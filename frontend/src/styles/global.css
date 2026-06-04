@@ -1,0 +1,279 @@
+/* ============================================================
+   css/styles.css — Shared Styles (used on ALL pages)
+   
+   Contains global reset, body defaults, header/nav layout,
+   brand logo styles, navigation link hover effects (purple
+   underline), fullscreen background image, and shared
+   responsive rules for small screens.
+   
+   Pages that use this: index.html, home.html, login.html
+   ============================================================ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Manrope', sans-serif;
+  background: #FAFAFF;
+  color: #18181B;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: opacity 0.5s ease;
+}
+
+html {
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+header {
+  padding: 0.85rem 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.logo {
+  height: 26px;
+  width: auto;
+  display: block;
+  border-radius: 8px;
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.nav-left .brand {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 600;
+  font-size: 1.15rem;
+  color: #18181B;
+}
+
+nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+nav a {
+  text-decoration: none;
+  font-family: 'Manrope', sans-serif;
+  font-weight: 500;
+  font-size: 0.88rem;
+  color: #18181B;
+  opacity: 0.7;
+  position: relative;
+  padding-bottom: 2px;
+  transition: opacity 0.2s;
+}
+
+nav a::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, #6D5DFC, #A855F7);
+  transform: translateX(-50%) scaleX(0);
+  transform-origin: center;
+  transition: transform 0.3s ease;
+  border-radius: 2px;
+}
+
+nav a:hover {
+  opacity: 1;
+}
+
+nav a:hover::after {
+  transform: translateX(-50%) scaleX(1);
+}
+
+.bg-full {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  z-index: -1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.header-search {
+  flex: 1;
+  max-width: 480px;
+  margin: 0 2rem;
+}
+
+.search-bar {
+  width: 100%;
+  padding: 0.45rem 1rem 0.45rem 2.4rem;
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: #18181B;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(24, 24, 27, 0.08);
+  border-radius: 100px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371717A' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 0.85rem center;
+  background-size: 16px;
+}
+
+.search-bar:focus {
+  border-color: #6D5DFC;
+  box-shadow: 0 0 0 3px rgba(109, 93, 252, 0.1);
+}
+
+.search-bar::placeholder {
+  color: #71717A;
+  opacity: 0.6;
+}
+
+.header-username {
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #18181B;
+  margin-right: 0.25rem;
+}
+
+.notif-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: #18181B;
+  opacity: 0.6;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.notif-icon:hover {
+  opacity: 1;
+  background: rgba(109, 93, 252, 0.08);
+}
+
+.notif-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #EF4444;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: 'Outfit', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.nav-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  header { padding: 0.65rem 1.5rem; flex-wrap: wrap; gap: 0.6rem; }
+  .logo { height: 30px; }
+  .header-search { order: 3; max-width: 100%; margin: 0; flex-basis: 100%; }
+  .header--messages .header-search { display: none !important; }
+}
+
+@media (max-width: 480px) {
+  header { padding: 0.5rem 1rem; }
+}
+
+/* ---------- Bottom Navigation ---------- */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(24, 24, 27, 0.06);
+  display: none;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 100;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.03);
+  padding: 0 1rem;
+}
+
+.bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  background: none;
+  border: none;
+  color: #71717A;
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 500;
+  cursor: pointer;
+  width: 60px;
+  height: 100%;
+  transition: all 0.2s;
+  padding: 4px 0;
+}
+
+.bottom-nav-item svg {
+  stroke: currentColor;
+  stroke-width: 2px;
+  transition: transform 0.2s;
+}
+
+.bottom-nav-item:hover {
+  color: #18181B;
+}
+
+.bottom-nav-item:hover svg {
+  transform: translateY(-1px);
+}
+
+.bottom-nav-item.active {
+  color: #6D5DFC;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .bottom-nav {
+    display: flex;
+  }
+}

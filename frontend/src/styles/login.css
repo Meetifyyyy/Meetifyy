@@ -1,0 +1,149 @@
+/* ============================================================
+   css/login.css — Standalone Login Page Styles (login.html)
+   
+   A separate, full-page login form (different from the overlay
+   in index.html). Contains:
+   - .nav-left a (wraps logo in link for login.html only)
+   - Centered main layout
+   - Glassmorphism login card with blur backdrop
+   - Form inputs, login button, footer links
+   - Page-enter fade-in animation
+   
+   Used by: login.html only
+   ============================================================ */
+
+.nav-left a {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+}
+
+main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.login-card {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 24px;
+  padding: 3rem 2.5rem;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 8px 32px rgba(109, 93, 252, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.login-card h1 {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 600;
+  font-size: 1.75rem;
+  text-align: center;
+  margin-bottom: 0.35rem;
+}
+
+.login-card .subtitle {
+  text-align: center;
+  font-size: 0.9rem;
+  color: #18181B;
+  opacity: 0.55;
+  margin-bottom: 2rem;
+}
+
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-group label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #18181B;
+  margin-bottom: 0.4rem;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.95rem;
+  border: 1.5px solid rgba(24, 24, 27, 0.12);
+  border-radius: 12px;
+  background: #fff;
+  color: #18181B;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-group input:focus {
+  border-color: #6D5DFC;
+  box-shadow: 0 0 0 3px rgba(109, 93, 252, 0.12);
+}
+
+.form-group input::placeholder {
+  color: #18181B;
+  opacity: 0.35;
+}
+
+.login-btn {
+  width: 100%;
+  padding: 0.8rem;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 600;
+  font-size: 1rem;
+  color: #fff;
+  background: linear-gradient(135deg, #6D5DFC, #A855F7);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.2s;
+  margin-top: 0.5rem;
+}
+
+.login-btn:hover {
+  box-shadow: 0 4px 20px rgba(109, 93, 252, 0.35);
+  transform: translateY(-1px);
+}
+
+.login-btn:active {
+  transform: translateY(0);
+}
+
+.login-footer {
+  text-align: center;
+  margin-top: 1.5rem;
+  font-size: 0.85rem;
+  color: #18181B;
+  opacity: 0.55;
+}
+
+.login-footer a {
+  color: #6D5DFC;
+  text-decoration: none;
+  font-weight: 600;
+  opacity: 1;
+}
+
+.login-footer a:hover {
+  text-decoration: underline;
+}
+
+.page-enter {
+  animation: fadeIn 0.4s ease forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 640px) {
+  .login-card {
+    padding: 2rem 1.5rem;
+  }
+}
