@@ -24,7 +24,7 @@ export default function LandingPage() {
       setFading(true);
       setTimeout(() => {
         setView('login');
-      }, 450);
+      }, 350);
     } else if (view === 'login') {
       setView('signup');
     } else if (view === 'signup') {
@@ -115,7 +115,7 @@ export default function LandingPage() {
           <img className="logo" src={logo} alt="Meetify" />
           <span className="brand">Meetify</span>
         </div>
-        <nav className={view !== 'hero' ? 'nav-hidden' : ''}>
+        <nav>
           <div className="profile-link" style={{ textDecoration: 'none', cursor: 'pointer' }} onClick={handleProfileClick}>
             <div className="profile-btn" title="Profile">
               <div className="profile-icon">
@@ -153,7 +153,7 @@ export default function LandingPage() {
         </main>
 
         {/* ---------- Features ---------- */}
-        {view === 'hero' && !fading && (
+        {view === 'hero' && (
           <>
             <section className="landing-section features-section">
               <div className="section-inner">

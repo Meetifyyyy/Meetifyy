@@ -19,7 +19,7 @@ export default function MessagesLayout() {
     setShowChatOnMobile(false);
   };
 
-  const handleSend = (convId, text) => {
+  const handleSend = (convId, text, replyTo = null) => {
     const now = new Date();
     const timeStr = now.getHours() + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
 
@@ -28,10 +28,51 @@ export default function MessagesLayout() {
         c.id === convId
           ? {
               ...c,
-              messages: [...c.messages, { from: 'me', text, time: timeStr }],
+              messages: [
+                ...c.messages,
+                { from: 'me', text, time: timeStr, replyTo: replyTo ? { text: replyTo.text, from: replyTo.from } : null }
+              ],
               lastMsg: text,
               time: 'now',
             }
+          : c
+      )
+    );
+  };
+
+  const handleReact = (convId, messageIndex, reaction) => {
+    setConversations((prev) =>
+      prev.map((c) => {
+        if (c.id !== convId) return c;
+        const updatedMessages = c.messages.map((m, idx) => {
+          if (idx !== messageIndex) return m;
+          const currentReactions = m.reactions || [];
+          const exists = currentReactions.includes(reaction);
+          const newReactions = exists
+            ? currentReactions.filter((r) => r !== reaction)
+            : [...currentReactions, reaction];
+          return { ...m, reactions: newReactions };
+        });
+        return { ...c, messages: updatedMessages };
+      })
+    );
+  };
+
+  const handleClearChat = (convId) => {
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convId
+          ? { ...c, messages: [], lastMsg: 'Chat cleared', time: 'now' }
+          : c
+      )
+    );
+  };
+
+  const handleBlockUser = (convId) => {
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convId
+          ? { ...c, blocked: !c.blocked }
           : c
       )
     );
@@ -45,8 +86,16 @@ export default function MessagesLayout() {
           activeChatId={activeChatId}
           onSelect={handleSelectChat}
         />
-        <ChatArea conversation={activeConv} onSendMessage={handleSend} onBack={handleBack} />
+        <ChatArea
+          conversation={activeConv}
+          onSendMessage={handleSend}
+          onReactMessage={(msgIndex, reaction) => handleReact(activeChatId, msgIndex, reaction)}
+          onClearChat={() => handleClearChat(activeChatId)}
+          onBlockUser={() => handleBlockUser(activeChatId)}
+          onBack={handleBack}
+        />
       </div>
     </div>
   );
 }
+

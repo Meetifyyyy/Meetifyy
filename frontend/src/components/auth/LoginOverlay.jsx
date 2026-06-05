@@ -24,7 +24,7 @@ export default function LoginOverlay({ visible, onLogin, onSwitchToSignup, toast
             <input
               type="text"
               id="username"
-              placeholder="sarthak"
+              placeholder="Username"
               value={user}
               onChange={(e) => setUser(e.target.value)}
             />

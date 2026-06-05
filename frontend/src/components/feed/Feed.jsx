@@ -13,18 +13,26 @@ export default function Feed() {
   const { username, initial } = useAuth();
   const [userPosts, setUserPosts] = useState([]);
 
-  const handleNewPost = (text) => {
-    setUserPosts([
-      { name: username, avatar: initial, time: 'Just now', text, likes: 0, comments: 0 },
-      ...userPosts,
-    ]);
+  const handleNewPost = (text, pollData) => {
+    const newId = `post-${Date.now()}-${Math.random()}`;
+    if (pollData) {
+      setUserPosts([
+        { id: newId, name: username, avatar: initial, time: 'Just now', text, poll: pollData, likes: 0, comments: 0 },
+        ...userPosts,
+      ]);
+    } else if (text) {
+      setUserPosts([
+        { id: newId, name: username, avatar: initial, time: 'Just now', text, likes: 0, comments: 0 },
+        ...userPosts,
+      ]);
+    }
   };
 
   return (
     <div className="feed">
       <PostComposer onSubmit={handleNewPost} />
-      {userPosts.map((p, i) => (
-        <Post key={`user-${i}`} {...p} initialLikes={p.likes} initialComments={p.comments} />
+      {userPosts.map((p) => (
+        <Post key={p.id} {...p} initialLikes={p.likes} initialComments={p.comments} />
       ))}
       {defaultPosts.map((p, i) => (
         <Post key={`default-${i}`} {...p} initialLikes={p.likes} initialComments={p.comments} />

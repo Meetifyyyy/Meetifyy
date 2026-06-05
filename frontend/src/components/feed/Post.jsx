@@ -1,7 +1,85 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-export default function Post({ name, avatar, time, text, initialLikes = 0, initialComments = 0, communityTag }) {
+function PollCard({ poll }) {
+  const [votes, setVotes] = useState(() => poll.options.map(() => 0));
+  const [selected, setSelected] = useState([]);
+  const [hasVoted, setHasVoted] = useState(false);
+  const totalVotes = votes.reduce((a, b) => a + b, 0);
+
+  const handleVote = (idx) => {
+    if (hasVoted) return;
+
+    if (poll.multiSelect) {
+      // Toggle selection without submitting yet
+      setSelected((prev) =>
+        prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+      );
+    } else {
+      // Single select — vote immediately
+      setSelected([idx]);
+      setVotes((prev) => prev.map((v, i) => (i === idx ? v + 1 : v)));
+      setHasVoted(true);
+    }
+  };
+
+  const confirmMultiVote = () => {
+    if (selected.length === 0 || hasVoted) return;
+    setVotes((prev) => prev.map((v, i) => (selected.includes(i) ? v + 1 : v)));
+    setHasVoted(true);
+  };
+
+  const showResults = hasVoted;
+
+  return (
+    <div className="poll-card">
+      <div className="poll-card-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <line x1="9" y1="8" x2="9" y2="16" />
+          <line x1="12" y1="11" x2="12" y2="16" />
+          <line x1="15" y1="6" x2="15" y2="16" />
+        </svg>
+        <span className="poll-card-question">{poll.question}</span>
+        {poll.multiSelect && <span className="poll-multi-badge">Multi</span>}
+      </div>
+      <div className="poll-card-options">
+        {poll.options.map((opt, i) => {
+          const pct = showResults && totalVotes > 0 ? Math.round((votes[i] / totalVotes) * 100) : 0;
+          const isSelected = selected.includes(i);
+
+          return (
+            <button
+              key={i}
+              className={`poll-card-option ${isSelected ? 'selected' : ''} ${showResults ? 'voted' : ''}`}
+              onClick={() => handleVote(i)}
+              disabled={showResults}
+            >
+              <div className="poll-option-fill" style={{ width: showResults ? `${pct}%` : '0%' }} />
+              <span className="poll-option-label">
+                {poll.multiSelect && !showResults && (
+                  <span className={`poll-checkbox ${isSelected ? 'checked' : ''}`}>
+                    {isSelected && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12" /></svg>}
+                  </span>
+                )}
+                {opt}
+              </span>
+              {showResults && <span className="poll-option-pct">{pct}%</span>}
+            </button>
+          );
+        })}
+      </div>
+      <div className="poll-card-footer">
+        {poll.multiSelect && !hasVoted && selected.length > 0 && (
+          <button className="poll-confirm-btn" onClick={confirmMultiVote}>Confirm</button>
+        )}
+        <span className="poll-vote-count">{totalVotes} {totalVotes === 1 ? 'vote' : 'votes'}</span>
+      </div>
+    </div>
+  );
+}
+
+export default function Post({ name, avatar, time, text, poll, initialLikes = 0, initialComments = 0, communityTag }) {
   const [likes, setLikes] = useState(initialLikes);
   const [liked, setLiked] = useState(false);
 
@@ -30,7 +108,8 @@ export default function Post({ name, avatar, time, text, initialLikes = 0, initi
           </span>
         )}
       </div>
-      <div className="post-body">{text}</div>
+      {text && <div className="post-body">{text}</div>}
+      {poll && <PollCard poll={poll} />}
       <div className="post-stats">
         <span><strong>{likes}</strong> likes</span>
         <span><strong>{initialComments}</strong> comments</span>

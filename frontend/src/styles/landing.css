@@ -21,7 +21,7 @@
   background: linear-gradient(135deg, #6D5DFC, #A855F7);
   background-size: 200% 200%;
   background-position: 0% 50%;
-  border-radius: 18px;
+  border-radius: 22px;
   cursor: pointer;
   transition: gap 0.4s cubic-bezier(0.4, 0, 0.2, 1),
               padding 0.4s cubic-bezier(0.4, 0, 0.2, 1),
@@ -35,8 +35,8 @@
 }
 
 .profile-btn .profile-icon {
-  width: 36px;
-  height: 36px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -46,8 +46,8 @@
 }
 
 .profile-btn .profile-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   fill: #fff;
   transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -55,7 +55,7 @@
 .profile-btn .login-text {
   font-family: 'Manrope', sans-serif;
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 1.05rem;
   color: #fff;
   white-space: nowrap;
   max-width: 0;
@@ -68,8 +68,8 @@
 }
 
 .profile-btn:hover {
-  padding: 0 16px 0 0;
-  gap: 8px;
+  padding: 0 20px 0 0;
+  gap: 10px;
   background-position: 100% 50%;
   box-shadow: 0 0 0 3px rgba(109, 93, 252, 0.2),
               0 4px 20px rgba(109, 93, 252, 0.3);
@@ -85,7 +85,7 @@
 }
 
 .profile-btn:hover .login-text {
-  max-width: 60px;
+  max-width: 80px;
   opacity: 1;
   transform: translateX(0);
 }
@@ -326,62 +326,74 @@ main {
   z-index: 10;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(12px);
-  transition: opacity 0.4s ease, transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.45s ease;
   overflow-y: auto;
   padding: 2rem 1rem;
 }
 
 .overlay.visible {
   opacity: 1;
-  transform: translateY(0);
 }
 
 .overlay.visible .auth-card {
   pointer-events: auto;
+  animation: authCardIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes authCardIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
 }
 
 .auth-card {
-  padding: 3rem 2.5rem;
+  padding: 3.5rem 3rem;
   width: 100%;
-  max-width: 420px;
+  max-width: 500px;
 }
 
 .auth-card h1 {
   font-family: 'Outfit', sans-serif;
   font-weight: 600;
-  font-size: 1.75rem;
+  font-size: 2.15rem;
   text-align: center;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.5rem;
 }
 
 .auth-card .subtitle {
   text-align: center;
-  font-size: 0.9rem;
+  font-size: 1.05rem;
   color: #18181B;
   opacity: 0.55;
-  margin-bottom: 2rem;
+  margin-bottom: 2.25rem;
 }
 
 .form-group {
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
 }
 
 .form-group label {
   display: block;
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 1rem;
   color: #18181B;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.5rem;
 }
 
 .form-group input {
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: 0.95rem 1.15rem;
   font-family: 'Manrope', sans-serif;
-  font-size: 0.95rem;
+  font-size: 1.08rem;
   border: 1.5px solid rgba(24, 24, 27, 0.12);
-  border-radius: 12px;
+  border-radius: 14px;
   background: #fff;
   color: #18181B;
   outline: none;
@@ -400,17 +412,17 @@ main {
 
 .auth-btn {
   width: 100%;
-  padding: 0.8rem;
+  padding: 1.05rem;
   font-family: 'Outfit', sans-serif;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 1.15rem;
   color: #fff;
   background: linear-gradient(135deg, #6D5DFC, #A855F7);
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   cursor: pointer;
   transition: box-shadow 0.2s, transform 0.2s;
-  margin-top: 0.5rem;
+  margin-top: 0.75rem;
 }
 
 .auth-btn:hover {
@@ -424,8 +436,8 @@ main {
 
 .auth-footer {
   text-align: center;
-  margin-top: 1.5rem;
-  font-size: 0.85rem;
+  margin-top: 1.75rem;
+  font-size: 1rem;
   color: #18181B;
   opacity: 0.55;
 }
@@ -451,13 +463,26 @@ main {
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.5s ease;
+  filter: blur(8px);
+  transform: scale(0.96);
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), 
+              filter 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
+  z-index: 100;
 }
 
 .welcome-greeting.visible {
   opacity: 1;
+  filter: blur(0);
+  transform: scale(1);
   pointer-events: auto;
+}
+
+.welcome-greeting.fading-out {
+  opacity: 0;
+  filter: blur(8px);
+  transform: scale(1.04);
 }
 
 .greeting-content h1 {
@@ -624,8 +649,8 @@ main {
   scrollbar-width: none;
   -ms-overflow-style: none;
   opacity: 1;
-  transform: scale(1);
-  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  filter: blur(0);
+  transition: opacity 0.5s ease, filter 0.5s ease;
 }
 
 .landing-scroll::-webkit-scrollbar {
@@ -638,8 +663,7 @@ main {
 
 .landing-scroll--fading {
   opacity: 0;
-  transform: scale(0.97);
-  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  filter: blur(12px);
   pointer-events: none;
 }
 
