@@ -31,10 +31,10 @@ export default function FeedRoute() {
 
   return (
     <>
-      <main className="centre">
+      <main className="centre animate-in">
         <Feed onPostClick={handlePostClick} />
       </main>
-      <RightPanel>
+      <RightPanel className="animate-in">
         <QuickActions actions={quickActions} />
         <OnlineFriends />
         <UpcomingEvents />

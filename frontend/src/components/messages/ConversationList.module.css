@@ -197,4 +197,7 @@
   .hideOnMobile {
     display: none !important;
   }
+  .msgConvSearch {
+    display: none !important;
+  }
 }

@@ -1,4 +1,5 @@
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
+import { useData } from '../context/DataContext';
 import PostView from '../components/feed/PostView';
 import RightPanel from '../components/layout/RightPanel';
 import { communities } from '../data/communities';
@@ -7,7 +8,7 @@ import rightPanelStyles from '../components/layout/RightPanel.module.css';
 export default function PostDetailRoute() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { id } = useParams();
+  const { getUserById } = useData();
 
   // Retrieve post data passed from navigation state. 
   // In a real app, if state is missing (e.g. direct URL hit), you'd fetch it using the id.
@@ -18,8 +19,6 @@ export default function PostDetailRoute() {
   };
 
   if (!activePost || !activePost.post) {
-    // Fallback if accessed directly and no state is available.
-    // Ideally we would fetch the post data here.
     return (
       <main className="centre">
         <div style={{ padding: '2rem', textAlign: 'center' }}>
@@ -68,7 +67,13 @@ export default function PostDetailRoute() {
         </RightPanel>
       );
     } else {
-      const pName = post.name || post.user;
+      const author = getUserById(post.authorId) || {
+        displayName: 'Unknown User',
+        followers: 0,
+        following: 0,
+        communities: []
+      };
+
       return (
         <RightPanel>
             <div className={rightPanelStyles.panelCard} style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -81,7 +86,7 @@ export default function PostDetailRoute() {
               <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                 {/* Header & Options */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#18181B', fontFamily: "'Outfit', sans-serif" }}>{pName}</h3>
+                  <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#18181B', fontFamily: "'Outfit', sans-serif" }}>{author.displayName}</h3>
                   <button style={{ background: 'rgba(24, 24, 27, 0.05)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer', transition: 'background 0.2s' }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71717A" strokeWidth="2.5"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
                   </button>
@@ -102,11 +107,11 @@ export default function PostDetailRoute() {
                 {/* Stats */}
                 <div style={{ display: 'flex', gap: '2.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid rgba(24, 24, 27, 0.05)' }}>
                     <div>
-                      <div style={{ fontWeight: 800, color: '#18181B', fontSize: '1.15rem' }}>8,401</div>
+                      <div style={{ fontWeight: 800, color: '#18181B', fontSize: '1.15rem' }}>{author.followers.toLocaleString()}</div>
                       <div style={{ color: '#71717A', fontSize: '0.85rem', fontWeight: 500 }}>Followers</div>
                     </div>
                     <div>
-                      <div style={{ fontWeight: 800, color: '#18181B', fontSize: '1.15rem' }}>161</div>
+                      <div style={{ fontWeight: 800, color: '#18181B', fontSize: '1.15rem' }}>{author.following.toLocaleString()}</div>
                       <div style={{ color: '#71717A', fontSize: '0.85rem', fontWeight: 500 }}>Following</div>
                     </div>
                 </div>
@@ -116,29 +121,22 @@ export default function PostDetailRoute() {
                     <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#71717A', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1.25rem' }}>Member of these communities</div>
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                      {/* Comm 1 */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #22C55E, #10B981)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontSize: '0.9rem', fontWeight: 700 }}>S</div>
-                            <div>
-                              <div style={{ fontWeight: 700, color: '#18181B', fontSize: '0.95rem' }}>Startup Hub</div>
-                              <div style={{ color: '#71717A', fontSize: '0.8rem' }}>6,700 members</div>
-                            </div>
+                      {author.communities && author.communities.length > 0 ? author.communities.map((commName, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                              <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #22C55E, #10B981)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontSize: '0.9rem', fontWeight: 700 }}>
+                                {commName.charAt(0)}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 700, color: '#18181B', fontSize: '0.95rem' }}>{commName}</div>
+                                <div style={{ color: '#71717A', fontSize: '0.8rem' }}>Member</div>
+                              </div>
+                          </div>
+                          <button style={{ background: 'rgba(24, 24, 27, 0.05)', color: '#71717A', border: 'none', borderRadius: '100px', padding: '0.4rem 1rem', fontSize: '0.85rem', fontWeight: 600, cursor: 'default' }}>Joined</button>
                         </div>
-                        <button style={{ background: '#6D5DFC', color: '#fff', border: 'none', borderRadius: '100px', padding: '0.4rem 1rem', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s' }}>Join</button>
-                      </div>
-                      
-                      {/* Comm 2 */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #A855F7, #EC4899)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#fff', fontSize: '0.9rem', fontWeight: 700 }}>H</div>
-                            <div>
-                              <div style={{ fontWeight: 700, color: '#18181B', fontSize: '0.95rem' }}>Hackathon Heroes</div>
-                              <div style={{ color: '#71717A', fontSize: '0.8rem' }}>4,100 members</div>
-                            </div>
-                        </div>
-                        <button style={{ background: 'rgba(24, 24, 27, 0.05)', color: '#71717A', border: 'none', borderRadius: '100px', padding: '0.4rem 1rem', fontSize: '0.85rem', fontWeight: 600, cursor: 'default' }}>Joined</button>
-                      </div>
+                      )) : (
+                        <div style={{ color: '#71717A', fontSize: '0.85rem' }}>No communities yet.</div>
+                      )}
                     </div>
                 </div>
               </div>
@@ -151,7 +149,7 @@ export default function PostDetailRoute() {
   return (
     <>
       <main className="centre">
-        <PostView post={{...post, name: post.name || post.user}} onBack={handleBack} />
+        <PostView post={post} onBack={handleBack} />
       </main>
       {renderRightPanel()}
     </>

@@ -1,7 +1,8 @@
+import { useData } from '../../context/DataContext';
 import styles from './RightPanel.module.css';
 
-export default function RightPanel({ children }) {
-  return <aside className={styles.rightPanel}>{children}</aside>;
+export default function RightPanel({ children, className = '' }) {
+  return <aside className={`${styles.rightPanel} ${className}`.trim()}>{children}</aside>;
 }
 
 export function QuickActions({ actions }) {
@@ -19,12 +20,19 @@ export function QuickActions({ actions }) {
 }
 
 export function OnlineFriends() {
-  const friends = [
-    { name: 'Alice', letter: 'A', status: 'Online', online: true },
-    { name: 'Bob', letter: 'B', status: 'Online', online: true },
-    { name: 'Charlie', letter: 'C', status: 'Away', online: false },
-    { name: 'Diana', letter: 'D', status: 'Offline', online: false },
-  ];
+  const { users, currentUser } = useData();
+
+  const friends = Object.values(users)
+    .filter(u => u.id !== currentUser.id)
+    .slice(0, 4)
+    .map((u, i) => ({
+      id: u.id,
+      name: u.displayName,
+      username: u.username,
+      letter: u.avatar,
+      status: i < 2 ? 'Online' : (i === 2 ? 'Away' : 'Offline'),
+      online: i < 2
+    }));
 
   return (
     <div className={styles.panelCard}>

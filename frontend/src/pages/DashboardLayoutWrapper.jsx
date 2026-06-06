@@ -12,7 +12,8 @@ export default function DashboardLayoutWrapper() {
   // Determine if wide layout is needed based on path
   const isWide = 
     location.pathname.startsWith('/communities') || 
-    location.pathname.startsWith('/messages');
+    location.pathname.startsWith('/messages') ||
+    location.pathname.startsWith('/profile');
 
   const handleCommunityClick = (id) => {
     navigate(`/communities/${id}`);

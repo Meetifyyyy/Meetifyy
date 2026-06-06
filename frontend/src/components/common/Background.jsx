@@ -7,8 +7,7 @@ export default function Background() {
       className={styles.bgFull}
       src={heroBg}
       alt=""
-      loading="lazy"
-      decoding="async"
+      fetchPriority="high"
     />
   );
 }

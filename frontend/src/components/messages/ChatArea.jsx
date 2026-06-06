@@ -10,6 +10,7 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
   const [replyingTo, setReplyingTo] = useState(null);
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
   
   // Voice Call States
   const [isCalling, setIsCalling] = useState(false);
@@ -57,6 +58,10 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
     setInputValue('');
     setShowEmojiPicker(false);
     setReplyingTo(null);
+    setIsTyping(true);
+    setTimeout(() => {
+      setIsTyping(false);
+    }, 2500);
   };
 
   const reactionsList = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
@@ -350,6 +355,17 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
               </div>
             );
           })
+        )}
+        {isTyping && (
+          <div className={`${styles.msgBubbleContainer} ${styles.msgBubbleContainerThem}`}>
+            <div className={styles.msgBubbleWrapper}>
+              <div className={`${styles.msgBubble} ${styles.msgBubbleThem}`}>
+                <div className={styles.typingIndicator}>
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
 

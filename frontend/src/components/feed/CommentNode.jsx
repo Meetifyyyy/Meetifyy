@@ -1,18 +1,22 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { showToast } from '../../utils/toast';
+import { useData } from '../../context/DataContext';
 import styles from './CommentNode.module.css';
 
-export default function CommentNode({ comment, onReplySubmit, level = 0, isLastInThread = false }) {
+export default function CommentNode({ postId, comment, onReplySubmit, level = 0, isLastInThread = false }) {
   const [isReplying, setIsReplying] = useState(false);
   const [replyText, setReplyText] = useState('');
-  const [likes, setLikes] = useState(comment.likes);
-  const [liked, setLiked] = useState(comment.liked);
   const [showMenu, setShowMenu] = useState(false);
+  const [isLiking, setIsLiking] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
+  const { getUserById, likeComment } = useData();
+
+  const author = getUserById(comment.authorId) || { displayName: 'Unknown', username: 'unknown', avatar: '?' };
 
   const handleProfileClick = () => {
-    navigate(`/profile/${comment.user.toLowerCase().replace(/\s+/g, '')}`);
+    navigate(`/profile/${author.username}`);
   };
 
   const handleReplyClick = () => {
@@ -25,17 +29,23 @@ export default function CommentNode({ comment, onReplySubmit, level = 0, isLastI
     setReplyText('');
   };
 
-  const handleSubmit = () => {
-    if (!replyText.trim()) return;
-    onReplySubmit(comment.id, replyText);
+  const handleSubmit = async () => {
+    if (!replyText.trim() || isSubmitting) return;
+    setIsSubmitting(true);
+    await onReplySubmit(comment.id, replyText);
+    setIsSubmitting(false);
     setIsReplying(false);
     setReplyText('');
   };
 
-  const handleLike = () => {
-    setLikes(liked ? likes - 1 : likes + 1);
-    setLiked(!liked);
+  const handleLike = async () => {
+    if (isLiking) return;
+    setIsLiking(true);
+    await likeComment(postId, comment.id);
+    setIsLiking(false);
   };
+
+  const { likes, isLikedByMe } = comment;
 
   return (
     <div className={`${styles.nodeContainer} ${level === 0 ? styles.level0 : styles.levelN}`}>
@@ -49,7 +59,7 @@ export default function CommentNode({ comment, onReplySubmit, level = 0, isLastI
           className={styles.replyAvatar} 
           onClick={handleProfileClick}
         >
-          {comment.avatar}
+          {author.avatar}
         </div>
         
         <div className={styles.replyContent}>
@@ -58,9 +68,9 @@ export default function CommentNode({ comment, onReplySubmit, level = 0, isLastI
               onClick={handleProfileClick}
               className={`hover-underline ${styles.username}`}
             >
-              {comment.user}
+              {author.displayName}
             </span>
-            <span className={styles.handle}>@{comment.user.toLowerCase().replace(/\s+/g, '')}</span>
+            <span className={styles.handle}>@{author.username}</span>
             <span className={styles.time}>• {comment.time}</span>
             <div className={styles.menuWrapper}>
               <button 
@@ -92,9 +102,11 @@ export default function CommentNode({ comment, onReplySubmit, level = 0, isLastI
           <div className={styles.replyActionsRow}>
             <button 
               onClick={handleLike}
-              className={`${styles.actionBtn} ${liked ? styles.actionBtnLiked : ''}`}
+              disabled={isLiking}
+              className={`${styles.actionBtn} ${isLikedByMe ? styles.actionBtnLiked : ''}`}
+              style={{ opacity: isLiking ? 0.5 : 1 }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill={liked ? 'var(--color-danger)' : 'none'} stroke="currentColor" strokeWidth="2.5"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" /></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill={isLikedByMe ? 'var(--color-danger)' : 'none'} stroke="currentColor" strokeWidth="2.5"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" /></svg>
               {likes}
             </button>
             <button 
@@ -110,7 +122,7 @@ export default function CommentNode({ comment, onReplySubmit, level = 0, isLastI
           {isReplying && (
             <div className={styles.inlineComposerContainer}>
               <textarea 
-                placeholder={`Reply to u/${comment.user.replace(/\s+/g, '')}`}
+                placeholder={`Reply to @${author.username}`}
                 value={replyText}
                 onChange={(e) => {
                   setReplyText(e.target.value);
@@ -130,10 +142,10 @@ export default function CommentNode({ comment, onReplySubmit, level = 0, isLastI
                 </button>
                 <button 
                   onClick={handleSubmit}
-                  disabled={!replyText.trim()} 
-                  className={`${styles.submitBtn} ${replyText.trim() ? styles.submitBtnActive : styles.submitBtnDisabled}`}
+                  disabled={!replyText.trim() || isSubmitting} 
+                  className={`${styles.submitBtn} ${replyText.trim() && !isSubmitting ? styles.submitBtnActive : styles.submitBtnDisabled}`}
                 >
-                  Comment
+                  {isSubmitting ? '...' : 'Comment'}
                 </button>
               </div>
             </div>
@@ -147,6 +159,7 @@ export default function CommentNode({ comment, onReplySubmit, level = 0, isLastI
           {comment.replies.map((childReply, idx) => (
             <CommentNode 
               key={childReply.id} 
+              postId={postId}
               comment={childReply} 
               onReplySubmit={onReplySubmit} 
               level={level + 1}

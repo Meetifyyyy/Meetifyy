@@ -1,27 +1,37 @@
-import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
 import { useFollow } from '../../context/FollowContext';
 import FollowButton from '../common/FollowButton';
 import { useNavigate } from 'react-router-dom';
 import styles from './ProfileHeader.module.css';
 
 export default function ProfileHeader({ profileUsername, onViewFollowers, onViewFollowing, onBack }) {
-  const { username: currentUser } = useAuth();
+  const { getUserByUsername, currentUser } = useData();
   const { following } = useFollow();
   const navigate = useNavigate();
   
-  // In a real app, you'd fetch the user profile data. Here we mock it based on the name.
-  const displayUsername = profileUsername || currentUser;
-  const initial = displayUsername ? displayUsername.charAt(0).toUpperCase() : '?';
-  const displayName = displayUsername ? displayUsername.charAt(0).toUpperCase() + displayUsername.slice(1) : '';
+  // Fetch real mock user profile
+  const targetUsername = profileUsername || currentUser.username;
+  const profileUser = getUserByUsername(targetUsername) || currentUser;
 
-  const isCurrentUser = displayUsername === currentUser;
-  const isFollowing = following.includes(displayUsername);
+  const displayName = profileUser.displayName;
+  const isCurrentUser = profileUser.username === currentUser.username;
+  const isFollowing = following.includes(profileUser.username);
 
-  // Mock stats
-  let followersCount = isCurrentUser ? 156 : 42;
+  // Mock stats - in real app would come directly from backend
+  let followersCount = profileUser.followers;
   if (!isCurrentUser && isFollowing) followersCount += 1;
-  const followingCount = isCurrentUser ? following.length : 18;
+  const followingCount = profileUser.following;
 
+  // We can use UI faces or just initials for the mock
+  // For the mockup we will use an image if available or initials
+  const avatarContent = profileUser.avatar && profileUser.avatar.length === 1 
+    ? profileUser.avatar 
+    : <img src={profileUser.avatar} alt="avatar" className={styles.avatarImg} />;
+    
+  // Override for the specific "David Chen" mockup look if needed, but we'll stick to dynamic
+  // Let's assume we want to show dynamic image if it's not a single char. 
+  // In mockData, they are single chars ('A', 'M', etc), but we will style it to look like the mockup.
+  
   return (
     <div className={styles.profileCard}>
       <div className={styles.profileCover}>
@@ -32,47 +42,25 @@ export default function ProfileHeader({ profileUsername, onViewFollowers, onView
             </svg>
           </button>
         )}
-        <div className={styles.profileAvatarLarge}>{initial}</div>
+      </div>
+
+      <div className={styles.profileAvatarContainer}>
+        <div className={styles.profileAvatarLarge}>
+          {profileUser.username === 'sammydoe' ? (
+             <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?fit=crop&w=150&h=150" alt="avatar" />
+          ) : (
+             avatarContent
+          )}
+        </div>
       </div>
 
       <div className={styles.profileInfo}>
-        <div className={styles.profileInfoHeader}>
-          <div>
-            <h1 className={styles.profileName}>{displayName}</h1>
-            <p className={styles.profileUsername}>@{displayUsername}</p>
-          </div>
-          {!isCurrentUser && (
-            <FollowButton targetUsername={displayUsername} />
-          )}
-        </div>
+        <h1 className={styles.profileName}>{displayName}</h1>
+        <p className={styles.profileUsername}>@{profileUser.username}</p>
         
         <p className={styles.profileTagline}>
-          Building cool stuff & meeting awesome people. I love experimenting with new technologies, creating unique user experiences, and exploring the unknown.
+          {profileUser.bio}
         </p>
-        
-        <div className={styles.profileSubtitleRow}>
-          <div className={styles.subtitleItem}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-              <circle cx="12" cy="10" r="3" />
-            </svg>
-            Based in New York
-          </div>
-          <div className={styles.subtitleItem}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M12 20h9" />
-              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-            </svg>
-            Full-stack Developer
-          </div>
-          <div className={styles.subtitleItem}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-              <polyline points="22,6 12,13 2,6" />
-            </svg>
-            {displayUsername}@meetify.app
-          </div>
-        </div>
         
         <div className={styles.profileStats}>
           <div className={styles.stat} onClick={onViewFollowers} style={{ cursor: 'pointer' }}>
@@ -83,14 +71,18 @@ export default function ProfileHeader({ profileUsername, onViewFollowers, onView
             <div className={styles.statValue}>{followingCount}</div>
             <div className={styles.statLabel}>Following</div>
           </div>
-          <div className={styles.stat}>
-            <div className={styles.statValue}>43</div>
-            <div className={styles.statLabel}>Posts</div>
+        </div>
+
+        <div className={styles.profileActions}>
+          <div className={styles.followBtnWrapper}>
+            <FollowButton targetUsername={profileUser.username} />
           </div>
-          <div className={styles.stat}>
-            <div className={styles.statValue}>12</div>
-            <div className={styles.statLabel}>Communities</div>
-          </div>
+          <button className={styles.messageBtn} aria-label="Message">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+              <polyline points="22,6 12,13 2,6" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>

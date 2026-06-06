@@ -60,4 +60,25 @@ export const initialMessages = [
       { from: 'them', text: 'New paper discussion this Friday', time: '2d ago' },
     ],
   },
+  {
+    id: 7, name: 'Johnson Wood', avatar: 'J', color: '#EAB308', online: true,
+    lastMsg: 'Are we still on for the co-op session tonight?', time: '10m ago', unread: 1,
+    messages: [
+      { from: 'them', text: 'Hey, I finally got the new expansion pack.', time: 'Yesterday' },
+      { from: 'me', text: 'Nice! I am free tomorrow evening to play.', time: 'Yesterday' },
+      { from: 'them', text: 'Sounds like a plan. Let us aim for 8 PM.', time: 'Yesterday' },
+      { from: 'me', text: 'Perfect. See you then!', time: 'Yesterday' },
+      { from: 'them', text: 'Are we still on for the co-op session tonight?', time: '10m ago' },
+    ]
+  },
+  {
+    id: 8, name: 'Sarah Jones', avatar: 'S', color: '#14B8A6', online: false,
+    lastMsg: 'Check out this new Rust library I found.', time: '4h ago', unread: 0,
+    messages: [
+      { from: 'me', text: 'Hey Sarah, do you have any good resources for learning Rust?', time: '10:00 AM' },
+      { from: 'them', text: 'Absolutely! The official Rust book is the best place to start.', time: '10:15 AM' },
+      { from: 'me', text: 'I am reading it now, but the borrow checker is tricky.', time: '10:20 AM' },
+      { from: 'them', text: 'Yeah, it takes some getting used to. Check out this new Rust library I found.', time: '4h ago' }
+    ]
+  }
 ];

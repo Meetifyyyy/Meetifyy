@@ -8,6 +8,7 @@ import CommunityDetailRoute from './pages/CommunityDetailRoute';
 import PostDetailRoute from './pages/PostDetailRoute';
 import MessagesRoute from './pages/MessagesRoute';
 import ProfilePage from './pages/ProfilePage';
+import ErrorBoundary from './components/common/ErrorBoundary';
 
 function ProtectedRoute({ children }) {
   const { isLoggedIn } = useAuth();
@@ -26,10 +27,10 @@ const router = createBrowserRouter([
   {
     path: "/",
     element: (
-      <>
+      <ErrorBoundary>
         <ScrollRestoration />
         <Outlet />
-      </>
+      </ErrorBoundary>
     ),
     children: [
       {
@@ -52,15 +53,8 @@ const router = createBrowserRouter([
           { path: "/communities/:id", element: <CommunityDetailRoute /> },
           { path: "/messages", element: <MessagesRoute /> },
           { path: "/post/:id", element: <PostDetailRoute /> },
+          { path: "/profile/:profileUsername?", element: <ProfilePage /> },
         ]
-      },
-      {
-        path: "/profile/:profileUsername?",
-        element: (
-          <ProtectedRoute>
-            <ProfilePage />
-          </ProtectedRoute>
-        ),
       },
       { path: "*", element: <Navigate to="/" replace /> }
     ]

@@ -5,11 +5,12 @@
   border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: var(--radius-lg);
   padding: 1.25rem;
-  transition: box-shadow 0.2s;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .post:hover {
-  box-shadow: 0 4px 20px rgba(109, 93, 252, 0.06);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(109, 93, 252, 0.1);
 }
 
 .postHeader {
@@ -112,13 +113,14 @@
   border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: 100px;
   cursor: pointer;
-  transition: all var(--transition-normal);
+  transition: all var(--transition-normal), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .postActionBtn:hover {
   background: rgba(109, 93, 252, 0.08);
   border-color: rgba(109, 93, 252, 0.2);
   color: var(--color-text-main);
+  transform: scale(1.03);
 }
 
 .postActionBtn svg {

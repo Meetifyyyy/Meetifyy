@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { showToast } from '../../utils/toast';
+import { useData } from '../../context/DataContext';
 import styles from './Post.module.css';
 
 function PollCard({ poll }) {
@@ -81,31 +82,37 @@ function PollCard({ poll }) {
   );
 }
 
-export default function Post({ name, avatar, time, text, poll, initialLikes = 0, initialComments = 0, communityTag, onClick }) {
-  const [likes, setLikes] = useState(initialLikes);
-  const [liked, setLiked] = useState(false);
+export default function Post({ postData, communityTag, onClick }) {
+  const { getUserById, likePost } = useData();
   const [showMenu, setShowMenu] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const toggleLike = (e) => {
+  // For backward compatibility while refactoring, if postData is missing, fallback to props
+  if (!postData) return null;
+
+  const { id, authorId, time, text, poll, likes, comments, isLikedByMe } = postData;
+  const author = getUserById(authorId) || { displayName: 'Unknown', username: 'unknown', avatar: '?' };
+
+  const toggleLike = async (e) => {
     e.stopPropagation();
-    setLiked(!liked);
-    setLikes(liked ? likes - 1 : likes + 1);
+    if (isLoading) return;
+    setIsLoading(true);
+    await likePost(id);
+    setIsLoading(false);
   };
-
-  const username = name.toLowerCase().replace(/\s+/g, '');
 
   return (
     <div className={styles.post} onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
       <div className={styles.postHeader}>
-        <Link to={`/profile/${username}`} style={{ textDecoration: 'none' }} onClick={(e) => e.stopPropagation()}>
-          <div className={styles.postAvatar}>{avatar}</div>
+        <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none' }} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.postAvatar}>{author.avatar}</div>
         </Link>
         <div className={styles.postUser}>
-          <Link to={`/profile/${username}`} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
-            <div className={`hover-underline ${styles.postName}`}>{name}</div>
+          <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-block' }} onClick={(e) => e.stopPropagation()}>
+            <div className={`hover-underline ${styles.postName}`}>{author.displayName}</div>
           </Link>
         <div className={styles.postTime} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <span>@{username}</span>
+            <span>@{author.username}</span>
             <span style={{ opacity: 0.5 }}>•</span>
             <span>{time}</span>
           </div>
@@ -142,8 +149,8 @@ export default function Post({ name, avatar, time, text, poll, initialLikes = 0,
       {text && <div className={styles.postBody}>{text}</div>}
       {poll && <div onClick={(e) => e.stopPropagation()}><PollCard poll={poll} /></div>}
       <div className={styles.postActions} style={{ marginTop: '0.5rem', paddingTop: '0' }}>
-        <button className={styles.postActionBtn} onClick={toggleLike} style={liked ? { color: 'var(--color-primary)' } : {}}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <button className={styles.postActionBtn} onClick={toggleLike} disabled={isLoading} style={{ opacity: isLoading ? 0.5 : 1, ...(isLikedByMe ? { color: 'var(--color-primary)' } : {}) }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill={isLikedByMe ? 'var(--color-primary)' : 'none'} stroke="currentColor" strokeWidth="2">
             <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
           </svg>
           <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{likes}</span>
@@ -152,7 +159,7 @@ export default function Post({ name, avatar, time, text, poll, initialLikes = 0,
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
-          <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{initialComments}</span>
+          <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{comments}</span>
         </button>
         <button className={styles.postActionBtn} onClick={(e) => e.stopPropagation()}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

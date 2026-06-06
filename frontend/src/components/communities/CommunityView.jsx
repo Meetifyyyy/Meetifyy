@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { useData } from '../../context/DataContext';
 import { communities } from '../../data/communities';
 import Post from '../feed/Post';
 import styles from './CommunityView.module.css';
 
 export default function CommunityView({ communityId, onBack, onPostClick }) {
+  const { posts } = useData();
   const comm = communities[communityId];
   const [joined, setJoined] = useState(false);
   const [memberCount, setMemberCount] = useState(comm?.members || 0);
@@ -20,6 +22,8 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
       setMemberCount(memberCount + 1);
     }
   };
+  
+  const communityPosts = posts.filter(p => p.communityId === comm.id);
 
   return (
     <div className={styles.commViewWrapper}>
@@ -53,8 +57,8 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
         <div className={styles.commViewLeftBox}>
           <div className={styles.commSectionLabel} style={{ padding: '0 1.5rem', marginTop: '1.5rem' }}>Posts</div>
           <div className={styles.commFeedIntegrated} style={{ paddingBottom: '0' }}>
-            {comm.posts.map((p, i) => (
-              <Post key={p.id || i} name={p.user} avatar={p.avatar} time={p.time} text={p.text} initialLikes={p.likes} initialComments={p.comments} onClick={() => onPostClick && onPostClick(p, 'community', comm.id)} />
+            {communityPosts.map((p) => (
+              <Post key={p.id} postData={p} onClick={() => onPostClick && onPostClick(p, 'community', comm.id)} />
             ))}
           </div>
         </div>

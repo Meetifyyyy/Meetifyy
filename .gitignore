@@ -7,11 +7,13 @@ backend/node_modules/
 dist/
 frontend/dist/
 backend/dist/
+build/
 
 # IDE and system files
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
@@ -24,6 +26,7 @@ backend/dist/
 .env.development.local
 .env.test.local
 .env.production.local
+*.env
 
 # Logs
 npm-debug.log*
@@ -31,3 +34,28 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+*.log
+
+# Cache
+.cache/
+.vite/
+frontend/.vite/
+
+# Coverage / testing
+coverage/
+*.lcov
+.nyc_output
+
+# OS files
+ehthumbs.db
+Desktop.ini
+
+# Misc
+*.zip
+*.tar.gz
+
+# Project documentation (internal only — not for repo)
+DOCUMENTATION.md
+REMINDERS.md
+TECH_STACK.md
+FRONTEND_GUIDELINES.md

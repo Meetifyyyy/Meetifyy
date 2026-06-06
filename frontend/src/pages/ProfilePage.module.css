@@ -1,0 +1,54 @@
+.profileMainContent {
+  display: flex;
+  flex-direction: row !important; /* Override .centre's column */
+  align-items: flex-start !important; /* Prevent children from stretching vertically */
+  justify-content: space-between;
+  gap: 2rem;
+  width: 100%;
+  padding: 0 2rem 0 0.5rem !important; /* Move profile card a little to the left */
+  flex-shrink: 0; /* Prevent shrinking which causes cutoff and hides scrollbar */
+}
+
+.profileSidebarFixed {
+  width: 380px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: fit-content;
+  z-index: 10;
+}
+
+.profileContentScrollable {
+  flex-grow: 1;
+  max-width: 850px;
+  /* Remove display: flex to prevent stretching children vertically */
+  margin-left: auto;
+}
+
+.profileContentScrollable > div {
+  width: 100%;
+}
+
+@media (max-width: 1024px) {
+  .profileMainContent {
+    gap: 1.5rem;
+  }
+  .profileSidebarFixed {
+    width: 320px;
+  }
+}
+
+@media (max-width: 768px) {
+  .profileMainContent {
+    flex-direction: column;
+  }
+  .profileSidebarFixed {
+    width: 100%;
+    position: static;
+  }
+  .profileContentScrollable {
+    max-width: 100%;
+    margin-left: 0;
+  }
+}
+

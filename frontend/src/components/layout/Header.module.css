@@ -10,10 +10,6 @@
   /* overrides for messages layout */
 }
 
-.headerMessages .headerSearch {
-  display: none !important;
-}
-
 .navLeft {
   display: flex;
   align-items: center;
@@ -310,6 +306,10 @@
     max-width: 100%;
     margin: 0;
     flex-basis: 100%;
+  }
+
+  .headerMessages .headerSearch {
+    display: none !important;
   }
 }
 

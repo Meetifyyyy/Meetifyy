@@ -9,7 +9,7 @@ export default function CommunitiesRoute() {
   };
 
   return (
-    <main className="centre centre-wide">
+    <main className="centre centre-wide animate-in">
       <CommunitiesBrowse onOpenCommunity={handleOpenCommunity} />
     </main>
   );

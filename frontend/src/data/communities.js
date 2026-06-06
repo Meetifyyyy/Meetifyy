@@ -20,9 +20,11 @@ export const communities = {
       { name: 'Lena Q.', avatar: 'L', role: 'Brand Designer' },
     ],
     posts: [
-      { id: 'c_design_1', user: 'Emma L.', avatar: 'E', time: '1 hour ago', text: 'Just redesigned my portfolio using glassmorphism — love how this trend is evolving! Thoughts on neumorphism vs glass? ✨', likes: 31, comments: 14 },
-      { id: 'c_design_2', user: 'David K.', avatar: 'D', time: '3 hours ago', text: "Anyone here using Figma plugins for auto-layout? Just discovered \"Autoflow\" and it's a game changer for wireframing 🎨", likes: 18, comments: 7 },
-      { id: 'c_design_3', user: 'Sophie M.', avatar: 'S', time: '6 hours ago', text: "Weekly design challenge: redesign a music player app. Here's my take on a minimal Spotify concept. Feedback welcome!", likes: 45, comments: 22 },
+      { id: 'c_design_1', authorId: 'u1', time: '1 hour ago', text: 'Just redesigned my portfolio using glassmorphism — love how this trend is evolving! Thoughts on neumorphism vs glass? ✨', likes: 31, comments: 14 },
+      { id: 'c_design_2', authorId: 'u6', time: '3 hours ago', text: "Anyone here using Figma plugins for auto-layout? Just discovered \"Autoflow\" and it's a game changer for wireframing 🎨", likes: 18, comments: 7 },
+      { id: 'c_design_3', authorId: 'u4', time: '6 hours ago', text: "Weekly design challenge: redesign a music player app. Here's my take on a minimal Spotify concept. Feedback welcome!", likes: 45, comments: 22 },
+      { id: 'c_design_4', authorId: 'u2', time: '1 day ago', text: "Is anyone here attending the UX summit next week? Let's connect!", likes: 25, comments: 4 },
+      { id: 'c_design_5', authorId: 'u7', time: '2 days ago', text: 'Does anyone have good resources for learning motion design in UI? I feel like my interfaces are too static.', likes: 45, comments: 12 },
     ],
   },
   aiml: {
@@ -46,9 +48,11 @@ export const communities = {
       { name: 'Ethan G.', avatar: 'E', role: 'MLOps' },
     ],
     posts: [
-      { id: 'c_aiml_1', user: 'Rahul V.', avatar: 'R', time: '2 hours ago', text: 'Fine-tuned Llama 3 on my own dataset this weekend — the results are incredible. Open-sourcing the notebook soon! 🤖', likes: 52, comments: 18 },
-      { id: 'c_aiml_2', user: 'Mia W.', avatar: 'M', time: '5 hours ago', text: 'Can we talk about RAG architectures? Just implemented a hybrid search pipeline with dense + sparse retrievers. Huge improvement over vanilla semantic search.', likes: 27, comments: 11 },
-      { id: 'c_aiml_3', user: 'Alex J.', avatar: 'A', time: '8 hours ago', text: 'New to ML and feeling overwhelmed. Any recommendations for structured learning paths that actually work?', likes: 33, comments: 26 },
+      { id: 'c_aiml_1', authorId: 'u3', time: '2 hours ago', text: 'Fine-tuned Llama 3 on my own dataset this weekend — the results are incredible. Open-sourcing the notebook soon! 🤖', likes: 52, comments: 18 },
+      { id: 'c_aiml_2', authorId: 'u5', time: '5 hours ago', text: 'Can we talk about RAG architectures? Just implemented a hybrid search pipeline with dense + sparse retrievers. Huge improvement over vanilla semantic search.', likes: 27, comments: 11 },
+      { id: 'c_aiml_3', authorId: 'u1', time: '8 hours ago', text: 'New to ML and feeling overwhelmed. Any recommendations for structured learning paths that actually work?', likes: 33, comments: 26 },
+      { id: 'c_aiml_4', authorId: 'u8', time: '1 day ago', text: 'Rust + ML? Anyone exploring burn.rs framework?', likes: 65, comments: 12 },
+      { id: 'c_aiml_5', authorId: 'u4', time: '3 days ago', text: 'Has anyone here used the new Claude 3.5 Sonnet API yet? The reasoning capabilities are off the charts.', likes: 110, comments: 45 },
     ],
   },
   startup: {
@@ -72,9 +76,11 @@ export const communities = {
       { name: 'Drew H.', avatar: 'D', role: 'CTO' },
     ],
     posts: [
-      { id: 'c_startup_1', user: 'Jordan B.', avatar: 'J', time: '1 hour ago', text: 'Launched our MVP today! A micro-SaaS for remote team standups. Bootstrapped and proud. Would love some beta testers 🚀', likes: 67, comments: 23 },
-      { id: 'c_startup_2', user: 'Taylor R.', avatar: 'T', time: '4 hours ago', text: "Hot take: founder-market fit matters more than product-market fit in early stages. What's your take?", likes: 41, comments: 19 },
-      { id: 'c_startup_3', user: 'Casey L.', avatar: 'C', time: '9 hours ago', text: 'Looking for a technical co-founder (full-stack, React/Node) for my ed-tech startup. Have 2k waitlist users already. DM me!', likes: 29, comments: 15 },
+      { id: 'c_startup_1', authorId: 'u1', time: '1 hour ago', text: 'Launched our MVP today! A micro-SaaS for remote team standups. Bootstrapped and proud. Would love some beta testers 🚀', likes: 67, comments: 23 },
+      { id: 'c_startup_2', authorId: 'u6', time: '4 hours ago', text: "Hot take: founder-market fit matters more than product-market fit in early stages. What's your take?", likes: 41, comments: 19 },
+      { id: 'c_startup_3', authorId: 'u2', time: '9 hours ago', text: 'Looking for a technical co-founder (full-stack, React/Node) for my ed-tech startup. Have 2k waitlist users already. DM me!', likes: 29, comments: 15 },
+      { id: 'c_startup_4', authorId: 'u8', time: '12 hours ago', text: 'Just hit $1k MRR after 4 months of building! Never give up!', likes: 120, comments: 34 },
+      { id: 'c_startup_5', authorId: 'u5', time: '2 days ago', text: 'Is YC still worth it in 2024? Debating whether to apply for the next batch or just stay bootstrapped.', likes: 88, comments: 56 },
     ],
   },
   hackathon: {
@@ -98,11 +104,38 @@ export const communities = {
       { name: 'Casey N.', avatar: 'C', role: 'UI Designer' },
     ],
     posts: [
-      { id: 'c_hackathon_1', user: 'Jamie N.', avatar: 'J', time: '30 min ago', text: '48-hour hackathon done! We built an AI-powered study buddy using Whisper + GPT-4o. 2nd place overall! 🏆', likes: 89, comments: 31 },
-      { id: 'c_hackathon_2', user: 'Sam W.', avatar: 'S', time: '3 hours ago', text: "Tips for first-timers at hackathons: 1) Sleep is optional 2) Pizza is fuel 3) Don't over-scope — build the demo, not the production app", likes: 56, comments: 12 },
-      { id: 'c_hackathon_3', user: 'Riley P.', avatar: 'R', time: '7 hours ago', text: 'Looking for team members for the upcoming ClimateTech Hackathon in SF. Need a designer and a backend dev!', likes: 22, comments: 9 },
+      { id: 'c_hackathon_1', authorId: 'u7', time: '30 min ago', text: '48-hour hackathon done! We built an AI-powered study buddy using Whisper + GPT-4o. 2nd place overall! 🏆', likes: 89, comments: 31 },
+      { id: 'c_hackathon_2', authorId: 'u4', time: '3 hours ago', text: "Tips for first-timers at hackathons: 1) Sleep is optional 2) Pizza is fuel 3) Don't over-scope — build the demo, not the production app", likes: 56, comments: 12 },
+      { id: 'c_hackathon_3', authorId: 'u3', time: '7 hours ago', text: 'Looking for team members for the upcoming ClimateTech Hackathon in SF. Need a designer and a backend dev!', likes: 22, comments: 9 },
+      { id: 'c_hackathon_4', authorId: 'u5', time: '1 day ago', text: 'Hardware hackathons are so much more stressful than software ones. Change my mind.', likes: 45, comments: 18 },
+      { id: 'c_hackathon_5', authorId: 'u1', time: '3 days ago', text: 'My team just won the track prize at HackMIT! So exhausted but so happy.', likes: 320, comments: 45 },
     ],
   },
+  gaming: {
+    id: 'gaming',
+    name: 'Gaming & E-Sports',
+    avatar: 'G',
+    color: 'linear-gradient(135deg, #F43F5E, #FB923C)',
+    desc: 'Connect with gamers from around the world. Discuss your favorite games, find teammates, and stay updated on e-sports news.',
+    members: 15400,
+    online: 890,
+    created: 'September 2024',
+    categories: ['gaming', 'technology'],
+    tagColor: '#F43F5E',
+    memberList: [
+      { name: 'Alex M.', avatar: 'A', role: 'Streamer', admin: true },
+      { name: 'Johnson W.', avatar: 'J', role: 'Game Developer' },
+      { name: 'Chris P.', avatar: 'C', role: 'Pro Player' },
+      { name: 'Emma T.', avatar: 'E', role: 'Casual Gamer' },
+    ],
+    posts: [
+      { id: 'c_gaming_1', authorId: 'u7', time: '1 hour ago', text: 'Has anyone tried the new Unreal Engine 5.4 features? The performance improvements are insane!', likes: 120, comments: 45 },
+      { id: 'c_gaming_2', authorId: 'u4', time: '4 hours ago', text: 'Going live in 10 minutes! We are grinding ranked today. Come hang out in the chat! 🎮', likes: 85, comments: 12 },
+      { id: 'c_gaming_3', authorId: 'u8', time: '8 hours ago', text: 'Anyone want to group up for some casual matches tonight? I main support.', likes: 15, comments: 8 },
+      { id: 'c_gaming_4', authorId: 'u2', time: '1 day ago', text: 'Just beat Elden Ring for the first time. What a masterpiece. What game should I play next?', likes: 200, comments: 65 },
+      { id: 'c_gaming_5', authorId: 'u6', time: '2 days ago', text: 'Looking to form a team for the upcoming Valorant community tournament. Must be Ascendant+.', likes: 30, comments: 14 },
+    ]
+  }
 };
 
 export const categoriesList = [

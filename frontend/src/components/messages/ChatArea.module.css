@@ -603,6 +603,55 @@
   display: none;
 }
 
+.msgBlockedInputOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-family-sans);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  z-index: 10;
+  border-radius: 0 0 12px 0;
+}
+
+.typingIndicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 2px;
+}
+
+.typingIndicator span {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  animation: typingBounce 1.4s infinite cubic-bezier(0.2, 0.6, 0.4, 1);
+}
+
+.typingIndicator span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typingIndicator span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typingBounce {
+  0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
 .voiceCallOverlay {
   position: absolute;
   inset: 0;

@@ -5,7 +5,7 @@
   padding: 0 2rem 0;
   flex: 1;
   min-height: 0;
-  animation: dashboardFadeIn 0.65s var(--transition-slow) forwards;
+  animation: dashboardFadeIn 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .dashboardWide {
