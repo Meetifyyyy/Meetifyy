@@ -39,7 +39,7 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
 
   return (
     <div className={styles.commViewWrapper}>
-      <div className={styles.commViewHeader} style={{ margin: '0 1.5rem 1.5rem' }}>
+      <div className={styles.commViewHeader}>
         <div className={styles.commViewBanner} style={{ background: comm.color }}></div>
         <div className={styles.commViewHeaderContent}>
           <div className={styles.commViewAvatar} style={{ background: comm.color }}>{comm.avatar}</div>
@@ -67,15 +67,15 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
 
       <div className={styles.commViewMain}>
         <div className={styles.commViewLeftBox}>
-          <div className={styles.commSectionLabel} style={{ padding: '0 1.5rem', marginTop: '1.5rem' }}>Posts</div>
-          <div className={styles.commFeedIntegrated} style={{ padding: '1.5rem 1.5rem 0' }}>
+          <div className={styles.commSectionLabel}>Posts</div>
+          <div className={styles.commFeedIntegrated}>
             {joined && (
-              <div style={{ marginBottom: '1.5rem' }}>
+              <div className={styles.commComposerWrap}>
                 <PostComposer onSubmit={(text, poll) => addPost(text, poll, comm.id)} />
               </div>
             )}
             {communityPosts.length === 0 ? (
-              <div style={{ textAlign: 'left', padding: '3rem 1rem', color: 'var(--color-text-muted)' }}>
+              <div className={styles.commEmptyPosts}>
                 No posts in this community yet. Be the first to share something!
               </div>
             ) : (

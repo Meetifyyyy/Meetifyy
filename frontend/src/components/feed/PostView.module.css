@@ -149,3 +149,42 @@
   border-radius: 50%;
   object-fit: cover;
 }
+
+@media (max-width: 768px) {
+  .postViewContainer {
+    padding-bottom: 4.5rem;
+  }
+
+  .postViewTopbar,
+  .postViewMain,
+  .postViewComposer {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .postViewComposer {
+    gap: 0.75rem;
+  }
+
+  .replyForm {
+    margin-right: 0;
+  }
+
+  .postViewReplies {
+    padding: 0 1rem 1.25rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .postViewTopbar,
+  .postViewMain,
+  .postViewComposer {
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+  }
+
+  .postViewReplies {
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+  }
+}

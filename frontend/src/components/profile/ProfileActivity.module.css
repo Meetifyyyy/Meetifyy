@@ -15,6 +15,18 @@
   margin-bottom: 1rem;
 }
 
+.activityList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.emptyActivity {
+  color: var(--color-text-muted);
+  padding: 1.5rem 0.25rem;
+  text-align: left;
+}
+
 .profilePost {
   padding: 1rem 0;
   border-bottom: 1px solid rgba(24, 24, 27, 0.06);
@@ -115,10 +127,18 @@
 
 @media (max-width: 768px) {
   .profileSection {
-    padding: 1.1rem 1rem;
+    padding: 1rem 0.75rem;
   }
   .sectionTitle {
     font-size: 1rem;
     margin-bottom: 0.75rem;
+  }
+
+  .activityList {
+    gap: 0.75rem;
+  }
+
+  .emptyActivity {
+    padding: 1.25rem 0.25rem;
   }
 }

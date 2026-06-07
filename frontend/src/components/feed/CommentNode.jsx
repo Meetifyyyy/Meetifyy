@@ -11,9 +11,10 @@ export default function CommentNode({ postId, comment, onReplySubmit, level = 0,
   const [isLiking, setIsLiking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
-  const { getUserById, likeComment } = useData();
+  const { getUserById, likeComment, communities } = useData();
 
   const author = getUserById(comment.authorId) || { displayName: 'Unknown', username: 'unknown', avatar: '?' };
+  const authorCollege = author.collegeId ? communities[author.collegeId] : null;
 
   const handleProfileClick = () => {
     navigate(`/profile/${author.username}`);
@@ -49,11 +50,6 @@ export default function CommentNode({ postId, comment, onReplySubmit, level = 0,
 
   return (
     <div className={`${styles.nodeContainer} ${level === 0 ? styles.level0 : styles.levelN}`}>
-      {/* Thread Line connecting this comment to its children */}
-      {!isLastInThread && (
-        <div className={styles.threadLine} />
-      )}
-
       <div className={styles.replyWrapper}>
         <div 
           className={styles.replyAvatar} 
@@ -68,14 +64,27 @@ export default function CommentNode({ postId, comment, onReplySubmit, level = 0,
         
         <div className={styles.replyContent}>
           <div className={styles.replyHeader}>
-            <span 
-              onClick={handleProfileClick}
-              className={`hover-underline ${styles.username}`}
-            >
-              {author.displayName}
-            </span>
-            <span className={styles.handle}>@{author.username}</span>
-            <span className={styles.time}>• {comment.time}</span>
+            <div className={styles.replyIdentity}>
+              <button 
+                onClick={handleProfileClick}
+                className={`hover-underline ${styles.nameButton}`}
+              >
+                <span className={styles.username}>{author.displayName}</span>
+                {authorCollege && (
+                  <img
+                    src={authorCollege.avatar}
+                    alt={authorCollege.name}
+                    className={styles.commentCollegeIcon}
+                    title={authorCollege.name}
+                  />
+                )}
+              </button>
+              <div className={styles.commentMeta}>
+                <span className={styles.handle}>@{author.username}</span>
+                <span className={styles.metaDot}>•</span>
+                <span className={styles.time}>{comment.time}</span>
+              </div>
+            </div>
             <div className={styles.menuWrapper}>
               <button 
                 onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
@@ -175,3 +184,4 @@ export default function CommentNode({ postId, comment, onReplySubmit, level = 0,
     </div>
   );
 }
+

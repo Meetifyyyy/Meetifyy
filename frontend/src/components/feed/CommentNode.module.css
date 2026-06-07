@@ -1,32 +1,23 @@
 .nodeContainer {
   position: relative;
   text-align: left;
+  min-width: 0;
 }
 
 .level0 {
-  margin-top: 1.5rem;
+  margin-top: 1.25rem;
 }
 
 .levelN {
-  margin-top: 1rem;
-}
-
-.threadLine {
-  position: absolute;
-  top: 40px;
-  bottom: -1rem;
-  left: 19px;
-  width: 2px;
-  background: rgba(24, 24, 27, 0.08);
-  border-radius: 2px;
-  z-index: 1;
+  margin-top: 0.9rem;
 }
 
 .replyWrapper {
   display: flex;
-  gap: 1rem;
+  align-items: flex-start;
+  gap: 0.75rem;
   position: relative;
-  z-index: 2;
+  min-width: 0;
 }
 
 .replyAvatar {
@@ -46,37 +37,83 @@
 
 .replyContent {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.35rem;
 }
 
 .replyHeader {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.replyIdentity {
+  flex: 1;
+  min-width: 0;
+}
+
+.nameButton {
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  min-width: 0;
+  max-width: 100%;
+  gap: 0.4rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
 }
 
 .username {
   font-weight: 700;
   color: var(--color-text-main);
   font-size: 0.95rem;
-  cursor: pointer;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.commentCollegeIcon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.commentMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.1rem;
+  min-width: 0;
 }
 
 .handle {
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.78rem;
+}
+
+.metaDot {
+  color: var(--color-text-muted-light);
+  font-size: 0.75rem;
 }
 
 .time {
   color: var(--color-text-muted-light);
-  font-size: 0.85rem;
+  font-size: 0.78rem;
 }
 
 .menuWrapper {
   position: relative;
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 .menuBtn {
@@ -100,14 +137,16 @@
 
 .replyText {
   color: var(--color-text-main);
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .replyActionsRow {
   display: flex;
-  gap: 1rem;
-  margin-top: 0.5rem;
+  align-items: center;
+  gap: 0.9rem;
+  margin-top: 0.35rem;
 }
 
 .actionBtn {
@@ -200,8 +239,9 @@
 }
 
 .repliesContainer {
-  margin-left: 1.2rem;
-  padding-left: 1rem;
+  margin: 0.75rem 0 0 1.25rem;
+  padding-left: 1.25rem;
+  border-left: 2px solid rgba(24, 24, 27, 0.08);
 }
 
 .replyAvatarImg {
@@ -213,16 +253,32 @@
 
 @media (max-width: 768px) {
   .repliesContainer {
-    margin-left: 0.6rem;
-    padding-left: 0.6rem;
+    margin-left: 0.95rem;
+    padding-left: 0.8rem;
   }
   .replyAvatar {
     width: 32px;
     height: 32px;
     font-size: 0.8rem;
   }
-  .threadLine {
-    top: 32px;
-    left: 15px;
+
+  .replyWrapper {
+    gap: 0.6rem;
+  }
+
+  .replyHeader {
+    gap: 0.5rem;
+  }
+
+  .username {
+    font-size: 0.9rem;
+  }
+
+  .replyText {
+    font-size: 0.9rem;
+  }
+
+  .actionBtn {
+    font-size: 0.8rem;
   }
 }

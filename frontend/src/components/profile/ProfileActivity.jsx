@@ -21,11 +21,11 @@ export default function ProfileActivity({ profileUsername }) {
     <div className={styles.profileSection}>
       <h2 className={styles.sectionTitle}>Recent Activity</h2>
       {posts.length === 0 ? (
-        <div style={{ textAlign: 'left', padding: '2rem', color: 'var(--color-text-muted)' }}>
+        <div className={styles.emptyActivity}>
           No recent activity.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div className={styles.activityList}>
           {posts.map((p) => (
             <Post key={p.id} postData={p} onClick={() => handlePostClick(p)} />
           ))}

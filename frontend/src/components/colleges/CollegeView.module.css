@@ -251,13 +251,13 @@
 
 /* Feed Tab */
 .composerWrapper {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .postsList {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
 .emptyState {
@@ -373,7 +373,7 @@
 
 @media (max-width: 768px) {
   .collegeHeader {
-    margin: 0 0.25rem 1rem;
+    margin: 0 0 1rem;
   }
   .collegeHeaderContent {
     flex-direction: column;
@@ -405,7 +405,7 @@
     width: 100%;
   }
   .collegeMainLayout {
-    margin: 0 0.25rem 1rem;
+    margin: 0 0 1rem;
     display: flex;
     flex-direction: column;
   }
@@ -436,16 +436,24 @@
 
 @media (max-width: 480px) {
   .collegeHeader {
-    margin: 0 0.25rem 1rem;
+    margin: 0 0 1rem;
   }
   .collegeMainLayout {
-    margin: 0 0.25rem;
+    margin: 0;
   }
   .tabsContainer {
-    padding: 0 0.25rem;
+    padding: 0;
   }
   .feedTab, .communitiesTab, .eventsTab, .membersTab {
-    padding: 0 0.25rem;
+    padding: 0;
+  }
+
+  .composerWrapper {
+    margin-bottom: 0.75rem;
+  }
+
+  .postsList {
+    gap: 0.75rem;
   }
 }
 
