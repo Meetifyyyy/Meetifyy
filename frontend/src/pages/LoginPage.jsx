@@ -24,7 +24,7 @@ export default function LoginPage() {
       return;
     }
     // We are mocking auth
-    const success = login(user.trim());
+    const success = login(user.trim(), pass);
     if (success) {
       navigate('/home');
     } else {

@@ -34,21 +34,27 @@ export function AuthProvider({ children }) {
     return localStorage.getItem('loggedIn') === 'true' && hasUser;
   });
 
-  const login = useCallback((username) => {
+  const login = useCallback((username, password) => {
     // Find the user in mockData first
-    let user = Object.values(initialUsers).find(u => u.username === username);
+    let user = Object.values(initialUsers).find(u => u.username === username || u.email === username);
     
     // Also check if we have a saved user in localStorage that matches
     const savedUserStr = localStorage.getItem('currentUser');
     if (savedUserStr) {
       const savedUser = JSON.parse(savedUserStr);
-      if (savedUser.username === username) {
+      if (savedUser.username === username || savedUser.email === username) {
         user = savedUser;
       }
     }
 
     if (!user) {
-      return false; // User not found, fail login
+      return false; // User not found
+    }
+
+    // Check password (default mock password if not set is password)
+    const userPassword = user.password || 'password';
+    if (userPassword !== password) {
+      return false; // Incorrect password
     }
 
     localStorage.setItem('loggedIn', 'true');
