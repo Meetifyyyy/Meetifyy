@@ -138,8 +138,8 @@
   padding: 0.6rem;
   font-size: 0.85rem;
   color: var(--color-danger);
-  background: #FEF2F2;
-  border: 1px dashed #FECACA;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px dashed rgba(239, 68, 68, 0.3);
   border-radius: 10px;
   font-weight: 600;
 }
@@ -187,8 +187,8 @@
 }
 
 .msgSearchHighlight {
-  background: #FEF3C7;
-  color: #92400E;
+  background: rgba(245, 158, 11, 0.25);
+  color: var(--color-text-main);
   padding: 0 2px;
   border-radius: 3px;
 }
@@ -258,7 +258,8 @@
 
 .msgBubbleThem {
   align-self: flex-start;
-  background: #F1F0EC;
+  background: var(--color-bubble-them);
+  color: var(--color-bubble-them-text);
   border-bottom-left-radius: 4px;
 }
 

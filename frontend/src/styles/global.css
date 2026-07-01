@@ -280,12 +280,13 @@ nav a.active {
   align-items: stretch;
   justify-content: flex-start;
   gap: 1rem;
-  padding: 0 1.5rem;
+  padding: 0 0.5rem;
   overflow-y: auto;
   overflow-x: hidden;
   height: 100%;
-  max-width: 760px;
-  margin: 0 auto;
+  /* No max-width cap — the grid column constrains it */
+  max-width: none;
+  margin: 0;
   width: 100%;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -408,4 +409,76 @@ button {
 
 button:active {
   transform: scale(0.97);
+}
+
+/* ============================================================
+   Dark mode overrides for components that hardcode colors
+   ============================================================ */
+
+/* College button (hardcoded #154726 green) */
+[data-theme="dark"] .collegeBtn {
+  background: #1a5c32 !important;
+  border-color: #1a5c32 !important;
+}
+[data-theme="dark"] .collegeBtn:hover {
+  background: #14472a !important;
+}
+
+/* Confirm modal glass overlay */
+[data-theme="dark"] .confirmModal {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Search bar icon (embedded SVG uses hardcoded #94A3B8 — fine in both modes) */
+
+/* Input elements need explicit bg/color so browser autofill doesn't flash white */
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+  background-color: var(--color-bg-white);
+  color: var(--color-text-main);
+  border-color: var(--color-border);
+  color-scheme: dark;
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: var(--color-text-light);
+}
+
+/* Disabled inputs */
+[data-theme="dark"] input:disabled {
+  background-color: var(--color-bg-main);
+  color: var(--color-text-light);
+  opacity: 0.7;
+}
+
+/* Scrollbar styling for dark mode */
+[data-theme="dark"] * {
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* Mobile drawer background */
+[data-theme="dark"] .mobileDrawer {
+  background: rgba(15, 23, 42, 0.92);
+  border-right-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Skeleton pulse — needs to be visible on dark bg */
+[data-theme="dark"] .skeleton,
+[data-theme="dark"] [style*="skeletonPulse"] {
+  background-color: var(--color-border) !important;
+}
+
+/* Community card avatar stack border */
+[data-theme="dark"] .stackAvatar,
+[data-theme="dark"] .stackRemaining {
+  border-color: var(--color-bg-white);
+}
+
+/* Toast text on dark — keep inverted pill readable */
+[data-theme="dark"] .custom-toast {
+  background: var(--color-text-main);
+  color: var(--color-bg-dark);
 }

@@ -234,8 +234,8 @@
 .continueBtn {
   margin-top: 3rem;
   padding: 1rem 2.5rem;
-  background: var(--color-text-main, #111827);
-  color: white;
+  background: linear-gradient(135deg, #094887 0%, #1D6EC8 60%, #3B82F6 100%);
+  color: #ffffff;
   border: none;
   border-radius: 999px;
   font-size: 1.125rem;
@@ -245,14 +245,15 @@
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 16px rgba(9, 72, 135, 0.35);
 }
 .continueBtn:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+  box-shadow: 0 8px 24px rgba(9, 72, 135, 0.45);
+  opacity: 0.92;
 }
 .continueBtn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
   transform: none;
 }

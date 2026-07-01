@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { useFollow } from '../../context/FollowContext';
@@ -20,6 +21,142 @@ export function QuickActions({ actions }) {
           {a.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────
+   Find Friends — live search panel card
+───────────────────────────────────────── */
+export function FindFriends() {
+  const { users, currentUser } = useData();
+  const { isFollowing, toggleFollow } = useFollow();
+  const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+
+  // Filter users: exclude self, match display name or username
+  const q = query.trim().toLowerCase();
+  const results = q.length < 1
+    ? []
+    : Object.values(users)
+        .filter(u =>
+          u.id !== currentUser?.id &&
+          (
+            u.displayName?.toLowerCase().includes(q) ||
+            u.username?.toLowerCase().includes(q)
+          )
+        )
+        .slice(0, 6);
+
+  // Suggested people to follow when no query (not already followed, not self)
+  const suggested = q.length < 1
+    ? Object.values(users)
+        .filter(u => u.id !== currentUser?.id && !isFollowing(u.username))
+        .slice(0, 3)
+    : [];
+
+  const displayList = q.length >= 1 ? results : suggested;
+
+  return (
+    <div className={styles.panelCard}>
+      <h3 className={styles.panelTitle}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        Find Friends
+      </h3>
+
+      {/* Search input */}
+      <div className={styles.findFriendsSearch}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={styles.findFriendsSearchIcon} aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search by name or username…"
+          className={styles.findFriendsInput}
+          aria-label="Search for people"
+        />
+        {query && (
+          <button
+            className={styles.findFriendsClear}
+            onClick={() => setQuery('')}
+            aria-label="Clear search"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {/* Label above results */}
+      {q.length < 1 && suggested.length > 0 && (
+        <p className={styles.findFriendsLabel}>People you may know</p>
+      )}
+      {q.length >= 1 && results.length === 0 && (
+        <p className={styles.findFriendsEmpty}>No users found for "{query}"</p>
+      )}
+
+      {/* Results list */}
+      <div className={styles.findFriendsList}>
+        {displayList.map(u => {
+          const following = isFollowing(u.username);
+          return (
+            <div key={u.id} className={styles.findFriendItem}>
+              <div
+                className={styles.findFriendAvatar}
+                onClick={() => navigate(`/profile/${u.username}`)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => e.key === 'Enter' && navigate(`/profile/${u.username}`)}
+                aria-label={`View ${u.displayName}'s profile`}
+              >
+                {isImageUrl(u.avatarUrl || u.avatar) ? (
+                  <img src={u.avatarUrl || u.avatar} alt={u.displayName} className={styles.findFriendAvatarImg} />
+                ) : (
+                  <DefaultAvatar />
+                )}
+                {u.recentlyActive && <span className={styles.onlineDot} aria-label="Online" />}
+              </div>
+
+              <div
+                className={styles.findFriendInfo}
+                onClick={() => navigate(`/profile/${u.username}`)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => e.key === 'Enter' && navigate(`/profile/${u.username}`)}
+              >
+                <div className={styles.findFriendName}>{u.displayName}</div>
+                <div className={styles.findFriendMeta}>@{u.username}</div>
+              </div>
+
+              <button
+                className={`${styles.findFriendFollowBtn} ${following ? styles.findFriendFollowing : ''}`}
+                onClick={() => toggleFollow(u.username)}
+                aria-label={following ? `Unfollow ${u.displayName}` : `Follow ${u.displayName}`}
+              >
+                {following ? 'Following' : 'Follow'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer: view full search */}
+      <button
+        className={styles.viewAllBtn}
+        onClick={() => navigate(q ? `/search?q=${encodeURIComponent(query)}` : '/search')}
+      >
+        {q ? `See all results for "${query}" →` : 'Browse all people →'}
+      </button>
     </div>
   );
 }

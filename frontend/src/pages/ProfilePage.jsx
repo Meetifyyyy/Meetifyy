@@ -24,6 +24,7 @@ export default function ProfilePage() {
             profileUsername={targetUsername} 
             onViewFollowers={() => setModalType('followers')}
             onViewFollowing={() => setModalType('following')}
+            onBack={() => navigate(-1)}
           />
         </div>
         

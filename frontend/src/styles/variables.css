@@ -47,4 +47,44 @@
   --transition-fast: 0.15s ease;
   --transition-normal: 0.2s ease;
   --transition-slow: 0.3s ease;
+
+  /* === Chat bubble (light) === */
+  --color-bubble-them: #F1F0EC;
+  --color-bubble-them-text: #0F172A;
+}
+
+/* ============================================================
+   Dark mode tokens — applied when data-theme="dark" on <html>
+   ============================================================ */
+[data-theme="dark"] {
+  --color-bg-main: #0F172A;
+  --color-bg-white: #1E293B;
+  --color-bg-dark: #020617;
+
+  --color-text-main: #F1F5F9;
+  --color-text-muted: #94A3B8;
+  --color-text-light: #64748B;
+  --color-text-inverse: #0F172A;
+
+  --color-border: #334155;
+  --color-border-light: #1E293B;
+  --color-border-dark: #475569;
+
+  /* Slightly brighter primary so it stays visible on dark backgrounds */
+  --color-primary: #3B82F6;
+  --color-primary-hover: #2563EB;
+
+  /* Glassmorphism on dark */
+  --bg-glass: rgba(30, 41, 59, 0.85);
+  --border-glass: 1px solid rgba(255, 255, 255, 0.08);
+
+  /* Shadows — deeper on dark */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.2);
+  --shadow-premium: 0 16px 40px rgba(0, 0, 0, 0.4), 0 4px 8px rgba(0, 0, 0, 0.2);
+
+  /* Chat bubble (dark) */
+  --color-bubble-them: #273549;
+  --color-bubble-them-text: #E2E8F0;
 }

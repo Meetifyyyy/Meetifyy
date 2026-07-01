@@ -3,455 +3,209 @@
 }
 
 .postComposer {
-  background: var(--bg-glass);
-  backdrop-filter: var(--blur-glass);
-  border: var(--border-glass);
-  border-radius: var(--radius-xl);
-  padding: 1.25rem 1.5rem;
+  background: var(--color-bg-white);
+  border: 1.5px solid var(--color-border-light);
+  border-radius: 18px;
+  padding: 1.15rem 1.35rem;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.6rem;
+  gap: 0.55rem;
   box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
-
 .postComposer:focus-within {
   box-shadow: var(--shadow-md);
-  border-color: var(--color-border);
+  border-color: var(--color-primary);
 }
 
 .composerTopRow {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  width: 100%;
+  display: flex; align-items: center; gap: 0.85rem; width: 100%;
 }
 
 .composerAvatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-family-display);
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--color-bg-white);
-  flex-shrink: 0;
+  width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-family-display); font-weight: 600;
+  font-size: 0.95rem; color: var(--color-bg-white); flex-shrink: 0;
 }
+.composerAvatarImg { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 
 .composerInput {
   flex: 1;
   padding: 0.6rem 0;
   font-family: var(--font-family-sans);
-  font-size: 0.92rem;
-  font-weight: 400;
+  font-size: 0.95rem; font-weight: 400;
   color: var(--color-text-main);
-  background: none;
-  border: none;
-  outline: none;
-  min-width: 0;
+  background: none; border: none; outline: none; min-width: 0;
 }
-
-.composerInput::placeholder {
-  color: var(--color-text-light);
-}
+.composerInput::placeholder { color: var(--color-text-light); }
 
 .composerContentArea {
   margin-left: calc(40px + 0.85rem);
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  display: flex; flex-direction: column; gap: 0.75rem;
 }
 
 .composerActions {
-  display: flex;
-  align-items: center;
+  display: flex; align-items: center;
   justify-content: space-between;
-  width: 100%;
-  padding-top: 0.5rem;
+  width: 100%; padding-top: 0.5rem;
   border-top: 1px solid var(--color-border-light);
 }
 
-.composerActionsLeft {
-  display: flex;
-  gap: 0.15rem;
-}
+.composerActionsLeft { display: flex; gap: 0.1rem; }
 
 .composerIconBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-sm);
-  background: none;
-  border: none;
-  color: var(--color-text-light);
-  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: 8px; background: none; border: none;
+  color: var(--color-text-light); cursor: pointer;
   transition: all var(--transition-normal);
 }
+.composerIconBtn:hover { color: var(--color-primary); background: rgba(37, 99, 235, 0.08); }
+.composerIconBtn.active { color: var(--color-primary); background: rgba(37, 99, 235, 0.1); }
 
-.composerIconBtn:hover {
-  color: var(--color-primary);
-  background: var(--color-border-light);
-}
-
-.composerIconBtn.active {
-  color: var(--color-primary);
-  background: rgba(37, 99, 235, 0.08);
-}
-
+/* Send button — gradient primary pill */
 .composerSendBtn {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--color-primary);
-  border: none;
-  color: var(--color-bg-white);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all var(--transition-normal);
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0 1.1rem; height: 36px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, #094887 0%, #2563EB 100%);
+  border: none; color: #fff;
+  font-family: var(--font-family-sans); font-size: 0.82rem; font-weight: 700;
+  cursor: pointer; flex-shrink: 0;
+  transition: all 0.2s ease;
+  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.3);
+  letter-spacing: -0.01em;
 }
-
 .composerSendBtn:hover {
-  background: var(--color-primary-hover);
-  transform: scale(1.05);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.42);
+  opacity: 0.92;
 }
+.composerSendBtn:active { transform: translateY(0); box-shadow: 0 3px 10px rgba(37, 99, 235, 0.3); }
 
-.composerSendBtn:active {
-  transform: scale(0.96);
-}
-
+/* Emoji picker */
 .emojiPicker {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  width: 300px;
-  max-width: 100%;
-  max-height: 320px;
-  overflow-y: auto;
+  position: absolute; top: calc(100% + 8px); left: 0;
+  width: 300px; max-width: 100%; max-height: 320px; overflow-y: auto;
   background: var(--color-bg-white);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 0.75rem;
-  box-shadow: var(--shadow-lg);
-  z-index: 100;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border) transparent;
-  animation: popupIn 0.2s ease forwards;
+  border: 1px solid var(--color-border); border-radius: var(--radius-lg);
+  padding: 0.75rem; box-shadow: var(--shadow-lg); z-index: 100;
+  scrollbar-width: thin; scrollbar-color: var(--color-border) transparent;
+  animation: popupIn 0.18s ease forwards;
 }
+.emojiPicker::-webkit-scrollbar { width: 5px; }
+.emojiPicker::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
 
-.emojiPicker::-webkit-scrollbar {
-  width: 5px;
-}
-
-.emojiPicker::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 4px;
-}
-
-.emojiGroup {
-  margin-bottom: 0.5rem;
-}
-
-.emojiGroup:last-child {
-  margin-bottom: 0;
-}
-
+.emojiGroup { margin-bottom: 0.5rem; }
+.emojiGroup:last-child { margin-bottom: 0; }
 .emojiGroupLabel {
-  font-family: var(--font-family-sans);
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: var(--color-text-light);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 0.25rem 0.15rem 0.35rem;
+  font-family: var(--font-family-sans); font-size: 0.68rem; font-weight: 600;
+  color: var(--color-text-light); text-transform: uppercase;
+  letter-spacing: 0.06em; padding: 0.25rem 0.15rem 0.35rem;
 }
-
-.emojiGrid {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 2px;
-}
-
+.emojiGrid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
 .emojiBtn {
-  width: 100%;
-  aspect-ratio: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.2rem;
-  background: none;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.15s;
-  line-height: 1;
+  width: 100%; aspect-ratio: 1; display: flex; align-items: center;
+  justify-content: center; font-size: 1.2rem; background: none; border: none;
+  border-radius: var(--radius-sm); cursor: pointer; transition: all 0.15s; line-height: 1;
 }
+.emojiBtn:hover { background: var(--color-border-light); transform: scale(1.2); }
 
-.emojiBtn:hover {
-  background: var(--color-border-light);
-  transform: scale(1.2);
-}
-
+/* Poll creator */
 .pollCreator {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  width: 320px;
-  background: var(--color-bg-white);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 1.1rem;
-  box-shadow: var(--shadow-lg);
-  z-index: 100;
-  animation: popupIn 0.2s ease forwards;
+  position: absolute; top: calc(100% + 8px); left: 0; width: 320px;
+  background: var(--color-bg-white); border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg); padding: 1.1rem; box-shadow: var(--shadow-lg);
+  z-index: 100; animation: popupIn 0.18s ease forwards;
 }
-
 .pollCreatorHeader {
-  font-family: var(--font-family-display);
-  font-weight: 700;
-  font-size: 0.95rem;
-  color: var(--color-text-main);
-  margin-bottom: 0.85rem;
+  font-family: var(--font-family-display); font-weight: 700;
+  font-size: 0.95rem; color: var(--color-text-main); margin-bottom: 0.85rem;
 }
-
 .pollQuestionInput {
-  width: 100%;
-  padding: 0.6rem 0.85rem;
-  font-family: var(--font-family-sans);
-  font-size: 0.88rem;
-  font-weight: 500;
-  color: var(--color-text-main);
-  border: 1.5px solid var(--color-border);
-  border-radius: 10px;
-  background: var(--color-bg-white);
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  margin-bottom: 0.75rem;
+  width: 100%; padding: 0.6rem 0.85rem;
+  font-family: var(--font-family-sans); font-size: 0.88rem; font-weight: 500;
+  color: var(--color-text-main); border: 1.5px solid var(--color-border);
+  border-radius: 10px; background: var(--color-bg-white); outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s; margin-bottom: 0.75rem;
 }
+.pollQuestionInput:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+.pollQuestionInput::placeholder { color: var(--color-text-light); }
 
-.pollQuestionInput:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.pollQuestionInput::placeholder {
-  color: var(--color-text-light);
-}
-
-.pollOptionsList {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  margin-bottom: 0.65rem;
-}
-
-.pollOptionRow {
-  display: flex;
-  align-items: center;
-  position: relative;
-  width: 100%;
-  gap: 0.5rem;
-}
-
-.pollOptionInputWrapper {
-  position: relative;
-  flex: 1;
-  display: flex;
-  align-items: center;
-}
-
+.pollOptionsList { display: flex; flex-direction: column; gap: 0.45rem; margin-bottom: 0.65rem; }
+.pollOptionRow { display: flex; align-items: center; position: relative; width: 100%; gap: 0.5rem; }
+.pollOptionInputWrapper { position: relative; flex: 1; display: flex; align-items: center; }
 .pollOptionInput {
-  flex: 1;
-  padding: 0.5rem 2.2rem 0.5rem 0.75rem;
-  font-family: var(--font-family-sans);
-  font-size: 0.82rem;
-  color: var(--color-text-main);
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-white);
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  width: 100%;
+  flex: 1; padding: 0.5rem 2.2rem 0.5rem 0.75rem;
+  font-family: var(--font-family-sans); font-size: 0.82rem;
+  color: var(--color-text-main); border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm); background: var(--color-bg-white);
+  outline: none; transition: border-color 0.2s, box-shadow 0.2s; width: 100%;
 }
-
-.pollOptionInput:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
-}
-
-.pollOptionInput::placeholder {
-  color: var(--color-text-light);
-}
-
+.pollOptionInput:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08); }
+.pollOptionInput::placeholder { color: var(--color-text-light); }
 .pollOptionRemove {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: none;
-  border: none;
-  color: var(--color-text-light);
-  cursor: pointer;
-  transition: all 0.15s;
-  z-index: 5;
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: none; border: none; color: var(--color-text-light);
+  cursor: pointer; transition: all 0.15s; z-index: 5;
 }
-
-.pollOptionRemove:hover {
-  color: var(--color-danger);
-  background: rgba(239, 68, 68, 0.08);
-}
-
-.pollOptionActionSpace {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
+.pollOptionRemove:hover { color: var(--color-danger); background: rgba(239, 68, 68, 0.08); }
+.pollOptionActionSpace { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .pollOptionAdd {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--color-border-light);
-  border: none;
-  color: var(--color-primary);
-  cursor: pointer;
-  transition: all 0.15s;
-  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--color-border-light); border: none;
+  color: var(--color-primary); cursor: pointer; transition: all 0.15s; flex-shrink: 0;
 }
-
-.pollOptionAdd:hover {
-  background: rgba(37, 99, 235, 0.12);
-}
+.pollOptionAdd:hover { background: rgba(37, 99, 235, 0.12); }
 
 .inlinePollCreator {
-  margin-top: 0.85rem;
-  padding-top: 0.85rem;
+  margin-top: 0.85rem; padding-top: 0.85rem;
   border-top: 1px solid var(--color-border-light);
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  width: 100%;
+  display: flex; flex-direction: column; gap: 0.75rem; width: 100%;
 }
-
 .pollDiscardBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  margin: 0;
-  padding: 0.35rem 0.85rem;
-  font-family: var(--font-family-sans);
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--color-danger);
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.15);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all var(--transition-normal);
-  width: fit-content;
+  display: flex; align-items: center; justify-content: center;
+  gap: 0.35rem; margin: 0; padding: 0.35rem 0.85rem;
+  font-family: var(--font-family-sans); font-size: 0.78rem; font-weight: 600;
+  color: var(--color-danger); background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.15); border-radius: var(--radius-sm);
+  cursor: pointer; transition: all var(--transition-normal); width: fit-content;
 }
-
-.pollDiscardBtn:hover {
-  background: rgba(239, 68, 68, 0.14);
-}
-
-.pollDiscardBtn:active {
-  transform: translateY(0);
-}
+.pollDiscardBtn:hover { background: rgba(239, 68, 68, 0.14); }
+.pollDiscardBtn:active { transform: translateY(0); }
 
 .pollCreatorFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0;
-  min-height: 28px;
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 0; min-height: 28px;
 }
-
 .pollMultiToggle {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  user-select: none;
-  font-family: var(--font-family-sans);
-  font-size: 0.78rem;
-  color: var(--color-text-muted);
+  display: flex; align-items: center; gap: 0.5rem; cursor: pointer;
+  user-select: none; font-family: var(--font-family-sans);
+  font-size: 0.78rem; color: var(--color-text-muted);
 }
-
 .pollToggleTrack {
-  width: 32px;
-  height: 18px;
-  border-radius: 100px;
-  background: var(--color-border);
-  position: relative;
-  transition: background 0.2s ease;
+  width: 32px; height: 18px; border-radius: 100px;
+  background: var(--color-border); position: relative; transition: background 0.2s ease;
 }
-
-.pollToggleTrack.on {
-  background: var(--color-primary);
-}
-
+.pollToggleTrack.on { background: var(--color-primary); }
 .pollToggleThumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--color-bg-white);
-  position: absolute;
-  top: 2px;
-  left: 2px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--color-bg-white); position: absolute; top: 2px; left: 2px;
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
-
-.pollToggleTrack.on .pollToggleThumb {
-  transform: translateX(14px);
-}
+.pollToggleTrack.on .pollToggleThumb { transform: translateX(14px); }
 
 @keyframes popupIn {
-  from {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.composerAvatarImg {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
+  from { opacity: 0; transform: translateY(-6px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @media (max-width: 480px) {
-  .composerContentArea {
-    margin-left: 0;
-  }
-  .postComposer {
-    padding: 1rem 1.25rem;
-    border-radius: var(--radius-lg);
-  }
+  .composerContentArea { margin-left: 0; }
+  .postComposer { padding: 1rem 1.1rem; border-radius: 14px; }
 }

@@ -14,6 +14,43 @@
   flex-shrink: 0;
 }
 
+/* Back button — top of sidebar, above the nav items */
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+.backBtn:hover {
+  background: var(--color-bg-white);
+  color: var(--color-text-main);
+  transform: translateX(-2px);
+}
+.backBtn svg {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.backBtn:hover svg {
+  transform: translateX(-2px);
+}
+
+/* Thin separator between back button and nav items */
+.sidebarDivider {
+  height: 1px;
+  background: var(--color-border-light);
+  margin: 0.25rem 0;
+}
+
 .navBtn {
   text-align: left;
   padding: 0.75rem 1rem;
@@ -184,14 +221,111 @@ input:checked + .slider:before {
   }
   .sidebar {
     width: 100%;
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: 0.5rem;
   }
+  /* On mobile: back button stays full-width on top, then nav buttons scroll horizontally */
+  .backBtn {
+    width: auto;
+  }
+  .sidebarDivider {
+    display: none;
+  }
+  /* Wrap nav buttons in a horizontal scroll row on mobile */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  /* Nav buttons row scrolls horizontally */
   .navBtn {
     white-space: nowrap;
   }
   .content {
     padding: 1.5rem 1rem;
   }
+}
+
+/* === Theme Picker Cards === */
+.themeSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.themeCards {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.themeCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--color-bg-main);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  min-width: 110px;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  color: var(--color-text-muted);
+}
+
+.themeCard:hover {
+  border-color: var(--color-primary);
+  background: var(--color-bg-main);
+  color: var(--color-text-main);
+}
+
+.themeCardActive {
+  border-color: var(--color-primary) !important;
+  background: rgba(37, 99, 235, 0.06) !important;
+  color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.themeCardIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  color: inherit;
+}
+
+.themeCardActive .themeCardIcon {
+  background: rgba(37, 99, 235, 0.1);
+  border-color: rgba(37, 99, 235, 0.2);
+}
+
+.themeCardLabel {
+  font-family: var(--font-family-display);
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--color-text-main);
+}
+
+.themeCardDesc {
+  font-family: var(--font-family-sans);
+  font-size: 0.72rem;
+  color: var(--color-text-light);
+  text-align: center;
+}
+
+.themeCardCheck {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }

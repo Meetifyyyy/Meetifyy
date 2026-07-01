@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
+import { useTheme } from '../../context/ThemeContext';
 import { showToast } from '../../utils/toast';
 import { isImageUrl } from '../../utils/avatar';
 import DefaultAvatar from '../common/DefaultAvatar';
@@ -9,6 +10,58 @@ import GlobalSearch from '../search/GlobalSearch';
 import NotificationsMenu from './NotificationsMenu';
 import { useNotifications } from '../../context/NotificationContext';
 import styles from './Header.module.css';
+
+/** Cycles: light → dark → system → light */
+function ThemeToggleBtn() {
+  const { theme, setTheme, resolvedTheme } = useTheme();
+
+  const cycleTheme = (e) => {
+    e.stopPropagation();
+    const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light';
+    setTheme(next);
+    const labels = { light: 'Light mode', dark: 'Dark mode', system: 'System mode' };
+    showToast(labels[next]);
+  };
+
+  // Icon: sun = light, moon = dark, monitor = system
+  const icon =
+    theme === 'dark' ? (
+      // Moon
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+    ) : theme === 'system' ? (
+      // Monitor
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+        <line x1="8" y1="21" x2="16" y2="21"/>
+        <line x1="12" y1="17" x2="12" y2="21"/>
+      </svg>
+    ) : (
+      // Sun
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="5"/>
+        <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>
+    );
+
+  const labels = { light: 'Switch to dark mode', dark: 'Switch to system mode', system: 'Switch to light mode' };
+
+  return (
+    <button
+      className={styles.notifIcon}
+      onClick={cycleTheme}
+      aria-label={labels[theme]}
+      title={labels[theme]}
+      style={{ color: 'var(--color-text-muted)' }}
+    >
+      {icon}
+    </button>
+  );
+}
 
 export default function Header({ variant = 'dashboard' }) {
   const { initial, logout, currentUser } = useAuth();
@@ -46,13 +99,13 @@ export default function Header({ variant = 'dashboard' }) {
         <button className={styles.hamburgerBtn} onClick={() => setDrawerOpen(true)}>
           <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
         </button>
-        <span className={styles.brand} onClick={() => navigate('/home')} style={{cursor: 'pointer'}}>Meetify</span>
+        <span className={styles.brand} onClick={() => navigate('/home')} style={{cursor: 'pointer'}}>Meetifyy</span>
       </div>
 
       {/* Mobile Drawer */}
       <div className={`${styles.mobileDrawer} ${drawerOpen ? styles.drawerOpen : ''}`}>
         <div className={styles.drawerHeader}>
-          <span className={styles.brand}>Meetify</span>
+          <span className={styles.brand}>Meetifyy</span>
           <button className={styles.closeDrawerBtn} onClick={() => setDrawerOpen(false)}>✕</button>
         </div>
         <div className={styles.drawerLinks}>
@@ -84,6 +137,9 @@ export default function Header({ variant = 'dashboard' }) {
               <span>{userCollege.name}</span>
             </button>
           )}
+          <div style={{ position: 'relative' }} ref={notifRef}>
+            <ThemeToggleBtn />
+          </div>
           <div style={{ position: 'relative' }} ref={notifRef}>
             <button
               className={styles.notifIcon}

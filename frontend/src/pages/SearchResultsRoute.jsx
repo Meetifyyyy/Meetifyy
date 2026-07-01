@@ -85,7 +85,7 @@ export default function SearchResultsRoute() {
           <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="1.5" style={{ opacity: 0.7, marginBottom: '1rem' }}>
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
-          <p style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--color-text-main)', margin: 0 }}>Search Meetify</p>
+          <p style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--color-text-main)', margin: 0 }}>Search Meetifyy</p>
           <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', marginTop: '0.5rem' }}>Find communities, posts, colleges, and people.</span>
         </div>
       ) : (
@@ -105,7 +105,7 @@ export default function SearchResultsRoute() {
           {isSearching ? (
             <div className={styles.loadingContainer}>
               <div className={styles.loadingSpinner} />
-              <span>Searching across Meetify...</span>
+              <span>Searching across Meetifyy...</span>
             </div>
           ) : !hasResults ? (
             <div className={styles.empty}>
