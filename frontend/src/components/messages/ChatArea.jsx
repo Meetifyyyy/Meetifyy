@@ -3,11 +3,15 @@ import data from '@emoji-mart/data';
 import { isImageUrl } from '../../utils/avatar';
 import DefaultAvatar from '../common/DefaultAvatar';
 import GroupSettingsModal from './GroupSettingsModal';
+import { useSimulatedFetch } from '../../hooks/useSimulatedFetch';
+import Skeleton from '../common/Skeleton';
+import { ErrorState } from '../common/StateViews';
 import styles from './ChatArea.module.css';
 
 const Picker = lazy(() => import('@emoji-mart/react'));
 
 export default function ChatArea({ conversation, onSendMessage, onReactMessage, onClearChat, onBlockUser, onJoinGroup, onBack, showChatOnMobile }) {
+  const { isLoading, data: loadedMessages, error, retry } = useSimulatedFetch(conversation?.messages || [], 800, [conversation?.id]);
   const [inputValue, setInputValue] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);

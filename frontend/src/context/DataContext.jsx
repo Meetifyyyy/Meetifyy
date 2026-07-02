@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { initialUsers, initialPosts } from '../data/mockData';
 import { communities as initialCommunities } from '../data/communities';
 import { initialMessages } from '../data/messages';
@@ -891,12 +891,32 @@ export function DataProvider({ children }) {
     return acc;
   }, {});
 
+  // Enrich conversations with latest user avatars/names
+  const enrichedConversations = useMemo(() => {
+    return conversations.map(conv => {
+      if (conv.isGroup) return conv;
+      
+      const targetUser = conv.username 
+        ? users[conv.username] 
+        : Object.values(users).find(u => u.displayName === conv.name || u.name === conv.name);
+        
+      if (targetUser) {
+        return {
+          ...conv,
+          name: targetUser.displayName || targetUser.name || conv.name,
+          avatar: targetUser.avatarUrl || targetUser.avatar || conv.avatar
+        };
+      }
+      return conv;
+    });
+  }, [conversations, users]);
+
   return (
     <DataContext.Provider value={{
       users,
       posts,
       communities: enrichedCommunities,
-      conversations,
+      conversations: enrichedConversations,
       crewActivities,
       currentUser: liveCurrentUser,
       searchQuery,
