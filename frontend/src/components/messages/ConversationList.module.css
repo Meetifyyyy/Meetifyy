@@ -163,7 +163,7 @@
   overflow-y: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  padding: 0.25rem 0;
+
 }
 
 .msgConvScroll::-webkit-scrollbar {
@@ -332,13 +332,23 @@
   .msgConvScroll {
     padding-bottom: 60px;
   }
+
   .msgConvHeader {
     height: auto;
     padding: 0 0 1rem 0;
     border-bottom: none;
   }
+
   .searchRow {
-    padding: 0 0 1rem 0;
+    padding: 0.5rem 0;
     border-bottom: none;
+  }
+
+  .tabsRow {
+    padding: 0.5rem 0.5rem;
+  }
+
+  .convItem {
+    padding: 0.75rem 0.75rem;
   }
 }

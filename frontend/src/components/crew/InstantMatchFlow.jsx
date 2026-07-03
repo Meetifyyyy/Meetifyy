@@ -1,16 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { isImageUrl } from '../../utils/avatar';
 import styles from './InstantMatchFlow.module.css';
 
 export default function InstantMatchFlow({ isOpen, onClose, onCreateActivity }) {
-  const { startInstantMatch, createTemporaryGroupChat, currentUser } = useData();
-  
-  if (!isOpen) return null;
+  const { startInstantMatch, createTemporaryGroupChat, joinCrewActivity, currentUser } = useData();
   const navigate = useNavigate();
+  const [isClosing, setIsClosing] = useState(false);
+
+  const handleClose = useCallback(() => {
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 300);
+  }, [onClose]);
   
-  const [step, setStep] = useState('preferences'); // preferences, searching, matched
+  const [step, setStep] = useState('preferences');
   
   const [activity, setActivity] = useState('Badminton');
   const [isCustom, setIsCustom] = useState(false);
@@ -34,13 +41,13 @@ export default function InstantMatchFlow({ isOpen, onClose, onCreateActivity }) 
     if (!matches) return;
     const userIds = matches.users.map(u => u.id);
     const roomId = await createTemporaryGroupChat(matches.activity, userIds);
-    onClose();
+    handleClose();
     navigate('/messages', { state: { conversationId: roomId } });
   };
   
   const handleJoinActivity = async (activityId) => {
     await joinCrewActivity(activityId);
-    onClose();
+    handleClose();
     navigate('/messages', { state: { conversationId: `act_${activityId}` } });
   };
 
@@ -55,16 +62,21 @@ export default function InstantMatchFlow({ isOpen, onClose, onCreateActivity }) 
       });
     }
   };
+
+  if (!isOpen) return null;
+  
+  const rootClass = `${styles.overlay}${isClosing ? ` ${styles.overlayClosing}` : ''}`;
+  const sheetClass = `${styles.sheet}${isClosing ? ` ${styles.sheetClosing}` : ''}`;
   
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.sheet} onClick={e => e.stopPropagation()}>
+    <div className={rootClass} onClick={handleClose}>
+      <div className={sheetClass} onClick={e => e.stopPropagation()}>
         
         {step === 'preferences' && (
           <div className={`${styles.content} animate-in`}>
             <div className={styles.header}>
               <h3>Instant Match</h3>
-              <button className={styles.closeBtn} onClick={onClose}>✕</button>
+              <button className={styles.closeBtn} onClick={handleClose}>✕</button>
             </div>
             
             <div className={styles.scrollArea}>
@@ -199,7 +211,7 @@ export default function InstantMatchFlow({ isOpen, onClose, onCreateActivity }) 
           <div className={`${styles.content} animate-in`}>
              <div className={styles.header}>
               <h3 className={styles.matchedTitle}>🏸 Match Found</h3>
-              <button className={styles.closeBtn} onClick={onClose}>✕</button>
+              <button className={styles.closeBtn} onClick={handleClose}>✕</button>
             </div>
             
             <div className={styles.scrollArea}>

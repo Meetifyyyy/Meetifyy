@@ -6,6 +6,11 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  animation: overlayFadeIn 0.25s ease-out;
+}
+
+.overlayClosing {
+  animation: overlayFadeOut 0.25s ease-in forwards;
 }
 
 .sheet {
@@ -18,6 +23,43 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: sheetSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sheetClosing {
+  animation: sheetSlideDown 0.25s ease-in forwards;
+}
+
+@keyframes overlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlayFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes sheetSlideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes sheetSlideDown {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100%);
+    opacity: 0;
+  }
 }
 
 .content {
@@ -38,6 +80,10 @@
   align-items: center;
   padding: 1.5rem 1.5rem 1rem;
   border-bottom: 1px solid #f3f4f6;
+}
+
+[data-theme="dark"] .header {
+  border-bottom-color: var(--color-border);
 }
 
 .header h3 {
@@ -77,6 +123,10 @@
   font-size: 0.95rem;
 }
 
+[data-theme="dark"] .section label {
+  color: var(--color-text-muted);
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -95,14 +145,31 @@
   transition: all 0.2s;
 }
 
+[data-theme="dark"] .chip {
+  background: var(--color-bg-soft);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+}
+
 .chip:hover {
   background: #e5e7eb;
+}
+
+[data-theme="dark"] .chip:hover {
+  background: var(--color-bg-alt);
+  border-color: var(--color-border-dark);
 }
 
 .chipActive {
   background: rgba(var(--color-primary-rgb), 0.1);
   color: var(--color-primary-hover);
   border-color: #a5b4fc;
+}
+
+[data-theme="dark"] .chipActive {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  border-color: rgba(99, 102, 241, 0.3);
 }
 
 .customInput {
@@ -117,6 +184,12 @@
   outline: none;
   font-family: inherit;
   transition: all 0.2s;
+}
+
+[data-theme="dark"] .customInput {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  border-color: rgba(99, 102, 241, 0.3);
 }
 
 .customInput::placeholder {
@@ -138,6 +211,17 @@
   min-height: 100px;
   resize: vertical;
 }
+
+[data-theme="dark"] .textarea {
+  background: var(--color-bg-main);
+  color: var(--color-text-main);
+  border-color: var(--color-border);
+}
+
+[data-theme="dark"] .textarea::placeholder {
+  color: var(--color-text-light);
+}
+
 .textarea:focus {
   outline: none;
   border-color: var(--color-primary);
@@ -147,6 +231,10 @@
   padding: 1.5rem;
   border-top: 1px solid #f3f4f6;
   background: var(--color-bg-white);
+}
+
+[data-theme="dark"] .footer {
+  border-top-color: var(--color-border);
 }
 
 .primaryBtn {
@@ -179,6 +267,16 @@
 }
 .secondaryBtn:hover {
   background: #e5e7eb;
+}
+
+[data-theme="dark"] .secondaryBtn {
+  background: var(--color-bg-soft);
+  color: var(--color-text-muted);
+}
+
+[data-theme="dark"] .secondaryBtn:hover {
+  background: var(--color-bg-alt);
+  color: var(--color-text-main);
 }
 
 /* Searching Animation */
@@ -242,6 +340,11 @@
   margin-bottom: 2rem;
 }
 
+[data-theme="dark"] .onlineBadge {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-success);
+}
+
 .matchingText {
   color: var(--color-primary-hover);
   font-weight: 500;
@@ -256,6 +359,10 @@
 /* Matched State */
 .matchedTitle {
   color: #4f46e5 !important;
+}
+
+[data-theme="dark"] .matchedTitle {
+  color: #818cf8 !important;
 }
 
 .matchesCarousel {
@@ -293,9 +400,19 @@
   text-align: center;
 }
 
+[data-theme="dark"] .matchCard {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-border);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
 .matchCard:hover {
   transform: translateY(-4px);
   box-shadow: 0 12px 32px rgba(0,0,0,0.1);
+}
+
+[data-theme="dark"] .matchCard:hover {
+  box-shadow: 0 12px 32px rgba(0,0,0,0.5);
 }
 
 .matchAvatarWrapper {
@@ -307,6 +424,10 @@
   flex-shrink: 0;
   border: 3px solid white;
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+}
+
+[data-theme="dark"] .matchAvatarWrapper {
+  border-color: var(--color-bg-elevated);
 }
 
 .matchAvatar {
@@ -336,6 +457,10 @@
   margin: 0.5rem 0 1rem;
   color: #9ca3af;
   font-size: 0.75rem;
+}
+
+[data-theme="dark"] .matchDetailTime {
+  color: var(--color-text-light);
 }
 
 .matchActions {

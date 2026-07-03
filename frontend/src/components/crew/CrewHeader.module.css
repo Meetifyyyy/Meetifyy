@@ -148,25 +148,6 @@
   border-radius: 2px 2px 0 0;
 }
 
-.locationDropdown {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  background: none;
-  border: none;
-  color: var(--color-text-light);
-  font-family: inherit;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 0 0 0.75rem 0;
-  transition: color 0.2s;
-}
-
-.locationDropdown:hover {
-  color: var(--color-text-main);
-}
-
 @media (max-width: 768px) {
   .tabsNav {
     gap: 0.75rem;
@@ -199,14 +180,32 @@
   }
 
   /* Search box matches Communities exactly */
+  .searchRow {
+    gap: 0.5rem;
+  }
+
   .searchBox {
     border-radius: 100px;
     padding: 0 1rem;
     height: 40px;
+    gap: 0.4rem;
+  }
+
+  .searchBox:focus-within {
+    box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.15);
+  }
+
+  .searchIcon {
+    color: var(--color-text-light);
+    margin-right: 0;
   }
 
   .searchInput {
     font-size: 0.85rem;
+  }
+
+  .searchInput::placeholder {
+    color: var(--color-text-light);
   }
 
   /* Tabs become pills matching Communities catNav */
@@ -260,55 +259,6 @@
     color: white !important;
   }
 
-  .locationDropdown {
-    font-size: 0.75rem;
-    padding: 0.3rem 0.5rem;
-    border: 1px solid var(--color-border);
-    border-radius: 100px;
-    background: var(--color-bg-white);
-  }
-}
-
-.locationWrapper {
-  position: relative;
-}
-
-.locMenu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 0.5rem;
-  background: var(--color-bg-white);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-  padding: 0.5rem;
-  display: flex;
-  flex-direction: column;
-  min-width: 150px;
-  z-index: 20;
-}
-
-.locItem {
-  background: none;
-  border: none;
-  padding: 0.75rem 1rem;
-  text-align: left;
-  font-size: 0.95rem;
-  color: var(--color-text-main);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.locItem:hover {
-  background: var(--color-bg-alt);
-}
-
-.locActive {
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  font-weight: 600;
 }
 
 .categoryFilters {

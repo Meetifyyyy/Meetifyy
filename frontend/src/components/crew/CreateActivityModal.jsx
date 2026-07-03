@@ -81,8 +81,6 @@ export default function CreateActivityModal({ isOpen, onClose, onPublish, initia
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialData]);
 
-  if (!isOpen) return null;
-
   const getDaysInMonth = (year, month) => new Date(year, month, 0).getDate();
   const maxDays = getDaysInMonth(formData.dateYear, formData.dateMonth);
 
@@ -231,6 +229,8 @@ export default function CreateActivityModal({ isOpen, onClose, onPublish, initia
     
     return { value: m, label: m, disabled: isDisabled };
   });
+
+  if (!isOpen) return null;
 
   return (
     <div className={styles.overlay} onClick={handleOverlayClick}>

@@ -142,7 +142,7 @@
 .profileTagline {
   font-size: 0.85rem;
   font-weight: 400;
-  color: var(--color-text-main);
+  color: var(--color-text-muted);
   margin-bottom: 1rem;
   line-height: 1.4;
 }
@@ -255,7 +255,6 @@
   .profileTagline {
     font-size: 0.875rem;
     margin-bottom: 1.25rem;
-    color: #475569;
   }
 
   .profileStats {

@@ -18,20 +18,13 @@ function ActivityRow({ activity, onClick }) {
   const hasRequested = activity.pendingRequests?.includes(currentUser?.id);
   const isApproval = activity.participationType === 'approval';
 
-  const categoryColors = {
-    'Sports':           { bg: 'rgba(37,99,235,0.1)',    color: '#2563EB' },
-    'Health & Fitness': { bg: 'rgba(16,185,129,0.1)',   color: '#10B981' },
-    'Gaming':           { bg: 'rgba(124,58,237,0.1)',   color: '#7C3AED' },
-    'Creative':         { bg: 'rgba(255,107,53,0.1)',   color: '#FF6B35' },
-    'Social':           { bg: 'rgba(245,158,11,0.1)',   color: '#F59E0B' },
-    'Event':            { bg: 'rgba(236,72,153,0.1)',   color: '#EC4899' },
-  };
-  const theme = categoryColors[activity.category] || { bg: 'rgba(37,99,235,0.1)', color: '#2563EB' };
-
   return (
     <div className={styles.activityRow} onClick={onClick}>
-      <div className={styles.activityRowIcon} style={{ background: theme.bg, color: theme.color }}>
-        <Activity size={20} />
+      <div className={styles.activityRowIcon}>
+        {isImageUrl(activity.hostAvatar)
+          ? <img src={activity.hostAvatar} alt={activity.hostName} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+          : <DefaultAvatar />
+        }
       </div>
       <div className={styles.activityRowInfo}>
         <span className={styles.activityRowTitle}>{activity.title}</span>
@@ -107,12 +100,13 @@ function CommunityRow({ comm, onClick }) {
 // Person row in sidebar
 function PersonRow({ user, idx }) {
   const { toggleFollow, currentUser, users } = useData();
+  const navigate = useNavigate();
   // Always read from latest users state so button updates immediately
   const latestMe = users?.[currentUser?.username];
   const isFollowing = latestMe?.followingList?.includes(user.username);
 
   return (
-    <div className={styles.sidebarItem}>
+    <div className={styles.sidebarItem} onClick={() => navigate(`/profile/${user.username}`)}>
       <div className={styles.sidebarAvatar}>
         {isImageUrl(user.avatar)
           ? <img src={user.avatar} alt={user.displayName} />
@@ -344,7 +338,7 @@ export default function SearchResultsRoute() {
                       {topPosts.map((post) => {
                         const author = users ? Object.values(users).find(u => u.id === post.authorId) : null;
                         return (
-                          <button key={post.id} className={styles.topPostCard} onClick={() => navigate(`/posts/${post.id}`)}>
+                          <button key={post.id} className={styles.topPostCard} onClick={() => navigate(`/post/${post.id}`)}>
                             <div className={styles.topPostAvatar}>
                               {author && isImageUrl(author.avatar)
                                 ? <img src={author.avatar} alt={author.displayName} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />

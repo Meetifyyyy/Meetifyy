@@ -232,12 +232,17 @@
     font-size: 0.78rem;
   }
 
-  .findMatchBtn {
-    padding: 0.55rem 1rem;
-    font-size: 0.85rem;
+  .footer {
+    flex-direction: column;
+    gap: 0.65rem;
+    align-items: stretch;
+    margin-top: 0;
   }
 
-  .footer {
-    margin-top: 0;
+  .findMatchBtn {
+    padding: 0.65rem 1rem;
+    font-size: 0.9rem;
+    justify-content: center;
+    width: 100%;
   }
 }
