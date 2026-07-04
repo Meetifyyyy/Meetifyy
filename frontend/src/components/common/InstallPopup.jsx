@@ -1,13 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { X, Download, CheckCircle, ExternalLink } from 'lucide-react';
+import { X, Download, CheckCircle, ExternalLink, Share2, Smartphone } from 'lucide-react';
 import styles from './InstallPopup.module.css';
+
+function getPlatform() {
+  const ua = navigator.userAgent;
+  if (/iphone|ipad|ipod/i.test(ua)) return 'ios';
+  if (/android/i.test(ua)) return 'android';
+  return 'desktop';
+}
 
 export default function InstallPopup() {
   const { isLoggedIn } = useAuth();
   const [show, setShow] = useState(false);
-  const [mode, setMode] = useState('install'); // 'install' | 'open-app' | 'installing' | 'installed'
-  const [progress, setProgress] = useState(0);
+  const [mode, setMode] = useState('install'); // 'install' | 'instructions' | 'open-app' | 'installed'
   const deferredPrompt = useRef(null);
 
   useEffect(() => {
@@ -22,7 +28,6 @@ export default function InstallPopup() {
     const appInstalled = localStorage.getItem('meetify_installed') === 'true';
 
     if (appInstalled) {
-      // App is installed but user opened in browser — show "Open in App"
       setMode('open-app');
       setShow(true);
       return;
@@ -30,6 +35,15 @@ export default function InstallPopup() {
 
     const dismissed = localStorage.getItem('meetify_install_dismissed');
     if (dismissed === 'true') return;
+
+    const platform = getPlatform();
+
+    // iOS Safari doesn't support beforeinstallprompt — show instructions directly
+    if (platform === 'ios') {
+      setMode('instructions');
+      setShow(true);
+      return;
+    }
 
     const handler = (e) => {
       e.preventDefault();
@@ -40,10 +54,10 @@ export default function InstallPopup() {
 
     window.addEventListener('beforeinstallprompt', handler);
 
-    // Fallback: show install popup even if beforeinstallprompt never fires
+    // Fallback: if beforeinstallprompt never fires (e.g. desktop without PWA support)
     const fallbackTimer = setTimeout(() => {
       if (!deferredPrompt.current) {
-        setMode('install');
+        setMode('instructions');
         setShow(true);
       }
     }, 3000);
@@ -54,54 +68,21 @@ export default function InstallPopup() {
     };
   }, [isLoggedIn]);
 
-  const simulateProgress = () => {
-    setMode('installing');
-    setProgress(0);
-
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 90) {
-          clearInterval(interval);
-          return 90;
-        }
-        const increment = prev < 30 ? 15 : prev < 60 ? 8 : prev < 80 ? 4 : 2;
-        return Math.min(prev + increment, 90);
-      });
-    }, 300);
-  };
-
   const handleInstall = async () => {
     const prompt = deferredPrompt.current;
 
     if (prompt) {
-      simulateProgress();
       prompt.prompt();
       const result = await prompt.userChoice;
       deferredPrompt.current = null;
 
       if (result.outcome === 'accepted') {
         localStorage.setItem('meetify_installed', 'true');
-        setProgress(100);
         setMode('installed');
         setTimeout(() => {
           setShow(false);
-          setProgress(0);
-        }, 1500);
-      } else {
-        setMode('install');
-        setProgress(0);
+        }, 2000);
       }
-    } else {
-      simulateProgress();
-      setTimeout(() => {
-        localStorage.setItem('meetify_installed', 'true');
-        setProgress(100);
-        setMode('installed');
-        setTimeout(() => {
-          setShow(false);
-          setProgress(0);
-        }, 1500);
-      }, 2000);
     }
   };
 
@@ -116,10 +97,12 @@ export default function InstallPopup() {
 
   if (!show) return null;
 
+  const platform = getPlatform();
+
   return (
     <div className={styles.overlay}>
       <div className={styles.card}>
-        {mode !== 'installing' && mode !== 'installed' && (
+        {mode !== 'installed' && (
           <button className={styles.close} onClick={handleClose} aria-label="Close">
             <X size={18} />
           </button>
@@ -137,24 +120,27 @@ export default function InstallPopup() {
           </>
         )}
 
-        {mode === 'installing' && (
+        {mode === 'instructions' && (
           <>
             <div className={styles.iconWrap}>
-              <Download size={28} />
+              <Smartphone size={28} />
             </div>
-            <h3 className={styles.title}>Installing Meetifyy...</h3>
-            <div className={styles.progressWrap}>
-              <div className={styles.progressBar}>
-                <div
-                  className={styles.progressFill}
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <span className={styles.progressText}>{progress}%</span>
-            </div>
+            <h3 className={styles.title}>Install Meetifyy</h3>
             <p className={styles.desc}>
-              Please follow the prompts on your browser to complete the installation.
+              {platform === 'ios' ? (
+                <>Tap the <strong>Share</strong> button <Share2 size={14} style={{ display: 'inline', verticalAlign: 'middle' }} /> in Safari, then scroll down and tap <strong>"Add to Home Screen"</strong>.</>
+              ) : (
+                <>Open this site in <strong>Chrome</strong>, tap the menu <strong>⋮</strong> and select <strong>"Add to Home Screen"</strong>.</>
+              )}
             </p>
+            <div className={styles.actions}>
+              <button className={styles.installBtn} onClick={handleClose}>
+                Got it
+              </button>
+              <button className={styles.laterBtn} onClick={handleDismiss}>
+                Don't show again
+              </button>
+            </div>
           </>
         )}
 
