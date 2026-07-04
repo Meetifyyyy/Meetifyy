@@ -25,16 +25,19 @@ export default function InstallPopup() {
     // Already inside the installed app — no popup needed
     if (isStandalone) return;
 
+    // Listen for the appinstalled event to reliably track installation
+    const onInstalled = () => {
+      localStorage.setItem('meetify_installed', 'true');
+    };
+    window.addEventListener('appinstalled', onInstalled);
+
     const appInstalled = localStorage.getItem('meetify_installed') === 'true';
 
     if (appInstalled) {
       setMode('open-app');
       setShow(true);
-      return;
+      return () => window.removeEventListener('appinstalled', onInstalled);
     }
-
-    const dismissed = localStorage.getItem('meetify_install_dismissed');
-    if (dismissed === 'true') return;
 
     const platform = getPlatform();
 
@@ -42,7 +45,7 @@ export default function InstallPopup() {
     if (platform === 'ios') {
       setMode('instructions');
       setShow(true);
-      return;
+      return () => window.removeEventListener('appinstalled', onInstalled);
     }
 
     const handler = (e) => {
@@ -64,6 +67,7 @@ export default function InstallPopup() {
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('appinstalled', onInstalled);
       clearTimeout(fallbackTimer);
     };
   }, [isLoggedIn]);
@@ -87,7 +91,6 @@ export default function InstallPopup() {
   };
 
   const handleDismiss = () => {
-    localStorage.setItem('meetify_install_dismissed', 'true');
     setShow(false);
   };
 
@@ -136,9 +139,6 @@ export default function InstallPopup() {
             <div className={styles.actions}>
               <button className={styles.installBtn} onClick={handleClose}>
                 Got it
-              </button>
-              <button className={styles.laterBtn} onClick={handleDismiss}>
-                Don't show again
               </button>
             </div>
           </>
