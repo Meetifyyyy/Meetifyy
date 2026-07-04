@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useData } from '../../context/DataContext';
 import { useNavigate } from 'react-router-dom';
+import DefaultAvatar from '../common/DefaultAvatar';
 import ShareProfileModal from './ShareProfileModal';
 import styles from './ProfileAbout.module.css';
 
@@ -45,6 +46,14 @@ export default function ProfileAbout({ profileUsername }) {
   const hasSocialLinks = socialLinks.instagram || socialLinks.facebook || socialLinks.linkedin || socialLinks.twitter;
 
   const isOwnProfile = targetUsername === currentUser?.username;
+
+  const sharedConnections = useMemo(() => {
+    if (!profileUsername || profileUsername === currentUser?.username) return [];
+    const myFollowing = currentUser?.followingList || [];
+    const theirFollowing = profileUser?.followingList || [];
+    const mutual = myFollowing.filter(u => theirFollowing.includes(u));
+    return mutual.map(uname => getUserByUsername(uname)).filter(Boolean);
+  }, [profileUsername, currentUser, profileUser, getUserByUsername]);
 
   return (
     <div className={styles.profileSection}>
@@ -104,15 +113,41 @@ export default function ProfileAbout({ profileUsername }) {
       )}
       
       <div className={styles.detailsContainer}>
-        {profileUsername && profileUsername !== currentUser?.username && (
+        {profileUsername && profileUsername !== currentUser?.username && sharedConnections.length > 0 && (
           <div className={styles.detailGroup}>
             <h3 className={styles.groupTitle}>Shared Connections</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'var(--color-bg-main)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
               <div style={{ display: 'flex' }}>
-                <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(59, 130, 246, 0.2))', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: '0.8rem', border: '2px solid var(--color-bg-white)', zIndex: 2 }}>A</div>
-                <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(52, 211, 153, 0.2))', color: 'var(--color-success, #10b981)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: '0.8rem', border: '2px solid var(--color-bg-white)', marginLeft: '-10px', zIndex: 1 }}>S</div>
+                {sharedConnections.slice(0, 3).map((conn, i) => (
+                  <div
+                    key={conn.username}
+                    style={{
+                      width: '30px', height: '30px', borderRadius: '50%',
+                      background: conn.avatar && conn.avatar.length > 1
+                        ? `url(${conn.avatar}) center/cover`
+                        : 'linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(59, 130, 246, 0.2))',
+                      color: 'var(--color-primary)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: 600, fontSize: '0.8rem',
+                      border: '2px solid var(--color-bg-white)',
+                      marginLeft: i > 0 ? '-10px' : '0',
+                      zIndex: 3 - i,
+                      overflow: 'hidden'
+                    }}
+                  >
+                    {conn.avatar && conn.avatar.length > 1 ? null : conn.avatar || conn.displayName?.[0] || '?'}
+                  </div>
+                ))}
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-main)' }}>You both know <strong>Alex T.</strong> and <strong>Sam Rivera</strong>.</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-main)' }}>
+                {sharedConnections.length === 1 ? (
+                  <>You both know <strong>{sharedConnections[0].displayName || sharedConnections[0].username}</strong>.</>
+                ) : sharedConnections.length === 2 ? (
+                  <>You both know <strong>{sharedConnections[0].displayName || sharedConnections[0].username}</strong> and <strong>{sharedConnections[1].displayName || sharedConnections[1].username}</strong>.</>
+                ) : (
+                  <>You both know <strong>{sharedConnections[0].displayName || sharedConnections[0].username}</strong>, <strong>{sharedConnections[1].displayName || sharedConnections[1].username}</strong> and {sharedConnections.length - 2} other{sharedConnections.length - 2 > 1 ? 's' : ''}.</>
+                )}
+              </div>
             </div>
           </div>
         )}

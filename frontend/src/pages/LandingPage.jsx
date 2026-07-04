@@ -1,371 +1,318 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { showToast } from '../utils/toast';
+import { motion } from 'framer-motion';
+import {
+  ArrowRight,
+  Sun,
+  Moon,
+  HelpCircle,
+  LifeBuoy,
+  Bug,
+  Shield,
+  FileText,
+} from 'lucide-react';
 import Background from '../components/common/Background';
-import Toast from '../components/common/Toast';
 import logo from '../assets/images/logo.png';
-import heroImg from '../assets/images/hero-illustration.webp';
-import '../styles/landing.css';
+import pexelsStudents from '../assets/images/pexels-students.jpg';
+import styles from './LandingPage.module.css';
 
+const communityTags = [
+  { name: 'Startups', color: '#2563EB' },
+  { name: 'Design', color: '#EC4899' },
+  { name: 'Music', color: '#F59E0B' },
+  { name: 'Engineering', color: '#10B981' },
+  { name: 'Photography', color: '#8B5CF6' },
+  { name: 'Gaming', color: '#06B6D4' },
+  { name: 'Travel', color: '#F97316' },
+  { name: 'Fitness', color: '#EF4444' },
+  { name: 'Art', color: '#A855F7' },
+  { name: 'Science', color: '#0EA5E9' },
+  { name: 'Writing', color: '#14B8A6' },
+  { name: 'Film', color: '#D946EF' },
+];
+
+const marqueeItems = [
+  'Real Conversations', 'Find Your People', 'No Algorithms',
+  'Genuine Connections', 'College Communities', 'Share Your Spotlight',
+];
+
+const principles = [
+  {
+    title: 'Real Conversations',
+    desc: 'No noise, no algorithms. Connect with people who share your passions.',
+    visual: 'conversation',
+  },
+  {
+    title: 'Meaningful Communities',
+    desc: 'Find your people across clubs, interests, and campuses -- all in one place.',
+    visual: 'community',
+  },
+  {
+    title: 'Moments That Matter',
+    desc: 'Share wins, start discussions, and build memories that last beyond graduation.',
+    visual: 'moments',
+  },
+];
+
+const fadeUp = {
+  initial: { opacity: 0, y: 40 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, margin: '-80px' },
+  transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] },
+};
+
+const slideUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 30 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, margin: '-60px' },
+  transition: { duration: 0.6, delay, ease: [0.16, 1, 0.3, 1] },
+});
 
 export default function LandingPage() {
-  const { login } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
-
-  const [toastMsg, setToastMsg] = useState('');
-  const [toastVisible, setToastVisible] = useState(false);
+  const scrollRef = useRef(null);
+  const [headerVisible, setHeaderVisible] = useState(true);
+  const lastScrollY = useRef(0);
 
   useEffect(() => {
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-        }
-      });
-    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+    const el = scrollRef.current;
+    if (!el) return;
 
-    const elements = document.querySelectorAll('.reveal');
-    elements.forEach(el => observer.observe(el));
+    const onScroll = () => {
+      const currentY = el.scrollTop;
+      if (currentY < 10) {
+        setHeaderVisible(true);
+      } else if (currentY > lastScrollY.current) {
+        setHeaderVisible(false);
+      } else {
+        setHeaderVisible(true);
+      }
+      lastScrollY.current = currentY;
+    };
 
-    return () => observer.disconnect();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
   }, []);
-
-  const showToast = useCallback((msg) => {
-    setToastMsg(msg);
-    setToastVisible(true);
-  }, []);
-
-  const features = [
-    {
-      icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        </svg>
-      ),
-      title: 'Find Your People',
-      desc: 'Connect with like-minded creators, builders, and dreamers who share your passions.',
-    },
-    {
-      icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-      ),
-      title: 'Real Conversations',
-      desc: 'No noise. No algorithms. Just genuine discussions that matter to you.',
-    },
-    {
-      icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" />
-        </svg>
-      ),
-      title: 'Communities That Click',
-      desc: 'Build or join micro-communities around the things that make you come alive.',
-    },
-  ];
-
-  const steps = [
-    { num: '01', title: 'Create Your Space', desc: 'Set up your profile and tell the world what you\'re about.' },
-    { num: '02', title: 'Discover & Connect', desc: 'Browse communities, follow interesting people, and start conversations.' },
-    { num: '03', title: 'Grow Together', desc: 'Collaborate on ideas, share wins, and build something meaningful.' },
-  ];
-
-  const testimonials = [
-    { name: 'Maya R.', handle: '@mayabuilds', text: 'Found my entire startup team through Meetifyy. This place just gets it.', gradient: 'linear-gradient(135deg, #2563EB, #3B82F6)' },
-    { name: 'James K.', handle: '@jamesk_dev', text: 'The communities here feel alive. No empty feeds, no bots — just real people.', gradient: 'linear-gradient(135deg, #F59E0B, #F97316)' },
-    { name: 'Priya S.', handle: '@priya_designs', text: 'I\'ve been on every social platform. Meetifyy is the first one that felt like home.', gradient: 'linear-gradient(135deg, #EC4899, #8B5CF6)' },
-  ];
-
-  const communityTags = [
-    { name: 'Startups', color: '#2563EB' },
-    { name: 'Design', color: '#EC4899' },
-    { name: 'Music', color: '#F59E0B' },
-    { name: 'Dev', color: '#10B981' },
-    { name: 'Photography', color: '#8B5CF6' },
-    { name: 'Gaming', color: '#06B6D4' },
-    { name: 'Travel', color: '#F97316' },
-    { name: 'Fitness', color: '#EF4444' },
-    { name: 'Art', color: '#A855F7' },
-    { name: 'Science', color: '#0EA5E9' },
-    { name: 'Writing', color: '#14B8A6' },
-    { name: 'Film', color: '#D946EF' },
-  ];
 
   return (
     <>
       <Background />
+      <div className={styles.page} ref={scrollRef}>
 
-      <header className="landing-header">
-        <div className="nav-left" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
-          <img className="logo" src={logo} alt="Meetifyy" />
-          <span className="brand">Meetifyy</span>
-        </div>
-        <nav className="nav-links">
-          <a href="#why" className="nav-link-item">Why Meetifyy</a>
-          <a href="#how" className="nav-link-item">How It Works</a>
-          <a href="#explore" className="nav-link-item">Explore</a>
-          <a href="#testimonials" className="nav-link-item">Voices</a>
-        </nav>
-        <div className="nav-actions">
-          <button 
-            className="theme-toggle-btn" 
-            onClick={toggleTheme}
-            aria-label="Toggle Theme"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--color-text-main)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '0.5rem'
-            }}
+        <motion.header
+          className={styles.header}
+          animate={{ y: headerVisible ? 0 : -96 }}
+          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <div className={styles.brandLeft} onClick={() => navigate('/')}>
+            <img className={styles.logo} src={logo} alt="Meetify" />
+            <span className={styles.brandName}>Meetifyy</span>
+          </div>
+          <div className={styles.headerActions}>
+            <button
+              className={styles.themeBtn}
+              onClick={toggleTheme}
+              aria-label="Toggle theme"
+            >
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button className={styles.loginBtn} onClick={() => navigate('/login')}>
+              Log in
+            </button>
+          </div>
+        </motion.header>
+
+        <motion.section
+          className={styles.hero}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.8 }}
+        >
+          <div className={styles.heroLeft}>
+            <motion.p
+              className={styles.heroTitle}
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            >
+              Where your <span className={styles.heroTitleGradient}>college story</span> begins...
+              <br />
+              Meet new people, join communities, and make the most of your college journey.
+            </motion.p>
+
+            <motion.div
+              className={styles.heroActions}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.65, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <button className={styles.heroBtnPrimary} onClick={() => navigate('/signup')}>
+                Try it now <ArrowRight size={16} />
+              </button>
+            <button className={styles.heroBtnOutline} onClick={() => navigate('/login')}>
+              Log in
+            </button>
+            </motion.div>
+          </div>
+
+          <motion.div
+            className={styles.heroRight}
+            initial={{ opacity: 0, x: 40 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.8, delay: 0.5, ease: [0.16, 1, 0.3, 1] }}
           >
-            {theme === 'dark' ? (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="5" />
-                <line x1="12" y1="1" x2="12" y2="3" />
-                <line x1="12" y1="21" x2="12" y2="23" />
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                <line x1="1" y1="12" x2="3" y2="12" />
-                <line x1="21" y1="12" x2="23" y2="12" />
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-              </svg>
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
-            )}
-          </button>
-          <button className="btn-login" onClick={() => navigate('/login')}>Log in</button>
-          <button className="btn-signup" onClick={() => navigate('/signup')}>Join Meetifyy</button>
-        </div>
-      </header>
+            <img
+              className={styles.heroImage}
+              src={pexelsStudents}
+              alt="College students"
+            />
+          </motion.div>
 
-      {/* Scrollable landing content */}
-      <div className="landing-scroll">
+        </motion.section>
 
-        <main id="mainContent" className="hero-section">
-          <div className="hero-text-col">
-
-             <h1 className="hero-title">
-              MEET THE OTHER <span className="text-gradient">YOU</span>
-            </h1>
-            <p className="hero-subtitle">
-              Find your tribe and your spotlight.
-            </p>
-            <div className="hero-actions">
-              <button className="hero-btn-primary" onClick={() => navigate('/signup')}>
-                Get Started
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <div className="hero-graphic-col">
-            <div className="hero-image-container">
-              <img src={heroImg} alt="Meetifyy community illustration" className="hero-img" loading="lazy" />
-              <div className="fragment fragment--1" style={{ animation: 'float 6s ease-in-out infinite' }}>
-                <span className="live-dot" style={{ display: 'inline-block', width: 8, height: 8, background: '#10B981', borderRadius: '50%', marginRight: 8, animation: 'pulse 2s infinite' }}></span>
-                Sarah just joined Design Thinkers
-              </div>
-              <div className="fragment fragment--2" style={{ animation: 'float 6s ease-in-out infinite 1.5s' }}>
-                <span className="live-dot" style={{ display: 'inline-block', width: 8, height: 8, background: '#3B82F6', borderRadius: '50%', marginRight: 8, animation: 'pulse 2s infinite' }}></span>
-                Alex posted in Startup Builders
-              </div>
-              <div className="fragment fragment--3" style={{ animation: 'float 6s ease-in-out infinite 3s' }}>
-                <span className="live-dot" style={{ display: 'inline-block', width: 8, height: 8, background: '#F59E0B', borderRadius: '50%', marginRight: 8, animation: 'pulse 2s infinite' }}></span>
-                New discussion in Engineering
-              </div>
-              <div className="fragment fragment--4" style={{ animation: 'float 6s ease-in-out infinite 4.5s' }}>
-                <span className="live-dot" style={{ display: 'inline-block', width: 8, height: 8, background: '#EC4899', borderRadius: '50%', marginRight: 8, animation: 'pulse 2s infinite' }}></span>
-                Maya followed James
-              </div>
-            </div>
-          </div>
-        </main>
-
-        {/* ---------- Features ---------- */}
-        <section className="landing-section features-section" id="why">
-          <div className="section-inner reveal">
-            <h2 className="landing-heading">
-              Why <span className="text-gradient">Meetifyy</span>?
-            </h2>
-            <p className="landing-subheading">A space where connections are real and communities thrive.</p>
-            <div className="features-grid">
-              {features.map((f, i) => (
-                <div className="feature-card" key={i}>
-                  <div className="feature-icon">{f.icon}</div>
-                  <h3>{f.title}</h3>
-                  <p>{f.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ---------- How It Works ---------- */}
-        <section className="landing-section steps-section" id="how">
-          <div className="section-inner reveal">
-            <h2 className="landing-heading">
-              How It <span className="text-gradient">Works</span>
-            </h2>
-            <p className="landing-subheading">Three steps. Zero friction.</p>
-            <div className="steps-row">
-              {steps.map((s, i) => (
-                <div className="step-card" key={i}>
-                  <span className="step-num">{s.num}</span>
-                  <h3>{s.title}</h3>
-                  <p>{s.desc}</p>
-                  {i < steps.length - 1 && (
-                    <div className="step-connector">
-                      <svg width="40" height="12" viewBox="0 0 40 12" fill="none">
-                        <path d="M0 6h32m0 0l-5-5m5 5l-5 5" stroke="#2563EB" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.4" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ---------- Communities ---------- */}
-        <section className="landing-section communities-section" id="explore">
-          <div className="section-inner reveal">
-            <h2 className="landing-heading">
-              Explore <span className="text-gradient">Communities</span>
-            </h2>
-            <p className="landing-subheading">Thousands of people are already here. Find where you belong.</p>
-            <div className="community-tags">
-              {communityTags.map((tag, i) => (
-                <span className="community-tag" key={i} style={{ '--tag-color': tag.color, cursor: 'pointer' }} onClick={() => navigate('/login')}>
-                  <span className="tag-dot" style={{ background: tag.color }} />
-                  {tag.name}
+        <motion.div className={styles.marqueeSection} {...fadeUp}>
+          <div className={styles.marqueeTrack}>
+            {[...Array(2)].map((_, loopIdx) =>
+              marqueeItems.map((item, i) => (
+                <span className={styles.marqueeItem} key={`${loopIdx}-${i}`}>
+                  {item}
+                  <span className={styles.marqueeDot} />
                 </span>
-              ))}
-            </div>
-            <div className="community-stats-row">
-              <div className="community-stat">
-                <span className="community-stat-num">12k+</span>
-                <span className="community-stat-label">Members & growing</span>
-              </div>
-              <div className="community-stat">
-                <span className="community-stat-num">340+</span>
-                <span className="community-stat-label">Communities</span>
-              </div>
-              <div className="community-stat">
-                <span className="community-stat-num">89k+</span>
-                <span className="community-stat-label">Conversations</span>
-              </div>
-            </div>
+              ))
+            )}
           </div>
+        </motion.div>
+
+        <motion.section className={styles.statement} {...fadeUp}>
+          <p className={styles.statementText}>
+            College isn't just about what you learn in class.{' '}
+            <span className={styles.statementEm}>It's who you meet along the way.</span>
+          </p>
+        </motion.section>
+
+        <section className={styles.principles}>
+          {principles.map((item, i) => (
+            <motion.div className={styles.principle} key={i} {...slideUp(i * 0.15)}>
+              <div className={`${styles.principleVisual} ${styles[item.visual]}`}>
+                <img src={pexelsStudents} alt="" className={styles.visualPhoto} />
+              </div>
+              <div className={styles.principleCopy}>
+                <p className={styles.principleText}>
+                  <span className={styles.principleTitle}>{item.title}</span>
+                  <br />
+                  {item.desc}
+                </p>
+              </div>
+            </motion.div>
+          ))}
         </section>
 
-        {/* ---------- Testimonials ---------- */}
-        <section className="landing-section testimonials-section" id="testimonials">
-          <div className="section-inner reveal">
-            <h2 className="landing-heading">
-              Voices from the <span className="text-gradient">Community</span>
+        <motion.section className={styles.statsBanner} {...fadeUp}>
+          <p className={styles.statsText}>
+            <span className={styles.statsNumber}>12,000+</span> members ·{' '}
+            <span className={styles.statsNumber}>340</span> communities ·{' '}
+            <span className={styles.statsNumber}>89,000</span> conversations
+          </p>
+        </motion.section>
+
+        <motion.section className={styles.communities} {...fadeUp}>
+          <div className={styles.communitiesIntro}>
+            <h2 className={styles.communitiesTitle}>
+              Whatever you're into,
+              <br />
+              <span>there's a community for it</span>
             </h2>
-            <div className="testimonials-grid">
-              {testimonials.map((t, i) => (
-                <div className="testimonial-card" key={i}>
-                  <p className="testimonial-text">"{t.text}"</p>
-                  <div className="testimonial-author">
-                    <div className="testimonial-avatar" style={{ background: t.gradient }}>
-                      {t.name.charAt(0)}
-                    </div>
-                    <div className="testimonial-meta">
-                      <div className="testimonial-name">{t.name}</div>
-                      <div className="testimonial-handle">{t.handle}</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <p className={styles.communitiesSub}>
+              From niche hobbies to major passions -- find your people, join the conversation.
+            </p>
+          </div>
+          <div className={styles.tagCloud}>
+            {communityTags.map((tag, i) => (
+              <motion.span
+                className={styles.tag}
+                key={i}
+                initial={{ opacity: 0, scale: 0.9 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.3, delay: i * 0.04 }}
+              >
+                <span className={styles.tagDot} style={{ background: tag.color }} />
+                {tag.name}
+              </motion.span>
+            ))}
+          </div>
+        </motion.section>
+
+        <motion.section className={styles.cta} {...fadeUp}>
+          <h2 className={styles.ctaTitle}>Ready to find your people?</h2>
+          <p className={styles.ctaSub}>
+            Join thousands of students already sharing their spotlight.
+          </p>
+          <button className={styles.ctaBtn} onClick={() => navigate('/signup')}>
+            Join Meetify <ArrowRight size={16} />
+          </button>
+        </motion.section>
+
+        <footer className={styles.footer}>
+          <div className={styles.footerInner}>
+            <div className={styles.footerBrandCol}>
+              <div className={styles.footerBrand}>
+                <img className={styles.footerLogo} src={logo} alt="Meetify" />
+                Meetifyy
+              </div>
+              <p className={styles.footerTagline}>Where your college story begins. Built for students, by students.</p>
+            </div>
+            <div>
+              <h4 className={styles.footerColTitle}>Support</h4>
+              <ul className={styles.footerLinks}>
+                <li><a href="#" className={styles.footerLink}><HelpCircle size={14} /> FAQ</a></li>
+                <li><a href="#" className={styles.footerLink}><LifeBuoy size={14} /> Help &amp; Support</a></li>
+                <li><a href="#" className={styles.footerLink}><Bug size={14} /> Report a Bug</a></li>
+              </ul>
+            </div>
+            <div>
+              <h4 className={styles.footerColTitle}>Legal</h4>
+              <ul className={styles.footerLinks}>
+                <li><a href="#" className={styles.footerLink}><Shield size={14} /> Privacy Policy</a></li>
+                <li><a href="#" className={styles.footerLink}><FileText size={14} /> Terms of Service</a></li>
+              </ul>
+            </div>
+            <div>
+              <h4 className={styles.footerColTitle}>Social</h4>
+              <ul className={styles.footerLinks}>
+                <li><a href="#" className={styles.footerLink}>Twitter / X</a></li>
+                <li><a href="#" className={styles.footerLink}>LinkedIn</a></li>
+                <li><a href="#" className={styles.footerLink}>Instagram</a></li>
+              </ul>
             </div>
           </div>
-        </section>
-
-        {/* ---------- CTA ---------- */}
-        <section className="landing-section cta-section">
-          <div className="section-inner cta-inner reveal">
-            <div className="cta-content-wrapper">
-              <h2 className="cta-heading">Ready to find your people?</h2>
-              <p className="cta-sub">Join thousands of creators, builders, and dreamers already sharing their spotlight.</p>
-              <button className="cta-btn" onClick={() => navigate('/signup')}>
-                Get Started
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+          <div className={styles.footerBottom}>
+            <span className={styles.footerCopy}>&copy; 2026 Meetify. All rights reserved.</span>
+            <div className={styles.footerSocials}>
+              <a href="#" className={styles.footerSocialLink} aria-label="Twitter">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                 </svg>
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* ---------- Footer ---------- */}
-        <footer className="landing-footer">
-          <div className="footer-inner">
-            <div className="footer-top">
-              <div className="footer-brand">
-                <img className="logo" src={logo} alt="Meetifyy" />
-                <span className="brand">Meetifyy</span>
-              </div>
-
-              <div className="footer-links">
-                <div className="footer-col">
-                  <h4>Product</h4>
-                  <a href="#explore" className="footer-link-item">Communities</a>
-                  <a href="#why" className="footer-link-item">Features</a>
-                  <span className="footer-link-item disabled-link">Messaging <span className="soon-badge">soon</span></span>
-                </div>
-                <div className="footer-col">
-                  <h4>Company</h4>
-                  <span className="footer-link-item disabled-link">About <span className="soon-badge">soon</span></span>
-                  <span className="footer-link-item disabled-link">Blog <span className="soon-badge">soon</span></span>
-                  <span className="footer-link-item disabled-link">Careers <span className="soon-badge">soon</span></span>
-                </div>
-                <div className="footer-col">
-                  <h4>Support</h4>
-                  <span className="footer-link-item disabled-link">Help Center <span className="soon-badge">soon</span></span>
-                  <span className="footer-link-item disabled-link">Privacy <span className="soon-badge">soon</span></span>
-                  <span className="footer-link-item disabled-link">Terms <span className="soon-badge">soon</span></span>
-                </div>
-              </div>
-            </div>
-
-            <div className="footer-bottom">
-              <span className="footer-copy">&copy; 2026 Meetifyy. All rights reserved.</span>
-              <div className="footer-socials">
-                <a href="#" aria-label="Twitter">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" /></svg>
-                </a>
-                <a href="#" aria-label="GitHub">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" /></svg>
-                </a>
-                <a href="#" aria-label="Instagram">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5" /><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" /><line x1="17.5" y1="6.5" x2="17.51" y2="6.5" /></svg>
-                </a>
-              </div>
+              </a>
+              <a href="#" className={styles.footerSocialLink} aria-label="LinkedIn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+                </svg>
+              </a>
+              <a href="#" className={styles.footerSocialLink} aria-label="Instagram">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+                  <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                  <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+                </svg>
+              </a>
             </div>
           </div>
         </footer>
-      </div>
 
-      <Toast
-        message={toastMsg}
-        visible={toastVisible}
-        onHide={() => setToastVisible(false)}
-      />
+      </div>
     </>
   );
 }

@@ -58,7 +58,8 @@ export default function NotificationsRoute() {
         if (notif.communityId) navigate(`/communities/${notif.communityId}`);
         break;
       case 'crew_join':
-        if (notif.activityId) navigate(`/crew/${notif.activityId}`);
+      case 'activity_discussion':
+        if (notif.activityId) navigate(`/crew/${notif.activityId}?discussion=1`);
         break;
       default:
         navigate('/home');

@@ -24,27 +24,28 @@ export default function SignupProgressBar() {
   };
 
   return (
-    <div className={styles.progressContainer}>
-      <button onClick={handleBack} className={styles.backButton}>
-        <span className={styles.iconCircle}>
-          <ArrowLeft size={20} />
-        </span>
-        <span className={styles.backText}>Back</span>
-      </button>
-      
+    <>
+      <div className={styles.progressContainer}>
+        <button onClick={handleBack} className={styles.backButton}>
+          <span className={styles.iconCircle}>
+            <ArrowLeft size={20} />
+          </span>
+          <span className={styles.backText}>Back</span>
+        </button>
+      </div>
       {currentStep > 1 && (
-        <>
+        <div className={styles.progressBarRow}>
           <div className={styles.progressTrack}>
-            <div 
-              className={styles.progressFill} 
+            <div
+              className={styles.progressFill}
               style={{ width: `${progressPercentage}%` }}
             />
           </div>
           <div className={styles.stepIndicator}>
             {currentStep - 1} / {totalSteps - 2}
           </div>
-        </>
+        </div>
       )}
-    </div>
+    </>
   );
 }

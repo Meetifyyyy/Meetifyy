@@ -123,6 +123,10 @@
   .list {
     gap: 0.75rem;
   }
+
+  .sidebarWrapper {
+    display: none;
+  }
 }
 
 @media (max-width: 640px) {

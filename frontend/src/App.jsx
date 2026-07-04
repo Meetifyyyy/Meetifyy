@@ -15,6 +15,7 @@ import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ErrorBoundary, { RouteErrorBoundary } from './components/common/ErrorBoundary';
+import InstallPopup from './components/common/InstallPopup';
 import OnboardingRoute from './pages/onboarding/OnboardingRoute';
 import SettingsRoute from './pages/settings/SettingsRoute';
 import FindYourCrewPage from './components/crew/FindYourCrewPage';
@@ -85,6 +86,7 @@ export default function App() {
         <ErrorBoundary>
           <SmartBackTracker />
           <ScrollRestoration />
+          <InstallPopup />
           <Outlet />
         </ErrorBoundary>
       ),

@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSmartBack } from '../../hooks/useSmartBack';
 import { categoriesList } from '../../data/communities';
 import { useData } from '../../context/DataContext';
 import { useSimulatedFetch } from '../../hooks/useSimulatedFetch';
 import { EmptyState, ErrorState } from '../common/StateViews';
+import { isImageUrl } from '../../utils/avatar';
+import DefaultAvatar from '../common/DefaultAvatar';
 import CommunityCard from './CommunityCard';
 import CommunityCardSkeleton from './CommunityCardSkeleton';
 import CommunityGrid from './CommunityGrid';
@@ -12,12 +14,13 @@ import CreateCommunityModal from './CreateCommunityModal';
 import styles from './CommunitiesBrowse.module.css';
 
 export default function CommunitiesBrowse({ onOpenCommunity }) {
-  const { communities, searchQuery, setSearchQuery } = useData();
+  const { communities, searchQuery, setSearchQuery, currentUser } = useData();
   const location = useLocation();
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const [activeCategory, setActiveCategory] = useState(location.state?.category || 'all');
   const [showCreate, setShowCreate] = useState(false);
+  const [showAllMyComms, setShowAllMyComms] = useState(false);
 
   useEffect(() => {
     if (location.state?.category) {
@@ -60,6 +63,11 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
     );
   });
 
+  const myCommunities = useMemo(() => {
+    if (!currentUser?.communities) return [];
+    return allComms.filter(c => currentUser.communities.includes(c.name));
+  }, [allComms, currentUser]);
+
   const { isLoading, data: remaining, error, retry } = useSimulatedFetch(searched, 800);
 
   return (
@@ -86,31 +94,6 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
           </p>
         </div>
         <div className={styles.headerRight}>
-          <div className={styles.searchRow}>
-            <div className={styles.searchBox}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={styles.searchIcon}>
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input 
-                type="text" 
-                className={styles.searchInput} 
-                placeholder="Search communities..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery && setSearchQuery(e.target.value)} 
-              />
-            </div>
-            <button 
-              className={styles.createIconBtn} 
-              onClick={() => setShowCreate(true)}
-              aria-label="Create Community"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            </button>
-          </div>
           <button 
             className={styles.createTextBtn}
             onClick={() => setShowCreate(true)}
@@ -119,6 +102,80 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
           </button>
         </div>
       </div>
+
+      <div className={styles.searchRow}>
+        <div className={styles.searchBox}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={styles.searchIcon}>
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input 
+            type="text" 
+            className={styles.searchInput} 
+            placeholder="Search communities..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery && setSearchQuery(e.target.value)} 
+          />
+        </div>
+        <button 
+          className={styles.createIconBtn} 
+          onClick={() => setShowCreate(true)}
+          aria-label="Create Community"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+      </div>
+
+      {myCommunities.length > 0 && (
+        <section className={styles.gridSection}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>My Communities</h2>
+            {!showAllMyComms && myCommunities.length > 4 && (
+              <button className={styles.viewAllBtn} onClick={() => setShowAllMyComms(true)}>View all</button>
+            )}
+          </div>
+          {showAllMyComms ? (
+            <CommunityGrid>
+              {myCommunities.map((c) => (
+                <div key={c.id} className={styles.myCommCardExpanded} onClick={() => onOpenCommunity(c.id)}>
+                  <div className={styles.myCommAvatar}>
+                    {isImageUrl(c.avatar) ? (
+                      <img src={c.avatar} alt={c.name} />
+                    ) : (
+                      <DefaultAvatar />
+                    )}
+                  </div>
+                  <div className={styles.myCommInfo}>
+                    <h4 className={styles.myCommName}>{c.name}</h4>
+                    <p className={styles.myCommDesc}>{c.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </CommunityGrid>
+          ) : (
+            <div className={styles.myCommsRow}>
+              {myCommunities.map((c) => (
+                <div key={c.id} className={styles.myCommCard} onClick={() => onOpenCommunity(c.id)}>
+                  <div className={styles.myCommAvatar}>
+                    {isImageUrl(c.avatar) ? (
+                      <img src={c.avatar} alt={c.name} />
+                    ) : (
+                      <DefaultAvatar />
+                    )}
+                  </div>
+                  <div className={styles.myCommInfo}>
+                    <h4 className={styles.myCommName}>{c.name}</h4>
+                    <p className={styles.myCommDesc}>{c.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <nav className={styles.catNav}>
         {categoriesList.map((cat) => (
@@ -133,54 +190,54 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
       </nav>
 
       <div className={styles.content}>
-        {isLoading && (
-          <section className={styles.gridSection}>
-            <div className={styles.sectionHeader}>
-              <h2 className={styles.sectionTitle}>Loading...</h2>
-            </div>
-            <CommunityGrid>
-              <CommunityCardSkeleton />
-              <CommunityCardSkeleton />
-              <CommunityCardSkeleton />
-              <CommunityCardSkeleton />
-              <CommunityCardSkeleton />
-              <CommunityCardSkeleton />
-            </CommunityGrid>
-          </section>
-        )}
+          {isLoading && (
+            <section className={styles.gridSection}>
+              <div className={styles.sectionHeader}>
+                <h2 className={styles.sectionTitle}>Loading...</h2>
+              </div>
+              <CommunityGrid>
+                <CommunityCardSkeleton />
+                <CommunityCardSkeleton />
+                <CommunityCardSkeleton />
+                <CommunityCardSkeleton />
+                <CommunityCardSkeleton />
+                <CommunityCardSkeleton />
+              </CommunityGrid>
+            </section>
+          )}
 
-        {!isLoading && error && (
-          <ErrorState onRetry={retry} />
-        )}
+          {!isLoading && error && (
+            <ErrorState onRetry={retry} />
+          )}
 
-        {!isLoading && !error && remaining && remaining.length > 0 && (
-          <section className={styles.gridSection}>
-            <div className={styles.sectionHeader}>
-              <h2 className={styles.sectionTitle}>
-                {activeCategory === 'all' ? 'All Communities' : `${categoriesList.find(c => c.id === activeCategory)?.label || ''} Communities`}
-              </h2>
-              <span className={styles.sectionCount}>{remaining.length} communities</span>
-            </div>
-            <CommunityGrid>
-              {remaining.map((c) => (
-                <CommunityCard key={c.id} comm={c} onClick={() => onOpenCommunity(c.id)} />
-              ))}
-            </CommunityGrid>
-          </section>
-        )}
+          {!isLoading && !error && remaining && remaining.length > 0 && (
+            <section className={styles.gridSection}>
+              <div className={styles.sectionHeader}>
+                <h2 className={styles.sectionTitle}>
+                  {activeCategory === 'all' ? 'All Communities' : `${categoriesList.find(c => c.id === activeCategory)?.label || ''} Communities`}
+                </h2>
+                <span className={styles.sectionCount}>{remaining.length} communities</span>
+              </div>
+              <CommunityGrid>
+                {remaining.map((c) => (
+                  <CommunityCard key={c.id} comm={c} onClick={() => onOpenCommunity(c.id)} />
+                ))}
+              </CommunityGrid>
+            </section>
+          )}
 
-        {!isLoading && !error && remaining && remaining.length === 0 && (
-          <EmptyState 
-            title="No communities found"
-            message="We couldn't find any communities matching your search or filters."
-            icon={
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem', opacity: 0.5 }}>
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-            }
-          />
-        )}
+          {!isLoading && !error && remaining && remaining.length === 0 && (
+            <EmptyState 
+              title="No communities found"
+              message="We couldn't find any communities matching your search or filters."
+              icon={
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem', opacity: 0.5 }}>
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              }
+            />
+          )}
       </div>
       {showCreate && <CreateCommunityModal onClose={() => setShowCreate(false)} onCreated={id => onOpenCommunity(id)} />}
     </div>

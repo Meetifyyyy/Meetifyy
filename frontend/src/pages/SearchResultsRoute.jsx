@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Users, Activity, UsersRound, Calendar, Filter, UserPlus, UserCheck, MapPin, Clock, UsersIcon } from 'lucide-react';
+import { Search, Users, Activity, UsersRound, UserPlus, UserCheck, MapPin, Clock, UsersIcon } from 'lucide-react';
 import { useGlobalSearch } from '../hooks/useGlobalSearch';
 import { useData } from '../context/DataContext';
 import { useSmartBack } from '../hooks/useSmartBack';
@@ -98,12 +98,20 @@ function CommunityRow({ comm, onClick }) {
 }
 
 // Person row in sidebar
-function PersonRow({ user, idx }) {
+function PersonRow({ user }) {
   const { toggleFollow, currentUser, users } = useData();
   const navigate = useNavigate();
   // Always read from latest users state so button updates immediately
   const latestMe = users?.[currentUser?.username];
   const isFollowing = latestMe?.followingList?.includes(user.username);
+
+  // Compute real mutual connections: people that both the current user and this user follow
+  const mutualConnections = useMemo(() => {
+    const myFollowing = latestMe?.followingList || [];
+    const theirFollowing = users?.[user.username]?.followingList || [];
+    const mutualUsernames = myFollowing.filter(u => theirFollowing.includes(u));
+    return mutualUsernames.map(uname => users?.[uname]).filter(Boolean);
+  }, [latestMe?.followingList, user.username, users]);
 
   return (
     <div className={styles.sidebarItem} onClick={() => navigate(`/profile/${user.username}`)}>
@@ -122,13 +130,23 @@ function PersonRow({ user, idx }) {
         <span className={styles.sidebarItemDesc}>
           {user.bio ? user.bio.substring(0, 35) + '...' : 'Student • Explorer'}
         </span>
-        <div className={styles.mutualFriends}>
-          <div className={styles.mutualAvatars}>
-            <div className={styles.mutualAvatar}><DefaultAvatar /></div>
-            <div className={styles.mutualAvatar}><DefaultAvatar /></div>
+        {mutualConnections.length > 0 && (
+          <div className={styles.mutualFriends}>
+            <div className={styles.mutualAvatars}>
+              {mutualConnections.slice(0, 3).map(m => (
+                <div key={m.username} className={styles.mutualAvatar}>
+                  {isImageUrl(m.avatar)
+                    ? <img src={m.avatar} alt={m.displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : m.avatar && m.avatar.length === 1
+                      ? <span style={{ fontSize: '8px', fontWeight: 700 }}>{m.avatar}</span>
+                      : <DefaultAvatar />
+                  }
+                </div>
+              ))}
+            </div>
+            <span>{mutualConnections.length} mutual {mutualConnections.length === 1 ? 'connection' : 'connections'}</span>
           </div>
-          <span>{(idx + 1) * 4 + 2} mutual friends</span>
-        </div>
+        )}
       </div>
       <button
         className={`${styles.followBtn} ${isFollowing ? styles.followBtnActive : ''}`}
@@ -211,7 +229,6 @@ export default function SearchResultsRoute() {
     { id: 'users', label: 'People', icon: Users },
     { id: 'activities', label: 'Activities', icon: Activity },
     { id: 'community', label: 'Communities', icon: UsersRound },
-    { id: 'events', label: 'Events', icon: Calendar }
   ];
 
   // What to show in left column when on explore page (no query)
@@ -242,10 +259,6 @@ export default function SearchResultsRoute() {
           <div className={styles.searchWrapper}>
             <GlobalSearch variant="mobileSearchPage" />
           </div>
-          <button className={styles.filterBtn}>
-            <Filter size={18} />
-            <span>Filters</span>
-          </button>
         </div>
 
         <div className={styles.sectionTabs}>
@@ -323,7 +336,7 @@ export default function SearchResultsRoute() {
           )}
 
           {/* All / default two-column view */}
-          {(activeSection === 'all' || activeSection === 'events') && (
+          {(activeSection === 'all') && (
             <div className={styles.exploreColumns}>
               {/* Left Column */}
               <div className={styles.exploreMain}>
@@ -479,11 +492,6 @@ export default function SearchResultsRoute() {
                   {results.communities.length > 0
                     ? <div className={styles.list}>{results.communities.map(r => <CommunityResult key={`c-${r.item.id}`} result={r} onClick={handleNavigate} />)}</div>
                     : <div className={styles.sectionEmpty}>No communities for "{q}"</div>}
-                </div>
-              )}
-              {activeSection === 'events' && (
-                <div className={styles.resultsContainer}>
-                  <div className={styles.sectionEmpty}>No events for "{q}"</div>
                 </div>
               )}
             </div>

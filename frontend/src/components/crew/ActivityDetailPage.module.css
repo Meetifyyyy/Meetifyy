@@ -459,6 +459,14 @@
   margin: 0;
 }
 
+/* ---------- Comment Hint ---------- */
+.commentHint {
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+  margin: 0 0 0.75rem;
+  line-height: 1.4;
+}
+
 /* ---------- Comment Form ---------- */
 .commentForm {
   display: flex;

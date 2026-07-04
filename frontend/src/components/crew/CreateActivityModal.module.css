@@ -389,4 +389,61 @@
     border-radius: 0;
     max-width: 100%;
   }
+
+  .header {
+    padding: 0.75rem 1rem;
+    min-height: 52px;
+  }
+
+  .header h2 {
+    font-size: 0.95rem;
+  }
+
+  .body {
+    padding: 1rem;
+  }
+
+  .step h3 {
+    font-size: 0.95rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .categories {
+    gap: 0.5rem;
+  }
+
+  .catBtn {
+    padding: 0.65rem 0.9rem;
+    font-size: 0.82rem;
+  }
+
+  .formGroup {
+    margin-bottom: 0.9rem;
+  }
+
+  .formGroup label {
+    font-size: 0.78rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .formGroup input[type="text"],
+  .formGroup input[type="number"],
+  .formGroup textarea {
+    padding: 0.7rem 0.85rem;
+    font-size: 0.88rem;
+  }
+
+  .footer {
+    padding: 0.75rem 1rem;
+  }
+
+  .nextBtn, .publishBtn {
+    padding: 0.7rem 1.25rem;
+    font-size: 0.85rem;
+  }
+
+  .backBtn {
+    padding: 0.7rem 0.75rem;
+    font-size: 0.85rem;
+  }
 }

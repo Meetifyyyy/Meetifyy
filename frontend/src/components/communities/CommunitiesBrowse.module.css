@@ -39,7 +39,7 @@
 }
 
 .searchRow {
-  display: none;
+  display: flex;
   align-items: center;
   gap: 0.5rem;
   width: 100%;
@@ -53,6 +53,7 @@
   border-radius: 100px;
   padding: 0 1rem;
   flex: 1;
+  max-width: 400px;
   height: 40px;
   transition: all 0.2s;
 }
@@ -109,9 +110,11 @@
   border: none;
   color: #FFFFFF;
   cursor: pointer;
-  padding: 0.4rem;
-  border-radius: var(--radius-sm);
-  transition: background 0.2s;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  transition: background 0.2s, transform 0.15s;
+  flex-shrink: 0;
 }
 
 .createIconBtn:hover {
@@ -133,6 +136,120 @@
 
 .createTextBtn:hover {
   background: var(--color-primary-hover);
+}
+
+.viewAllBtn {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+
+.viewAllBtn:hover {
+  opacity: 0.8;
+}
+
+.myCommsRow {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-bottom: 0.25rem;
+}
+
+.myCommsRow::-webkit-scrollbar {
+  display: none;
+}
+
+.myCommCard {
+  flex: 0 0 320px;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  min-width: 0;
+}
+
+.myCommCard:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.1);
+}
+
+.myCommsStack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.myCommCardExpanded {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  width: 100%;
+}
+
+.myCommCardExpanded:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.1);
+}
+
+.myCommAvatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--color-bg-elevated);
+}
+
+.myCommAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.myCommInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.myCommName {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  line-height: 1.3;
+}
+
+.myCommDesc {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .title {

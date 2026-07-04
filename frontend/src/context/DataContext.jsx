@@ -16,7 +16,13 @@ export function DataProvider({ children }) {
     const saved = localStorage.getItem('meetifyy_users');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        Object.keys(parsed).forEach(username => {
+          const u = parsed[username];
+          if (!u.followingList) u.followingList = [];
+          if (!u.followersList) u.followersList = [];
+        });
+        return parsed;
       } catch (e) {
         console.error(e);
       }
@@ -580,11 +586,27 @@ export function DataProvider({ children }) {
         };
       });
 
+      const currentMemberInfo = {
+        id: currentUser.id,
+        name: currentUser.displayName || currentUser.username || 'Member',
+        avatar: currentUser.avatar || currentUser.displayName?.charAt(0) || currentUser.username?.charAt(0) || 'U',
+        role: 'Member',
+        admin: false
+      };
+      const newMemberList = isJoined
+        ? (commToUpdate.memberList || []).filter(m => m.id !== currentUser.id)
+        : [...(commToUpdate.memberList || []), currentMemberInfo];
+      const newMemberAvatars = isJoined
+        ? (commToUpdate.memberAvatars || []).filter(a => a !== currentMemberInfo.avatar)
+        : [...(commToUpdate.memberAvatars || []), currentMemberInfo.avatar];
+
       return {
         ...prevComm,
         [communityId]: {
           ...commToUpdate,
-          members: isJoined ? commToUpdate.members - 1 : commToUpdate.members + 1
+          members: isJoined ? commToUpdate.members - 1 : commToUpdate.members + 1,
+          memberList: newMemberList,
+          memberAvatars: newMemberAvatars
         }
       };
     });

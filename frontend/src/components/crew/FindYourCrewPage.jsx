@@ -72,6 +72,10 @@ export default function FindYourCrewPage() {
             onTabChange={setSelectedTab}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
+            onCreateActivity={() => {
+              setInitialActivityData(null);
+              setIsCreateModalOpen(true);
+            }}
           />
 
           <div className={styles.layout}>
