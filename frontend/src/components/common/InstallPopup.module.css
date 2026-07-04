@@ -100,3 +100,34 @@
   transition: color var(--transition-fast);
 }
 .laterBtn:hover { color: var(--color-text-main); }
+
+.progressWrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.progressBar {
+  flex: 1;
+  height: 8px;
+  background: var(--color-bg-soft);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease;
+}
+
+.progressText {
+  font-family: var(--font-family-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  min-width: 2.5rem;
+  text-align: right;
+}
