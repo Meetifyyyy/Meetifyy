@@ -34,16 +34,18 @@ self.addEventListener('fetch', (event) => {
   // Only handle same-origin requests
   if (url.origin !== self.location.origin) return;
 
-  // For navigation requests (page loads), serve index.html (SPA fallback)
+  // For navigation requests (page loads), serve index.html (SPA fallback) using Network First
   if (request.mode === 'navigate') {
     event.respondWith(
-      caches.match('/index.html').then((cached) => {
-        return cached || fetch('/index.html').then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE).then((cache) => cache.put('/index.html', clone));
+      fetch('/index.html')
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE).then((cache) => cache.put('/index.html', clone));
+          }
           return response;
-        });
-      })
+        })
+        .catch(() => caches.match('/index.html'))
     );
     return;
   }

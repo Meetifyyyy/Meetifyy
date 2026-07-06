@@ -28,10 +28,18 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>,
 );
 
-/* Register service worker for PWA */
+/* Register service worker for PWA in production, unregister in development */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js');
+    if (import.meta.env.PROD) {
+      navigator.serviceWorker.register('/sw.js');
+    } else {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const registration of registrations) {
+          registration.unregister();
+        }
+      });
+    }
   });
 }
 
