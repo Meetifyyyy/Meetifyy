@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { useFollow } from '../../context/FollowContext';
+import CalendarIcon from '../common/CalendarIcon';
 import { useNotifications } from '../../context/NotificationContext';
 import { showToast } from '../../utils/toast';
 import Avatar from '../common/Avatar';
@@ -158,9 +159,77 @@ export function OnlineFriends() {
   );
 }
 
+function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
+  if (act.startsInLabel && !act.date) return act.startsInLabel;
+  try {
+    if (act.date) {
+      const targetDate = new Date(act.date);
+      if (act.time) {
+        const match = act.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (match) {
+          let h = parseInt(match[1], 10);
+          const m = parseInt(match[2], 10);
+          const ampm = match[3].toUpperCase();
+          if (ampm === 'PM' && h < 12) h += 12;
+          if (ampm === 'AM' && h === 12) h = 0;
+          targetDate.setHours(h, m, 0, 0);
+        }
+      }
+      const diffMs = targetDate.getTime() - nowTime;
+      if (diffMs > 0) {
+        if (diffMs >= 24 * 60 * 60 * 1000) {
+          const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+          const hours = Math.floor((diffMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+          return `Starts in ${days}d ${hours}hr`;
+        } else if (diffMs >= 60 * 60 * 1000) {
+          const hours = Math.floor(diffMs / (60 * 60 * 1000));
+          const mins = Math.floor((diffMs % (60 * 60 * 1000)) / (60 * 1000));
+          return `Starts in ${hours}hr ${mins}m`;
+        } else {
+          const mins = Math.floor(diffMs / (60 * 1000));
+          const secs = Math.floor((diffMs % (60 * 1000)) / 1000);
+          const secsStr = String(secs).padStart(2, '0');
+          return `Starts in ${mins}m ${secsStr}s`;
+        }
+      }
+    }
+  } catch (e) {
+    // fallback
+  }
+  // mock fallback using nowTime to make it tick down slightly
+  const defaultDiff = index === 0 ? 59 * 60 * 1000 + 4 * 1000 : 4 * 60 * 60 * 1000 + 18 * 60 * 1000;
+  const targetMock = nowTime + defaultDiff - (nowTime % 3600000);
+  const diffMs = targetMock - nowTime;
+  if (diffMs > 0) {
+    if (diffMs >= 24 * 60 * 60 * 1000) {
+      const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+      const hours = Math.floor((diffMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+      return `Starts in ${days}d ${hours}hr`;
+    } else if (diffMs >= 60 * 60 * 1000) {
+      const hours = Math.floor(diffMs / (60 * 60 * 1000));
+      const mins = Math.floor((diffMs % (60 * 60 * 1000)) / (60 * 1000));
+      return `Starts in ${hours}hr ${mins}m`;
+    } else {
+      const mins = Math.floor(diffMs / (60 * 1000));
+      const secs = Math.floor((diffMs % (60 * 1000)) / 1000);
+      const secsStr = String(secs).padStart(2, '0');
+      return `Starts in ${mins}m ${secsStr}s`;
+    }
+  }
+  return `Starts soon`;
+}
+
 export function UpcomingEvents() {
   const { crewActivities, currentUser } = useData();
   const navigate = useNavigate();
+  const [nowTime, setNowTime] = React.useState(Date.now());
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const myActivities = useMemo(() => {
     if (!currentUser) return [];
@@ -176,34 +245,12 @@ export function UpcomingEvents() {
         {myActivities.length === 0 ? (
           <p className={styles.emptyText}>No upcoming activities yet. Join one to get started!</p>
         ) : (
-          myActivities.slice(0, 2).map(activity => (
-            <div key={activity.id} className={styles.activityItem} onClick={() => navigate(`/crew/${activity.id}`, { state: { activity } })}>
-              <div className={styles.activityIcon}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                  <line x1="16" y1="2" x2="16" y2="6"/>
-                  <line x1="8" y1="2" x2="8" y2="6"/>
-                  <line x1="3" y1="10" x2="21" y2="10"/>
-                </svg>
-              </div>
-              <div className={styles.activityDetails}>
-                <h4>{activity.title}</h4>
-                <div className={styles.activityMeta}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                    <line x1="16" y1="2" x2="16" y2="6"/>
-                    <line x1="8" y1="2" x2="8" y2="6"/>
-                    <line x1="3" y1="10" x2="21" y2="10"/>
-                  </svg>
-                  <span>{activity.dateLabel} • {activity.time}</span>
-                </div>
-                <div className={styles.activityMeta}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-                    <circle cx="12" cy="10" r="3"/>
-                  </svg>
-                  <span>{Math.min(activity.slotsFilled, activity.slotsNeeded)} / {activity.slotsNeeded} joined</span>
-                </div>
+          myActivities.slice(0, 2).map((activity, i) => (
+            <div key={activity.id} className={styles.eventItem} onClick={() => navigate(`/crew/${activity.id}`, { state: { activity } })}>
+              <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
+              <div className={styles.eventDetail}>
+                <div className={styles.eventName}>{activity.title}</div>
+                <div className={styles.eventSub}>{getStartsInLabel(activity, i, nowTime)}</div>
               </div>
             </div>
           ))

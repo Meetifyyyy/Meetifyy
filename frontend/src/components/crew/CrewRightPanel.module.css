@@ -102,43 +102,44 @@
   text-align: center;
 }
 
-.calendarBadge {
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+.eventItem {
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  text-align: center;
-  min-width: 44px;
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  flex-shrink: 0;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.18s ease;
+  margin: 0 -0.5rem;
 }
 
-.calMonth {
-  background: #5d0f11;
-  color: #fff;
-  font-size: 0.65rem;
-  font-weight: 800;
-  padding: 4px 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.eventItem:hover {
+  background: var(--color-bg-soft);
 }
 
-.calDay {
-  color: #000;
-  font-size: 1rem;
-  font-weight: 800;
-  padding: 4px 6px;
-  font-family: var(--font-family-sans);
-  background: #fff;
-}
-
-.activityDetails {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
+.eventDetail {
   flex: 1;
+  min-width: 0;
+}
+
+.eventName {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  margin-bottom: 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eventSub {
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .activityDetails h4 {
@@ -169,4 +170,196 @@
 
 .viewAllBtn:hover {
   opacity: 0.8;
+}
+
+/* Custom Create Activity Card Redesign */
+.createCard {
+  background: #003BFF;
+  /* Vibrant electric blue */
+  border-radius: var(--radius-lg);
+  padding: 1.5rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  color: white;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  box-shadow: 0 8px 30px rgba(0, 59, 255, 0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  height: 260px;
+  /* Keep the box size same as how it is now */
+  justify-content: space-between;
+  cursor: default;
+  border: none;
+}
+
+.blackSlash {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 55%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.characterImg {
+  position: absolute;
+  bottom: 0;
+  right: 15px;
+  height: 240px;
+  pointer-events: none;
+  z-index: 2;
+  object-fit: contain;
+}
+
+.createCardContent {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.8rem;
+}
+
+.createCardTitle {
+  font-family: var(--font-family-display), "Inter", "Arial Black", sans-serif;
+  font-size: 2.1rem;
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  color: white;
+  text-transform: uppercase;
+  margin: 0;
+  text-align: left;
+}
+
+.createCardSubtitle {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.35;
+  margin: 0.15rem 0 0 0;
+  text-align: left;
+  max-width: 60%;
+  font-family: var(--font-family-sans), sans-serif;
+}
+
+.yellowDot {
+  color: #FFD700;
+}
+
+.horizontalSteps {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0.5rem 0;
+  width: 100%;
+  position: relative;
+  z-index: 3;
+}
+
+.horizontalStepItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.horizontalDivider {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.2);
+  align-self: center;
+}
+
+.stepIconWrapper {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stepLabel {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  text-align: center;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.createCardBottom {
+  position: relative;
+  z-index: 4;
+  width: 100%;
+  margin-top: auto;
+}
+
+/* The pill button */
+.createCardBtn {
+  background: white;
+  border: none;
+  border-radius: 9999px;
+  height: 48px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.createCardBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+}
+
+.createCardBtnIcon {
+  width: 40px;
+  height: 40px;
+  background: #003BFF;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.btnAsterisk {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  margin-top: 6px;
+}
+
+.createCardBtnText {
+  color: #003BFF;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  font-family: var(--font-family-sans), sans-serif;
+}
+
+.createCardBtnArrow {
+  color: #003BFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  transition: transform 0.2s ease;
+}
+
+.createCardBtn:hover .createCardBtnArrow {
+  transform: translateX(4px);
 }

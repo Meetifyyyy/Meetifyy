@@ -128,7 +128,7 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
     }
   };
 
-  const showDropdown = isFocused && !query.trim() && variant !== 'bottomNav';
+  const showDropdown = isFocused && !query.trim() && variant !== 'bottomNav' && variant !== 'header';
 
   return (
     <div ref={containerRef} className={`${styles.container} ${variant === 'bottomNav' ? styles.bottomNavContainer : ''} ${isActive ? styles.active : ''}`}>

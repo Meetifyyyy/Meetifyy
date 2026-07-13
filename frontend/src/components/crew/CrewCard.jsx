@@ -5,6 +5,7 @@ import DefaultAvatar from '../common/DefaultAvatar';
 import { useData } from '../../context/DataContext';
 import ShareActivityModal from './ShareActivityModal';
 import ActivityJoinedModal from './ActivityJoinedModal';
+import CalendarIcon from '../common/CalendarIcon';
 import styles from './CrewCard.module.css';
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -102,14 +103,6 @@ export default function CrewCard({ activity, onClick }) {
   const filled = Math.min(slotsFilled, slotsNeeded);
 
 
-  let monthStr = '';
-  let dayStr = '';
-  if (activity.date) {
-    const d = new Date(activity.date);
-    monthStr = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-    dayStr = d.getDate();
-  }
-
   return (
     <div 
       className={styles.card} 
@@ -127,10 +120,9 @@ export default function CrewCard({ activity, onClick }) {
           <div className={styles.coverPlaceholder} />
         )}
         
-        {(monthStr || dayStr) && (
+        {(activity.date || activity.dateLabel) && (
           <div className={styles.calendarBadge}>
-            <div className={styles.calMonth}>{monthStr}</div>
-            <div className={styles.calDay}>{dayStr}</div>
+            <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
           </div>
         )}
       </div>

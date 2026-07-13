@@ -191,8 +191,9 @@ export default function CampusPage() {
 
   // Handle Creating Activity or Group
   const handleCreateGroup = async (name, desc, avatar) => {
-    await createCampusGroup(name, desc, avatar);
+    const newId = await createCampusGroup(name, desc, avatar);
     showToast('Group created successfully! 🚀');
+    navigate(`/messages/${newId}`);
   };
 
   // Handle Creating Activity or Group

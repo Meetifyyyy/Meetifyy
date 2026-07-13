@@ -4,8 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import Avatar from '../common/Avatar';
 import ConfirmModal from '../common/ConfirmModal';
+import CalendarIcon from '../common/CalendarIcon';
 import styles from './ChatDetailsPage.module.css';
-import { Pin, Trash2, LogOut, Pencil, ChevronRight, User, Search, Ban, Phone, UserPlus } from 'lucide-react';
+import { Pin, Trash2, LogOut, Pencil, ChevronRight, User, Search, Ban, UserPlus } from 'lucide-react';
 import ImageSearchModal from '../common/ImageSearchModal';
 import InviteModal from './InviteModal';
 import { showToast } from '../../utils/toast';
@@ -13,7 +14,7 @@ import { showToast } from '../../utils/toast';
 export default function ChatDetailsPage({ conversation, onBack, onBlockUser, onClearChat, onSearch }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const { users, crewActivities, endCrewActivity, leaveGroup, updateGroupInfo, updateGroupEditPermission, removeGroupMember, changeGroupOwner, promoteToAdmin, demoteFromAdmin, endGroup } = useData();
+  const { users, crewActivities, endCrewActivity, leaveGroup, updateGroupInfo, updateGroupEditPermission, updateGroupSettings, removeGroupMember, changeGroupOwner, promoteToAdmin, demoteFromAdmin, endGroup } = useData();
 
   // General States
   const [showConfirm, setShowConfirm] = useState(false);
@@ -57,6 +58,12 @@ export default function ChatDetailsPage({ conversation, onBack, onBlockUser, onC
     setEditName(conversation.name || '');
     setEditDesc(conversation.description || '');
     setEditAvatar(conversation.avatar || '');
+    setWhoCanJoin(conversation.whoCanJoin || 'Anyone');
+    setVisibility(
+      conversation.visibility ||
+      (conversation.id && String(conversation.id).startsWith('c_') ? 'Visible only to Gla University' : 'Hidden group')
+    );
+    setAllowSharing(conversation.allowSharing !== false);
     setShowEditGroupPage(false);
     setShowSettingsPage(false);
     setShowGalleryPage(false);
@@ -72,13 +79,13 @@ export default function ChatDetailsPage({ conversation, onBack, onBlockUser, onC
   const [joinLeaveUpdates, setJoinLeaveUpdates] = useState('Everyone');
   const [eventUpdates, setEventUpdates] = useState('Everyone');
   const [albumUpdates, setAlbumUpdates] = useState('Everyone');
-  const [whoCanJoin, setWhoCanJoin] = useState('Anyone');
+  const [whoCanJoin, setWhoCanJoin] = useState(conversation.whoCanJoin || 'Anyone');
   const [visibility, setVisibility] = useState(() => {
     if (conversation.visibility) return conversation.visibility;
     if (conversation.id && String(conversation.id).startsWith('c_')) return 'Visible only to Gla University';
     return 'Hidden group';
   });
-  const [allowSharing, setAllowSharing] = useState(true);
+  const [allowSharing, setAllowSharing] = useState(conversation.allowSharing !== false);
   const [editGroupPermission, setEditGroupPermission] = useState(conversation.editGroupPermission || 'Everyone');
   const [showImageSearch, setShowImageSearch] = useState(false);
 
@@ -474,16 +481,25 @@ export default function ChatDetailsPage({ conversation, onBack, onBlockUser, onC
           <div className={styles.settingsForm}>
             {/* Avatar Section inside Settings */}
             <div className={styles.avatarSection} style={{ marginBottom: '2rem' }}>
-              <Avatar
-                src={editAvatar}
-                name={editName}
-                size="120px"
-                isGroup={isGroup || isEventGroup}
-                onClick={handleAvatarClick}
-                disableHover={true}
-                className={isAdmin ? styles.avatarWrapperClickable : ''}
-              />
-              {isAdmin && (
+              {isEventGroup ? (
+                <Avatar
+                  src={conversation.avatar}
+                  name={conversation.name}
+                  size="120px"
+                  isGroup={true}
+                />
+              ) : (
+                <Avatar
+                  src={editAvatar}
+                  name={editName}
+                  size="120px"
+                  isGroup={isGroup}
+                  onClick={handleAvatarClick}
+                  disableHover={true}
+                  className={isAdmin ? styles.avatarWrapperClickable : ''}
+                />
+              )}
+              {isAdmin && !isEventGroup && (
                 <button 
                   type="button"
                   className={styles.changePhotoBtn}
@@ -643,7 +659,11 @@ export default function ChatDetailsPage({ conversation, onBack, onBlockUser, onC
               type="button" 
               className={styles.settingRow}
               onClick={() => {
-                if (isAdmin) setWhoCanJoin(prev => prev === 'Anyone' ? 'Request required' : 'Anyone');
+                if (isAdmin) {
+                  const newVal = whoCanJoin === 'Anyone' ? 'Request required' : 'Anyone';
+                  setWhoCanJoin(newVal);
+                  updateGroupSettings(conversation.id, { whoCanJoin: newVal });
+                }
               }}
               style={{ cursor: isAdmin ? 'pointer' : 'default', opacity: isAdmin ? 1 : 0.7 }}
             >
@@ -668,7 +688,11 @@ export default function ChatDetailsPage({ conversation, onBack, onBlockUser, onC
               type="button" 
               className={styles.settingRow}
               onClick={() => {
-                if (isAdmin) setVisibility(prev => prev.startsWith('Visible') ? 'Hidden group' : 'Visible only to Gla University');
+                if (isAdmin) {
+                  const newVal = visibility.startsWith('Visible') ? 'Hidden group' : 'Visible only to Gla University';
+                  setVisibility(newVal);
+                  updateGroupSettings(conversation.id, { visibility: newVal });
+                }
               }}
               style={{ cursor: isAdmin ? 'pointer' : 'default', opacity: isAdmin ? 1 : 0.7 }}
             >
@@ -699,7 +723,10 @@ export default function ChatDetailsPage({ conversation, onBack, onBlockUser, onC
                     type="checkbox"
                     checked={allowSharing}
                     onChange={(e) => {
-                      if (isAdmin) setAllowSharing(e.target.checked);
+                      if (isAdmin) {
+                        setAllowSharing(e.target.checked);
+                        updateGroupSettings(conversation.id, { allowSharing: e.target.checked });
+                      }
                     }}
                     disabled={!isAdmin}
                   />
@@ -867,19 +894,28 @@ export default function ChatDetailsPage({ conversation, onBack, onBlockUser, onC
       <div className={styles.scrollBody} key="details-scroll">
         {/* Large Avatar Block */}
         <div className={styles.avatarSection}>
-          <Avatar
-            src={conversation.avatar}
-            name={conversation.name}
-            size="120px"
-            isGroup={isGroup || isEventGroup}
-            onClick={!isClosed && isMember ? handleAvatarClick : undefined}
-            disableHover={isClosed || !isMember}
-            className={`${isGroup && isAdmin && !isClosed && isMember ? styles.avatarWrapperClickable : ''}`}
-          >
-            {isGroup && isAdmin && !isClosed && isMember && (
-              <div className={styles.avatarOverlay}>Change Photo</div>
-            )}
-          </Avatar>
+          {isEventGroup ? (
+            <Avatar
+              src={conversation.avatar}
+              name={conversation.name}
+              size="120px"
+              isGroup={true}
+            />
+          ) : (
+            <Avatar
+              src={conversation.avatar}
+              name={conversation.name}
+              size="120px"
+              isGroup={isGroup}
+              onClick={!isClosed && isMember ? handleAvatarClick : undefined}
+              disableHover={isClosed || !isMember}
+              className={`${isGroup && isAdmin && !isClosed && isMember ? styles.avatarWrapperClickable : ''}`}
+            >
+              {isGroup && isAdmin && !isClosed && isMember && (
+                <div className={styles.avatarOverlay}>Change Photo</div>
+              )}
+            </Avatar>
+          )}
           
           <h1 className={styles.primaryName}>
             {isOneOnOne && targetUser ? (targetUser.displayName || targetUser.name) : conversation.name}
@@ -940,17 +976,6 @@ export default function ChatDetailsPage({ conversation, onBack, onBlockUser, onC
 
           {isGroup && !isClosed && (
             <div className={styles.actionButtonsRow}>
-              <div className={styles.actionIconContainer}>
-                <button
-                  type="button"
-                  className={styles.actionIconButton}
-                  onClick={() => showToast('Audio call coming soon')}
-                  title="Audio Call"
-                >
-                  <Phone size={24} />
-                </button>
-                <span className={styles.actionIconLabel}>Audio</span>
-              </div>
 
               <div className={styles.actionIconContainer}>
                 <button
@@ -982,11 +1007,8 @@ export default function ChatDetailsPage({ conversation, onBack, onBlockUser, onC
 
           {isEventGroup && activity && (
             <div className={styles.eventInfoRow}>
-              {(monthStr || dayStr) && (
-                <div className={styles.calendarBadge}>
-                  <div className={styles.calMonth}>{monthStr}</div>
-                  <div className={styles.calDay}>{dayStr}</div>
-                </div>
+              {(activity.date || activity.dateLabel) && (
+                <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
               )}
               <div className={styles.eventDateTime}>{formatEventDateTime()}</div>
             </div>

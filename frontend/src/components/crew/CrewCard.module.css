@@ -41,33 +41,9 @@
   position: absolute;
   bottom: -3px;
   right: -3px;
-  background: #fff;
-  border-radius: 7px;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  text-align: center;
-  min-width: 28px;
-  border: 1px solid rgba(0, 0, 0, 0.05);
-}
-
-.calMonth {
-  background: #5d0f11;
-  color: #fff;
-  font-size: 0.48rem;
-  font-weight: 800;
-  padding: 2px 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.calDay {
-  color: #000;
-  font-size: 0.72rem;
-  font-weight: 800;
-  padding: 2px 4px;
-  font-family: var(--font-family-sans);
+  z-index: 5;
+  transform: scale(0.72);
+  transform-origin: bottom right;
 }
 
 .clickable {

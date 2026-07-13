@@ -228,7 +228,7 @@ export default function PostDetailRoute() {
 
   return (
     <>
-      <main className="centre">
+      <main className="centre centre--post">
         <PostView post={post} onBack={handleBack} />
       </main>
       {renderRightPanel()}

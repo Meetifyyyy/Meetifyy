@@ -320,26 +320,39 @@
 }
 
 .activityRowIcon {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  overflow: hidden;
+  background: var(--color-bg-soft);
+  border: 1px solid var(--color-border-light);
+}
+
+.activityFallbackIcon {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--color-primary-rgb), 0.1);
+  border-radius: inherit;
 }
 
 .activityRowInfo {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   flex: 1;
   min-width: 0;
 }
 
 .activityRowTitle {
   font-family: var(--font-family-display);
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   font-weight: 700;
   color: var(--color-text-main);
   white-space: nowrap;
@@ -350,17 +363,96 @@
 .activityRowMeta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .activityRowMetaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-family-sans);
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.activityRowMetaItemLocation {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-family-sans);
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  max-width: 165px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locationText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.goingContainer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.goingAvatars {
+  display: inline-flex;
+  align-items: center;
+}
+
+.goingAvatarCircle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-bg-white);
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.goingAvatarCircle + .goingAvatarCircle {
+  margin-left: -7px;
+}
+
+.goingAvatarCircle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.goingAvatarFallback {
   display: flex;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.goingText {
   font-family: var(--font-family-sans);
-  font-size: 0.73rem;
+  font-size: 0.74rem;
+  font-weight: 600;
   color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
 /* ===== Community Row ===== */
@@ -385,7 +477,7 @@
 .communityRowAvatar {
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: 50%;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -522,6 +614,26 @@
 
 .sidebarItem:hover {
   background: rgba(var(--color-primary-rgb), 0.05);
+}
+
+.personRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border-light);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  width: 100%;
+  text-align: left;
+}
+
+.personRow:last-child {
+  border-bottom: none;
+}
+
+.personRow:hover {
+  background: var(--color-bg-soft);
 }
 
 .sidebarAvatar {  composes: ui-avatar from global;
@@ -674,25 +786,28 @@
 
 /* ===== Search Results ===== */
 .searchResults {
+  width: 100%;
   max-width: 760px;
   margin: 0 auto;
   padding: 0.75rem 1rem 0;
 }
 
 .resultsContainer {
+  width: 100%;
   background: var(--bg-glass);
   backdrop-filter: var(--blur-glass, blur(16px));
   -webkit-backdrop-filter: var(--blur-glass, blur(16px));
   border: var(--border-glass);
   border-radius: var(--radius-lg, 16px);
-  padding: 6px;
+  padding: 0;
   box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  width: 100%;
 }
 
 .empty {
@@ -872,7 +987,7 @@
   .communityRowAvatar {
     width: 36px;
     height: 36px;
-    border-radius: 8px;
+    border-radius: 50%;
   }
 
   .communityRowName {
@@ -902,6 +1017,12 @@
   /* People list padding fix */
   .sidebarItem {
     padding: 8px 6px;
+  }
+
+  .personRow {
+    padding: 10px 12px;
+    gap: 10px;
+    width: 100%;
   }
 
   .sidebarItemName {

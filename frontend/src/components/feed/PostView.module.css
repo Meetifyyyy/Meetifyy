@@ -143,7 +143,9 @@
 
 @media (max-width: 768px) {
   .postViewContainer {
-    padding-bottom: 4.5rem;
+    padding-bottom: 0;
+    border: none;
+    border-radius: 0;
   }
 
   .postViewTopbar,

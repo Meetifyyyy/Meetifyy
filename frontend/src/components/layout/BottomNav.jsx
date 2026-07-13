@@ -57,7 +57,8 @@ export default function BottomNav() {
   const isProfileActive = location.pathname.startsWith('/profile');
 
   const isChatOpen = location.pathname.startsWith('/messages/') && location.pathname !== '/messages/';
-  if (isChatOpen) return null;
+  const isPostOpen = location.pathname.startsWith('/post/');
+  if (isChatOpen || isPostOpen) return null;
 
   return (
     <div className={styles.bottomNav}>

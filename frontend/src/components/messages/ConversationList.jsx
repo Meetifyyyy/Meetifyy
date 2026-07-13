@@ -5,6 +5,7 @@ import { useData } from '../../context/DataContext';
 import { useSimulatedFetch } from '../../hooks/useSimulatedFetch';
 import Avatar from '../common/Avatar';
 import Skeleton from '../common/Skeleton';
+import CalendarIcon from '../common/CalendarIcon';
 import { ErrorState, EmptyState } from '../common/StateViews';
 import { MessageSquarePlus, CalendarDays, Pin, VolumeX } from 'lucide-react';
 import NewMessageModal from './NewMessageModal';
@@ -263,24 +264,29 @@ export default function ConversationList({ conversations, activeChatId, onSelect
               onContextMenu={(e) => handleContextMenu(e, conv.id)}
             >
               <div className={styles.convAvatar}>
-                <Avatar 
-                  src={conv.avatar} 
-                  name={conv.name} 
-                  size="48px" 
-                  isGroup={conv.isGroup || conv.isActivityChat || isCampusGroup} 
-                  isOnline={conv.online} 
-                />
-                {conv.isActivityChat && (
-                  hasNotStarted && monthStr && dayStr ? (
-                    <div className={styles.calendarBadgeOverlay}>
-                      <div className={styles.calMonth}>{monthStr}</div>
-                      <div className={styles.calDay}>{dayStr}</div>
+                {conv.isActivityChat ? (
+                  <div className={styles.activityAvatarWrapper}>
+                    <Avatar 
+                      src={conv.avatar} 
+                      name={conv.name} 
+                      size="48px" 
+                      isGroup={true} 
+                    />
+                    <div className={styles.calendarBadge}>
+                      <CalendarIcon 
+                        date={conv.activity?.date} 
+                        dateLabel={conv.activity?.dateLabel || conv.dateLabel} 
+                      />
                     </div>
-                  ) : (
-                    <div className={styles.activityBadge}>
-                      <CalendarDays size={14} strokeWidth={2} />
-                    </div>
-                  )
+                  </div>
+                ) : (
+                  <Avatar 
+                    src={conv.avatar} 
+                    name={conv.name} 
+                    size="48px" 
+                    isGroup={conv.isGroup || isCampusGroup} 
+                    isOnline={conv.online} 
+                  />
                 )}
               </div>
               <div className={styles.convInfo}>

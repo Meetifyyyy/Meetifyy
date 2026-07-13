@@ -1,0 +1,22 @@
+# Dependency directories
+node_modules/
+frontend/node_modules/
+
+# Build outputs
+dist/
+frontend/dist/
+build/
+
+# Agent/IDE directories and files
+.agent/
+.agents/
+.dual-graph/
+scratch/
+docs/
+AGENTS.md
+GEMINI.md
+.gemini/
+
+# OS/System files
+.DS_Store
+Thumbs.db

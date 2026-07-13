@@ -15,7 +15,8 @@ export default function DashboardLayoutWrapper() {
   const noPadding = matches.some(match => 
     match.pathname.startsWith('/messages') || 
     match.pathname.startsWith('/campus') ||
-    match.pathname.startsWith('/profile')
+    match.pathname.startsWith('/profile') ||
+    match.pathname.startsWith('/post')
   );
   
   useEffect(() => {

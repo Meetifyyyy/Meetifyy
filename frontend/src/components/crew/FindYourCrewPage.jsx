@@ -113,7 +113,6 @@ export default function FindYourCrewPage() {
                 </div>
               ) : (
                 <>
-                  
                   <section className={styles.listSection}>
                     {selectedTab !== 'For You' && (
                       <div className={styles.sectionHeader}>

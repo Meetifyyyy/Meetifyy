@@ -263,6 +263,22 @@
   gap: 0.75rem;
 }
 
+.calendarBox > :first-child {
+  flex-shrink: 0;
+  width: 32px !important;
+  height: 32px !important;
+}
+
+.noRings::before,
+.noRings::after {
+  display: none !important;
+}
+
+.noRings,
+.noRings * {
+  text-shadow: none !important;
+}
+
 .locationBox {
   display: flex;
   align-items: center;

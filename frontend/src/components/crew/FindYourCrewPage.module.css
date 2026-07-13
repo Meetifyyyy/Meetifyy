@@ -48,7 +48,7 @@
 }
 
 .sidebarWrapper {
-  width: 320px;
+  width: 380px;
   flex-shrink: 0;
 }
 
@@ -185,3 +185,4 @@
     padding: 0.65rem 1.25rem;
   }
 }
+

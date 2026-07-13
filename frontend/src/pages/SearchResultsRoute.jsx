@@ -16,20 +16,59 @@ import styles from './SearchResultsRoute.module.css';
 
 // Compact horizontal activity row
 function ActivityRow({ activity, onClick }) {
-  const { joinCrewActivity, requestToJoinActivity, currentUser } = useData();
+  const { joinCrewActivity, requestToJoinActivity, currentUser, users } = useData();
   const navigate = useNavigate();
   const [showJoinedModal, setShowJoinedModal] = useState(false);
   const isJoined = activity.participants?.includes(currentUser?.id);
   const hasRequested = activity.pendingRequests?.includes(currentUser?.id);
   const isApproval = activity.participationType === 'approval';
 
+  const eventImage = activity.coverImage || activity.image || activity.hostAvatar;
+
+  const goingCount = Math.max(
+    activity.participants?.length || 0,
+    activity.slotsFilled || 0,
+    1
+  );
+
+  const goingAvatars = useMemo(() => {
+    const countToShow = Math.min(3, goingCount);
+    const avatars = [];
+
+    if (activity.participants && users) {
+      activity.participants.forEach(id => {
+        const u = users[id];
+        if (u && isImageUrl(u.avatar) && !avatars.includes(u.avatar)) {
+          avatars.push(u.avatar);
+        }
+      });
+    }
+
+    if (isImageUrl(activity.hostAvatar) && !avatars.includes(activity.hostAvatar)) {
+      avatars.push(activity.hostAvatar);
+    }
+
+    if (avatars.length < countToShow && users) {
+      Object.values(users).forEach(u => {
+        if (isImageUrl(u.avatar) && !avatars.includes(u.avatar) && avatars.length < countToShow) {
+          avatars.push(u.avatar);
+        }
+      });
+    }
+
+    return avatars.slice(0, countToShow);
+  }, [activity.participants, activity.hostAvatar, users, goingCount]);
+
   return (
     <div className={styles.activityRow} onClick={onClick}>
       <div className={styles.activityRowIcon}>
-        {isImageUrl(activity.hostAvatar)
-          ? <img src={activity.hostAvatar} alt={activity.hostName} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-          : <DefaultAvatar />
-        }
+        {isImageUrl(eventImage) ? (
+          <img src={eventImage} alt={activity.title} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+        ) : (
+          <div className={styles.activityFallbackIcon}>
+            <Activity size={20} color="var(--color-primary)" />
+          </div>
+        )}
       </div>
       <div className={styles.activityRowInfo}>
         <span className={styles.activityRowTitle}>{activity.title}</span>
@@ -41,17 +80,34 @@ function ActivityRow({ activity, onClick }) {
             </span>
           )}
           {activity.location && (
-            <span className={styles.activityRowMetaItem}>
-              <MapPin size={11} />
-              {activity.location}
+            <span className={styles.activityRowMetaItemLocation} title={activity.location}>
+              <MapPin size={11} style={{ flexShrink: 0 }} />
+              <span className={styles.locationText}>{activity.location}</span>
             </span>
           )}
-          {activity.slotsNeeded && (
-            <span className={styles.activityRowMetaItem}>
-              <UsersIcon size={11} />
-              {Math.min(activity.slotsFilled || 0, activity.slotsNeeded)}/{activity.slotsNeeded} joined
+          <span className={styles.goingContainer}>
+            <span className={styles.goingAvatars}>
+              {Array.from({ length: Math.min(3, goingCount) }).map((_, idx) => {
+                const avatarUrl = goingAvatars[idx];
+                return (
+                  <span
+                    key={idx}
+                    className={styles.goingAvatarCircle}
+                    style={{ zIndex: 10 - idx }}
+                  >
+                    {isImageUrl(avatarUrl) ? (
+                      <img src={avatarUrl} alt="Going" />
+                    ) : (
+                      <span className={styles.goingAvatarFallback}>
+                        {String.fromCharCode(65 + idx)}
+                      </span>
+                    )}
+                  </span>
+                );
+              })}
             </span>
-          )}
+            <span className={styles.goingText}>{goingCount} going</span>
+          </span>
         </div>
       </div>
       <button
@@ -96,7 +152,7 @@ function CommunityRow({ comm, onClick }) {
       >
         {isImageUrl(comm.avatar)
           ? <img src={comm.avatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-          : <span>{comm.name.charAt(0).toUpperCase()}</span>
+          : <span style={{ fontWeight: 700, color: '#FFFFFF' }}>{comm.avatar || comm.name?.charAt(0).toUpperCase()}</span>
         }
       </div>
       <div className={styles.communityRowInfo}>
@@ -116,7 +172,7 @@ function CommunityRow({ comm, onClick }) {
   );
 }
 
-// Person row in sidebar
+// Person row in sidebar / full width
 function PersonRow({ user }) {
   const { toggleFollow, currentUser, users } = useData();
   const navigate = useNavigate();
@@ -124,16 +180,8 @@ function PersonRow({ user }) {
   const latestMe = users?.[currentUser?.username];
   const isFollowing = latestMe?.followingList?.includes(user.username);
 
-  // Compute real mutual connections: people that both the current user and this user follow
-  const mutualConnections = useMemo(() => {
-    const myFollowing = latestMe?.followingList || [];
-    const theirFollowing = users?.[user.username]?.followingList || [];
-    const mutualUsernames = myFollowing.filter(u => theirFollowing.includes(u));
-    return mutualUsernames.map(uname => users?.[uname]).filter(Boolean);
-  }, [latestMe?.followingList, user.username, users]);
-
   return (
-    <div className={styles.sidebarItem} onClick={() => navigate(`/profile/${user.username}`)}>
+    <div className={styles.personRow} onClick={() => navigate(`/profile/${user.username}`)}>
       <div className={styles.sidebarAvatar}>
         {isImageUrl(user.avatar)
           ? <img src={user.avatar} alt={user.displayName} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
@@ -147,25 +195,8 @@ function PersonRow({ user }) {
         </div>
         <span className={styles.sidebarItemHandle}>@{user.username}</span>
         <span className={styles.sidebarItemDesc}>
-          {user.bio ? user.bio.substring(0, 35) + '...' : 'Student • Explorer'}
+          {user.bio || 'Student • Explorer'}
         </span>
-        {mutualConnections.length > 0 && (
-          <div className={styles.mutualFriends}>
-            <div className={styles.mutualAvatars}>
-              {mutualConnections.slice(0, 3).map(m => (
-                <div key={m.username} className={styles.mutualAvatar}>
-                  {isImageUrl(m.avatar)
-                    ? <img src={m.avatar} alt={m.displayName} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-                    : m.avatar && m.avatar.length === 1
-                      ? <span style={{ fontSize: '8px', fontWeight: 700 }}>{m.avatar}</span>
-                      : <DefaultAvatar />
-                  }
-                </div>
-              ))}
-            </div>
-            <span>{mutualConnections.length} mutual {mutualConnections.length === 1 ? 'connection' : 'connections'}</span>
-          </div>
-        )}
       </div>
       <button
         className={`${styles.followBtn} ${isFollowing ? styles.followBtnActive : ''}`}
@@ -428,12 +459,13 @@ export default function SearchResultsRoute() {
               <div className={styles.resultsContainer}>
                 <div className={styles.list}>
                   {[1, 2, 3, 4, 5].map(i => (
-                    <div key={i} style={{ display: 'flex', gap: '1rem', padding: '1.2rem', borderBottom: '1px solid var(--color-border-light)', background: 'var(--color-bg-white)', borderRadius: '12px', marginBottom: '0.5rem' }}>
-                      <Skeleton type="circle" width="48px" height="48px" />
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                        <Skeleton type="text" width="40%" height="1.1rem" style={{ marginBottom: '6px' }} />
-                        <Skeleton type="text" width="70%" height="0.8rem" />
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderBottom: '1px solid var(--color-border-light)', width: '100%' }}>
+                      <Skeleton type="circle" width="40px" height="40px" />
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <Skeleton type="text" width="35%" height="1rem" />
+                        <Skeleton type="text" width="60%" height="0.8rem" />
                       </div>
+                      <Skeleton type="circle" width="32px" height="32px" />
                     </div>
                   ))}
                 </div>
@@ -452,11 +484,11 @@ export default function SearchResultsRoute() {
                   {topMatches.length > 0 ? (
                     <div className={styles.list}>
                       {topMatches.map(r => {
-                        if (r.type === 'user') return <UserResult key={`top-u-${r.item.id}`} result={r} onClick={handleNavigate} />;
-                        if (r.type === 'community') return <CommunityResult key={`top-c-${r.item.id}`} result={r} onClick={handleNavigate} />;
+                        if (r.type === 'user') return <PersonRow key={`top-u-${r.item.id}`} user={r.item} />;
+                        if (r.type === 'community') return <CommunityRow key={`top-c-${r.item.id}`} comm={r.item} onClick={() => navigate(`/communities/${r.item.id}`)} />;
                         if (r.type === 'college') return <CollegeResult key={`top-col-${r.item.id}`} result={r} onClick={handleNavigate} />;
                         if (r.type === 'post') return <PostResult key={`top-p-${r.item.id}`} result={r} onClick={handleNavigate} />;
-                        if (r.type === 'crew') return <CrewResult key={`top-cr-${r.item.id}`} result={r} onClick={handleNavigate} />;
+                        if (r.type === 'crew') return <ActivityRow key={`top-cr-${r.item.id}`} activity={r.item} onClick={() => navigate(`/crew/${r.item.id}`, { state: { activity: r.item } })} />;
                         return null;
                       })}
                     </div>
@@ -466,21 +498,21 @@ export default function SearchResultsRoute() {
               {activeSection === 'users' && (
                 <div className={styles.resultsContainer}>
                   {results.users.length > 0
-                    ? <div className={styles.list}>{results.users.map(r => <UserResult key={`u-${r.item.id}`} result={r} onClick={handleNavigate} />)}</div>
+                    ? <div className={styles.list}>{results.users.map(r => <PersonRow key={`u-${r.item.id}`} user={r.item} />)}</div>
                     : <div className={styles.sectionEmpty}>No people for "{q}"</div>}
                 </div>
               )}
               {activeSection === 'activities' && (
                 <div className={styles.resultsContainer}>
-                  {results.posts.length > 0
-                    ? <div className={styles.list}>{results.posts.map(r => <PostResult key={`p-${r.item.id}`} result={r} onClick={handleNavigate} />)}</div>
+                  {results.crew.length > 0
+                    ? <div className={styles.list}>{results.crew.map(r => <ActivityRow key={`cr-${r.item.id}`} activity={r.item} onClick={() => navigate(`/crew/${r.item.id}`, { state: { activity: r.item } })} />)}</div>
                     : <div className={styles.sectionEmpty}>No activities for "{q}"</div>}
                 </div>
               )}
               {activeSection === 'community' && (
                 <div className={styles.resultsContainer}>
                   {results.communities.length > 0
-                    ? <div className={styles.list}>{results.communities.map(r => <CommunityResult key={`c-${r.item.id}`} result={r} onClick={handleNavigate} />)}</div>
+                    ? <div className={styles.list}>{results.communities.map(r => <CommunityRow key={`c-${r.item.id}`} comm={r.item} onClick={() => navigate(`/communities/${r.item.id}`)} />)}</div>
                     : <div className={styles.sectionEmpty}>No communities for "{q}"</div>}
                 </div>
               )}

@@ -9,8 +9,8 @@ export default function InviteModal({ isOpen, onClose, group }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
-  
-  const { conversations } = useData();
+
+  const { users, conversations, addGroupMember, startConversation, sendDirectMessage } = useData();
   const modalRef = useRef(null);
 
   useEffect(() => {
@@ -30,44 +30,57 @@ export default function InviteModal({ isOpen, onClose, group }) {
     });
   };
 
-  const handleSend = (convId) => {
-    // Mock send invite logic
-    setSentTo(prev => new Set(prev).add(convId));
-  };
+  const handleSend = async (user) => {
+    if (!group?.id || sentTo.has(user.id)) return;
 
-  // Filter conversations based on search term
-  const filteredConnections = useMemo(() => {
-    if (!conversations) return [];
-    
-    // Sort by most recent first, exclude the current group
-    const sorted = [...conversations].filter(c => c.id !== group?.id).sort((a, b) => {
-      return (b.createdAt || 0) - (a.createdAt || 0);
+    // Send them a DM so they know
+    const dmConvId = await startConversation(user);
+    sendDirectMessage(dmConvId, `You've been invited to join the group "${group.name || 'a group'}".`, null, {
+      groupId: group.id,
+      groupName: group.name || 'Group'
     });
 
-    if (!searchTerm.trim()) return sorted;
-    
-    const lowerSearch = searchTerm.toLowerCase();
-    return sorted.filter(c => c.name?.toLowerCase().includes(lowerSearch));
-  }, [conversations, searchTerm, group?.id]);
+    setSentTo(prev => new Set(prev).add(user.id));
+  };
+
+  // Current group members
+  const currentMemberIds = useMemo(() => {
+    const conv = (conversations || []).find(c => c.id === group?.id);
+    return new Set((conv?.members || conv?.participants || []).map(String));
+  }, [conversations, group?.id]);
+
+  // All users except current group members
+  const filteredUsers = useMemo(() => {
+    const allUsers = Object.values(users || {});
+    const term = searchTerm.toLowerCase().trim();
+    return allUsers
+      .filter(u => !currentMemberIds.has(String(u.id)))
+      .filter(u =>
+        !term ||
+        u.name?.toLowerCase().includes(term) ||
+        u.displayName?.toLowerCase().includes(term) ||
+        u.username?.toLowerCase().includes(term)
+      );
+  }, [users, searchTerm, currentMemberIds]);
 
   if (!isOpen) return null;
 
   return createPortal(
-    <div 
-      className={styles.overlay} 
-      onClick={(e) => { 
-        e.stopPropagation(); 
-        e.preventDefault(); 
-        onClose(); 
+    <div
+      className={styles.overlay}
+      onClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        onClose();
       }}
     >
-      <div 
-        className={styles.modal} 
+      <div
+        className={styles.modal}
         onClick={e => e.stopPropagation()}
         ref={modalRef}
       >
         <div className={styles.header}>
-          <h2 className={styles.title}>Invite</h2>
+          <h2 className={styles.title}>Invite People</h2>
           <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -83,42 +96,44 @@ export default function InviteModal({ isOpen, onClose, group }) {
           </svg>
           <input
             type="text"
-            placeholder="Search connections or groups..."
+            placeholder="Search people..."
             className={styles.searchInput}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            autoFocus
           />
         </div>
 
-
-
         <div className={styles.list}>
-          {filteredConnections.length > 0 ? (
-            filteredConnections.map(conv => {
-              const isSent = sentTo.has(conv.id);
+          {filteredUsers.length > 0 ? (
+            filteredUsers.map(user => {
+              const isSent = sentTo.has(user.id);
               return (
-                <div key={conv.id} className={styles.listItem}>
+                <div key={user.id} className={styles.listItem}>
                   <div className={styles.contactInfo}>
-                    {isImageUrl(conv.avatar) ? (
-                      <img src={conv.avatar} alt={conv.name} className={styles.avatar} />
+                    {isImageUrl(user.avatar) ? (
+                      <img src={user.avatar} alt={user.displayName || user.name} className={styles.avatar} />
                     ) : (
-                      <DefaultAvatar size={40} className={styles.avatar} />
+                      <DefaultAvatar size={40} name={user.displayName || user.name} className={styles.avatar} />
                     )}
-                    <span className={styles.contactName}>{conv.name}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                      <span className={styles.contactName}>{user.displayName || user.name}</span>
+                      <span style={{ fontSize: '0.78rem', opacity: 0.55 }}>@{user.username}</span>
+                    </div>
                   </div>
-                  <button 
+                  <button
                     className={styles.sendBtn}
-                    onClick={() => handleSend(conv.id)}
+                    onClick={() => handleSend(user)}
                     disabled={isSent}
                   >
-                    {isSent ? 'Sent' : 'Send'}
+                    {isSent ? 'Invited' : 'Invite'}
                   </button>
                 </div>
               );
             })
           ) : (
             <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-light)' }}>
-              No chats found.
+              {searchTerm ? 'No matching users.' : 'Everyone is already in the group.'}
             </div>
           )}
         </div>
@@ -137,7 +152,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
               </svg>
-              Copy Link
+              Copy Invite Link
             </>
           )}
         </button>

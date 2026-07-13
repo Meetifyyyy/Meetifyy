@@ -11,6 +11,7 @@ import ConfirmModal from '../common/ConfirmModal';
 import ChatDetailsPage from './ChatDetailsPage';
 import { useSimulatedFetch } from '../../hooks/useSimulatedFetch';
 import Skeleton from '../common/Skeleton';
+import CalendarIcon from '../common/CalendarIcon';
 import { ErrorState } from '../common/StateViews';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
@@ -22,11 +23,139 @@ import { useMediaViewer } from '../../context/MediaViewerContext';
 
 const Picker = lazy(() => import('@emoji-mart/react'));
 
+const VoiceMessagePlayer = ({ src, fromMe }) => {
+  const audioRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play();
+      setIsPlaying(true);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current && isFinite(audioRef.current.duration)) {
+      setDuration(audioRef.current.duration);
+    }
+  };
+
+  const handleDurationChange = () => {
+    if (audioRef.current && isFinite(audioRef.current.duration)) {
+      setDuration(audioRef.current.duration);
+    }
+  };
+
+  const handleEnded = () => {
+    setIsPlaying(false);
+    setCurrentTime(0);
+  };
+
+  const handleSeek = (e) => {
+    const time = parseFloat(e.target.value);
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+      setCurrentTime(time);
+    }
+  };
+
+  const toggleSpeed = () => {
+    const speeds = [1, 1.5, 2];
+    const nextIndex = (speeds.indexOf(playbackSpeed) + 1) % speeds.length;
+    const nextSpeed = speeds[nextIndex];
+    setPlaybackSpeed(nextSpeed);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = nextSpeed;
+    }
+  };
+
+  const formatTime = (secs) => {
+    if (!secs || isNaN(secs) || !isFinite(secs)) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
+
+  return (
+    <div className={`${styles.voicePlayerContainer} ${fromMe ? styles.voicePlayerMe : ''}`}>
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onDurationChange={handleDurationChange}
+        onEnded={handleEnded}
+      />
+      <button
+        type="button"
+        className={styles.voicePlayBtn}
+        onClick={togglePlay}
+        title={isPlaying ? 'Pause' : 'Play'}
+      >
+        {isPlaying ? (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16" rx="1.5" />
+            <rect x="14" y="4" width="4" height="16" rx="1.5" />
+          </svg>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 4l14 8-14 8V4z" />
+          </svg>
+        )}
+      </button>
+
+      <div className={styles.voicePlayerCenter}>
+        <input
+          type="range"
+          min="0"
+          max={duration || 100}
+          value={currentTime}
+          onChange={handleSeek}
+          className={styles.voiceScrubber}
+          style={{ '--progress': `${progressPercent}%` }}
+        />
+        <span className={styles.voiceTimeText}>
+          {currentTime > 0 ? formatTime(currentTime) : formatTime(duration)}
+        </span>
+      </div>
+
+      <button
+        type="button"
+        className={styles.voiceSpeedBtn}
+        onClick={toggleSpeed}
+        title="Playback speed"
+      >
+        {playbackSpeed}x
+      </button>
+    </div>
+  );
+};
+
 export default function ChatArea({ conversation, onSendMessage, onReactMessage, onClearChat, onBlockUser, onJoinGroup, onBack, showChatOnMobile }) {
   const { openViewer } = useMediaViewer();
   const navigate = useNavigate();
   const { initial, currentUser } = useAuth();
-  const { users, crewActivities, endCrewActivity, leaveGroup } = useData();
+  const { users, crewActivities, endCrewActivity, leaveGroup, conversations, campusGroups } = useData();
+  const conversationActivity = useMemo(() => {
+    if (!conversation?.isActivityChat || !conversation?.activityId) return null;
+    return crewActivities?.find(act => String(act.id) === String(conversation.activityId) || `act_${act.id}` === String(conversation.id) || String(act.id) === String(conversation.id));
+  }, [conversation, crewActivities]);
   const { isLoading, data: loadedMessages, error, retry } = useSimulatedFetch(conversation?.messages || [], 800, [conversation?.id]);
   const [inputValue, setInputValue] = useState({ text: '', mentions: [] });
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -173,11 +302,7 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
     }
   };
   
-  // Voice Call States
-  const [isCalling, setIsCalling] = useState(false);
-  const [callDuration, setCallDuration] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isSpeakerOn, setIsSpeakerOn] = useState(false);
+
   const [isMutedNotifications, setIsMutedNotifications] = useState(false);
   const [showGroupSettings, setShowGroupSettings] = useState(false);
   const [showActivityDetails, setShowActivityDetails] = useState(false);
@@ -216,20 +341,6 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
     }
   }, [conversation?.messages?.length, replyingTo]);
 
-  // Voice Call Duration Timer
-  useEffect(() => {
-    if (isCalling) {
-      setCallDuration(0);
-      timerRef.current = setInterval(() => {
-        setCallDuration((prev) => prev + 1);
-      }, 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isCalling]);
 
   if (!conversation) {
     return (
@@ -264,11 +375,7 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
     );
   }
 
-  const formatDuration = (secs) => {
-    const m = Math.floor(secs / 60).toString().padStart(2, '0');
-    const s = (secs % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
+
 
   const handleSend = () => {
     const text = (typeof inputValue === 'string' ? inputValue : (inputValue?.text || '')).trim();
@@ -284,93 +391,17 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
     }, 2500);
   };
 
+  const formatDuration = (secs) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
   const reactionsList = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
 
   return (
     <div className={`${styles.msgChatArea}${!showChatOnMobile ? ` ${styles.hideOnMobile}` : ''}`} onClick={() => setShowMoreMenu(false)}>
-      {/* Voice Call Overlay */}
-      {isCalling && (
-        <div className={styles.callOverlay}>
-          <div className={styles.callCard}>
-            <div className={styles.callAvatarContainer}>
-              <div className={`${styles.callAvatarPulse} ${styles.pulse1}`} />
-              <div className={`${styles.callAvatarPulse} ${styles.pulse2}`} />
-              <Avatar 
-                src={conversation.avatar} 
-                name={conversation.name} 
-                size="112px" 
-                isGroup={conversation.isGroup || conversation.isActivityChat} 
-                className={styles.callAvatar} 
-              />
-            </div>
-            <div className={styles.callName}>{conversation.name}</div>
-            <div className={styles.callStatus}>
-              {callDuration === 0 ? 'Connecting...' : formatDuration(callDuration)}
-            </div>
 
-            {callDuration > 0 && (
-              <div className={styles.callWaveform}>
-                <span className={`${styles.waveBar} ${styles.bar1}`} />
-                <span className={`${styles.waveBar} ${styles.bar2}`} />
-                <span className={`${styles.waveBar} ${styles.bar3}`} />
-                <span className={`${styles.waveBar} ${styles.bar4}`} />
-                <span className={`${styles.waveBar} ${styles.bar5}`} />
-                <span className={`${styles.waveBar} ${styles.bar6}`} />
-                <span className={`${styles.waveBar} ${styles.bar7}`} />
-              </div>
-            )}
-
-            <div className={styles.callControls}>
-              <button
-                className={`${styles.callBtn} ${isMuted ? styles.active : ''}`}
-                onClick={() => setIsMuted(!isMuted)}
-                title={isMuted ? 'Unmute Mic' : 'Mute Mic'}
-              >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  {isMuted ? (
-                    <>
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                      <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
-                      <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
-                      <line x1="12" y1="19" x2="12" y2="23" />
-                      <line x1="8" y1="23" x2="16" y2="23" />
-                    </>
-                  ) : (
-                    <>
-                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                      <line x1="12" y1="19" x2="12" y2="23" />
-                      <line x1="8" y1="23" x2="16" y2="23" />
-                    </>
-                  )}
-                </svg>
-              </button>
-
-              <button
-                className={`${styles.callBtn} ${styles.callEndBtn}`}
-                onClick={() => setIsCalling(false)}
-                title="End Call"
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" />
-                  <line x1="3" y1="21" x2="21" y2="3" strokeWidth="2.5" />
-                </svg>
-              </button>
-
-              <button
-                className={`${styles.callBtn} ${isSpeakerOn ? styles.active : ''}`}
-                onClick={() => setIsSpeakerOn(!isSpeakerOn)}
-                title={isSpeakerOn ? 'Speaker Off' : 'Speaker On'}
-              >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className={styles.msgChatHeader} onClick={() => setShowDetails(true)}>
         <div className={`${styles.msgChatUser} ${styles.msgChatUserClickable}`}>
@@ -382,17 +413,26 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
               </svg>
             </button>
           )}
-          <Avatar 
-            src={conversation.avatar} 
-            name={conversation.name} 
-            size="38px" 
-            isGroup={conversation.isGroup || conversation.isActivityChat} 
-            isOnline={!conversation.isGroup && !conversation.isActivityChat && (() => {
-              const targetUser = Object.values(users).find(u => u.username === conversation.username || u.id === conversation.userId);
-              const canSee = targetUser ? canSeeOnlineStatus(currentUser, targetUser) : true;
-              return canSee && targetUser?.isOnline;
-            })()} 
-          />
+          {conversation.isActivityChat ? (
+            <Avatar 
+              src={conversation.avatar} 
+              name={conversation.name} 
+              size="38px" 
+              isGroup={true} 
+            />
+          ) : (
+            <Avatar 
+              src={conversation.avatar} 
+              name={conversation.name} 
+              size="38px" 
+              isGroup={conversation.isGroup} 
+              isOnline={!conversation.isGroup && (() => {
+                const targetUser = Object.values(users).find(u => u.username === conversation.username || u.id === conversation.userId);
+                const canSee = targetUser ? canSeeOnlineStatus(currentUser, targetUser) : true;
+                return canSee && targetUser?.isOnline;
+              })()} 
+            />
+          )}
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className={styles.msgChatName}>
               <span className={styles.msgChatNameText}>{conversation.name}</span>
@@ -427,15 +467,7 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
           </div>
         </div>
         <div className={styles.msgChatActions} onClick={(e) => e.stopPropagation()}>
-          <button 
-            className={`${styles.msgChatActionBtn} ${isCalling ? styles.msgChatActionBtnActive : ''}`} 
-            title="Voice Call"
-            onClick={() => setIsCalling(true)}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-            </svg>
-          </button>
+
           <div style={{ position: 'relative' }}>
             <button 
               className={`${styles.msgChatActionBtn} ${showMoreMenu ? styles.msgChatActionBtnActive : ''}`} 
@@ -623,6 +655,7 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
 
             const hasQuery = searchQuery && msg.text.toLowerCase().includes(searchQuery.toLowerCase());
             const shouldDim = searchQuery && !hasQuery;
+            const isGroupInvite = msg.inviteData && !msg.inviteData.type;
             
             return (
               <div 
@@ -673,7 +706,7 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
                     {/* ── Audio Card ── */}
                     {msg.mediaUrl && msg.mediaType === 'audio' && (
                       <div className={styles.msgAudioCardContainer}>
-                        <audio src={msg.mediaUrl} controls className={styles.msgAudioPlayer} />
+                        <VoiceMessagePlayer src={msg.mediaUrl} fromMe={msg.from === 'me'} />
                         {(!msg.text && !msg.linkPreview && !msg.inviteData) && (
                           <div className={`${styles.msgImageFooter} ${msg.from === 'me' ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
                             <span>{msg.time}</span>
@@ -730,10 +763,10 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
                     )}
 
                     {(msg.text || msg.linkPreview || msg.inviteData) && (
-                    <div className={`${styles.msgBubble} ${msg.from === 'me' ? styles.msgBubbleMe : styles.msgBubbleThem} ${((msg.inviteData?.type === 'activityShare' || msg.inviteData?.type === 'postShare' || msg.inviteData?.type === 'profileShare' || msg.inviteData?.type === 'collegeShare') && !msg.text) ? styles.msgBubbleTransparent : ''}`}>
+                    <div className={`${styles.msgBubble} ${msg.from === 'me' ? styles.msgBubbleMe : styles.msgBubbleThem} ${(isGroupInvite || ((msg.inviteData?.type === 'activityShare' || msg.inviteData?.type === 'postShare' || msg.inviteData?.type === 'profileShare' || msg.inviteData?.type === 'collegeShare') && !msg.text)) ? styles.msgBubbleTransparent : ''}`}>
                       <div className={styles.msgText}>
                       {/* ── Text content ── */}
-                      {msg.text && (searchQuery && hasQuery ? (
+                      {msg.text && !isGroupInvite && (searchQuery && hasQuery ? (
                         (() => {
                           const idx = msg.text.toLowerCase().indexOf(searchQuery.toLowerCase());
                           const length = searchQuery.length;
@@ -779,18 +812,13 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
                           const activity = { ...dbActivity, ...msg.inviteData.activity };
                           
                           const activityDate = new Date(activity.date || Date.now());
-                          const monthStr = activityDate.toLocaleString('default', { month: 'short' }).toUpperCase();
-                          const dayStr = activityDate.getDate();
                           return (
                             <div className={styles.activityShareCardNew} onClick={() => navigate('/crew/' + activity.id)}>
                               {(activity.image || activity.coverImage) && (
                                 <img src={activity.image || activity.coverImage} className={styles.activityShareCover} alt="Cover" />
                               )}
                               <div className={styles.activityShareContentNew}>
-                                <div className={styles.activityShareDateBox}>
-                                  <span className={styles.activityShareDateMonth}>{monthStr}</span>
-                                  <span className={styles.activityShareDateDay}>{dayStr}</span>
-                                </div>
+                                <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
                                 <div className={styles.activityShareInfoNew}>
                                   <div className={styles.activityShareTitleNew}>
                                     <span>{activity.title}</span>
@@ -924,30 +952,110 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
                             </button>
                           </div>
                         </div>
-                      ) : msg.inviteData ? (
-                        <div className={styles.msgInviteCard}>
-                          <div className={styles.msgInviteIcon}>
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                              <circle cx="9" cy="7" r="4"></circle>
-                              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                            </svg>
+                      ) : msg.inviteData ? ( (() => {
+                        const targetGroupId = msg.inviteData.groupId;
+                        const groupInfo = (conversations || []).find(c => String(c.id) === String(targetGroupId)) || 
+                                          (campusGroups && campusGroups[targetGroupId]);
+                        
+                        const otherUser = Object.values(users).find(u => u.username === conversation.username || u.id === conversation.userId);
+                        const inviterUser = msg.from === 'me' ? currentUser : otherUser;
+                        
+                        let groupMembers = [];
+                        if (groupInfo) {
+                          if (Array.isArray(groupInfo.members)) {
+                            groupInfo.members.forEach(uid => {
+                              const u = Object.values(users).find(usr => String(usr.id) === String(uid));
+                              if (u) groupMembers.push(u);
+                            });
+                          } else if (Array.isArray(groupInfo.memberList)) {
+                            groupInfo.memberList.forEach(m => {
+                              groupMembers.push({
+                                id: m.id,
+                                avatar: m.avatar,
+                                displayName: m.name,
+                                username: m.username
+                              });
+                            });
+                          }
+                        }
+                        
+                        // Fallback to inviter/creator if members list is empty
+                        if (groupMembers.length === 0 && inviterUser) {
+                          groupMembers.push(inviterUser);
+                        }
+                        
+                        const memberCount = groupMembers.length;
+
+                        return (
+                          <div className={styles.premiumInviteCard}>
+                            <div className={styles.inviteBanner}>
+                              <div className={styles.inviteBannerContent}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <Avatar 
+                                    src={groupInfo?.avatar} 
+                                    name={groupInfo?.name || msg.inviteData.groupName} 
+                                    size="44px" 
+                                    isGroup 
+                                  />
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <h3 className={styles.inviteGroupName}>
+                                      {groupInfo?.name || msg.inviteData.groupName}
+                                    </h3>
+                                    <span className={styles.inviteMemberCountSub}>
+                                      {memberCount} {memberCount === 1 ? 'member' : 'members'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div className={styles.inviteFooter}>
+                              <div className={styles.inviteFooterLeft}>
+                                <div className={styles.memberStackRow} style={{ marginTop: 0 }}>
+                                  <div className={styles.avatarStack}>
+                                    {groupMembers.slice(0, 3).map((m, idx) => (
+                                      <div 
+                                        key={m.id || idx} 
+                                        className={styles.stackedAvatar} 
+                                        style={{ zIndex: 3 - idx }}
+                                      >
+                                        <Avatar 
+                                          src={m.avatar} 
+                                          name={m.displayName || m.username} 
+                                          size="24px" 
+                                        />
+                                      </div>
+                                    ))}
+                                    {memberCount > 3 && (
+                                      <div className={styles.avatarMorePill}>
+                                        +{memberCount - 3}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div className={styles.inviteDivider} />
+                              
+                              <div className={styles.inviteButtonsRight}>
+                                <button 
+                                  className={styles.joinBtn} 
+                                  onClick={() => onJoinGroup && onJoinGroup(msg.inviteData.groupId)}
+                                >
+                                  Join Group
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="5" y1="12" x2="19" y2="12" />
+                                    <polyline points="12 5 19 12 12 19" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                          <div className={styles.msgInviteContent}>
-                            <div className={styles.msgInviteTitle}>Group Invitation</div>
-                            <div className={styles.msgInviteName}>{msg.inviteData.groupName}</div>
-                          </div>
-                          <button 
-                            className={styles.msgInviteBtn}
-                            onClick={() => onJoinGroup && onJoinGroup(msg.inviteData.groupId)}
-                          >
-                            Join Group
-                          </button>
-                        </div>
+                        );
+                      })()
                       ) : null}
                     </div>
-                    {msg.inviteData && !msg.text && !msg.linkPreview ? (
+                    {(isGroupInvite || (msg.inviteData && !msg.text && !msg.linkPreview)) ? (
                       <div style={{ display: 'flex', justifyContent: msg.from === 'me' ? 'flex-end' : 'flex-start', marginTop: '4px' }}>
                         <div className={`${styles.msgImageFooter} ${msg.from === 'me' ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
                           <span>{msg.time}</span>
@@ -988,7 +1096,7 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
           <div className={styles.msgReplyPreview}>
             <div className={styles.msgReplyPreviewDetails}>
               <span className={styles.msgReplyPreviewLabel}>
-                Replying to {replyingTo.from === 'me' ? 'yourself' : conversation.name}
+                Replying to {replyingTo.from === 'me' ? 'yourself' : (replyingTo.senderName || conversation.name)}
               </span>
               <span className={styles.msgReplyPreviewText}>{replyingTo.text}</span>
             </div>
@@ -1020,9 +1128,21 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
           <div className={styles.msgBlockedInputOverlay}>
             <span style={{ color: '#ef4444', fontWeight: 'bold' }}>This group has been closed by the Owner. This chat is now read-only.</span>
           </div>
-        ) : (conversation.isGroup && !(conversation.members || conversation.participants || []).includes(currentUser?.id)) ? (
+        ) : (conversation.isGroup && !(conversation.members || conversation.participants || []).map(String).includes(String(currentUser?.id))) ? (
           <div className={styles.msgBlockedInputOverlay}>
-            <span style={{ color: '#ef4444', fontWeight: 'bold' }}>You are no longer a member of this group.</span>
+            <span style={{ color: 'var(--color-text-main)', fontWeight: 'bold' }}>
+              {String(conversation.id).startsWith('c_') ? 'You are not a member of this campus group.' : 'You are no longer a member of this group.'}
+            </span>
+            {String(conversation.id).startsWith('c_') && (
+              <button 
+                type="button" 
+                className={styles.unblockBannerBtn}
+                onClick={() => onJoinGroup(conversation.id)}
+                style={{ marginLeft: '1rem' }}
+              >
+                Join Group
+              </button>
+            )}
           </div>
         ) : conversation.blocked ? (
           <div className={styles.msgBlockedInputOverlay}>

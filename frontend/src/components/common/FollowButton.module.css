@@ -3,46 +3,58 @@
   font-weight: 600;
   border-radius: 100px;
   cursor: pointer;
-  transition: all var(--transition-normal);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.25rem;
+  box-sizing: border-box;
+  transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+
+.followBtn:active {
+  transform: scale(0.96);
 }
 
 .sizeSm {
   padding: 0.28rem 0.8rem;
   font-size: 0.73rem;
   font-weight: 600;
+  min-width: 78px;
 }
 
 .sizeMd {
-  padding: 0.75rem 1.5rem;
+  padding: 0.72rem 1.45rem;
   font-size: 0.9rem;
+  min-width: 110px;
 }
 
 .following {
   border: 1.5px solid var(--color-border);
-  background: transparent;
+  background-color: var(--color-bg-hover);
   color: var(--color-text-main);
-  transition: all 0.2s ease;
+  box-shadow: none;
 }
 
 .following:hover {
-  background: var(--color-bg-hover);
+  background-color: var(--color-bg-soft);
   border-color: var(--color-text-muted);
 }
 
 .notFollowing {
-  border: none;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  border: 1.5px solid transparent;
+  background-color: var(--color-primary);
   color: #FFFFFF;
-  box-shadow: 0 2px 10px rgba(var(--color-primary-rgb), 0.22);
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.22);
 }
 
 .notFollowing:hover {
-  opacity: 0.88;
-  box-shadow: 0 4px 16px rgba(var(--color-primary-rgb), 0.32);
+  background-color: #1D4ED8;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.32);
 }
 
 /* ── Mobile (≤768px) ── */
@@ -50,38 +62,31 @@
   .sizeMd {
     padding: 0.65rem 1rem;
     font-size: 0.85rem;
-  }
-
-  .following {
-    padding: 0.42rem 1.25rem;
+    min-width: 100px;
   }
 }
 
 /* ── Small mobile (≤480px) ── */
 @media (max-width: 480px) {
   .sizeMd {
-    padding: 0.6rem 0.75rem;
+    padding: 0.6rem 0.85rem;
     font-size: 0.8rem;
-  }
-
-  .following {
-    padding: 0.38rem 1rem;
+    min-width: 94px;
   }
 
   .sizeSm {
     padding: 0.25rem 0.65rem;
     font-size: 0.68rem;
+    min-width: 72px;
   }
 }
 
 /* ── Very small mobile (≤360px) ── */
 @media (max-width: 360px) {
   .sizeMd {
-    padding: 0.38rem 0.85rem;
+    padding: 0.45rem 0.8rem;
     font-size: 0.75rem;
-  }
-
-  .following {
-    padding: 0.35rem 0.85rem;
+    min-width: 88px;
   }
 }
+

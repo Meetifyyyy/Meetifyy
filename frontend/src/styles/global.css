@@ -331,6 +331,10 @@ nav a.active {
     height: 100% !important;
     max-height: 100% !important;
   }
+
+  .centre--post {
+    padding-bottom: 0 !important;
+  }
 }
 
 /* ---------- Dropdown Menu ---------- */

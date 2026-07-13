@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import DefaultAvatar from '../common/DefaultAvatar';
 import ConfirmModal from '../common/ConfirmModal';
 import { isImageUrl } from '../../utils/avatar';
+import CalendarIcon from '../common/CalendarIcon';
 import styles from './ActivityChatDetailsModal.module.css';
 
 export default function ActivityChatDetailsModal({ conversation, onClose, onEndActivity }) {
@@ -51,14 +52,9 @@ export default function ActivityChatDetailsModal({ conversation, onClose, onEndA
           <div className={styles.section}>
             <h3 className={styles.sectionTitle}>Activity Details</h3>
             <div className={styles.detailCard}>
-              <div className={styles.detailItem}>
-                <svg className={styles.detailIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                  <line x1="16" y1="2" x2="16" y2="6" />
-                  <line x1="8" y1="2" x2="8" y2="6" />
-                  <line x1="3" y1="10" x2="21" y2="10" />
-                </svg>
-                <div className={styles.detailText}>{activity.date}</div>
+              <div className={styles.detailItem} style={{ gap: '0.75rem', alignItems: 'center' }}>
+                <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
+                <div className={styles.detailText} style={{ fontWeight: '500' }}>{activity.date}</div>
               </div>
               <div className={styles.detailItem}>
                 <svg className={styles.detailIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

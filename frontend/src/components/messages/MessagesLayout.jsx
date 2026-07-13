@@ -16,6 +16,8 @@ export default function MessagesLayout() {
     clearChat, 
     toggleBlockUser,
     addGroupMember,
+    toggleJoinCampusGroup,
+    initializeCampusGroupConversation,
     currentUser
   } = useData();
 
@@ -31,11 +33,14 @@ export default function MessagesLayout() {
       const id = isNaN(conversationId) ? conversationId : Number(conversationId);
       setActiveChatId(id);
       setShowChatOnMobile(true);
+      if (String(id).startsWith('c_')) {
+        initializeCampusGroupConversation(id);
+      }
     } else {
       setActiveChatId(null);
       setShowChatOnMobile(false);
     }
-  }, [conversationId]);
+  }, [conversationId, initializeCampusGroupConversation]);
 
   const activeConv = conversations.find((c) => {
     if (!c || activeChatId == null) return false;
@@ -74,8 +79,11 @@ export default function MessagesLayout() {
   };
 
   const handleJoinGroup = (groupId) => {
-    addGroupMember(groupId, currentUser?.id);
-    // Optionally navigate to the group
+    if (String(groupId).startsWith('c_')) {
+      toggleJoinCampusGroup(groupId);
+    } else {
+      addGroupMember(groupId, currentUser?.id);
+    }
     handleSelectChat(groupId);
   };
 

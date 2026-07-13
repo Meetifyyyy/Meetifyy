@@ -19,6 +19,8 @@ export default function GroupsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
 
   const userCollegeId = currentUser?.collegeId || 'gla';
 
@@ -51,8 +53,32 @@ export default function GroupsPage() {
   };
 
   const handleCreateGroup = async (name, desc, avatar) => {
-    await createCampusGroup(name, desc, avatar);
+    const newId = await createCampusGroup(name, desc, avatar);
     showToast('Group created successfully! 🚀');
+    navigate(`/messages/${newId}`);
+  };
+
+  const handleGroupClick = (group) => {
+    const isMember = currentUser?.campusGroups?.map(String).includes(String(group.id));
+    if (isMember) {
+      navigate(`/messages/${group.id}`);
+    } else {
+      setSelectedGroup(group);
+      setIsJoinModalOpen(true);
+    }
+  };
+
+  const handleJoinConfirm = () => {
+    if (!selectedGroup) return;
+    if (selectedGroup.whoCanJoin === 'Request required') {
+      showToast('Join request sent successfully! 📨');
+    } else {
+      toggleJoinCampusGroup(selectedGroup.id);
+      showToast('Joined group successfully! 🎉');
+      navigate(`/messages/${selectedGroup.id}`);
+    }
+    setIsJoinModalOpen(false);
+    setSelectedGroup(null);
   };
 
   return (
@@ -104,7 +130,7 @@ export default function GroupsPage() {
               <div
                 key={group.id}
                 className={styles.directoryCard}
-                onClick={() => navigate(`/messages/${group.id}`)}
+                onClick={() => handleGroupClick(group)}
               >
                 <Avatar
                   src={group.avatar || (group.name ? group.name.substring(0, 2).toUpperCase() : 'GR')}
@@ -117,7 +143,7 @@ export default function GroupsPage() {
                     {group.name}
                   </h4>
                   <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {group.desc || `${group.members || 1} members`}
+                    {group.desc || `${group.members || 1} ${(group.members || 1) === 1 ? 'member' : 'members'}`}
                   </p>
                 </div>
               </div>
@@ -162,6 +188,38 @@ export default function GroupsPage() {
           onCreate={handleCreateGroup} 
           isDark={theme === 'dark'} 
         />
+      )}
+
+      {isJoinModalOpen && selectedGroup && (
+        <div className={styles.modalOverlay} onClick={() => { setIsJoinModalOpen(false); setSelectedGroup(null); }}>
+          <div className={styles.joinModal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.joinAvatarWrapper}>
+              <Avatar
+                src={selectedGroup.avatar || (selectedGroup.name ? selectedGroup.name.substring(0, 2).toUpperCase() : 'GR')}
+                name={selectedGroup.name}
+                size="80px"
+                isGroup={true}
+              />
+            </div>
+            <h3 className={styles.joinGroupName}>{selectedGroup.name}</h3>
+            <p style={{ fontSize: '0.88rem', color: 'var(--color-text-muted)', marginTop: '-0.75rem', marginBottom: '0.25rem' }}>
+              {selectedGroup.members || 1} {(selectedGroup.members || 1) === 1 ? 'member' : 'members'}
+            </p>
+            {selectedGroup.desc && (
+              <p className={styles.joinGroupDesc}>
+                {selectedGroup.desc}
+              </p>
+            )}
+            <div className={styles.joinModalButtons}>
+              <button className={styles.joinPrimaryBtn} onClick={handleJoinConfirm}>
+                {selectedGroup.whoCanJoin === 'Request required' ? 'Request to Join' : 'Join'}
+              </button>
+              <button className={styles.joinCancelBtn} onClick={() => { setIsJoinModalOpen(false); setSelectedGroup(null); }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

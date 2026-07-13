@@ -35,31 +35,64 @@
 }
 
 .eventDate {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 46px;
   border-radius: 10px;
-  background: rgba(var(--color-primary-rgb), 0.1);
-  color: var(--color-primary);
-  font-family: var(--font-family-display);
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.eventDate::before,
+.eventDate::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  width: 3.5px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  z-index: 3;
+}
+
+.eventDate::before {
+  left: 10px;
+}
+
+.eventDate::after {
+  right: 10px;
 }
 
 .eventMonth {
-  font-size: 0.6rem;
+  width: 100%;
+  background: linear-gradient(135deg, #EF4444, #E11D48);
+  color: #FFFFFF;
+  font-size: 0.58rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  padding: 4px 0 2px;
+  text-align: center;
   line-height: 1;
 }
 
 .eventDay {
-  font-size: 1rem;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-family-display);
+  font-size: 1.08rem;
   font-weight: 800;
-  line-height: 1.1;
+  color: var(--color-text-main);
+  background: var(--color-bg-white);
+  line-height: 1;
 }
 
 .eventDetail {
@@ -137,21 +170,40 @@
 .joinBtn {
   background: transparent;
   color: var(--color-primary);
-  border: 1px solid rgba(var(--color-primary-rgb), 0.3);
+  border: 1.5px solid rgba(var(--color-primary-rgb), 0.35);
   border-radius: 100px;
-  padding: 0.28rem 0.75rem;
+  padding: 0.28rem 0.78rem;
+  min-width: 66px;
+  text-align: center;
   font-family: var(--font-family-sans);
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.18s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
   flex-shrink: 0;
+  user-select: none;
 }
 
 .joinBtn:hover {
   background: rgba(var(--color-primary-rgb), 0.08);
   border-color: var(--color-primary);
+}
+
+.joinBtn:active {
+  transform: scale(0.96);
+}
+
+.joinedBtn {
+  background: var(--color-bg-soft);
+  color: var(--color-text-muted);
+  border: 1.5px solid var(--color-border);
+}
+
+.joinedBtn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-main);
+  border-color: var(--color-text-muted);
 }
 
 .divider {
@@ -167,13 +219,18 @@
   }
 
   .eventDate {
-    width: 38px;
-    height: 38px;
-    border-radius: 8px;
+    width: 40px;
+    height: 42px;
+    border-radius: 9px;
+  }
+
+  .eventMonth {
+    font-size: 0.52rem;
+    padding: 3px 0 2px;
   }
 
   .eventDay {
-    font-size: 0.9rem;
+    font-size: 0.96rem;
   }
 
   .eventName {

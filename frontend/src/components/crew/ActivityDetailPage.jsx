@@ -8,6 +8,7 @@ import Avatar from '../common/Avatar';
 import ConfirmModal from '../common/ConfirmModal';
 import ShareActivityModal from './ShareActivityModal';
 import ActivityJoinedModal from './ActivityJoinedModal';
+import CalendarIcon from '../common/CalendarIcon';
 import styles from './ActivityDetailPage.module.css';
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -65,18 +66,6 @@ function formatDateTime(activity) {
   return `${dateFormatted} • ${time}${endTimeStr}`;
 }
 
-/* ── Icon helpers ──────────────────────────────────────────── */
-function IconCalendar() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-      <line x1="16" y1="2" x2="16" y2="6" />
-      <line x1="8" y1="2" x2="8" y2="6" />
-      <line x1="3" y1="10" x2="21" y2="10" />
-    </svg>
-  );
-}
-
 /* ── Details card ──────────────────────────────────────────── */
 function DetailsCard({ date, time, duration, actLocation, isOnline, slotsFilled, spotsLeft, activity }) {
   const computedDateLabel = getRelativeDateLabel(date) || activity?.dateLabel;
@@ -84,8 +73,8 @@ function DetailsCard({ date, time, duration, actLocation, isOnline, slotsFilled,
     <div className={styles.detailsCard}>
       <h2 className={styles.detailsTitle}>Details</h2>
       <div className={styles.detailsGrid}>
-        <div className={styles.detailRow}>
-          <span className={styles.detailIcon}><IconCalendar /></span>
+        <div className={styles.detailRow} style={{ alignItems: 'center' }}>
+          <CalendarIcon date={date} dateLabel={computedDateLabel} />
           <div>
             <div className={styles.detailLabel}>{computedDateLabel}</div>
             <div className={styles.detailValue}>{new Date(date).toLocaleDateString()}</div>
@@ -333,14 +322,13 @@ export default function ActivityDetailPage() {
             <div className={styles.detailsCol}>
               <div className={styles.leftInfoBlock} style={{ marginTop: 0, marginBottom: '2rem' }}>
                 <div className={styles.calendarBox}>
-                  <div className={styles.dateBadge}>
-                    <div className={styles.dateBadgeMonth}>
-                      {activity.date ? new Date(activity.date).toLocaleDateString('en-US', { month: 'short' }).toUpperCase() : 'M'}
-                    </div>
-                    <div className={styles.dateBadgeDay}>
-                      {activity.date ? new Date(activity.date).getDate() : '-'}
-                    </div>
-                  </div>
+                  <CalendarIcon
+                    date={activity.date}
+                    dateLabel={activity.dateLabel}
+                    variant="glass"
+                    style={{ width: '32px', height: '32px', borderRadius: '6px', boxShadow: 'none' }}
+                    className={styles.noRings}
+                  />
                   <div className={styles.timeText}>
                     {formatDateTime(activity)}
                   </div>

@@ -1577,29 +1577,19 @@ export function DataProvider({ children }) {
   const createGroupConversation = useCallback(async (groupName, userIds) => {
     await new Promise(resolve => setTimeout(resolve, 300));
     
-    const directMembers = [];
-    const invitedMembers = [];
-    const myFollowers = currentUser?.followersList || [];
-    
-    for (const uid of userIds) {
-      const u = Object.values(users).find(usr => usr.id === uid);
-      if (u && myFollowers.includes(u.username)) {
-        directMembers.push(uid);
-      } else if (u) {
-        invitedMembers.push(u);
-      }
-    }
-
     const newId = 'g_' + Date.now();
     const newConv = {
       id: newId,
       name: groupName,
       isGroup: true,
       editGroupPermission: 'Everyone',
+      whoCanJoin: 'Anyone',
+      visibility: 'Hidden group',
+      allowSharing: true,
       ownerId: currentUser?.id,
       admins: [],
-      members: [currentUser?.id, ...directMembers],
-      avatar: null, // No default avatar yet, or can use name initials
+      members: [currentUser?.id],
+      avatar: null,
       color: '#2d2d2d',
       online: true,
       lastMsg: 'Group created',
@@ -1608,17 +1598,19 @@ export function DataProvider({ children }) {
       description: '',
       createdAt: Date.now(),
       messages: [],
-      visibility: 'Hidden group'
     };
     setConversations(prev => [newConv, ...prev]);
 
-    // Send invites to non-followers
-    for (const u of invitedMembers) {
-      const dmConvId = await startConversation(u);
-      sendDirectMessage(dmConvId, `I've invited you to join the group "${groupName}".`, null, {
-        groupId: newId,
-        groupName: groupName
-      });
+    // Send a DM invite to all selected users so they can join
+    for (const uid of userIds) {
+      const u = Object.values(users).find(usr => usr.id === uid);
+      if (u) {
+        const dmConvId = await startConversation(u);
+        sendDirectMessage(dmConvId, `You've been invited to join the group "${groupName}".`, null, {
+          groupId: newId,
+          groupName: groupName
+        });
+      }
     }
 
     return newId;
@@ -1656,6 +1648,11 @@ export function DataProvider({ children }) {
   const createCampusGroup = useCallback(async (groupName, description, avatar) => {
     await new Promise(resolve => setTimeout(resolve, 300));
     const id = 'c_' + Date.now();
+    const collegeName = currentUser?.collegeId === 'gla' 
+      ? 'GLA University' 
+      : currentUser?.collegeId === 'iitdelhi' 
+        ? 'IIT Delhi' 
+        : 'University';
     
     const newComm = {
       id,
@@ -1666,6 +1663,9 @@ export function DataProvider({ children }) {
       isUniversity: false,
       collegeId: currentUser?.collegeId || 'gla',
       categories: ['general'],
+      whoCanJoin: 'Anyone',
+      visibility: `Visible only to ${collegeName}`,
+      allowSharing: true,
       memberList: [{
         id: currentUser?.id,
         name: currentUser?.displayName || currentUser?.username || 'You',
@@ -1683,6 +1683,9 @@ export function DataProvider({ children }) {
       name: groupName,
       isGroup: true,
       editGroupPermission: 'Everyone',
+      whoCanJoin: 'Anyone',
+      visibility: `Visible only to ${collegeName}`,
+      allowSharing: true,
       ownerId: currentUser?.id,
       admins: [],
       members: [currentUser?.id],
@@ -1695,13 +1698,13 @@ export function DataProvider({ children }) {
       description: description,
       createdAt: Date.now(),
       messages: [],
-      visibility: 'Visible only to Gla University'
     };
 
     setConversations(prev => [newConv, ...prev]);
 
     updateCurrentUser({
-      campusGroups: [...(currentUser?.campusGroups || []), groupName]
+      ...currentUser,
+      campusGroups: [...(currentUser?.campusGroups || []), id]
     });
 
     return id;
@@ -1730,12 +1733,37 @@ export function DataProvider({ children }) {
         }
       };
     });
+
+    setCampusGroupsState(prev => {
+      const group = prev[convId];
+      if (!group) return prev;
+      return {
+        ...prev,
+        [convId]: {
+          ...group,
+          name: newName !== undefined ? newName : group.name,
+          avatar: newAvatar !== undefined ? newAvatar : group.avatar,
+          desc: newDescription !== undefined ? newDescription : group.desc
+        }
+      };
+    });
   }, []);
 
   const updateGroupEditPermission = useCallback(async (convId, newPermission) => {
     setConversations(prev => prev.map(c => 
       c.id === convId ? { ...c, editGroupPermission: newPermission } : c
     ));
+    setCampusGroupsState(prev => {
+      const group = prev[convId];
+      if (!group) return prev;
+      return {
+        ...prev,
+        [convId]: {
+          ...group,
+          editGroupPermission: newPermission
+        }
+      };
+    });
   }, []);
 
   const changeGroupOwner = useCallback(async (convId, newOwnerId) => {
@@ -1908,6 +1936,157 @@ export function DataProvider({ children }) {
     }));
   }, [currentUser]);
 
+  const updateGroupSettings = useCallback(async (convId, settings) => {
+    setConversations(prev => prev.map(c =>
+      c.id === convId ? { ...c, ...settings } : c
+    ));
+    setCampusGroupsState(prev => {
+      const group = prev[convId];
+      if (!group) return prev;
+      return {
+        ...prev,
+        [convId]: {
+          ...group,
+          ...settings
+        }
+      };
+    });
+  }, []);
+
+  const initializeCampusGroupConversation = useCallback((groupId) => {
+    if (!groupId) return;
+    setConversations(prev => {
+      const exists = prev.find(c => c.id === groupId);
+      if (exists) return prev;
+
+      const group = campusGroupsState[groupId];
+      if (group) {
+        const creatorId = group.memberList?.find(m => m.role === 'Creator')?.id || group.memberList?.[0]?.id || currentUser?.id;
+        const newConv = {
+          id: groupId,
+          name: group.name,
+          isGroup: true,
+          editGroupPermission: 'Everyone',
+          whoCanJoin: group.whoCanJoin || 'Anyone',
+          visibility: group.visibility || 'Visible to Gla University',
+          allowSharing: group.allowSharing !== false,
+          ownerId: creatorId,
+          admins: group.memberList?.filter(m => m.admin).map(m => m.id) || [],
+          members: group.memberList?.map(m => m.id) || [],
+          avatar: group.avatar || null,
+          color: '#2d2d2d',
+          online: true,
+          lastMsg: 'Welcome to the group!',
+          time: 'Just now',
+          unread: 0,
+          description: group.desc || '',
+          createdAt: Date.now(),
+          messages: [],
+        };
+        return [newConv, ...prev];
+      }
+      return prev;
+    });
+  }, [campusGroupsState, currentUser]);
+
+  const toggleJoinCampusGroup = useCallback((groupId) => {
+    if (!currentUser) return;
+    const isJoined = currentUser.campusGroups?.map(String).includes(String(groupId));
+    
+    updateCurrentUser({
+      ...currentUser,
+      campusGroups: isJoined 
+        ? currentUser.campusGroups.filter(id => String(id) !== String(groupId))
+        : [...(currentUser.campusGroups || []), groupId]
+    });
+
+    setCampusGroupsState(prev => {
+      const group = prev[groupId];
+      if (!group) return prev;
+      let newMemberList = [...(group.memberList || [])];
+      let newMembersCount = group.members || 1;
+      
+      if (isJoined) {
+        newMemberList = newMemberList.filter(m => String(m.id) !== String(currentUser.id));
+        newMembersCount = Math.max(1, newMembersCount - 1);
+      } else {
+        if (!newMemberList.some(m => String(m.id) === String(currentUser.id))) {
+          newMemberList.push({
+            id: currentUser.id,
+            name: currentUser.displayName || currentUser.username || 'You',
+            avatar: currentUser.avatar,
+            role: 'Member',
+            admin: false
+          });
+          newMembersCount += 1;
+        }
+      }
+      return {
+        ...prev,
+        [groupId]: {
+          ...group,
+          memberList: newMemberList,
+          members: newMembersCount
+        }
+      };
+    });
+
+    setConversations(prev => {
+      const existing = prev.find(c => c.id === groupId);
+      const sysMsgText = isJoined 
+        ? `@${currentUser.username || 'someone'} has left` 
+        : `@${currentUser.username || 'someone'} has joined`;
+      const sysMsg = { id: Date.now(), type: 'system', text: sysMsgText, time: 'Just now' };
+      
+      if (existing) {
+        let newMembers = [...(existing.members || [])];
+        if (isJoined) {
+          newMembers = newMembers.filter(uid => String(uid) !== String(currentUser.id));
+        } else {
+          if (!newMembers.map(String).includes(String(currentUser.id))) {
+            newMembers.push(currentUser.id);
+          }
+        }
+        return prev.map(c => c.id === groupId ? {
+          ...c,
+          members: newMembers,
+          messages: [...(c.messages || []), sysMsg],
+          lastMsg: sysMsgText,
+          time: 'Just now',
+          timestamp: Date.now()
+        } : c);
+      } else if (!isJoined) {
+        const group = campusGroupsState[groupId];
+        if (group) {
+          const creatorId = group.memberList?.find(m => m.role === 'Creator')?.id || group.memberList?.[0]?.id || currentUser.id;
+          const newConv = {
+            id: groupId,
+            name: group.name,
+            isGroup: true,
+            editGroupPermission: 'Everyone',
+            whoCanJoin: group.whoCanJoin || 'Anyone',
+            visibility: group.visibility || 'Visible to Gla University',
+            allowSharing: group.allowSharing !== false,
+            ownerId: creatorId,
+            admins: group.memberList?.filter(m => m.admin).map(m => m.id) || [],
+            members: [...(group.memberList?.map(m => m.id) || []), currentUser.id],
+            avatar: group.avatar || null,
+            color: '#2d2d2d',
+            online: true,
+            lastMsg: sysMsgText,
+            time: 'Just now',
+            unread: 0,
+            description: group.desc || '',
+            createdAt: Date.now(),
+            messages: [sysMsg],
+          };
+          return [newConv, ...prev];
+        }
+      }
+      return prev;
+    });
+  }, [currentUser, updateCurrentUser, campusGroupsState]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const liveCurrentUser = enrichUser(users[currentUser?.username] || currentUser);
   
@@ -1964,16 +2143,6 @@ export function DataProvider({ children }) {
       return enriched;
     });
   }, [conversations, users, crewActivities]);
-
-  const toggleJoinCampusGroup = useCallback((groupId) => {
-    if (!currentUser) return;
-    const isJoined = currentUser.campusGroups?.includes(groupId);
-    updateCurrentUser({
-      campusGroups: isJoined 
-        ? currentUser.campusGroups.filter(id => id !== groupId)
-        : [...(currentUser.campusGroups || []), groupId]
-    });
-  }, [currentUser, updateCurrentUser]);
 
   const toggleSaveActivity = useCallback((activityId) => {
     setSavedActivities(prev =>
@@ -2096,6 +2265,8 @@ export function DataProvider({ children }) {
       removeGroupMember,
       leaveGroup,
       endGroup,
+      updateGroupSettings,
+      initializeCampusGroupConversation,
       joinCrewActivity,
       leaveCrewActivity,
       requestToJoinActivity,
