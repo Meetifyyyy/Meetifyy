@@ -1,0 +1,410 @@
+.flowContainer {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: transparent;
+  color: var(--color-text-main, var(--color-text-main));
+  font-family: inherit;
+  position: relative;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+
+
+/* Progress Bar Container */
+.progressContainer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding: 1.5rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+  background: transparent;
+}
+
+.backButton {
+  background: none;
+  border: none;
+  color: var(--color-text-main);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0;
+  transition: opacity 0.2s;
+}
+.backButton:hover {
+  opacity: 0.8;
+}
+
+.progressBarRow {
+  position: fixed;
+  top: 68px;
+  left: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.5rem 2rem;
+  z-index: 10;
+  background: transparent;
+}
+
+.iconCircle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--color-bg-alt, var(--color-border));
+  transition: background 0.2s;
+}
+.backButton:hover .iconCircle {
+  background: var(--color-border-dark);
+}
+
+.backText {
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-family: var(--font-family-display, inherit);
+  letter-spacing: -0.01em;
+}
+
+.progressTrack {
+  width: 200px;
+  height: 4px;
+  background: rgba(0,0,0,0.05);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-primary, var(--color-primary));
+  border-radius: 4px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stepIndicator {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-muted, var(--color-text-muted));
+}
+
+/* Main Content Area */
+.contentArea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 7.5rem 2rem 2rem 2rem;
+  z-index: 1;
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Step Common Layout */
+.stepWrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: auto 0;
+}
+
+.headline {
+  font-size: 2.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5rem;
+  color: var(--color-text-main, var(--color-text-main));
+  line-height: 1.2;
+}
+
+.subheadline {
+  font-size: 1.125rem;
+  color: var(--color-text-muted, var(--color-text-muted));
+  margin-bottom: 2.5rem;
+}
+
+/* Inputs */
+.largeInput {
+  width: 100%;
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  border: none;
+  border-bottom: 2px solid var(--color-border);
+  padding: 0.5rem 0;
+  background: transparent;
+  outline: none;
+  transition: border-color 0.2s, color 0.2s;
+  color: var(--color-text-muted);
+  margin-bottom: 1rem;
+}
+.largeInput::placeholder {
+  color: var(--color-text-light);
+}
+.largeInput:focus,
+.largeInput:focus-visible {
+  border-bottom-color: var(--color-primary, var(--color-primary));
+  outline: none;
+  box-shadow: none;
+}
+
+.feedbackText {
+  font-size: 1rem;
+  color: var(--color-primary, var(--color-primary));
+  font-weight: 500;
+  min-height: 1.5rem;
+}
+
+/* Options Grid (Chips) */
+.optionsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 1rem;
+  width: 100%;
+}
+
+.optionChip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem 1rem;
+  background: var(--color-bg-elevated, #f9fafb);
+  border: 2px solid transparent;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: center;
+  gap: 0.75rem;
+}
+.optionChip:hover {
+  background: var(--color-bg-hover, #f3f4f6);
+  transform: translateY(-2px);
+}
+.optionChip.selected {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: var(--color-primary, var(--color-primary));
+  color: var(--color-primary, var(--color-primary));
+}
+
+.chipIcon {
+  font-size: 1.75rem;
+}
+
+.chipLabel {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+/* Bubble Options */
+.bubbleContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.bubble {
+  padding: 0.75rem 1.5rem;
+  border-radius: 999px;
+  background: var(--color-bg-elevated, #f9fafb);
+  color: var(--color-text-main, var(--color-text-main));
+  font-weight: 600;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 0.95rem;
+}
+.bubble:hover {
+  transform: scale(1.05);
+  background: var(--color-bg-hover, #f3f4f6);
+}
+.bubble.selected {
+  background: var(--color-primary, var(--color-primary));
+  color: white;
+  transform: scale(1.1);
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+}
+
+/* Primary Button */
+.continueBtn {
+  margin-top: 3rem;
+  padding: 1rem 2.5rem;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 999px;
+  font-size: 1.125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  box-shadow:(--shadow-sm);
+}
+.continueBtn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow:(--shadow-sm);
+}
+.continueBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btnIcon {
+  transition: transform 0.2s;
+}
+.continueBtn:hover:not(:disabled) .btnIcon {
+  transform: translateX(4px);
+}
+
+/* Welcome Screen Specifics */
+.welcomeIllustration {
+  width: 100%;
+  max-width: 400px;
+  height: 300px;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* Mobile adjustments */
+@media (max-width: 640px) {
+  .headline {
+    font-size: 1.5rem;
+    line-height: 1.25;
+  }
+  .subheadline {
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+  }
+  .largeInput {
+    font-size: 1.25rem;
+    padding: 0.35rem 0;
+    margin-bottom: 0.5rem;
+  }
+  .progressContainer {
+    padding: 0.75rem 1rem;
+  }
+  .progressBarRow {
+    padding: 0.4rem 1rem;
+    top: 56px;
+    gap: 0.75rem;
+  }
+  .progressTrack {
+    width: 140px;
+  }
+  .contentArea {
+    padding: 1.25rem;
+    padding-top: 5.5rem;
+  }
+  .continueBtn {
+    width: 100%;
+    justify-content: center;
+    padding: 0.85rem 1.5rem;
+    font-size: 1rem;
+    margin-top: 2rem;
+  }
+  .optionsGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+  .optionChip {
+    padding: 1rem 0.75rem;
+    gap: 0.5rem;
+  }
+  .chipIcon {
+    font-size: 1.35rem;
+  }
+  .chipLabel {
+    font-size: 0.8rem;
+  }
+  .bubble {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+  }
+  .bubbleContainer {
+    gap: 0.5rem;
+  }
+  .iconCircle {
+    width: 34px;
+    height: 34px;
+  }
+  .backText {
+    font-size: 1rem;
+  }
+  .stepIndicator {
+    font-size: 0.8rem;
+  }
+  .welcomeIllustration {
+    height: 200px;
+    margin-bottom: 1rem;
+  }
+}
+
+/* Validation & Feedback UI */
+.errorText {
+  color: var(--color-danger);
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-weight: 500;
+}
+
+.successText {
+  color: var(--color-success);
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-weight: 500;
+}
+
+.inputError {
+  border-bottom-color: var(--color-danger) !important;
+}
+.inputError:focus {
+  border-bottom-color: var(--color-danger) !important;
+}
+
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.checklistItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  transition: color 0.2s;
+}
+
+.checklistItem.met {
+  color: var(--color-success);
+}

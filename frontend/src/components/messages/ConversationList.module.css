@@ -1,0 +1,548 @@
+.msgConvList {
+  width: 350px;
+  flex-shrink: 0;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border-light);
+}
+
+.msgConvHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 72px;
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--color-border-light);
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.titleGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.backBtn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  color: var(--color-text-main);
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: 50%;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.backBtn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.msgConvTitle {
+  font-family: "Changa One", cursive;
+  font-weight: normal;
+  font-size: 1.75rem;
+  color: var(--color-text-main);
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.filterRow {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-bg-white);
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.filterRow::-webkit-scrollbar {
+  display: none;
+}
+
+.filterChip {
+  background: var(--color-bg-soft, #f4f4f5);
+  border: none;
+  font-family: var(--font-family-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--color-text-light);
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  border-radius: 100px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.filterChip:hover {
+  background: var(--color-bg-main, #e4e4e7);
+  color: var(--color-text-main);
+}
+
+.activeFilter {
+  background: var(--color-primary);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.activeFilter:hover {
+  background: var(--color-primary-hover, var(--color-primary));
+  color: #ffffff;
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--color-border-light);
+  flex-shrink: 0;
+}
+
+.msgNewBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary);
+  border: none;
+  color: #FFFFFF;
+  cursor: pointer;
+  padding: 0.4rem;
+  border-radius: var(--radius-sm);
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.msgNewBtn:hover {
+  background: var(--color-primary-hover);
+}
+
+.msgConvSearch {
+  display: flex;
+  align-items: center;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: 100px;
+  padding: 0 1rem;
+  flex: 1;
+  height: 40px;
+  transition: all 0.2s;
+}
+
+.msgConvSearch:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.15);
+}
+
+.searchIcon {
+  color: var(--color-text-light);
+  margin-right: 0.4rem;
+  flex-shrink: 0;
+}
+
+.msgSearchInput {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: none;
+  font-family: var(--font-family-sans);
+  font-size: 0.82rem;
+  color: var(--color-text-main);
+}
+
+.msgSearchInput::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+.msgConvScroll {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+}
+
+.msgConvScroll::-webkit-scrollbar {
+  display: none;
+}
+
+.convItem {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  margin: 0.35rem 0.6rem;
+  border-radius: 12px;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.convItem:hover {
+  background: var(--color-bg-soft);
+}
+
+.convItemActive {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+:global([data-theme="dark"]) .convItemActive {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.convAvatar {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  position: relative;
+  /* outer container — overflow:visible so badges can peek out */
+}
+
+.convAvatarClip {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-family-display);
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--color-text-inverse);
+  overflow: hidden;
+  /* fallback when no color is provided */
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  /* GPU compositing for crisp rounded corners */
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  mask-image: radial-gradient(white, black);
+}
+
+.convAvatarImg {
+  composes: ui-avatar-img from global;
+}
+
+.convOnlineDot {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--color-success);
+  border: 2px solid var(--color-bg-white);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.convInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.convNameRow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.convNameText {
+  font-family: var(--font-family-display);
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--color-text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.convNameTextUnread {
+  font-weight: 700;
+}
+
+.convTags {
+  display: flex;
+  gap: 4px;
+}
+
+.tagActivity {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.12);
+  padding: 1px 4px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.tagGroup {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--color-success);
+  background: rgba(16, 185, 129, 0.12);
+  padding: 1px 4px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.convPreview {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.convPreviewUnread {
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+.convMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+  align-self: flex-start;
+  padding-top: 0.25rem;
+}
+
+.convTime {
+  font-size: 0.72rem;
+  color: var(--color-text-light);
+  font-variant-numeric: tabular-nums;
+}
+
+.convTimeUnread {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.convBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #FFFFFF;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0 4px;
+  font-family: var(--font-family-display);
+  box-shadow: 0 2px 6px rgba(var(--color-primary-rgb), 0.2);
+}
+
+.contextMenu {
+  position: fixed;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 0.5rem;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 180px;
+}
+
+.contextMenu button {
+  background: none;
+  border: none;
+  padding: 0.6rem 0.8rem;
+  text-align: left;
+  font-family: var(--font-family-sans);
+  font-size: 0.85rem;
+  color: var(--color-text-main);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.contextMenu button:hover {
+  background: var(--color-bg-main);
+}
+
+.contextMenu .deleteBtn {
+  color: var(--color-danger);
+}
+
+.contextMenu .deleteBtn:hover {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.mobileHeaderWrapper {
+  display: none;
+}
+
+.desktopHeaderWrapper {
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .mobileHeaderWrapper {
+    display: block;
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+
+  .desktopHeaderWrapper {
+    display: none;
+  }
+
+  .msgNewBtn {
+    border-radius: 50% !important;
+    width: 40px !important;
+    height: 40px !important;
+    padding: 0 !important;
+    box-shadow: 0 4px 10px rgba(var(--color-primary-rgb, 37, 99, 235), 0.25) !important;
+  }
+
+  .msgConvList {
+    width: 100% !important;
+    flex: 1;
+    min-height: 0;
+    border-right: none;
+    padding: 0rem 0.75rem 0;
+    box-sizing: border-box;
+  }
+
+  .hideOnMobile {
+    display: none !important;
+  }
+
+  .msgConvTitle {
+    font-size: 1.4rem;
+  }
+
+  .backBtn {
+    display: flex;
+  }
+
+  .msgConvScroll {
+    padding-bottom: 60px;
+  }
+
+  .msgConvHeader {
+    height: auto;
+    padding: 0 0 1rem 0;
+    border-bottom: none;
+  }
+
+  .searchRow {
+    padding: 0.5rem 0;
+    border-bottom: none;
+  }
+
+  .filterRow {
+    padding: 0.5rem 0;
+  }
+
+  .convItem {
+    padding: 0.75rem 0.75rem;
+    margin: 0.35rem 0;
+  }
+}
+
+.convIndicators {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.pinnedIcon {
+  color: var(--color-primary);
+  transform: rotate(45deg);
+  opacity: 0.8;
+}
+
+.mutedIcon {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+.activityBadge {
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: #18181b;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  z-index: 2;
+}
+
+:global([data-theme="dark"]) .activityBadge {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #18181b;
+}
+
+.calendarBadgeOverlay {
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+  background: #ffffff;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  text-align: center;
+  min-width: 22px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  z-index: 2;
+}
+
+.calMonth {
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 0.35rem;
+  font-weight: 800;
+  padding: 1px 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
+.calDay {
+  color: #000000;
+  font-size: 0.55rem;
+  font-weight: 800;
+  padding: 1px 2px;
+  font-family: var(--font-family-sans);
+  line-height: 1;
+}

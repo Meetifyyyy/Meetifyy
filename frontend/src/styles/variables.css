@@ -1,0 +1,98 @@
+:root {
+  /* === Colors === */
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
+  --color-primary-rgb: 37, 99, 235;
+  --color-secondary: #7C3AED;
+  --color-highlight: #FF6B35;
+  --color-success: #10B981;
+  --color-danger: #EF4444;
+  --color-danger-hover: #DC2626;
+  --color-danger-rgb: 239, 68, 68;
+
+  --color-bg-main: #F8F7F4;
+  --color-bg-white: #FFFFFF;
+  --color-bg-white-rgb: 255, 255, 255;
+  --color-bg-soft: #F1F5F9;
+  --color-bg-alt: #F1F5F9;
+  --color-bg-dark: #0F172A;
+  
+  --color-activity-card-grad-start: #E2E8F0; /* Mid greyish for light mode */
+  --color-activity-card-grad-end: #F1F5F9;
+  
+  --color-text-main: #0F172A;
+  --color-text-muted: #334155;
+  --color-text-light: #475569;
+  --color-text-inverse: #FFFFFF;
+  --color-icon-base: #475569;
+
+  --color-border: #E2E8F0;
+  --color-border-light: #F1F5F9;
+  --color-border-dark: #CBD5E1;
+
+  --bg-gradient-center: #ffffff;
+  --bg-gradient-mid: #f0f5fc;
+  --bg-gradient-edge: #d1e3f8;
+
+  /* === Typography === */
+  --font-family-display: 'Inter', sans-serif;
+  --font-family-sans: 'Inter', sans-serif;
+
+  /* === Border Radius === */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* === Shadows === */
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.03);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --shadow-premium: 0 16px 40px rgba(15, 23, 42, 0.06), 0 4px 8px rgba(15, 23, 42, 0.03);
+
+  /* === Glassmorphism === */
+  --bg-glass: rgba(255, 255, 255, 0.75);
+  --blur-glass: blur(16px);
+  --border-glass: 1px solid rgba(255, 255, 255, 0.4);
+
+  /* === Transitions === */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease;
+  --transition-slow: 0.3s ease;
+  --transition-theme: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+[data-theme="dark"] {
+  --color-bg-main: #121212;
+  --color-bg-white: #202020;
+  --color-bg-white-rgb: 32, 32, 32;
+  --color-bg-elevated: #202020;
+  --color-bg-soft: #2A2A2A;
+  --color-bg-alt: #2A2A2A;
+  
+  --color-activity-card-grad-start: #404247; /* Cement color greyish for dark mode */
+  --color-activity-card-grad-end: #2b2d31;
+  
+  --color-text-main: #FFFFFF;
+  --color-text-muted: #B3B3B3;
+  --color-text-light: #8A8A8A;
+  --color-text-inverse: #121212;
+  --color-icon-base: #D4D4D4;
+
+  --color-border: #404040;
+  --color-border-light: #333333;
+  --color-border-dark: #4D4D4D;
+
+  --bg-gradient-center: #1E1E1E;
+  --bg-gradient-mid: #121212;
+  --bg-gradient-edge: #000000;
+
+  --bg-glass: rgba(32, 32, 32, 0.75);
+  --border-glass: 1px solid rgba(255, 255, 255, 0.1);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --shadow-premium: 0 16px 40px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
+}

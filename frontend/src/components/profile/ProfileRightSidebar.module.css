@@ -1,0 +1,206 @@
+/* Uses the same design tokens as RightPanel.module.css */
+
+.panelCard {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.35rem;
+  box-shadow: 0 2px 12px rgba(18, 54, 107, 0.04);
+}
+
+.panelTitle {
+  font-family: var(--font-family-sans);
+  font-weight: 700;
+  font-size: 0.72rem;
+  color: var(--color-text-light);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 0.9rem;
+}
+
+/* ── Event item ── */
+.eventItem {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.18s ease;
+  margin: 0 -0.5rem;
+}
+
+.eventItem:hover {
+  background: var(--color-bg-soft);
+}
+
+.eventDate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: rgba(var(--color-primary-rgb), 0.1);
+  color: var(--color-primary);
+  font-family: var(--font-family-display);
+  flex-shrink: 0;
+}
+
+.eventMonth {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.eventDay {
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.eventDetail {
+  flex: 1;
+  min-width: 0;
+}
+
+.eventName {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  margin-bottom: 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eventSub {
+  font-size: 0.7rem;
+  color: var(--color-text-light);
+}
+
+/* ── Who to follow item ── */
+.personItem {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-md);
+  transition: background 0.18s ease;
+  margin: 0 -0.5rem;
+}
+
+.personItem:hover {
+  background: var(--color-bg-soft);
+}
+
+.personInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.personName {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.personSub {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Community item ── */
+.communityItem {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-md);
+  transition: background 0.18s ease;
+  margin: 0 -0.5rem;
+}
+
+.communityItem:hover {
+  background: var(--color-bg-soft);
+}
+
+.joinBtn {
+  background: transparent;
+  color: var(--color-primary);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.3);
+  border-radius: 100px;
+  padding: 0.28rem 0.75rem;
+  font-family: var(--font-family-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+}
+
+.joinBtn:hover {
+  background: rgba(var(--color-primary-rgb), 0.08);
+  border-color: var(--color-primary);
+}
+
+.divider {
+  height: 1px;
+  background: var(--color-border-light);
+  margin: 0.5rem 0;
+}
+
+/* ── Compact desktop (1025–1200px) ── */
+@media (max-width: 1200px) {
+  .panelCard {
+    padding: 1.1rem 1.15rem;
+  }
+
+  .eventDate {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+  }
+
+  .eventDay {
+    font-size: 0.9rem;
+  }
+
+  .eventName {
+    font-size: 0.78rem;
+  }
+
+  .eventSub {
+    font-size: 0.65rem;
+  }
+
+  .personName {
+    font-size: 0.78rem;
+  }
+
+  .personSub {
+    font-size: 0.65rem;
+  }
+
+  .joinBtn {
+    padding: 0.25rem 0.65rem;
+    font-size: 0.7rem;
+  }
+}
+
+/* ── Standard desktop (1201–1440px) ── */
+@media (max-width: 1440px) and (min-width: 1201px) {
+  .panelCard {
+    padding: 1.15rem 1.25rem;
+  }
+}

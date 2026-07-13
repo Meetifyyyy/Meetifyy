@@ -1,0 +1,10 @@
+.bgFull {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100dvh;
+  background: radial-gradient(circle at center, var(--bg-gradient-center) 0%, var(--bg-gradient-mid) 45%, var(--bg-gradient-edge) 100%);
+  z-index: -1;
+  pointer-events: none;
+}

@@ -1,0 +1,49 @@
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.resultCount {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-text-light);
+  margin-bottom: 0.15rem;
+}
+
+/* Skeleton loading */
+.skeleton {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.skeletonBlock {
+  border-radius: 4px;
+  background: var(--color-border-light);
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.skeletonActions {
+  display: flex;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  margin-top: 0.15rem;
+}
+
+.skeletonBtn {
+  flex: 1;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--color-border-light);
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

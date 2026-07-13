@@ -1,0 +1,100 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1.25rem;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  transition: transform var(--transition-normal), border-color var(--transition-normal), box-shadow var(--transition-normal);
+  min-width: 0;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 0.4rem;
+}
+
+.cardAvatar {  composes: ui-avatar from global;
+  width: 56px;
+  height: 56px;
+  background: var(--color-primary);
+}
+
+.cardAvatarImg {  composes: ui-avatar-img from global;
+}
+
+.cardTitle {
+  font-family: var(--font-family-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  margin: 0;
+  line-height: 1.3;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.joinBtn {
+  padding: 0.65rem 1rem;
+  border: none;
+  border-radius: 100px;
+  font-family: var(--font-family-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  background: var(--color-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.joinBtn:hover {
+  background: var(--color-primary-hover);
+  transform: scale(1.03);
+}
+
+.joined {
+  background: var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.joined:hover {
+  background: rgba(24, 24, 27, 0.12);
+  transform: none;
+}
+
+.cardDesc {
+  font-family: var(--font-family-sans);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.cardLetter {
+  font-family: var(--font-family-display);
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: #FFFFFF !important;
+  line-height: 1;
+}
+

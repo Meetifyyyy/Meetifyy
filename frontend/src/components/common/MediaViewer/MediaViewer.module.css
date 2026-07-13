@@ -1,0 +1,1057 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.3s ease;
+  outline: none;
+}
+
+.overlay.visible {
+  background: rgba(0, 0, 0, 0.92);
+}
+
+/* ── Top Bar ── */
+.topBar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10001;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.25rem;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, transparent 100%);
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+}
+
+.topBar.controlsVisible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.topBarLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.topBarRight {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.iconBtn {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+  flex-shrink: 0;
+  backdrop-filter: blur(4px);
+}
+
+.iconBtn:hover {
+  background: rgba(255,255,255,0.2);
+  transform: scale(1.05);
+}
+
+.iconBtn:active {
+  transform: scale(0.95);
+}
+
+/* ── Media Stage ── */
+.stage {
+  position: relative;
+  width: 100vw;
+  height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── Nav Arrows ── */
+.navBtn {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10001;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  transition: opacity 0.25s ease, background 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+}
+
+.navBtn.controlsVisible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.navBtn:hover {
+  background: rgba(255,255,255,0.18);
+}
+
+.navBtn:active {
+  transform: translateY(-50%) scale(0.92);
+}
+
+.navBtn:disabled {
+  opacity: 0.2 !important;
+  cursor: not-allowed;
+}
+
+.navPrev { left: 1rem; }
+.navNext { right: 1rem; }
+
+/* ── Counter ── */
+.counter {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, calc(-50% - 0px));
+  pointer-events: none;
+  /* will be below the media, just a reference; actual display is in topBar */
+  display: none;
+}
+
+.counterBadge {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.5);
+  color: rgba(255,255,255,0.9);
+  font-family: var(--font-family-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--radius-full);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.1);
+  letter-spacing: 0.02em;
+  z-index: 10002;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+.counterBadge.controlsVisible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── Info Panel ── */
+.infoPanel {
+  position: fixed;
+  bottom: 80px;
+  left: 1.25rem;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: min(400px, calc(100vw - 2.5rem));
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+}
+
+.infoPanel.controlsVisible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.infoPanelStandalone {
+  bottom: 16px;
+}
+
+.infoAvatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,0.2);
+}
+
+.infoAvatarPlaceholder {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-family-sans);
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #fff;
+  flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,0.2);
+}
+
+.infoText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.infoAuthor {
+  font-family: var(--font-family-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.infoMeta {
+  font-family: var(--font-family-sans);
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.6);
+  line-height: 1.2;
+}
+
+.infoCaption {
+  font-family: var(--font-family-sans);
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.8);
+  margin-top: 0.1rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+
+
+/* ── More Menu ── */
+.moreMenuWrap {
+  position: relative;
+}
+
+.moreMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 0.35rem;
+  min-width: 160px;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.96);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 10010;
+}
+
+.moreMenu.open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.moreMenuItem {
+  width: 100%;
+  padding: 0.5rem 0.85rem;
+  font-family: var(--font-family-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--color-text-main);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  transition: background 0.15s;
+}
+
+.moreMenuItem:hover {
+  background: var(--color-border-light);
+}
+
+.moreMenuItem.danger {
+  color: var(--color-danger);
+}
+
+/* ── Image Viewer ── */
+.imageWrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Cursor is toggled imperatively via classList */
+  cursor: default;
+  overflow: hidden;
+  /* Prevent callout on long-press (iOS) */
+  -webkit-touch-callout: none;
+}
+
+.imageWrap.grabbing {
+  cursor: grabbing !important;
+}
+
+.mediaImage {
+  max-width: 100%;
+  max-height: 100dvh;
+  object-fit: contain;
+  border-radius: 2px;
+  will-change: transform;
+  transform-origin: center center;
+  /* transform is applied imperatively by JS — only opacity uses CSS transition */
+  transition: opacity 0.32s ease;
+  user-select: none;
+  -webkit-user-drag: none;
+  /* pointer-events: none so the wrap element receives all mouse events */
+  pointer-events: none;
+  /* Prevent native image drag ghost on desktop */
+  -webkit-user-select: none;
+  cursor: zoom-in;
+}
+
+.mediaImage.entering {
+  opacity: 0;
+}
+
+.mediaImage.entered {
+  opacity: 1;
+}
+
+/* ── Skeleton / Loading ── */
+.skeleton {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.skeletonRect {
+  width: min(640px, 90vw);
+  height: min(440px, 60dvh);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.06) 25%,
+    rgba(255,255,255,0.12) 50%,
+    rgba(255,255,255,0.06) 75%
+  );
+  background-size: 400% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ── Broken Media ── */
+.brokenWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  color: rgba(255,255,255,0.5);
+  font-family: var(--font-family-sans);
+}
+
+.brokenWrap svg {
+  opacity: 0.4;
+}
+
+.brokenWrap span {
+  font-size: 0.875rem;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   VIDEO VIEWER — Premium Player
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Wrapper ─────────────────────────────────────────────────────────────── */
+.videoWrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  /* Hardware-accelerated layer */
+  transform: translateZ(0);
+}
+
+/* Fullscreen adaptations */
+.videoWrap:fullscreen,
+.videoWrap:-webkit-full-screen {
+  background: #000;
+  width: 100vw;
+  height: 100vh;
+  cursor: default;
+}
+
+/* ── Video element ────────────────────────────────────────────────────────── */
+.viewerVideo {
+  max-width: 100%;
+  max-height: 100dvh;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  outline: none;
+  display: block;
+  /* GPU composite */
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* ── Loading / Buffering spinner ─────────────────────────────────────────── */
+.videoSpinnerWrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.videoSpinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(255,255,255,0.15);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: vSpin 0.75s linear infinite;
+}
+
+@keyframes vSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Error state ─────────────────────────────────────────────────────────── */
+.videoError {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  color: rgba(255,255,255,0.55);
+  font-family: var(--font-family-sans);
+  font-size: 0.88rem;
+  pointer-events: auto;
+  z-index: 3;
+}
+
+.videoError svg {
+  opacity: 0.45;
+  color: rgba(255,255,255,0.7);
+}
+
+.videoRetryBtn {
+  margin-top: 0.25rem;
+  padding: 0.45rem 1.2rem;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-family: var(--font-family-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  backdrop-filter: blur(6px);
+}
+
+.videoRetryBtn:hover {
+  background: rgba(255,255,255,0.16);
+}
+
+/* ── Seek ripple (mobile double-tap) ─────────────────────────────────────── */
+.seekRipple {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  color: #fff;
+  pointer-events: none;
+  opacity: 0;
+  animation: rippleFade 0.65s ease forwards;
+  z-index: 5;
+}
+
+.seekRippleLeft  { left: 10%; }
+.seekRippleRight { right: 10%; }
+
+.seekRippleLabel {
+  font-family: var(--font-family-sans);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+}
+
+@keyframes rippleFade {
+  0%   { opacity: 0;   transform: translateY(-50%) scale(0.85); }
+  20%  { opacity: 1;   transform: translateY(-50%) scale(1); }
+  75%  { opacity: 1; }
+  100% { opacity: 0;   transform: translateY(-50%) scale(1.05); }
+}
+
+/* ── Controls overlay ────────────────────────────────────────────────────── */
+.videoControlsOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+
+.controlsOverlayVisible {
+  opacity: 1;
+}
+
+/* ── Bottom gradient ─────────────────────────────────────────────────────── */
+.videoGradient {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100px;
+  background: linear-gradient(
+    to top,
+    rgba(0,0,0,0.5) 0%,
+    transparent 100%
+  );
+  pointer-events: none;
+  border-radius: 0 0 2px 2px;
+}
+
+/* ── Progress area ───────────────────────────────────────────────────────── */
+.videoProgressArea {
+  position: relative;
+  padding: 0 1.25rem;
+  margin-bottom: 0.3rem;
+  z-index: 1;
+}
+
+/* ── Seek tooltip ────────────────────────────────────────────────────────── */
+.seekTooltip {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.82);
+  color: #fff;
+  font-family: var(--font-family-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.22rem 0.55rem;
+  border-radius: 5px;
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.12);
+  z-index: 2;
+}
+
+/* ── Progress track ──────────────────────────────────────────────────────── */
+.videoProgressTrack {
+  width: 100%;
+  height: 18px;   /* larger hit-target */
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.videoProgressBg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(255,255,255,0.18);
+  border-radius: 3px;
+  pointer-events: none;
+  transition: height 0.15s;
+}
+
+.videoProgressTrack:hover .videoProgressBg {
+  height: 4px;
+}
+
+.videoProgressBuffer {
+  position: absolute;
+  left: 0;
+  height: 3px;
+  background: rgba(255,255,255,0.32);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.videoProgressTrack:hover .videoProgressBuffer {
+  height: 4px;
+}
+
+.videoProgressFill {
+  position: absolute;
+  left: 0;
+  height: 3px;
+  background: var(--color-primary);
+  border-radius: 3px;
+  pointer-events: none;
+  transition: height 0.15s;
+}
+
+.videoProgressTrack:hover .videoProgressFill {
+  height: 4px;
+}
+
+.videoProgressThumb {
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  background: #fff;
+  border-radius: var(--radius-full);
+  transform: translate(-50%, -50%) scale(0);
+  pointer-events: none;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.45);
+  transition: width 0.15s, height 0.15s, transform 0.15s;
+}
+
+.videoProgressTrack:hover .videoProgressThumb {
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* ── Controls row ────────────────────────────────────────────────────────── */
+.videoControlsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.75rem 0.85rem;
+  gap: 0.25rem;
+  z-index: 1;
+  position: relative;
+}
+
+/* Interactive children of controls overlay get pointer-events when visible */
+.controlsOverlayVisible .videoControlsRow,
+.controlsOverlayVisible .videoProgressArea,
+.controlsOverlayVisible .videoBtn,
+.controlsOverlayVisible .videoSpeedBtn,
+.controlsOverlayVisible .videoVolSlider,
+.controlsOverlayVisible .videoProgressTrack {
+  pointer-events: auto;
+}
+
+.videoCtrlGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+/* ── Control buttons ─────────────────────────────────────────────────────── */
+.videoBtn {
+  width: 38px;
+  height: 38px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s, transform 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.videoBtn:hover {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+
+.videoBtn:active {
+  transform: scale(0.88);
+}
+
+.videoBtnActive {
+  color: var(--color-primary);
+}
+
+/* Focus ring */
+.videoBtn:focus-visible,
+.videoProgressTrack:focus-visible,
+.videoSpeedBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ── Volume group ────────────────────────────────────────────────────────── */
+.videoVolGroup {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.videoVolSliderWrap {
+  width: 0;
+  overflow: hidden;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.videoCtrlGroup:hover .videoVolSliderWrap,
+.videoVolGroup:focus-within .videoVolSliderWrap {
+  width: 80px;
+}
+
+.videoVolSlider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 72px;
+  height: 4px;
+  background: linear-gradient(
+    to right,
+    var(--color-primary, #3b82f6) calc(var(--vol, 1) * 100%),
+    rgba(255, 255, 255, 0.15) calc(var(--vol, 1) * 100%)
+  );
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+  transition: height 0.2s ease;
+}
+
+.videoVolSlider:hover {
+  height: 6px;
+}
+
+.videoVolSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s ease;
+  transform: scale(0);
+}
+
+.videoVolGroup:hover .videoVolSlider::-webkit-slider-thumb,
+.videoVolSlider:focus-visible::-webkit-slider-thumb {
+  transform: scale(1);
+}
+
+.videoVolSlider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.videoVolSlider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s ease;
+  transform: scale(0);
+}
+
+.videoVolGroup:hover .videoVolSlider::-moz-range-thumb,
+.videoVolSlider:focus-visible::-moz-range-thumb {
+  transform: scale(1);
+}
+
+.videoVolSlider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* ── Time display ────────────────────────────────────────────────────────── */
+.videoTime {
+  font-family: var(--font-family-sans);
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+  letter-spacing: 0.03em;
+  padding: 0 0.35rem;
+  user-select: none;
+}
+
+.videoTimeSep {
+  color: rgba(255,255,255,0.5);
+}
+
+/* ── Speed control ───────────────────────────────────────────────────────── */
+.videoSpeedWrap {
+  position: relative;
+}
+
+.videoSpeedBtn {
+  font-family: var(--font-family-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(255,255,255,0.92);
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 20px;
+  padding: 0.2rem 0.65rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.12s;
+  white-space: nowrap;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  backdrop-filter: blur(6px);
+}
+
+.videoSpeedBtn:hover {
+  background: rgba(255,255,255,0.2);
+  border-color: rgba(255,255,255,0.3);
+  color: #fff;
+}
+
+.videoSpeedBtn:active {
+  transform: scale(0.94);
+}
+
+.videoSpeedMenu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  background: rgba(15, 15, 20, 0.97);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04);
+  padding: 0.45rem;
+  min-width: 120px;
+  z-index: 20;
+  backdrop-filter: blur(20px);
+  animation: speedMenuIn 0.18s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes speedMenuIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.videoSpeedOption {
+  width: 100%;
+  padding: 0.42rem 0.7rem;
+  font-family: var(--font-family-sans);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.75);
+  background: none;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  transition: background 0.12s, color 0.12s;
+  position: relative;
+}
+
+.videoSpeedOption:hover {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}
+
+.videoSpeedOption.active {
+  color: #fff;
+  font-weight: 700;
+  background: rgba(255,255,255,0.06);
+}
+
+.videoSpeedOption.active::after {
+  content: '';
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  flex-shrink: 0;
+}
+
+/* ── Keyboard hint ───────────────────────────────────────────────────────── */
+.videoKeyHints {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0;
+  /* Hidden by default, show briefly on open via animation */
+  display: none;
+}
+
+.videoKeyHints span {
+  font-family: var(--font-family-sans);
+  font-size: 0.72rem;
+  color: rgba(255,255,255,0.4);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* ── Responsive ── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 600px) {
+  .navBtn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .navPrev { left: 0.5rem; }
+  .navNext { right: 0.5rem; }
+
+  .infoPanel {
+    bottom: 80px;
+    left: 0.75rem;
+    max-width: calc(100vw - 1.5rem);
+  }
+
+  .infoPanelStandalone {
+    bottom: 12px;
+  }
+
+  /* On mobile, always show volume slider expanded */
+  .videoVolSliderWrap {
+    width: 0 !important;
+    display: none;
+  }
+
+  .videoTime {
+    font-size: 0.7rem;
+  }
+
+  .videoControlsRow {
+    padding: 0 0.5rem 0.7rem;
+  }
+
+  .videoProgressArea {
+    padding: 0 0.75rem;
+  }
+
+  /* Make touch targets larger */
+  .videoBtn {
+    width: 42px;
+    height: 42px;
+  }
+
+  .videoProgressTrack {
+    height: 24px;
+  }
+
+  .videoProgressTrack .videoProgressBg,
+  .videoProgressTrack .videoProgressBuffer,
+  .videoProgressTrack .videoProgressFill {
+    height: 4px;
+  }
+
+  .videoProgressTrack .videoProgressThumb {
+    width: 16px !important;
+    height: 16px !important;
+    transform: translate(-50%, -50%) scale(1) !important;
+  }
+}
+
+/* ── Tap Feedback (Central Play/Pause Flash) ── */
+.tapFeedback {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: tapFeedbackAnim 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes tapFeedbackAnim {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.4);
+  }
+}

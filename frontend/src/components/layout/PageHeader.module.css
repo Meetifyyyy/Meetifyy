@@ -1,0 +1,332 @@
+.headerContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  border: none !important;
+}
+
+.titleArea {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.mobileTitleRow {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.backBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  color: var(--color-text-main);
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: 50%;
+  transition: background 0.2s;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+}
+
+.backBtn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.mobileTitle {
+  font-family: var(--font-family-display);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  margin: 0;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.desktopTitleRow {
+  display: block;
+}
+
+.desktopTitle {
+  font-family: var(--font-family-display);
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: var(--color-text-main);
+  margin: 0 0 0.2rem;
+  line-height: 1.1;
+}
+
+.desktopSubtitle {
+  font-family: var(--font-family-sans);
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  position: relative;
+  z-index: 50;
+}
+
+.searchWrapper {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 0 1rem;
+  height: 40px;
+  gap: 0.5rem;
+  width: 100%;
+  transition: border-radius 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.25s ease,
+    background-color 0.25s ease,
+    box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.searchBox:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb, 37, 99, 235), 0.18),
+    0 4px 16px rgba(15, 23, 42, 0.06);
+}
+
+.searchIcon {
+  color: var(--color-text-light);
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+
+.searchInput {
+  border: none;
+  background: transparent;
+  width: 100%;
+  height: 100%;
+  font-family: var(--font-family-sans);
+  font-size: 0.88rem;
+  color: var(--color-text-main);
+  outline: none;
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-light);
+}
+
+.clearBtn {
+  background: none;
+  border: none;
+  color: var(--color-text-light);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: color 0.2s;
+}
+
+.clearBtn:hover {
+  color: var(--color-text-main);
+}
+
+.actionSlot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 40px;
+}
+
+.actionPlaceholder {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.tabsNav {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-top: 0.15rem;
+}
+
+.tabsNav::-webkit-scrollbar {
+  display: none;
+}
+
+.tabsUnderline {
+  gap: 1.5rem;
+  border-bottom: 1.5px solid var(--color-border-light);
+  padding-bottom: 0;
+}
+
+.tabsUnderline .tabBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  padding: 10px 4px;
+  margin-bottom: -1.5px;
+  font-family: var(--font-family-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.tabsUnderline .tabBtn:hover {
+  color: var(--color-text-main);
+}
+
+.tabsUnderline .tabActive {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+.tabsPills {
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+  border-bottom: none;
+  padding: 0.25rem 0;
+}
+
+.tabsPills .tabBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: 100px;
+  padding: 6px 14px;
+  font-family: var(--font-family-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.tabsPills .tabBtn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb, 37, 99, 235), 0.08);
+}
+
+.tabsPills .tabActive {
+  background: var(--color-primary) !important;
+  color: white !important;
+  border-color: var(--color-primary) !important;
+}
+
+.tabIcon {
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .headerContainer {
+    gap: 0.85rem;
+    padding-top: 8px;
+  }
+
+  .mobileTitleRow {
+    display: flex;
+    padding-top: 4px;
+  }
+
+  .backBtn {
+    background: transparent !important;
+  }
+
+  .desktopTitleRow {
+    display: none;
+  }
+
+  .searchRow {
+    gap: 0.5rem;
+  }
+
+  .tabsNav {
+    border-bottom: none;
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+    padding: 0.25rem 0;
+  }
+
+  .tabBtn {
+    border: 1px solid var(--color-border) !important;
+    border-radius: 100px !important;
+    background: var(--color-bg-white) !important;
+    padding: 0.35rem 0.85rem !important;
+    font-size: 0.78rem !important;
+    margin-bottom: 0 !important;
+    border-bottom: 1px solid var(--color-border) !important;
+    color: var(--color-text-muted) !important;
+  }
+
+  .tabBtn:hover {
+    border-color: var(--color-primary) !important;
+    color: var(--color-primary) !important;
+    background: rgba(var(--color-primary-rgb, 37, 99, 235), 0.08) !important;
+  }
+
+  .tabActive {
+    background: var(--color-primary) !important;
+    color: white !important;
+    border-color: var(--color-primary) !important;
+  }
+
+  .tabIcon {
+    display: none;
+  }
+}
+
+.changaFont {
+  font-family: "Changa One", cursive !important;
+  font-weight: normal !important;
+  font-size: 2rem !important;
+}
+
+@media (max-width: 768px) {
+  .changaFont {
+    font-size: 1.8rem !important;
+    padding-left: 0.5rem;
+  }
+
+  .backBtn:not(.hideBackOnMobile)+.changaFont {
+    padding-left: 0.1rem !important;
+  }
+
+  .hideBackOnMobile {
+    display: none !important;
+  }
+}

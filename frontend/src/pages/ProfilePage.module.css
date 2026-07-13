@@ -1,0 +1,484 @@
+/* ═══════════════════════════════════════════
+   Profile Page Layout — Fully Responsive
+   ═══════════════════════════════════════════ */
+
+/* The main element sits inside the DashboardLayout grid. */
+.profileMain {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start !important;
+  overflow-y: auto !important;
+  gap: clamp(1rem, 2vw, 1.5rem);
+  padding: 0 1rem 2rem 0rem !important;
+  max-width: 1050px !important;
+  margin: 0 auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  box-sizing: border-box;
+}
+
+.profileMain::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Center column ── */
+.centerColumn {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  height: auto;
+}
+
+/* ── Profile card (cover + info) ── */
+.profileCard {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 12px rgba(18, 54, 107, 0.04);
+}
+
+.coverPhoto {
+  width: 100%;
+  height: clamp(100px, 25vw, 180px);
+  background-size: cover;
+  background-position: center;
+  background-color: var(--color-bg-soft);
+}
+
+.profileInfo {
+  padding: 0 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  z-index: 2;
+}
+
+.avatarWrapper {
+  margin-top: clamp(-48px, -10vw, -40px);
+  margin-bottom: 0.75rem;
+  border-radius: 50%;
+  padding: 4px;
+  background: var(--color-bg-white);
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatarWrapper>div {
+  width: clamp(72px, 20vw, 96px) !important;
+  height: clamp(72px, 20vw, 96px) !important;
+}
+
+.name {
+  font-family: 'Changa', sans-serif;
+  font-size: clamp(1.3rem, 3.5vw, 1.6rem);
+  font-weight: 800;
+  color: var(--color-text-main);
+  margin: 0 0 0.1rem 0;
+  line-height: 1.2;
+  text-align: center;
+  word-break: break-word;
+}
+
+.username {
+  font-size: clamp(0.85rem, 2vw, 0.95rem);
+  color: var(--color-text-muted);
+  margin: 0 0 1rem 0;
+  text-align: center;
+  word-break: break-all;
+}
+
+/* ── Tags container ── */
+.tagsScrollWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+  align-items: flex-start;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+  padding: 0 0.5rem; /* add a little safe padding on the sides */
+}
+
+.tagsScrollWrapper::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge */
+}
+
+.tagsRow {
+  display: flex;
+  gap: 0.5rem;
+  width: max-content;
+}
+
+.tag {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--color-bg-soft);
+  border: 1px solid var(--color-border-light);
+  border-radius: 100px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-text-main);
+  transition: all 0.18s ease;
+}
+
+.tag:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border);
+}
+
+/* ── Stats row ── */
+.statsContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1.5rem, 5vw, 3rem);
+  margin-bottom: 1.25rem;
+  width: 100%;
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.statItem:hover {
+  opacity: 0.7;
+}
+
+.statNumber {
+  font-family: 'Changa', sans-serif;
+  font-size: clamp(1.2rem, 3vw, 1.6rem);
+  font-weight: 800;
+  color: var(--color-text-main);
+  line-height: 1;
+  margin-bottom: 0.2rem;
+}
+
+.statLabel {
+  font-size: clamp(0.75rem, 1.5vw, 0.85rem);
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+/* ── Action buttons ── */
+.actionButtons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  width: 100%;
+}
+
+.actionButtons>* {
+  flex: 1;
+  min-width: 0;
+  max-width: 200px;
+}
+
+.primaryBtn {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  color: #fff;
+  border: none;
+  border-radius: 100px;
+  padding: 0.75rem 1.5rem;
+  font-family: var(--font-family-sans);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 10px rgba(var(--color-primary-rgb), 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.primaryBtn:hover {
+  opacity: 0.88;
+  box-shadow: 0 4px 16px rgba(var(--color-primary-rgb), 0.32);
+}
+
+.secondaryBtn {
+  background: transparent;
+  color: var(--color-text-main);
+  border: 1.5px solid var(--color-border);
+  border-radius: 100px;
+  padding: 0.75rem 1.5rem;
+  font-family: var(--font-family-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.secondaryBtn:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-text-muted);
+}
+
+/* ── Posts ── */
+.postsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.emptyState {
+  text-align: center;
+  padding: 3rem 1rem;
+  background: var(--color-bg-white);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+}
+
+.emptyStateIcon {
+  color: var(--color-text-muted);
+  margin-bottom: 0.85rem;
+}
+
+.emptyStateTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  margin-bottom: 0.4rem;
+}
+
+.emptyStateDesc {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+/* ── Right sidebar ── */
+.rightSidebar {
+  width: 280px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 0.25rem 0 2rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.rightSidebar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════
+   Responsive Breakpoints
+   ═══════════════════════════════════════════ */
+
+@media (min-width: 1441px) {
+  .profileMain {
+    max-width: 1050px !important;
+  }
+}
+
+@media (max-width: 1200px) {
+  .profileMain {
+    max-width: 960px !important;
+  }
+
+  .rightSidebar {
+    width: 240px;
+  }
+}
+
+@media (max-width: 960px) {
+  .rightSidebar {
+    display: none;
+  }
+
+  .profileMain {
+    max-width: 680px !important;
+  }
+}
+
+/* ── Mobile & Tablets ── */
+@media (max-width: 768px) {
+  .profileMain {
+    flex-direction: column !important;
+    padding: 0 0 5rem 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  .centerColumn {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .profileCard {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    margin-bottom: 0.75rem;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .profileInfo {
+    padding: 0 1rem 1.25rem;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .avatarWrapper {
+    margin-top: -50px !important;
+    margin-bottom: 0.5rem !important;
+    position: relative !important;
+    z-index: 10 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .avatarWrapper>div {
+    width: 96px !important;
+    height: 96px !important;
+  }
+
+  .name {
+    font-size: 1.35rem !important;
+    font-weight: 800 !important;
+    color: var(--color-text-main) !important;
+    margin: 0 0 0.2rem 0 !important;
+    text-align: center !important;
+    display: block !important;
+  }
+
+  .username {
+    font-size: 0.85rem !important;
+    color: var(--color-text-muted) !important;
+    margin: 0 0 1rem 0 !important;
+    text-align: center !important;
+    display: block !important;
+  }
+
+  .tagsScrollWrapper {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .statsContainer {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 1.5rem !important;
+    margin-bottom: 1.25rem !important;
+    width: 100% !important;
+  }
+
+  .tag {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.7rem;
+  }
+
+  .actionButtons {
+    gap: 0.6rem;
+    flex-wrap: wrap !important;
+    width: 100% !important;
+  }
+
+  .actionButtons>* {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .primaryBtn,
+  .secondaryBtn {
+    padding: 0.65rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  .postsContainer {
+    gap: 0.5rem;
+    padding: 0 0.5rem;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .emptyState {
+    border-radius: var(--radius-md);
+    padding: 2rem 1rem;
+    margin: 0;
+  }
+}
+
+/* ── Small Mobile ── */
+@media (max-width: 480px) {
+  .profileInfo {
+    padding: 0 0.75rem 1.25rem;
+  }
+
+  .avatarWrapper {
+    margin-top: -42px !important;
+  }
+
+  .avatarWrapper>div {
+    width: 80px !important;
+    height: 80px !important;
+  }
+
+  .name {
+    font-size: 1.2rem !important;
+  }
+
+  .username {
+    font-size: 0.8rem !important;
+  }
+
+  .tagsScrollWrapper {
+    gap: 0.4rem;
+  }
+
+  .tag {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.6rem;
+  }
+
+  .actionButtons {
+    gap: 0.5rem;
+  }
+
+  .primaryBtn,
+  .secondaryBtn {
+    font-size: 0.8rem;
+    padding: 0.6rem 0.75rem;
+  }
+
+  .statsContainer {
+    gap: 1.25rem !important;
+  }
+}

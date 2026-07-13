@@ -1,0 +1,568 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Globally prevent selection and dragging of images and avatars */
+img,
+.ui-avatar,
+.ui-avatar img,
+.ui-avatar-img {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  user-drag: none;
+  draggable: false;
+}
+
+body {
+  font-family: var(--font-family-sans);
+  background: var(--color-bg-main);
+  color: var(--color-text-main);
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: var(--transition-theme);
+}
+
+html {
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overflow-x: hidden;
+}
+
+/* Unused global header styling removed to prevent conflicts with Header.module.css */
+header {
+  box-sizing: border-box;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+[contenteditable="true"]:focus,
+[contenteditable="true"]:focus-visible {
+  outline: none !important;
+}
+
+.logo {
+  height: 40px;
+  width: auto;
+  display: block;
+  border-radius: var(--radius-sm);
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.nav-left .brand {
+  font-family: var(--font-family-display);
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: var(--color-text-main);
+  letter-spacing: -0.02em;
+  padding-bottom: 0.15em;
+  margin-bottom: -0.15em;
+}
+
+nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+nav a {
+  text-decoration: none;
+  font-family: var(--font-family-sans);
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  position: relative;
+  padding: 0.35rem 0;
+  transition: color 0.2s;
+}
+
+nav a:hover {
+  color: var(--color-text-main);
+}
+
+nav a.active {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.bg-full {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100dvh;
+  background: var(--color-bg-main);
+  z-index: -1;
+  pointer-events: none;
+  transition: var(--transition-theme);
+}
+
+.header-search {
+  flex: 1;
+  max-width: 420px;
+  margin: 0 1.5rem;
+  position: relative;
+}
+
+.search-bar {
+  width: 100%;
+  height: 38px;
+  padding: 0 1rem 0 2.4rem;
+  font-family: var(--font-family-sans);
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--color-text-main);
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: 100px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 0.85rem center;
+  background-size: 16px;
+}
+
+.search-bar:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.15);
+}
+
+.search-bar::placeholder {
+  color: var(--color-text-light);
+}
+
+.header-username {
+  font-family: var(--font-family-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+.notif-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.notif-icon:hover {
+  color: var(--color-text-main);
+  background: var(--color-border-light);
+}
+
+.notif-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--color-danger);
+  color: #FFFFFF;
+  font-size: 0.62rem;
+  font-weight: 700;
+  font-family: var(--font-family-display);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.nav-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  header {
+    padding: 0.6rem 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .logo {
+    height: 34px;
+  }
+
+  .header-search {
+    order: 3;
+    max-width: 100%;
+    margin: 0;
+    flex-basis: 100%;
+  }
+
+  /* Remove mobile hidden search rule from global.css. Handled within CSS modules */
+}
+
+@media (max-width: 480px) {
+  header {
+    padding: 0.5rem 0.75rem;
+  }
+}
+
+/* Unused bottom-nav styles removed since the app uses CSS module styles instead */
+
+.hover-underline:hover {
+  text-decoration: underline;
+}
+
+.custom-toast {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--color-text-main);
+  color: var(--color-text-inverse);
+  padding: 0.75rem 1.5rem;
+  border-radius: 100px;
+  font-family: var(--font-family-sans);
+  font-weight: 600;
+  font-size: 0.85rem;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 9999;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 768px) {
+  .custom-toast {
+    bottom: calc(52px + 1rem);
+    /* 52px is the height of BottomNav.module.css bottomNav */
+  }
+}
+
+.custom-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ---------- Centre Layout ---------- */
+.centre {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 1rem;
+  padding: 0 0rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  width: 100%;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.centre::-webkit-scrollbar {
+  display: none;
+}
+
+.profile {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.centre-wide {
+  max-width: none !important;
+}
+
+.centre--messages {
+  padding: 0 !important;
+  max-width: none !important;
+}
+
+@media (max-width: 1024px) {
+  .centre {
+    padding: 0 0rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .centre {
+    padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow-y: auto !important;
+    padding-bottom: 70px !important;
+    max-width: none !important;
+    margin: 0 !important;
+  }
+
+  .centre--messages {
+    padding-bottom: 0 !important;
+    overflow: hidden !important;
+    height: 100% !important;
+    max-height: 100% !important;
+  }
+}
+
+/* ---------- Dropdown Menu ---------- */
+.dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 200;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 0.35rem;
+  min-width: 160px;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.96);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.page-transition-exit-active {
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity var(--transition-normal), transform var(--transition-normal);
+}
+
+/* ---------- Theme Radial Transition ---------- */
+.theme-transitioning * {
+  transition: none !important;
+}
+
+::view-transition-old(root) {
+  animation: none;
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  animation: reveal var(--vt-duration, 1200ms) cubic-bezier(0.25, 0, 0.15, 1) forwards;
+  z-index: 2;
+}
+
+@keyframes reveal {
+  from { clip-path: circle(0px at var(--vt-x) var(--vt-y)); }
+  to   { clip-path: circle(var(--vt-r) at var(--vt-x) var(--vt-y)); }
+}
+
+/* Respect reduced motion — no animation, instant switch */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation-duration: 0ms; }
+}
+
+.theme-overlay {
+  will-change: clip-path;          /* Tells browser to composite this layer */
+  transform: translateZ(0);        /* Force GPU layer promotion */
+  contain: strict;                 /* Isolate painting scope */
+  pointer-events: none;            /* Never block interactions */
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+}
+
+.dropdown.open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.dropdown button {
+  width: 100%;
+  padding: 0.5rem 0.85rem;
+  font-family: var(--font-family-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--color-text-main);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.dropdown button:hover {
+  background: var(--color-border-light);
+}
+
+
+@keyframes fadeInSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-in {
+  animation: none !important;
+}
+
+@keyframes skeletonPulse {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes typingBounce {
+
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+  }
+
+  40% {
+    transform: translateY(-4px);
+  }
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+button {
+  transition: transform 0.15s ease, opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Custom Scrollbar Theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-dark);
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-bg-main);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-light);
+}
+
+* {
+  scrollbar-color: var(--color-border-dark) transparent;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* === UI Consistency: Standardized Avatar System === */
+.ui-avatar {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-family-display, 'Inter', sans-serif);
+  font-weight: 600;
+  color: var(--color-text-inverse, #fff);
+  background: var(--color-bg-soft, #F1F5F9);
+  flex-shrink: 0;
+  overflow: hidden;
+  position: relative;
+  /* Fix for Safari border-radius overflow issues with images */
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  mask-image: radial-gradient(white, black);
+  box-shadow: var(--shadow-sm); /* Default standard shadow */
+  transition: filter var(--transition-fast) ease, opacity var(--transition-fast) ease;
+}
+
+/* Dark mode fallback adjustment if needed */
+[data-theme="dark"] .ui-avatar {
+  background: var(--color-bg-soft, #2A2A2A);
+  color: var(--color-text-main, #fff);
+}
+
+.ui-avatar img,
+.ui-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  display: block;
+  /* Fallback color when image is loading or broken */
+  background-color: var(--color-bg-soft);
+}
+
+.ui-avatar-clickable {
+  cursor: pointer;
+}
+.ui-avatar-clickable:hover {
+  filter: brightness(0.9);
+}
+[data-theme="dark"] .ui-avatar-clickable:hover {
+  filter: brightness(1.2);
+}

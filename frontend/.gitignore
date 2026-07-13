@@ -1,0 +1,7 @@
+node_modules
+dist
+.agent
+.dual-graph
+scratch
+AGENTS.md
+GEMINI.md

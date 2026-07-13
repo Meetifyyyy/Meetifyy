@@ -1,0 +1,522 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(8px);
+  padding: 1.5rem;
+  overflow-y: auto;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.modal {
+  margin: auto;
+  background: var(--color-bg-white);
+  width: 100%;
+  max-width: 820px;
+  border-radius: 20px;
+  padding: 2.5rem;
+  box-shadow: var(--shadow-premium);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  position: relative;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid var(--color-border);
+}
+
+.closeButton {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-bg-soft);
+  color: var(--color-text-main);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.closeButton:hover {
+  background: var(--color-border);
+}
+
+/* === Content Steps === */
+.stepWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-height: 260px;
+}
+
+.stepTitleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-right: 3rem; /* Leave space for close button */
+}
+
+.stepTitle {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--color-text-main);
+  line-height: 1.25;
+  font-family: var(--font-family-display);
+}
+
+.stepSubtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--color-text-light);
+  line-height: 1.4;
+}
+
+/* === Inputs === */
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  margin-top: 0.6rem;
+}
+
+.fieldLabel, .textareaLabel {
+  position: absolute;
+  left: 0.85rem;
+  top: 0.85rem;
+  padding: 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 400;
+  pointer-events: none;
+  transition: transform 0.2s ease-in-out, font-size 0.2s ease-in-out, color 0.2s ease-in-out, background-color 0.2s ease-in-out;
+  transform-origin: left top;
+  color: var(--color-text-light);
+  background-color: transparent;
+  z-index: 1;
+}
+
+.textInput {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-main);
+}
+
+.textInput:focus {
+  border-color: var(--color-primary);
+  background: transparent;
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.15);
+}
+
+/* Floating label states */
+.textInput:focus ~ .fieldLabel,
+.textInput:not(:placeholder-shown) ~ .fieldLabel {
+  transform: translateY(-1.35rem) scale(0.78);
+  font-weight: 500;
+  background-color: var(--color-bg-white);
+  color: var(--color-text-light);
+}
+
+.textInput:focus ~ .fieldLabel {
+  color: var(--color-primary);
+}
+
+.textareaInput {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-main);
+  min-height: 95px;
+  resize: none;
+}
+
+.textareaInput:focus {
+  border-color: var(--color-primary);
+  background: transparent;
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.15);
+}
+
+/* Floating labels for textareas */
+.textareaInput:focus ~ .textareaLabel,
+.textareaInput:not(:placeholder-shown) ~ .textareaLabel {
+  transform: translateY(-1.35rem) scale(0.78);
+  font-weight: 500;
+  background-color: var(--color-bg-white);
+  color: var(--color-text-light);
+}
+
+.textareaInput:focus ~ .textareaLabel {
+  color: var(--color-primary);
+}
+
+.counterRow {
+  display: flex;
+  justify-content: flex-end;
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+  margin-top: 0.25rem;
+}
+
+/* === Categories Flow Grid === */
+.categoryGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  padding: 0.25rem 0;
+}
+
+.categoryCard {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  background: var(--color-bg-white);
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--color-text-main);
+  transition: all var(--transition-fast);
+}
+
+.categoryCard:hover {
+  background: var(--color-bg-soft);
+  border-color: var(--color-border-dark);
+}
+
+.categoryCardSelected {
+  background: rgba(var(--color-primary-rgb), 0.08);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* === Privacy Option Cards === */
+.privacyContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.privacyCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.15rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-white);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.privacyCard:hover {
+  border-color: var(--color-border-dark);
+  background: var(--color-bg-soft);
+}
+
+.privacyCardSelected {
+  border-color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.04);
+}
+
+.privacyIcon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.privacyText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+}
+
+.privacyLabel {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+.privacyDesc {
+  font-size: 0.8rem;
+  color: var(--color-text-light);
+  line-height: 1.35;
+}
+
+.radioCircle {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.1rem;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.privacyCardSelected .radioCircle {
+  border-color: var(--color-primary);
+}
+
+.radioDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  transform: scale(0);
+  transition: transform var(--transition-fast);
+}
+
+.privacyCardSelected .radioDot {
+  transform: scale(1);
+}
+
+/* === Avatar Upload & Cropper === */
+.avatarSection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  margin-top: 0.5rem;
+}
+
+.avatarCropperContainer {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-soft);
+  overflow: hidden;
+}
+
+.uploadTriggerButton {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1.15rem;
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  background: var(--color-bg-white);
+  color: var(--color-text-main);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.uploadTriggerButton:hover {
+  background: var(--color-bg-soft);
+  border-color: var(--color-border-dark);
+}
+
+.uploadTriggerIcon {
+  color: var(--color-text-light);
+}
+
+.avatarInput {
+  display: none;
+}
+
+.cropperWrapper {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  overflow: hidden;
+  user-select: none;
+  cursor: grab;
+}
+
+.cropperWrapper:active {
+  cursor: grabbing;
+}
+
+.cropperImage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: center center;
+  pointer-events: none;
+}
+
+.zoomSliderRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 220px;
+}
+
+.zoomIcon {
+  color: var(--color-text-light);
+  font-size: 0.85rem;
+}
+
+.zoomInput {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+  outline: none;
+  accent-color: var(--color-primary);
+}
+
+.letterAvatar {  composes: ui-avatar from global;
+  width: 150px;
+  height: 150px;
+  color: #FFFFFF;
+  font-size: 4rem;
+  font-weight: 700;
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-family-display);
+}
+
+/* === Final Summary UI === */
+.summaryContainer {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.15rem;
+  background: var(--color-bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.summaryLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  min-width: 90px;
+}
+
+.summaryVal {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text-main);
+  text-align: right;
+  word-break: break-word;
+}
+
+/* === Dots & Pill buttons Footer === */
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1.5rem;
+}
+
+.dotsProgress {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-border-dark);
+  transition: all var(--transition-normal);
+}
+
+.dotActive {
+  background: var(--color-text-main);
+}
+
+.buttonGroup {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.buttonBack, .buttonCancel {
+  padding: 0.65rem 1.5rem;
+  background: var(--color-bg-soft);
+  border: none;
+  border-radius: 9999px;
+  color: var(--color-text-main);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.buttonBack:hover, .buttonCancel:hover {
+  background: var(--color-border);
+}
+
+.buttonContinue, .buttonCreate {
+  padding: 0.65rem 1.75rem;
+  background: var(--color-text-main);
+  border: none;
+  border-radius: 9999px;
+  color: var(--color-bg-white);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.buttonContinue:hover, .buttonCreate:hover {
+  opacity: 0.9;
+}
+
+.buttonContinue:disabled, .buttonCreate:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}

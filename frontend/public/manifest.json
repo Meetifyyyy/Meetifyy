@@ -1,0 +1,26 @@
+{
+  "name": "Meetifyy",
+  "short_name": "Meetifyy",
+  "description": "Meetifyy — your vibe, your tribe, your spotlight. Connect with like-minded people, join communities, and build your network.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#7c3aed",
+  "categories": ["social", "communication"],
+  "icons": [
+    {
+      "src": "/logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

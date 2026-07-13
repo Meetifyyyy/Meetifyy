@@ -1,0 +1,344 @@
+/* ─── Container ─────────────────────────────────────────────────────────────── */
+.container {
+  position: relative;
+  width: 100%;
+  overflow: visible;
+}
+
+.searchBox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  overflow: visible;
+  border: 1.2px solid var(--color-primary);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-white);
+  transition:
+    border-radius 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.25s ease,
+    background-color 0.25s ease,
+    box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.searchBox:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb, 37, 99, 235), 0.15),
+              0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.searchBox.searchBoxOpen {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-color: var(--color-primary);
+  border-bottom-color: transparent;      /* seamless merge with dropdown border */
+  box-shadow: none;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  width: 28px;
+  height: 28px;
+  pointer-events: none;
+  opacity: 0.9;
+  object-fit: contain;
+  z-index: 2;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+}
+
+.input {
+  width: 100%;
+  padding: 7px 40px 7px 50px;         /* right pad avoids clear btn overlap */
+  border: none;
+  background: transparent;
+  color: var(--color-text-main);
+  font-size: 0.95rem;
+  font-family: var(--font-family-sans);
+  line-height: 1.5;                      /* consistent cursor height across browsers */
+  outline: none;
+}
+
+.input:focus {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.input::placeholder {
+  color: var(--color-text-light);
+}
+
+.clearBtn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  z-index: 2;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.clearBtn:hover {
+  background: var(--color-border-light);
+  color: var(--color-text-main);
+}
+
+/* Bottom Nav Variant Styles */
+.bottomNavContainer {
+  display: flex;
+  height: 40px;
+  width: 100%;
+  overflow: visible;
+}
+
+.bottomNavSearchBox {
+  display: flex;
+  align-items: center;
+  background: var(--color-border-light);
+  border: 1px solid rgba(24, 24, 27, 0.1);
+  border-radius: var(--radius-xl);
+  padding: 0 0.75rem;
+  width: 100%;
+  overflow: visible;
+  transition:
+    border-radius 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.25s ease,
+    background-color 0.25s ease,
+    box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: text;
+}
+
+.active .bottomNavSearchBox {
+  background: rgba(var(--color-primary-rgb), 0.15);
+  border-color: rgba(var(--color-primary-rgb), 0.15);
+}
+
+.bottomNavIcon {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  margin-right: 0.5rem;
+}
+
+.active .bottomNavIcon {
+  color: var(--color-primary);
+}
+
+.bottomNavInput {
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  font-family: var(--font-family-sans);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--color-text-main);
+  width: 100%;
+}
+
+.bottomNavInput:focus {
+  background: transparent;
+  box-shadow: none;
+}
+
+.bottomNavInput::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.7;
+}
+
+.bottomNavClearBtn {
+  position: static;
+  padding: 4px;
+  margin-left: 4px;
+  color: var(--color-text-muted);
+  background: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.bottomNavClearBtn:hover {
+  background: var(--color-border);
+  color: var(--color-text-main);
+}
+
+/* Mobile Search Page Variant Styles */
+.mobileSearchPageBox {
+  display: flex;
+  align-items: center;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 0 1rem;
+  height: 40px;
+  gap: 0.5rem;
+  overflow: visible;
+  transition:
+    border-radius 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.25s ease,
+    background-color 0.25s ease,
+    box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mobileSearchPageBox:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb, 37, 99, 235), 0.15),
+              0 2px 8px rgba(15, 23, 42, 0.05);
+}
+
+.mobileSearchPageBox.searchBoxOpen,
+.bottomNavSearchBox.searchBoxOpen {
+  border-top-left-radius: var(--radius-xl);
+  border-top-right-radius: var(--radius-xl);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-color: var(--color-primary);
+  border-bottom-color: transparent;
+  box-shadow: none;
+}
+
+.mobileSearchPageIcon {
+  color: var(--color-text-light);
+  flex-shrink: 0;
+  pointer-events: none;
+  transition: color 0.25s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mobileSearchPageBox:focus-within .mobileSearchPageIcon {
+  color: var(--color-primary);
+  transform: scale(1.08);
+}
+
+.mobileSearchPageInput {
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  height: 100%;
+  font-family: var(--font-family-sans);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--color-text-main);
+  width: 100%;
+}
+
+.mobileSearchPageInput::placeholder {
+  color: var(--color-text-light);
+}
+
+.mobileSearchPageInput:focus {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Search Dropdown Menu */
+.dropdownMenu {
+  position: absolute;
+  top: calc(100% - 1px);               /* overlap by 1px so border joins cleanly */
+  left: 0;
+  width: 100%;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-primary);
+  border-top: none;
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 8px 24px -4px rgba(15, 23, 42, 0.12),
+              0 2px 8px rgba(15, 23, 42, 0.06);
+  z-index: 600;                         /* above header z-index: 500 */
+  animation: dropdownExpand 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: top center;
+}
+
+@keyframes dropdownExpand {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+.dropdownHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  padding: 16px 16px 8px;
+  letter-spacing: 0.5px;
+}
+
+.dropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  color: var(--color-text-main);
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.dropdownItem:hover {
+  background: var(--color-border-light);
+}
+
+.dropdownIcon {
+  color: var(--color-text-light);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.removeRecentBtn {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  background: none;
+  border: none;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.removeRecentBtn:hover {
+  background: var(--color-border);
+  color: var(--color-text-main);
+}
+
+.clearAllBtn {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.clearAllBtn:hover {
+  background: rgba(var(--color-primary-rgb), 0.1);
+}

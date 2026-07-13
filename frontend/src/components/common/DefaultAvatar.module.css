@@ -1,0 +1,13 @@
+.avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary);
+  color: #ffffff;
+  flex-shrink: 0;
+  overflow: hidden;
+  font-size: inherit;
+}

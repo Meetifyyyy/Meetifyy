@@ -1,0 +1,31 @@
+.wrapper {
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  display: inline;
+}
+
+.mentionLink {
+  color: var(--color-primary, #3b82f6);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.mentionLink:hover {
+  text-decoration: underline;
+}
+
+.plainText {
+  display: inline;
+}
+
+.urlLink {
+  color: var(--color-primary, #3b82f6);
+  text-decoration: underline;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.urlLink:hover {
+  text-decoration: none;
+}
+

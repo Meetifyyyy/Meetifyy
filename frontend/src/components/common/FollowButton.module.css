@@ -1,0 +1,87 @@
+.followBtn {
+  font-family: var(--font-family-sans);
+  font-weight: 600;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+}
+
+.sizeSm {
+  padding: 0.28rem 0.8rem;
+  font-size: 0.73rem;
+  font-weight: 600;
+}
+
+.sizeMd {
+  padding: 0.75rem 1.5rem;
+  font-size: 0.9rem;
+}
+
+.following {
+  border: 1.5px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-main);
+  transition: all 0.2s ease;
+}
+
+.following:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-text-muted);
+}
+
+.notFollowing {
+  border: none;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  color: #FFFFFF;
+  box-shadow: 0 2px 10px rgba(var(--color-primary-rgb), 0.22);
+}
+
+.notFollowing:hover {
+  opacity: 0.88;
+  box-shadow: 0 4px 16px rgba(var(--color-primary-rgb), 0.32);
+}
+
+/* ── Mobile (≤768px) ── */
+@media (max-width: 768px) {
+  .sizeMd {
+    padding: 0.65rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  .following {
+    padding: 0.42rem 1.25rem;
+  }
+}
+
+/* ── Small mobile (≤480px) ── */
+@media (max-width: 480px) {
+  .sizeMd {
+    padding: 0.6rem 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .following {
+    padding: 0.38rem 1rem;
+  }
+
+  .sizeSm {
+    padding: 0.25rem 0.65rem;
+    font-size: 0.68rem;
+  }
+}
+
+/* ── Very small mobile (≤360px) ── */
+@media (max-width: 360px) {
+  .sizeMd {
+    padding: 0.38rem 0.85rem;
+    font-size: 0.75rem;
+  }
+
+  .following {
+    padding: 0.35rem 0.85rem;
+  }
+}
