@@ -1,0 +1,181 @@
+.msgChatHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 72px;
+  padding: 0 0.75rem;
+  border-bottom: 1px solid var(--color-border-light);
+  flex-shrink: 0;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.msgChatHeader:hover {
+  background-color: var(--color-bg-soft);
+}
+
+.msgChatUser {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+  padding-right: 0.75rem;
+}
+
+.msgChatUserClickable {
+  border-radius: var(--radius-md);
+}
+
+.msgChatAvatar {  composes: ui-avatar from global;
+  width: 38px;
+  height: 38px;
+  font-family: var(--font-family-display);
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--color-text-inverse);
+  /* ensure GPU layer for clean clipping */
+}
+
+.msgChatAvatarClip {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.msgChatAvatarImg {  composes: ui-avatar-img from global;
+}
+
+.msgChatName {
+  font-family: var(--font-family-display);
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--color-text-main);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.msgChatNameText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.msgChatStatus {
+  font-size: 0.72rem;
+  color: var(--color-success);
+  font-weight: 500;
+  margin-top: 1px;
+}
+
+.msgChatActions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.msgChatActionBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-main);
+  border: 1px solid var(--color-border-light);
+  color: var(--color-icon-base);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.msgChatActionBtn:hover,
+.msgChatActionBtnActive {
+  background: var(--color-border-light);
+  color: var(--color-primary);
+  border-color: var(--color-border);
+}
+
+.msgMoreDropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 170px;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-md);
+  padding: 0.35rem;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.msgDropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: none;
+  font-family: var(--font-family-sans);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-text-main);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  text-align: left;
+}
+
+.msgDropdownItem:hover {
+  background: var(--color-border-light);
+}
+
+.msgDropdownItemDanger {
+  color: var(--color-danger);
+}
+
+.msgDropdownItemDanger:hover {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.msgBlockedBadge {
+  font-size: 0.65rem;
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-danger);
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.msgMobileHeaderVisible {
+  /* Class to override display on mobile if needed */
+}
+
+.msgBackBtn {
+  background: none;
+  border: none;
+  color: var(--color-icon-base);
+  cursor: pointer;
+  padding: 4px;
+  margin-right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+
+.msgBackBtn:hover {
+  background-color: var(--color-bg-soft);
+}

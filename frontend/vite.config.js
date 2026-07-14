@@ -105,6 +105,8 @@ export default defineConfig({
       '@features': path.resolve(__dirname, 'src/features'),
       '@data':     path.resolve(__dirname, 'src/data'),
       '@styles':   path.resolve(__dirname, 'src/styles'),
+      '@constants': path.resolve(__dirname, 'src/constants'),
+      '@assets':   path.resolve(__dirname, 'src/assets'),
 
       // ── bridge aliases (old paths → new locations) ───────────────
       // shared layer
@@ -130,6 +132,9 @@ export default defineConfig({
 
       // pages → features
       '@/pages': path.resolve(__dirname, 'src/features'),
+      '@/constants': path.resolve(__dirname, 'src/constants'),
+      '@/assets': path.resolve(__dirname, 'src/assets'),
+      '@': path.resolve(__dirname, 'src'),
     },
   },
   server: {

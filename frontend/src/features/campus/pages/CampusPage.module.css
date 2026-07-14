@@ -1,0 +1,108 @@
+/* You May Know */
+.knowCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 88px;
+  /* Matches avatar width */
+}
+
+.knowAvatar {
+  composes: ui-avatar from global;
+  width: 88px;
+  height: 88px;
+  background: #7a8a9e;
+  color: white;
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+.knowName {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--color-text-main);
+  text-align: center;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.knowListContainer {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 0.5rem;
+}
+
+.knowListContainer::-webkit-scrollbar {
+  display: none;
+}
+
+.viewDirBtn {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-main);
+  border-radius: var(--radius-md);
+  padding: 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s;
+  text-align: center;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.viewDirBtn:hover {
+  transform: translateY(-1px);
+}
+
+:global([data-theme="dark"]) .viewDirBtn {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Discover Groups */
+.discoverGroupsCard {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.dashedAddSquare {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: 2px dashed #0088cc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  color: #0088cc;
+}
+
+.plusOverlay {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  font-size: 0.75rem;
+  font-weight: bold;
+}
+
+.discoverGroupsText {
+  color: #0088cc;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.discoverGroupsCard:hover .dashedAddSquare {
+  background: rgba(0, 136, 204, 0.05);
+}
+
+.discoverGroupsCard:hover .discoverGroupsText {
+  text-decoration: underline;
+}

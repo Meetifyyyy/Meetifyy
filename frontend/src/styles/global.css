@@ -570,3 +570,19 @@ button:active {
 [data-theme="dark"] .ui-avatar-clickable:hover {
   filter: brightness(1.2);
 }
+
+/* ── Global spinner ──────────────────────────────────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  flex-shrink: 0;
+}

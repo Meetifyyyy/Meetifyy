@@ -1,39 +1,40 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
-import { SmartBackTracker } from './hooks/useSmartBack';
-import { useAuth } from './context/AuthContext';
-import DashboardLayoutWrapper from './pages/DashboardLayoutWrapper';
-import ErrorBoundary, { RouteErrorBoundary } from './components/common/ErrorBoundary';
-import InstallPopup from './components/common/InstallPopup';
+import { SmartBackTracker } from './shared/hooks/useSmartBack';
+import { useAuth } from './shared/context/AuthContext';
+import DashboardLayoutWrapper from './layout/DashboardLayoutWrapper';
+import ErrorBoundary, { RouteErrorBoundary } from './shared/components/ErrorBoundary';
+import InstallPopup from './shared/components/InstallPopup';
+import PageShellSkeleton from './shared/components/PageShellSkeleton';
 
-const LandingPage = lazy(() => import('./pages/LandingPage'));
-const FeedRoute = lazy(() => import('./pages/FeedRoute'));
-const CommunitiesRoute = lazy(() => import('./pages/CommunitiesRoute'));
-const CommunityDetailRoute = lazy(() => import('./pages/CommunityDetailRoute'));
-const PostDetailRoute = lazy(() => import('./pages/PostDetailRoute'));
-const MessagesRoute = lazy(() => import('./pages/MessagesRoute'));
-const ProfilePage = lazy(() => import('./pages/ProfilePage'));
-const SearchResultsRoute = lazy(() => import('./pages/SearchResultsRoute'));
-const LoginPage = lazy(() => import('./pages/LoginPage'));
-const SignupPage = lazy(() => import('./pages/SignupPage'));
-const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
-const OnboardingRoute = lazy(() => import('./pages/onboarding/OnboardingRoute'));
-const SettingsRoute = lazy(() => import('./pages/settings/SettingsRoute'));
-const FindYourCrewPage = lazy(() => import('./components/crew/FindYourCrewPage'));
-const ActivityDetailPage = lazy(() => import('./components/crew/ActivityDetailPage'));
-const CreateActivityPage = lazy(() => import('./components/crew/CreateActivityPage'));
-const NotificationsRoute = lazy(() => import('./pages/NotificationsRoute'));
-const CampusPage = lazy(() => import('./pages/CampusPage'));
-const DirectoryPage = lazy(() => import('./pages/DirectoryPage'));
-const ActivitiesPage = lazy(() => import('./pages/ActivitiesPage'));
-const GroupsPage = lazy(() => import('./pages/GroupsPage'));
-const SavedPage = lazy(() => import('./pages/SavedPage'));
+const LandingPage = lazy(() => import('./features/auth/pages/LandingPage'));
+const FeedRoute = lazy(() => import('./features/feed/pages/FeedRoute'));
+const CommunitiesRoute = lazy(() => import('./features/communities/pages/CommunitiesRoute'));
+const CommunityDetailRoute = lazy(() => import('./features/communities/pages/CommunityDetailRoute'));
+const PostDetailRoute = lazy(() => import('./features/feed/pages/PostDetailRoute'));
+const MessagesRoute = lazy(() => import('./features/messages/pages/MessagesRoute'));
+const ProfilePage = lazy(() => import('./features/profile/pages/ProfilePage'));
+const SearchResultsRoute = lazy(() => import('./features/search/pages/SearchResultsRoute'));
+const LoginPage = lazy(() => import('./features/auth/pages/LoginPage'));
+const SignupPage = lazy(() => import('./features/auth/pages/SignupPage'));
+const ForgotPasswordPage = lazy(() => import('./features/auth/pages/ForgotPasswordPage'));
+const OnboardingRoute = lazy(() => import('./features/onboarding/pages/OnboardingRoute'));
+const SettingsRoute = lazy(() => import('./features/settings/pages/SettingsRoute'));
+const FindYourCrewPage = lazy(() => import('./features/crew/pages/FindYourCrewPage'));
+const ActivityDetailPage = lazy(() => import('./features/crew/pages/ActivityDetailPage'));
+const CreateActivityPage = lazy(() => import('./features/crew/pages/CreateActivityPage'));
+const NotificationsRoute = lazy(() => import('./features/notifications/pages/NotificationsRoute'));
+const CampusPage = lazy(() => import('./features/campus/pages/CampusPage'));
+const DirectoryPage = lazy(() => import('./features/campus/pages/DirectoryPage'));
+const ActivitiesPage = lazy(() => import('./features/campus/pages/ActivitiesPage'));
+const GroupsPage = lazy(() => import('./features/campus/pages/GroupsPage'));
+const SavedPage = lazy(() => import('./features/feed/pages/SavedPage'));
 
 /** Wraps a route element with a scoped error boundary and suspense fallback */
 function withBoundary(element) {
   return (
     <RouteErrorBoundary>
-      <Suspense fallback={null}>
+      <Suspense fallback={<PageShellSkeleton />}>
         {element}
       </Suspense>
     </RouteErrorBoundary>
@@ -92,7 +93,7 @@ function NotFound() {
  * on one page never unmounts the surrounding shell (header, sidebar, bottom nav).
  */
 export default function App() {
-  const router = createBrowserRouter([
+  const router = useMemo(() => createBrowserRouter([
     {
       path: '/',
       element: (
@@ -172,7 +173,7 @@ export default function App() {
   ],
 },
 { path: '*', element: <Navigate to="/" replace /> },
-]);
+]), []);
 
   return <RouterProvider router={router} />;
 }

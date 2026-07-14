@@ -1,0 +1,121 @@
+.msgChatArea {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+}
+
+.msgBlockedInputOverlay {
+  flex: 1;
+  text-align: left;
+  padding: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--color-danger);
+  background: #FEF2F2;
+  border: 1px dashed #FECACA;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.msgSearchBar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1.25rem;
+  background: var(--color-bg-main);
+  border-bottom: 1px solid var(--color-border-light);
+  color: var(--color-text-muted);
+  animation: slideDownSearch 0.2s ease-out;
+}
+
+@keyframes slideDownSearch {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.msgSearchBarInput {
+  flex: 1;
+  border: none;
+  background: none;
+  outline: none;
+  font-family: var(--font-family-sans);
+  font-size: 0.85rem;
+  color: var(--color-text-main);
+}
+
+.msgSearchBarClose {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 50%;
+}
+
+.msgSearchBarClose:hover {
+  background: var(--color-border-light);
+}
+
+.msgSearchHighlight {
+  background: #FEF3C7;
+  color: #92400E;
+  padding: 0 2px;
+  border-radius: 3px;
+}
+
+.msgNoChatSelected {
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-main);
+}
+
+.msgNoChatContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  max-width: 320px;
+  animation: none !important;
+}
+
+.msgNoChatIcon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(var(--color-primary-rgb), 0.1), rgba(var(--color-secondary-rgb), 0.1));
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 8px 32px rgba(var(--color-primary-rgb), 0.1);
+}
+
+.msgNoChatContent h3 {
+  font-family: var(--font-family-display);
+  font-weight: 700;
+  font-size: 1.4rem;
+  color: var(--color-text-main);
+  margin-bottom: 0.5rem;
+}
+
+.msgNoChatContent p {
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+

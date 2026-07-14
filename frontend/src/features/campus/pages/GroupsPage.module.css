@@ -1,0 +1,176 @@
+
+/* Creation Modal Form Sizing */
+.modalForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.formGroup label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.formGroup input,
+.formGroup textarea,
+.formGroup select {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 0.65rem 0.85rem;
+  color: white;
+  outline: none;
+}
+
+.modalBtns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.cancelBtn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: white;
+  padding: 0.55rem 1.25rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.submitBtn {
+  background: var(--color-primary);
+  border: none;
+  color: white;
+  padding: 0.55rem 1.25rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+/* Join Group Modal */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeInOverlay 0.25s ease-out;
+}
+
+.joinModal {
+  background: rgba(18, 18, 18, 0.85);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-xl);
+  padding: 2.25rem 2rem;
+  width: 90%;
+  max-width: 440px;
+  text-align: center;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  animation: scaleUpModal 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.joinAvatarWrapper {
+  margin-bottom: 0.5rem;
+}
+
+.joinGroupName {
+  font-family: var(--font-family-display);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  margin: 0;
+  line-height: 1.25;
+}
+
+.joinGroupDesc {
+  font-size: 0.92rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 320px;
+}
+
+.joinModalButtons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.joinPrimaryBtn {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  padding: 0.85rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.2);
+}
+
+.joinPrimaryBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(29, 78, 216, 0.35);
+}
+
+.joinCancelBtn {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-main);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.85rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.joinCancelBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes fadeInOverlay {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scaleUpModal {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}

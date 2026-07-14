@@ -1,14 +1,14 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AuthProvider } from './context/AuthContext';
-import { FollowProvider } from './context/FollowContext';
-import { DataProvider } from './context/DataContext';
-import { NotificationProvider } from './context/NotificationContext';
-import NotificationBridge from './context/NotificationBridge';
-import { ThemeProvider } from './context/ThemeContext';
+import { AuthProvider } from './shared/context/AuthContext';
+import { FollowProvider } from './shared/context/FollowContext';
+import { DataProvider } from './shared/context/DataContext';
+import { NotificationProvider } from './shared/context/NotificationContext';
+import NotificationBridge from './shared/context/NotificationBridge';
+import { ThemeProvider } from './shared/context/ThemeContext';
 import App from './App.jsx';
-import { MediaViewerProvider } from './context/MediaViewerContext';
-import MediaViewer from './components/common/MediaViewer/MediaViewer';
+import { MediaViewerProvider } from './shared/context/MediaViewerContext';
+import MediaViewer from './shared/components/MediaViewer/MediaViewer';
 import './styles/variables.css';
 import './styles/global.css';
 
