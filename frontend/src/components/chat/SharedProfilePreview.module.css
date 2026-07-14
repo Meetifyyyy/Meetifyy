@@ -1,0 +1,102 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  transition: transform var(--transition-fast) ease, box-shadow var(--transition-fast) ease, border-color var(--transition-fast) ease;
+  width: 100%;
+  max-width: 320px;
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text-main);
+  padding-bottom: 20px;
+}
+
+.container:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-border-dark);
+}
+
+.coverWrapper {
+  width: 100%;
+  height: 140px;
+  overflow: hidden;
+  background: var(--color-bg-soft);
+}
+
+.coverPhoto {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatarContainer {
+  margin-top: -44px;
+  z-index: 2;
+  background: var(--color-bg-white);
+  border-radius: var(--radius-full);
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition-theme);
+}
+
+:global([data-theme="dark"]) .avatarContainer {
+  background: var(--color-bg-white); /* keep white background for avatar ring as seen in screenshot */
+}
+
+.avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  display: block;
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 12px;
+  padding: 0 16px;
+  text-align: center;
+  width: 100%;
+}
+
+.name {
+  font-family: var(--font-family-display);
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--color-text-main);
+  margin-bottom: 2px;
+  line-height: 1.2;
+}
+
+.username {
+  font-family: var(--font-family-sans);
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+/* Unavailable state */
+.unavailable {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  background: var(--color-bg-soft);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-light);
+  font-size: 0.85rem;
+  width: 100%;
+  max-width: 320px;
+}

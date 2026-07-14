@@ -14,6 +14,7 @@ import CommunityMembersModal from './CommunityMembersModal';
 import CommunityAdminModal from './CommunityAdminModal';
 import styles from './CommunityView.module.css';
 import { useMediaViewer } from '../../context/MediaViewerContext';
+import ShareCommunityModal from './ShareCommunityModal';
 
 function getActivityPhrase(comm) {
   if (comm.trending) return 'Growing Fast';
@@ -38,6 +39,7 @@ function HeroSection({ comm, joined, onToggleJoin, onCreatePost, userCommunities
   const avatarInputRef = useRef(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -202,8 +204,7 @@ function HeroSection({ comm, joined, onToggleJoin, onCreatePost, userCommunities
                   <button 
                     type="button"
                     onClick={() => {
-                      navigator.clipboard.writeText(window.location.href);
-                      showToast('Link copied to clipboard!');
+                      setShowShareModal(true);
                       setShowDropdown(false);
                     }}
                   >
@@ -296,6 +297,11 @@ function HeroSection({ comm, joined, onToggleJoin, onCreatePost, userCommunities
           </div>
         </div>
       </div>
+      <ShareCommunityModal 
+        isOpen={showShareModal} 
+        onClose={() => setShowShareModal(false)} 
+        community={comm} 
+      />
     </div>
   );
 }

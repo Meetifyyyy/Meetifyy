@@ -328,7 +328,7 @@ export default function SettingsRoute() {
                       if (socialErrors[platform]) setSocialErrors(prev => ({ ...prev, [platform]: null }));
                     }}
                   />
-                  {socialErrors[platform] && <div style={{ color: 'var(--color-danger)', fontSize: '0.75rem', marginTop: '4px' }}>{socialErrors[platform]}</div>}
+                  {socialErrors[platform] && <div className={styles.errorText}>{socialErrors[platform]}</div>}
                 </div>
               </div>
             ))}
@@ -367,7 +367,7 @@ export default function SettingsRoute() {
               </label>
             </div>
             
-            <div className={styles.divider} style={{ marginLeft: 16 }} />
+            <div className={styles.nestedDivider} />
 
             <div className={`${styles.selectRow} ${!showOnlineStatus ? styles.disabledRow : ''}`}>
               <div className={styles.toggleInfo}>
@@ -387,7 +387,7 @@ export default function SettingsRoute() {
               />
             </div>
 
-            <div className={styles.divider} style={{ marginLeft: 16 }} />
+            <div className={styles.nestedDivider} />
 
             <div className={styles.toggleRow}>
               <div className={styles.toggleInfo}>
@@ -400,7 +400,7 @@ export default function SettingsRoute() {
               </label>
             </div>
 
-            <div className={styles.divider} style={{ marginLeft: 16 }} />
+            <div className={styles.nestedDivider} />
 
             <div className={`${styles.selectRow} ${!showLastSeen ? styles.disabledRow : ''}`}>
               <div className={styles.toggleInfo}>
@@ -420,7 +420,7 @@ export default function SettingsRoute() {
               />
             </div>
 
-            <div className={styles.divider} style={{ marginLeft: 16 }} />
+            <div className={styles.nestedDivider} />
 
             <div className={styles.toggleRow}>
               <div className={styles.toggleInfo}>
@@ -446,7 +446,7 @@ export default function SettingsRoute() {
                 <span className={styles.slider} />
               </label>
             </div>
-            <div className={styles.divider} style={{ marginLeft: 16 }} />
+            <div className={styles.nestedDivider} />
             <div className={styles.toggleRow}>
               <div className={styles.toggleInfo}>
                 <span className={styles.rowLabel}>Push Notifications</span>

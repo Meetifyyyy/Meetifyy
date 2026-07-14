@@ -20,6 +20,8 @@ import RichText from '../common/mentions/RichText';
 import { canSeeOnlineStatus, canSeeLastSeen, formatLastSeen } from '../../utils/presence';
 import styles from './ChatArea.module.css';
 import { useMediaViewer } from '../../context/MediaViewerContext';
+import { SharedPostPreview } from '../chat/SharedPostPreview';
+import { SharedProfilePreview } from '../chat/SharedProfilePreview';
 
 const Picker = lazy(() => import('@emoji-mart/react'));
 
@@ -837,74 +839,39 @@ export default function ChatArea({ conversation, onSendMessage, onReactMessage, 
                           );
                         })()
                       ) : msg.inviteData && msg.inviteData.type === 'postShare' ? (
-                        <div className={styles.postShareCard} onClick={() => navigate('/post/' + msg.inviteData.post.id)}>
-                          <div className={styles.postShareLeft}>
-                            <div className={styles.postShareHeader}>
-                              <span className={`${styles.postShareBadge} ${msg.inviteData.post.pollQuestion ? styles.badgePoll : styles.badgePost}`}>
-                                {msg.inviteData.post.pollQuestion ? 'Poll' : 'Post'}
-                              </span>
-                              <div className={styles.postShareAuthor}>
-                                {isImageUrl(msg.inviteData.post.authorAvatar) ? (
-                                  <img src={msg.inviteData.post.authorAvatar} alt={msg.inviteData.post.authorName} className={styles.postShareAuthorAvatar} />
-                                ) : (
-                                  <DefaultAvatar name={msg.inviteData.post.authorName} size={16} className={styles.postShareAuthorAvatar} />
-                                )}
-                                <span className={styles.postShareAuthorName}>
-                                  Shared from <strong>{msg.inviteData.post.authorName}</strong>
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className={styles.postShareBody}>
-                              {msg.inviteData.post.text && (
-                                <p className={styles.postShareText}><RichText content={msg.inviteData.post.text} mentions={msg.inviteData.post.mentions} /></p>
-                              )}
-                              {msg.inviteData.post.pollQuestion && (
-                                <div className={styles.postSharePollQuestion}>
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="8" x2="9" y2="16" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="15" y1="6" x2="15" y2="16" /></svg>
-                                  <span>{msg.inviteData.post.pollQuestion}</span>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className={styles.postShareFooter}>
-                              <span className={styles.postShareTime}>{msg.inviteData.post.time || 'Recent'}</span>
-                            </div>
-                          </div>
-
-                          <div className={styles.postShareRight}>
-                            <button className={styles.postShareBtn}>
-                              View
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-                            </button>
-                          </div>
-                        </div>
+                        <SharedPostPreview post={msg.inviteData.post} />
                       ) : msg.inviteData && msg.inviteData.type === 'profileShare' ? (
-                        <div className={styles.profileShareCard} onClick={() => navigate('/profile/' + msg.inviteData.profile.username)}>
+                        <SharedProfilePreview 
+                          profile={msg.inviteData.profile} 
+                          currentUserId={currentUser?.id} 
+                        />
+                      ) : msg.inviteData && msg.inviteData.type === 'communityShare' ? (
+                        <div className={styles.profileShareCard} onClick={() => navigate('/communities/' + msg.inviteData.community.id)}>
                           <div className={styles.profileShareLeft}>
                             <div className={styles.profileShareHeader}>
-                              <span className={styles.profileShareBadge}>Profile</span>
+                              <span className={styles.profileShareBadge} style={{ background: 'var(--color-primary)', color: 'white' }}>Community</span>
                             </div>
                             
                             <div className={styles.profileShareInfo}>
-                              {isImageUrl(msg.inviteData.profile.avatar) ? (
-                                <img src={msg.inviteData.profile.avatar} alt={msg.inviteData.profile.displayName} className={styles.profileShareAvatar} />
+                              {isImageUrl(msg.inviteData.community.avatar) ? (
+                                <img src={msg.inviteData.community.avatar} alt={msg.inviteData.community.name} className={styles.profileShareAvatar} style={{ borderRadius: '8px', objectFit: 'cover' }} />
                               ) : (
-                                <DefaultAvatar name={msg.inviteData.profile.displayName} size={48} className={styles.profileShareAvatar} />
+                                <div className={styles.profileShareAvatar} style={{ background: msg.inviteData.community.color || 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: '1.2rem', borderRadius: '8px' }}>
+                                  {msg.inviteData.community.name?.charAt(0).toUpperCase() || 'C'}
+                                </div>
                               )}
                               <div className={styles.profileShareDetails}>
-                                <div className={styles.profileShareName}>{msg.inviteData.profile.displayName}</div>
-                                <div className={styles.profileShareUsername}>@{msg.inviteData.profile.username}</div>
+                                <div className={styles.profileShareName}>{msg.inviteData.community.name}</div>
+                                <div className={styles.profileShareUsername}>@{msg.inviteData.community.id}</div>
                               </div>
                             </div>
 
-                            {msg.inviteData.profile.bio && (
-                              <p className={styles.profileShareBio}>{msg.inviteData.profile.bio}</p>
+                            {msg.inviteData.community.description && (
+                              <p className={styles.profileShareBio}>{msg.inviteData.community.description}</p>
                             )}
 
                             <div className={styles.profileShareStats}>
-                              <span className={styles.profileShareStat}><strong>{msg.inviteData.profile.followers || 0}</strong> Followers</span>
-                              <span className={styles.profileShareStat}><strong>{msg.inviteData.profile.following || 0}</strong> Following</span>
+                              <span className={styles.profileShareStat}><strong>{msg.inviteData.community.membersCount?.toLocaleString() || 0}</strong> Members</span>
                             </div>
                           </div>
 

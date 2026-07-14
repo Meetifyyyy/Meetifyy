@@ -7,6 +7,7 @@
   flex-direction: column;
   height: 100dvh;
   overflow: hidden;
+  transition: var(--transition-theme);
 }
 
 /* ── Sticky top bar ── */
@@ -33,9 +34,9 @@
   background: none;
   cursor: pointer;
   color: var(--color-text-main);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
-  transition: background 0.15s;
+  transition: background var(--transition-fast) ease, color var(--transition-fast) ease;
 }
 
 .backBtn:hover {
@@ -65,6 +66,7 @@
 
 /* ── Section label ── */
 .sectionLabel {
+  font-family: var(--font-family-display);
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -77,9 +79,11 @@
 .group {
   background: var(--color-bg-white);
   border: 1px solid var(--color-border-light);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   margin: 0 16px 8px;
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition-theme);
 }
 
 /* ── List row ── */
@@ -88,12 +92,12 @@
   align-items: center;
   width: 100%;
   padding: 14px 16px;
-  background: none;
+  background: transparent;
   border: none;
   cursor: pointer;
   gap: 14px;
   text-align: left;
-  transition: background 0.12s;
+  transition: background var(--transition-fast) ease;
 }
 
 .row:hover,
@@ -107,14 +111,16 @@
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--color-bg-main);
-  color: var(--color-text-main);
+  color: var(--color-icon-base);
   flex-shrink: 0;
+  transition: background var(--transition-fast) ease, color var(--transition-fast) ease;
 }
 
 .rowLabel {
   flex: 1;
+  font-family: var(--font-family-sans);
   font-size: 0.95rem;
   font-weight: 500;
   color: var(--color-text-main);
@@ -132,6 +138,12 @@
 
 .rowDanger .rowIcon {
   color: var(--color-danger);
+  background: rgba(var(--color-danger-rgb), 0.08);
+}
+
+.rowDanger:hover,
+.rowDanger:active {
+  background: rgba(var(--color-danger-rgb), 0.08);
 }
 
 /* ── Divider ── */
@@ -141,9 +153,16 @@
   margin-left: 66px;
 }
 
+.nestedDivider {
+  height: 1px;
+  background: var(--color-border-light);
+  margin-left: 16px;
+}
+
 /* ── Version footer ── */
 .version {
   text-align: center;
+  font-family: var(--font-family-sans);
   font-size: 0.78rem;
   color: var(--color-text-muted);
   padding: 28px 0 12px;
@@ -158,6 +177,7 @@
 }
 
 .inputLabel {
+  font-family: var(--font-family-display);
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--color-text-muted);
@@ -168,19 +188,23 @@
 .input {
   width: 100%;
   border: none;
+  border-bottom: 1.5px solid transparent;
   outline: none;
   background: transparent;
+  font-family: var(--font-family-sans);
   font-size: 0.95rem;
   color: var(--color-text-main);
   padding: 2px 0;
+  transition: border-color var(--transition-fast) ease, color var(--transition-fast) ease;
 }
 
 .input:disabled {
-  color: var(--color-text-muted);
+  color: var(--color-text-light);
+  cursor: not-allowed;
 }
 
 .input:focus {
-  border-bottom: 1.5px solid var(--color-primary);
+  border-bottom-color: var(--color-primary);
 }
 
 /* ── Toggle rows (privacy / appearance) ── */
@@ -200,6 +224,7 @@
 }
 
 .toggleDesc {
+  font-family: var(--font-family-sans);
   font-size: 0.8rem;
   color: var(--color-text-muted);
 }
@@ -224,8 +249,8 @@
   cursor: pointer;
   inset: 0;
   background: var(--color-border-dark);
-  border-radius: 28px;
-  transition: background 0.22s;
+  border-radius: var(--radius-full);
+  transition: background 0.22s ease;
 }
 
 .slider::before {
@@ -238,11 +263,11 @@
   background: white;
   border-radius: 50%;
   box-shadow: var(--shadow-sm);
-  transition: transform 0.22s;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 input:checked+.slider {
-  background: var(--color-success);
+  background: var(--color-primary);
 }
 
 input:checked+.slider::before {
@@ -253,24 +278,28 @@ input:checked+.slider::before {
 .saveBtn {
   display: block;
   width: calc(100% - 32px);
-  margin: 20px 16px 0;
-  padding: 14px;
+  margin: 24px 16px 0;
+  padding: 12px 24px;
   background: var(--color-primary);
   color: white;
   border: none;
-  border-radius: 14px;
-  font-size: 0.95rem;
+  border-radius: var(--radius-full);
+  font-family: var(--font-family-sans);
+  font-size: 0.9rem;
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
+  box-shadow: 0 4px 12px rgba(var(--color-primary-rgb), 0.2);
+  transition: background var(--transition-fast) ease, transform 0.15s ease, box-shadow var(--transition-fast) ease;
 }
 
 .saveBtn:hover {
-  background: var(--color-primary-dark, #1d4ed8);
+  background: var(--color-primary-hover);
+  box-shadow: 0 6px 16px rgba(var(--color-primary-rgb), 0.3);
+  transform: translateY(-1px);
 }
 
 .saveBtn:active {
-  transform: scale(0.98);
+  transform: scale(0.97) translateY(0);
 }
 
 /* ── Select dropdown rows ── */
@@ -295,14 +324,14 @@ input:checked+.slider::before {
   justify-content: space-between;
   padding: 10px 14px;
   background: var(--color-bg-white);
-  border: 1px solid var(--color-border-dark);
-  border-radius: 12px;
-  font-family: inherit;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-family-sans);
   font-size: 0.9rem;
   font-weight: 500;
   color: var(--color-text-main);
   cursor: pointer;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
+  transition: border-color var(--transition-fast) ease, background var(--transition-fast) ease;
 }
 
 .selectButton:hover:not(:disabled) {
@@ -316,7 +345,7 @@ input:checked+.slider::before {
 
 .selectChevron {
   color: var(--color-text-muted);
-  transition: transform var(--transition-fast);
+  transition: transform var(--transition-fast) ease;
   margin-left: 8px;
 }
 
@@ -332,7 +361,7 @@ input:checked+.slider::before {
   background: var(--color-bg-white);
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-lg);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 6px;
   z-index: 100;
   display: flex;
@@ -360,14 +389,14 @@ input:checked+.slider::before {
   padding: 8px 12px;
   background: transparent;
   border: none;
-  font-family: inherit;
+  font-family: var(--font-family-sans);
   font-size: 0.88rem;
   font-weight: 500;
   color: var(--color-text-main);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   text-align: left;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-fast) ease, color var(--transition-fast) ease;
   width: 100%;
 }
 
@@ -392,6 +421,14 @@ input:checked+.slider::before {
 
 .disabledRow {
   opacity: 0.5;
+}
+
+.errorText {
+  color: var(--color-danger);
+  font-family: var(--font-family-sans);
+  font-size: 0.75rem;
+  margin-top: 4px;
+  font-weight: 500;
 }
 
 /* ── Desktop: centre the card ── */

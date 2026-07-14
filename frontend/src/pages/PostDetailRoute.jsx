@@ -203,9 +203,17 @@ export default function PostDetailRoute() {
                       onClick={() => commId && navigate(`/communities/${commId}`)}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                        <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'linear-gradient(135deg, #22C55E, #10B981)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#FFFFFF', fontSize: '0.8rem', fontWeight: 700 }}>
-                          {commName.charAt(0)}
-                        </div>
+                        {commEntry?.[1]?.avatar ? (
+                          <img 
+                            src={commEntry[1].avatar} 
+                            alt={commName} 
+                            style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} 
+                          />
+                        ) : (
+                          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'linear-gradient(135deg, #22C55E, #10B981)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#FFFFFF', fontSize: '0.8rem', fontWeight: 700 }}>
+                            {commName.charAt(0)}
+                          </div>
+                        )}
                         <div>
                           <div style={{ fontWeight: 700, color: 'var(--color-text-main)', fontSize: '0.85rem' }}>{commName}</div>
                           <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Member</div>

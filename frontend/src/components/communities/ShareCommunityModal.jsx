@@ -5,7 +5,7 @@ import DefaultAvatar from '../common/DefaultAvatar';
 import { isImageUrl } from '../../utils/avatar';
 import styles from '../crew/ShareActivityModal.module.css';
 
-export default function SharePostModal({ isOpen, onClose, post, author }) {
+export default function ShareCommunityModal({ isOpen, onClose, community }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
@@ -13,7 +13,7 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
   const { conversations, sendDirectMessage } = useData();
 
   const handleCopyLink = () => {
-    const link = `${window.location.origin}/post/${post.id}`;
+    const link = `${window.location.origin}/communities/${community.id}`;
     navigator.clipboard.writeText(link).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -22,16 +22,14 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
 
   const handleSend = (convId) => {
     sendDirectMessage(convId, '', null, { 
-      type: 'postShare', 
-      post: { 
-        id: post.id, 
-        text: post.text, 
-        authorName: author?.displayName || 'Someone',
-        authorAvatar: author?.avatar,
-        time: post.time,
-        createdAt: post.createdAt,
-        pollQuestion: post.poll?.question,
-        image: post.media ? (typeof post.media === 'string' ? post.media : post.media.url) : null
+      type: 'communityShare', 
+      community: { 
+        id: community.id, 
+        name: community.name, 
+        avatar: community.avatar,
+        color: community.color,
+        description: community.description || community.desc,
+        membersCount: community.members || 0
       } 
     });
     setSentTo(prev => new Set(prev).add(convId));
@@ -41,6 +39,7 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
   const filteredConversations = useMemo(() => {
     if (!conversations) return [];
     
+    // Sort by most recent first
     const sorted = [...conversations].sort((a, b) => {
       return (b.createdAt || 0) - (a.createdAt || 0);
     });
@@ -54,11 +53,11 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
   if (!isOpen) return null;
 
   return createPortal(
-    <div className={styles.overlay} style={{ zIndex: 20000 }} onClick={(e) => { e.stopPropagation(); e.preventDefault(); onClose(); }}>
+    <div className={styles.overlay} onClick={(e) => { e.stopPropagation(); e.preventDefault(); onClose(); }}>
       <div className={styles.modal} onClick={e => e.stopPropagation()}>
         <div className={styles.header}>
-          <h2 className={styles.title}>Share Post</h2>
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
+          <h2 className={styles.title}>Share Community</h2>
+          <button className={styles.closeBtn} onClick={(e) => { e.stopPropagation(); e.preventDefault(); onClose(); }} aria-label="Close">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -121,7 +120,7 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
             </>
           ) : (
             <>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
               </svg>

@@ -62,14 +62,13 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition: background 0.15s ease;
   flex-shrink: 0;
   backdrop-filter: blur(4px);
 }
 
 .iconBtn:hover {
   background: rgba(255,255,255,0.2);
-  transform: scale(1.05);
 }
 
 .iconBtn:active {

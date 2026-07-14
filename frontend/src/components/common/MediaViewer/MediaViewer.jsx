@@ -6,6 +6,7 @@ import { showToast } from '../../../utils/toast';
 import ImageViewer from './ImageViewer';
 import VideoViewer from './VideoViewer';
 import styles from './MediaViewer.module.css';
+import SharePostModal from '../../feed/SharePostModal';
 
 /** Detect video items by explicit type field OR URL extension. */
 function isVideo(item) {
@@ -28,6 +29,7 @@ export default function MediaViewer() {
   const [visible, setVisible] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const didClose = useRef(false);
 
   const currentItem = items[index] || null;
@@ -92,20 +94,37 @@ export default function MediaViewer() {
     if (e.target === overlayRef.current) handleClose();
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     const url = currentItem?.url;
     if (!url) return;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = url.split('/').pop() || 'media';
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
     showToast('Downloading…');
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = url.split('/').pop()?.split('?')[0] || 'media';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch (_) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = url.split('/').pop()?.split('?')[0] || 'media';
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
   };
 
   const handleShare = async () => {
+    if (meta?.source === 'Post' && meta?.post) {
+      setShowShareModal(true);
+      return;
+    }
     const url = currentItem?.url;
     if (!url) return;
     try {
@@ -153,12 +172,14 @@ export default function MediaViewer() {
 
         <div className={styles.topBarRight}>
           {/* Forward */}
-          <button className={styles.iconBtn} onClick={() => showToast('Forwarded!')} aria-label="Forward">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 17 20 12 15 7" />
-              <path d="M4 18v-2a4 4 0 0 1 4-4h12" />
-            </svg>
-          </button>
+          {meta?.source !== 'Post' && (
+            <button className={styles.iconBtn} onClick={() => showToast('Forwarded!')} aria-label="Forward">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 17 20 12 15 7" />
+                <path d="M4 18v-2a4 4 0 0 1 4-4h12" />
+              </svg>
+            </button>
+          )}
 
           {/* Share */}
           <button className={styles.iconBtn} onClick={handleShare} aria-label="Share">
@@ -176,8 +197,8 @@ export default function MediaViewer() {
               onClick={(e) => { e.stopPropagation(); setShowMoreMenu(!showMoreMenu); }}
               aria-label="More options"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2.2" /><circle cx="12" cy="12" r="2.2" /><circle cx="12" cy="19" r="2.2" />
               </svg>
             </button>
             <div className={`${styles.moreMenu} ${showMoreMenu ? styles.open : ''}`} onClick={(e) => e.stopPropagation()}>
@@ -269,6 +290,15 @@ export default function MediaViewer() {
             )}
           </div>
         </div>
+      )}
+
+      {showShareModal && meta?.post && (
+        <SharePostModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          post={meta.post}
+          author={meta.author}
+        />
       )}
 
     </div>,

@@ -4,7 +4,7 @@ import { isImageUrl } from '../../utils/avatar';
 import DefaultAvatar from '../common/DefaultAvatar';
 import MentionInput from '../common/mentions/MentionInput';
 import Post from './Post';
-import CommentNode from './CommentNode';
+import { CommentTreeRoot } from './CommentNode';
 import styles from './PostView.module.css';
 
 // Persistent set to track posts whose comments have already been loaded once
@@ -120,16 +120,11 @@ export default function PostView({ post, onBack }) {
             </svg>
           </div>
         ) : (
-          replies.map((reply, idx) => (
-            <CommentNode 
-              key={reply.id} 
-              postId={livePost.id}
-              comment={reply} 
-              onReplySubmit={handleCommentReplySubmit} 
-              level={0}
-              isLastInThread={idx === replies.length - 1 && (!reply.replies || reply.replies.length === 0)}
-            />
-          ))
+          <CommentTreeRoot
+            postId={livePost.id}
+            comments={replies}
+            onReplySubmit={handleCommentReplySubmit}
+          />
         )}
       </div>
     </div>

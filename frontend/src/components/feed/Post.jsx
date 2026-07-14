@@ -11,6 +11,7 @@ import styles from './Post.module.css';
 import SharePostModal from './SharePostModal';
 import VideoPlayer from '../common/VideoPlayer';
 import { useMediaViewer } from '../../context/MediaViewerContext';
+import ConfirmModal from '../common/ConfirmModal';
 
 function PollCard({ poll, postId }) {
   const { voteInPoll, currentUser } = useData();
@@ -96,12 +97,9 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
   const { getUserById, getPostById, likePost, communities, currentUser, deletePost, editPost, reportPost, reportedPosts, savedPosts = [], toggleSavePost } = useData();
   const { openViewer } = useMediaViewer();
   const [showMenu, setShowMenu] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editText, setEditText] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [editContent, setEditContent] = useState({ text: '', mentions: [] });
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const livePost = postData ? (getPostById(postData.id) || postData) : null;
   if (!livePost) return null;
@@ -239,44 +237,20 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
             <div className="dropdown open" style={{ right: 0, top: '100%', width: '140px' }} onClick={(e) => e.stopPropagation()}>
               {currentUser && authorId === currentUser.id && (
                 <>
-                  {/* Edit — always available on own posts */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setEditText(text || '');
-                      setEditContent({ text: text || '', mentions: mentions || [] });
-                      setIsEditing(true);
                       setShowMenu(false);
+                      setShowDeleteConfirm(true);
                     }}
-                    style={{ color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}
+                    style={{ color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                     </svg>
-                    Edit
+                    Delete Post
                   </button>
-                  {/* Delete — only within 5 min window */}
-                  {(() => {
-                    const postTimestamp = id.startsWith('post_') ? parseInt(id.split('_')[1], 10) : 0;
-                    const canDelete = (Date.now() - postTimestamp) <= 5 * 60 * 1000;
-                    return canDelete ? (
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          setShowMenu(false);
-                          if (deletePost) await deletePost(id);
-                        }}
-                        style={{ color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                        </svg>
-                        Delete
-                      </button>
-                    ) : null;
-                  })()}
                 </>
               )}
               {/* Report — for all posts (including own if needed) */}
@@ -300,79 +274,58 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
           )}
         </div>
       </div>
-      {isEditing ? (
-        <div className={styles.postBody} onClick={(e) => e.stopPropagation()}>
-          <div style={{ minHeight: '60px', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--color-border)', background: 'var(--color-bg-white)', color: 'var(--color-text-main)' }}>
-            <MentionInput
-              value={editContent}
-              onChange={setEditContent}
-              onSubmit={async () => {
-                if (editPost) await editPost(id, normalizePostText(editContent.text), editContent.mentions);
-                setIsEditing(false);
-              }}
-              singleLine={false}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', justifyContent: 'flex-end' }}>
-            <button onClick={() => { setIsEditing(false); }} style={{ padding: '0.35rem 0.75rem', cursor: 'pointer', background: 'var(--color-bg-white)', border: '1px solid var(--color-border)', borderRadius: '4px', fontWeight: 500, color: 'var(--color-text-main)' }}>Cancel</button>
-            <button onClick={async () => {
-              if (editPost) await editPost(id, normalizePostText(editContent.text), editContent.mentions);
-              setIsEditing(false);
-            }} style={{ padding: '0.35rem 0.75rem', cursor: 'pointer', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 500 }}>Save</button>
-          </div>
-        </div>
-      ) : (
-        text && (() => {
-          const normalizedText = normalizePostText(text);
-          const lines = normalizedText.split('\n');
-          const lineCount = lines.length;
-          const textLength = normalizedText.length;
-          
-          const exceedsCharLimit = textLength > 300;
-          const exceedsLineLimit = lineCount > 8;
-          const needsTruncation = (exceedsCharLimit || exceedsLineLimit) && !isDetailed;
 
-          let displayedText = normalizedText;
-          if (needsTruncation && !isExpanded) {
-            let tempText = normalizedText;
-            if (exceedsCharLimit) {
-              tempText = normalizedText.slice(0, 300);
-            }
-            const tempLines = tempText.split('\n');
-            if (tempLines.length > 8) {
-              displayedText = tempLines.slice(0, 8).join('\n');
-            } else {
-              displayedText = tempText;
-            }
-            if (displayedText.length < normalizedText.length) {
-              displayedText = displayedText.trimEnd() + '...';
-            }
+      {text && (() => {
+        const normalizedText = normalizePostText(text);
+        const lines = normalizedText.split('\n');
+        const lineCount = lines.length;
+        const textLength = normalizedText.length;
+        
+        const exceedsCharLimit = textLength > 300;
+        const exceedsLineLimit = lineCount > 8;
+        const needsTruncation = (exceedsCharLimit || exceedsLineLimit) && !isDetailed;
+
+        let displayedText = normalizedText;
+        if (needsTruncation && !isExpanded) {
+          let tempText = normalizedText;
+          if (exceedsCharLimit) {
+            tempText = normalizedText.slice(0, 300);
           }
+          const tempLines = tempText.split('\n');
+          if (tempLines.length > 8) {
+            displayedText = tempLines.slice(0, 8).join('\n');
+          } else {
+            displayedText = tempText;
+          }
+          if (displayedText.length < normalizedText.length) {
+            displayedText = displayedText.trimEnd() + '...';
+          }
+        }
 
-          const displayedMentions = (needsTruncation && !isExpanded)
-            ? (mentions || []).filter(m => m.end <= (displayedText.endsWith('...') ? displayedText.length - 3 : displayedText.length))
-            : mentions;
+        const displayedMentions = (needsTruncation && !isExpanded)
+          ? (mentions || []).filter(m => m.end <= (displayedText.endsWith('...') ? displayedText.length - 3 : displayedText.length))
+          : mentions;
 
-          return (
-            <div className={`${styles.postBody} ${isDetailed ? styles.selectableText : ''}`}>
-              <RichText content={displayedText} mentions={displayedMentions} urlLimit={isDetailed ? 50 : 35} />
-              {needsTruncation && (
-                <div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsExpanded(!isExpanded);
-                    }}
-                    className={styles.seeMoreBtn}
-                  >
-                    {isExpanded ? 'See less' : 'See more'}
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })()
-      )}
+        return (
+          <div className={`${styles.postBody} ${isDetailed ? styles.selectableText : ''}`}>
+            <RichText content={displayedText} mentions={displayedMentions} urlLimit={isDetailed ? 50 : 35} />
+            {needsTruncation && (
+              <div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsExpanded(!isExpanded);
+                  }}
+                  className={styles.seeMoreBtn}
+                >
+                  {isExpanded ? 'See less' : 'See more'}
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {(() => {
         const normalizedText = normalizePostText(text);
         const lines = normalizedText.split('\n');
@@ -396,6 +349,8 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
                   timestamp: livePost.createdAt ? new Date(livePost.createdAt).toLocaleString() : time,
                   source: 'Post',
                   isOwner: currentUser?.id === authorId,
+                  post: livePost,
+                  author,
                 };
                 openViewer(
                   [{ url: mediaSrc, type: isVideo ? 'video' : 'image', caption: livePost.text || '' }],
@@ -488,6 +443,19 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
         post={livePost} 
         author={author} 
       />
+      <div onClick={(e) => e.stopPropagation()}>
+        <ConfirmModal
+          title="Delete Post?"
+          desc="Are you sure you want to delete this post? This action is permanent and cannot be undone."
+          visible={showDeleteConfirm}
+          onCancel={() => setShowDeleteConfirm(false)}
+          onConfirm={async () => {
+            setShowDeleteConfirm(false);
+            if (deletePost) await deletePost(id);
+          }}
+          confirmText="Delete"
+        />
+      </div>
     </div>
   );
 }
