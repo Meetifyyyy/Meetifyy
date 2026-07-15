@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import Background from '@shared/components/Background';
-import Toast from '@shared/components/Toast';
+import Background from '@shared/components/ui/Background';
+import Toast from '@shared/components/ui/Toast';
 import { motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
 import styles from '../signup/SignupFlow.module.css';

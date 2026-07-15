@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@shared/context/DataContext';
-import CalendarIcon from '@shared/components/CalendarIcon';
+import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './SharedActivityPreview.module.css';
 
 export function SharedActivityPreview({ activity: passedActivity }) {

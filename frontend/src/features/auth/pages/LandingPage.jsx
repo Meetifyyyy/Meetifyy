@@ -12,7 +12,7 @@ import {
   Shield,
   FileText,
 } from 'lucide-react';
-import Background from '@shared/components/Background';
+import Background from '@shared/components/ui/Background';
 import logo from '@assets/images/meetify logo.png';
 import pexelsStudents from '@assets/images/pexels-students.jpg';
 import styles from './LandingPage.module.css';

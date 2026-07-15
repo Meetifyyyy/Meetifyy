@@ -7,11 +7,11 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { PostResult, CommunityResult, UserResult, CollegeResult, CrewResult } from '../components/SearchResultCards';
 import GlobalSearch from '../components/GlobalSearch';
 import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/DefaultAvatar';
-import Skeleton from '@shared/components/Skeleton';
+import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import Skeleton from '@shared/components/skeletons/Skeleton';
 import PageLayout from '@layout/PageLayout';
 import PageHeader from '@layout/PageHeader';
-import ActivityJoinedModal from '@features/crew/components/activities/ActivityJoinedModal';
+import ActivityJoinedModal from '@features/crew/components/modals/ActivityJoinedModal';
 import styles from './SearchResultsRoute.module.css';
 
 // Compact horizontal activity row

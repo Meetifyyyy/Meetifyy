@@ -1,10 +1,10 @@
 import { useCallback, memo, useState, useMemo, useRef, useEffect } from 'react';
 import { useData } from '@shared/context/DataContext';
 import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
-import { EmptyState, ErrorState } from '@shared/components/StateViews';
-import PostComposer from './PostComposer';
-import Post from './Post';
-import PostSkeleton from './PostSkeleton';
+import { EmptyState, ErrorState } from '@shared/components/ui/StateViews';
+import PostComposer from './composer/PostComposer';
+import Post from './post/Post';
+import PostSkeleton from './skeletons/PostSkeleton';
 import styles from './Feed.module.css';
 
 const PAGE_SIZE = 20;

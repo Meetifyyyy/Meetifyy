@@ -4,9 +4,9 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { Bookmark, List, Grid, ArrowLeft } from 'lucide-react';
 import { useData } from '@shared/context/DataContext';
 import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
-import Post from '../components/Post';
-import PostSkeleton from '../components/PostSkeleton';
-import Avatar from '@shared/components/Avatar';
+import Post from '../components/post/Post';
+import PostSkeleton from '../components/skeletons/PostSkeleton';
+import Avatar from '@shared/components/avatar/Avatar';
 import styles from './SavedPage.module.css';
 import { showToast } from '@shared/utils/toast';
 

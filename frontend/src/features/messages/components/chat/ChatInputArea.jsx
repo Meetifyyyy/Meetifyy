@@ -2,7 +2,7 @@ import { useState, useRef, Suspense, lazy } from 'react';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import data from '@emoji-mart/data';
 import styles from './ChatInputAreaStyles.module.css';
-import { useVoiceRecorder } from './useVoiceRecorder';
+import { useVoiceRecorder } from '../../hooks/useVoiceRecorder';
 
 const Picker = lazy(() => import('@emoji-mart/react'));
 

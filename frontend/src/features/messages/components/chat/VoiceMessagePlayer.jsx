@@ -1,12 +1,39 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import styles from './VoiceMessagePlayer.module.css';
 
 export default function VoiceMessagePlayer({ src, fromMe }) {
   const audioRef = useRef(null);
+  const animationRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
+
+  useEffect(() => {
+    const updateProgress = () => {
+      if (audioRef.current && isPlaying) {
+        setCurrentTime(audioRef.current.currentTime);
+        if (audioRef.current.duration && isFinite(audioRef.current.duration) && audioRef.current.duration !== duration) {
+          setDuration(audioRef.current.duration);
+        }
+        animationRef.current = requestAnimationFrame(updateProgress);
+      }
+    };
+
+    if (isPlaying) {
+      animationRef.current = requestAnimationFrame(updateProgress);
+    } else {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    }
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [isPlaying, duration]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -20,7 +47,7 @@ export default function VoiceMessagePlayer({ src, fromMe }) {
   };
 
   const handleTimeUpdate = () => {
-    if (audioRef.current) {
+    if (audioRef.current && !isPlaying) {
       setCurrentTime(audioRef.current.currentTime);
     }
   };
@@ -67,7 +94,8 @@ export default function VoiceMessagePlayer({ src, fromMe }) {
     return `${m}:${s}`;
   };
 
-  const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
+  const activeDuration = duration || 100;
+  const progressPercent = activeDuration > 0 ? Math.min(100, Math.max(0, (currentTime / activeDuration) * 100)) : 0;
 
   return (
     <div className={`${styles.voicePlayerContainer} ${fromMe ? styles.voicePlayerMe : ''}`}>
@@ -101,8 +129,9 @@ export default function VoiceMessagePlayer({ src, fromMe }) {
       <div className={styles.voicePlayerCenter}>
         <input
           type="range"
+          step="any"
           min="0"
-          max={duration || 100}
+          max={activeDuration}
           value={currentTime}
           onChange={handleSeek}
           className={styles.voiceScrubber}

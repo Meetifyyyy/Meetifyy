@@ -2,12 +2,12 @@ import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useData } from '@shared/context/DataContext';
 import { useFollow } from '@shared/context/FollowContext';
-import { EmptyState } from '@shared/components/StateViews';
-import PostView from '../components/PostView';
+import { EmptyState } from '@shared/components/ui/StateViews';
+import PostView from '../components/post/PostView';
 import RightPanel from '@layout/RightPanel';
 import rightPanelStyles from '@layout/RightPanel.module.css';
 import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/DefaultAvatar';
+import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 
 export default function PostDetailRoute() {
   const navigate = useNavigate();

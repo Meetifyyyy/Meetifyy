@@ -1,4 +1,4 @@
-import Skeleton from '@shared/components/Skeleton';
+import Skeleton from '@shared/components/skeletons/Skeleton';
 import cardStyles from './CrewCard.module.css';
 
 export default function CrewCardSkeleton() {

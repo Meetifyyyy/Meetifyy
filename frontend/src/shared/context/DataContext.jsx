@@ -127,7 +127,7 @@ export function DataProvider({ children }) {
   });
 
   const [conversations, setConversations] = useState(() => {
-    const CONVERSATIONS_SEED_VERSION = '2';
+    const CONVERSATIONS_SEED_VERSION = '5';
     const storedVersion = localStorage.getItem('meetifyy_conversations_seed_v');
     if (storedVersion !== CONVERSATIONS_SEED_VERSION) {
       localStorage.removeItem('meetifyy_conversations');
@@ -141,11 +141,36 @@ export function DataProvider({ children }) {
         console.error(e);
       }
     }
-    return initialMessages;
+    
+    return initialMessages.map(c => {
+      const messagesWithIds = (c.messages || []).map((m, idx) => ({
+        id: m.id || `msg_${c.id}_${idx}`,
+        ...m
+      }));
+      
+      return {
+        ...c,
+        messages: messagesWithIds.map(m => {
+          if (m.replyTo && !m.replyTo.id) {
+            const matchedMsg = messagesWithIds.find(prevM => prevM.text === m.replyTo.text);
+            if (matchedMsg) {
+              return {
+                ...m,
+                replyTo: {
+                  ...m.replyTo,
+                  id: matchedMsg.id
+                }
+              };
+            }
+          }
+          return m;
+        })
+      };
+    });
   });
 
   const [crewActivities, setCrewActivities] = useState(() => {
-    const CREW_ACTIVITIES_SEED_VERSION = '2';
+    const CREW_ACTIVITIES_SEED_VERSION = '3';
     const storedVersion = localStorage.getItem('meetifyy_crew_activities_seed_v');
     if (storedVersion !== CREW_ACTIVITIES_SEED_VERSION) {
       localStorage.removeItem('meetifyy_crew_activities');
@@ -1127,26 +1152,46 @@ export function DataProvider({ children }) {
       m && typeof m.start === 'number' && typeof m.end === 'number' && m.username
     );
 
-    const newMessage = { 
-      id: tempId,
-      from: 'me', 
-      text, 
-      time: timeStr,
-      timestamp: now.getTime(),
-      status: 'sending',
-      replyTo: replyTo ? { text: replyTo.text, from: replyTo.from } : null,
-      inviteData: inviteData || null,
-      mentions: validMentions,
-      mediaUrl: mediaUrl || null,
-      mediaType: mediaType || null,
-      linkPreview: explicitLinkPreview || (text ? (getLinkPreview(text) || undefined) : undefined)
-    };
-
     setConversations((prev) => {
       const convIndex = prev.findIndex(c => c.id === convId);
       if (convIndex === -1) return prev;
       
       const conv = prev[convIndex];
+      
+      let finalReplyTo = null;
+      if (replyTo) {
+        let senderName = replyTo.senderName;
+        if (!senderName) {
+          if (replyTo.from === 'me') {
+            senderName = 'You';
+          } else {
+            const targetUser = Object.values(users).find(u => u.username === conv.username || u.id === conv.userId);
+            senderName = targetUser?.displayName || targetUser?.name || conv.name || 'Someone';
+          }
+        }
+        finalReplyTo = {
+          id: replyTo.id,
+          text: replyTo.text,
+          from: replyTo.from,
+          senderName: senderName
+        };
+      }
+
+      const newMessage = { 
+        id: tempId,
+        from: 'me', 
+        text, 
+        time: timeStr,
+        timestamp: now.getTime(),
+        status: 'sending',
+        replyTo: finalReplyTo,
+        inviteData: inviteData || null,
+        mentions: validMentions,
+        mediaUrl: mediaUrl || null,
+        mediaType: mediaType || null,
+        linkPreview: explicitLinkPreview || (text ? (getLinkPreview(text) || undefined) : undefined)
+      };
+      
       const updatedConv = {
         ...conv,
         messages: [...conv.messages, newMessage],
@@ -2064,19 +2109,150 @@ export function DataProvider({ children }) {
   }, [currentUser]);
 
   const updateGroupSettings = useCallback(async (convId, settings) => {
-    setConversations(prev => prev.map(c =>
-      c.id === convId ? { ...c, ...settings } : c
-    ));
+    setConversations(prev => {
+      const updated = prev.map(c => c.id === convId ? { ...c, ...settings } : c);
+      
+      const convObj = updated.find(c => c.id === convId);
+      if (convObj && convObj.visibility && convObj.visibility !== 'Hidden group') {
+        setCampusGroupsState(prevGroups => {
+          const existing = prevGroups[convId];
+          const newGroup = {
+            id: convId,
+            name: convObj.name,
+            desc: convObj.description || '',
+            avatar: convObj.avatar || null,
+            members: convObj.members?.length || 1,
+            isUniversity: false,
+            collegeId: currentUser?.collegeId || 'gla',
+            categories: ['general'],
+            whoCanJoin: convObj.whoCanJoin || 'Anyone',
+            visibility: convObj.visibility,
+            allowSharing: convObj.allowSharing !== false,
+            memberList: (convObj.members || [currentUser?.id]).map(uid => {
+              const u = Object.values(users).find(user => user.id === uid);
+              return {
+                id: uid,
+                name: u?.displayName || u?.name || 'Member',
+                avatar: u?.avatar || null,
+                role: uid === convObj.ownerId ? 'Creator' : 'Member',
+                admin: uid === convObj.ownerId || convObj.admins?.includes(uid)
+              };
+            })
+          };
+          return { ...prevGroups, [convId]: newGroup };
+        });
+      } else if (convObj && convObj.visibility === 'Hidden group') {
+        setCampusGroupsState(prevGroups => {
+          const next = { ...prevGroups };
+          delete next[convId];
+          return next;
+        });
+      }
+      return updated;
+    });
+  }, [currentUser, users]);
+
+  const requestToJoinGroup = useCallback((convId, userId) => {
+    setConversations(prev => prev.map(c => {
+      if (c.id === convId) {
+        const pending = c.pendingRequests || [];
+        if (!pending.includes(userId)) {
+          return { ...c, pendingRequests: [...pending, userId] };
+        }
+      }
+      return c;
+    }));
+    
     setCampusGroupsState(prev => {
       const group = prev[convId];
-      if (!group) return prev;
-      return {
-        ...prev,
-        [convId]: {
-          ...group,
-          ...settings
+      if (group) {
+        const pending = group.pendingRequests || [];
+        if (!pending.includes(userId)) {
+          return {
+            ...prev,
+            [convId]: {
+              ...group,
+              pendingRequests: [...pending, userId]
+            }
+          };
         }
-      };
+      }
+      return prev;
+    });
+  }, []);
+
+  const acceptGroupJoinRequest = useCallback((convId, userId) => {
+    const joinedUser = Object.values(users).find(u => u.id === userId) || users[userId];
+    const joinedName = joinedUser ? joinedUser.username : 'someone';
+    const sysMsg = { id: Date.now(), type: 'system', text: `@${joinedName} has joined the group`, time: 'Just now' };
+
+    setConversations(prev => prev.map(c => {
+      if (c.id === convId) {
+        const members = c.members || [];
+        const participants = c.participants || [];
+        return {
+          ...c,
+          pendingRequests: (c.pendingRequests || []).filter(id => id !== userId),
+          members: members.includes(userId) ? members : [...members, userId],
+          participants: participants.includes(userId) ? participants : [...participants, userId],
+          messages: [...(c.messages || []), sysMsg],
+          lastMsg: sysMsg.text,
+          time: 'Just now',
+          timestamp: Date.now()
+        };
+      }
+      return c;
+    }));
+
+    setCampusGroupsState(prev => {
+      const group = prev[convId];
+      if (group) {
+        const memberList = group.memberList || [];
+        const joinedUserObj = Object.values(users).find(u => u.id === userId);
+        const newMember = {
+          id: userId,
+          name: joinedUserObj?.displayName || joinedUserObj?.name || 'Member',
+          avatar: joinedUserObj?.avatar || null,
+          role: 'Member',
+          admin: false
+        };
+        return {
+          ...prev,
+          [convId]: {
+            ...group,
+            pendingRequests: (group.pendingRequests || []).filter(id => id !== userId),
+            memberList: memberList.some(m => m.id === userId) ? memberList : [...memberList, newMember],
+            members: (group.members || 1) + 1
+          }
+        };
+      }
+      return prev;
+    });
+  }, [users]);
+
+  const declineGroupJoinRequest = useCallback((convId, userId) => {
+    setConversations(prev => prev.map(c => {
+      if (c.id === convId) {
+        return {
+          ...c,
+          pendingRequests: (c.pendingRequests || []).filter(id => id !== userId)
+        };
+      }
+      return c;
+    }));
+
+    setCampusGroupsState(prev => {
+      const group = prev[convId];
+      if (group) {
+        return {
+          ...prev,
+          [convId]: {
+            ...group,
+            pendingRequests: (group.pendingRequests || []).filter(id => id !== userId)
+          }
+        };
+      }
+      return prev;
     });
   }, []);
 
@@ -2404,6 +2580,9 @@ export function DataProvider({ children }) {
       addCrewActivity,
       endCrewActivity,
       createTemporaryGroupChat,
+      requestToJoinGroup,
+      acceptGroupJoinRequest,
+      declineGroupJoinRequest,
       resetDataState,
       setOnNotify
     }}>

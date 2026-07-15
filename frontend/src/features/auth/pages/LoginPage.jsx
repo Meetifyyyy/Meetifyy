@@ -4,7 +4,7 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 import { motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, AlertCircle } from 'lucide-react';
-import Background from '@shared/components/Background';
+import Background from '@shared/components/ui/Background';
 import styles from '../signup/SignupFlow.module.css';
 
 export default function LoginPage() {

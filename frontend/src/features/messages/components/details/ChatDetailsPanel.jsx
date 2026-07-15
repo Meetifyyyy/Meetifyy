@@ -2,9 +2,9 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/context/DataContext';
-import Avatar from '@shared/components/Avatar';
-import ConfirmModal from '@shared/components/ConfirmModal';
-import CalendarIcon from '@shared/components/CalendarIcon';
+import Avatar from '@shared/components/avatar/Avatar';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
+import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ChatDetailsPanel.module.css';
 import { Pin, Trash2, LogOut, ChevronRight, User, Search, Ban, UserPlus } from 'lucide-react';
 import InviteModal from '../modals/InviteModal';
@@ -18,7 +18,7 @@ import GroupSettingsPage from './GroupSettingsPage';
 export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, onClearChat, onSearch }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const { users, crewActivities, endCrewActivity, leaveGroup, updateGroupInfo, updateGroupEditPermission, updateGroupSettings, removeGroupMember, changeGroupOwner, promoteToAdmin, demoteFromAdmin, endGroup } = useData();
+  const { users, crewActivities, endCrewActivity, leaveGroup, updateGroupInfo, updateGroupEditPermission, updateGroupSettings, removeGroupMember, changeGroupOwner, promoteToAdmin, demoteFromAdmin, endGroup, acceptGroupJoinRequest, declineGroupJoinRequest } = useData();
 
   // General States
   const [showConfirm, setShowConfirm] = useState(false);
@@ -673,6 +673,53 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
               </svg>
               <span>Group Settings</span>
               </button>
+            )}
+
+            {/* Join Requests */}
+            {isAdmin && conversation.pendingRequests && conversation.pendingRequests.length > 0 && (
+              <div className={styles.section} style={{ borderColor: 'var(--color-primary)' }}>
+                <h3 className={styles.sectionTitle} style={{ color: 'var(--color-primary)' }}>Join Requests ({conversation.pendingRequests.length})</h3>
+                <div className={styles.memberList}>
+                  {conversation.pendingRequests.map(uid => {
+                    const userObj = Object.values(users).find(u => u.id === uid);
+                    if (!userObj) return null;
+                    
+                    return (
+                      <div key={uid} className={styles.memberItem}>
+                        <Link to={`/profile/${userObj.username}`} className={styles.memberLink}>
+                          <Avatar 
+                            src={userObj.avatar} 
+                            name={userObj.name} 
+                            size="38px" 
+                          />
+                          <div className={styles.memberMeta}>
+                            <span className={styles.memberName}>{userObj.displayName || userObj.name}</span>
+                            <span className={styles.memberUsername}>@{userObj.username}</span>
+                          </div>
+                        </Link>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            type="button"
+                            className={styles.saveHeaderBtn}
+                            style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem', marginTop: 0 }}
+                            onClick={() => acceptGroupJoinRequest(conversation.id, uid)}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.cancelBtn}
+                            style={{ margin: 0, padding: '0.4rem 0.85rem', fontSize: '0.8rem' }}
+                            onClick={() => declineGroupJoinRequest(conversation.id, uid)}
+                          >
+                            Ignore
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
             <div className={styles.section}>

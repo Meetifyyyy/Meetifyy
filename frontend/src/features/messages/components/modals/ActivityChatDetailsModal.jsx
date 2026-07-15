@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/context/DataContext';
 import { Link } from 'react-router-dom';
-import DefaultAvatar from '@shared/components/DefaultAvatar';
-import ConfirmModal from '@shared/components/ConfirmModal';
+import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import { isImageUrl } from '@shared/utils/avatar';
-import CalendarIcon from '@shared/components/CalendarIcon';
+import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ActivityChatDetailsModal.module.css';
 
 export default function ActivityChatDetailsModal({ conversation, onClose, onEndActivity }) {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/DefaultAvatar';
+import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { getRelativeDateLabel } from '@shared/utils/time';
 import styles from './SearchResultCards.module.css';
 

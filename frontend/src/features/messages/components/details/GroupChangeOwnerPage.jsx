@@ -1,6 +1,6 @@
 import styles from './ChatDetailsPanel.module.css';
-import Avatar from '@shared/components/Avatar';
-import ConfirmModal from '@shared/components/ConfirmModal';
+import Avatar from '@shared/components/avatar/Avatar';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 
 export default function GroupChangeOwnerPage({
   conversation,

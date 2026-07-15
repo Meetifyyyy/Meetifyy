@@ -3,7 +3,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/context/DataContext';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
-import ConfirmModal from '@shared/components/ConfirmModal';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import GroupSettingsModal from '../modals/GroupSettingsModal';
 import ActivityChatDetailsModal from '../modals/ActivityChatDetailsModal';
 

@@ -4,11 +4,11 @@ import { useData } from '@shared/context/DataContext';
 import { useNotifications } from '@shared/context/NotificationContext';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { getRelativeDateLabel } from '@shared/utils/time';
-import Avatar from '@shared/components/Avatar';
-import ConfirmModal from '@shared/components/ConfirmModal';
-import ShareActivityModal from '../components/activities/ShareActivityModal';
-import ActivityJoinedModal from '../components/activities/ActivityJoinedModal';
-import CalendarIcon from '@shared/components/CalendarIcon';
+import Avatar from '@shared/components/avatar/Avatar';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
+import ShareActivityModal from '../components/modals/ShareActivityModal';
+import ActivityJoinedModal from '../components/modals/ActivityJoinedModal';
+import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ActivityDetailPage.module.css';
 
 /* ── Helpers ───────────────────────────────────────────────── */

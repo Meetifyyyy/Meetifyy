@@ -6,7 +6,7 @@ import { showToast } from '@shared/utils/toast';
 import ImageViewer from './ImageViewer';
 import VideoViewer from './VideoViewer';
 import styles from './MediaViewer.module.css';
-import SharePostModal from '@features/feed/components/SharePostModal';
+import SharePostModal from '@features/feed/components/modals/SharePostModal';
 
 /** Detect video items by explicit type field OR URL extension. */
 function isVideo(item) {

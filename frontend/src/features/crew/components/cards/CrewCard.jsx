@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/DefaultAvatar';
+import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { useData } from '@shared/context/DataContext';
-import ShareActivityModal from '../activities/ShareActivityModal';
-import ActivityJoinedModal from '../activities/ActivityJoinedModal';
-import CalendarIcon from '@shared/components/CalendarIcon';
+import ShareActivityModal from '../modals/ShareActivityModal';
+import ActivityJoinedModal from '../modals/ActivityJoinedModal';
+import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './CrewCard.module.css';
 
 /* ── Helpers ───────────────────────────────────────────────── */

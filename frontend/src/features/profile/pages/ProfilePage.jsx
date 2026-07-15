@@ -4,17 +4,16 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/context/DataContext';
 import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
-import Post from '@features/feed/components/Post';
-import UserListModal from '@shared/components/UserListModal';
-import Skeleton from '@shared/components/Skeleton';
-import PostSkeleton from '@features/feed/components/PostSkeleton';
-import { ErrorState } from '@shared/components/StateViews';
-import Avatar from '@shared/components/Avatar';
+import Post from '@features/feed/components/post/Post';
+import UserListModal from '@shared/components/modals/UserListModal';
+import { ErrorState } from '@shared/components/ui/StateViews';
+import Avatar from '@shared/components/avatar/Avatar';
 import s from './ProfilePage.module.css';
 import defaultCover from '@assets/images/default_cover.png';
-import FollowButton from '@shared/components/FollowButton';
+import FollowButton from '@shared/components/ui/FollowButton';
 import ProfileRightSidebar from '../components/ProfileRightSidebar';
 import ShareProfileModal from '../components/ShareProfileModal';
+import ProfilePageSkeleton from '../components/skeletons/ProfilePageSkeleton';
 
 const tags = [
   { icon: '🎓', label: 'Gla University - Mathura 2029' },
@@ -31,29 +30,6 @@ const tags = [
   { icon: '🎉', label: 'Sports' },
 ];
 
-function ProfileSkeleton() {
-  return (
-    <div className={s.centerColumn}>
-      <div className={s.profileCard}>
-        <Skeleton type="rect" width="100%" height="180px" style={{ borderRadius: 0 }} />
-        <div style={{ padding: '0 1.5rem 1.5rem' }}>
-          <Skeleton type="circle" width="96px" height="96px" style={{ marginTop: '-48px', marginBottom: '0.75rem', border: '3px solid var(--color-bg-white)' }} />
-          <Skeleton type="text" width="180px" height="1.5rem" style={{ marginBottom: '0.3rem' }} />
-          <Skeleton type="text" width="110px" height="1rem" style={{ marginBottom: '1.1rem' }} />
-          <div style={{ display: 'flex', gap: '2rem', marginBottom: '1.1rem' }}>
-            {[1,2,3].map(i => <Skeleton key={i} type="rect" width="52px" height="36px" style={{ borderRadius: '8px' }} />)}
-          </div>
-          <div style={{ display: 'flex', gap: '0.6rem' }}>
-            <Skeleton type="rect" width="110px" height="34px" style={{ borderRadius: '100px' }} />
-            <Skeleton type="rect" width="90px" height="34px" style={{ borderRadius: '100px' }} />
-          </div>
-        </div>
-      </div>
-      <PostSkeleton />
-      <PostSkeleton />
-    </div>
-  );
-}
 
 export default function ProfilePage() {
   const { profileUsername } = useParams();
@@ -84,12 +60,7 @@ export default function ProfilePage() {
 
 
   if (isLoading) {
-    return (
-      <main className={`centre centre-wide animate-in ${s.profileMain}`}>
-        <ProfileSkeleton />
-        <ProfileRightSidebar />
-      </main>
-    );
+    return <ProfilePageSkeleton />;
   }
 
   if (error) {

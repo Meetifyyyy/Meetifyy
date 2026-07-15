@@ -4,8 +4,19 @@ import { SmartBackTracker } from './shared/hooks/useSmartBack';
 import { useAuth } from './shared/context/AuthContext';
 import DashboardLayoutWrapper from './layout/DashboardLayoutWrapper';
 import ErrorBoundary, { RouteErrorBoundary } from './shared/components/ErrorBoundary';
-import InstallPopup from './shared/components/InstallPopup';
-import PageShellSkeleton from './shared/components/PageShellSkeleton';
+import InstallPopup from './shared/components/ui/InstallPopup';
+import PageShellSkeleton from './shared/components/skeletons/PageShellSkeleton';
+import DashboardContentSkeleton from './shared/components/skeletons/DashboardContentSkeleton';
+import HomeSkeleton from './features/feed/components/skeletons/HomeSkeleton';
+import ProfilePageSkeleton from './features/profile/components/skeletons/ProfilePageSkeleton';
+import MessagesSkeleton from './features/messages/components/skeletons/MessagesSkeleton';
+import CampusSkeleton from './features/campus/components/skeletons/CampusSkeleton';
+import CrewSkeleton from './features/crew/components/skeletons/CrewSkeleton';
+import CommunitiesSkeleton from './features/communities/components/skeletons/CommunitiesSkeleton';
+import NotificationsSkeleton from './features/notifications/components/skeletons/NotificationsSkeleton';
+import SearchSkeleton from './features/search/components/skeletons/SearchSkeleton';
+import SettingsSkeleton from './features/settings/components/skeletons/SettingsSkeleton';
+import SavedPageSkeleton from './features/feed/components/skeletons/SavedPageSkeleton';
 
 const LandingPage = lazy(() => import('./features/auth/pages/LandingPage'));
 const FeedRoute = lazy(() => import('./features/feed/pages/FeedRoute'));
@@ -30,11 +41,15 @@ const ActivitiesPage = lazy(() => import('./features/campus/pages/ActivitiesPage
 const GroupsPage = lazy(() => import('./features/campus/pages/GroupsPage'));
 const SavedPage = lazy(() => import('./features/feed/pages/SavedPage'));
 
-/** Wraps a route element with a scoped error boundary and suspense fallback */
-function withBoundary(element) {
+/**
+ * Wraps a route element with a scoped error boundary and suspense fallback.
+ * @param {JSX.Element} element - The route element to wrap.
+ * @param {JSX.Element} [fallback] - Custom skeleton. Defaults to full-page shell for public routes.
+ */
+function withBoundary(element, fallback = <PageShellSkeleton />) {
   return (
     <RouteErrorBoundary>
-      <Suspense fallback={<PageShellSkeleton />}>
+      <Suspense fallback={fallback}>
         {element}
       </Suspense>
     </RouteErrorBoundary>
@@ -148,23 +163,23 @@ export default function App() {
             {
               element: <DashboardLayoutWrapper />,
               children: [
-            { path: '/home',                       element: withBoundary(<FeedRoute />) },
-            { path: '/search',                     element: withBoundary(<SearchResultsRoute />), handle: { wide: true } },
-            { path: '/communities',                element: withBoundary(<CommunitiesRoute />), handle: { wide: true } },
-            { path: '/communities/:id',            element: withBoundary(<CommunityDetailRoute />), handle: { wide: true } },
-            { path: '/messages/:conversationId?',  element: withBoundary(<MessagesRoute />), handle: { wide: true } },
-            { path: '/post/:id',                   element: withBoundary(<PostDetailRoute />) },
-            { path: '/profile/:profileUsername?',  element: withBoundary(<ProfilePage />), handle: { wide: true } },
-            { path: '/settings',                   element: withBoundary(<SettingsRoute />), handle: { wide: true } },
-            { path: '/notifications',              element: withBoundary(<NotificationsRoute />), handle: { wide: true } },
-            { path: '/campus',                     element: withBoundary(<CampusPage />), handle: { wide: true } },
-            { path: '/campus/directory',           element: withBoundary(<DirectoryPage />), handle: { wide: true } },
-            { path: '/campus/activities',          element: withBoundary(<ActivitiesPage />), handle: { wide: true } },
-            { path: '/campus/groups',              element: withBoundary(<GroupsPage />), handle: { wide: true } },
-            { path: '/crew',                       element: withBoundary(<FindYourCrewPage />), handle: { wide: true } },
-            { path: '/crew/create',                element: withBoundary(<CreateActivityPage />), handle: { wide: true } },
-            { path: '/crew/:id',                   element: withBoundary(<ActivityDetailPage />), handle: { wide: true } },
-            { path: '/saved',                      element: withBoundary(<SavedPage />) },
+            { path: '/home',                       element: withBoundary(<FeedRoute />, <HomeSkeleton />) },
+            { path: '/search',                     element: withBoundary(<SearchResultsRoute />, <SearchSkeleton />), handle: { wide: true } },
+            { path: '/communities',                element: withBoundary(<CommunitiesRoute />, <CommunitiesSkeleton />), handle: { wide: true } },
+            { path: '/communities/:id',            element: withBoundary(<CommunityDetailRoute />, <DashboardContentSkeleton />), handle: { wide: true } },
+            { path: '/messages/:conversationId?',  element: withBoundary(<MessagesRoute />, <MessagesSkeleton />), handle: { wide: true } },
+            { path: '/post/:id',                   element: withBoundary(<PostDetailRoute />, <DashboardContentSkeleton />) },
+            { path: '/profile/:profileUsername?',  element: withBoundary(<ProfilePage />, <ProfilePageSkeleton />), handle: { wide: true } },
+            { path: '/settings',                   element: withBoundary(<SettingsRoute />, <SettingsSkeleton />), handle: { wide: true } },
+            { path: '/notifications',              element: withBoundary(<NotificationsRoute />, <NotificationsSkeleton />), handle: { wide: true } },
+            { path: '/campus',                     element: withBoundary(<CampusPage />, <CampusSkeleton />), handle: { wide: true } },
+            { path: '/campus/directory',           element: withBoundary(<DirectoryPage />, <DashboardContentSkeleton />), handle: { wide: true } },
+            { path: '/campus/activities',          element: withBoundary(<ActivitiesPage />, <DashboardContentSkeleton />), handle: { wide: true } },
+            { path: '/campus/groups',              element: withBoundary(<GroupsPage />, <DashboardContentSkeleton />), handle: { wide: true } },
+            { path: '/crew',                       element: withBoundary(<FindYourCrewPage />, <CrewSkeleton />), handle: { wide: true } },
+            { path: '/crew/create',                element: withBoundary(<CreateActivityPage />, <DashboardContentSkeleton />), handle: { wide: true } },
+            { path: '/crew/:id',                   element: withBoundary(<ActivityDetailPage />, <DashboardContentSkeleton />), handle: { wide: true } },
+            { path: '/saved',                      element: withBoundary(<SavedPage />, <SavedPageSkeleton />) },
             { path: '*',                           element: withBoundary(<NotFound />) },
           ],
         },

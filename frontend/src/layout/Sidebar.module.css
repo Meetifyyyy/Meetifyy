@@ -315,6 +315,11 @@
   width: 16px;
   height: 16px;
   color: inherit;
+  transition: transform 0.25s ease;
+}
+
+.chevronIcon.rotated {
+  transform: rotate(-180deg);
 }
 
 .communitiesListContainer {

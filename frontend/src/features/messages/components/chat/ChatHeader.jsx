@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Avatar from '@shared/components/Avatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import { canSeeOnlineStatus, canSeeLastSeen, formatLastSeen } from '@shared/utils/presence';
 import styles from './ChatHeader.module.css';
 
@@ -21,6 +21,10 @@ export default function ChatHeader({
 }) {
   const navigate = useNavigate();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+
+  const isOwner = conversation.ownerId === currentUser?.id || conversation.hostId === currentUser?.id || isActivityHost;
+  const isAdmin = isOwner || (conversation.admins || []).includes(currentUser?.id);
+  const hasPendingRequests = conversation.pendingRequests && conversation.pendingRequests.length > 0;
 
   return (
     <div className={`${styles.msgChatHeader} ${showChatOnMobile ? styles.msgMobileHeaderVisible : ''}`}>
@@ -58,6 +62,18 @@ export default function ChatHeader({
             <span className={styles.msgChatNameText}>{conversation.name}</span>
             {conversation.blocked && (
               <span className={styles.msgBlockedBadge}>Blocked</span>
+            )}
+            {isAdmin && hasPendingRequests && (
+              <span 
+                className={styles.msgRequestsBadge} 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  setShowDetails(true); 
+                }}
+                title={`${conversation.pendingRequests.length} pending join request(s)`}
+              >
+                {conversation.pendingRequests.length} request{conversation.pendingRequests.length > 1 ? 's' : ''}
+              </span>
             )}
           </div>
           {!conversation.isActivityChat && (

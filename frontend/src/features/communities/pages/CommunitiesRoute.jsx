@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import PageLayout from '@layout/PageLayout';
-import CommunitiesBrowse from '../components/CommunitiesBrowse';
+import CommunitiesBrowse from '../components/browse/CommunitiesBrowse';
 
 export default function CommunitiesRoute() {
   const navigate = useNavigate();

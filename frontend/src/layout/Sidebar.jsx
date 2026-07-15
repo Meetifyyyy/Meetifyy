@@ -3,7 +3,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/context/DataContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/DefaultAvatar';
+import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import styles from './Sidebar.module.css';
 import {
   HomeIcon as HomeOutline,
@@ -199,14 +199,10 @@ export default function Sidebar({ onCommunityClick }) {
           onClick={() => setIsCommunitiesMenuOpen(!isCommunitiesMenuOpen)}
         >
           <span>COMMUNITIES</span>
-          {isCommunitiesMenuOpen ? (
-            <ChevronUpIcon className={styles.chevronIcon} />
-          ) : (
-            <ChevronDownIcon className={styles.chevronIcon} />
-          )}
+          <ChevronDownIcon className={`${styles.chevronIcon} ${isCommunitiesMenuOpen ? styles.rotated : ''}`} />
         </div>
         
-        {isCommunitiesMenuOpen && (
+        <div className={`${styles.communitiesListContainer} ${isCommunitiesMenuOpen ? styles.open : ''}`}>
           <div className={styles.communitiesList}>
             {joinedCommunityObjects.map(comm => (
               <SidebarCommunityItem key={comm.id} comm={comm} navigate={navigate} />
@@ -221,7 +217,7 @@ export default function Sidebar({ onCommunityClick }) {
               <span>Explore more...</span>
             </a>
           </div>
-        )}
+        </div>
       </div>
     </aside>
   );

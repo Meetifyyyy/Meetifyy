@@ -1,8 +1,8 @@
 import { useState, useRef } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/context/DataContext';
-import Avatar from '@shared/components/Avatar';
-import ConfirmModal from '@shared/components/ConfirmModal';
+import Avatar from '@shared/components/avatar/Avatar';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import styles from './GroupSettingsModal.module.css';
 
 export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup }) {

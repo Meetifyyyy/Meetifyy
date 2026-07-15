@@ -5,18 +5,18 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/context/DataContext';
 import { useTheme } from '@shared/context/ThemeContext';
 import { showToast } from '@shared/utils/toast';
-import Avatar from '@shared/components/Avatar';
-import sharedStyles from './CampusShared.module.css';
+import Avatar from '@shared/components/avatar/Avatar';
+import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './GroupsPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import { Plus, Search, ArrowLeft, Users } from 'lucide-react';
-import GroupCreationModal from '@shared/components/GroupCreationModal';
+import GroupCreationModal from '@shared/components/modals/GroupCreationModal';
 
 export default function GroupsPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
-  const { campusGroups, toggleJoinCampusGroup, createCampusGroup } = useData();
+  const { campusGroups, toggleJoinCampusGroup, createCampusGroup, requestToJoinGroup } = useData();
   const { theme } = useTheme();
 
   const [showSearch, setShowSearch] = useState(false);
@@ -75,6 +75,7 @@ export default function GroupsPage() {
   const handleJoinConfirm = () => {
     if (!selectedGroup) return;
     if (selectedGroup.whoCanJoin === 'Request required') {
+      requestToJoinGroup(selectedGroup.id, currentUser?.id);
       showToast('Join request sent successfully! 📨');
     } else {
       toggleJoinCampusGroup(selectedGroup.id);

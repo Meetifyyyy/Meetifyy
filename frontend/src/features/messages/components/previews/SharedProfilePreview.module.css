@@ -57,7 +57,9 @@
   height: 80px;
   border-radius: var(--radius-full);
   object-fit: cover;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .details {

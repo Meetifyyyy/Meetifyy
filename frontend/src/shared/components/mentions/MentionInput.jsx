@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useMentionSuggestions } from './useMentionSuggestions';
+import { useMentionSuggestions } from '../../hooks/useMentionSuggestions';
 import MentionDropdown from './MentionDropdown';
 import { cleanUrlDisplay } from '@shared/utils/linkPreview';
 import styles from './MentionInput.module.css';

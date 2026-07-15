@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/context/DataContext';
 import { showToast } from '@shared/utils/toast';
-import Avatar from '@shared/components/Avatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import GlobalSearch from '@features/search/components/GlobalSearch';
 import { useNotifications } from '@shared/context/NotificationContext';
 import { useTheme } from '@shared/context/ThemeContext';

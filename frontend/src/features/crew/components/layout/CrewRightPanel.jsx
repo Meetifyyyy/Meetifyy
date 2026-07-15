@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import styles from './CrewRightPanel.module.css';
 import { useData } from '@shared/context/DataContext';
 import createActivityBackgroundCharacter from '@assets/images/createactivitybackgroundcharacter.png';
-import CalendarIcon from '@shared/components/CalendarIcon';
+import CalendarIcon from '@shared/components/ui/CalendarIcon';
 
 
 

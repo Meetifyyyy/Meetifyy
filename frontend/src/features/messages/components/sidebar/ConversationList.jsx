@@ -3,13 +3,13 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useData } from '@shared/context/DataContext';
 import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
 import { useDebounce } from '@shared/hooks/useDebounce';
-import { ErrorState, EmptyState } from '@shared/components/StateViews';
+import { ErrorState, EmptyState } from '@shared/components/ui/StateViews';
 import { MessageSquarePlus } from 'lucide-react';
 import NewMessageModal from '../modals/NewMessageModal';
 import PageHeader from '@layout/PageHeader';
 import styles from './ConversationList.module.css';
 
-import ConversationSkeleton from './ConversationSkeleton';
+import ConversationSkeleton from '../skeletons/ConversationSkeleton';
 import ConversationItem from './ConversationItem';
 import ConversationContextMenu from './ConversationContextMenu';
 

@@ -1,7 +1,7 @@
-import Avatar from '@shared/components/Avatar';
-import CalendarIcon from '@shared/components/CalendarIcon';
+import Avatar from '@shared/components/avatar/Avatar';
+import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import { timeAgo } from '@shared/utils/time';
-import { Pin, VolumeX } from 'lucide-react';
+import { Pin, VolumeX, CalendarDays } from 'lucide-react';
 import styles from './ConversationList.module.css';
 
 export default function ConversationItem({ conv, activeChatId, onSelect, onContextMenu }) {
@@ -11,6 +11,11 @@ export default function ConversationItem({ conv, activeChatId, onSelect, onConte
   const cleanActId = conv.activityId ? String(conv.activityId).replace(/^(act_)+/, '') : null;
   const isMatch = cleanAid != null && (cleanCid === cleanAid || cleanActId === cleanAid);
   const isUnread = conv.unread > 0;
+
+  const hasStarted = (() => {
+    if (!conv.activity?.date) return false;
+    return new Date(conv.activity.date) <= new Date();
+  })();
 
   return (
     <div
@@ -28,10 +33,16 @@ export default function ConversationItem({ conv, activeChatId, onSelect, onConte
               isGroup={true} 
             />
             <div className={styles.calendarBadge}>
-              <CalendarIcon 
-                date={conv.activity?.date} 
-                dateLabel={conv.activity?.dateLabel || conv.dateLabel} 
-              />
+              {hasStarted ? (
+                <div className={styles.startedCalendarBadge}>
+                  <CalendarDays size={30} />
+                </div>
+              ) : (
+                <CalendarIcon 
+                  date={conv.activity?.date} 
+                  dateLabel={conv.activity?.dateLabel || conv.dateLabel} 
+                />
+              )}
             </div>
           </div>
         ) : (

@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import Avatar from '@shared/components/Avatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import styles from './BottomNav.module.css';
 import {
   HomeIcon as HomeOutline,

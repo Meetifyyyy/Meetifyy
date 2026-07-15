@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import styles from './CreateActivityPage.module.css';
 import { useData } from '@shared/context/DataContext';
-import ImageSearchModal from '@shared/components/ImageSearchModal';
+import ImageSearchModal from '@shared/components/modals/ImageSearchModal';
 import { getRelativeDateLabel } from '@shared/utils/time';
 import {
   ArrowLeft, Send, ImageIcon,

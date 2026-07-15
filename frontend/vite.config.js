@@ -103,6 +103,8 @@ export default defineConfig({
       '@shared':   path.resolve(__dirname, 'src/shared'),
       '@layout':   path.resolve(__dirname, 'src/layout'),
       '@features': path.resolve(__dirname, 'src/features'),
+      '@data/communities': path.resolve(__dirname, 'src/features/communities/data/communities'),
+      '@data/messages': path.resolve(__dirname, 'src/features/messages/data/messages'),
       '@data':     path.resolve(__dirname, 'src/data'),
       '@styles':   path.resolve(__dirname, 'src/styles'),
       '@constants': path.resolve(__dirname, 'src/constants'),

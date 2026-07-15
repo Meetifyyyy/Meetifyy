@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useData } from '@shared/context/DataContext';
 import { useAuth } from '@shared/context/AuthContext';
-import Avatar from '@shared/components/Avatar';
-import FollowButton from '@shared/components/FollowButton';
+import Avatar from '@shared/components/avatar/Avatar';
+import FollowButton from '@shared/components/ui/FollowButton';
 import { useNavigate } from 'react-router-dom';
-import CalendarIcon from '@shared/components/CalendarIcon';
+import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import s from './ProfileRightSidebar.module.css';
 
 const isImageUrl = (str) => {

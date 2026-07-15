@@ -1,6 +1,6 @@
 import { useEffect, useRef, Fragment } from 'react';
-import MessageRowSkeleton from './MessageRowSkeleton';
-import { ErrorState } from '@shared/components/StateViews';
+import MessageRowSkeleton from '../skeletons/MessageRowSkeleton';
+import { ErrorState } from '@shared/components/ui/StateViews';
 import MessageBubble from './MessageBubble';
 import styles from './ChatMessageList.module.css';
 

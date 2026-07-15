@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@shared/context/DataContext';
 import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/DefaultAvatar';
-import PostPreviewSkeleton from '@shared/components/PostPreviewSkeleton';
+import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import PostPreviewSkeleton from '@shared/components/skeletons/PostPreviewSkeleton';
 import { Link2, Heart, MessageCircle, FileX } from 'lucide-react';
 import styles from './SharedPostPreview.module.css';
 

@@ -118,6 +118,43 @@ export function generateCrewActivities(users) {
     });
   });
 
+  // Add a finished activity (past date) where student is a participant
+  const pastDate = new Date();
+  pastDate.setDate(pastDate.getDate() - 2); // 2 days ago
+  
+  const finishedActivity = {
+    id: 'crew_finished_1',
+    hostId: 'u2', // Zoe Miller
+    hostName: 'Zoe Miller',
+    hostUsername: 'zoemiller',
+    hostAvatar: 'Z',
+    hostCollege: 'IIT Delhi',
+    hostVerified: false,
+    
+    category: 'Creative',
+    title: 'GlassyUI Design Brainstorming',
+    description: 'Finalized the design token system and spacing specifications for our new component library.',
+    coverImage: COVER_IMAGES[0],
+    tags: ['design', 'glassmorphism'],
+    
+    dateLabel: '2 days ago',
+    date: pastDate.toISOString(),
+    time: '3:00 PM',
+    duration: '2 hours',
+    location: 'Online - Figma',
+    isOnline: true,
+    
+    participationType: 'approval',
+    slotsNeeded: 5,
+    slotsFilled: 3,
+    
+    participants: ['u2', 'u9', 'u4'], // Host, Student, Sophia Li
+    requests: [],
+    invitedUsers: []
+  };
+
+  activities.push(finishedActivity);
+
   return shuffle(activities);
 }
 

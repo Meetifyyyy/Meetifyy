@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useData } from '@shared/context/DataContext';
-import DefaultAvatar from '@shared/components/DefaultAvatar';
+import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
-import styles from '@features/crew/components/activities/ShareActivityModal.module.css';
+import styles from '@features/crew/components/modals/ShareActivityModal.module.css';
 
 export default function ShareProfileModal({ isOpen, onClose, profileUser }) {
   const [searchTerm, setSearchTerm] = useState('');

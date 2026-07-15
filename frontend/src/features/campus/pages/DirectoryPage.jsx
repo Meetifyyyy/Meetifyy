@@ -1,12 +1,13 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Search, Plus } from 'lucide-react';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/context/DataContext';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
-import Avatar from '@shared/components/Avatar';
-import sharedStyles from './CampusShared.module.css';
+import Avatar from '@shared/components/avatar/Avatar';
+import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './DirectoryPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import { MAJORS_LIST } from '../data/majors';

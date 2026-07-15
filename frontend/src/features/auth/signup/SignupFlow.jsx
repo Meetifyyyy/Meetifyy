@@ -1,7 +1,7 @@
 import React from 'react';
 import { SignupProvider, useSignup } from './SignupContext';
 import { AnimatePresence } from 'framer-motion';
-import Background from '@shared/components/Background';
+import Background from '@shared/components/ui/Background';
 import styles from './SignupFlow.module.css';
 import SignupProgressBar from './components/SignupProgressBar';
 

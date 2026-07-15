@@ -2,10 +2,10 @@ import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@shared/context/DataContext';
 import { useFollow } from '@shared/context/FollowContext';
-import CalendarIcon from '@shared/components/CalendarIcon';
+import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import { useNotifications } from '@shared/context/NotificationContext';
 import { showToast } from '@shared/utils/toast';
-import Avatar from '@shared/components/Avatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import { canSeeOnlineStatus } from '@shared/utils/presence';
 import styles from './RightPanel.module.css';
 

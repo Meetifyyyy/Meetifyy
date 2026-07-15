@@ -1,0 +1,122 @@
+.invitationItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.15rem 1.25rem;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  border-bottom: 1px solid var(--color-border-light);
+  position: relative;
+}
+
+.invitationItem:last-child {
+  border-bottom: none;
+}
+
+.invitationItem:hover {
+  background: var(--color-bg-elevated);
+}
+
+.unread {
+  background: rgba(var(--color-primary-rgb), 0.05);
+  position: relative;
+}
+
+.unread::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 2.2rem;
+  width: 5px;
+  height: 5px;
+  background-color: var(--color-primary);
+  border-radius: 50%;
+}
+
+.avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  mask-image: radial-gradient(white, black);
+}
+
+.avatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  display: block;
+}
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-family: var(--font-family-sans);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+  word-break: break-word;
+}
+
+.actorName {
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+.actionText {
+  color: var(--color-text-muted);
+}
+
+.invitationActions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.25rem;
+}
+
+.acceptBtn {
+  background: var(--color-primary);
+  color: #FFFFFF;
+  border: none;
+  padding: 0.4rem 1.15rem;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.acceptBtn:hover {
+  background: var(--color-primary-hover, #1d4ed8);
+  transform: translateY(-1px);
+}
+
+.declineBtn,
+.closeBtn {
+  background: transparent;
+  color: var(--color-text-main);
+  border: 1px solid var(--color-border);
+  padding: 0.4rem 1.15rem;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.declineBtn:hover,
+.closeBtn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-danger, #ef4444);
+  border-color: rgba(239, 68, 68, 0.4);
+}

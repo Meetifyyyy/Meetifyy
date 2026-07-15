@@ -426,10 +426,10 @@
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  background: #1e1e1e;
+  background: var(--color-bg-white);
   border-radius: var(--radius-md, 10px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: var(--shadow-lg, 0 10px 30px rgba(0, 0, 0, 0.15));
+  border: 1px solid var(--color-border-light);
   width: max-content;
   min-width: 160px;
   padding: 0.4rem;
@@ -459,8 +459,8 @@
 }
 
 .dropdownItem:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--color-bg-soft);
+  color: var(--color-primary);
 }
 
 .dangerItem {

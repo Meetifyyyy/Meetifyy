@@ -1,7 +1,7 @@
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './GroupEditPage.module.css';
-import Avatar from '@shared/components/Avatar';
-import ImageSearchModal from '@shared/components/ImageSearchModal';
+import Avatar from '@shared/components/avatar/Avatar';
+import ImageSearchModal from '@shared/components/modals/ImageSearchModal';
 
 export default function GroupEditPage({
   conversation,

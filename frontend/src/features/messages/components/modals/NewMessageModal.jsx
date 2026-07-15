@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/context/DataContext';
 import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/DefaultAvatar';
+import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import styles from './NewMessageModal.module.css';
 
 export default function NewMessageModal({ onClose, onStartChat, onCreateGroup }) {

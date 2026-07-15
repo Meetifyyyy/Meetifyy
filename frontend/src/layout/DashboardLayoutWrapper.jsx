@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Outlet, useNavigate, useMatches } from 'react-router-dom';
-import Background from '@shared/components/Background';
+import Background from '@shared/components/ui/Background';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import DashboardLayout from './DashboardLayout';

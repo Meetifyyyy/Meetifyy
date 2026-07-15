@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
+import { useData } from '@shared/context/DataContext';
 import { CheckCheck, Check } from 'lucide-react';
-import Avatar from '@shared/components/Avatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import { isImageUrl } from '@shared/utils/avatar';
 import RichText from '@shared/components/mentions/RichText';
 import { SharedPostPreview } from '../previews/SharedPostPreview';
@@ -87,6 +88,7 @@ export default function MessageBubble({
   onRetry = null
 }) {
   const navigate = useNavigate();
+  const { conversations, toggleJoinCampusGroup, addGroupMember, requestToJoinGroup } = useData();
   const displayTime = getDisplayClockTime(msg, index);
 
   const meUser = users[currentUser?.username];
@@ -155,6 +157,7 @@ export default function MessageBubble({
   
   return (
     <div 
+      id={`msg-${msg.id}`}
       className={`${styles.msgBubbleContainer} ${msg.from === 'me' ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}
       style={{ opacity: shouldDim ? 0.45 : 1 }}
     >
@@ -175,6 +178,8 @@ export default function MessageBubble({
             }
             name={msg.from === 'me' ? 'Me' : msg.senderName}
             size="28px"
+            disableHover={true}
+            className={styles.msgAvatar}
             onClick={(e) => {
               e.stopPropagation();
               if (msg.from === 'me') {
@@ -263,9 +268,25 @@ export default function MessageBubble({
             <div className={styles.msgText} style={{ display: 'flex', flexDirection: 'column' }}>
             
             {msg.replyTo && (
-              <div className={styles.msgBubbleReplyRef}>
+              <div 
+                className={styles.msgBubbleReplyRef}
+                style={{ cursor: msg.replyTo.id ? 'pointer' : 'default' }}
+                onClick={(e) => {
+                  if (msg.replyTo.id) {
+                    e.stopPropagation();
+                    const el = document.getElementById(`msg-${msg.replyTo.id}`);
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      el.classList.add(styles.highlightFlash);
+                      setTimeout(() => {
+                        el.classList.remove(styles.highlightFlash);
+                      }, 1500);
+                    }
+                  }
+                }}
+              >
                 <div className={styles.msgBubbleReplyRefHeader}>
-                  {msg.replyTo.from === 'me' ? 'You' : (msg.replyTo.senderName || 'Someone')}
+                  {msg.replyTo.senderName || (msg.replyTo.from === 'me' ? 'You' : 'Someone')}
                 </div>
                 <div className={styles.msgBubbleReplyRefText}>
                   {msg.replyTo.text || 'Attachment'}
@@ -289,11 +310,45 @@ export default function MessageBubble({
               <SharedCommunityPreview community={msg.inviteData.community} currentUserId={currentUser?.id} />
             ) : msg.inviteData ? ( (() => {
               const targetGroupId = msg.inviteData.groupId;
-              let groupMembers = [];
-              const groupInfo = msg.inviteData.groupInfo; // fallback if needed
+              const isCampusGroup = String(targetGroupId).startsWith('c_');
+              const targetConv = conversations?.find(c => String(c.id) === String(targetGroupId));
+              const isMember = targetConv 
+                ? (targetConv.members || targetConv.participants || []).map(String).includes(String(currentUser?.id))
+                : false;
+              const isJoinedCampus = isCampusGroup && currentUser?.campusGroups?.map(String).includes(String(targetGroupId));
+              const alreadyJoined = isMember || isJoinedCampus;
               
               const inviteAuthorId = typeof msg.inviteData.inviterId === 'string' ? msg.inviteData.inviterId : String(msg.inviteData.inviterId);
               let fromText = msg.from === 'me' ? 'you' : (msg.senderName || 'someone');
+              
+              const isRequested = targetConv?.pendingRequests?.includes(currentUser?.id);
+              const buttonText = alreadyJoined 
+                ? 'View Group' 
+                : isRequested 
+                  ? 'Requested' 
+                  : 'Join Group';
+              
+              const handleJoinGroup = () => {
+                if (!alreadyJoined) {
+                  if (targetConv?.whoCanJoin === 'Request required' || msg.inviteData.whoCanJoin === 'Request required') {
+                    if (!isRequested) {
+                      requestToJoinGroup(targetGroupId, currentUser?.id);
+                      if (window.showToast) {
+                        window.showToast('Join request sent! 📨');
+                      }
+                    }
+                  } else {
+                    if (isCampusGroup) {
+                      toggleJoinCampusGroup(targetGroupId);
+                    } else {
+                      addGroupMember(targetGroupId, currentUser?.id);
+                    }
+                    navigate(`/messages/${targetGroupId}`);
+                  }
+                } else {
+                  navigate(`/messages/${targetGroupId}`);
+                }
+              };
               
               return (
                 <div className={styles.groupInviteCard}>
@@ -307,9 +362,11 @@ export default function MessageBubble({
                   <div className={styles.groupInviteActions}>
                     <button 
                       className={styles.groupInviteBtn}
-                      onClick={() => navigate(`/chat/c_${targetGroupId}`)}
+                      onClick={handleJoinGroup}
+                      disabled={!alreadyJoined && isRequested}
+                      style={(!alreadyJoined && isRequested) ? { opacity: 0.6, cursor: 'default' } : undefined}
                     >
-                      View Group
+                      {buttonText}
                     </button>
                   </div>
                 </div>
