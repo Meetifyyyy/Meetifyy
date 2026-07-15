@@ -1442,10 +1442,40 @@ export function DataProvider({ children }) {
       unread: 0,
       messages: []
     };
-    
     setConversations(prev => [newConv, ...prev]);
     return newId;
   }, [conversations]);
+
+  const start24HrInstantChat = useCallback(async (targetUser, activityName) => {
+    const targetName = targetUser.displayName || targetUser.name;
+    const targetUsername = targetUser.username || targetUser.id || targetName;
+    const targetAvatar = targetUser.avatar || targetUser.avatarUrl || (targetName ? targetName.charAt(0).toUpperCase() : '?');
+
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    const newId = 'instant_' + Date.now();
+    const sysMsgText = `⚡ You've been matched with a fellow student. Say hello! 👋\n(Chat expires in 24 hours.)`;
+    const sysMsg = { id: Date.now(), type: 'system', text: sysMsgText, time: 'Just now' };
+
+    const newConv = {
+      id: newId,
+      name: targetName,
+      username: targetUsername,
+      avatar: targetAvatar,
+      color: 'var(--color-secondary)',
+      online: true,
+      lastMsg: sysMsgText,
+      time: 'Just now',
+      unread: 0,
+      isInstantMatch: true,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+      messages: [sysMsg],
+      timestamp: Date.now()
+    };
+    
+    setConversations(prev => [newConv, ...prev]);
+    return newId;
+  }, []);
 
   const joinCrewActivity = useCallback(async (activityId) => {
     await new Promise(resolve => setTimeout(resolve, 400));
@@ -2558,6 +2588,7 @@ export function DataProvider({ children }) {
       markConversationUnread,
       deleteConversation,
       startConversation,
+      start24HrInstantChat,
       createGroupConversation,
       createCampusGroup,
       updateGroupInfo,

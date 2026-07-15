@@ -5,6 +5,10 @@ import Header from './Header';
 import Sidebar from './Sidebar';
 import DashboardLayout from './DashboardLayout';
 import BottomNav from './BottomNav';
+import { InstantMatchProvider } from '@features/instant-match/context/InstantMatchContext';
+import InstantMatchFAB from '@features/instant-match/components/InstantMatchFAB';
+import InstantMatchSheet from '@features/instant-match/components/InstantMatchSheet';
+import MatchPopup from '@features/instant-match/components/match/MatchPopup';
 
 export default function DashboardLayoutWrapper() {
   const matches = useMatches();
@@ -38,7 +42,7 @@ export default function DashboardLayoutWrapper() {
   };
 
   return (
-    <>
+    <InstantMatchProvider>
       <Background />
       <Header variant="dashboard" />
       <DashboardLayout wide={isWide} noPaddingMobile={noPadding}>
@@ -46,6 +50,10 @@ export default function DashboardLayoutWrapper() {
         <Outlet />
       </DashboardLayout>
       {!isSavedPage && <BottomNav />}
-    </>
+      <InstantMatchFAB />
+      <InstantMatchSheet />
+      <MatchPopup />
+    </InstantMatchProvider>
   );
 }
+

@@ -57,7 +57,14 @@ export default function ConversationItem({ conv, activeChatId, onSelect, onConte
       </div>
       <div className={styles.convInfo}>
         <div className={styles.convNameRow}>
-          <span className={`${styles.convNameText} ${isUnread ? styles.convNameTextUnread : ''}`}>{conv.name}</span>
+          <span className={`${styles.convNameText} ${isUnread ? styles.convNameTextUnread : ''}`}>
+            {conv.name}
+            {conv.isInstantMatch && (
+              <span className={styles.instantMatchBadge}>
+                ⚡ 24h
+              </span>
+            )}
+          </span>
         </div>
         {(() => {
           let previewText = conv.lastMsg || '';

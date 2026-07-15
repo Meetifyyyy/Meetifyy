@@ -1,0 +1,107 @@
+.instant-match-fab-container {
+  position: fixed;
+  bottom: 84px;
+  right: 24px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  transition: opacity 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.instant-match-fab-container:hover {
+  transform: scale(1.1);
+}
+
+.instant-match-fab-container:active {
+  transform: scale(0.95);
+}
+
+.instant-match-fab {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--color-secondary), var(--color-primary));
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4), 0 0 0 0 rgba(124, 58, 237, 0.4);
+  position: relative;
+  overflow: visible;
+  animation: pulse-glow 3s infinite;
+}
+
+.instant-match-fab svg {
+  width: 24px;
+  height: 24px;
+  transition: transform 0.3s ease;
+}
+
+.instant-match-fab:hover svg {
+  transform: rotate(15deg) scale(1.1);
+}
+
+@keyframes pulse-glow {
+  0% {
+    box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4), 0 0 0 0 rgba(124, 58, 237, 0.6);
+  }
+  50% {
+    box-shadow: 0 4px 25px rgba(37, 99, 235, 0.5), 0 0 0 12px rgba(37, 99, 235, 0);
+  }
+  100% {
+    box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4), 0 0 0 0 rgba(124, 58, 237, 0);
+  }
+}
+
+/* Hide FAB when sheet or popup is active */
+.instant-match-fab-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.5);
+}
+
+/* Responsive adjustments */
+@media (min-width: 769px) {
+  .instant-match-fab-container {
+    bottom: 32px;
+    right: 32px;
+  }
+}
+
+/* Searching active border spin animation */
+.instant-match-fab-ring {
+  box-sizing: border-box;
+  display: block;
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  border: 3px solid transparent;
+  border-radius: 50%;
+  animation: fab-ring-rotate 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  pointer-events: none;
+}
+
+.instant-match-fab-ring:nth-of-type(1) {
+  border-top-color: var(--color-secondary);
+}
+
+.instant-match-fab-ring:nth-of-type(2) {
+  animation-delay: -0.3s;
+  border-top-color: var(--color-primary);
+}
+
+.instant-match-fab-ring:nth-of-type(3) {
+  animation-delay: -0.6s;
+  border-top-color: var(--color-highlight);
+}
+
+@keyframes fab-ring-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
