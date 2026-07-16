@@ -34,7 +34,7 @@ export const SignupProvider = ({ children }) => {
   const navigate = useNavigate();
 
   const urlStep = parseInt(searchParams.get('step'), 10);
-  const currentStep = !isNaN(urlStep) && urlStep >= 1 && urlStep <= 11 ? urlStep : 1;
+  const currentStep = !isNaN(urlStep) && urlStep >= 1 && urlStep <= 5 ? urlStep : 1;
 
   const [signupData, setSignupData] = useState(() => {
     try {
@@ -60,7 +60,7 @@ export const SignupProvider = ({ children }) => {
   };
 
   const nextStep = () => {
-    const next = Math.min(currentStep + 1, 11);
+    const next = Math.min(currentStep + 1, 5);
     setSearchParams({ step: next });
   };
   
@@ -82,7 +82,7 @@ export const SignupProvider = ({ children }) => {
         nextStep,
         prevStep,
         goToStep,
-        totalSteps: 11
+        totalSteps: 5
       }}
     >
       {children}

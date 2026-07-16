@@ -1,0 +1,388 @@
+.loginContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  width: 100%;
+  position: relative;
+  padding: 2rem;
+  overflow: hidden;
+  background: radial-gradient(circle at center, var(--bg-gradient-center) 0%, var(--bg-gradient-mid) 45%, var(--bg-gradient-edge) 100%);
+}
+
+.loginBox {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  width: 850px;
+  aspect-ratio: 3 / 2;
+  height: auto;
+  background: var(--color-bg-white);
+  border-radius: 32px;
+  overflow: hidden;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+/* Left panel - UI Design Showcase */
+.leftPanel {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  background: white;
+  padding: 0.75rem;
+  overflow: hidden;
+}
+
+/* Decorative ambient glowing circles */
+.glowCircle1 {
+  position: absolute;
+  top: -10%;
+  left: -10%;
+  width: 400px;
+  height: 400px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  filter: blur(80px);
+  animation: floatD 8s ease-in-out infinite;
+}
+
+.glowCircle2 {
+  position: absolute;
+  bottom: -10%;
+  right: -10%;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  background: rgba(121, 101, 251, 0.4);
+  filter: blur(100px);
+  animation: floatE 10s ease-in-out infinite;
+}
+
+.leftContent {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  color: white;
+}
+
+.brandLogo {
+  font-family: 'Changa One', 'Calistoga', sans-serif;
+  font-size: 1.85rem;
+  color: white;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.slogan {
+  font-family: 'Calistoga', serif;
+  font-size: 1.6rem;
+  line-height: 1.15;
+  margin: 0;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  background: linear-gradient(to right, #ffffff, #f0eeff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Login Illustration Elements */
+.illustrationWrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.loginIllustration {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 20px;
+
+  box-sizing: border-box;
+}
+
+/* Right panel - Credentials Form */
+.rightPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem 2.5rem;
+  background: var(--color-bg-white);
+  position: relative;
+}
+
+.formWrapper {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.headerArea {
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.backBtn {
+  background: none;
+  border: none;
+  padding: 0.3rem;
+  margin-top: -0.1rem;
+  margin-left: -0.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.backBtn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--color-text-main);
+}
+
+.headerTextContent {
+  display: flex;
+  flex-direction: column;
+}
+
+.welcomeTitle {
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--color-text-main);
+  margin: 0 0 0.25rem 0;
+}
+
+.subtitle {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.inputGroup {
+  margin-bottom: 1.25rem;
+  position: relative;
+  padding-top: 1rem;
+}
+
+.floatingLabel {
+  position: absolute;
+  left: 0;
+  top: 1.25rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+.textInput {
+  width: 100%;
+  font-size: 1rem;
+  font-weight: 500;
+  border: none;
+  border-bottom: 2px solid var(--color-border);
+  padding: 0.5rem 0;
+  background: transparent;
+  outline: none;
+  transition: border-color 0.2s, color 0.2s;
+  color: var(--color-text-main);
+}
+
+.textInput:focus~.floatingLabel,
+.textInput:not(:placeholder-shown)~.floatingLabel {
+  top: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.textInput:focus {
+  border-bottom-color: var(--color-primary);
+}
+
+.textInputError {
+  border-bottom-color: var(--color-danger) !important;
+}
+
+/* Actions Row (Sign/Keep me and Forgot Password) */
+.actionsRow {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.rememberMeLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.checkboxInput {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 2px solid var(--color-border);
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.forgotLink {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.forgotLink:hover {
+  text-decoration: underline;
+}
+
+/* Buttons */
+.submitButton {
+  width: 100%;
+  padding: 0.8rem;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 99px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s;
+}
+
+.submitButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  background: var(--color-primary-hover);
+}
+
+.submitButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.errorBox {
+  min-height: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-danger);
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-top: 0.25rem;
+}
+
+.footerText {
+  margin-top: 1.75rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.signupLink {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 700;
+  margin-left: 0.25rem;
+}
+
+.signupLink:hover {
+  text-decoration: underline;
+}
+
+/* Mobile adjustments */
+@media (max-width: 900px) {
+  .leftPanel {
+    display: none;
+  }
+
+  .loginBox {
+    width: 100%;
+    max-width: 480px;
+    height: auto;
+    border-radius: 24px;
+    margin: 1rem;
+  }
+
+  .rightPanel {
+    padding: 2.5rem 1.5rem;
+  }
+}
+
+/* Animations */
+@keyframes floatA {
+
+  0%,
+  100% {
+    transform: translateY(0px) rotate(-1deg);
+  }
+
+  50% {
+    transform: translateY(-8px) rotate(-1deg);
+  }
+}
+
+@keyframes floatB {
+
+  0%,
+  100% {
+    transform: translateY(0px) rotate(1deg);
+  }
+
+  50% {
+    transform: translateY(-10px) rotate(1deg);
+  }
+}
+
+@keyframes floatD {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate(10px, -15px) scale(1.05);
+  }
+}
+
+@keyframes floatE {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate(-15px, 10px) scale(0.95);
+  }
+}

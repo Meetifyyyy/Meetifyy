@@ -1,0 +1,200 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useSignup } from '../SignupContext';
+import AnimatedStep from './AnimatedStep';
+import { motion } from 'framer-motion';
+import { ArrowRight, AlertCircle, Mail, Loader2, Check } from 'lucide-react';
+import styles from '../SignupFlow.module.css';
+
+export default function Step3OTP() {
+  const { signupData, nextStep } = useSignup();
+  const [code, setCode] = useState(['', '', '', '', '', '']);
+  const [error, setError] = useState(null);
+  const [status, setStatus] = useState('input'); // input -> verifying -> success
+  const [timer, setTimer] = useState(59);
+  const [showDemoNotification, setShowDemoNotification] = useState(true);
+  const inputsRef = useRef([]);
+
+  useEffect(() => {
+    let interval = null;
+    if (timer > 0) {
+      interval = setInterval(() => {
+        setTimer((t) => t - 1);
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [timer]);
+
+  const handleResend = () => {
+    setTimer(59);
+    setError(null);
+    setShowDemoNotification(true);
+  };
+
+  const handleChange = (e, index) => {
+    const val = e.target.value;
+    if (isNaN(Number(val))) return; // allow only digits
+    
+    const newCode = [...code];
+    newCode[index] = val.substring(val.length - 1); // take only the last digit
+    setCode(newCode);
+
+    if (val && index < 5) {
+      inputsRef.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyDown = (e, index) => {
+    if (e.key === 'Backspace' && !code[index] && index > 0) {
+      inputsRef.current[index - 1]?.focus();
+    }
+  };
+
+  const isComplete = code.every((digit) => digit !== '');
+
+  const handleVerify = (e) => {
+    if (e) e.preventDefault();
+    if (!isComplete) return;
+
+    setStatus('verifying');
+    setError(null);
+
+    const enteredCode = code.join('');
+
+    setTimeout(() => {
+      // Allow '123456' as the mock OTP
+      if (enteredCode === '123456') {
+        setStatus('success');
+        setTimeout(() => {
+          nextStep();
+        }, 1500);
+      } else {
+        setStatus('input');
+        setError('Incorrect code. Try entering 123456.');
+      }
+    }, 1500);
+  };
+
+  useEffect(() => {
+    if (isComplete) {
+      handleVerify();
+    }
+  }, [code]);
+
+  return (
+    <AnimatedStep className={styles.stepWrapper}>
+      {showDemoNotification && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          background: 'var(--color-bg-white)',
+          padding: '1rem',
+          borderRadius: 'var(--radius-md)',
+          boxShadow: 'var(--shadow-lg)',
+          borderLeft: '4px solid var(--color-primary)',
+          zIndex: 100,
+          maxWidth: '320px',
+          fontSize: '0.875rem',
+          animation: 'floatD 4s ease-in-out infinite'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+            <span style={{ fontWeight: 700 }}>Meetifyy Security</span>
+            <button 
+              onClick={() => setShowDemoNotification(false)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--color-text-light)' }}
+            >
+              ✕
+            </button>
+          </div>
+          <p style={{ margin: 0 }}>Your simulation OTP code is: <strong style={{ color: 'var(--color-primary)', fontSize: '1rem' }}>123456</strong></p>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-primary)', marginBottom: '1rem' }}>
+        <Mail size={24} />
+        <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>Verify Email</span>
+      </div>
+      <h2 className={styles.headline}>Enter verification code</h2>
+      <p className={styles.subheadline}>We sent a 6-digit code to <strong>{signupData.email || 'your email'}</strong></p>
+
+      {status === 'verifying' ? (
+        <div style={{ width: '100%', textAlign: 'center', padding: '3rem 0' }}>
+          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} style={{ display: 'inline-block', color: 'var(--color-primary)' }}>
+            <Loader2 size={48} />
+          </motion.div>
+          <p style={{ marginTop: '1.5rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>Confirming code...</p>
+        </div>
+      ) : status === 'success' ? (
+        <div style={{ width: '100%', textAlign: 'center', padding: '3rem 0' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--color-success)', marginBottom: '1.5rem' }}>
+            <Check size={36} />
+          </div>
+          <p style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-success)' }}>Email verified successfully!</p>
+        </div>
+      ) : (
+        <form onSubmit={(e) => { e.preventDefault(); handleVerify(); }} style={{ width: '100%' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', margin: '2rem 0' }}>
+            {code.map((digit, idx) => (
+              <input
+                key={idx}
+                ref={(el) => (inputsRef.current[idx] = el)}
+                type="text"
+                pattern="[0-9]*"
+                inputMode="numeric"
+                maxLength={1}
+                value={digit}
+                onChange={(e) => handleChange(e, idx)}
+                onKeyDown={(e) => handleKeyDown(e, idx)}
+                style={{
+                  width: '48px',
+                  height: '56px',
+                  fontSize: '1.75rem',
+                  fontWeight: 700,
+                  textAlign: 'center',
+                  border: 'none',
+                  borderBottom: '2px solid var(--color-border)',
+                  background: 'transparent',
+                  outline: 'none',
+                  color: 'var(--color-text-main)',
+                  transition: 'border-color 0.2s'
+                }}
+                className={error ? styles.inputError : ''}
+              />
+            ))}
+          </div>
+
+          <div style={{ minHeight: '2rem', textAlign: 'center' }}>
+            {error && (
+              <div className={styles.errorText} style={{ justifyContent: 'center' }}><AlertCircle size={16} /> {error}</div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '1.5rem' }}>
+            {timer > 0 ? (
+              <span style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)' }}>Resend code in {timer}s</span>
+            ) : (
+              <button 
+                type="button" 
+                onClick={handleResend}
+                style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontWeight: 600, cursor: 'pointer', fontSize: '0.95rem' }}
+              >
+                Resend verification code
+              </button>
+            )}
+
+            <button 
+              type="submit" 
+              className={styles.continueBtn}
+              disabled={!isComplete}
+              style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}
+            >
+              Verify Code <ArrowRight className={styles.btnIcon} />
+            </button>
+          </div>
+        </form>
+      )}
+    </AnimatedStep>
+  );
+}

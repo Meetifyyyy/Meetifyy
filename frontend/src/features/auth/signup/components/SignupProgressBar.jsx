@@ -8,12 +8,7 @@ export default function SignupProgressBar() {
   const { currentStep, prevStep, totalSteps } = useSignup();
   const navigate = useNavigate();
 
-  if (currentStep === totalSteps) {
-    // Hide progress bar on the final success screen
-    return null;
-  }
-
-  const progressPercentage = ((currentStep - 1) / (totalSteps - 2)) * 100;
+  const progressPercentage = (currentStep / totalSteps) * 100;
 
   const handleBack = () => {
     if (currentStep === 1) {
@@ -33,19 +28,17 @@ export default function SignupProgressBar() {
           <span className={styles.backText}>Back</span>
         </button>
       </div>
-      {currentStep > 1 && (
-        <div className={styles.progressBarRow}>
-          <div className={styles.progressTrack}>
-            <div
-              className={styles.progressFill}
-              style={{ width: `${progressPercentage}%` }}
-            />
-          </div>
-          <div className={styles.stepIndicator}>
-            {currentStep - 1} / {totalSteps - 2}
-          </div>
+      <div className={styles.progressBarRow}>
+        <div className={styles.progressTrack}>
+          <div
+            className={styles.progressFill}
+            style={{ width: `${progressPercentage}%` }}
+          />
         </div>
-      )}
+        <div className={styles.stepIndicator}>
+          Step {currentStep} of {totalSteps}
+        </div>
+      </div>
     </>
   );
 }

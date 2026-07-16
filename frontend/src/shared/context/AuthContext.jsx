@@ -89,7 +89,7 @@ export function AuthProvider({ children }) {
       id: `u_${Date.now()}`,
       ...userData,
       displayName: userData.firstName ? `${userData.firstName} ${userData.lastName || ''}`.trim() : userData.username,
-      avatar: userData.firstName ? userData.firstName.charAt(0).toUpperCase() : (userData.username || '?').charAt(0).toUpperCase(),
+      avatar: userData.avatar || (userData.firstName ? userData.firstName.charAt(0).toUpperCase() : (userData.username || '?').charAt(0).toUpperCase()),
       bio: 'Just joined Meetifyy!',
       role: 'New User',
       followers: 0,
