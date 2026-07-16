@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, ArrowRight, Check, School, Compass } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import styles from './SignupJourneyCTA.module.css';
 
 const containerVariants = {
@@ -79,15 +80,15 @@ export default function SignupJourneyCTA() {
   const [email, setEmail] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [placeholder, setPlaceholder] = useState('Enter your college email');
+  const navigate = useNavigate();
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!email || !email.includes('@')) {
       return;
     }
-    setIsSubmitted(true);
-    setPlaceholder(`Check your inbox to verify! 🚀`);
-    setEmail('');
+    
+    navigate('/signup', { state: { email } });
   };
 
   return (

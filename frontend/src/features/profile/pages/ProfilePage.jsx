@@ -15,20 +15,15 @@ import ProfileRightSidebar from '../components/ProfileRightSidebar';
 import ShareProfileModal from '../components/ShareProfileModal';
 import ProfilePageSkeleton from '../components/skeletons/ProfilePageSkeleton';
 
-const tags = [
-  { icon: '🎓', label: 'Gla University - Mathura 2029' },
-  { icon: '🤖', label: 'Computer Science' },
-  { icon: '💖', label: 'Taylor Swift' },
-  { icon: '🎤', label: 'Kendrick Lamar' },
-  { icon: '🍔', label: 'Free food' },
-  { icon: '🏋️', label: 'Fitness' },
-  { icon: '🎮', label: 'Gaming' },
-  { icon: '🍳', label: 'Cooking' },
-  { icon: '👗', label: 'Fashion' },
-  { icon: '📚', label: 'Library hangouts' },
-  { icon: '🎉', label: 'Campus events' },
-  { icon: '🎉', label: 'Sports' },
-];
+import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
+
+// Build emoji lookup map
+const emojiMap = {};
+INTERESTS_BY_CATEGORY.forEach(category => {
+  category.tags.forEach(tag => {
+    emojiMap[tag.label] = tag.emoji;
+  });
+});
 
 
 export default function ProfilePage() {
@@ -40,6 +35,40 @@ export default function ProfilePage() {
 
   const targetUsername = profileUsername || username;
   const profileUser = getUserByUsername(targetUsername) || currentUser;
+
+  // Build dynamic user tags list
+  const userTags = [];
+  const universityName = profileUser.university || 'GLA University';
+  const gradYear = profileUser.year || '2029';
+  userTags.push({ icon: '🎓', label: `${universityName} - ${gradYear}` });
+
+  if (profileUser.course) {
+    userTags.push({ icon: '🤖', label: profileUser.course });
+  } else if (profileUser.branch) {
+    userTags.push({ icon: '🤖', label: profileUser.branch });
+  }
+
+  if (profileUser.interests && Array.isArray(profileUser.interests)) {
+    profileUser.interests.forEach(interest => {
+      const emoji = emojiMap[interest] || '✨';
+      userTags.push({ icon: emoji, label: interest });
+    });
+  } else {
+    // Fallback mock interests
+    const fallbackMockInterests = [
+      { icon: '💖', label: 'Taylor Swift' },
+      { icon: '🎤', label: 'Kendrick Lamar' },
+      { icon: '🍔', label: 'Free food' },
+      { icon: '🏋️', label: 'Fitness' },
+      { icon: '🎮', label: 'Gaming' },
+      { icon: '🍳', label: 'Cooking' },
+      { icon: '👗', label: 'Fashion' },
+      { icon: '📚', label: 'Library hangouts' },
+      { icon: '🎉', label: 'Campus events' },
+      { icon: '🎉', label: 'Sports' }
+    ];
+    userTags.push(...fallbackMockInterests);
+  }
 
   const { isLoading, data: user, error, retry } = useSimulatedFetch(profileUser, 350, [profileUsername]);
 
@@ -83,8 +112,6 @@ export default function ProfilePage() {
   const handlePostClick = (post) => {
     navigate(`/post/${post.id}`, { state: { post, sourceContext: 'profile' } });
   };
-
-  const halfIdx = Math.ceil(tags.length / 2);
 
   return (
     <>
@@ -151,10 +178,9 @@ export default function ProfilePage() {
               {profileUser.bio && <p className={s.bio}>{profileUser.bio}</p>}
 
               {/* Interest tags */}
-              {/* Interest tags */}
               <div className={s.tagsScrollWrapper}>
                 <div className={s.tagsRow}>
-                  {tags.filter((_, idx) => idx % 2 === 0).map((tag, idx) => (
+                  {userTags.filter((_, idx) => idx % 2 === 0).map((tag, idx) => (
                     <div key={`tag-row1-${idx}`} className={s.tag}>
                       <span>{tag.icon}</span>
                       <span>{tag.label}</span>
@@ -162,7 +188,7 @@ export default function ProfilePage() {
                   ))}
                 </div>
                 <div className={s.tagsRow}>
-                  {tags.filter((_, idx) => idx % 2 !== 0).map((tag, idx) => (
+                  {userTags.filter((_, idx) => idx % 2 !== 0).map((tag, idx) => (
                     <div key={`tag-row2-${idx}`} className={s.tag}>
                       <span>{tag.icon}</span>
                       <span>{tag.label}</span>

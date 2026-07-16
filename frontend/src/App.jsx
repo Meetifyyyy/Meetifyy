@@ -132,7 +132,7 @@ export default function App() {
           path: '/login',
           element: (
             <PublicRoute>
-              {withBoundary(<LoginPage />)}
+              {withBoundary(<LoginPage />, null)}
             </PublicRoute>
           ),
         },
@@ -140,7 +140,7 @@ export default function App() {
           path: '/signup',
           element: (
             <PublicRoute>
-              {withBoundary(<SignupPage />)}
+              {withBoundary(<SignupPage />, null)}
             </PublicRoute>
           ),
         },

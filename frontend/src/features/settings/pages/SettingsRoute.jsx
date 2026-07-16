@@ -1,9 +1,19 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
+import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
+import { MAJORS_LIST } from '@features/campus/data/majors';
 import styles from './SettingsRoute.module.css';
+
+// Build emoji lookup map
+const emojiMap = {};
+INTERESTS_BY_CATEGORY.forEach(category => {
+  category.tags.forEach(tag => {
+    emojiMap[tag.label] = tag.emoji;
+  });
+});
 
 function ChevronRight() {
   return (
@@ -14,21 +24,42 @@ function ChevronRight() {
   );
 }
 
-function CustomSelect({ value, onChange, options, disabled }) {
+function PencilIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  );
+}
+
+function CustomSelect({ value, onChange, options, disabled, placeholder, searchable }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const containerRef = useRef(null);
 
   useEffect(() => {
     const handleOutsideClick = (e) => {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setIsOpen(false);
+        setSearchQuery('');
       }
     };
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  const selectedOption = options.find(o => o.value === value) || options[0];
+  const selectedOption = options.find(o => String(o.value) === String(value));
+
+  const filteredOptions = useMemo(() => {
+    if (!searchable || !searchQuery) return options;
+    const query = searchQuery.toLowerCase().trim();
+    return options.filter(opt => 
+      String(opt.label).toLowerCase().includes(query) || 
+      String(opt.value).toLowerCase().includes(query)
+    );
+  }, [options, searchQuery, searchable]);
 
   return (
     <div className={`${styles.customSelectContainer} ${disabled ? styles.disabledSelect : ''}`} ref={containerRef}>
@@ -38,7 +69,9 @@ function CustomSelect({ value, onChange, options, disabled }) {
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
       >
-        <span className={styles.selectValue}>{selectedOption?.label}</span>
+        <span className={styles.selectValue}>
+          {selectedOption ? selectedOption.label : (placeholder || 'Select...')}
+        </span>
         <svg 
           width="16" 
           height="16" 
@@ -56,24 +89,44 @@ function CustomSelect({ value, onChange, options, disabled }) {
 
       {isOpen && (
         <div className={styles.selectDropdown}>
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`${styles.selectOption} ${opt.value === value ? styles.selectOptionActive : ''}`}
-              onClick={() => {
-                onChange(opt.value);
-                setIsOpen(false);
-              }}
-            >
-              {opt.label}
-              {opt.value === value && (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              )}
-            </button>
-          ))}
+          {searchable && (
+            <div className={styles.selectSearchContainer}>
+              <input
+                type="text"
+                className={styles.selectSearchInput}
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onClick={e => e.stopPropagation()}
+                autoFocus
+              />
+            </div>
+          )}
+          <div className={styles.selectDropdownOptions}>
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`${styles.selectOption} ${String(opt.value) === String(value) ? styles.selectOptionActive : ''}`}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setIsOpen(false);
+                    setSearchQuery('');
+                  }}
+                >
+                  {opt.label}
+                  {String(opt.value) === String(value) && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </button>
+              ))
+            ) : (
+              <div className={styles.noResults}>No results found</div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -81,7 +134,7 @@ function CustomSelect({ value, onChange, options, disabled }) {
 }
 
 export default function SettingsRoute() {
-  const { currentUser, updateProfile } = useAuth();
+  const { currentUser, updateProfile, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const goBack = useSmartBack();
@@ -92,6 +145,13 @@ export default function SettingsRoute() {
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [email, setEmail] = useState(currentUser?.email || '');
   const [bio, setBio] = useState(currentUser?.bio || '');
+  const [birthday, setBirthday] = useState(currentUser?.birthday || '');
+  const [university] = useState(currentUser?.university || 'GLA University'); // Read-only
+  const [course, setCourse] = useState(currentUser?.course || currentUser?.branch || '');
+  const [year, setYear] = useState(currentUser?.year || '');
+
+  // Interests state
+  const [selectedInterests, setSelectedInterests] = useState(currentUser?.interests || []);
 
   // Social Links state
   const [socialLinks, setSocialLinks] = useState({
@@ -102,7 +162,7 @@ export default function SettingsRoute() {
   });
   const [socialErrors, setSocialErrors] = useState({});
 
-  // Privacy & notifications state — initialized from user object
+  // Privacy & notifications state
   const [emailNotifs, setEmailNotifs] = useState(currentUser?.preferences?.emailNotifs ?? true);
   const [pushNotifs, setPushNotifs] = useState(currentUser?.preferences?.pushNotifs ?? false);
   const [privateProfile, setPrivateProfile] = useState(currentUser?.preferences?.privateProfile ?? false);
@@ -113,6 +173,7 @@ export default function SettingsRoute() {
   const [whoCanSeeOnline, setWhoCanSeeOnline] = useState(currentUser?.preferences?.whoCanSeeOnline || 'everyone');
   const [whoCanSeeLastSeen, setWhoCanSeeLastSeen] = useState(currentUser?.preferences?.whoCanSeeLastSeen || 'everyone');
   const [readReceipts, setReadReceipts] = useState(currentUser?.preferences?.readReceipts ?? true);
+
   const validateSocialLinks = () => {
     const errors = {};
     if (socialLinks.instagram && !socialLinks.instagram.includes('instagram.com/')) {
@@ -133,7 +194,15 @@ export default function SettingsRoute() {
 
   const handleSave = () => {
     if (activePanel === 'account') {
-      updateProfile({ displayName, email, bio });
+      updateProfile({ 
+        displayName, 
+        email, 
+        bio, 
+        birthday, 
+        course, 
+        branch: course, 
+        year 
+      });
       showToast('Saved');
     } else if (activePanel === 'social') {
       if (!validateSocialLinks()) {
@@ -143,7 +212,6 @@ export default function SettingsRoute() {
       updateProfile({ socialLinks });
       showToast('Saved');
     } else if (activePanel === 'privacy') {
-      // Persist preferences to the user object so they survive refresh
       updateProfile({
         preferences: {
           ...(currentUser?.preferences || {}),
@@ -158,15 +226,32 @@ export default function SettingsRoute() {
         }
       });
       showToast('Saved');
+    } else if (activePanel === 'interests') {
+      updateProfile({ interests: selectedInterests });
+      showToast('Saved');
     } else {
       showToast('Saved');
     }
+  };
+
+  const toggleInterest = (id) => {
+    setSelectedInterests(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(i => i !== id);
+      }
+      if (prev.length >= 10) {
+        showToast('Maximum 10 interests allowed');
+        return prev;
+      }
+      return [...prev, id];
+    });
   };
 
   const panelTitle = {
     account: 'Account Details',
     social: 'Social Links',
     privacy: 'Privacy & Notifications',
+    interests: 'Interests & Topics',
   };
 
   return (
@@ -234,6 +319,37 @@ export default function SettingsRoute() {
             </button>
           </div>
 
+          {/* Interests section */}
+          <div className={styles.sectionLabel}>Interests</div>
+          <div className={styles.group}>
+            <div className={styles.interestsRow}>
+              <div className={styles.interestsInfo}>
+                <span className={styles.rowLabel} style={{ fontWeight: 600 }}>My Interests</span>
+                {currentUser?.interests && currentUser.interests.length > 0 ? (
+                  <div className={styles.selectedTagsContainer}>
+                    {currentUser.interests.map(interest => {
+                      const emoji = emojiMap[interest] || '✨';
+                      return (
+                        <span key={interest} className={styles.tagPillPreview}>
+                          <span>{emoji}</span> {interest}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <span className={styles.toggleDesc}>No interests selected. Add some topics!</span>
+                )}
+              </div>
+              <button 
+                className={styles.editInterestsBtn} 
+                onClick={() => setActivePanel('interests')}
+                aria-label="Edit interests"
+              >
+                <PencilIcon />
+              </button>
+            </div>
+          </div>
+
           {/* More section */}
           <div className={styles.sectionLabel}>More</div>
           <div className={styles.group}>
@@ -247,7 +363,7 @@ export default function SettingsRoute() {
               <span className={styles.rowChev}><ChevronRight /></span>
             </button>
             <div className={styles.divider} />
-            <button className={`${styles.row} ${styles.rowDanger}`} onClick={() => showToast('Log out coming soon')}>
+            <button className={`${styles.row} ${styles.rowDanger}`} onClick={logout}>
               <span className={styles.rowIcon}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
@@ -264,7 +380,7 @@ export default function SettingsRoute() {
       {/* ── Account Details panel ── */}
       {activePanel === 'account' && (
         <div className={`${styles.body} animate-in`}>
-          <div className={styles.group}>
+          <div className={styles.group} style={{ overflow: 'visible' }}>
             <div className={styles.inputRow}>
               <label className={styles.inputLabel}>Display Name</label>
               <input
@@ -302,6 +418,58 @@ export default function SettingsRoute() {
                 type="text"
                 value={bio}
                 onChange={e => setBio(e.target.value)}
+              />
+            </div>
+            
+            <div className={styles.divider} />
+            <div className={styles.inputRow}>
+              <label className={styles.inputLabel}>Date of Birth</label>
+              <input
+                className={styles.input}
+                type="date"
+                value={birthday}
+                onChange={e => setBirthday(e.target.value)}
+              />
+            </div>
+
+            <div className={styles.divider} />
+            <div className={styles.inputRow}>
+              <label className={styles.inputLabel}>University</label>
+              <input
+                className={styles.input}
+                type="text"
+                value={university}
+                disabled
+              />
+            </div>
+
+            <div className={styles.divider} />
+            <div className={styles.selectRow} style={{ overflow: 'visible' }}>
+              <div className={styles.toggleInfo}>
+                <span className={styles.inputLabel}>Major / Course</span>
+              </div>
+              <CustomSelect 
+                value={course}
+                onChange={setCourse}
+                options={MAJORS_LIST}
+                placeholder="Select Major"
+                searchable={true}
+              />
+            </div>
+
+            <div className={styles.divider} />
+            <div className={styles.selectRow} style={{ overflow: 'visible' }}>
+              <div className={styles.toggleInfo}>
+                <span className={styles.inputLabel}>Year of Passing</span>
+              </div>
+              <CustomSelect 
+                value={year}
+                onChange={setYear}
+                options={Array.from({ length: 9 }, (_, i) => {
+                  const y = String(new Date().getFullYear() - 2 + i);
+                  return { value: y, label: y };
+                })}
+                placeholder="Select Year"
               />
             </div>
           </div>
@@ -462,6 +630,42 @@ export default function SettingsRoute() {
         </div>
       )}
 
+      {/* ── Interests panel ── */}
+      {activePanel === 'interests' && (
+        <div className={`${styles.body} animate-in`}>
+          <div className={styles.interestsHeader}>
+            <p className={styles.interestsSubheadline}>
+              Select up to 10 topics to customize your experience ({selectedInterests.length}/10)
+            </p>
+          </div>
+
+          <div className={styles.categoriesWrapper}>
+            {INTERESTS_BY_CATEGORY.map((category, catIndex) => (
+              <div key={catIndex} className={styles.categorySection}>
+                <h3 className={styles.categoryTitle}>{category.title}</h3>
+                <div className={styles.tagsContainer}>
+                  {category.tags.map((tag, tagIndex) => {
+                    const isSelected = selectedInterests.includes(tag.label);
+                    return (
+                      <button 
+                        key={tagIndex}
+                        type="button"
+                        className={`${styles.optionPill} ${isSelected ? styles.selectedPill : ''}`}
+                        onClick={() => toggleInterest(tag.label)}
+                      >
+                        <span className={styles.pillIcon}>{tag.emoji}</span>
+                        <span className={styles.pillLabel}>{tag.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button className={styles.saveBtn} onClick={handleSave}>Save Interests</button>
+        </div>
+      )}
 
     </div>
   );

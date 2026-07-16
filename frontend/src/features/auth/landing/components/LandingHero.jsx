@@ -44,7 +44,13 @@ export default function LandingHero() {
               <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <button className={styles.secondaryBtn} onClick={() => navigate('/signup')}>
+          <button 
+            className={styles.secondaryBtn} 
+            onClick={() => {
+              const el = document.getElementById('how-it-works');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }}
+          >
             See how it works
           </button>
         </motion.div>

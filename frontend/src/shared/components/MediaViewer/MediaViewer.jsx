@@ -30,6 +30,7 @@ export default function MediaViewer() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [savedUrls, setSavedUrls] = useState(new Set());
   const didClose = useRef(false);
 
   const currentItem = items[index] || null;
@@ -137,6 +138,17 @@ export default function MediaViewer() {
     } catch (_) {}
   };
 
+  const handleSave = () => {
+    if (!currentItem?.url) return;
+    setSavedUrls(prev => {
+      const next = new Set(prev);
+      if (next.has(currentItem.url)) next.delete(currentItem.url);
+      else next.add(currentItem.url);
+      return next;
+    });
+    setShowMoreMenu(false);
+  };
+
   if (!open) return null;
 
   const hasMany = items.length > 1;
@@ -206,9 +218,9 @@ export default function MediaViewer() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                 Download
               </button>
-              <button className={styles.moreMenuItem} onClick={() => { showToast('Saved'); setShowMoreMenu(false); }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
-                Save
+              <button className={styles.moreMenuItem} onClick={handleSave}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill={currentItem?.url && savedUrls.has(currentItem.url) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
+                {currentItem?.url && savedUrls.has(currentItem.url) ? 'Saved' : 'Save'}
               </button>
               <button className={styles.moreMenuItem} onClick={() => { showToast('Reported'); setShowMoreMenu(false); }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" /></svg>

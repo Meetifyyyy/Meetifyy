@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useData } from '@shared/context/DataContext';
 import { showToast } from '@shared/utils/toast';
+import { isImageUrl } from '@shared/utils/avatar';
 
 export default function CommunityAdminModal({ community, onClose }) {
   const { updateCommunity, kickMember } = useData();
   const [activeTab, setActiveTab] = useState('details');
+  const avatarInputRef = useRef(null);
+  const coverInputRef = useRef(null);
 
   // Details State
   const [name, setName] = useState(community.name || '');
@@ -75,7 +78,7 @@ export default function CommunityAdminModal({ community, onClose }) {
         </div>
 
         <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--color-border)' }}>
-          {['details', 'settings'].map(tab => (
+          {['details', 'appearance', 'settings'].map(tab => (
             <button 
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -141,6 +144,93 @@ export default function CommunityAdminModal({ community, onClose }) {
                 style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }} 
               />
             </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
+              <button type="button" onClick={onClose} style={{ padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-bg-soft)', color: 'var(--color-text-main)', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button type="submit" disabled={isSaving} style={{ padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 600, cursor: 'pointer', opacity: isSaving ? 0.7 : 1 }}>{isSaving ? 'Saving...' : 'Save Changes'}</button>
+            </div>
+          </form>
+        )}
+
+        {activeTab === 'appearance' && (
+          <form onSubmit={handleSaveDetails} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <label style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text-main)' }}>Avatar Image</label>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--color-bg-alt)', overflow: 'hidden', border: '2px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {isImageUrl(avatar) ? (
+                    <img src={avatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <span style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>
+                      {avatar || (community.name ? community.name.charAt(0).toUpperCase() : 'C')}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
+                  <button 
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--color-bg-soft)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, width: 'fit-content' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20h9"></path>
+                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                    </svg>
+                    Change
+                  </button>
+                  <input 
+                    type="file" 
+                    accept="image/*"
+                    ref={avatarInputRef}
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => setAvatar(ev.target.result);
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <label style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text-main)' }}>Cover Image</label>
+              <div style={{ width: '100%', height: '120px', borderRadius: 'var(--radius-lg)', background: 'var(--color-bg-alt)', overflow: 'hidden', border: '1px solid var(--color-border)', position: 'relative' }}>
+                {coverImage ? (
+                  <img src={coverImage} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>No Cover Image</div>
+                )}
+              </div>
+              <button 
+                type="button"
+                onClick={() => coverInputRef.current?.click()}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--color-bg-soft)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, width: 'fit-content' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9"></path>
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                </svg>
+                Change Cover
+              </button>
+              <input 
+                type="file" 
+                accept="image/*"
+                ref={coverInputRef}
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setCoverImage(ev.target.result);
+                    reader.readAsDataURL(file);
+                  }
+                }}
+              />
+            </div>
+            
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
               <button type="button" onClick={onClose} style={{ padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-bg-soft)', color: 'var(--color-text-main)', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button type="submit" disabled={isSaving} style={{ padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 600, cursor: 'pointer', opacity: isSaving ? 0.7 : 1 }}>{isSaving ? 'Saving...' : 'Save Changes'}</button>

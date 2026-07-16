@@ -2,16 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/context/DataContext';
+import { INTERESTS_BY_CATEGORY } from '../constants/interestsData';
 import styles from './OnboardingRoute.module.css';
-
-const INTERESTS = [
-  { id: 'design', label: 'Design', icon: '🎨' },
-  { id: 'coding', label: 'Engineering', icon: '💻' },
-  { id: 'business', label: 'Business', icon: '📈' },
-  { id: 'sports', label: 'Sports', icon: '🏀' },
-  { id: 'gaming', label: 'Gaming', icon: '🎮' },
-  { id: 'music', label: 'Music', icon: '🎵' }
-];
 
 export default function OnboardingRoute() {
   const { currentUser, completeOnboarding } = useAuth();
@@ -32,9 +24,15 @@ export default function OnboardingRoute() {
   if (!currentUser || !currentUser.isNewUser) return null;
 
   const toggleInterest = (id) => {
-    setSelectedInterests(prev => 
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
+    setSelectedInterests(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(i => i !== id);
+      }
+      if (prev.length >= 10) {
+        return prev;
+      }
+      return [...prev, id];
+    });
   };
 
   const toggleCommunity = (name) => {
@@ -49,7 +47,10 @@ export default function OnboardingRoute() {
     } else {
       // Finish onboarding
       const updatedCommunities = [...new Set([...(currentUser.communities || []), ...selectedCommunities])];
-      completeOnboarding({ communities: updatedCommunities });
+      completeOnboarding({ 
+        communities: updatedCommunities,
+        interests: selectedInterests
+      });
       navigate('/home', { replace: true });
     }
   };
@@ -63,28 +64,52 @@ export default function OnboardingRoute() {
         {step === 1 && (
           <div className="animate-in" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <h1 className={styles.headline}>What are you into?</h1>
-            <p className={styles.subheadline}>Select a few topics to help us customize your feed.</p>
+            <p className={styles.subheadline}>
+              {selectedInterests.length >= 1
+                ? `You can select up to 10 topics (${selectedInterests.length}/10)`
+                : "Choose a few tags to personalize your profile and customize your feed."}
+            </p>
             
-            <div className={styles.optionsGrid}>
-              {INTERESTS.map(interest => (
-                <div 
-                  key={interest.id}
-                  className={`${styles.optionChip} ${selectedInterests.includes(interest.id) ? styles.selected : ''}`}
-                  onClick={() => toggleInterest(interest.id)}
-                >
-                  <span className={styles.chipIcon}>{interest.icon}</span>
-                  <span className={styles.chipLabel}>{interest.label}</span>
-                </div>
-              ))}
+            <div className={styles.categoriesWrapper}>
+              {INTERESTS_BY_CATEGORY.map((category, catIndex) => {
+                const row1 = category.tags.filter((_, i) => i % 2 === 0);
+                const row2 = category.tags.filter((_, i) => i % 2 !== 0);
+                return (
+                  <div key={catIndex} className={styles.categorySection}>
+                    <h2 className={styles.categoryTitle}>{category.title}</h2>
+                    <div className={styles.tagsContainer}>
+                      {[row1, row2].map((rowTags, rowIndex) => (
+                        <div key={rowIndex} className={styles.tagsRow}>
+                          {rowTags.map((tag, tagIndex) => {
+                            const isSelected = selectedInterests.includes(tag.label);
+                            return (
+                              <div 
+                                key={tagIndex}
+                                className={`${styles.optionPill} ${isSelected ? styles.selected : ''}`}
+                                onClick={() => toggleInterest(tag.label)}
+                              >
+                                <span className={styles.pillIcon}>{tag.emoji}</span>
+                                <span className={styles.pillLabel}>{tag.label}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
-            <button 
-              className={styles.continueBtn} 
-              onClick={handleNext}
-              disabled={selectedInterests.length === 0}
-            >
-              Continue
-            </button>
+            <div className={styles.actionsFooter}>
+              <button 
+                className={styles.continueBtn} 
+                onClick={handleNext}
+                disabled={selectedInterests.length === 0}
+              >
+                Continue
+              </button>
+            </div>
           </div>
         )}
 
@@ -94,17 +119,29 @@ export default function OnboardingRoute() {
             <p className={styles.subheadline}>Based on your interests, we recommend these communities.</p>
             
             <div className={styles.communitiesList}>
-              {suggestedCommunities.map(comm => (
-                <div key={comm.id} className={styles.communityCard}>
-                  <div className={styles.commInfo}>
-                    <div className={styles.commAvatar}>
-                      {comm.name.charAt(0)}
+              {suggestedCommunities.map(comm => {
+                const isImage = comm.avatar && (comm.avatar.startsWith('/') || comm.avatar.startsWith('http://') || comm.avatar.startsWith('https://') || comm.avatar.startsWith('data:'));
+                return (
+                  <div key={comm.id} className={styles.communityCard}>
+                    <div className={styles.commInfo}>
+                      <div 
+                        className={styles.commAvatar}
+                        style={{
+                          background: isImage ? 'var(--color-bg-white)' : (comm.color || 'var(--color-primary)'),
+                          color: '#ffffff'
+                        }}
+                      >
+                        {isImage ? (
+                          <img src={comm.avatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          comm.avatar || comm.name.charAt(0).toUpperCase()
+                        )}
+                      </div>
+                      <div className={styles.commText}>
+                        <span className={styles.commName}>{comm.name}</span>
+                        <span className={styles.commDesc}>{comm.members?.toLocaleString() || '0'} members</span>
+                      </div>
                     </div>
-                    <div className={styles.commText}>
-                      <span className={styles.commName}>{comm.name}</span>
-                      <span className={styles.commDesc}>{comm.members?.toLocaleString() || '0'} members</span>
-                    </div>
-                  </div>
                   <button 
                     className={`${styles.joinBtn} ${selectedCommunities.includes(comm.name) ? styles.joined : ''}`}
                     onClick={() => toggleCommunity(comm.name)}
@@ -112,8 +149,9 @@ export default function OnboardingRoute() {
                     {selectedCommunities.includes(comm.name) ? 'Joined' : 'Join'}
                   </button>
                 </div>
-              ))}
-            </div>
+              )
+            })}
+          </div>
 
             <button 
               className={styles.continueBtn} 

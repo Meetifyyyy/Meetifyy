@@ -3,6 +3,7 @@ import { SignupProvider, useSignup } from './SignupContext';
 import { AnimatePresence } from 'framer-motion';
 import styles from './SignupFlow.module.css';
 import SignupProgressBar from './components/SignupProgressBar';
+import loginIllustration from '@assets/login-illustration.png';
 
 import Step1Identity from './components/Step1Identity';
 import Step2Academic from './components/Step2Academic';
@@ -27,11 +28,21 @@ const StepRenderer = () => {
   return (
     <div className={styles.pageContainer}>
       <div className={styles.signupBox}>
-        <SignupProgressBar />
-        <div className={styles.contentArea}>
-          <AnimatePresence mode="wait">
-            {renderStep()}
-          </AnimatePresence>
+        {/* Left Panel: UI Design Showcase */}
+        <div className={styles.leftPanel}>
+          <div className={styles.illustrationWrapper}>
+            <img src={loginIllustration} alt="Signup Illustration" className={styles.loginIllustration} />
+          </div>
+        </div>
+
+        {/* Right Panel: Signup Form */}
+        <div className={styles.rightPanel}>
+          <SignupProgressBar />
+          <div className={styles.contentArea}>
+            <AnimatePresence mode="wait">
+              {renderStep()}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 
 const SignupContext = createContext();
 
@@ -32,17 +32,26 @@ const initialData = {
 export const SignupProvider = ({ children }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const urlStep = parseInt(searchParams.get('step'), 10);
   const currentStep = !isNaN(urlStep) && urlStep >= 1 && urlStep <= 5 ? urlStep : 1;
 
   const [signupData, setSignupData] = useState(() => {
+    let parsed = initialData;
     try {
       const saved = sessionStorage.getItem('meetifyy_signup_data');
-      return saved ? JSON.parse(saved) : initialData;
+      if (saved) {
+        parsed = JSON.parse(saved);
+      }
     } catch (e) {
-      return initialData;
+      // Ignored
     }
+    
+    if (location.state && location.state.email) {
+      return { ...parsed, email: location.state.email };
+    }
+    return parsed;
   });
 
   useEffect(() => {

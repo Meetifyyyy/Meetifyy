@@ -1711,6 +1711,9 @@
   .heroCover {
     border-radius: 0;
   }
+  .editCoverBtn {
+    display: none !important;
+  }
   .heroContent {
     padding: 0;
   }
