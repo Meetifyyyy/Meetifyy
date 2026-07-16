@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@shared/context/DataContext';
 import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
@@ -32,14 +33,13 @@ function formatCount(n) {
   return n.toLocaleString();
 }
 
-function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCommunities, onViewMembers, isAdmin, onOpenAdmin, onUpdateCommunity, isMuted, onMuteClick }) {
+function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCommunities, onViewMembers, isAdmin, onOpenAdmin, onUpdateCommunity, isMuted, onMuteClick, onTitleClick, onShare }) {
   const navigate = useNavigate();
   const { openViewer } = useMediaViewer();
   const coverInputRef = useRef(null);
   const avatarInputRef = useRef(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [imgError, setImgError] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -211,7 +211,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
                     <button 
                       type="button"
                       onClick={() => {
-                        setShowShareModal(true);
+                        onShare();
                         setShowDropdown(false);
                       }}
                     >
@@ -323,7 +323,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
             </div>
             
             <div className={styles.mobileHeroMetaInfo}>
-              <div className={styles.mobileHeroTitleRow}>
+              <div className={styles.mobileHeroTitleRow} onClick={onTitleClick}>
                 <h2 className={styles.mobileHeroTitle}>{comm.name}</h2>
                 <div className={styles.mobileTitleArrow}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -388,11 +388,6 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
           </div>
         </div>
       </div>
-      <ShareCommunityModal 
-        isOpen={showShareModal} 
-        onClose={() => setShowShareModal(false)} 
-        community={comm} 
-      />
     </div>
   );
 }
@@ -520,6 +515,7 @@ function GuidelinesCard() {
 export default function CommunityView({ communityId, onBack, onPostClick }) {
   const { posts, communities: allCommunities, users, currentUser, toggleJoinCommunity, addPost, updateCommunity } = useData();
   const [showMembersModal, setShowMembersModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showMobileDetails, setShowMobileDetails] = useState(() => {
     const saved = localStorage.getItem('meetify_show_community_details');
@@ -527,6 +523,30 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
   });
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showMuteModal, setShowMuteModal] = useState(false);
+  const [showMobileAbout, setShowMobileAbout] = useState(false);
+  const [isMobileAboutClosing, setIsMobileAboutClosing] = useState(false);
+
+  const handleCloseMobileAbout = () => {
+    setIsMobileAboutClosing(true);
+  };
+
+  const handleMobileAboutAnimationEnd = () => {
+    if (isMobileAboutClosing) {
+      setShowMobileAbout(false);
+      setIsMobileAboutClosing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showMobileAbout && !isMobileAboutClosing) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showMobileAbout, isMobileAboutClosing]);
   const [isMuted, setIsMuted] = useState(() => {
     try {
       const muted = JSON.parse(localStorage.getItem('meetify_muted_communities') || '[]');
@@ -688,13 +708,45 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
             <div className={styles.mobileDropdownMenu}>
               <button 
                 onClick={() => {
-                  const newVal = !showMobileDetails;
-                  setShowMobileDetails(newVal);
-                  localStorage.setItem('meetify_show_community_details', JSON.stringify(newVal));
+                  setShowShareModal(true);
                   setShowMobileMenu(false);
                 }}
               >
-                {showMobileDetails ? 'Hide Details' : 'Show Details'}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
+                  <circle cx="18" cy="5" r="3" />
+                  <circle cx="6" cy="12" r="3" />
+                  <circle cx="18" cy="19" r="3" />
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                </svg>
+                Share
+              </button>
+              <button 
+                onClick={() => {
+                  setShowMembersModal(true);
+                  setShowMobileMenu(false);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+                Members
+              </button>
+              <button 
+                onClick={() => {
+                  showToast('Community reported.');
+                  setShowMobileMenu(false);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                Report
               </button>
             </div>
           )}
@@ -716,6 +768,8 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
         }}
         isMuted={isMuted}
         onMuteClick={() => setShowMuteModal(true)}
+        onTitleClick={() => setShowMobileAbout(true)}
+        onShare={() => setShowShareModal(true)}
       />
 
       {showAdminModal && (
@@ -731,6 +785,40 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
           title={`${comm.name} Members`}
           onClose={() => setShowMembersModal(false)}
         />
+      )}
+
+      {showShareModal && (
+        <ShareCommunityModal 
+          isOpen={showShareModal} 
+          onClose={() => setShowShareModal(false)} 
+          community={comm} 
+        />
+      )}
+
+      {showMobileAbout && createPortal(
+        <div 
+          className={`${styles.mobileAboutOverlay}${isMobileAboutClosing ? ` ${styles.closing}` : ''}`}
+          onAnimationEnd={handleMobileAboutAnimationEnd}
+        >
+          <div className={styles.mobileAboutHeader}>
+            <button 
+              className={styles.mobileAboutCloseBtn} 
+              onClick={handleCloseMobileAbout}
+              aria-label="Go back"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+            </button>
+            <h3 className={styles.mobileAboutTitle}>{comm.name}</h3>
+          </div>
+          <div className={styles.mobileAboutContent}>
+            <AboutCard comm={comm} />
+            <GuidelinesCard />
+          </div>
+        </div>,
+        document.body
       )}
 
       {showMuteModal && (

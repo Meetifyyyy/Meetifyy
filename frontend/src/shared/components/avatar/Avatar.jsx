@@ -1,5 +1,6 @@
-import { forwardRef } from 'react';
+import { forwardRef, useState, useEffect } from 'react';
 import { UsersIcon, UserIcon } from '@heroicons/react/24/solid';
+import { useTheme } from '@shared/context/ThemeContext';
 import styles from './Avatar.module.css';
 
 const isImageUrl = (str) => {
@@ -23,8 +24,23 @@ const Avatar = forwardRef(({
   disableHover = false,
   children
 }, ref) => {
+  const { theme } = useTheme();
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  const bgHex = theme === 'dark' ? '202020' : 'ffffff';
+
+  let processedSrc = src;
+  if (src && typeof src === 'string' && src.startsWith('https://api.dicebear.com/')) {
+    const baseUrl = src.split('&backgroundColor=')[0];
+    processedSrc = `${baseUrl}&backgroundColor=${bgHex}`;
+  }
+
+  useEffect(() => {
+    setHasLoaded(false);
+  }, [processedSrc]);
+
   const sizeValue = typeof size === 'number' ? `${size}px` : size;
-  const hasImage = isImageUrl(src);
+  const hasImage = isImageUrl(processedSrc);
 
   // Initials mode for groups passed as short src string
   const isInitials = isGroup && src && typeof src === 'string' && src.length <= 2;
@@ -40,6 +56,12 @@ const Avatar = forwardRef(({
     ...style
   };
 
+  const clipStyle = firstLetter
+    ? { background: INITIALS_BG }
+    : (hasImage && hasLoaded)
+      ? { background: theme === 'dark' ? '#202020' : '#ffffff' }
+      : undefined;
+
   const handleClick = (e) => {
     if (onClick) onClick(e);
   };
@@ -53,14 +75,16 @@ const Avatar = forwardRef(({
     >
       <div
         className={styles.avatarClip}
-        style={firstLetter ? { background: INITIALS_BG } : undefined}
+        style={clipStyle}
       >
         {hasImage ? (
           <img
-            src={src}
+            src={processedSrc}
             alt={name || (isGroup ? 'Group Avatar' : 'User Avatar')}
             loading="lazy"
             className={styles.avatarImg}
+            onLoad={() => setHasLoaded(true)}
+            onError={() => setHasLoaded(false)}
           />
         ) : isInitials ? (
           <div className={styles.avatarInitials}>{initials}</div>

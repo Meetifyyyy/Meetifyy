@@ -1,21 +1,51 @@
-.flowContainer {
+.pageContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
   min-height: 100vh;
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  background-color: transparent;
-  color: var(--color-text-main, var(--color-text-main));
-  font-family: inherit;
   position: relative;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
+  background-image: url('../../../assets/login-bg-large.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
+.pageContainer::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 1;
+  pointer-events: none;
+}
 
+.signupBox {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  width: 840px;
+  height: 560px;
+  min-width: 840px;
+  min-height: 560px;
+  flex-shrink: 0;
+  background: var(--color-bg-white, white);
+  border-radius: 32px;
+  border: 10px solid white;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.25);
+  color: var(--color-text-main, var(--color-text-main));
+  font-family: inherit;
+}
 
 /* Progress Bar Container */
 .progressContainer {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   width: 100%;
@@ -43,7 +73,7 @@
 }
 
 .progressBarRow {
-  position: fixed;
+  position: absolute;
   top: 68px;
   left: 0;
   width: 100%;
@@ -71,7 +101,7 @@
 }
 
 .backText {
-  font-size: 1.15rem;
+  font-size: 1rem;
   font-weight: 700;
   font-family: var(--font-family-display, inherit);
   letter-spacing: -0.01em;
@@ -105,7 +135,7 @@
   flex-direction: column;
   justify-content: flex-start;
   align-items: center;
-  padding: 7.5rem 2rem 2rem 2rem;
+  padding: 6.5rem 2rem 1.5rem 2rem;
   z-index: 1;
   width: 100%;
   max-width: 600px;
@@ -122,43 +152,182 @@
 }
 
 .headline {
-  font-size: 2.25rem;
+  font-size: 1.5rem;
   font-weight: 800;
   letter-spacing: -0.02em;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
   color: var(--color-text-main, var(--color-text-main));
   line-height: 1.2;
 }
 
 .subheadline {
-  font-size: 1.125rem;
+  font-size: 0.85rem;
   color: var(--color-text-muted, var(--color-text-muted));
-  margin-bottom: 2.5rem;
+  margin-bottom: 1.25rem;
 }
 
 /* Inputs */
 .largeInput {
   width: 100%;
-  font-size: 1.75rem;
-  font-weight: 600;
+  font-size: 1.1rem;
+  font-weight: 500;
   letter-spacing: -0.01em;
   border: none;
   border-bottom: 2px solid var(--color-border);
-  padding: 0.5rem 0;
+  padding: 0.25rem 0;
   background: transparent;
   outline: none;
   transition: border-color 0.2s, color 0.2s;
-  color: var(--color-text-muted);
-  margin-bottom: 1rem;
+  color: var(--color-text-main);
 }
 .largeInput::placeholder {
-  color: var(--color-text-light);
+  color: transparent;
 }
 .largeInput:focus,
 .largeInput:focus-visible {
   border-bottom-color: var(--color-primary, var(--color-primary));
   outline: none;
   box-shadow: none;
+}
+
+.inputGroup {
+  margin-bottom: 0.25rem;
+  position: relative;
+  padding-top: 1rem;
+}
+
+.floatingLabel {
+  position: absolute;
+  left: 0;
+  top: 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+.largeInput:focus~.floatingLabel,
+.largeInput:not(:placeholder-shown)~.floatingLabel {
+  top: -0.1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.dateSelectRow {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.academicRow {
+  display: flex;
+  gap: 1rem;
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.dateSelectWrapper {
+  position: relative;
+  flex: 1;
+}
+
+.dateSelect {
+  width: 100%;
+  appearance: none;
+  font-size: 1rem;
+  font-weight: 500;
+  padding: 0.75rem 1rem;
+  background-color: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 12px);
+  color: var(--color-text-main);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.dateSelect:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.dateSelectIcon {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--color-text-muted);
+}
+
+.customSelectContainer {
+  position: relative;
+  flex: 1;
+}
+
+.customSelectList {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  top: auto;
+  left: 0;
+  width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 12px);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+  z-index: 50;
+  list-style: none;
+  padding: 0.25rem;
+  margin: 0;
+  
+  /* Scrollbar styles for the dropdown */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,0.2) transparent;
+}
+.customSelectList::-webkit-scrollbar {
+  width: 4px;
+}
+.customSelectList::-webkit-scrollbar-thumb {
+  background-color: rgba(0,0,0,0.2);
+  border-radius: 4px;
+}
+
+.customSelectSearch {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  outline: none;
+  color: var(--color-text-main);
+  background: var(--color-bg-white);
+  transition: border-color 0.2s;
+}
+.customSelectSearch:focus {
+  border-color: var(--color-primary);
+}
+
+.customSelectOption {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: background 0.1s, color 0.1s;
+  color: var(--color-text-main);
+}
+
+.customSelectOption:hover {
+  background: var(--color-bg-hover, #f3f4f6);
+}
+
+.customSelectOption.selected {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 .feedbackText {
@@ -242,20 +411,20 @@
 
 /* Primary Button */
 .continueBtn {
-  margin-top: 3rem;
-  padding: 1rem 2.5rem;
+  margin-top: 1rem;
+  padding: 0.75rem 2rem;
   background: var(--color-primary);
   color: white;
   border: none;
   border-radius: 999px;
-  font-size: 1.125rem;
+  font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
-  box-shadow:(--shadow-sm);
+  box-shadow: var(--shadow-sm);
 }
 .continueBtn:hover:not(:disabled) {
   transform: translateY(-2px);
@@ -287,6 +456,27 @@
 }
 
 /* Mobile adjustments */
+@media (max-width: 900px) {
+  .pageContainer {
+    background: radial-gradient(circle at center, var(--bg-gradient-center) 0%, var(--bg-gradient-mid) 45%, var(--bg-gradient-edge) 100%);
+    background-attachment: scroll;
+  }
+  .pageContainer::before {
+    display: none;
+  }
+  .signupBox {
+    width: 100%;
+    max-width: 480px;
+    min-width: 0;
+    height: auto;
+    min-height: 0;
+    flex-shrink: 1;
+    border-radius: 24px;
+    margin: 1rem;
+    border: 4px solid white;
+  }
+}
+
 @media (max-width: 640px) {
   .headline {
     font-size: 1.5rem;
@@ -311,6 +501,10 @@
   }
   .progressTrack {
     width: 140px;
+  }
+  .academicRow {
+    flex-direction: column;
+    gap: 0.75rem;
   }
   .contentArea {
     padding: 1.25rem;
@@ -363,21 +557,21 @@
 /* Validation & Feedback UI */
 .errorText {
   color: var(--color-danger);
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
   font-weight: 500;
 }
 
 .successText {
   color: var(--color-success);
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
   font-weight: 500;
 }
 
@@ -407,4 +601,55 @@
 
 .checklistItem.met {
   color: var(--color-success);
+}
+
+.highlight {
+  color: var(--color-primary);
+  font-weight: 700;
+  background: transparent;
+}
+
+.otpInputRow {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin: 2rem 0;
+}
+
+.otpInput {
+  width: 48px;
+  height: 56px;
+  font-size: 1.75rem;
+  font-weight: 700;
+  text-align: center;
+  border: none;
+  border-bottom: 2px solid var(--color-border);
+  background: transparent;
+  outline: none;
+  color: var(--color-text-main);
+  transition: border-color 0.2s;
+}
+
+.statusContainer {
+  width: 100%;
+  height: 252px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .otpInput {
+    width: 36px;
+    height: 44px;
+    font-size: 1.35rem;
+  }
+  .otpInputRow {
+    gap: 0.35rem;
+    margin: 1.5rem 0;
+  }
+  .statusContainer {
+    height: 208px;
+  }
 }

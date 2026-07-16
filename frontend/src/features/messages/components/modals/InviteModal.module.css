@@ -5,7 +5,7 @@
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  z-index: 1000;
+  z-index: 10000;
   animation: fadeIn 0.25s ease;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);

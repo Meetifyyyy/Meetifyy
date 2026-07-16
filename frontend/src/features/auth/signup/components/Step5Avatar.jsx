@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useSignup } from '../SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
+import { useTheme } from '@shared/context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import AnimatedStep from './AnimatedStep';
 import { motion } from 'framer-motion';
@@ -18,12 +19,21 @@ const presetAvatars = [
 export default function Step5Avatar() {
   const { signupData, updateData } = useSignup();
   const { signup } = useAuth();
+  const { theme } = useTheme();
   const navigate = useNavigate();
 
   const [avatar, setAvatar] = useState(signupData.avatar || '');
   const [isUploading, setIsUploading] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
+
+  const bgHex = theme === 'dark' ? '202020' : 'ffffff';
+
+  const getProcessedAvatarUrl = (url) => {
+    if (!url || !url.startsWith('https://api.dicebear.com/')) return url;
+    const baseUrl = url.split('&backgroundColor=')[0];
+    return `${baseUrl}&backgroundColor=${bgHex}`;
+  };
 
   const loadingMessages = [
     'Creating your profile...',
@@ -60,7 +70,7 @@ export default function Step5Avatar() {
       const finalData = {
         ...signupData,
         username: mockUsername,
-        avatar: avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${signupData.firstName || 'U'}`
+        avatar: getProcessedAvatarUrl(avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${signupData.firstName || 'U'}`
       };
 
       signup(finalData);
@@ -120,7 +130,7 @@ export default function Step5Avatar() {
             {isUploading ? (
               <Loader2 size={36} className="animate-spin" style={{ color: 'var(--color-text-muted)' }} />
             ) : avatar ? (
-              <img src={avatar} alt="Profile Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <img src={getProcessedAvatarUrl(avatar)} alt="Profile Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
               <span style={{ fontSize: '3rem', fontWeight: 700, color: 'var(--color-text-light)' }}>
                 {(signupData.firstName || 'U')[0].toUpperCase()}
@@ -150,29 +160,33 @@ export default function Step5Avatar() {
         </div>
 
         {/* Preset Avatars Selection */}
-        <div style={{ width: '100%', textAlign: 'center' }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>Or choose a preset character</span>
+        <div style={{ width: '100%', textAlignt: 'center' }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)', display: 'block', textAlign: 'center' }}>Or choose a preset character</span>
           <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', marginTop: '0.75rem' }}>
-            {presetAvatars.map((url, idx) => (
-              <button
-                key={idx}
-                onClick={() => setAvatar(url)}
-                style={{
-                  width: '48px',
-                  height: '48px',
-                  borderRadius: '50%',
-                  overflow: 'hidden',
-                  border: avatar === url ? '3px solid var(--color-primary)' : '2px solid transparent',
-                  background: 'var(--color-bg-alt)',
-                  padding: 0,
-                  cursor: 'pointer',
-                  transform: avatar === url ? 'scale(1.1)' : 'none',
-                  transition: 'all 0.2s'
-                }}
-              >
-                <img src={url} alt={`Preset ${idx}`} style={{ width: '100%', height: '100%' }} />
-              </button>
-            ))}
+            {presetAvatars.map((url, idx) => {
+              const processedUrl = getProcessedAvatarUrl(url);
+              const isSelected = avatar && avatar.split('&backgroundColor=')[0] === url;
+              return (
+                <button
+                  key={idx}
+                  onClick={() => setAvatar(url)}
+                  style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '50%',
+                    overflow: 'hidden',
+                    border: isSelected ? '3px solid var(--color-primary)' : '2px solid transparent',
+                    background: 'var(--color-bg-alt)',
+                    padding: 0,
+                    cursor: 'pointer',
+                    transform: isSelected ? 'scale(1.1)' : 'none',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <img src={processedUrl} alt={`Preset ${idx}`} style={{ width: '100%', height: '100%' }} />
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -187,3 +201,4 @@ export default function Step5Avatar() {
     </AnimatedStep>
   );
 }
+

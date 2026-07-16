@@ -27,16 +27,11 @@ export default function SignupProgressBar() {
           </span>
           <span className={styles.backText}>Back</span>
         </button>
-      </div>
-      <div className={styles.progressBarRow}>
         <div className={styles.progressTrack}>
           <div
             className={styles.progressFill}
             style={{ width: `${progressPercentage}%` }}
           />
-        </div>
-        <div className={styles.stepIndicator}>
-          Step {currentStep} of {totalSteps}
         </div>
       </div>
     </>

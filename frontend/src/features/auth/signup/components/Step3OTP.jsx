@@ -11,7 +11,7 @@ export default function Step3OTP() {
   const [error, setError] = useState(null);
   const [status, setStatus] = useState('input'); // input -> verifying -> success
   const [timer, setTimer] = useState(59);
-  const [showDemoNotification, setShowDemoNotification] = useState(true);
+
   const inputsRef = useRef([]);
 
   useEffect(() => {
@@ -29,7 +29,6 @@ export default function Step3OTP() {
   const handleResend = () => {
     setTimer(59);
     setError(null);
-    setShowDemoNotification(true);
   };
 
   const handleChange = (e, index) => {
@@ -84,33 +83,7 @@ export default function Step3OTP() {
 
   return (
     <AnimatedStep className={styles.stepWrapper}>
-      {showDemoNotification && (
-        <div style={{
-          position: 'fixed',
-          top: '20px',
-          right: '20px',
-          background: 'var(--color-bg-white)',
-          padding: '1rem',
-          borderRadius: 'var(--radius-md)',
-          boxShadow: 'var(--shadow-lg)',
-          borderLeft: '4px solid var(--color-primary)',
-          zIndex: 100,
-          maxWidth: '320px',
-          fontSize: '0.875rem',
-          animation: 'floatD 4s ease-in-out infinite'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-            <span style={{ fontWeight: 700 }}>Meetifyy Security</span>
-            <button 
-              onClick={() => setShowDemoNotification(false)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--color-text-light)' }}
-            >
-              ✕
-            </button>
-          </div>
-          <p style={{ margin: 0 }}>Your simulation OTP code is: <strong style={{ color: 'var(--color-primary)', fontSize: '1rem' }}>123456</strong></p>
-        </div>
-      )}
+
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-primary)', marginBottom: '1rem' }}>
         <Mail size={24} />
@@ -119,23 +92,16 @@ export default function Step3OTP() {
       <h2 className={styles.headline}>Enter verification code</h2>
       <p className={styles.subheadline}>We sent a 6-digit code to <strong>{signupData.email || 'your email'}</strong></p>
 
-      {status === 'verifying' ? (
-        <div style={{ width: '100%', textAlign: 'center', padding: '3rem 0' }}>
-          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} style={{ display: 'inline-block', color: 'var(--color-primary)' }}>
-            <Loader2 size={48} />
-          </motion.div>
-          <p style={{ marginTop: '1.5rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>Confirming code...</p>
-        </div>
-      ) : status === 'success' ? (
-        <div style={{ width: '100%', textAlign: 'center', padding: '3rem 0' }}>
+      {status === 'success' ? (
+        <div className={styles.statusContainer}>
           <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--color-success)', marginBottom: '1.5rem' }}>
             <Check size={36} />
           </div>
-          <p style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-success)' }}>Email verified successfully!</p>
+          <p style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-success)', margin: 0 }}>Email verified successfully!</p>
         </div>
       ) : (
         <form onSubmit={(e) => { e.preventDefault(); handleVerify(); }} style={{ width: '100%' }}>
-          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', margin: '2rem 0' }}>
+          <div className={styles.otpInputRow}>
             {code.map((digit, idx) => (
               <input
                 key={idx}
@@ -147,20 +113,8 @@ export default function Step3OTP() {
                 value={digit}
                 onChange={(e) => handleChange(e, idx)}
                 onKeyDown={(e) => handleKeyDown(e, idx)}
-                style={{
-                  width: '48px',
-                  height: '56px',
-                  fontSize: '1.75rem',
-                  fontWeight: 700,
-                  textAlign: 'center',
-                  border: 'none',
-                  borderBottom: '2px solid var(--color-border)',
-                  background: 'transparent',
-                  outline: 'none',
-                  color: 'var(--color-text-main)',
-                  transition: 'border-color 0.2s'
-                }}
-                className={error ? styles.inputError : ''}
+                className={`${styles.otpInput} ${error ? styles.inputError : ''}`}
+                disabled={status === 'verifying'}
               />
             ))}
           </div>
@@ -178,7 +132,8 @@ export default function Step3OTP() {
               <button 
                 type="button" 
                 onClick={handleResend}
-                style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontWeight: 600, cursor: 'pointer', fontSize: '0.95rem' }}
+                disabled={status === 'verifying'}
+                style={{ background: 'none', border: 'none', color: status === 'verifying' ? 'var(--color-text-muted)' : 'var(--color-primary)', fontWeight: 600, cursor: status === 'verifying' ? 'not-allowed' : 'pointer', fontSize: '0.95rem' }}
               >
                 Resend verification code
               </button>
@@ -187,10 +142,18 @@ export default function Step3OTP() {
             <button 
               type="submit" 
               className={styles.continueBtn}
-              disabled={!isComplete}
+              disabled={!isComplete || status === 'verifying'}
               style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}
             >
-              Verify Code <ArrowRight className={styles.btnIcon} />
+              {status === 'verifying' ? (
+                <>
+                  Verifying... <Loader2 className={styles.btnIcon} style={{ animation: 'spin 1s linear infinite' }} />
+                </>
+              ) : (
+                <>
+                  Verify Code <ArrowRight className={styles.btnIcon} />
+                </>
+              )}
             </button>
           </div>
         </form>

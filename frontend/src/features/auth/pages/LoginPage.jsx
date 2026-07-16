@@ -3,7 +3,6 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { ArrowRight, AlertCircle, ArrowLeft } from 'lucide-react';
 import s from './LoginPage.module.css';
-import loginIllustration from '../../../assets/login-illustration.png';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -38,13 +37,7 @@ export default function LoginPage() {
       <div className={s.loginBox}>
         {/* Left Panel: UI Design Showcase */}
         <div className={s.leftPanel}>
-          <div className={s.illustrationWrapper}>
-            <img 
-              src={loginIllustration} 
-              alt="Login Illustration" 
-              className={s.loginIllustration} 
-            />
-          </div>
+          {/* Transparent area to reveal background image */}
         </div>
 
         {/* Right Panel: Credentials Form */}

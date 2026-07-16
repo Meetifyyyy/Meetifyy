@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useData } from '@shared/context/DataContext';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
-import styles from '@features/crew/components/modals/ShareActivityModal.module.css';
+import styles from './InviteModal.module.css';
 
 export default function InviteModal({ isOpen, onClose, group }) {
   const [searchTerm, setSearchTerm] = useState('');

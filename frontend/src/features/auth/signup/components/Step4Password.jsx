@@ -43,7 +43,7 @@ export default function Step4Password() {
       <h2 className={styles.headline}>Set up a password</h2>
       <p className={styles.subheadline}>Keep your Meetifyy profile secure and private.</p>
 
-      <form onSubmit={handleSubmit} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <form onSubmit={handleSubmit} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
         <div>
           <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>Choose Password</label>
           <div style={{ position: 'relative' }}>
@@ -57,6 +57,7 @@ export default function Step4Password() {
             />
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => setShowPassword(!showPassword)}
               style={{
                 position: 'absolute',

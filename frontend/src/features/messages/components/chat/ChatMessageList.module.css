@@ -45,11 +45,13 @@
   display: flex;
   align-items: flex-end;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .msgBubbleContent {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .msgAvatar {
@@ -76,7 +78,7 @@
 }
 
 .msgBubbleContainerMe .msgBubbleWrapper {
-  justify-content: flex-end;
+  justify-content: flex-start;
   flex-direction: row-reverse;
 }
 
@@ -90,6 +92,7 @@
   border-radius: 14px;
   line-height: 1.4;
   position: relative;
+  min-width: 0;
 }
 
 .msgBubbleThem {
@@ -648,6 +651,7 @@
   color: rgba(255, 255, 255, 0.9);
   max-width: 100%;
   min-width: 105px;
+  min-width: 0;
 }
 
 .msgBubbleThem .msgBubbleReplyRef {
