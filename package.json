@@ -2,6 +2,9 @@
   "name": "meetifyy-monorepo",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "description": "Meetifyy Monorepo Root - Start backend, main frontend, and admin frontend in one command",
   "scripts": {
     "build": "npm --prefix backend install && npm --prefix backend run build",
