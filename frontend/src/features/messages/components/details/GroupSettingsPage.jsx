@@ -99,7 +99,11 @@ export default function GroupSettingsPage({
                   <input
                     type="checkbox"
                     checked={groupUpdatesActive}
-                    onChange={(e) => setGroupUpdatesActive(e.target.checked)}
+                    onChange={(e) => {
+                      const newVal = e.target.checked;
+                      setGroupUpdatesActive(newVal);
+                      updateGroupSettings(conversation.id, { groupUpdatesActive: newVal });
+                    }}
                   />
                   <span className={styles.slider}></span>
                 </label>
@@ -145,7 +149,8 @@ export default function GroupSettingsPage({
                 className={styles.settingRow}
                 onClick={() => {
                   if (isAdmin) {
-                    const newVal = visibility.startsWith('Visible') ? 'Hidden group' : 'Visible only to Gla University';
+                    const uniName = visibility.startsWith('Visible') ? visibility.split('Visible only to ')[1] || 'your university' : 'your university';
+                    const newVal = visibility.startsWith('Visible') ? 'Hidden group' : `Visible only to ${uniName}`;
                     setVisibility(newVal);
                     updateGroupSettings(conversation.id, { visibility: newVal });
                   }

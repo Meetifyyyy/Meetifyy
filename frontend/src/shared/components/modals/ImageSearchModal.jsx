@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import styles from './ImageSearchModal.module.css';
 import { X, Search, Upload } from 'lucide-react';
+import { useR2Upload } from '@shared/hooks/useR2Upload';
 
 export default function ImageSearchModal({ onClose, onSelect }) {
   const [query, setQuery] = useState('');
@@ -8,6 +9,7 @@ export default function ImageSearchModal({ onClose, onSelect }) {
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('images'); // 'images' or 'gifs'
   const fileInputRef = useRef(null);
+  const { upload: uploadImage } = useR2Upload('covers');
 
   useEffect(() => {
     let active = true;
@@ -15,7 +17,7 @@ export default function ImageSearchModal({ onClose, onSelect }) {
       setIsLoading(true);
       if (activeTab === 'images') {
         // Fetch from Unsplash
-        const UNSPLASH_KEY = 'SxGAVwx8aEF9osPkgp-cJIUXANI2f09pfNekVmXG1Tg';
+        const UNSPLASH_KEY = import.meta.env.VITE_UNSPLASH_KEY || '';
         
         try {
           if (!query.trim()) {
@@ -55,7 +57,7 @@ export default function ImageSearchModal({ onClose, onSelect }) {
         }
       } else {
         // Fetch from Giphy
-        const GIPHY_KEY = '35QtJis0Cfz6gKm69lNb05GJw7lBzzpi';
+        const GIPHY_KEY = import.meta.env.VITE_GIPHY_KEY || '';
         
         try {
           if (!query.trim()) {
@@ -110,17 +112,28 @@ export default function ImageSearchModal({ onClose, onSelect }) {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e) => {
+  const handleCustomUpload = async (e) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          onSelect(event.target.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+      if (!file.type.startsWith('image/')) {
+        alert('Only image files are allowed.');
+        e.target.value = '';
+        return;
+      }
+      if (file.size > MAX_SIZE) {
+        alert('Image too large. Maximum size is 10 MB.');
+        e.target.value = '';
+        return;
+      }
+      try {
+        const publicUrl = await uploadImage(file);
+        onSelect(publicUrl);
+      } catch {
+        alert('Failed to upload image.');
+      }
     }
+    e.target.value = '';
   };
 
   return (
@@ -154,7 +167,7 @@ export default function ImageSearchModal({ onClose, onSelect }) {
             accept="image/*"
             ref={fileInputRef}
             style={{ display: 'none' }}
-            onChange={handleFileChange}
+            onChange={handleCustomUpload}
           />
 
           <button

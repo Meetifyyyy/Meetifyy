@@ -1,17 +1,19 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
+import { supabase } from '@shared/context/AuthContext';
 import Background from '@shared/components/ui/Background';
 import Toast from '@shared/components/ui/Toast';
 import { motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
-import styles from '../signup/SignupFlow.module.css';
+import styles from './ForgotPasswordPage.module.css';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [toastMsg, setToastMsg] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const goBack = useSmartBack();
 
   const showToast = (msg) => {
@@ -19,15 +21,33 @@ export default function ForgotPasswordPage() {
     setToastVisible(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email.trim() || !email.includes('@')) {
       showToast('Please enter a valid email address');
       return;
     }
     
-    // Mock successful submission
-    setIsSubmitted(true);
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      
+      if (error) throw error;
+      
+      setIsSubmitted(true);
+    } catch (err) {
+      const isExpectedError = err.status === 400 || err.status === 422 || err.message?.includes('not found') || err.message?.includes('invalid');
+      if (isExpectedError) {
+        showToast('If an account exists, you will receive a reset link shortly.');
+        setIsSubmitted(true);
+      } else {
+        showToast(err.message || 'Something went wrong. Please check your connection and try again.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -65,8 +85,8 @@ export default function ForgotPasswordPage() {
                     onChange={(e) => setEmail(e.target.value)}
                   />
                   
-                  <button type="submit" className={styles.continueBtn} style={{ marginTop: '1.5rem' }}>
-                    Send Reset Link <ArrowRight className={styles.btnIcon} />
+                  <button type="submit" className={styles.continueBtn} disabled={isSubmitting} style={{ marginTop: '1.5rem' }}>
+                    {isSubmitting ? 'Sending...' : 'Send Reset Link'} <ArrowRight className={styles.btnIcon} />
                   </button>
                 </form>
               </>
@@ -80,12 +100,20 @@ export default function ForgotPasswordPage() {
                   We've sent a password reset link to <strong style={{ color: 'var(--color-text-main)' }}>{email}</strong>.
                 </p>
                 <p className={styles.subheadline} style={{ fontSize: '0.9rem', textAlign: 'center', marginBottom: '2.5rem' }}>
-                  (This is a mock response. No actual email was sent.)
+                  If an account exists, you will receive a reset link shortly.
                 </p>
-                <Link to="/login" style={{ textDecoration: 'none', width: '100%', display: 'block' }}>
-                  <button className={styles.continueBtn} style={{ background: 'var(--color-bg-white)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', justifyContent: 'center' }}>
-                    Return to log in
-                  </button>
+                <Link
+                  to="/login"
+                  className={styles.continueBtn}
+                  style={{
+                    textDecoration: 'none',
+                    background: 'var(--color-bg-white)',
+                    color: 'var(--color-text-main)',
+                    border: '1px solid var(--color-border)',
+                    justifyContent: 'center'
+                  }}
+                >
+                  Return to log in
                 </Link>
               </div>
             )}

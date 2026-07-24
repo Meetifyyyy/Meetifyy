@@ -1,13 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, ArrowRight, Check, School, Compass } from 'lucide-react';
+import { Sparkles, ArrowRight, School, Compass } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import styles from './SignupJourneyCTA.module.css';
-
-const containerVariants = {
-  hidden: {},
-  visible: {}
-};
 
 const titleVariants = {
   hidden: { opacity: 0, y: 25 },
@@ -78,8 +73,6 @@ const formVariants = {
 
 export default function SignupJourneyCTA() {
   const [email, setEmail] = useState('');
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const [placeholder, setPlaceholder] = useState('Enter your college email');
   const navigate = useNavigate();
 
   const handleSubmit = (e) => {
@@ -113,7 +106,6 @@ export default function SignupJourneyCTA() {
         initial="hidden"
         whileInView="visible"
         viewport={{ once: true, amount: 0.15 }}
-        variants={containerVariants}
       >
         {/* Layered Heading */}
         <motion.h2
@@ -240,26 +232,18 @@ export default function SignupJourneyCTA() {
             <input
               type="email"
               value={email}
-              disabled={isSubmitted}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder={placeholder}
+              placeholder="Enter your college email"
               className={styles.input}
               required
             />
             <button
               type="submit"
-              disabled={isSubmitted}
-              className={`${styles.submitBtn} ${isSubmitted ? styles.submitted : styles.notSubmitted}`}
+              className={`${styles.submitBtn} ${styles.notSubmitted}`}
             >
-              {isSubmitted ? (
-                <span className={styles.btnContent}>
-                  <Check size={16} /> Account Created
-                </span>
-              ) : (
-                <span className={styles.btnContent}>
-                  Sign Up <ArrowRight size={16} />
-                </span>
-              )}
+              <span className={styles.btnContent}>
+                Sign Up <ArrowRight size={16} />
+              </span>
             </button>
           </form>
 

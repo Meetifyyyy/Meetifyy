@@ -1,22 +1,22 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { ArrowRight, AlertCircle, ArrowLeft } from 'lucide-react';
+import { ArrowRight, AlertCircle } from 'lucide-react';
 import loginIllustration from '@assets/login-illustration.png';
 import s from './LoginPage.module.css';
 
 export default function LoginPage() {
   const { login } = useAuth();
-  const navigate = useNavigate();
 
   const [user, setUser] = useState('');
   const [pass, setPass] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!user.trim()) {
+    const trimmedUser = user.trim();
+    if (!trimmedUser) {
       setError('Please enter your username or email.');
       return;
     }
@@ -25,11 +25,15 @@ export default function LoginPage() {
       return;
     }
     
-    const success = login(user.trim(), pass);
-    if (success) {
-      navigate('/home', { replace: true });
-    } else {
-      setError('User not found or incorrect password. Try username "sarthak" or pass "password".');
+    setError(null);
+    setLoading(true);
+    try {
+      // Just call login — PublicRoute will redirect to /home
+      // automatically once isLoggedIn flips true via onAuthStateChange.
+      await login(user.trim(), pass);
+    } catch (err) {
+      setError(err.message || 'Invalid username or password.');
+      setLoading(false);
     }
   };
 
@@ -60,11 +64,14 @@ export default function LoginPage() {
                   id="user"
                   type="text"
                   autoFocus
+                  autoComplete="username"
                   className={`${s.textInput} ${error && !user.trim() ? s.textInputError : ''}`}
                   placeholder=" "
                   value={user}
                   onChange={(e) => {
-                    setUser(e.target.value);
+                    // If it contains @ it's an email — allow uppercase, else force lowercase
+                    const val = e.target.value;
+                    setUser(val.includes('@') ? val : val.toLowerCase());
                     if (error) setError(null);
                   }}
                 />
@@ -108,9 +115,18 @@ export default function LoginPage() {
               <button
                 type="submit"
                 className={s.submitButton}
-                disabled={!user.trim() || !pass}
+                disabled={!user.trim() || !pass || loading}
               >
-                Log in <ArrowRight size={18} />
+                {loading ? (
+                  <>
+                    <div className="spinner" style={{ width: '18px', height: '18px', borderColor: 'rgba(255, 255, 255, 0.3)', borderTopColor: 'white' }} />
+                    Logging in...
+                  </>
+                ) : (
+                  <>
+                    Log in <ArrowRight size={18} />
+                  </>
+                )}
               </button>
             </form>
 

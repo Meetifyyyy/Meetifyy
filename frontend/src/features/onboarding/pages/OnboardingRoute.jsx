@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+
 import { INTERESTS_BY_CATEGORY } from '../constants/interestsData';
 import styles from './OnboardingRoute.module.css';
+import { useData } from '@shared/hooks/useData';
+import { communitiesApi } from '@shared/api/apiClient';
+import { motion } from 'framer-motion';
 
 export default function OnboardingRoute() {
   const { currentUser, completeOnboarding } = useAuth();
@@ -12,16 +15,25 @@ export default function OnboardingRoute() {
   
   const [step, setStep] = useState(1);
   const [selectedInterests, setSelectedInterests] = useState([]);
-  const [selectedCommunities, setSelectedCommunities] = useState([]);
+  const [selectedCommunities, setSelectedCommunities] = useState([]); // stores community IDs
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
+
+  const loadingMessages = [
+    'Creating your profile...',
+    'Saving your interests...',
+    'Setting up your campus circle...',
+    'Almost ready!'
+  ];
 
   // Redirect if not a new user
   useEffect(() => {
-    if (currentUser && !currentUser.isNewUser) {
+    if (currentUser && !currentUser.isNewUser && !isCompleting) {
       navigate('/home', { replace: true });
     }
-  }, [currentUser, navigate]);
+  }, [currentUser, navigate, isCompleting]);
 
-  if (!currentUser || !currentUser.isNewUser) return null;
+  if (!currentUser || (!currentUser.isNewUser && !isCompleting)) return null;
 
   const toggleInterest = (id) => {
     setSelectedInterests(prev => {
@@ -35,28 +47,81 @@ export default function OnboardingRoute() {
     });
   };
 
-  const toggleCommunity = (name) => {
+  const toggleCommunity = (id) => {
     setSelectedCommunities(prev => 
-      prev.includes(name) ? prev.filter(c => c !== name) : [...prev, name]
+      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
     );
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step === 1) {
       setStep(2);
     } else {
-      // Finish onboarding
-      const updatedCommunities = [...new Set([...(currentUser.communities || []), ...selectedCommunities])];
-      completeOnboarding({ 
-        communities: updatedCommunities,
-        interests: selectedInterests
-      });
-      navigate('/home', { replace: true });
+      setIsCompleting(true);
+
+      const interval = setInterval(() => {
+        setLoadingMsgIdx((prev) => (prev < loadingMessages.length - 1 ? prev + 1 : prev));
+      }, 700);
+
+      try {
+        // Join selected communities via API
+        for (const commId of selectedCommunities) {
+          try {
+            await communitiesApi.join(commId);
+          } catch (e) {
+            console.error(`Failed to join community ${commId}:`, e);
+          }
+        }
+        
+        const success = await completeOnboarding({ 
+          interests: selectedInterests
+        });
+
+        clearInterval(interval);
+
+        if (success) {
+          navigate('/home', { replace: true });
+        } else {
+          setIsCompleting(false);
+          alert("Failed to save onboarding data. Please try again. Ensure your backend is running.");
+        }
+      } catch (err) {
+        clearInterval(interval);
+        setIsCompleting(false);
+        alert(err.message || "An error occurred while saving your profile.");
+      }
     }
   };
 
   // Filter communities based on selected interests for step 2
-  const suggestedCommunities = Object.values(communities).filter(c => !c.isUniversity).slice(0, 5);
+  const suggestedCommunities = communities.filter(c => !c.isUniversity).slice(0, 5);
+
+  if (isCompleting) {
+    return (
+      <div className={styles.onboardingContainer} style={{ justifyContent: 'center', alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '2rem' }}>
+          <div style={{ position: 'relative', marginBottom: '2rem' }}>
+            <motion.div
+              style={{
+                width: '72px',
+                height: '72px',
+                borderRadius: '50%',
+                border: '4px solid var(--color-border)',
+                borderTopColor: 'var(--color-primary)',
+                display: 'inline-block',
+              }}
+              animate={{ rotate: 360 }}
+              transition={{ repeat: Infinity, duration: 1.2, ease: 'linear' }}
+            />
+          </div>
+          <h2 className={styles.headline} style={{ fontSize: '1.75rem' }}>Creating profile...</h2>
+          <p className={styles.subheadline} style={{ color: 'var(--color-primary)', fontWeight: 600, marginTop: '0.5rem' }}>
+            {loadingMessages[loadingMsgIdx]}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.onboardingContainer}>
@@ -132,7 +197,7 @@ export default function OnboardingRoute() {
                         }}
                       >
                         {isImage ? (
-                          <img src={comm.avatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <img src={comm.avatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                         ) : (
                           comm.avatar || comm.name.charAt(0).toUpperCase()
                         )}
@@ -143,10 +208,10 @@ export default function OnboardingRoute() {
                       </div>
                     </div>
                   <button 
-                    className={`${styles.joinBtn} ${selectedCommunities.includes(comm.name) ? styles.joined : ''}`}
-                    onClick={() => toggleCommunity(comm.name)}
+                    className={`${styles.joinBtn} ${selectedCommunities.includes(comm.id) ? styles.joined : ''}`}
+                    onClick={() => toggleCommunity(comm.id)}
                   >
-                    {selectedCommunities.includes(comm.name) ? 'Joined' : 'Join'}
+                    {selectedCommunities.includes(comm.id) ? 'Joined' : 'Join'}
                   </button>
                 </div>
               )

@@ -1,18 +1,21 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Users, Activity, UsersRound, UserPlus, UserCheck, MapPin, Clock, UsersIcon, ThumbsUp, MessageCircle } from 'lucide-react';
+import { Search, Users, Activity, UsersRound, MapPin, Clock, UsersIcon, ThumbsUp, MessageCircle, UserPlus, UserCheck } from 'lucide-react';
+import { useFollow } from '@shared/context/FollowContext';
 import { useGlobalSearch } from '@features/search/hooks/useGlobalSearch';
-import { useData } from '@shared/context/DataContext';
+
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { PostResult, CommunityResult, UserResult, CollegeResult, CrewResult } from '../components/SearchResultCards';
+import { PostResult, CommunityResult, CollegeResult, CrewResult } from '../components/SearchResultCards';
 import GlobalSearch from '../components/GlobalSearch';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import PageLayout from '@layout/PageLayout';
 import PageHeader from '@layout/PageHeader';
 import ActivityJoinedModal from '@features/crew/components/modals/ActivityJoinedModal';
 import styles from './SearchResultsRoute.module.css';
+import { useData } from '@shared/hooks/useData';
 
 // Compact horizontal activity row
 function ActivityRow({ activity, onClick }) {
@@ -96,7 +99,7 @@ function ActivityRow({ activity, onClick }) {
                     style={{ zIndex: 10 - idx }}
                   >
                     {isImageUrl(avatarUrl) ? (
-                      <img src={avatarUrl} alt="Going" />
+                      <img src={avatarUrl} alt="Going"  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                     ) : (
                       <span className={styles.goingAvatarFallback}>
                         {String.fromCharCode(65 + idx)}
@@ -151,7 +154,7 @@ function CommunityRow({ comm, onClick }) {
         style={(!isImageUrl(comm.avatar)) ? (comm.color ? { background: comm.color } : { background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }) : { background: 'var(--color-bg-white)' }}
       >
         {isImageUrl(comm.avatar)
-          ? <img src={comm.avatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+          ? <img src={comm.avatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
           : <span style={{ fontWeight: 700, color: '#FFFFFF' }}>{comm.avatar || comm.name?.charAt(0).toUpperCase()}</span>
         }
       </div>
@@ -172,22 +175,16 @@ function CommunityRow({ comm, onClick }) {
   );
 }
 
-// Person row in sidebar / full width
+// Person row in search results
 function PersonRow({ user }) {
-  const { toggleFollow, currentUser, users } = useData();
+  const { toggleFollow, isFollowing: checkIsFollowing, isPending } = useFollow();
   const navigate = useNavigate();
-  // Always read from latest users state so button updates immediately
-  const latestMe = users?.[currentUser?.username];
-  const isFollowing = latestMe?.followingList?.includes(user.username);
+  const isFollowing = checkIsFollowing(user.username);
+  const pending = isPending(user.username);
 
   return (
     <div className={styles.personRow} onClick={() => navigate(`/profile/${user.username}`)}>
-      <div className={styles.sidebarAvatar}>
-        {isImageUrl(user.avatar)
-          ? <img src={user.avatar} alt={user.displayName} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-          : <DefaultAvatar />
-        }
-      </div>
+      <Avatar src={user.avatar} name={user.displayName} size="40px" disableHover />
       <div className={styles.sidebarItemInfo}>
         <div className={styles.sidebarItemNameRow}>
           <span className={styles.sidebarItemName}>{user.displayName}</span>
@@ -201,7 +198,9 @@ function PersonRow({ user }) {
       <button
         className={`${styles.followBtn} ${isFollowing ? styles.followBtnActive : ''}`}
         title={isFollowing ? 'Unfollow' : 'Follow'}
-        onClick={(e) => { e.stopPropagation(); toggleFollow(user.username); }}
+        disabled={pending}
+        onClick={(e) => { e.stopPropagation(); if (!pending) toggleFollow(user.username); }}
+        style={{ opacity: pending ? 0.6 : 1, cursor: pending ? 'not-allowed' : 'pointer' }}
       >
         {isFollowing ? <UserCheck size={15} /> : <UserPlus size={15} />}
       </button>
@@ -216,7 +215,7 @@ export default function SearchResultsRoute() {
   const goBack = useSmartBack();
   const [activeSection, setActiveSection] = useState('all');
   const containerRef = useRef(null);
-  const { communities, users, crewActivities, posts } = useData();
+  const { communities, users, crewActivities, posts, currentUser } = useData();
 
   useEffect(() => {
     if (containerRef.current) {
@@ -236,25 +235,17 @@ export default function SearchResultsRoute() {
 
   const topMatches = useMemo(() => {
     const sorted = [];
-    if (results.posts.length > 0) sorted.push(...results.posts.slice(0, 3).map(r => ({ ...r, type: 'post' })));
-    if (results.users.length > 0) sorted.push(...results.users.slice(0, 3).map(r => ({ ...r, type: 'user' })));
+    if (results.posts.length > 0) sorted.push(...results.posts.slice(0, 2).map(r => ({ ...r, type: 'post' })));
+    if (results.users.length > 0) sorted.push(...results.users.slice(0, 2).map(r => ({ ...r, type: 'user' })));
     if (results.communities.length > 0) sorted.push(...results.communities.slice(0, 2).map(r => ({ ...r, type: 'community' })));
     if (results.colleges.length > 0) sorted.push(...results.colleges.slice(0, 2).map(r => ({ ...r, type: 'college' })));
     if (results.crew.length > 0) sorted.push(...results.crew.slice(0, 2).map(r => ({ ...r, type: 'crew' })));
     return sorted;
   }, [results]);
 
-  const suggestedUsers = useMemo(() => {
-    if (!users) return [];
-    return Object.values(users)
-      .filter(u => u.username !== 'current_user')
-      .sort((a, b) => (b.followers || 0) - (a.followers || 0))
-      .slice(0, 4);
-  }, [users]);
-
   const popularCommunities = useMemo(() => {
     if (!communities) return [];
-    return Object.values(communities)
+    return communities
       .filter(c => !c.isUniversity)
       .sort((a, b) => (b.members || 0) - (a.members || 0))
       .slice(0, 5);
@@ -281,175 +272,97 @@ export default function SearchResultsRoute() {
     { id: 'community', label: 'Communities', icon: UsersRound },
   ];
 
-  // What to show in left column when on explore page (no query)
-  const showActivitiesOnly = !q.trim() && activeSection === 'activities';
-  const showCommunitiesOnly = !q.trim() && activeSection === 'community';
-  const showPeopleOnly = !q.trim() && activeSection === 'users';
-
   return (
     <PageLayout containerRef={containerRef}>
       <PageHeader
         title="Search"
-        subtitle="Find people, activities, and communities ✨"
+        subtitle="Find activities and communities ✨"
         backPath="/home"
         searchBar={<GlobalSearch variant="pageHeader" />}
-        tabs={sections}
+        tabs={q.trim() ? sections : null}
         activeTab={activeSection}
         onTabChange={setActiveSection}
         tabVariant="underline"
       />
 
-      {/* Explore page (no search query) */}
+      {/* Explore page (no search query typed yet) */}
       {!q.trim() ? (
         <div className={styles.explorePage}>
-          {/* People-only view */}
-          {showPeopleOnly && (
-            <div className={styles.fullWidthSection}>
-              <div className={styles.sectionHeader}>
-                <h2 className={styles.sectionTitle}>People you may know</h2>
-              </div>
-              <div className={styles.sidebarBlock}>
-                <div className={styles.sidebarList}>
-                  {suggestedUsers.map((u, idx) => (
-                    <PersonRow key={u.id} user={u} idx={idx} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Activities-only view */}
-          {showActivitiesOnly && (
-            <div className={styles.fullWidthSection}>
-              <div className={styles.sectionHeader}>
-                <h2 className={styles.sectionTitle}>Trending Activities</h2>
-                <button className={styles.viewAllBtn} onClick={() => navigate('/crew')}>View all</button>
-              </div>
-              <div className={styles.rowList}>
-                {trendingActivities.map(activity => (
-                  <ActivityRow
-                    key={activity.id}
-                    activity={activity}
-                    onClick={() => navigate(`/crew/${activity.id}`, { state: { activity } })}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Communities-only view */}
-          {showCommunitiesOnly && (
-            <div className={styles.fullWidthSection}>
-              <div className={styles.sectionHeader}>
-                <h2 className={styles.sectionTitle}>Popular Communities</h2>
-                <button className={styles.viewAllBtn} onClick={() => navigate('/communities')}>View all</button>
-              </div>
-              <div className={styles.rowList}>
-                {popularCommunities.map(c => (
-                  <CommunityRow
-                    key={c.id}
-                    comm={c}
-                    onClick={() => navigate(`/communities/${c.id}`)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* All / default two-column view */}
-          {(activeSection === 'all') && (
-            <div className={styles.exploreColumns}>
-              {/* Left Column */}
-              <div className={styles.exploreMain}>
-                {/* Top Posts */}
-                {topPosts.length > 0 && (
-                  <div className={styles.sectionBlock}>
-                    <div className={styles.sectionHeader}>
-                      <h2 className={styles.sectionTitle}>Top Posts</h2>
-                      <button className={styles.viewAllBtn} onClick={() => navigate('/home')}>View all</button>
-                    </div>
-                    <div className={styles.topPostsList}>
-                      {topPosts.map((post) => {
-                        const author = users ? Object.values(users).find(u => u.id === post.authorId) : null;
-                        return (
-                          <button key={post.id} className={styles.topPostCard} onClick={() => navigate(`/post/${post.id}`)}>
-                            <div className={styles.topPostAvatar}>
-                              {author && isImageUrl(author.avatar)
-                                ? <img src={author.avatar} alt={author.displayName} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-                                : <DefaultAvatar />
-                              }
-                            </div>
-                            <div className={styles.topPostInfo}>
-                              <span className={styles.topPostName}>{author?.displayName || 'Someone'}</span>
-                              <p className={styles.topPostText}>{post.text?.substring(0, 80)}{post.text?.length > 80 ? '...' : ''}</p>
-                              <div className={styles.topPostMeta}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><ThumbsUp size={13} /> {post.likes || 0}</span>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><MessageCircle size={13} /> {post.comments || 0}</span>
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Trending Activities */}
-                {trendingActivities.length > 0 && (
-                  <div className={styles.sectionBlock}>
-                    <div className={styles.sectionHeader}>
-                      <h2 className={styles.sectionTitle}>Trending Activities</h2>
-                      <button className={styles.viewAllBtn} onClick={() => navigate('/crew')}>View all</button>
-                    </div>
-                    <div className={styles.rowList}>
-                      {trendingActivities.map(activity => (
-                        <ActivityRow
-                          key={activity.id}
-                          activity={activity}
-                          onClick={() => navigate(`/crew/${activity.id}`, { state: { activity } })}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Right Column */}
-              <div className={styles.exploreSidebar}>
-                {/* People */}
-                <div className={styles.sidebarBlock}>
+          <div className={styles.exploreColumns}>
+            {/* Left / Main Column */}
+            <div className={styles.exploreMain}>
+              {/* Trending Activities */}
+              {trendingActivities.length > 0 && (
+                <div className={styles.sectionBlock}>
                   <div className={styles.sectionHeader}>
-                    <h2 className={styles.sectionTitle}>People</h2>
-                    <button className={styles.viewAllBtn} onClick={() => setActiveSection('users')}>View all</button>
+                    <h2 className={styles.sectionTitle}>Trending Activities</h2>
+                    <button className={styles.viewAllBtn} onClick={() => navigate('/crew')}>View all</button>
                   </div>
-                  <div className={styles.sidebarList}>
-                    {suggestedUsers.map((u, idx) => (
-                      <PersonRow key={u.id} user={u} idx={idx} />
+                  <div className={styles.rowList}>
+                    {trendingActivities.map(activity => (
+                      <ActivityRow
+                        key={activity.id}
+                        activity={activity}
+                        onClick={() => navigate(`/crew/${activity.id}`, { state: { activity } })}
+                      />
                     ))}
                   </div>
                 </div>
+              )}
 
-                {/* Communities */}
-                {popularCommunities.length > 0 && (
-                  <div className={styles.sidebarBlock}>
-                    <div className={styles.sectionHeader}>
-                      <h2 className={styles.sectionTitle}>Communities</h2>
-                      <button className={styles.viewAllBtn} onClick={() => navigate('/communities')}>View all</button>
-                    </div>
-                    <div className={styles.rowList}>
-                      {popularCommunities.slice(0, 4).map(c => (
-                        <CommunityRow
-                          key={c.id}
-                          comm={c}
-                          onClick={() => navigate(`/communities/${c.id}`)}
-                        />
-                      ))}
-                    </div>
+              {/* Top Posts */}
+              {topPosts.length > 0 && (
+                <div className={styles.sectionBlock}>
+                  <div className={styles.sectionHeader}>
+                    <h2 className={styles.sectionTitle}>Top Posts</h2>
+                    <button className={styles.viewAllBtn} onClick={() => navigate('/home')}>View all</button>
                   </div>
-                )}
-              </div>
+                  <div className={styles.topPostsList}>
+                    {topPosts.map((post) => {
+                      const author = users ? Object.values(users).find(u => u.id === post.authorId) : null;
+                      return (
+                        <button key={post.id} className={styles.topPostCard} onClick={() => navigate(`/post/${post.id}`)}>
+                          <div className={styles.topPostAvatar}>
+                            <Avatar src={author?.avatar} name={author?.displayName} size="36px" disableHover />
+                          </div>
+                          <div className={styles.topPostInfo}>
+                            <span className={styles.topPostName}>{author?.displayName || 'Someone'}</span>
+                            <p className={styles.topPostText}>{post.text?.substring(0, 80)}{post.text?.length > 80 ? '...' : ''}</p>
+                            <div className={styles.topPostMeta}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><ThumbsUp size={13} /> {post.likes || 0}</span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><MessageCircle size={13} /> {post.comments || 0}</span>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Right Column / Sidebar */}
+            <div className={styles.exploreSidebar}>
+              {/* Popular Communities */}
+              {popularCommunities.length > 0 && (
+                <div className={styles.sidebarBlock}>
+                  <div className={styles.sectionHeader}>
+                    <h2 className={styles.sectionTitle}>Popular Communities</h2>
+                    <button className={styles.viewAllBtn} onClick={() => navigate('/communities')}>View all</button>
+                  </div>
+                  <div className={styles.rowList}>
+                    {popularCommunities.slice(0, 5).map(c => (
+                      <CommunityRow
+                        key={c.id}
+                        comm={c}
+                        onClick={() => navigate(`/communities/${c.id}`)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       ) : (
         /* Search results for active query */
@@ -472,10 +385,20 @@ export default function SearchResultsRoute() {
               </div>
             </div>
           ) : !hasResults ? (
-            <div className={styles.empty}>
-              <Search size={48} className={styles.emptyIcon} />
-              <p>No results for "{q}"</p>
-              <span>Check spelling or try a different term.</span>
+            <div className={styles.emptyCard}>
+              <div className={styles.emptyBadge}>
+                <Search size={26} color="var(--color-primary)" />
+              </div>
+              <h3 className={styles.emptyTitle}>No results found</h3>
+              <p className={styles.emptySubtitle}>We couldn't find matching activities or communities for "{q}".</p>
+              <div className={styles.emptyActions}>
+                <button className={styles.emptyBtnPrimary} onClick={() => navigate('/crew')}>
+                  Explore Activities
+                </button>
+                <button className={styles.emptyBtnSecondary} onClick={() => navigate('/communities')}>
+                  Browse Communities
+                </button>
+              </div>
             </div>
           ) : (
             <div className={styles.sectionContent}>

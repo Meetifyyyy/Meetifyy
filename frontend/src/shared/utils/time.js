@@ -1,19 +1,40 @@
 export function timeAgo(timestamp) {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return 'Now';
+  if (!timestamp) return '';
+  
+  let date;
+  if (typeof timestamp === 'number' || timestamp instanceof Date) {
+    date = new Date(timestamp);
+  } else if (typeof timestamp === 'string') {
+    date = new Date(timestamp);
+    if (isNaN(date.getTime())) {
+      date = new Date(parseTimeString(timestamp));
+    }
+  } else {
+    date = new Date(timestamp);
+  }
+
+  const time = date.getTime();
+  if (isNaN(time)) return typeof timestamp === 'string' ? timestamp : '';
+
+  const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
+  if (seconds < 1) return '1s';
+  if (seconds < 60) return `${seconds}s`;
+
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;
+
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
-  
-  const date = new Date(timestamp);
+
+  const days = Math.floor(hours / 24);
+  if (days < 3) return `${days}d`;
+
   const options = { month: 'short', day: 'numeric' };
   if (date.getFullYear() !== new Date().getFullYear()) {
     options.year = 'numeric';
   }
-  
-  const formatted = date.toLocaleDateString('en-US', options);
-  return formatted;
+
+  return date.toLocaleDateString('en-US', options);
 }
 
 export function parseTimeString(timeStr) {

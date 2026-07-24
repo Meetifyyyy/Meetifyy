@@ -1,12 +1,14 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useData } from '@shared/context/DataContext';
+
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import ProfilePreviewSkeleton from '@shared/components/skeletons/ProfilePreviewSkeleton';
 import { UserX } from 'lucide-react';
 import defaultCover from '@assets/images/default_cover.png';
 import styles from './SharedProfilePreview.module.css';
+import { useData } from '@shared/hooks/useData';
+
 
 export function SharedProfilePreview({
   profile,
@@ -67,7 +69,7 @@ export function SharedProfilePreview({
             src={avatar} 
             alt={displayName} 
             className={styles.avatar} 
-          />
+           onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
         ) : (
           <DefaultAvatar 
             name={displayName} 

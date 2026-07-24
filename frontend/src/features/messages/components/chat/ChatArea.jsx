@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
-import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
+
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import GroupSettingsModal from '../modals/GroupSettingsModal';
 import ActivityChatDetailsModal from '../modals/ActivityChatDetailsModal';
@@ -13,6 +13,10 @@ import ChatMessageList from './ChatMessageList';
 import ChatDetailsPanel from '../details/ChatDetailsPanel';
 
 import styles from './ChatArea.module.css';
+import { useData } from '@shared/hooks/useData';
+import { messagesApi } from '@shared/api/apiClient';
+import { toast } from 'sonner';
+
 
 export default function ChatArea({ 
   conversation, 
@@ -27,21 +31,47 @@ export default function ChatArea({
 }) {
   const { openViewer } = useMediaViewer();
   const { initial, currentUser } = useAuth();
-  const { users, crewActivities, endCrewActivity, leaveGroup } = useData();
+  const { users, crewActivities, endCrewActivity, leaveGroup, toggleMuteConversation } = useData();
 
   const conversationActivity = useMemo(() => {
     if (!conversation?.isActivityChat || !conversation?.activityId) return null;
     return crewActivities?.find(act => String(act.id) === String(conversation.activityId) || `act_${act.id}` === String(conversation.id) || String(act.id) === String(conversation.id));
   }, [conversation, crewActivities]);
 
-  const { isLoading, data: loadedMessages, error, retry } = useSimulatedFetch(conversation?.messages || [], 350, [conversation?.id]);
+  const isLoading = false;
+  const error = null;
+  const loadedMessages = conversation?.messages || [];
+  const retry = () => {};
 
   const [replyingTo, setReplyingTo] = useState(null);
-  const [showSearchBar, setShowSearchBar] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSearchBar, setShowSearchBar] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [unsendingId, setUnsendingId] = useState(null);
+
+  const handleUnsend = useCallback(async (msgId) => {
+    if (unsendingId) return;
+    setUnsendingId(msgId);
+    try {
+      await messagesApi.unsendMessage(msgId);
+      // Message will be removed via socket event (message:deleted) from the server.
+      // As a local fallback: remove optimistically from the in-memory list.
+      if (conversation?.messages) {
+        const idx = conversation.messages.findIndex(m => m.id === msgId);
+        if (idx !== -1) conversation.messages.splice(idx, 1);
+      }
+    } catch (err) {
+      toast.error('Could not unsend.');
+    } finally {
+      setUnsendingId(null);
+    }
+  }, [conversation, unsendingId]);
   
-  const [isMutedNotifications, setIsMutedNotifications] = useState(false);
+  // Mute state is sourced from the conversation (backend-persisted)
+  const isMutedNotifications = conversation?.muted || false;
+  const setIsMutedNotifications = () => {
+    if (conversation?.id) toggleMuteConversation(conversation.id, isMutedNotifications);
+  };
   const [showGroupSettings, setShowGroupSettings] = useState(false);
   const [showActivityDetails, setShowActivityDetails] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -159,6 +189,7 @@ export default function ChatArea({
         openViewer={openViewer}
         onReply={setReplyingTo}
         onRetryMessage={onRetryMessage}
+        onUnsend={handleUnsend}
         isTyping={isTyping}
         replyingTo={replyingTo}
       />
@@ -172,7 +203,7 @@ export default function ChatArea({
         setIsTyping={setIsTyping}
         onJoinGroup={onJoinGroup}
         onBlockUser={onBlockUser}
-        showToast={window.showToast}
+        showToast={(msg) => toast(msg)}
       />
 
       <ConfirmModal

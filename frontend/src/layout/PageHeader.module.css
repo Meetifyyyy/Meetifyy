@@ -252,6 +252,14 @@
   flex-shrink: 0;
 }
 
+.tabEmojiIcon {
+  font-size: 0.95rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 @media (max-width: 768px) {
   .headerContainer {
     gap: 0.85rem;

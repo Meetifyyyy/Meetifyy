@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
-import { useData } from '@shared/context/DataContext';
-import { useNotifications } from '@shared/context/NotificationContext';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { activitiesApi, usersApi } from '@shared/api/apiClient';
+import { useAuth } from '@shared/context/AuthContext';
+import { useNotifications } from '@shared/hooks/useNotifications';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { getRelativeDateLabel } from '@shared/utils/time';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -10,6 +12,7 @@ import ShareActivityModal from '../components/modals/ShareActivityModal';
 import ActivityJoinedModal from '../components/modals/ActivityJoinedModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ActivityDetailPage.module.css';
+import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 function formatDateTime(activity) {
@@ -89,9 +92,56 @@ function DetailsCard({ date, time, duration, actLocation, isOnline, slotsFilled,
 export default function ActivityDetailPage() {
   const { id } = useParams();
   const location = useLocation();
+  const { currentUser } = useAuth();
   const goBack = useSmartBack();
+  const queryClient = useQueryClient();
 
-  const { crewActivities, savedActivities, toggleSaveActivity, currentUser, joinCrewActivity, leaveCrewActivity, requestToJoinActivity, endCrewActivity, getUserById } = useData();
+  const { data: rawActivities = [] } = useQuery({
+    queryKey: ['activities'],
+    queryFn: activitiesApi.getAll,
+  });
+
+  const crewActivities = useMemo(() => {
+    return rawActivities.map(a => ({
+      ...a,
+      hostId: a.creatorId,
+      hostName: a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
+      hostUsername: a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
+      hostAvatar: a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
+      participants: a.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
+      pendingRequests: a.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
+      slotsFilled: a.members?.filter(m => m.status === 'MEMBER').length || 1,
+      slotsNeeded: a.maxMembers || 999,
+      _membersData: a.members?.map(m => m.user) || []
+    }));
+  }, [rawActivities]);
+
+  const joinMutation = useMutation({
+    mutationFn: (actId) => activitiesApi.join(actId),
+    onSuccess: () => queryClient.invalidateQueries(['activities']),
+  });
+
+  const leaveMutation = useMutation({
+    mutationFn: (actId) => activitiesApi.leave(actId),
+    onSuccess: () => queryClient.invalidateQueries(['activities']),
+  });
+
+  const requestMutation = useMutation({
+    mutationFn: (actId) => activitiesApi.requestToJoinActivity(actId),
+    onSuccess: () => queryClient.invalidateQueries(['activities']),
+  });
+
+  const endMutation = useMutation({
+    mutationFn: (actId) => activitiesApi.endCrewActivity(actId),
+    onSuccess: () => queryClient.invalidateQueries(['activities']),
+  });
+
+  const joinCrewActivity = (actId) => joinMutation.mutateAsync(actId);
+  const leaveCrewActivity = (actId) => leaveMutation.mutateAsync(actId);
+  const requestToJoinActivity = (actId) => requestMutation.mutateAsync(actId);
+  const endCrewActivity = (actId) => endMutation.mutateAsync(actId);
+
+  const { savedActivities, toggleSaveActivity } = useSavedActivitiesStore();
   const { addNotification } = useNotifications();
   const navigate = useNavigate();
   const discussionRef = useRef(null);
@@ -387,12 +437,10 @@ export default function ActivityDetailPage() {
                     </div>
                   )}
                   
-                  {activity.participants?.filter(pid => pid !== activity.hostId).map(participantId => {
-                    const pUser = getUserById(participantId);
-                    if (!pUser) return null;
+                  {activity._membersData?.filter(u => u && u.id !== activity.hostId).map(pUser => {
                     return (
                       <div 
-                        key={participantId} 
+                        key={pUser.id} 
                         className={styles.attendeeRow}
                         onClick={() => navigate(`/profile/${pUser.username}`)}
                       >

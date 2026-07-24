@@ -1,21 +1,28 @@
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useData } from '@shared/context/DataContext';
+
 import { useFollow } from '@shared/context/FollowContext';
+import FollowButton from '@shared/components/ui/FollowButton';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
-import { useNotifications } from '@shared/context/NotificationContext';
+import { useNotifications } from '@shared/hooks/useNotifications';
+import { timeAgo } from '@shared/utils/time';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import { canSeeOnlineStatus } from '@shared/utils/presence';
 import styles from './RightPanel.module.css';
+import { useQuery } from '@tanstack/react-query';
+import { usersApi, activitiesApi } from '@shared/api/apiClient';
+import { useAuth } from '@shared/context/AuthContext';
+import { useData } from '@shared/hooks/useData';
 
 export default function RightPanel({ children, className = '' }) {
   return <aside className={`${styles.rightPanel} ${className}`.trim()}>{children}</aside>;
 }
 
 export function NotificationsActivity() {
-  const { notifications, timeAgo } = useNotifications();
-  const { users } = useData();
+  const { notifications, isLoading } = useNotifications();
+  const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
+  const users = React.useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
   const navigate = useNavigate();
   const { isFollowing, toggleFollow } = useFollow();
 
@@ -28,61 +35,118 @@ export function NotificationsActivity() {
         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', cursor: 'pointer', fontWeight: 500 }} onClick={() => navigate('/notifications')}>See all</span>
       </div>
       
-      {displayNotifs.length === 0 ? (
+      {isLoading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 0' }}>
+          <div 
+            style={{
+              width: '24px',
+              height: '24px',
+              border: '2.5px solid rgba(var(--color-primary-rgb), 0.15)',
+              borderTopColor: 'var(--color-primary)',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite'
+            }}
+          />
+        </div>
+      ) : displayNotifs.length === 0 ? (
         <div style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', textAlign: 'center', padding: '1rem 0' }}>
           No recent activity.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           {displayNotifs.map((n) => {
-            const actor = Object.values(users).find(u => u.id === n.actorId) || users[n.actorId];
-            const isFollow = n.type === 'follow';
-            const targetUsername = actor?.username || (actor?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            const followingUser = isFollowing(targetUsername);
+            const actorName = n.actor?.displayName || n.actor?.username || n.metadata?.actorDisplayName || n.metadata?.actorName || n.metadata?.username || 'Someone';
+            const actorAvatar = n.actor?.avatar || n.metadata?.actorAvatar || '';
+            const targetUsername = n.actor?.username || n.metadata?.username || '';
 
-            // Format time ago using standard helper
-            const timeStr = timeAgo(n.createdAt);
+            const notifType = (n.type || '').toLowerCase();
+            const isFollow = notifType === 'follow';
+            const postMedia = n.metadata?.postMedia || n.metadata?.mediaUrl || n.metadata?.postImage || n.metadata?.thumbnailUrl || null;
+
+            let bodyText = n.body || n.text || '';
+            if (isFollow) {
+              bodyText = 'started following you.';
+            } else if (notifType === 'like') {
+              bodyText = 'liked your post.';
+            } else if (notifType === 'comment_like') {
+              bodyText = 'liked your comment.';
+            } else if (notifType === 'comment') {
+              if (n.metadata?.isReply || bodyText.includes('replied to your comment:')) {
+                bodyText = 'replied to your comment.';
+              } else if (bodyText.includes('commented:')) {
+                bodyText = bodyText.substring(bodyText.indexOf('commented:')).trim();
+              } else {
+                bodyText = 'commented on your post.';
+              }
+            } else if (notifType === 'mention') {
+              bodyText = 'mentioned you.';
+            } else if (notifType === 'message') {
+              bodyText = 'sent you a message.';
+            } else if (notifType === 'join_request') {
+              bodyText = 'requested to join your activity.';
+            } else if (bodyText.startsWith(actorName)) {
+              bodyText = bodyText.substring(actorName.length).trim();
+            }
+
+            if (!bodyText) {
+              bodyText = n.title || 'sent a notification.';
+            }
+
+            const timeStr = timeAgo(n.createdAt)
+              .replace(' ago', '')
+              .replace('just now', 'now')
+              .replace(' seconds', 's')
+              .replace(' second', 's')
+              .replace(' minutes', 'm')
+              .replace(' minute', 'm')
+              .replace(' hours', 'h')
+              .replace(' hour', 'h')
+              .replace(' days', 'd')
+              .replace(' day', 'd');
+
+            const handleItemClick = () => {
+              const postId = n.metadata?.postId || (n.entityType === 'POST' ? n.entityId : null);
+              if (isFollow && targetUsername) {
+                navigate(`/profile/${targetUsername}`);
+              } else if (postId) {
+                navigate(`/post/${postId}`);
+              } else {
+                navigate('/notifications');
+              }
+            };
 
             return (
-              <div key={n.id} className={styles.friendItem} style={{ borderBottom: 'none', alignItems: 'center' }}>
+              <div 
+                key={n.id} 
+                className={styles.friendItem} 
+                onClick={handleItemClick}
+                style={{ borderBottom: 'none', alignItems: 'center', cursor: 'pointer' }}
+              >
                 <Avatar 
-                  src={actor.avatarUrl || actor.avatar} 
-                  name={actor?.displayName} 
+                  src={actorAvatar} 
+                  name={actorName} 
                   size="36px" 
-                  onClick={() => targetUsername && navigate(`/profile/${targetUsername}`)}
                 />
                 
-                <div className={styles.friendInfo} style={{ paddingLeft: '0.25rem' }}>
-                  <div style={{ fontSize: '0.8rem', lineHeight: 1.4 }}>
-                    <span style={{ color: 'var(--color-text-main)', fontWeight: 700, cursor: 'pointer' }} onClick={() => targetUsername && navigate(`/profile/${targetUsername}`)}>
-                      {actor?.displayName || 'Someone'}
-                    </span>
-                    <span style={{ color: 'var(--color-text-muted)' }}> {n.text}. {timeStr}</span>
+                <div className={styles.friendInfo} style={{ paddingLeft: '0.25rem', flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.8rem', lineHeight: 1.35, color: 'var(--color-text-muted)' }}>
+                    <strong style={{ color: 'var(--color-text-main)', fontWeight: 700 }}>
+                      {actorName}
+                    </strong>{' '}
+                    {bodyText}{' '}
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-light)' }}>• {timeStr}</span>
                   </div>
                 </div>
 
-                {isFollow ? (
-                  <button 
-                    onClick={() => toggleFollow(targetUsername)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: followingUser ? 'var(--color-text-muted)' : 'var(--color-primary)',
-                      fontWeight: 600,
-                      fontSize: '0.78rem',
-                      cursor: 'pointer',
-                      padding: '0.25rem',
-                      transition: 'opacity 0.2s'
-                    }}
-                  >
-                    {followingUser ? 'Following' : 'Follow'}
-                  </button>
-                ) : (
-                  <div className={styles.postPreview}>
-                    {/* Placeholder image for like/comment */}
-                    <img src="https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=100&q=80" alt="post" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </div>
-                )}
+                <div style={{ flexShrink: 0, marginLeft: '0.5rem' }}>
+                  {isFollow && targetUsername ? (
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <FollowButton targetUsername={targetUsername} size="sm" />
+                    </div>
+                  ) : postMedia ? (
+                    <img src={postMedia} alt="" style={{ width: '32px', height: '32px', borderRadius: '6px', objectFit: 'cover' }} />
+                  ) : null}
+                </div>
               </div>
             );
           })}
@@ -93,11 +157,13 @@ export function NotificationsActivity() {
 }
 
 export function OnlineFriends() {
-  const { users, currentUser } = useData();
+  const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
+  const users = React.useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
 
   const friends = Object.values(users)
-    .filter(u => u.id !== currentUser.id)
+    .filter(u => currentUser && u.id !== currentUser.id)
     .map((u) => {
       const canSee = canSeeOnlineStatus(currentUser, u);
       const online = canSee ? !!u.isOnline : false;
@@ -191,36 +257,18 @@ function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
           const secsStr = String(secs).padStart(2, '0');
           return `Starts in ${mins}m ${secsStr}s`;
         }
+      } else {
+        return `Already started`;
       }
     }
   } catch (e) {
     // fallback
   }
-  // mock fallback using nowTime to make it tick down slightly
-  const defaultDiff = index === 0 ? 59 * 60 * 1000 + 4 * 1000 : 4 * 60 * 60 * 1000 + 18 * 60 * 1000;
-  const targetMock = nowTime + defaultDiff - (nowTime % 3600000);
-  const diffMs = targetMock - nowTime;
-  if (diffMs > 0) {
-    if (diffMs >= 24 * 60 * 60 * 1000) {
-      const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-      const hours = Math.floor((diffMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-      return `Starts in ${days}d ${hours}hr`;
-    } else if (diffMs >= 60 * 60 * 1000) {
-      const hours = Math.floor(diffMs / (60 * 60 * 1000));
-      const mins = Math.floor((diffMs % (60 * 60 * 1000)) / (60 * 1000));
-      return `Starts in ${hours}hr ${mins}m`;
-    } else {
-      const mins = Math.floor(diffMs / (60 * 1000));
-      const secs = Math.floor((diffMs % (60 * 1000)) / 1000);
-      const secsStr = String(secs).padStart(2, '0');
-      return `Starts in ${mins}m ${secsStr}s`;
-    }
-  }
   return `Starts soon`;
 }
 
 export function UpcomingEvents() {
-  const { crewActivities, currentUser } = useData();
+  const { crewActivities = [], currentUser } = useData();
   const navigate = useNavigate();
   const [nowTime, setNowTime] = React.useState(Date.now());
 
@@ -235,7 +283,7 @@ export function UpcomingEvents() {
     if (!currentUser) return [];
     return crewActivities
       .filter(a => a.participants?.includes(currentUser.id))
-      .sort((a, b) => new Date(a.dateLabel + ' 2024') - new Date(b.dateLabel + ' 2024'));
+      .sort((a, b) => new Date(a.startDate || a.createdAt) - new Date(b.startDate || b.createdAt));
   }, [crewActivities, currentUser]);
 
   return (
@@ -291,7 +339,9 @@ export function UniversityEvents({ events, title = 'Ongoing Events', onViewAll }
 }
 
 export function UniversityMembers({ members, title = 'Members', onViewAll }) {
-  const { currentUser, startConversation, users } = useData();
+  const { currentUser } = useAuth();
+  const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
+  const users = React.useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
   const { isFollowing, toggleFollow } = useFollow();
   const navigate = useNavigate();
   if (!members || members.length === 0) return null;
@@ -324,14 +374,7 @@ export function UniversityMembers({ members, title = 'Members', onViewAll }) {
               </div>
             </div>
             {!isSelf && (
-              <button 
-                className={`${styles.actionBtn}${isFollowingUser ? ` ${styles.followingBtn}` : ''}`} 
-                style={{ width: 'auto', padding: '0.3rem 0.5rem', marginBottom: 0 }}
-                title={isFollowingUser ? 'Following' : 'Follow'}
-                onClick={() => toggleFollow(targetUsername)}
-              >
-                {isFollowingUser ? 'Following' : 'Follow'}
-              </button>
+              <FollowButton targetUsername={targetUsername} size="sm" />
             )}
           </div>
         );

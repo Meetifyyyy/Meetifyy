@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { useData } from '@shared/context/DataContext';
-import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
 import { useDebounce } from '@shared/hooks/useDebounce';
 import { ErrorState, EmptyState } from '@shared/components/ui/StateViews';
 import { MessageSquarePlus } from 'lucide-react';
@@ -12,15 +11,22 @@ import styles from './ConversationList.module.css';
 import ConversationSkeleton from '../skeletons/ConversationSkeleton';
 import ConversationItem from './ConversationItem';
 import ConversationContextMenu from './ConversationContextMenu';
+import { useData } from '@shared/hooks/useData';
 
-export default function ConversationList({ conversations, activeChatId, onSelect, showChatOnMobile }) {
+export default function ConversationList({ 
+  conversations, 
+  activeChatId, 
+  onSelect, 
+  showChatOnMobile,
+  isLoading = false,
+  error = null 
+}) {
   const { 
     startConversation, 
     createGroupConversation, 
     crewActivities,
     togglePinConversation,
     toggleMuteConversation,
-    markConversationUnread,
     deleteConversation 
   } = useData();
   const [contextMenu, setContextMenu] = useState(null);
@@ -36,7 +42,6 @@ export default function ConversationList({ conversations, activeChatId, onSelect
 
   const filteredInputConvs = useMemo(() => {
     return (conversations || []).filter(c => {
-      // Setup proper logic to remove temporary chat 4 hours after activity finishes
       if (c.isTemporary && c.activityId && crewActivities) {
          const activity = crewActivities.find(a => a.id === c.activityId);
          if (activity && activity.date && activity.time) {
@@ -44,7 +49,7 @@ export default function ConversationList({ conversations, activeChatId, onSelect
            const activityTime = new Date(activityDateStr).getTime();
            if (!isNaN(activityTime)) {
              const fourHoursMs = 4 * 60 * 60 * 1000;
-             const durationMs = 2 * 60 * 60 * 1000; // rough duration
+             const durationMs = 2 * 60 * 60 * 1000;
              if (Date.now() > activityTime + durationMs + fourHoursMs) {
                return false;
              }
@@ -52,7 +57,6 @@ export default function ConversationList({ conversations, activeChatId, onSelect
          }
       }
 
-      // Filter by activeFilter
       if (activeFilter === 'Unread') {
         return c.unread > 0;
       }
@@ -64,15 +68,15 @@ export default function ConversationList({ conversations, activeChatId, onSelect
       }
       return true;
     }).sort((a, b) => {
-      // Pinned chats first
       if (a.pinned && !b.pinned) return -1;
       if (!a.pinned && b.pinned) return 1;
-      // Chronological DESC
       return (b.timestamp || 0) - (a.timestamp || 0);
     });
   }, [conversations, activeFilter, crewActivities]);
 
-  const { isLoading, data: loadedConvs, error, retry } = useSimulatedFetch(filteredInputConvs, 350);
+  const loadedConvs = filteredInputConvs;
+  const queryClient = useQueryClient();
+  const retry = () => queryClient.invalidateQueries({ queryKey: ['conversations'] });
 
   const searchedConvs = useMemo(() => {
     if (!debouncedSearchVal.trim()) return loadedConvs || [];
@@ -236,7 +240,6 @@ export default function ConversationList({ conversations, activeChatId, onSelect
       <ConversationContextMenu
         contextMenu={contextMenu}
         conversations={conversations}
-        onMarkUnread={markConversationUnread}
         onTogglePin={togglePinConversation}
         onToggleMute={toggleMuteConversation}
         onDelete={deleteConversation}

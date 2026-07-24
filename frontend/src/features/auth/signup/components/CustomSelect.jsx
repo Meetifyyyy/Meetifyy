@@ -231,12 +231,24 @@ export default function CustomSelect({ value, onChange, options, placeholder, se
         type="button" 
         className={styles.dateSelect} 
         onClick={() => setIsOpen(!isOpen)}
-        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '48px', minWidth: 0 }}
       >
-        <span style={{ color: selectedOption ? 'inherit' : 'var(--color-text-muted)' }}>
+        <span 
+          title={selectedOption ? selectedOption.label : placeholder}
+          style={{ 
+            color: selectedOption ? 'inherit' : 'var(--color-text-muted)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            marginRight: '0.5rem',
+            minWidth: 0,
+            flex: 1,
+            textAlign: 'left'
+          }}
+        >
           {selectedOption ? selectedOption.label : placeholder}
         </span>
-        <ChevronDown size={18} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', color: 'var(--color-text-muted)' }} />
+        <ChevronDown size={18} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', color: 'var(--color-text-muted)', flexShrink: 0 }} />
       </button>
       
       {isOpen && (

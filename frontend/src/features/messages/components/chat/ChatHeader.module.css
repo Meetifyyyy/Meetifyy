@@ -74,9 +74,16 @@
 
 .msgChatStatus {
   font-size: 0.72rem;
-  color: var(--color-success);
   font-weight: 500;
   margin-top: 1px;
+}
+
+.msgStatusOnline {
+  color: #22c55e;
+}
+
+.msgStatusOffline {
+  color: var(--color-text-muted, #94a3b8);
 }
 
 .msgChatActions {

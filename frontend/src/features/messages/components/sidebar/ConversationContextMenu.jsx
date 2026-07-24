@@ -3,7 +3,6 @@ import styles from './ConversationList.module.css';
 export default function ConversationContextMenu({
   contextMenu,
   conversations,
-  onMarkUnread,
   onTogglePin,
   onToggleMute,
   onDelete,
@@ -21,19 +20,13 @@ export default function ConversationContextMenu({
       onClick={(e) => e.stopPropagation()}
     >
       <button onClick={() => {
-        onMarkUnread(contextMenu.convId, targetConv.unread === 0);
-        onClose();
-      }}>
-        {targetConv.unread > 0 ? 'Mark as read' : 'Mark as unread'}
-      </button>
-      <button onClick={() => {
-        onTogglePin(contextMenu.convId);
+        onTogglePin(contextMenu.convId, targetConv.pinned);
         onClose();
       }}>
         {targetConv.pinned ? 'Unpin chat' : 'Pin chat'}
       </button>
       <button onClick={() => {
-        onToggleMute(contextMenu.convId);
+        onToggleMute(contextMenu.convId, targetConv.muted);
         onClose();
       }}>
         {targetConv.muted ? 'Unmute notifications' : 'Mute notifications'}

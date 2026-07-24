@@ -1,61 +1,49 @@
-import { useCallback, memo, useState, useMemo, useRef, useEffect } from 'react';
-import { useData } from '@shared/context/DataContext';
-import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
+import { useCallback, memo, useEffect, useRef } from 'react';
+import useUIStore from '@stores/uiStore';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { postsApi } from '@shared/api/apiClient';
 import { EmptyState, ErrorState } from '@shared/components/ui/StateViews';
 import PostComposer from './composer/PostComposer';
-import Post from './post/Post';
 import PostSkeleton from './skeletons/PostSkeleton';
+import Post from './post/Post';
 import styles from './Feed.module.css';
-
-const PAGE_SIZE = 20;
+import { useData } from '@shared/hooks/useData';
 
 function Feed({ onPostClick }) {
-  const { posts, addPost, searchQuery, getUserById, communities, currentUser } = useData();
-  const [page, setPage] = useState(1);
+  const { communities } = useData();
+  const searchQuery = useUIStore(state => state.searchQuery);
+  const queryClient = useQueryClient();
 
-  const filteredPosts = useMemo(() => {
-    const joinedCommunityIds = new Set(
-      Object.values(communities)
-        .filter(c => c.joined)
-        .map(c => c.id)
-    );
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isError,
+    refetch,
+  } = useInfiniteQuery({
+    queryKey: ['feed', searchQuery],
+    queryFn: async ({ pageParam = undefined }) => {
+      const limit = 20;
+      const res = await postsApi.getFeed(limit, pageParam);
+      return res; // Returns { posts: [...], nextCursor: ... }
+    },
+    getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
+    staleTime: 30_000,
+  });
 
-    let mutedCommunityIds = new Set();
-    try {
-      mutedCommunityIds = new Set(JSON.parse(localStorage.getItem('meetify_muted_communities') || '[]'));
-    } catch (e) {
-      console.error(e);
-    }
-
-    return posts.filter((p) => {
-      if (p.communityId && !joinedCommunityIds.has(p.communityId)) return false;
-      if (p.communityId && mutedCommunityIds.has(p.communityId)) return false;
-
-      if (searchQuery) {
-        const author = getUserById(p.authorId);
-        return (
-          p.text?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          author?.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          author?.username?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-      }
-      return true;
-    });
-  }, [posts, communities, currentUser, searchQuery, getUserById]);
-
-  const { isLoading, data, error, retry } = useSimulatedFetch(filteredPosts, 350);
-
-  const paginatedData = useMemo(() => (data || []).slice(0, page * PAGE_SIZE), [data, page]);
-  const hasMore = data ? paginatedData.length < data.length : false;
+  // Flatten the pages of posts into a single array
+  const allPosts = data?.pages.flatMap(page => page.posts || page.items || []) ?? [];
 
   const loadMoreRef = useRef(null);
 
   useEffect(() => {
-    if (!hasMore || isLoading) return;
+    if (!hasNextPage || isLoading || isFetchingNextPage) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
-          setPage(prev => prev + 1);
+          fetchNextPage();
         }
       },
       { threshold: 0.1, rootMargin: '200px' }
@@ -64,14 +52,27 @@ function Feed({ onPostClick }) {
       observer.observe(loadMoreRef.current);
     }
     return () => observer.disconnect();
-  }, [hasMore, isLoading]);
+  }, [hasNextPage, isLoading, isFetchingNextPage, fetchNextPage]);
 
-  const handleNewPost = useCallback((text, pollData, mediaData, mentions) => {
+  const handleNewPost = useCallback(async (text, pollData, mediaData, mentions) => {
     if (pollData || text || mediaData) {
-      addPost(text, pollData, null, mediaData, mentions);
-      setPage(1);
+      try {
+        await postsApi.createPost({ text, mediaKey: mediaData?.url, mentions, poll: pollData || undefined });
+        queryClient.invalidateQueries({ queryKey: ['feed'] });
+      } catch (err) {
+        console.error('Failed to create post:', err);
+      }
     }
-  }, [addPost]);
+  }, [queryClient]);
+
+  // Find the community tag
+  const getCommunityTag = (communityId) => {
+    if (!communityId) return null;
+    if (Array.isArray(communities)) {
+      return communities.find(c => c.id === communityId) || null;
+    }
+    return communities[communityId] || null;
+  };
 
   return (
     <div className={styles.feed}>
@@ -85,11 +86,11 @@ function Feed({ onPostClick }) {
         </>
       )}
 
-      {!isLoading && error && (
-        <ErrorState onRetry={retry} />
+      {!isLoading && isError && (
+        <ErrorState onRetry={refetch} />
       )}
 
-      {!isLoading && !error && data && data.length === 0 && (
+      {!isLoading && !isError && allPosts.length === 0 && !hasNextPage && (
         <EmptyState 
           title="It's quiet here..."
           message="Join communities or follow people to see their updates."
@@ -102,14 +103,14 @@ function Feed({ onPostClick }) {
         />
       )}
 
-      {!isLoading && !error && paginatedData.length > 0 && paginatedData.map((p) => {
-        const cTag = p.communityId ? communities[p.communityId] : null;
+      {!isLoading && !isError && allPosts.length > 0 && allPosts.map((p) => {
+        const cTag = getCommunityTag(p.communityId);
         return (
           <Post key={p.id} postData={p} communityTag={cTag} onClick={() => onPostClick && onPostClick(p, 'feed')} />
         );
       })}
 
-      {!isLoading && !error && hasMore && (
+      {!isLoading && !isError && hasNextPage && (
         <div ref={loadMoreRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
           <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '3px' }} />
         </div>
@@ -119,4 +120,3 @@ function Feed({ onPostClick }) {
 }
 
 export default memo(Feed);
-

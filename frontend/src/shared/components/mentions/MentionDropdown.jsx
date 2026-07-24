@@ -40,7 +40,7 @@ function DropdownContent({ suggestions, selectedIndex, onSelect, position, conta
           >
             <div className={styles.avatar}>
               {isImageUrl(user.avatar) ? (
-                <img src={user.avatar} alt={user.displayName} className={styles.avatarImg} />
+                <img src={user.avatar} alt={user.displayName} className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
               ) : (
                 <span>{user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}</span>
               )}

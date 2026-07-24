@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 export default defineConfig({
   plugins: [
@@ -81,7 +82,8 @@ export default defineConfig({
           }
         ]
       }
-    })
+    }),
+    visualizer({ open: false, filename: 'stats.html', gzipSize: true, brotliSize: true })
   ],
   build: {
     rollupOptions: {
@@ -91,7 +93,9 @@ export default defineConfig({
           'vendor-framer': ['framer-motion'],
           'vendor-emoji': ['emoji-mart', '@emoji-mart/data', '@emoji-mart/react'],
           'vendor-html2canvas': ['html2canvas'],
-          'vendor-icons': ['lucide-react', '@heroicons/react']
+          'vendor-icons': ['lucide-react', '@heroicons/react'],
+          'vendor-tanstack':   ['@tanstack/react-query', '@tanstack/react-virtual'],
+          'vendor-zustand':    ['zustand', 'immer']
         }
       }
     },
@@ -100,6 +104,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // ── canonical new paths ──────────────────────────────────────
+      '@stores':   path.resolve(__dirname, 'src/shared/stores'),
       '@shared':   path.resolve(__dirname, 'src/shared'),
       '@layout':   path.resolve(__dirname, 'src/layout'),
       '@features': path.resolve(__dirname, 'src/features'),
@@ -144,5 +149,17 @@ export default defineConfig({
     open: true,
     host: true,
     allowedHosts: ['.trycloudflare.com'],
+    proxy: {
+      '/api': {
+        target: process.env.VITE_API_URL || 'http://localhost:4000',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/health': {
+        target: process.env.VITE_API_URL || 'http://localhost:4000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
 });

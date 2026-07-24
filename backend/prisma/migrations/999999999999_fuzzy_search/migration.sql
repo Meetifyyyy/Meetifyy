@@ -1,0 +1,1 @@
+CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE INDEX IF NOT EXISTS user_username_trgm_idx ON "User" USING GIN (username gin_trgm_ops); CREATE INDEX IF NOT EXISTS community_slug_trgm_idx ON "Community" USING GIN (slug gin_trgm_ops);

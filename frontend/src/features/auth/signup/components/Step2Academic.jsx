@@ -1,10 +1,13 @@
-import React, { useState, useMemo } from 'react';
-import { useSignup } from '../SignupContext';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
-import { ArrowRight, AlertCircle } from 'lucide-react';
+import { ArrowRight, AlertCircle, Check, Loader2, X } from 'lucide-react';
 import CustomSelect from './CustomSelect';
 import { MAJORS_LIST } from '../../../campus/data/majors';
+import { apiClient } from '@shared/api/apiClient';
 import styles from '../SignupFlow.module.css';
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Step2Academic() {
   const { signupData, updateData, nextStep } = useSignup();
@@ -13,20 +16,56 @@ export default function Step2Academic() {
   const [major, setMajor] = useState(signupData.course || signupData.branch || '');
   const [year, setYear] = useState(signupData.year || '');
   const [attempted, setAttempted] = useState(false);
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+  const [emailAvailability, setEmailAvailability] = useState(null);
 
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  
   const emailError = useMemo(() => {
     if (!email) return "College email is required.";
     if (!email.includes('@')) return "Enter a valid email address.";
     if (!emailRegex.test(email)) return "Please enter a valid email address.";
-    // Check for college domain extension optionally
     const domain = email.split('@')[1] || '';
     if (!domain.endsWith('.edu') && !domain.endsWith('.ac.in') && !domain.endsWith('.org') && !domain.endsWith('.com')) {
       return "Please enter a valid institution email.";
     }
     return null;
   }, [email]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!email || emailError) {
+      setIsCheckingEmail(false);
+      setEmailAvailability(null);
+      return;
+    }
+
+    setIsCheckingEmail(true);
+    setEmailAvailability(null);
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiClient.post('/api/auth/check-email', { email: email.trim().toLowerCase() });
+        if (active && res) {
+          setEmailAvailability(res);
+        }
+      } catch (err) {
+        if (active) {
+          setEmailAvailability({ available: false, reason: 'This email is already registered.' });
+        }
+      } finally {
+        if (active) {
+          setIsCheckingEmail(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [email, emailError]);
+
+  const activeEmailError = emailError || (emailAvailability && !emailAvailability.available ? emailAvailability.reason : null);
 
   const majorError = useMemo(() => {
     if (!major.trim()) return "Major is required.";
@@ -39,29 +78,44 @@ export default function Step2Academic() {
     return null;
   }, [year]);
 
-  const isValid = !emailError && !majorError && !yearError;
+  const isEmailValid = !emailError && (emailAvailability ? emailAvailability.available : true);
+  const isValid = isEmailValid && !majorError && !yearError && !isCheckingEmail;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setAttempted(true);
-    if (isValid) {
-      // Deducing university from email domain or fallback
+
+    if (emailError || majorError || yearError) return;
+
+    try {
+      setIsCheckingEmail(true);
+      const res = await apiClient.post('/api/auth/check-email', { email: email.trim().toLowerCase() });
+      if (res && !res.available) {
+        setEmailAvailability(res);
+        return;
+      }
+    } catch (err) {
+      // Proceed if check fails due to network offline
+    } finally {
+      setIsCheckingEmail(false);
+    }
+
+    if (isValid && emailAvailability?.available !== false) {
       let university = 'GLA University';
       const domain = email.toLowerCase().split('@')[1] || '';
-      if (domain.includes('stanford')) {
+      if (domain === 'stanford.edu' || domain.endsWith('.stanford.edu')) {
         university = 'Stanford University';
-      } else if (domain.includes('mit')) {
+      } else if (domain === 'mit.edu' || domain.endsWith('.mit.edu')) {
         university = 'MIT';
-      } else if (domain.includes('gla')) {
+      } else if (domain === 'gla.ac.in' || domain.endsWith('.gla.ac.in') || domain === 'gla.in') {
         university = 'GLA University';
       } else {
-        // extract first part of domain and capitalize
         const parts = domain.split('.')[0];
         university = parts.charAt(0).toUpperCase() + parts.slice(1) + ' University';
       }
 
       updateData({
-        email,
+        email: email.trim().toLowerCase(),
         course: major,
         branch: major,
         year,
@@ -76,29 +130,42 @@ export default function Step2Academic() {
 
   return (
     <AnimatedStep className={styles.stepWrapper}>
-
       <h2 className={styles.headline}>Where do you study?</h2>
       <p className={styles.subheadline}>Provide your student credentials to connect with peers.</p>
 
       <form onSubmit={handleSubmit} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        <div className={styles.inputGroup}>
+        <div className={styles.inputGroup} style={{ position: 'relative' }}>
           <input
             id="email"
             type="email"
-            className={`${styles.largeInput} ${attempted && emailError ? styles.inputError : ''}`}
+            className={`${styles.largeInput} ${(attempted && activeEmailError) || (emailAvailability && !emailAvailability.available) ? styles.inputError : ''}`}
             placeholder=" "
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            style={{ paddingRight: '2rem' }}
           />
           <label htmlFor="email" className={styles.floatingLabel}>College Email</label>
-          <div className={styles.errorText} style={{ visibility: attempted && emailError ? 'visible' : 'hidden' }}>
-            <AlertCircle size={14} /> {emailError || ' '}
+
+          <div style={{ position: 'absolute', right: '0.25rem', top: '1.15rem', display: 'flex', alignItems: 'center' }}>
+            {isCheckingEmail && (
+              <Loader2 size={18} style={{ color: 'var(--color-primary)', animation: 'spin 1s linear infinite' }} />
+            )}
+            {!isCheckingEmail && emailAvailability && emailAvailability.available && (
+              <Check size={18} style={{ color: '#10b981' }} />
+            )}
+            {!isCheckingEmail && emailAvailability && !emailAvailability.available && (
+              <X size={18} style={{ color: '#ef4444' }} />
+            )}
+          </div>
+
+          <div className={styles.errorText} style={{ visibility: (attempted && activeEmailError) || (emailAvailability && !emailAvailability.available) ? 'visible' : 'hidden' }}>
+            <AlertCircle size={14} /> {activeEmailError || ' '}
           </div>
         </div>
 
-        <div className={styles.academicRow}>
-          <div style={{ flex: 2, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)', marginLeft: '0.25rem', marginBottom: '0.25rem' }}>Major / Course</label>
+        <div className={styles.academicRow} style={{ display: 'flex', gap: '1rem', width: '100%' }}>
+          <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)', marginLeft: '0.25rem', marginBottom: '0.25rem', whiteSpace: 'nowrap' }}>Major / Course</label>
             <CustomSelect 
               value={major} 
               onChange={setMajor}
@@ -111,8 +178,8 @@ export default function Step2Academic() {
             </div>
           </div>
 
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)', marginLeft: '0.25rem', marginBottom: '0.25rem' }}>Year of Passing</label>
+          <div style={{ flex: '0 0 135px', minWidth: '135px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)', marginLeft: '0.25rem', marginBottom: '0.25rem', whiteSpace: 'nowrap' }}>Year of Passing</label>
             <CustomSelect 
               value={year} 
               onChange={setYear}
@@ -127,6 +194,7 @@ export default function Step2Academic() {
 
         <button 
           type="submit" 
+          disabled={isCheckingEmail}
           className={styles.continueBtn}
           style={{ width: '100%', justifyContent: 'center', marginTop: '1.5rem' }}
         >

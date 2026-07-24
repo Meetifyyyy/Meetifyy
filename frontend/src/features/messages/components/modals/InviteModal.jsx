@@ -1,9 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useData } from '@shared/context/DataContext';
+
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
 import styles from './InviteModal.module.css';
+import { useData } from '@shared/hooks/useData';
+
 
 export default function InviteModal({ isOpen, onClose, group }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -112,7 +114,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
                 <div key={user.id} className={styles.listItem}>
                   <div className={styles.contactInfo}>
                     {isImageUrl(user.avatar) ? (
-                      <img src={user.avatar} alt={user.displayName || user.name} className={styles.avatar} />
+                      <img src={user.avatar} alt={user.displayName || user.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                     ) : (
                       <DefaultAvatar size={40} name={user.displayName || user.name} className={styles.avatar} />
                     )}

@@ -17,7 +17,7 @@ export default function InvitationItem({
     >
       <div className={styles.avatar}>
         {isImageUrl(inv.hostAvatar) ? (
-          <img src={inv.hostAvatar} alt={inv.hostName || "Host"} className={styles.avatarImg} />
+          <img src={inv.hostAvatar} alt={inv.hostName || "Host"} className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
         ) : (
           <DefaultAvatar />
         )}

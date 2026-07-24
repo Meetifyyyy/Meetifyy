@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import { getRelativeDateLabel } from '@shared/utils/time';
 import styles from './SearchResultCards.module.css';
 
@@ -84,7 +85,7 @@ export function CommunityResult({ result, isSelected, onClick }) {
         style={item.color ? { background: item.color } : { background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }}
       >
         {isImageUrl(item.avatar) ? (
-           <img src={item.avatar} alt={item.name} className={styles.avatar} />
+           <img src={item.avatar} alt={item.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
         ) : (
           <span style={{ fontWeight: 700, color: '#FFFFFF' }}>{item.avatar || item.name?.charAt(0).toUpperCase()}</span>
         )}
@@ -110,13 +111,7 @@ export function UserResult({ result, isSelected, onClick }) {
       data-selected={isSelected} 
       onClick={() => onClick(`/profile/${item.username}`)}
     >
-      <div className={styles.avatar}>
-        {isImageUrl(item.avatar) ? (
-          <img src={item.avatar} alt={item.displayName} className={styles.avatar} />
-        ) : (
-          <DefaultAvatar />
-        )}
-      </div>
+      <Avatar src={item.avatar} name={item.displayName} size="40px" disableHover />
       <div className={styles.content}>
         <div className={styles.title}>
           <HighlightedText text={item.displayName} matches={matches} keyName="displayName" />
@@ -149,7 +144,7 @@ export function CollegeResult({ result, isSelected, onClick }) {
         style={item.color ? { background: item.color } : {}}
       >
         {isImageUrl(item.avatar) ? (
-           <img src={item.avatar} alt={item.name} className={`${styles.avatar} ${styles.collegeAvatar}`} />
+           <img src={item.avatar} alt={item.name} className={`${styles.avatar} ${styles.collegeAvatar}`}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
         ) : (
           <DefaultAvatar isGroup={true} />
         )}
@@ -185,7 +180,7 @@ export function CrewResult({ result, isSelected, onClick }) {
     >
       <div className={styles.avatar} style={{ borderRadius: '12px', overflow: 'hidden' }}>
         {isImageUrl(eventImage) ? (
-          <img src={eventImage} alt={item.title} className={styles.avatar} style={{ borderRadius: 'inherit', objectFit: 'cover' }} />
+          <img src={eventImage} alt={item.title} className={styles.avatar} style={{ borderRadius: 'inherit', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
         ) : (
           <DefaultAvatar />
         )}

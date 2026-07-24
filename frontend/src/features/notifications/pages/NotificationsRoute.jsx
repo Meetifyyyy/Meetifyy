@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useNotifications } from '@shared/context/NotificationContext';
+import { useNotifications } from '@shared/hooks/useNotifications';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
-import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
+import { timeAgo } from '@shared/utils/time';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { ErrorState } from '@shared/components/ui/StateViews';
@@ -12,6 +11,8 @@ import PageHeader from '@layout/PageHeader';
 import NotificationList from '../components/NotificationList';
 import InvitationList from '../components/InvitationList';
 import styles from './NotificationsRoute.module.css';
+import { useData } from '@shared/hooks/useData';
+
 
 function NotificationRowSkeleton() {
   return (
@@ -33,10 +34,24 @@ function NotificationRowSkeleton() {
 export default function NotificationsRoute() {
   const [activeTab, setActiveTab] = useState('all');
   const { currentUser } = useAuth();
-  const { notifications, markAsRead, markAllRead, clearAll, timeAgo, dismissNotification } = useNotifications();
+  const {
+    notifications,
+    markAsRead,
+    markAllRead,
+    dismissNotification,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading
+  } = useNotifications();
   const { getUserById, crewActivities, joinCrewActivity, declineCrewInvitation, acceptJoinRequest, rejectJoinRequest } = useData();
   const navigate = useNavigate();
   const goBack = useSmartBack();
+
+  // Automatically mark all notifications as read when opening notifications page
+  useEffect(() => {
+    markAllRead();
+  }, []);
 
   const invitations = useMemo(() => {
     return crewActivities ? crewActivities.filter(a => 
@@ -61,37 +76,84 @@ export default function NotificationsRoute() {
     navigate(`/crew/${inv.id}`, { state: { activity: inv } });
   };
 
-  const { isLoading, data: loadedNotifications, error, retry } = useSimulatedFetch(notifications, 350);
+  const error = null;
+  const loadedNotifications = notifications;
+  const retry = () => {};
+
+  const SAFE_ID = /^[a-zA-Z0-9_-]{1,64}$/;
+  const SAFE_USERNAME = /^[a-zA-Z0-9_.]{1,50}$/;
+  const safeId = (v) => (v && SAFE_ID.test(v) ? v : null);
+  const safeUsername = (v) => (v && SAFE_USERNAME.test(v) ? v : null);
 
   const handleClick = (notif) => {
     markAsRead(notif.id);
 
-    switch (notif.type) {
-      case 'follow':
-        if (notif.targetUsername) navigate(`/profile/${notif.targetUsername}`);
+    const type = (notif.type || '').toUpperCase();
+    const actorUsername = notif.actor?.username || notif.metadata?.username || notif.targetUsername;
+    const postId = notif.metadata?.postId || (notif.entityType === 'POST' ? notif.entityId : null) || notif.postId;
+    const commentId = notif.metadata?.commentId || (notif.entityType === 'COMMENT' ? notif.entityId : null) || notif.commentId;
+
+    switch (type) {
+      case 'FOLLOW':
+        if (actorUsername) {
+          navigate(`/profile/${actorUsername}`);
+        } else if (notif.entityId) {
+          navigate(`/profile/${notif.entityId}`);
+        }
         break;
-      case 'mention':
-        if (notif.postId) navigate(`/post/${notif.postId}`);
-        else if (notif.convId) navigate(`/messages/${notif.convId}`);
-        else if (notif.activityId) navigate(`/crew/${notif.activityId}?discussion=1`);
-        else if (notif.communityId) navigate(`/communities/${notif.communityId}`);
-        else navigate('/home');
+
+      case 'LIKE':
+      case 'POST_LIKE':
+        if (postId) {
+          navigate(`/post/${postId}`);
+        } else if (notif.entityId) {
+          navigate(`/post/${notif.entityId}`);
+        }
         break;
-      case 'like':
-      case 'comment':
-        navigate('/home');
+
+      case 'COMMENT':
+      case 'COMMENT_LIKE':
+        if (postId && commentId) {
+          navigate(`/post/${postId}#comment-${commentId}`);
+        } else if (postId) {
+          navigate(`/post/${postId}`);
+        } else if (notif.entityId) {
+          navigate(`/post/${notif.entityId}`);
+        }
         break;
-      case 'community_join':
-        if (notif.communityId) navigate(`/communities/${notif.communityId}`);
+
+      case 'MENTION':
+        if (postId) {
+          navigate(`/post/${postId}`);
+        } else if (notif.metadata?.conversationId || notif.convId) {
+          navigate(`/messages/${notif.metadata?.conversationId || notif.convId}`);
+        } else if (notif.entityId) {
+          navigate(`/post/${notif.entityId}`);
+        }
         break;
-      case 'crew_join':
-      case 'activity_discussion':
-        if (notif.activityId) navigate(`/crew/${notif.activityId}?discussion=1`);
+
+      case 'MESSAGE':
+        if (notif.entityId) {
+          navigate(`/messages/${notif.entityId}`);
+        }
         break;
+
+      case 'JOIN_REQUEST':
       case 'ACTIVITY_JOIN_REQUEST':
+        if (notif.entityId) {
+          navigate(`/crew/${notif.entityId}?discussion=1`);
+        }
         break;
+
       default:
-        navigate('/home');
+        if (actorUsername) {
+          navigate(`/profile/${actorUsername}`);
+        } else if (postId) {
+          navigate(`/post/${postId}`);
+        } else {
+          navigate('/home');
+        }
+        break;
     }
   };
 
@@ -115,7 +177,9 @@ export default function NotificationsRoute() {
     const oneDay = 24 * 60 * 60 * 1000;
 
     loadedNotifications.forEach(notif => {
-      const diff = now - notif.createdAt;
+      // For MVP, created_at comes as string from backend, parse to ms
+      const createdAtMs = new Date(notif.createdAt).getTime();
+      const diff = now - createdAtMs;
       if (diff < oneDay) {
         groups.today.push(notif);
       } else if (diff < 2 * oneDay) {
@@ -166,13 +230,23 @@ export default function NotificationsRoute() {
 
         <div className={styles.list}>
           {isLoading ? (
-            <div className={styles.groupItems}>
-              <NotificationRowSkeleton />
-              <NotificationRowSkeleton />
-              <NotificationRowSkeleton />
-              <NotificationRowSkeleton />
-              <NotificationRowSkeleton />
-              <NotificationRowSkeleton />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3.5rem 1rem' }}>
+              <div 
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  border: '3px solid rgba(var(--color-primary-rgb), 0.15)',
+                  borderTopColor: 'var(--color-primary)',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite'
+                }}
+              />
+              <style>{`
+                @keyframes spin {
+                  0% { transform: rotate(0deg); }
+                  100% { transform: rotate(360deg); }
+                }
+              `}</style>
             </div>
           ) : error ? (
             <ErrorState onRetry={retry} />
@@ -189,7 +263,6 @@ export default function NotificationsRoute() {
           ) : (
             <NotificationList
               groupedNotifications={groupedNotifications}
-              resolveActor={resolveActor}
               timeAgo={timeAgo}
               onNotifClick={handleClick}
               onAcceptJoinRequest={(activityId, actorId, notifId) => {
@@ -200,8 +273,30 @@ export default function NotificationsRoute() {
                 rejectJoinRequest(activityId, actorId);
                 dismissNotification(notifId);
               }}
+              getUserById={getUserById}
               pageStyles={styles}
             />
+          )}
+          {activeTab !== 'invitations' && hasNextPage && (
+            <button
+              onClick={() => fetchNextPage()}
+              disabled={isFetchingNextPage}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                margin: '1.5rem 0',
+                background: 'var(--color-bg-white)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                color: 'var(--color-text)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'center',
+                transition: 'all 0.2s',
+              }}
+            >
+              {isFetchingNextPage ? 'Loading more...' : 'Load More'}
+            </button>
           )}
         </div>
       </div>

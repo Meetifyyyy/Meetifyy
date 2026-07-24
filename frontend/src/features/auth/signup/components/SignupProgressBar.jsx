@@ -1,5 +1,5 @@
 import React from 'react';
-import { useSignup } from '../SignupContext';
+import { useSignup } from '../../context/SignupContext';
 import { ArrowLeft } from 'lucide-react';
 import styles from '../SignupFlow.module.css';
 import { useNavigate } from 'react-router-dom';

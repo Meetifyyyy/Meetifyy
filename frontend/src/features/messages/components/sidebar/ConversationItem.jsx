@@ -17,6 +17,16 @@ export default function ConversationItem({ conv, activeChatId, onSelect, onConte
     return new Date(conv.activity.date) <= new Date();
   })();
 
+  const remainingTime = (() => {
+    if (!conv.isInstantMatch || !conv.expiresAt) return '24h';
+    const diff = new Date(conv.expiresAt).getTime() - Date.now();
+    if (diff <= 0) return 'Expired';
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    if (hours > 0) return `${hours}h left`;
+    return `${mins}m left`;
+  })();
+
   return (
     <div
       className={`${styles.convItem}${isMatch ? ` ${styles.convItemActive}` : ''}`}
@@ -60,8 +70,8 @@ export default function ConversationItem({ conv, activeChatId, onSelect, onConte
           <span className={`${styles.convNameText} ${isUnread ? styles.convNameTextUnread : ''}`}>
             {conv.name}
             {conv.isInstantMatch && (
-              <span className={styles.instantMatchBadge}>
-                ⚡ 24h
+              <span className={styles.instantMatchBadge} title={`Expires in ${remainingTime}`}>
+                ⚡ {remainingTime}
               </span>
             )}
           </span>

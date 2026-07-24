@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useData } from '@shared/context/DataContext';
+
 import { CheckCheck, Check } from 'lucide-react';
 import Avatar from '@shared/components/avatar/Avatar';
 import { isImageUrl } from '@shared/utils/avatar';
@@ -10,8 +10,12 @@ import { SharedCommunityPreview } from '../previews/SharedCommunityPreview';
 import { SharedActivityPreview } from '../previews/SharedActivityPreview';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import styles from './ChatMessageList.module.css';
+import { useData } from '@shared/hooks/useData';
 
-const formatToClockTime = (date) => {
+
+const formatToClockTime = (dateInput) => {
+  const d = dateInput ? new Date(dateInput) : new Date();
+  const date = isNaN(d.getTime()) ? new Date() : d;
   let hours = date.getHours();
   const minutes = date.getMinutes();
   const ampm = hours >= 12 ? 'PM' : 'AM';
@@ -21,57 +25,21 @@ const formatToClockTime = (date) => {
   return `${hours}:${minStr} ${ampm}`;
 };
 
-const getDisplayClockTime = (msg, index = 0) => {
+const getDisplayClockTime = (msg) => {
+  if (msg.createdAt) {
+    return formatToClockTime(msg.createdAt);
+  }
+  if (msg.timestamp) {
+    return formatToClockTime(msg.timestamp);
+  }
   const time = msg.time || '';
-  const clean = time.toLowerCase().trim();
+  const clean = time.trim();
   
-  if (clean.match(/^\d{1,2}:\d{2}\s*(am|pm)?$/i)) {
-    return time.toUpperCase();
+  if (clean.match(/^\d{1,2}:\d{2}\s+(am|pm)$/i)) {
+    return clean.toUpperCase();
   }
-  
-  const now = new Date();
-  
-  if (clean.includes('m ago') || clean.includes('minute')) {
-    const match = clean.match(/(\d+)/);
-    if (match) {
-      const mins = parseInt(match[1], 10);
-      const target = new Date(now.getTime() - mins * 60 * 1000);
-      return formatToClockTime(target);
-    }
-  }
-  
-  if (clean.includes('h ago') || clean.includes('hour')) {
-    const match = clean.match(/(\d+)/);
-    if (match) {
-      const hrs = parseInt(match[1], 10);
-      const target = new Date(now.getTime() - hrs * 60 * 60 * 1000);
-      return formatToClockTime(target);
-    }
-  }
-  
-  if (clean.includes('yesterday') || clean === '1d ago') {
-    const baseHour = 17; // 5 PM
-    const minutes = (index * 5) % 60;
-    const hour = baseHour + Math.floor((index * 5) / 60);
-    const target = new Date();
-    target.setDate(target.getDate() - 1);
-    target.setHours(hour, minutes, 0, 0);
-    return formatToClockTime(target);
-  }
-  
-  if (clean.includes('d ago')) {
-    const match = clean.match(/(\d+)/);
-    const days = match ? parseInt(match[1], 10) : 2;
-    const baseHour = 15; // 3 PM
-    const minutes = (index * 10) % 60;
-    const hour = baseHour + Math.floor((index * 10) / 60);
-    const target = new Date();
-    target.setDate(target.getDate() - days);
-    target.setHours(hour, minutes, 0, 0);
-    return formatToClockTime(target);
-  }
-  
-  return formatToClockTime(now);
+
+  return formatToClockTime(new Date());
 };
 
 export default function MessageBubble({ 
@@ -83,8 +51,9 @@ export default function MessageBubble({
   searchQuery, 
   openViewer, 
   onReply,
+  onUnsend,
   index = 0,
-  isLastOutgoing = false,
+  isLatestMessage = false,
   onRetry = null
 }) {
   const navigate = useNavigate();
@@ -93,8 +62,8 @@ export default function MessageBubble({
 
   const meUser = users[currentUser?.username];
   const targetUser = Object.values(users).find(u => u.username === conversation.username || u.id === conversation.userId);
-  const meReceipts = currentUser?.preferences?.readReceipts !== false && meUser?.settings?.privacy?.readReceipts !== false;
-  const targetReceipts = targetUser?.preferences?.readReceipts !== false && targetUser?.settings?.privacy?.readReceipts !== false;
+  const meReceipts = currentUser?.settings?.readReceipts !== false && currentUser?.preferences?.readReceipts !== false;
+  const targetReceipts = targetUser?.settings?.readReceipts !== false && targetUser?.preferences?.readReceipts !== false;
   const bothHaveReadReceipts = meReceipts && targetReceipts;
 
   const getReadStatusIcon = (msg) => {
@@ -102,11 +71,8 @@ export default function MessageBubble({
   };
 
   const renderStatusLabel = () => {
-    if (!isLastOutgoing) return null;
-
-    if (msg.status === 'sending') {
-      return <div className={styles.msgStatusLabel}>Sending...</div>;
-    }
+    // Only render status labels for messages sent by ME
+    if (msg.from !== 'me') return null;
 
     if (msg.status === 'failed') {
       return (
@@ -116,11 +82,21 @@ export default function MessageBubble({
       );
     }
 
+    // Do NOT show "Sending..." text per requirement
+    if (msg.status === 'sending') {
+      return null;
+    }
+
+    // Status label ("Sent" / "Seen") ONLY shows if this message is the latest message in the chat
+    if (!isLatestMessage) {
+      return null;
+    }
+
     if (msg.status === 'read' && bothHaveReadReceipts) {
       return <div className={styles.msgStatusLabel}>Seen</div>;
     }
 
-    return null;
+    return <div className={styles.msgStatusLabel}>Sent</div>;
   };
 
   if (msg.type === 'system') {
@@ -137,7 +113,9 @@ export default function MessageBubble({
                   style={{ color: 'var(--color-primary)', cursor: 'pointer', fontWeight: 600 }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    navigate(`/profile/${username}`);
+                    if (/^[a-zA-Z0-9_.]{1,50}$/.test(username)) {
+                      navigate(`/profile/${username}`);
+                    }
                   }}
                 >
                   {part}
@@ -433,6 +411,18 @@ export default function MessageBubble({
               <polyline points="9 17 4 12 9 7" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" />
             </svg>
           </button>
+          {msg.from === 'me' && onUnsend && (
+            <button 
+              className={styles.msgHoverActionBtn}
+              onClick={() => onUnsend(msg.id)}
+              title="Unsend"
+              style={{ color: 'var(--color-danger, #ef4444)' }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
       {renderStatusLabel()}

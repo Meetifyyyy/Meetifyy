@@ -17,7 +17,7 @@ export function SharedCommunityPreview({ community, currentUserId }) {
         
         <div className={styles.info}>
           {isImageUrl(community.avatar) ? (
-            <img src={community.avatar} alt={community.name} className={styles.avatar} style={{ borderRadius: '50%', objectFit: 'cover' }} />
+            <img src={community.avatar} alt={community.name} className={styles.avatar} style={{ borderRadius: '50%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
           ) : (
             <div className={styles.avatar} style={{ background: community.color || 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: '1.08rem', borderRadius: '50%' }}>
               {community.name?.charAt(0).toUpperCase() || 'C'}

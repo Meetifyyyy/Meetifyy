@@ -52,12 +52,33 @@
   display: flex;
   flex-direction: column;
   gap: 2rem;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   min-width: 0;
 }
 
 .scrollBody::-webkit-scrollbar {
-  width: 6px;
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.noMediaContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.25rem 1rem 1.5rem 1rem;
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.88rem;
+  font-weight: 500;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.noMediaIcon {
+  color: var(--color-text-light, #94a3b8);
+  flex-shrink: 0;
 }
 
 .scrollBody::-webkit-scrollbar-track {
@@ -88,8 +109,8 @@
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   background: var(--color-bg-soft);
-  -webkit-mask-image: -webkit-radial-gradient(white, black);
-  mask-image: radial-gradient(white, black);
+  isolation: isolate;
+  transform: translateZ(0);
 }
 
 .avatarWrapperClickable {

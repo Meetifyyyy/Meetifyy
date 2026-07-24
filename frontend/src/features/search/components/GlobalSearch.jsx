@@ -16,7 +16,8 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
   const [recentSearches, setRecentSearches] = useState(() => {
     try {
       const saved = localStorage.getItem('meetifyy_recent_searches');
-      return saved ? JSON.parse(saved) : [];
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed.filter(s => typeof s === 'string').slice(0, 20) : [];
     } catch (e) {
       return [];
     }
@@ -59,7 +60,7 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
   ];
 
   const handleSearchChange = (e) => {
-    const val = e.target.value;
+    const val = e.target.value.substring(0, 100);
     setQuery(val);
     
     const onSearchPage = location.pathname === '/search';
@@ -152,6 +153,7 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
           className={`${styles.input} ${variant === 'bottomNav' ? styles.bottomNavInput : ''} ${(variant === 'mobileSearchPage' || variant === 'pageHeader') ? styles.mobileSearchPageInput : ''}`}
           placeholder="Search..."
           value={query}
+          maxLength={100}
           onChange={handleSearchChange}
           onFocus={() => setIsFocused(true)}
           onKeyDown={handleKeyDown}

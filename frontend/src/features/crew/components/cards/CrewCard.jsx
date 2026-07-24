@@ -2,11 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
-import { useData } from '@shared/context/DataContext';
+import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
+
 import ShareActivityModal from '../modals/ShareActivityModal';
 import ActivityJoinedModal from '../modals/ActivityJoinedModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './CrewCard.module.css';
+import { useData } from '@shared/hooks/useData';
+import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 function formatDateTime(activity) {
@@ -68,6 +71,8 @@ export default function CrewCard({ activity, onClick }) {
   const [showMenu, setShowMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showJoinedModal, setShowJoinedModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [hasReported, setHasReported] = useState(false);
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -101,7 +106,6 @@ export default function CrewCard({ activity, onClick }) {
   };
 
   const filled = Math.min(slotsFilled, slotsNeeded);
-
 
   return (
     <div 
@@ -142,9 +146,18 @@ export default function CrewCard({ activity, onClick }) {
             </button>
             {showMenu && (
               <div className={styles.dropdownMenu}>
-                <button className={styles.dropdownItem} onClick={(e) => { e.stopPropagation(); alert('Host reported.'); setShowMenu(false); }}>
+                <button
+                  className={styles.dropdownItem}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMenu(false);
+                    if (!hasReported) setShowReportModal(true);
+                  }}
+                  disabled={hasReported}
+                  style={{ color: hasReported ? 'var(--color-text-muted)' : 'var(--color-text-main)' }}
+                >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
-                  Report Host
+                  {hasReported ? 'Already Reported' : 'Report Activity'}
                 </button>
                 <button className={styles.dropdownItem} onClick={(e) => { e.stopPropagation(); alert('Activities hidden.'); setShowMenu(false); }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
@@ -190,14 +203,12 @@ export default function CrewCard({ activity, onClick }) {
                 
                 return displayUsers.map((u, i) => (
                   <div 
-                    key={u.id} 
+                    key={u.id || i} 
                     className={styles.goingAvatarWrap} 
-                    style={{ 
-                      zIndex: 5 - i
-                    }}
+                    style={{ zIndex: 5 - i }}
                   >
                     {u.avatar && isImageUrl(u.avatar) ? (
-                      <img src={u.avatar} alt={u.displayName || "Participant"} className={styles.goingAvatarImg} />
+                      <img src={getProcessedAvatarUrl(u.avatar)} alt={u.displayName || "Participant"} className={styles.goingAvatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                     ) : (
                       <DefaultAvatar />
                     )}
@@ -209,7 +220,6 @@ export default function CrewCard({ activity, onClick }) {
           </div>
           
           <div className={styles.actionsGroup}>
-
             <button className={`${styles.saveBtn} ${isSaved ? styles.saved : ''}`} aria-label={isSaved ? "Unsave" : "Save"} onClick={handleSave}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill={isSaved ? "currentColor" : "none"} stroke={isSaved ? "none" : "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
@@ -218,8 +228,7 @@ export default function CrewCard({ activity, onClick }) {
           </div>
         </div>
       </div>
-
-      <ShareActivityModal 
+      <ShareActivityModal
         isOpen={showShareModal}
         onClose={() => setShowShareModal(false)}
         activity={activity}
@@ -228,6 +237,16 @@ export default function CrewCard({ activity, onClick }) {
         isOpen={showJoinedModal}
         onClose={() => setShowJoinedModal(false)}
         activity={activity}
+      />
+      <ReportModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        targetType="ACTIVITY"
+        targetId={activity.id}
+        targetName={title}
+        targetPreview={`${activity.hostName || ''} · ${activity.locationName || activity.location || ''}`}
+        reportedFrom="crew"
+        onSubmitted={() => setHasReported(true)}
       />
     </div>
   );

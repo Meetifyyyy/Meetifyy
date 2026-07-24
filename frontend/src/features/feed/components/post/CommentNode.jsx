@@ -12,14 +12,18 @@
 
 import { useState, useCallback, useEffect, useRef, useContext, createContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useData } from '@shared/context/DataContext';
+
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
+import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import RichText from '@shared/components/mentions/RichText';
 import { timeAgo } from '@shared/utils/time';
 import styles from './CommentNode.module.css';
+import { useData } from '@shared/hooks/useData';
+
 
 // ─── Shared tree context ─────────────────────────────────────────────────────
 const TreeDensityContext = createContext({ tier: 'small', expandedMap: {}, toggleExpanded: () => {} });
@@ -32,9 +36,43 @@ function countVisibleNodes(comment, expandedMap) {
   return count;
 }
 
+function findAncestorsOf(comments, targetId, path = []) {
+  for (const c of comments) {
+    if (c.id === targetId) return path;
+    if (c.replies?.length) {
+      const found = findAncestorsOf(c.replies, targetId, [...path, c.id]);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 // ─── Root wrapper ─────────────────────────────────────────────────────────────
 export function CommentTreeRoot({ postId, comments, onReplySubmit }) {
   const [expandedMap, setExpandedMap] = useState({});
+
+  useEffect(() => {
+    if (window.location.hash.startsWith('#comment-')) {
+      const targetId = window.location.hash.replace('#comment-', '');
+      const ancestors = findAncestorsOf(comments, targetId);
+      if (ancestors && ancestors.length > 0) {
+        setExpandedMap(prev => {
+          const next = { ...prev };
+          ancestors.forEach(id => { next[id] = true; });
+          return next;
+        });
+        setTimeout(() => {
+          const el = document.getElementById(`comment-${targetId}`);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300); // Wait for expand animation
+      } else {
+        setTimeout(() => {
+          const el = document.getElementById(`comment-${targetId}`);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      }
+    }
+  }, [comments]);
 
   const toggleExpanded = useCallback((id, currentVal) => {
     setExpandedMap(prev => ({ ...prev, [id]: !currentVal }));
@@ -222,8 +260,11 @@ export default function CommentNode({
   const filterId = useRef(`cf-${comment.id}`.replace(/[^a-zA-Z0-9-]/g, '_')).current;
 
   const navigate = useNavigate();
-  const { getUserById, likeComment, deleteComment, communities, currentUser } = useData();
+  const { getUserById, likeComment, unlikeComment, deleteComment, communities, currentUser } = useData();
   const { tier, expandedMap, toggleExpanded } = useContext(TreeDensityContext);
+
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [hasReported, setHasReported] = useState(false);
 
   const hasChildren = comment.replies?.length > 0;
   // Level 0 comments are expanded by default (unless explicitly closed)
@@ -234,10 +275,16 @@ export default function CommentNode({
 
   const author = getUserById(comment.authorId) || { displayName: 'Unknown', username: 'unknown', avatar: '?' };
   const authorCollege = author.collegeId ? communities[author.collegeId] : null;
-  const { likes, isLikedByMe: rawIsLiked } = comment;
-  const isLikedByMe = comment.likedBy
-    ? comment.likedBy.includes(currentUser?.id)
-    : !!rawIsLiked;
+  const initialLiked = comment.hasLiked !== undefined ? comment.hasLiked : (comment.likedBy ? comment.likedBy.includes(currentUser?.id) : false);
+  const initialLikes = comment.likeCount !== undefined ? comment.likeCount : (comment.likes || 0);
+
+  const [localLiked, setLocalLiked] = useState(initialLiked);
+  const [localLikesCount, setLocalLikesCount] = useState(initialLikes);
+
+  useEffect(() => {
+    setLocalLiked(initialLiked);
+    setLocalLikesCount(initialLikes);
+  }, [initialLiked, initialLikes]);
 
   // ── Constant node sizes and layout parameters ──────────────────────────────
   const avatarSize = 40;
@@ -257,7 +304,31 @@ export default function CommentNode({
   const handleProfileClick = () => navigate(`/profile/${author.username}`);
   const handleReplyClick   = () => { setIsReplying(r => !r); setReplyContent({ text: '', mentions: [] }); };
   const handleCancelReply  = () => { setIsReplying(false); setReplyContent({ text: '', mentions: [] }); };
-  const handleLike         = () => likeComment(postId, comment.id);
+
+  const handleLike = (e) => {
+    if (e) e.stopPropagation();
+    const nextLiked = !localLiked;
+    const nextLikes = nextLiked ? localLikesCount + 1 : Math.max(0, localLikesCount - 1);
+
+    setLocalLiked(nextLiked);
+    setLocalLikesCount(nextLikes);
+
+    if (nextLiked) {
+      if (likeComment) {
+        likeComment(postId, comment.id).catch(() => {
+          setLocalLiked(!nextLiked);
+          setLocalLikesCount(localLikesCount);
+        });
+      }
+    } else {
+      if (unlikeComment) {
+        unlikeComment(postId, comment.id).catch(() => {
+          setLocalLiked(!nextLiked);
+          setLocalLikesCount(localLikesCount);
+        });
+      }
+    }
+  };
 
   const handleSubmit = async () => {
     if (!replyContent.text.trim() || isSubmitting) return;
@@ -310,6 +381,7 @@ export default function CommentNode({
 
       {/* Comment card */}
       <div
+        id={`comment-${comment.id}`}
         className={[
           styles.replyCard,
           hasChildren && !isExpanded ? styles.isCollapsed : '',
@@ -323,18 +395,17 @@ export default function CommentNode({
       >
         <div className={styles.replyWrapper} data-reply-wrapper>
 
-          {/* Avatar — tagged so parent ConnectorSVG can locate it */}
           <div
             ref={avatarRef}
             className={styles.replyAvatar}
             data-child-avatar
-            onClick={(e) => { e.stopPropagation(); handleProfileClick(); }}
           >
-            {isImageUrl(author.avatar) ? (
-              <img src={author.avatar} alt={author.displayName} className={styles.replyAvatarImg} />
-            ) : (
-              <DefaultAvatar />
-            )}
+            <Avatar 
+              src={author.avatar} 
+              name={author.displayName} 
+              size="100%" 
+              onClick={(e) => { e.stopPropagation(); handleProfileClick(); }} 
+            />
           </div>
 
           {/* Text content */}
@@ -349,7 +420,7 @@ export default function CommentNode({
                       alt={authorCollege.name}
                       className={styles.commentCollegeIcon}
                       title={authorCollege.name}
-                    />
+                     onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                   )}
                 </button>
                 <div className={styles.commentMeta}>
@@ -387,14 +458,19 @@ export default function CommentNode({
                     )}
                     {(!currentUser || comment.authorId !== currentUser.id) && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); showToast('Reported'); setShowMenu(false); }}
-                        style={{ color: 'var(--color-text-main)' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowMenu(false);
+                          if (!hasReported) setShowReportModal(true);
+                        }}
+                        style={{ color: hasReported ? 'var(--color-text-muted)' : 'var(--color-text-main)' }}
                         className={styles.reportBtn}
+                        disabled={hasReported}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" />
                         </svg>
-                        Report
+                        {hasReported ? 'Already Reported' : 'Report'}
                       </button>
                     )}
                   </div>
@@ -410,12 +486,12 @@ export default function CommentNode({
               <div className={styles.replyActionsRow} data-no-collapse>
                 <button
                   onClick={handleLike}
-                  className={`${styles.actionBtn} ${isLikedByMe ? styles.actionBtnLiked : ''}`}
+                  className={`${styles.actionBtn} ${localLiked ? styles.actionBtnLiked : ''}`}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill={isLikedByMe ? 'var(--color-primary)' : 'none'} stroke={isLikedByMe ? 'var(--color-primary)' : 'currentColor'} strokeWidth="2.5">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill={localLiked ? 'var(--color-primary)' : 'none'} stroke={localLiked ? 'var(--color-primary)' : 'currentColor'} strokeWidth="2.5">
                     <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
                   </svg>
-                  {likes}
+                  {localLikesCount}
                 </button>
                 <button onClick={handleReplyClick} className={styles.actionBtn}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -494,6 +570,18 @@ export default function CommentNode({
           </div>
         </div>
       )}
+
+      <ReportModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        targetType="COMMENT"
+        targetId={comment.id}
+        targetPreview={comment.text?.slice(0, 80)}
+        targetName={author?.displayName || author?.username}
+        targetAvatar={author?.avatar}
+        reportedFrom="comment"
+        onSubmitted={() => setHasReported(true)}
+      />
     </div>
   );
 }

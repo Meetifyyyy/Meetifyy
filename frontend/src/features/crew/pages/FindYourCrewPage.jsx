@@ -1,21 +1,42 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useData } from '@shared/context/DataContext';
+import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@shared/context/AuthContext';
+import { activitiesApi } from '@shared/api/apiClient';
 import { useDebounce } from '@shared/hooks/useDebounce';
 import PageLayout from '@layout/PageLayout';
 import PageHeader from '@layout/PageHeader';
 import CrewCard from '../components/cards/CrewCard';
 import CrewCardSkeleton from '../components/cards/CrewCardSkeleton';
 import CrewRightPanel from '../components/layout/CrewRightPanel';
-import { filterActivities } from '@features/crew/data/crewData';
+import { filterActivities } from '@features/crew/utils/crewUtils';
 import styles from './FindYourCrewPage.module.css';
+import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 
 export default function FindYourCrewPage() {
-  const { crewActivities, currentUser, savedActivities } = useData();
+  const { currentUser } = useAuth();
+  const { data: rawActivities = [], isLoading: loading } = useQuery({
+    queryKey: ['activities'],
+    queryFn: activitiesApi.getAll,
+  });
+
+  const crewActivities = useMemo(() => {
+    return rawActivities.map(a => ({
+      ...a,
+      hostId: a.creatorId,
+      hostName: a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
+      hostUsername: a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
+      hostAvatar: a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
+      participants: a.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
+      pendingRequests: a.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
+      slotsFilled: a.members?.filter(m => m.status === 'MEMBER').length || 1,
+      slotsNeeded: a.maxMembers || 999,
+      _membersData: a.members?.map(m => m.user) || []
+    }));
+  }, [rawActivities]);
+  const savedActivities = useSavedActivitiesStore(state => state.savedActivities);
   const navigate = useNavigate();
   const location = useLocation();
-  const loading = !crewActivities || crewActivities.length === 0;
-  
   const [selectedTab, setSelectedTab] = useState(location.state?.selectedTab || 'For You');
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 200);
@@ -45,7 +66,7 @@ export default function FindYourCrewPage() {
       const activityDate = new Date(a.date);
       activityDate.setHours(0, 0, 0, 0);
       return activityDate >= today;
-    }).filter(a => !a.shareToSchool); // college-only activities are hidden here
+    }).filter(a => !a.shareToSchool || a.hostCollege === (currentUser?.college?.name || currentUser?.college)); 
 
     // Filter by tab
     if (selectedTab === 'For You') {

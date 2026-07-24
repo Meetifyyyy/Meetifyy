@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import Background from '@shared/components/ui/Background';
 import LandingNavbar from '../landing/components/LandingNavbar';
 import LandingHero from '../landing/components/LandingHero';
@@ -10,16 +10,16 @@ import SignupJourneyCTA from '../landing/components/SignupJourneyCTA';
 import LandingFooter from '../landing/components/LandingFooter';
 import '../landing/landing.css';
 
-let originalTheme = null;
-let hasCapturedTheme = false;
-
 export default function LandingPage() {
+  const originalTheme = useRef(null);
+  const hasCapturedTheme = useRef(false);
+
   useLayoutEffect(() => {
     const htmlEl = document.documentElement;
 
-    if (!hasCapturedTheme) {
-      originalTheme = htmlEl.getAttribute('data-theme');
-      hasCapturedTheme = true;
+    if (!hasCapturedTheme.current) {
+      originalTheme.current = htmlEl.getAttribute('data-theme');
+      hasCapturedTheme.current = true;
     }
 
     htmlEl.setAttribute('data-theme', 'light');
@@ -41,13 +41,13 @@ export default function LandingPage() {
 
     return () => {
       observer.disconnect();
-      if (originalTheme) {
-        htmlEl.setAttribute('data-theme', originalTheme);
+      if (originalTheme.current) {
+        htmlEl.setAttribute('data-theme', originalTheme.current);
       } else {
         htmlEl.removeAttribute('data-theme');
       }
-      hasCapturedTheme = false;
-      originalTheme = null;
+      hasCapturedTheme.current = false;
+      originalTheme.current = null;
     };
   }, []);
 

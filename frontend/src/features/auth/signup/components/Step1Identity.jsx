@@ -1,17 +1,20 @@
-import React, { useState, useMemo } from 'react';
-import { useSignup } from '../SignupContext';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
-import { ArrowRight, Check, AlertCircle } from 'lucide-react';
+import { ArrowRight, Check, AlertCircle, Loader2, X } from 'lucide-react';
 import CustomSelect from './CustomSelect';
 import { validateDOB } from '../../../../shared/utils/dateValidation';
+import { apiClient } from '@shared/api/apiClient';
 import styles from '../SignupFlow.module.css';
-import { initialUsers } from '@data/mockData';
 
 export default function Step1Identity() {
   const { signupData, updateData, nextStep } = useSignup();
   
   const [name, setName] = useState(signupData.firstName ? `${signupData.firstName} ${signupData.lastName || ''}`.trim() : '');
   const [username, setUsername] = useState(signupData.username || '');
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+  const [usernameAvailability, setUsernameAvailability] = useState(null); // null | { available: boolean, reason?: string }
+
   const initialDob = signupData.birthday || '';
   const initialParts = initialDob ? initialDob.split('-') : ['', '', ''];
   const [year, setYear] = useState(initialParts[0]);
@@ -26,7 +29,7 @@ export default function Step1Identity() {
     return new Date(y, m, 0).getDate();
   }, [month, year]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (day && parseInt(day, 10) > daysInMonth) {
       setDay('');
     }
@@ -41,39 +44,76 @@ export default function Step1Identity() {
     return null;
   }, [name]);
 
-  // Username Validation
-  const existingUsernames = Object.keys(initialUsers);
+  // Local Username Validation
   const usernameError = useMemo(() => {
     if (!username) return "Username is required.";
     if (username.includes(' ')) return "Usernames cannot contain spaces.";
     if (/[^a-z0-9_.]/.test(username)) return "Use lowercase letters, numbers, underscores, or periods.";
     if (username.length < 3) return "Username must be at least 3 characters.";
-    if (existingUsernames.includes(username)) return "Username is already taken.";
     return null;
   }, [username]);
+
+  // Real-time Backend Username Availability Check
+  useEffect(() => {
+    let active = true;
+
+    if (!username || username.trim().length < 3 || usernameError) {
+      setIsCheckingUsername(false);
+      setUsernameAvailability(null);
+      return;
+    }
+
+    setIsCheckingUsername(true);
+    setUsernameAvailability(null);
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiClient.post('/api/auth/check-username', { username: username.trim().toLowerCase() });
+        if (active && res) {
+          setUsernameAvailability(res);
+        }
+      } catch (err) {
+        if (active) {
+          setUsernameAvailability({ available: false, reason: 'Username not available' });
+        }
+      } finally {
+        if (active) {
+          setIsCheckingUsername(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [username, usernameError]);
 
   // DOB Validation
   const dobValidation = useMemo(() => validateDOB(year, month, day), [year, month, day]);
   const dobError = dobValidation.error;
 
-  const isValid = !nameError && !usernameError && !dobError;
+  const isUsernameValid = !usernameError && (usernameAvailability ? usernameAvailability.available : true);
+  const isValid = !nameError && isUsernameValid && !dobError && !isCheckingUsername;
 
   const handleSubmit = (e) => {
     e.preventDefault();
     setAttempted(true);
-    if (isValid) {
+    if (isValid && usernameAvailability?.available) {
       const parts = name.trim().split(' ');
       const firstName = parts[0];
       const lastName = parts.slice(1).join(' ');
       updateData({
         firstName,
         lastName,
-        username,
+        username: username.trim().toLowerCase(),
         birthday: dobValidation.dobString
       });
       nextStep();
     }
   };
+
+  const activeUsernameError = usernameError || (usernameAvailability && !usernameAvailability.available ? usernameAvailability.reason : null);
 
   return (
     <AnimatedStep className={styles.stepWrapper}>
@@ -96,18 +136,37 @@ export default function Step1Identity() {
           </div>
         </div>
 
-        <div className={styles.inputGroup}>
+        <div className={styles.inputGroup} style={{ position: 'relative' }}>
           <input
             id="username"
             type="text"
-            className={`${styles.largeInput} ${attempted && usernameError ? styles.inputError : ''}`}
+            className={`${styles.largeInput} ${(attempted && activeUsernameError) || (usernameAvailability && !usernameAvailability.available) ? styles.inputError : ''}`}
             placeholder=" "
             value={username}
-            onChange={(e) => setUsername(e.target.value.toLowerCase())}
+            onChange={(e) => {
+              const val = e.target.value.toLowerCase();
+              if (val !== '' && /[^a-z0-9_.]/.test(val)) return;
+              setUsername(val);
+            }}
+            style={{ paddingRight: '2rem' }}
           />
           <label htmlFor="username" className={styles.floatingLabel}>Username</label>
-          <div className={styles.errorText} style={{ visibility: attempted && usernameError ? 'visible' : 'hidden' }}>
-            <AlertCircle size={14} /> {usernameError || ' '}
+
+          {/* Real-time Availability Indicator */}
+          <div style={{ position: 'absolute', right: '0.25rem', top: '1.15rem', display: 'flex', alignItems: 'center' }}>
+            {isCheckingUsername && (
+              <Loader2 size={18} style={{ color: 'var(--color-primary)', animation: 'spin 1s linear infinite' }} />
+            )}
+            {!isCheckingUsername && usernameAvailability && usernameAvailability.available && (
+              <Check size={18} style={{ color: '#10b981' }} />
+            )}
+            {!isCheckingUsername && usernameAvailability && !usernameAvailability.available && (
+              <X size={18} style={{ color: '#ef4444' }} />
+            )}
+          </div>
+
+          <div className={styles.errorText} style={{ visibility: (attempted && activeUsernameError) || (usernameAvailability && !usernameAvailability.available) ? 'visible' : 'hidden' }}>
+            <AlertCircle size={14} /> {activeUsernameError || ' '}
           </div>
         </div>
 

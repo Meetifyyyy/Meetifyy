@@ -1,13 +1,12 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './CrewRightPanel.module.css';
-import { useData } from '@shared/context/DataContext';
+
 import createActivityBackgroundCharacter from '@assets/images/createactivitybackgroundcharacter.png';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
+import { useData } from '@shared/hooks/useData';
 
-
-
-function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
+function getStartsInLabel(act, nowTime = Date.now()) {
   if (act.startsInLabel && !act.date) return act.startsInLabel;
   try {
     if (act.date) {
@@ -39,36 +38,18 @@ function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
           const secsStr = String(secs).padStart(2, '0');
           return `Starts in ${mins}m ${secsStr}s`;
         }
+      } else {
+        return `Already started`;
       }
     }
   } catch (e) {
     // fallback
   }
-  // mock fallback using nowTime to make it tick down slightly
-  const defaultDiff = index === 0 ? 59 * 60 * 1000 + 4 * 1000 : 4 * 60 * 60 * 1000 + 18 * 60 * 1000;
-  const targetMock = nowTime + defaultDiff - (nowTime % 3600000);
-  const diffMs = targetMock - nowTime;
-  if (diffMs > 0) {
-    if (diffMs >= 24 * 60 * 60 * 1000) {
-      const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-      const hours = Math.floor((diffMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-      return `Starts in ${days}d ${hours}hr`;
-    } else if (diffMs >= 60 * 60 * 1000) {
-      const hours = Math.floor(diffMs / (60 * 60 * 1000));
-      const mins = Math.floor((diffMs % (60 * 60 * 1000)) / (60 * 1000));
-      return `Starts in ${hours}hr ${mins}m`;
-    } else {
-      const mins = Math.floor(diffMs / (60 * 1000));
-      const secs = Math.floor((diffMs % (60 * 1000)) / 1000);
-      const secsStr = String(secs).padStart(2, '0');
-      return `Starts in ${mins}m ${secsStr}s`;
-    }
-  }
   return `Starts soon`;
 }
 
 export default function CrewRightPanel({ onCreateActivity, onViewAll }) {
-  const { crewActivities, currentUser } = useData();
+  const { crewActivities = [], currentUser } = useData();
   const navigate = useNavigate();
   const [nowTime, setNowTime] = useState(Date.now());
 
@@ -83,7 +64,7 @@ export default function CrewRightPanel({ onCreateActivity, onViewAll }) {
     if (!currentUser) return [];
     return crewActivities
       .filter(a => a.participants?.includes(currentUser.id))
-      .sort((a, b) => new Date(a.dateLabel + ' 2024') - new Date(b.dateLabel + ' 2024'));
+      .sort((a, b) => new Date(a.startDate || a.createdAt) - new Date(b.startDate || b.createdAt));
   }, [crewActivities, currentUser]);
 
   return (

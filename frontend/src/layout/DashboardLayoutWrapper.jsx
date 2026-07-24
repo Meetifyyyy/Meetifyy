@@ -22,9 +22,13 @@ export default function DashboardLayoutWrapper() {
     match.pathname.startsWith('/profile') ||
     match.pathname.startsWith('/post') ||
     match.pathname.startsWith('/saved') ||
+    match.pathname.startsWith('/settings') ||
     /^\/communities\/.+/.test(match.pathname)
   );
-  const isSavedPage = matches.some(match => match.pathname.startsWith('/saved'));
+  const hideBottomNav = matches.some(match => 
+    match.pathname.startsWith('/saved') || 
+    match.pathname.startsWith('/settings')
+  );
   
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -49,7 +53,7 @@ export default function DashboardLayoutWrapper() {
         <Sidebar onCommunityClick={handleCommunityClick} />
         <Outlet />
       </DashboardLayout>
-      {!isSavedPage && <BottomNav />}
+      {!hideBottomNav && <BottomNav />}
       <InstantMatchFAB />
       <InstantMatchSheet />
       <MatchPopup />

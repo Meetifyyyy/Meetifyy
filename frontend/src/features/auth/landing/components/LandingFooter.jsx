@@ -10,6 +10,11 @@ export default function LandingFooter() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleNav = (path) => {
+    navigate(path);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <footer id="about" className={styles.footer} role="contentinfo">
       <div className={styles.container}>
@@ -35,26 +40,19 @@ export default function LandingFooter() {
             <ul className={styles.linkList} role="list">
               <li>
                 <button
-                  onClick={() => navigate('/')}
+                  onClick={() => handleNav('/about')}
                   className={styles.linkButton}
                 >
                   About Us
                 </button>
               </li>
               <li>
-                <a href="#" className={styles.link}>
-                  Blog
-                </a>
-              </li>
-              <li>
-                <a href="#" className={styles.link}>
-                  Careers
-                </a>
-              </li>
-              <li>
-                <a href="#" className={styles.link}>
+                <button
+                  onClick={() => handleNav('/contact')}
+                  className={styles.linkButton}
+                >
                   Contact
-                </a>
+                </button>
               </li>
             </ul>
           </div>
@@ -63,24 +61,36 @@ export default function LandingFooter() {
             <p className={styles.colTitle}>Legal</p>
             <ul className={styles.linkList} role="list">
               <li>
-                <a href="#" className={styles.link}>
+                <button
+                  onClick={() => handleNav('/privacy-policy')}
+                  className={styles.linkButton}
+                >
                   Privacy Policy
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#" className={styles.link}>
+                <button
+                  onClick={() => handleNav('/terms-and-conditions')}
+                  className={styles.linkButton}
+                >
                   Terms of Service
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#" className={styles.link}>
+                <button
+                  onClick={() => handleNav('/community-guidelines')}
+                  className={styles.linkButton}
+                >
                   Community Guidelines
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#" className={styles.link}>
+                <button
+                  onClick={() => handleNav('/cookie-policy')}
+                  className={styles.linkButton}
+                >
                   Cookie Policy
-                </a>
+                </button>
               </li>
             </ul>
           </div>

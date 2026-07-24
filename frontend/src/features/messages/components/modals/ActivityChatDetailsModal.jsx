@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+
 import { Link } from 'react-router-dom';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import { isImageUrl } from '@shared/utils/avatar';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ActivityChatDetailsModal.module.css';
+import { useData } from '@shared/hooks/useData';
+
 
 export default function ActivityChatDetailsModal({ conversation, onClose, onEndActivity }) {
   const { currentUser } = useAuth();
@@ -32,7 +34,8 @@ export default function ActivityChatDetailsModal({ conversation, onClose, onEndA
   };
 
   // Use conversation participants or fallback to activity participants
-  const participantIds = conversation.participants || activity.participants || [];
+  const rawParticipants = conversation.participants || activity.participants || [];
+  const participantIds = rawParticipants.map(p => p?.userId || p?.id || p);
 
   return (
     <>
@@ -94,7 +97,7 @@ export default function ActivityChatDetailsModal({ conversation, onClose, onEndA
                 return (
                   <Link key={uid} to={`/profile/${userObj.username}`} className={styles.memberItem} onClick={onClose}>
                     {isImageUrl(userObj.avatar) ? (
-                      <img src={userObj.avatar} alt={userObj.name} className={styles.memberAvatar} />
+                      <img src={userObj.avatar} alt={userObj.name} className={styles.memberAvatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                     ) : (
                       <div className={styles.memberAvatar} style={{ background: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <DefaultAvatar />

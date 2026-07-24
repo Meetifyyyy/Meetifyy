@@ -5,8 +5,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-primary);
-  color: #ffffff;
+  background: var(--color-bg-white);
+  color: var(--color-icon-base);
   flex-shrink: 0;
   overflow: hidden;
   font-size: inherit;

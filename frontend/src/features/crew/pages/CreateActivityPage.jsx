@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import styles from './CreateActivityPage.module.css';
-import { useData } from '@shared/context/DataContext';
+
 import ImageSearchModal from '@shared/components/modals/ImageSearchModal';
 import { getRelativeDateLabel } from '@shared/utils/time';
 import {
@@ -10,6 +10,9 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, X, Search, GraduationCap,
   BellOff, ChevronsUpDown, Eye
 } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { activitiesApi } from '@shared/api/apiClient';
+import { useAuth } from '@shared/context/AuthContext';
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS_OF_WEEK = ['S','M','T','W','T','F','S'];
 
@@ -338,7 +341,8 @@ export default function CreateActivityPage() {
   const location = useLocation();
   const prefill = location.state?.prefill || {};
   const returnTo = location.state?.returnTo || '/crew';
-  const { currentUser, addCrewActivity } = useData();
+  const { currentUser } = useAuth();
+  const queryClient = useQueryClient();
   const today = new Date();
 
   const [showImageSearch, setShowImageSearch] = useState(false);
@@ -472,44 +476,36 @@ export default function CreateActivityPage() {
   // Note: We don't block canPublish on isPast because we will auto-correct it on publish
   const canPublish = !!(formData.title.trim() && formData.location.trim() && hasInteractedWithDT && startD && endD && !isEndBeforeStart);
 
+  const createMutation = useMutation({
+    mutationFn: (data) => activitiesApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activities'] });
+      navigate(returnTo);
+    },
+    onError: (err) => {
+      console.error(err);
+      // fallback navigate anyway for UI flow
+      navigate(returnTo);
+    },
+  });
+
   const handlePublish = () => {
     if (!canPublish) return;
     const { startD: finalStart, endD: finalEnd, fd } = getCorrectedDates();
     if (finalEnd <= finalStart) return;
     
-    const dateStr = `${fd.startDateYear}-${String(fd.startDateMonth).padStart(2, '0')}-${String(fd.startDateDay).padStart(2, '0')}`;
-    const timeStr = `${String(fd.startTimeHour).padStart(2, '0')}:${String(fd.startTimeMinute).padStart(2, '0')} ${fd.startTimeAmPm}`;
-    
-    addCrewActivity({
-      id: `crew_${Date.now()}`,
-      hostId: currentUser?.id || 'current_user',
-      hostName: currentUser?.displayName || 'You',
-      hostUsername: currentUser?.username || 'currentUser',
-      hostAvatar: currentUser?.avatar || '',
-      hostCollege: currentUser?.university || 'University',
-      hostVerified: true,
-      category: 'Social',
+    createMutation.mutate({
       title: formData.title,
       description: formData.description,
-      coverImage: formData.coverImage,
-      tags: [],
-      dateLabel: getRelativeDateLabel(dateStr),
-      date: dateStr, 
-      time: timeStr,
-      endDate: `${fd.endDateYear}-${String(fd.endDateMonth).padStart(2, '0')}-${String(fd.endDateDay).padStart(2, '0')}`,
-      endTime: `${String(fd.endTimeHour).padStart(2, '0')}:${String(fd.endTimeMinute).padStart(2, '0')} ${fd.endTimeAmPm}`,
-      duration: getDurationString(finalStart, finalEnd),
       location: fd.location,
-      isOnline: false,
-      participationType: 'open',
-      slotsNeeded: fd.slotsNeeded,
-      slotsFilled: 1,
-      participants: [currentUser?.id || 'current_user'],
-      requests: [],
-      createEventGroup: fd.createEventGroup,
+      maxMembers: fd.slotsNeeded === 999 ? null : fd.slotsNeeded,
+      coverImage: formData.coverImage,
+      createActivityGroup: fd.createEventGroup,
       shareToSchool: fd.whoCanJoin === 'College',
+      hostCollege: currentUser?.college?.name || currentUser?.college || null,
+      startDate: finalStart.toISOString(),
+      endDate: finalEnd.toISOString(),
     });
-    navigate(returnTo);
   };
 
   const fmtDateTime = () => {
@@ -623,6 +619,7 @@ export default function CreateActivityPage() {
               onChange={e => set({ description: e.target.value })}
               placeholder="Add a description"
               rows={4}
+              maxLength={500}
             />
 
             {/* Date & Time button */}

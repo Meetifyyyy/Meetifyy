@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { useData } from '@shared/hooks/useData';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+
 import { useNavigate, useLocation } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
@@ -14,6 +15,7 @@ import {
   Cog6ToothIcon as SettingsOutline,
   ChevronDownIcon,
   ChevronUpIcon,
+  BellIcon as BellOutline,
 } from '@heroicons/react/24/outline';
 import {
   HomeIcon as HomeSolid,
@@ -22,7 +24,9 @@ import {
   UserGroupIcon as CommunitiesSolid,
   UserIcon as ProfileSolid,
   Cog6ToothIcon as SettingsSolid,
+  BellIcon as BellSolid,
 } from '@heroicons/react/24/solid';
+import NotificationBell from '@features/notifications/components/NotificationBell';
 
 const CompassOutline = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
@@ -89,7 +93,7 @@ export default function Sidebar({ onCommunityClick }) {
   const username = currentUser?.username || '';
   
   const joinedCommunityObjects = (currentUser?.communities || []).map(commName => {
-    return Object.values(communities).find(c => c.name === commName) || { name: commName, id: commName.toLowerCase().replace(/\s+/g, ''), avatar: commName.charAt(0) };
+    return communities.find(c => c.name === commName) || { name: commName, id: commName.toLowerCase().replace(/\s+/g, ''), avatar: commName.charAt(0) };
   });
 
   return (
@@ -103,6 +107,7 @@ export default function Sidebar({ onCommunityClick }) {
             href="#"
             className={`${styles.sidebarLink}${location.pathname === '/home' ? ` ${styles.active}` : ''}`}
             onClick={(e) => { e.preventDefault(); navigate('/home'); }}
+            onMouseEnter={() => import('@features/feed/pages/FeedRoute')}
           >
             {location.pathname === '/home' ? (
               <HomeSolid />
@@ -116,6 +121,7 @@ export default function Sidebar({ onCommunityClick }) {
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/feed') || location.pathname.startsWith('/search') ? ` ${styles.active}` : ''}`}
             onClick={(e) => { e.preventDefault(); navigate('/search'); }}
+            onMouseEnter={() => import('@features/search/pages/SearchResultsRoute')}
           >
             {location.pathname.startsWith('/feed') || location.pathname.startsWith('/search') ? (
               <SearchSolid />
@@ -129,6 +135,7 @@ export default function Sidebar({ onCommunityClick }) {
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/messages') ? ` ${styles.active}` : ''}`}
             onClick={(e) => { e.preventDefault(); navigate('/messages'); }}
+            onMouseEnter={() => import('@features/messages/pages/MessagesRoute')}
           >
             {location.pathname.startsWith('/messages') ? (
               <MessagesSolid />
@@ -142,6 +149,7 @@ export default function Sidebar({ onCommunityClick }) {
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/campus') ? ` ${styles.active}` : ''}`}
             onClick={(e) => { e.preventDefault(); navigate('/campus'); }}
+            onMouseEnter={() => import('@features/campus/pages/CampusPage')}
           >
             {location.pathname.startsWith('/campus') ? (
               <CampusSolid />
@@ -155,6 +163,7 @@ export default function Sidebar({ onCommunityClick }) {
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/crew') ? ` ${styles.active}` : ''}`}
             onClick={(e) => { e.preventDefault(); navigate('/crew'); }}
+            onMouseEnter={() => import('@features/crew/pages/FindYourCrewPage')}
           >
             {location.pathname.startsWith('/crew') ? (
               <CompassSolid />
@@ -163,11 +172,25 @@ export default function Sidebar({ onCommunityClick }) {
             )}
             <span className={styles.linkText}>Find your crew</span>
           </a>
+
+          <a
+            href="#"
+            className={`${styles.sidebarLink}${location.pathname.startsWith('/notifications') ? ` ${styles.active}` : ''}`}
+            onClick={(e) => { e.preventDefault(); navigate('/notifications'); }}
+          >
+            {location.pathname.startsWith('/notifications') ? (
+              <BellSolid />
+            ) : (
+              <BellOutline />
+            )}
+            <span className={styles.linkText}>Notifications</span>
+          </a>
           
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/profile') ? ` ${styles.active}` : ''}`}
             onClick={(e) => { e.preventDefault(); navigate(`/profile/${username}`); }}
+            onMouseEnter={() => import('@features/profile/pages/ProfilePage')}
           >
             {location.pathname.startsWith('/profile') ? (
               <ProfileSolid />
@@ -181,6 +204,7 @@ export default function Sidebar({ onCommunityClick }) {
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/settings') ? ` ${styles.active}` : ''}`}
             onClick={(e) => { e.preventDefault(); navigate('/settings'); }}
+            onMouseEnter={() => import('@features/settings/pages/SettingsRoute')}
           >
             {location.pathname.startsWith('/settings') ? (
               <SettingsSolid />

@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useData } from '@shared/context/DataContext';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
+import { useQuery } from '@tanstack/react-query';
+import { messagesApi } from '@shared/api/apiClient';
 import styles from './ShareActivityModal.module.css';
 
 export default function ShareActivityModal({ isOpen, onClose, activity }) {
@@ -10,7 +11,7 @@ export default function ShareActivityModal({ isOpen, onClose, activity }) {
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
   
-  const { conversations, sendDirectMessage } = useData();
+  const { data: conversations = [] } = useQuery({ queryKey: ['conversations'], queryFn: messagesApi.getConversations });
 
   const handleCopyLink = () => {
     const link = `${window.location.origin}/activity/${activity.id}`;
@@ -21,7 +22,7 @@ export default function ShareActivityModal({ isOpen, onClose, activity }) {
   };
 
   const handleSend = (convId) => {
-    sendDirectMessage(convId, '', null, { 
+    messagesApi.sendDirectMessage(convId, '', null, { 
       type: 'activityShare', 
       activity: { 
         id: activity.id, 
@@ -93,7 +94,7 @@ export default function ShareActivityModal({ isOpen, onClose, activity }) {
                 <div key={conv.id} className={styles.listItem}>
                   <div className={styles.contactInfo}>
                     {isImageUrl(conv.avatar) ? (
-                      <img src={conv.avatar} alt={conv.name} className={styles.avatar} />
+                      <img src={conv.avatar} alt={conv.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                     ) : (
                       <DefaultAvatar size={40} className={styles.avatar} />
                     )}

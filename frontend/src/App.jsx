@@ -4,9 +4,8 @@ import { SmartBackTracker } from './shared/hooks/useSmartBack';
 import { useAuth } from './shared/context/AuthContext';
 import DashboardLayoutWrapper from './layout/DashboardLayoutWrapper';
 import ErrorBoundary, { RouteErrorBoundary } from './shared/components/ErrorBoundary';
-import InstallPopup from './shared/components/ui/InstallPopup';
-import PageShellSkeleton from './shared/components/skeletons/PageShellSkeleton';
-import DashboardContentSkeleton from './shared/components/skeletons/DashboardContentSkeleton';
+import SocketManager from './shared/components/SocketManager';
+
 import HomeSkeleton from './features/feed/components/skeletons/HomeSkeleton';
 import ProfilePageSkeleton from './features/profile/components/skeletons/ProfilePageSkeleton';
 import MessagesSkeleton from './features/messages/components/skeletons/MessagesSkeleton';
@@ -18,35 +17,61 @@ import SearchSkeleton from './features/search/components/skeletons/SearchSkeleto
 import SettingsSkeleton from './features/settings/components/skeletons/SettingsSkeleton';
 import SavedPageSkeleton from './features/feed/components/skeletons/SavedPageSkeleton';
 
+function lazyWithRetry(componentImport) {
+  return lazy(async () => {
+    const pageHasAlreadyBeenReloaded = JSON.parse(
+      window.sessionStorage.getItem('page_reloaded_on_chunk_error') || 'false'
+    );
+    try {
+      const component = await componentImport();
+      window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'false');
+      return component;
+    } catch (error) {
+      if (!pageHasAlreadyBeenReloaded) {
+        window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'true');
+        window.location.reload();
+      }
+      throw error;
+    }
+  });
+}
+
 import LandingPage from './features/auth/pages/LandingPage';
-const FeedRoute = lazy(() => import('./features/feed/pages/FeedRoute'));
-const CommunitiesRoute = lazy(() => import('./features/communities/pages/CommunitiesRoute'));
-const CommunityDetailRoute = lazy(() => import('./features/communities/pages/CommunityDetailRoute'));
-const PostDetailRoute = lazy(() => import('./features/feed/pages/PostDetailRoute'));
-const MessagesRoute = lazy(() => import('./features/messages/pages/MessagesRoute'));
-const ProfilePage = lazy(() => import('./features/profile/pages/ProfilePage'));
-const SearchResultsRoute = lazy(() => import('./features/search/pages/SearchResultsRoute'));
-const LoginPage = lazy(() => import('./features/auth/pages/LoginPage'));
-const SignupPage = lazy(() => import('./features/auth/pages/SignupPage'));
-const ForgotPasswordPage = lazy(() => import('./features/auth/pages/ForgotPasswordPage'));
-const OnboardingRoute = lazy(() => import('./features/onboarding/pages/OnboardingRoute'));
-const SettingsRoute = lazy(() => import('./features/settings/pages/SettingsRoute'));
-const FindYourCrewPage = lazy(() => import('./features/crew/pages/FindYourCrewPage'));
-const ActivityDetailPage = lazy(() => import('./features/crew/pages/ActivityDetailPage'));
-const CreateActivityPage = lazy(() => import('./features/crew/pages/CreateActivityPage'));
-const NotificationsRoute = lazy(() => import('./features/notifications/pages/NotificationsRoute'));
-const CampusPage = lazy(() => import('./features/campus/pages/CampusPage'));
-const DirectoryPage = lazy(() => import('./features/campus/pages/DirectoryPage'));
-const ActivitiesPage = lazy(() => import('./features/campus/pages/ActivitiesPage'));
-const GroupsPage = lazy(() => import('./features/campus/pages/GroupsPage'));
-const SavedPage = lazy(() => import('./features/feed/pages/SavedPage'));
+const FeedRoute = lazyWithRetry(() => import('./features/feed/pages/FeedRoute'));
+const CommunitiesRoute = lazyWithRetry(() => import('./features/communities/pages/CommunitiesRoute'));
+const CommunityDetailRoute = lazyWithRetry(() => import('./features/communities/pages/CommunityDetailRoute'));
+const PostDetailRoute = lazyWithRetry(() => import('./features/feed/pages/PostDetailRoute'));
+const MessagesRoute = lazyWithRetry(() => import('./features/messages/pages/MessagesRoute'));
+const ProfilePage = lazyWithRetry(() => import('./features/profile/pages/ProfilePage'));
+const SearchResultsRoute = lazyWithRetry(() => import('./features/search/pages/SearchResultsRoute'));
+const LoginPage = lazyWithRetry(() => import('./features/auth/pages/LoginPage'));
+const SignupPage = lazyWithRetry(() => import('./features/auth/pages/SignupPage'));
+const ForgotPasswordPage = lazyWithRetry(() => import('./features/auth/pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazyWithRetry(() => import('./features/auth/pages/ResetPasswordPage'));
+const OnboardingRoute = lazyWithRetry(() => import('./features/onboarding/pages/OnboardingRoute'));
+const SettingsRoute = lazyWithRetry(() => import('./features/settings/pages/SettingsRoute'));
+const FindYourCrewPage = lazyWithRetry(() => import('./features/crew/pages/FindYourCrewPage'));
+const ActivityDetailPage = lazyWithRetry(() => import('./features/crew/pages/ActivityDetailPage'));
+const CreateActivityPage = lazyWithRetry(() => import('./features/crew/pages/CreateActivityPage'));
+const NotificationsRoute = lazyWithRetry(() => import('./features/notifications/pages/NotificationsRoute'));
+const CampusPage = lazyWithRetry(() => import('./features/campus/pages/CampusPage'));
+const DirectoryPage = lazyWithRetry(() => import('./features/campus/pages/DirectoryPage'));
+const ActivitiesPage = lazyWithRetry(() => import('./features/campus/pages/ActivitiesPage'));
+const GroupsPage = lazyWithRetry(() => import('./features/campus/pages/GroupsPage'));
+const SavedPage = lazyWithRetry(() => import('./features/feed/pages/SavedPage'));
+const AboutPage = lazyWithRetry(() => import('./features/info/pages/AboutPage'));
+const CommunityGuidelinesPage = lazyWithRetry(() => import('./features/info/pages/CommunityGuidelinesPage'));
+const CookiePolicyPage = lazyWithRetry(() => import('./features/info/pages/CookiePolicyPage'));
+const PrivacyPolicyPage = lazyWithRetry(() => import('./features/info/pages/PrivacyPolicyPage'));
+const TermsPage = lazyWithRetry(() => import('./features/info/pages/TermsPage'));
+const ContactPage = lazyWithRetry(() => import('./features/info/pages/ContactPage'));
 
 /**
  * Wraps a route element with a scoped error boundary and suspense fallback.
  * @param {JSX.Element} element - The route element to wrap.
  * @param {JSX.Element} [fallback] - Custom skeleton. Defaults to full-page shell for public routes.
  */
-function withBoundary(element, fallback = <PageShellSkeleton />) {
+function withBoundary(element, fallback = null) {
   return (
     <RouteErrorBoundary>
       <Suspense fallback={fallback}>
@@ -57,16 +82,24 @@ function withBoundary(element, fallback = <PageShellSkeleton />) {
 }
 
 function ProtectedRoute({ children }) {
-  const { isLoggedIn, currentUser } = useAuth();
+  const { isLoggedIn, currentUser, loading } = useAuth();
   const location = useLocation();
+  if (loading) return null;
   if (!isLoggedIn) return <Navigate to="/" replace state={{ from: location }} />;
-  if (currentUser?.isNewUser && location.pathname !== '/onboarding') return <Navigate to="/onboarding" replace />;
+  if (currentUser?.isNewUser && location.pathname !== '/onboarding' && location.pathname !== '/signup') return <Navigate to="/onboarding" replace />;
   return children;
 }
 
 function PublicRoute({ children }) {
-  const { isLoggedIn } = useAuth();
-  if (isLoggedIn) return <Navigate to="/home" replace />;
+  const { isLoggedIn, currentUser, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return null;
+  if (isLoggedIn) {
+    if (currentUser?.isNewUser && location.pathname === '/signup') {
+      return children;
+    }
+    return <Navigate to="/home" replace />;
+  }
   return children;
 }
 
@@ -108,6 +141,10 @@ function NotFound() {
  * on one page never unmounts the surrounding shell (header, sidebar, bottom nav).
  */
 export default function App() {
+  // NOTE: This router is created inside the App component using useMemo so that
+  // nested route elements and hooks (like ProtectedRoute, SocketManager) can
+  // safely consume context from AuthProvider, which wraps App in main.jsx.
+  // Do not restructure App to wrap AuthProvider; outer context must remain wrapper.
   const router = useMemo(() => createBrowserRouter([
     {
       path: '/',
@@ -115,7 +152,7 @@ export default function App() {
         <ErrorBoundary>
           <SmartBackTracker />
           <ScrollRestoration />
-          <InstallPopup />
+          <SocketManager />
           <Outlet />
         </ErrorBoundary>
       ),
@@ -153,6 +190,42 @@ export default function App() {
           ),
         },
         {
+          path: '/reset-password',
+          element: (
+            <PublicRoute>
+              {withBoundary(<ResetPasswordPage />)}
+            </PublicRoute>
+          ),
+        },
+        {
+          path: '/about',
+          element: withBoundary(<AboutPage />, null),
+        },
+        {
+          path: '/privacy-policy',
+          element: withBoundary(<PrivacyPolicyPage />, null),
+        },
+        {
+          path: '/terms-and-conditions',
+          element: withBoundary(<TermsPage />, null),
+        },
+        {
+          path: '/terms',
+          element: <Navigate to="/terms-and-conditions" replace />,
+        },
+        {
+          path: '/community-guidelines',
+          element: withBoundary(<CommunityGuidelinesPage />, null),
+        },
+        {
+          path: '/cookie-policy',
+          element: withBoundary(<CookiePolicyPage />, null),
+        },
+        {
+          path: '/contact',
+          element: withBoundary(<ContactPage />, null),
+        },
+        {
           element: (
             <ProtectedRoute>
               <Outlet />
@@ -166,19 +239,19 @@ export default function App() {
             { path: '/home',                       element: withBoundary(<FeedRoute />, <HomeSkeleton />) },
             { path: '/search',                     element: withBoundary(<SearchResultsRoute />, <SearchSkeleton />), handle: { wide: true } },
             { path: '/communities',                element: withBoundary(<CommunitiesRoute />, <CommunitiesSkeleton />), handle: { wide: true } },
-            { path: '/communities/:id',            element: withBoundary(<CommunityDetailRoute />, <DashboardContentSkeleton />), handle: { wide: true } },
+            { path: '/communities/:id',            element: withBoundary(<CommunityDetailRoute />, null), handle: { wide: true } },
             { path: '/messages/:conversationId?',  element: withBoundary(<MessagesRoute />, <MessagesSkeleton />), handle: { wide: true } },
-            { path: '/post/:id',                   element: withBoundary(<PostDetailRoute />, <DashboardContentSkeleton />) },
+            { path: '/post/:id',                   element: withBoundary(<PostDetailRoute />, null) },
             { path: '/profile/:profileUsername?',  element: withBoundary(<ProfilePage />, <ProfilePageSkeleton />), handle: { wide: true } },
-            { path: '/settings',                   element: withBoundary(<SettingsRoute />, <SettingsSkeleton />), handle: { wide: true } },
+            { path: '/settings',                   element: withBoundary(<SettingsRoute />, <SettingsSkeleton />) },
             { path: '/notifications',              element: withBoundary(<NotificationsRoute />, <NotificationsSkeleton />), handle: { wide: true } },
             { path: '/campus',                     element: withBoundary(<CampusPage />, <CampusSkeleton />), handle: { wide: true } },
-            { path: '/campus/directory',           element: withBoundary(<DirectoryPage />, <DashboardContentSkeleton />), handle: { wide: true } },
-            { path: '/campus/activities',          element: withBoundary(<ActivitiesPage />, <DashboardContentSkeleton />), handle: { wide: true } },
-            { path: '/campus/groups',              element: withBoundary(<GroupsPage />, <DashboardContentSkeleton />), handle: { wide: true } },
+            { path: '/campus/directory',           element: withBoundary(<DirectoryPage />, null), handle: { wide: true } },
+            { path: '/campus/activities',          element: withBoundary(<ActivitiesPage />, null), handle: { wide: true } },
+            { path: '/campus/groups',              element: withBoundary(<GroupsPage />, null), handle: { wide: true } },
             { path: '/crew',                       element: withBoundary(<FindYourCrewPage />, <CrewSkeleton />), handle: { wide: true } },
-            { path: '/crew/create',                element: withBoundary(<CreateActivityPage />, <DashboardContentSkeleton />), handle: { wide: true } },
-            { path: '/crew/:id',                   element: withBoundary(<ActivityDetailPage />, <DashboardContentSkeleton />), handle: { wide: true } },
+            { path: '/crew/create',                element: withBoundary(<CreateActivityPage />, null), handle: { wide: true } },
+            { path: '/crew/:id',                   element: withBoundary(<ActivityDetailPage />, null), handle: { wide: true } },
             { path: '/saved',                      element: withBoundary(<SavedPage />, <SavedPageSkeleton />) },
             { path: '*',                           element: withBoundary(<NotFound />) },
           ],
@@ -188,7 +261,11 @@ export default function App() {
   ],
 },
 { path: '*', element: <Navigate to="/" replace /> },
-]), []);
+], {
+  future: {
+    v7_startTransition: true,
+  }
+}), []);
 
   return <RouterProvider router={router} />;
 }

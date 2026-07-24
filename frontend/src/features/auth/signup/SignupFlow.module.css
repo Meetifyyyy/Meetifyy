@@ -69,7 +69,7 @@
   position: relative;
   padding: 0;
   overflow: hidden;
-  background: #ffffff;
+  background: #e8f1fb;
 }
 
 /* Login Illustration Elements */
@@ -86,7 +86,8 @@
 .loginIllustration {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   display: block;
   box-sizing: border-box;
 }
@@ -295,10 +296,14 @@
 
 .dateSelect {
   width: 100%;
+  height: 48px;
+  min-height: 48px;
+  max-height: 48px;
+  box-sizing: border-box;
   appearance: none;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 500;
-  padding: 0.75rem 1rem;
+  padding: 0 0.85rem;
   background-color: var(--color-bg-white, #ffffff);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md, 12px);
@@ -325,6 +330,7 @@
 .customSelectContainer {
   position: relative;
   flex: 1;
+  min-width: 0;
 }
 
 .customSelectList {

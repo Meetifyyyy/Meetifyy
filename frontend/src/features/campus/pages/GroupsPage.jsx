@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+import { communitiesApi } from '@shared/api/apiClient';
+
 import { useTheme } from '@shared/context/ThemeContext';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -11,13 +12,48 @@ import pageStyles from './GroupsPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import { Plus, Search, ArrowLeft, Users } from 'lucide-react';
 import GroupCreationModal from '@shared/components/modals/GroupCreationModal';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useData } from '@shared/hooks/useData';
 
 export default function GroupsPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
-  const { campusGroups, toggleJoinCampusGroup, createCampusGroup, requestToJoinGroup } = useData();
+  const queryClient = useQueryClient();
   const { theme } = useTheme();
+
+  const joinMutation = useMutation({
+    mutationFn: (id) => communitiesApi.join(id),
+    onSuccess: () => queryClient.invalidateQueries(['communities']),
+  });
+
+  const leaveMutation = useMutation({
+    mutationFn: (id) => communitiesApi.leave(id),
+    onSuccess: () => queryClient.invalidateQueries(['communities']),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data) => communitiesApi.create(data),
+    onSuccess: () => queryClient.invalidateQueries(['communities']),
+  });
+
+  const toggleJoinCampusGroup = (id) => {
+    const isJoined = currentUser?.campusGroups?.map(String).includes(String(id));
+    if (isJoined) {
+      leaveMutation.mutate(id);
+    } else {
+      joinMutation.mutate(id);
+    }
+  };
+
+  const { createCampusGroup, requestToJoinGroup } = useData();
+
+  const { data: communitiesData = [] } = useQuery({ 
+    queryKey: ['communities'], 
+    queryFn: communitiesApi.getAll 
+  });
+  
+  const campusGroups = communitiesData;
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -29,7 +65,7 @@ export default function GroupsPage() {
   const userCollegeId = currentUser?.collegeId || 'gla';
 
   const collegeGroups = useMemo(() => {
-    let list = Object.values(campusGroups).filter(c => c.collegeId === userCollegeId);
+    let list = campusGroups.filter(c => c.collegeId === userCollegeId);
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();

@@ -51,8 +51,34 @@
   aspect-ratio: 3 / 1;
   background-size: cover;
   background-position: center;
-  background-color: var(--color-bg-soft);
+  background-color: var(--color-bg-white);
 }
+
+.editCoverBtn {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.85rem;
+  background: rgba(0, 0, 0, 0.48);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 10;
+  backdrop-filter: blur(6px);
+  transition: background 0.18s, transform 0.15s;
+}
+
+.editCoverBtn:hover {
+  background: rgba(0, 0, 0, 0.64);
+  transform: translateY(-1px);
+}
+
 
 .mobileMenuBtn,
 .mobileBackBtn {
@@ -228,7 +254,7 @@
   width: 100%;
   margin-bottom: 1.25rem;
   overflow-x: auto;
-  align-items: flex-start;
+  align-items: stretch;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge */
   padding: 0 0.5rem; /* add a little safe padding on the sides */
@@ -242,14 +268,15 @@
   display: flex;
   gap: 0.5rem;
   width: max-content;
+  margin: 0 auto;
 }
 
 .tag {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  background: var(--color-bg-soft);
-  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
   border-radius: 100px;
   padding: 0.35rem 0.8rem;
   font-size: 0.8rem;
@@ -260,7 +287,17 @@
 
 .tag:hover {
   background: var(--color-bg-hover);
-  border-color: var(--color-border);
+  border-color: var(--color-text-muted);
+}
+
+.fixedTag {
+  background: var(--color-bg-white) !important;
+  border-color: var(--color-border) !important;
+}
+
+.fixedTag:hover {
+  background: var(--color-bg-hover) !important;
+  border-color: var(--color-text-muted) !important;
 }
 
 /* ── Stats row ── */

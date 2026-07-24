@@ -420,8 +420,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-primary);
-  color: white;
+  background: var(--color-bg-alt, #f1f5f9);
+  color: var(--color-text-main);
   font-size: 9px;
   font-weight: 700;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
@@ -811,6 +811,90 @@
   display: flex;
   flex-direction: column;
   width: 100%;
+}
+
+.emptyCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 3rem 1.5rem;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl, 16px);
+  margin: 1.5rem 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.emptyBadge {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(var(--color-primary-rgb, 37, 99, 235), 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+.emptyTitle {
+  font-family: var(--font-family-display);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  margin: 0 0 0.5rem;
+}
+
+.emptySubtitle {
+  font-family: var(--font-family-sans);
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  max-width: 400px;
+  margin: 0 0 1.5rem;
+  line-height: 1.5;
+}
+
+.emptyActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.emptyBtnPrimary {
+  background: var(--color-primary);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  padding: 0.6rem 1.2rem;
+  font-family: var(--font-family-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.emptyBtnPrimary:hover {
+  opacity: 0.9;
+}
+
+.emptyBtnSecondary {
+  background: transparent;
+  color: var(--color-text-main);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  padding: 0.6rem 1.2rem;
+  font-family: var(--font-family-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.emptyBtnSecondary:hover {
+  background: var(--color-bg-soft);
 }
 
 .empty {

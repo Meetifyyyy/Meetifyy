@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useData } from '@shared/context/DataContext';
+
 import { showToast } from '@shared/utils/toast';
 import styles from './CreateCommunityModal.module.css';
+import { useData } from '@shared/hooks/useData';
+import { useR2Upload } from '@shared/hooks/useR2Upload';
 
 const colors26 = [
   'linear-gradient(135deg, #FF6B6B, #FF8E53)',
@@ -70,6 +72,7 @@ const categories = [
 
 export default function CreateCommunityModal({ onClose, onCreated }) {
   const { addCommunity } = useData();
+  const { upload: uploadCommunityIcon } = useR2Upload('community-icons');
 
   // Wizard Steps state
   const [step, setStep] = useState(1);
@@ -189,8 +192,8 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
     }
   }, [imageSize]);
 
-  // Export base64 cropped source from canvas
-  const getCroppedAvatarUrl = () => {
+  // Export File Blob from canvas
+  const getCroppedAvatarFile = () => {
     return new Promise((resolve) => {
       if (!avatarPreview) {
         resolve(null);
@@ -219,7 +222,14 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
         const targetY = 128 + cropState.y * scaleFactor - targetH / 2;
 
         ctx.drawImage(img, targetX, targetY, targetW, targetH);
-        resolve(canvas.toDataURL('image/jpeg', 0.9));
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            resolve(null);
+            return;
+          }
+          const file = new File([blob], 'community-avatar.jpg', { type: 'image/jpeg' });
+          resolve(file);
+        }, 'image/jpeg', 0.9);
       };
       img.onerror = () => {
         resolve(null);
@@ -238,9 +248,9 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
       let hasCustomAvatar = false;
 
       if (avatarPreview) {
-        const croppedBase64 = await getCroppedAvatarUrl();
-        if (croppedBase64) {
-          finalAvatar = croppedBase64;
+        const croppedFile = await getCroppedAvatarFile();
+        if (croppedFile) {
+          finalAvatar = await uploadCommunityIcon(croppedFile);
           hasCustomAvatar = true;
         }
       }
@@ -334,40 +344,38 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
             <>
               <div className={styles.stepTitleGroup}>
                 <h3 className={styles.stepTitle}>Create your community</h3>
-                <p className={styles.stepSubtitle}>Start with a name and a short description to help others discover and join your community.</p>
+                <p className={styles.stepSubtitle}>Choose a name and description that clearly explains your community.</p>
               </div>
 
               <div className={styles.fieldGroup}>
-                <input
-                  id="community-name-input"
-                  ref={nameInputRef}
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder=" "
-                  maxLength={30}
-                  className={styles.textInput}
-                />
-                <label htmlFor="community-name-input" className={styles.fieldLabel}>Community Name</label>
-                <div className={styles.counterRow}>
-                  <span>{name.length} / 30</span>
+                <label className={styles.fieldLabel}>Name</label>
+                <div className={styles.inputWrap}>
+                  <input
+                    ref={nameInputRef}
+                    type="text"
+                    placeholder="e.g. Design Enthusiasts"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    maxLength={30}
+                    className={styles.textInput}
+                  />
+                  <span className={styles.charCounter}>{name.length}/30</span>
                 </div>
               </div>
 
               <div className={styles.fieldGroup}>
-                <textarea
-                  id="community-desc-input"
-                  value={desc}
-                  onChange={(e) => setDesc(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder=" "
-                  maxLength={250}
-                  className={styles.textareaInput}
-                />
-                <label htmlFor="community-desc-input" className={styles.textareaLabel}>Description</label>
-                <div className={styles.counterRow}>
-                  <span>{desc.length} / 250</span>
+                <label className={styles.fieldLabel}>Description</label>
+                <div className={styles.inputWrap}>
+                  <textarea
+                    placeholder="What is this community about?"
+                    value={desc}
+                    onChange={(e) => setDesc(e.target.value)}
+                    rows={3}
+                    maxLength={250}
+                    className={styles.textArea}
+                  />
+                  <span className={styles.charCounter}>{desc.length}/250</span>
                 </div>
               </div>
             </>
@@ -376,77 +384,60 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
           {step === 3 && (
             <>
               <div className={styles.stepTitleGroup}>
-                <h3 className={styles.stepTitle}>Who can join your community?</h3>
-                <p className={styles.stepSubtitle}>Choose who can become a member. You can change this later.</p>
+                <h3 className={styles.stepTitle}>Set an icon for your community</h3>
+                <p className={styles.stepSubtitle}>Upload an image or keep the default gradient icon.</p>
               </div>
 
-              <div className={styles.privacyContainer}>
-                <div
-                  onClick={() => setPrivacy('public')}
-                  className={`${styles.privacyCard} ${privacy === 'public' ? styles.privacyCardSelected : ''}`}
-                >
-                  <span className={styles.privacyIcon}>🌍</span>
-                  <div className={styles.privacyText}>
-                    <span className={styles.privacyLabel}>Public</span>
-                    <span className={styles.privacyDesc}>Anyone can discover and join your community instantly.</span>
-                  </div>
-                  <div className={styles.radioCircle}>
-                    <div className={styles.radioDot} />
-                  </div>
-                </div>
+              <div className={styles.fieldGroup} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  style={{ display: 'none' }}
+                  onChange={handleFileChange}
+                />
 
-                <div
-                  onClick={() => setPrivacy('private')}
-                  className={`${styles.privacyCard} ${privacy === 'private' ? styles.privacyCardSelected : ''}`}
-                >
-                  <span className={styles.privacyIcon}>🔒</span>
-                  <div className={styles.privacyText}>
-                    <span className={styles.privacyLabel}>Private</span>
-                    <span className={styles.privacyDesc}>People must send a join request, and admins approve new members.</span>
+                {!avatarPreview ? (
+                  <div
+                    className={styles.avatarPreviewPlaceholder}
+                    style={{ background: gradient }}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <span className={styles.avatarPreviewLetter}>
+                      {name.trim() ? name.trim().charAt(0).toUpperCase() : '?'}
+                    </span>
+                    <div className={styles.avatarPreviewOverlay}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                        <circle cx="12" cy="13" r="4" />
+                      </svg>
+                    </div>
                   </div>
-                  <div className={styles.radioCircle}>
-                    <div className={styles.radioDot} />
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-
-          {step === 4 && (
-            <>
-              <div className={styles.stepTitleGroup}>
-                <h3 className={styles.stepTitle}>Choose a community avatar</h3>
-                <p className={styles.stepSubtitle}>Upload an image or keep the auto-generated letter avatar.</p>
-              </div>
-
-              <div className={styles.avatarSection}>
-                {avatarPreview ? (
-                  <>
-                    <div 
-                      className={styles.avatarCropperContainer}
-                      onTouchStart={handleDragStart}
-                      onTouchMove={handleDragMove}
-                      onTouchEnd={handleDragEnd}
+                ) : (
+                  <div className={styles.cropperContainer}>
+                    <div
+                      className={styles.cropWindow}
                       onMouseDown={handleDragStart}
                       onMouseMove={handleDragMove}
                       onMouseUp={handleDragEnd}
                       onMouseLeave={handleDragEnd}
+                      onTouchStart={handleDragStart}
+                      onTouchMove={handleDragMove}
+                      onTouchEnd={handleDragEnd}
                     >
-                      <div className={styles.cropperWrapper}>
-                        <img
-                          src={avatarPreview}
-                          alt="Preview"
-                          className={styles.cropperImage}
-                          style={{
-                            width: `${baseDimensions.w}px`,
-                            height: `${baseDimensions.h}px`,
-                            transform: `translate(calc(-50% + ${cropState.x}px), calc(-50% + ${cropState.y}px)) scale(${cropState.zoom})`
-                          }}
-                        />
-                      </div>
+                      <img
+                        src={avatarPreview}
+                        alt="Crop preview"
+                        className={styles.cropImg}
+                        style={{
+                          width: `${baseDimensions.w}px`,
+                          height: `${baseDimensions.h}px`,
+                          transform: `translate(${cropState.x}px, ${cropState.y}px) scale(${cropState.zoom})`
+                        }}
+                       onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                     </div>
-                    <div className={styles.zoomSliderRow}>
-                      <span className={styles.zoomIcon}>➖</span>
+                    <div className={styles.cropControls}>
+                      <label className={styles.zoomLabel}>Zoom</label>
                       <input
                         type="range"
                         min="1"
@@ -454,86 +445,90 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
                         step="0.05"
                         value={cropState.zoom}
                         onChange={(e) => setCropState(prev => ({ ...prev, zoom: parseFloat(e.target.value) }))}
-                        className={styles.zoomInput}
+                        className={styles.zoomRange}
                       />
-                      <span className={styles.zoomIcon}>➕</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAvatarPreview(null);
+                          setAvatarFile(null);
+                        }}
+                        className={styles.removePhotoBtn}
+                      >
+                        Remove photo
+                      </button>
                     </div>
-                  </>
-                ) : (
-                  <div 
-                    className={styles.letterAvatar}
-                    style={{ background: gradient }}
-                  >
-                    {name.trim() ? name.trim().charAt(0).toUpperCase() : '?'}
                   </div>
                 )}
+              </div>
+            </>
+          )}
+
+          {step === 4 && (
+            <>
+              <div className={styles.stepTitleGroup}>
+                <h3 className={styles.stepTitle}>Who can join?</h3>
+                <p className={styles.stepSubtitle}>Choose privacy settings for your community.</p>
+              </div>
+
+              <div className={styles.privacyOptions}>
+                <button
+                  type="button"
+                  onClick={() => setPrivacy('public')}
+                  className={`${styles.privacyCard} ${privacy === 'public' ? styles.privacyCardSelected : ''}`}
+                >
+                  <div className={styles.privacyIcon}>🌐</div>
+                  <div className={styles.privacyDetails}>
+                    <div className={styles.privacyName}>Public</div>
+                    <div className={styles.privacyDesc}>Anyone can view and join this community.</div>
+                  </div>
+                </button>
 
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className={styles.uploadTriggerButton}
+                  onClick={() => setPrivacy('private')}
+                  className={`${styles.privacyCard} ${privacy === 'private' ? styles.privacyCardSelected : ''}`}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={styles.uploadTriggerIcon}>
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="17 8 12 3 7 8" />
-                    <line x1="12" y1="3" x2="12" y2="15" />
-                  </svg>
-                  <span>{avatarPreview ? 'Change avatar' : 'Upload avatar'}</span>
+                  <div className={styles.privacyIcon}>🔒</div>
+                  <div className={styles.privacyDetails}>
+                    <div className={styles.privacyName}>Private</div>
+                    <div className={styles.privacyDesc}>Only approved members can view posts and join.</div>
+                  </div>
                 </button>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={handleFileChange}
-                  className={styles.avatarInput}
-                />
               </div>
             </>
           )}
         </div>
 
-        {/* Footer with dots and pill buttons */}
+        {/* Footer Navigation */}
         <div className={styles.footer}>
-          {/* Dot indicators progress */}
-          <div className={styles.dotsProgress}>
-            <div className={`${styles.dot} ${step === 1 ? styles.dotActive : ''}`} />
-            <div className={`${styles.dot} ${step === 2 ? styles.dotActive : ''}`} />
-            <div className={`${styles.dot} ${step === 3 ? styles.dotActive : ''}`} />
-            <div className={`${styles.dot} ${step === 4 ? styles.dotActive : ''}`} />
-          </div>
+          {step > 1 ? (
+            <button type="button" onClick={() => setStep(step - 1)} className={styles.backBtn}>
+              Back
+            </button>
+          ) : (
+            <div />
+          )}
 
-          <div className={styles.buttonGroup}>
-            {step === 1 ? (
-              <button type="button" onClick={onClose} className={styles.buttonCancel}>
-                Cancel
-              </button>
-            ) : (
-              <button type="button" onClick={() => setStep(prev => prev - 1)} className={styles.buttonBack}>
-                Back
-              </button>
-            )}
-
-            {step < 4 ? (
-              <button
-                type="button"
-                onClick={handleContinue}
-                disabled={step === 1 ? !isCategoryValid : !isStep2Valid}
-                className={styles.buttonContinue}
-              >
-                Next
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => handleSubmit()}
-                disabled={isSubmitting || !isCategoryValid || !isStep2Valid}
-                className={styles.buttonCreate}
-              >
-                {isSubmitting ? 'Creating...' : 'Create'}
-              </button>
-            )}
-          </div>
+          {step < 4 ? (
+            <button
+              type="button"
+              onClick={handleContinue}
+              disabled={step === 1 ? !isCategoryValid : !isStep2Valid}
+              className={styles.continueBtn}
+            >
+              Continue
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className={styles.submitBtn}
+            >
+              {isSubmitting ? 'Creating...' : 'Create Community'}
+            </button>
+          )}
         </div>
       </div>
     </div>,

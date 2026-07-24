@@ -4,10 +4,13 @@ import { ArrowLeft, Check, Camera, RefreshCw } from 'lucide-react';
 import { GROUP_NAME_MIN_LENGTH, GROUP_NAME_MAX_LENGTH, GROUP_DESC_MAX_LENGTH } from '@/constants/group';
 import styles from './GroupCreationModal.module.css';
 
-export default function GroupCreationModal({ onClose, onCreate, isDark = true }) {
+import { useR2Upload } from '@shared/hooks/useR2Upload';
+
+export default function GroupCreationModal({ isOpen, onClose, onCreate }) {
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [avatar, setAvatar] = useState(null);
+  const [avatarFile, setAvatarFile] = useState(null);
   
   // Crop / Preview states
   const [cropSrc, setCropSrc] = useState(null);
@@ -21,6 +24,7 @@ export default function GroupCreationModal({ onClose, onCreate, isDark = true })
   const [showSuccess, setShowSuccess] = useState(false);
 
   const fileInputRef = useRef(null);
+  const { upload: uploadGroupIcon } = useR2Upload('group-icons');
 
   const handleAvatarClick = () => {
     if (isSubmitting || showSuccess) return;
@@ -30,13 +34,21 @@ export default function GroupCreationModal({ onClose, onCreate, isDark = true })
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setCropSrc(event.target.result);
-        setShowCropModal(true);
-        setZoom(1);
-      };
-      reader.readAsDataURL(file);
+      const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+      if (file.size > MAX_SIZE) {
+        alert('Image too large. Maximum size is 10 MB.');
+        e.target.value = '';
+        return;
+      }
+      if (!file.type.startsWith('image/')) {
+        alert('Only image files are allowed.');
+        e.target.value = '';
+        return;
+      }
+      setAvatarFile(file);
+      setCropSrc(URL.createObjectURL(file));
+      setShowCropModal(true);
+      setZoom(1);
     }
     e.target.value = '';
   };
@@ -56,23 +68,20 @@ export default function GroupCreationModal({ onClose, onCreate, isDark = true })
     setUploadProgress(10);
 
     try {
-      // Simulate image upload progress if avatar is selected
-      if (avatar) {
-        for (let p = 20; p <= 100; p += 20) {
-          await new Promise(resolve => setTimeout(resolve, 80));
-          setUploadProgress(p);
-        }
-      } else {
-        await new Promise(resolve => setTimeout(resolve, 300));
+      let finalAvatarUrl = null;
+      if (avatarFile) {
+        setUploadProgress(50);
+        finalAvatarUrl = await uploadGroupIcon(avatarFile);
+        setUploadProgress(90);
       }
 
-      await onCreate(name.trim(), desc.trim(), avatar);
+      await onCreate(name.trim(), desc.trim(), finalAvatarUrl);
       
-      setUploadProgress(null);
+      setUploadProgress(100);
       setShowSuccess(true);
       
       // Wait for success animation
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 800));
       onClose();
     } catch (err) {
       setError(err?.message || 'Failed to create group. Please try again.');
@@ -137,7 +146,7 @@ export default function GroupCreationModal({ onClose, onCreate, isDark = true })
                 />
                 <div className={styles.avatarPicker} onClick={handleAvatarClick}>
                   {avatar ? (
-                    <img src={avatar} alt="Preview" className={styles.avatarImg} />
+                    <img src={avatar} alt="Preview" className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                   ) : (
                     <div className={styles.avatarPlaceholder}>
                       <Camera size={28} />
