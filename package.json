@@ -4,8 +4,9 @@
   "private": true,
   "description": "Meetifyy Monorepo Root - Start backend, main frontend, and admin frontend in one command",
   "scripts": {
+    "build": "npm --prefix backend run build",
+    "start": "cd backend && npx prisma migrate deploy && npm run start:prod",
     "dev": "npx concurrently -k -p \"[{name}]\" -n \"BACKEND,FRONTEND,ADMIN\" -c \"blue.bold,magenta.bold,yellow.bold\" \"npm --prefix backend run start:dev\" \"npm --prefix frontend run dev\" \"npm --prefix admin-frontend run dev\"",
-    "start": "npm run dev",
     "dev:backend": "npm --prefix backend run start:dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "dev:admin": "npm --prefix admin-frontend run dev"
