@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import styles from './NewMessageModal.module.css';
+import { useData } from '@shared/hooks/useData';
+
 
 export default function NewMessageModal({ onClose, onStartChat, onCreateGroup }) {
   const { currentUser } = useAuth();
@@ -170,7 +172,7 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
                             src={user.avatar}
                             alt={user.displayName || user.name || user.username}
                             className={styles.avatarImg}
-                          />
+                           onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                         ) : (
                           <DefaultAvatar />
                         )}

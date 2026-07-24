@@ -1,10 +1,12 @@
 import { useNavigate } from 'react-router-dom';
-import { useData } from '@shared/context/DataContext';
+
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import PostPreviewSkeleton from '@shared/components/skeletons/PostPreviewSkeleton';
 import { Link2, Heart, MessageCircle, FileX } from 'lucide-react';
 import styles from './SharedPostPreview.module.css';
+import { useData } from '@shared/hooks/useData';
+
 
 export function SharedPostPreview({ post, isLoading = false }) {
   const navigate = useNavigate();
@@ -88,7 +90,7 @@ export function SharedPostPreview({ post, isLoading = false }) {
         {/* Author Info */}
         <div className={styles.authorRow}>
           {isImageUrl(authorAvatar) ? (
-            <img src={authorAvatar} alt={authorName} className={styles.avatar} />
+            <img src={authorAvatar} alt={authorName} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
           ) : (
             <DefaultAvatar name={authorName} size={24} className={styles.avatar} />
           )}

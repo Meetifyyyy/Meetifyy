@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+import { useData } from '@shared/hooks/useData';
+import { useR2Upload } from '@shared/hooks/useR2Upload';
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import styles from './GroupSettingsModal.module.css';
@@ -8,6 +9,7 @@ import styles from './GroupSettingsModal.module.css';
 export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup }) {
   const { currentUser } = useAuth();
   const { users, updateGroupInfo, removeGroupMember } = useData();
+  const { upload: uploadGroupIcon } = useR2Upload('avatars');
   const [editName, setEditName] = useState(conversation.name || '');
   const [editDesc, setEditDesc] = useState(conversation.description || '');
 
@@ -15,7 +17,8 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
 
   const isOwner = currentUser?.id === conversation.ownerId || currentUser?.id === conversation.hostId;
   const isAdmin = isOwner || (conversation.admins || []).includes(currentUser?.id);
-  const memberIds = conversation.members || conversation.participants || [];
+  const rawParticipants = conversation.members || conversation.participants || [];
+  const memberIds = rawParticipants.map(p => p?.userId || p?.id || p);
 
   const formattedDate = conversation.createdAt 
     ? new Date(conversation.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
@@ -36,15 +39,21 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target.result;
-        updateGroupInfo(conversation.id, undefined, dataUrl, undefined);
-      };
-      reader.readAsDataURL(file);
+      const MAX_FILE_SIZE = 50 * 1024 * 1024;
+      if (file.size > MAX_FILE_SIZE) {
+        alert('File too large. Maximum size is 50 MB.');
+        e.target.value = '';
+        return;
+      }
+      try {
+        const publicUrl = await uploadGroupIcon(file);
+        updateGroupInfo(conversation.id, undefined, publicUrl, undefined);
+      } catch {
+        alert('Failed to upload group icon.');
+      }
     }
     // Clear input so same file can be selected again
     e.target.value = '';
@@ -110,6 +119,7 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
                       type="text"
                       className={styles.groupInput}
                       value={editName}
+                      maxLength={120}
                       onChange={(e) => setEditName(e.target.value)}
                     />
                   </div>
@@ -119,6 +129,7 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
                   <textarea
                     className={styles.descTextArea}
                     value={editDesc}
+                    maxLength={300}
                     onChange={(e) => setEditDesc(e.target.value)}
                     placeholder="Add a group description..."
                   />

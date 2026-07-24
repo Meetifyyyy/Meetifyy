@@ -76,30 +76,33 @@ export default function ChatHeader({
               </span>
             )}
           </div>
-          {!conversation.isActivityChat && (
-            <div className={styles.msgChatStatus}>
-              {(() => {
-                if (conversation.status === 'Closed') {
-                  return <span style={{ color: '#ef4444' }}>Closed</span>;
-                }
-                if (conversation.isGroup) {
-                  return null;
-                }
-                
-                const targetUser = Object.values(users).find(u => u.username === conversation.username || u.id === conversation.userId);
-                const canSeeOnline = targetUser ? canSeeOnlineStatus(currentUser, targetUser) : true;
-                const canSeeSeen = targetUser ? canSeeLastSeen(currentUser, targetUser) : true;
-                
-                if (canSeeOnline && targetUser?.isOnline) {
-                  return 'Online';
-                } else if (canSeeSeen && targetUser?.lastActive) {
-                  return `Last seen ${formatLastSeen(targetUser.lastActive)}`;
-                } else {
-                  return 'Offline';
-                }
-              })()}
-            </div>
-          )}
+          {!conversation.isActivityChat && (() => {
+            const targetUser = conversation.targetUser || Object.values(users).find(u => u.username === conversation.username || u.id === conversation.userId);
+            const canSeeOnline = targetUser ? canSeeOnlineStatus(currentUser, targetUser) : true;
+            const canSeeSeen = targetUser ? canSeeLastSeen(currentUser, targetUser) : true;
+            const isOnline = canSeeOnline && !!targetUser?.isOnline;
+
+            return (
+              <div className={`${styles.msgChatStatus} ${isOnline ? styles.msgStatusOnline : styles.msgStatusOffline}`}>
+                {(() => {
+                  if (conversation.status === 'Closed') {
+                    return <span style={{ color: '#ef4444' }}>Closed</span>;
+                  }
+                  if (conversation.isGroup) {
+                    return conversation.participants?.length ? `${conversation.participants.length} members` : null;
+                  }
+
+                  if (isOnline) {
+                    return 'Online';
+                  } else if (canSeeSeen && targetUser?.lastActive) {
+                    return `Last seen ${formatLastSeen(targetUser.lastActive)}`;
+                  } else {
+                    return 'Offline';
+                  }
+                })()}
+              </div>
+            );
+          })()}
         </div>
       </div>
       <div className={styles.msgChatActions} onClick={(e) => e.stopPropagation()}>
@@ -201,7 +204,7 @@ export default function ChatHeader({
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
                       </svg>
-                      {conversation.blocked ? 'Unblock Contact' : 'Block Contact'}
+                      {(conversation.isBlockedByMe || conversation.blocked) ? 'Unblock Contact' : 'Block Contact'}
                     </button>
                   )}
                 </>

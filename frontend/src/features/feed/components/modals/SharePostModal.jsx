@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useData } from '@shared/context/DataContext';
+
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
 import styles from '@features/crew/components/modals/ShareActivityModal.module.css';
+import { useData } from '@shared/hooks/useData';
+
 
 export default function SharePostModal({ isOpen, onClose, post, author }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -88,7 +90,7 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
                 <div key={conv.id} className={styles.listItem}>
                   <div className={styles.contactInfo}>
                     {isImageUrl(conv.avatar) ? (
-                      <img src={conv.avatar} alt={conv.name} className={styles.avatar} />
+                      <img src={conv.avatar} alt={conv.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                     ) : (
                       <DefaultAvatar size={40} className={styles.avatar} />
                     )}

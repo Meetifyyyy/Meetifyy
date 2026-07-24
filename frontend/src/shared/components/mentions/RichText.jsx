@@ -1,7 +1,10 @@
 import { useNavigate } from 'react-router-dom';
-import { useData } from '@shared/context/DataContext';
+
 import { cleanUrlDisplay } from '@shared/utils/linkPreview';
+import { sanitizeUrl } from '@shared/utils/urlSanitize';
 import styles from './RichText.module.css';
+import { useData } from '@shared/hooks/useData';
+
 
 export default function RichText({ content = '', mentions = [], className = '', urlLimit = 50 }) {
   const navigate = useNavigate();
@@ -40,7 +43,8 @@ export default function RichText({ content = '', mentions = [], className = '', 
           cleanPart = part.slice(0, puncMatch.index);
           trailingPunc = puncMatch[0];
         }
-        const href = cleanPart.startsWith('www.') ? `https://${cleanPart}` : cleanPart;
+        const rawHref = cleanPart.startsWith('www.') ? `https://${cleanPart}` : cleanPart;
+        const href = sanitizeUrl(rawHref);
         
         // Clean display text using our algorithm
         const displayVal = cleanUrlDisplay(cleanPart);

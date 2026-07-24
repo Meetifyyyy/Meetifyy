@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useSignup } from '../SignupContext';
+import { useSignup } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
 import { useTheme } from '@shared/context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
@@ -7,6 +7,9 @@ import AnimatedStep from './AnimatedStep';
 import { motion } from 'framer-motion';
 import { ArrowRight, Camera, Upload, Check, Loader2 } from 'lucide-react';
 import styles from '../SignupFlow.module.css';
+import defaultAvatarImg from '../../../../assets/images/default_avatar.png';
+
+import { useR2Upload } from '@shared/hooks/useR2Upload';
 
 const presetAvatars = [
   'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix',
@@ -17,91 +20,54 @@ const presetAvatars = [
 ];
 
 export default function Step5Avatar() {
-  const { signupData, updateData } = useSignup();
-  const { signup } = useAuth();
+  const { signupData, clearSignupData } = useSignup();
+  const { updateProfile, currentUser } = useAuth();
   const { theme } = useTheme();
   const navigate = useNavigate();
-
+  const { upload: uploadToR2 } = useR2Upload('avatars');
+  
   const [avatar, setAvatar] = useState(signupData.avatar || '');
   const [isUploading, setIsUploading] = useState(false);
-  const [isFinishing, setIsFinishing] = useState(false);
-  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
-
   const bgHex = theme === 'dark' ? '202020' : 'ffffff';
 
   const getProcessedAvatarUrl = (url) => {
     if (!url || !url.startsWith('https://api.dicebear.com/')) return url;
-    const baseUrl = url.split('&backgroundColor=')[0];
-    return `${baseUrl}&backgroundColor=${bgHex}`;
+    return url.split('&backgroundColor=')[0];
   };
 
-  const loadingMessages = [
-    'Creating your profile...',
-    'Finding students near you...',
-    'Matching interests...',
-    'Setting up your campus circle...',
-    'Almost ready!'
-  ];
-
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      alert('File too large. Maximum size is 50 MB.');
+      e.target.value = '';
+      return;
+    }
+
     setIsUploading(true);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setAvatar(reader.result);
+    try {
+      const publicUrl = await uploadToR2(file);
+      setAvatar(publicUrl);
+    } catch {
+      alert('Upload failed. Try again.');
+    } finally {
       setIsUploading(false);
-    };
-    reader.readAsDataURL(file);
+      e.target.value = '';
+    }
   };
 
-  const handleFinish = () => {
-    setIsFinishing(true);
+  const handleFinish = async () => {
+    const chosenAvatar = getProcessedAvatarUrl(avatar) || '';
 
-    const interval = setInterval(() => {
-      setLoadingMsgIdx((prev) => (prev < loadingMessages.length - 1 ? prev + 1 : prev));
-    }, 800);
-
-    setTimeout(() => {
-      clearInterval(interval);
-      const mockUsername = signupData.username || `user${Math.floor(Math.random() * 1000)}`;
-      
-      const finalData = {
-        ...signupData,
-        username: mockUsername,
-        avatar: getProcessedAvatarUrl(avatar) || `https://api.dicebear.com/7.x/initials/svg?seed=${signupData.firstName || 'U'}`
-      };
-
-      signup(finalData);
-      navigate('/home');
-    }, 4000);
+    updateProfile({ avatar: chosenAvatar }).catch(err => console.error('Avatar update error:', err));
+    
+    // Clear persistence to prevent stale state for future signups
+    clearSignupData();
+    
+    navigate('/onboarding');
   };
-
-  if (isFinishing) {
-    return (
-      <AnimatedStep className={styles.stepWrapper} style={{ alignItems: 'center', textAlign: 'center', padding: '4rem 0' }}>
-        <div style={{ position: 'relative', marginBottom: '2.5rem' }}>
-          <motion.div
-            style={{
-              width: '80px',
-              height: '80px',
-              borderRadius: '50%',
-              border: '4px solid var(--color-border)',
-              borderTopColor: 'var(--color-primary)',
-              display: 'inline-block',
-            }}
-            animate={{ rotate: 360 }}
-            transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
-          />
-        </div>
-        <h2 className={styles.headline}>Preparing your dashboard...</h2>
-        <p className={styles.subheadline} style={{ marginTop: '0.5rem', color: 'var(--color-primary)', fontWeight: 600 }}>
-          {loadingMessages[loadingMsgIdx]}
-        </p>
-      </AnimatedStep>
-    );
-  }
 
   return (
     <AnimatedStep className={styles.stepWrapper}>
@@ -130,11 +96,9 @@ export default function Step5Avatar() {
             {isUploading ? (
               <Loader2 size={36} className="animate-spin" style={{ color: 'var(--color-text-muted)' }} />
             ) : avatar ? (
-              <img src={getProcessedAvatarUrl(avatar)} alt="Profile Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <img src={getProcessedAvatarUrl(avatar)} alt="Profile Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
             ) : (
-              <span style={{ fontSize: '3rem', fontWeight: 700, color: 'var(--color-text-light)' }}>
-                {(signupData.firstName || 'U')[0].toUpperCase()}
-              </span>
+              <img src={defaultAvatarImg} alt="Default Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
             )}
           </div>
           
@@ -160,7 +124,7 @@ export default function Step5Avatar() {
         </div>
 
         {/* Preset Avatars Selection */}
-        <div style={{ width: '100%', textAlignt: 'center' }}>
+        <div style={{ width: '100%', textAlign: 'center' }}>
           <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)', display: 'block', textAlign: 'center' }}>Or choose a preset character</span>
           <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', marginTop: '0.75rem' }}>
             {presetAvatars.map((url, idx) => {

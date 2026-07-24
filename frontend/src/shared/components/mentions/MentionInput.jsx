@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useMentionSuggestions } from '../../hooks/useMentionSuggestions';
 import MentionDropdown from './MentionDropdown';
 import { cleanUrlDisplay } from '@shared/utils/linkPreview';
+import { sanitizeUrl } from '@shared/utils/urlSanitize';
 import styles from './MentionInput.module.css';
 
 function escapeHtml(str) {
@@ -9,7 +10,9 @@ function escapeHtml(str) {
   return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
 }
 
 function convertUrlsToChipsHTML(text) {
@@ -20,7 +23,8 @@ function convertUrlsToChipsHTML(text) {
     const cleanDisplay = cleanUrlDisplay(url);
     const truncatedDisplay = cleanDisplay.length > 40 ? cleanDisplay.slice(0, 37) + '...' : cleanDisplay;
     const cleanUrl = url.startsWith('www.') ? `https://${url}` : url;
-    return `<span class="${styles.urlChip}" contenteditable="false" data-url="${cleanUrl}">[ ${truncatedDisplay} ]</span>`;
+    const safeUrl = sanitizeUrl(cleanUrl);
+    return `<span class="${styles.urlChip}" contenteditable="false" data-url="${safeUrl}">[ ${truncatedDisplay} ]</span>`;
   });
 }
 
@@ -54,10 +58,13 @@ function checkForUrlsAndConvertToChips(el) {
 
   cursorNode.nodeValue = beforeText;
 
+  const cleanUrl = url.startsWith('www.') ? `https://${url}` : url;
+  const safeUrl = sanitizeUrl(cleanUrl);
+
   const chip = document.createElement('span');
   chip.className = styles.urlChip;
   chip.setAttribute('contenteditable', 'false');
-  chip.setAttribute('data-url', url.startsWith('www.') ? `https://${url}` : url);
+  chip.setAttribute('data-url', safeUrl);
   chip.innerText = `[ ${truncatedDisplay} ]`;
 
   cursorNode.parentNode.insertBefore(chip, cursorNode.nextSibling);
@@ -79,6 +86,7 @@ export default function MentionInput({
   onChange,
   placeholder = 'Write something...',
   singleLine = false,
+  onSubmit,
   onKeyDown,
   communityId = null,
   className = '',
@@ -207,7 +215,7 @@ export default function MentionInput({
     sorted.forEach(m => {
       if (m.start >= cursor && m.end <= text.length && text.slice(m.start, m.end) === `@${m.username}`) {
         html += convertUrlsToChipsHTML(text.slice(cursor, m.start)).replace(/\n/g, '<br>');
-        html += `<span class="${styles.pill}" contenteditable="false" data-user-id="${m.userId}" data-username="${m.username}">@${m.username}</span>`;
+        html += `<span class="${styles.pill}" contenteditable="false" data-user-id="${escapeHtml(String(m.userId))}" data-username="${escapeHtml(m.username)}">@${escapeHtml(m.username)}</span>`;
         cursor = m.end;
       }
     });
@@ -368,14 +376,19 @@ export default function MentionInput({
 
     if (singleLine && e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (onKeyDown) onKeyDown(e);
+      // Call onSubmit (used by ChatInputArea) or fall back to onKeyDown
+      if (onSubmit) {
+        onSubmit();
+      } else if (onKeyDown) {
+        onKeyDown(e);
+      }
       return;
     }
 
     if (onKeyDown) {
       onKeyDown(e);
     }
-  }, [mentionActive, suggestions, selectedIndex, handleSelectSuggestion, singleLine, onKeyDown]);
+  }, [mentionActive, suggestions, selectedIndex, handleSelectSuggestion, singleLine, onSubmit, onKeyDown]);
 
   const handlePaste = useCallback((e) => {
     e.preventDefault();
@@ -388,8 +401,9 @@ export default function MentionInput({
     range.deleteContents();
 
     if (html && html.includes('data-username')) {
-      const temp = document.createElement('div');
-      temp.innerHTML = html;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const temp = doc.body;
       
       // Extract only safe text and mention pills
       const frag = document.createDocumentFragment();
@@ -409,7 +423,8 @@ export default function MentionInput({
             const chip = document.createElement('span');
             chip.className = styles.urlChip;
             chip.setAttribute('contenteditable', 'false');
-            chip.setAttribute('data-url', node.getAttribute('data-url'));
+            const safeUrl = sanitizeUrl(node.getAttribute('data-url'));
+            chip.setAttribute('data-url', safeUrl);
             chip.innerText = node.innerText;
             frag.appendChild(chip);
           } else if (node.nodeName === 'BR') {

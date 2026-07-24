@@ -1,8 +1,19 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useData } from '@shared/context/DataContext';
+import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@shared/context/AuthContext';
+import { usersApi, communitiesApi, messagesApi } from '@shared/api/apiClient';
+
+
 
 export function useMentionSuggestions({ query = '', communityId = null, maxResults = 15 }) {
-  const { users = {}, currentUser, conversations = [], communities = {} } = useData();
+  const { currentUser } = useAuth();
+  const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
+  const users = useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
+  
+  const { data: communitiesData = [] } = useQuery({ queryKey: ['communities'], queryFn: communitiesApi.getAll });
+  const communities = useMemo(() => communitiesData.reduce((acc, c) => ({ ...acc, [c.id]: c }), {}), [communitiesData]);
+
+  const { data: conversations = [] } = useQuery({ queryKey: ['conversations'], queryFn: messagesApi.getConversations });
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const cacheRef = useRef(new Map());

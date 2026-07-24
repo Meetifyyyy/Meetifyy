@@ -2,6 +2,7 @@ import { useEffect, useRef, Fragment } from 'react';
 import MessageRowSkeleton from '../skeletons/MessageRowSkeleton';
 import { ErrorState } from '@shared/components/ui/StateViews';
 import MessageBubble from './MessageBubble';
+import { timeAgo } from '@shared/utils/time';
 import styles from './ChatMessageList.module.css';
 
 const getRelativeDateString = (date) => {
@@ -74,6 +75,7 @@ export default function ChatMessageList({
   openViewer,
   onReply,
   onRetryMessage,
+  onUnsend,
   isTyping,
   replyingTo
 }) {
@@ -99,6 +101,16 @@ export default function ChatMessageList({
 
   return (
     <div className={styles.msgChatBody} ref={bodyRef}>
+      {conversation?.isInstantMatch && (
+        <div className={styles.msgDateSeparator} style={{ margin: '0.75rem 0' }}>
+          <span className={styles.msgDateSeparatorLine}></span>
+          <span className={styles.msgDateSeparatorText} style={{ background: 'rgba(234, 179, 8, 0.12)', color: '#eab308', padding: '4px 14px', borderRadius: '14px', fontWeight: 600, fontSize: '0.78rem' }}>
+            ⚡ Instant Match started {conversation.createdAt ? timeAgo(conversation.createdAt) : 'recently'}
+          </span>
+          <span className={styles.msgDateSeparatorLine}></span>
+        </div>
+      )}
+
       {isLoading && (
         <MessageRowSkeleton />
       )}
@@ -126,8 +138,9 @@ export default function ChatMessageList({
               )}
               <MessageBubble
                 index={i}
-                isLastOutgoing={i === lastOutgoingMsgIndex}
+                isLatestMessage={i === loadedMessages.length - 1}
                 onRetry={onRetryMessage}
+                onUnsend={onUnsend}
                 msg={msg}
                 conversation={conversation}
                 currentUser={currentUser}

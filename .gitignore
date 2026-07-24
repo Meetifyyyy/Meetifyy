@@ -1,11 +1,36 @@
 # Dependency directories
 node_modules/
-frontend/node_modules/
+**/node_modules/
 
 # Build outputs
 dist/
-frontend/dist/
 build/
+**/dist/
+**/build/
+stats.html
+**/stats.html
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+admin-frontend/.env
+
+# Prisma
+/backend/generated/prisma
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+**/*.log
 
 # Agent/IDE directories and files
 .agent/
@@ -16,7 +41,28 @@ docs/
 AGENTS.md
 GEMINI.md
 .gemini/
+.vscode/
+.idea/
+skills-lock.json
+REMEDIATION_PLAN.md
+
+# Testing
+coverage/
 
 # OS/System files
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Temporary & cache files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+*.bak
+.cache/
+.eslintcache
+.turbo/
+.vite/
+

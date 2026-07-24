@@ -103,7 +103,13 @@ export default function PageHeader({
                 className={`${styles.tabBtn} ${isActive ? styles.tabActive : ''}`}
                 onClick={() => onTabChange && onTabChange(id)}
               >
-                {Icon && <Icon size={15} className={styles.tabIcon} />}
+                {Icon && (
+                  typeof Icon === 'string' ? (
+                    <span className={styles.tabEmojiIcon}>{Icon}</span>
+                  ) : (
+                    <Icon size={15} className={styles.tabIcon} />
+                  )
+                )}
                 <span>{label}</span>
               </button>
             );

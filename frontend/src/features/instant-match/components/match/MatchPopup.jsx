@@ -70,7 +70,7 @@ export default function MatchPopup() {
           src={candidate.avatarUrl}
           alt={candidate.displayName}
           className="match-profile-avatar"
-        />
+         onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
       );
     }
     return (

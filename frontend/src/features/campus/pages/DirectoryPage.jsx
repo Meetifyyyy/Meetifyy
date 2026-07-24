@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, Plus } from 'lucide-react';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -11,6 +11,9 @@ import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './DirectoryPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import { MAJORS_LIST } from '../data/majors';
+import { useQuery } from '@tanstack/react-query';
+import { usersApi } from '@shared/api/apiClient';
+
 const SearchableMajorSelect = ({ value, onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -162,7 +165,19 @@ export default function DirectoryPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
-  const { users } = useData();
+
+  const { data: usersData = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => usersApi.getAll().then(res => res),
+  });
+
+  // Re-map array to the object format expected by the rest of the component
+  const users = useMemo(() => {
+    return usersData.reduce((acc, user) => {
+      acc[user.id] = user;
+      return acc;
+    }, {});
+  }, [usersData]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -180,11 +195,11 @@ export default function DirectoryPage() {
       list = list.filter(u =>
         u.displayName?.toLowerCase().includes(q) ||
         u.bio?.toLowerCase().includes(q) ||
-        u.skills?.some(s => s.toLowerCase().includes(q))
+        u.major?.toLowerCase().includes(q)
       );
     }
-    if (dirBranch !== 'All') list = list.filter(u => u.course === dirBranch || u.role === dirBranch);
-    if (dirYear !== 'All') list = list.filter(u => u.year === dirYear);
+    if (dirBranch !== 'All') list = list.filter(u => u.major === dirBranch);
+    if (dirYear !== 'All') list = list.filter(u => String(u.graduationYear) === dirYear);
 
     return list;
   }, [users, userCollegeId, searchQuery, dirBranch, dirYear, currentUser]);

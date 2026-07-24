@@ -1,17 +1,23 @@
 import { useState, useEffect, memo } from 'react';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
+import { sanitizeUrl } from '@shared/utils/urlSanitize';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import RichText from '@shared/components/mentions/RichText';
-import { useData } from '@shared/context/DataContext';
+import { useData } from '@shared/hooks/useData';
+import { postsApi } from '@shared/api/apiClient';
+import usePostStore from '@shared/stores/postStore';
 import { timeAgo } from '@shared/utils/time';
 import styles from './Post.module.css';
 import SharePostModal from '../modals/SharePostModal';
 import VideoPlayer from '@shared/components/media/VideoPlayer';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
+import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 
 function PollCard({ poll, postId }) {
   const { voteInPoll, currentUser } = useData();
@@ -94,20 +100,37 @@ const normalizePostText = (str) => {
 };
 
 function Post({ postData, communityTag, onClick, isDetailed = false, hideCommunityTag = false }) {
-  const { getUserById, getPostById, likePost, communities, currentUser, deletePost, editPost, reportPost, reportedPosts, savedPosts = [], toggleSavePost } = useData();
+  const { getUserById, getPostById, communities, currentUser, savedPosts = [], toggleSavePost } = useData();
+  const queryClient = useQueryClient();
   const { openViewer } = useMediaViewer();
   const [showMenu, setShowMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [hasReported, setHasReported] = useState(false);
 
   const livePost = postData ? (getPostById(postData.id) || postData) : null;
   if (!livePost) return null;
 
-  const { id, authorId, time, text, mentions, poll, likes, comments, isLikedByMe: rawIsLiked } = livePost;
-  const isLikedByMe = livePost.likedBy ? livePost.likedBy.includes(currentUser?.id) : !!rawIsLiked;
+  const { id, authorId, time, text, mentions, poll, likeCount, commentCount, hasLiked, isLiked, isLikedByMe: rawIsLiked } = livePost;
+  
+  const initialLiked = hasLiked !== undefined ? !!hasLiked : (isLiked !== undefined ? !!isLiked : (rawIsLiked !== undefined ? !!rawIsLiked : (livePost.likedBy ? livePost.likedBy.includes(currentUser?.id) : false)));
+  const initialLikes = likeCount !== undefined ? likeCount : (livePost.likesCount !== undefined ? livePost.likesCount : (livePost.likes || 0));
+
+  const [localLiked, setLocalLiked] = useState(initialLiked);
+  const [localLikesCount, setLocalLikesCount] = useState(initialLikes);
+
+  useEffect(() => {
+    setLocalLiked(initialLiked);
+    setLocalLikesCount(initialLikes);
+  }, [initialLiked, initialLikes]);
+
+  const isLikedByMe = localLiked;
+  const likes = localLikesCount;
+  const comments = commentCount !== undefined ? commentCount : (livePost.commentsCount !== undefined ? livePost.commentsCount : (livePost.comments || 0));
   const isSaved = savedPosts.includes(id);
-  const author = getUserById(authorId) || { displayName: 'Unknown', username: 'unknown', avatar: '?' };
+  const author = livePost.author || getUserById(authorId) || { displayName: 'User', username: 'user', avatar: null };
   const authorCollege = author.collegeId ? communities[author.collegeId] : null;
 
   useEffect(() => {
@@ -142,9 +165,79 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
     if (onClick) onClick(e);
   };
 
+  const syncCacheForPost = (targetPostId, newLiked, newLikesCount) => {
+    const updatePostObject = (p) => {
+      if (!p || p.id !== targetPostId) return p;
+      return {
+        ...p,
+        hasLiked: newLiked,
+        isLiked: newLiked,
+        isLikedByMe: newLiked,
+        likeCount: newLikesCount,
+        likesCount: newLikesCount,
+      };
+    };
+
+    queryClient.setQueriesData({}, (oldData) => {
+      if (!oldData) return oldData;
+      if (oldData.id === targetPostId) {
+        return updatePostObject(oldData);
+      }
+      if (Array.isArray(oldData.pages)) {
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page) => {
+            if (!page) return page;
+            const key = Array.isArray(page.posts) ? 'posts' : (Array.isArray(page.items) ? 'items' : null);
+            if (!key) return page;
+            return { ...page, [key]: page[key].map(updatePostObject) };
+          }),
+        };
+      }
+      if (Array.isArray(oldData)) {
+        return oldData.map(updatePostObject);
+      }
+      return oldData;
+    });
+  };
+
   const toggleLike = (e) => {
     e.stopPropagation();
-    likePost(id);
+    const prevLiked = isLikedByMe;
+    const prevLikes = likes;
+    const nextLiked = !prevLiked;
+    const nextLikes = nextLiked ? prevLikes + 1 : Math.max(0, prevLikes - 1);
+
+    // 1. Optimistic local state update
+    setLocalLiked(nextLiked);
+    setLocalLikesCount(nextLikes);
+
+    // 2. Optimistic React Query cache update across all active feeds
+    syncCacheForPost(id, nextLiked, nextLikes);
+
+    // 3. Perform backend mutation
+    const apiCall = nextLiked ? postsApi.likePost(id) : postsApi.unlikePost(id);
+    apiCall
+      .then((res) => {
+        const finalLiked = res?.isLiked !== undefined ? res.isLiked : nextLiked;
+        const finalLikes = res?.likeCount !== undefined ? res.likeCount : nextLikes;
+        setLocalLiked(finalLiked);
+        setLocalLikesCount(finalLikes);
+        syncCacheForPost(id, finalLiked, finalLikes);
+
+        queryClient.invalidateQueries({ queryKey: ['feed'] });
+        queryClient.invalidateQueries({ queryKey: ['posts'] });
+        queryClient.invalidateQueries({ queryKey: ['user-posts'] });
+        queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
+        queryClient.invalidateQueries({ queryKey: ['post', id] });
+      })
+      .catch((err) => {
+        console.error('Failed to toggle like:', err);
+        setLocalLiked(prevLiked);
+        setLocalLikesCount(prevLikes);
+        syncCacheForPost(id, prevLiked, prevLikes);
+        showToast('Failed to update like');
+      });
   };
 
   const handleShare = (e) => {
@@ -162,7 +255,7 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
           <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none' }} onClick={(e) => e.stopPropagation()}>
             <div className={styles.postAvatar}>
               {isImageUrl(author.avatar) ? (
-                <img src={author.avatar} alt={author.displayName} loading="lazy" className={styles.postAvatarImg} />
+                <img src={getProcessedAvatarUrl(author.avatar)} alt={author.displayName} loading="lazy" className={styles.postAvatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
               ) : (
                 <DefaultAvatar />
               )}
@@ -177,7 +270,7 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
               style={{ background: (!isImageUrl(postCommunity.avatar)) ? (postCommunity.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
             >
               {isImageUrl(postCommunity.avatar) ? (
-                <img src={postCommunity.avatar} alt="" loading="lazy" />
+                <img src={postCommunity.avatar} alt="" loading="lazy"  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
               ) : (
                 <span>{postCommunity.avatar || postCommunity.name?.charAt(0).toUpperCase()}</span>
               )}
@@ -195,7 +288,7 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
                 loading="lazy"
                 className={styles.postCollegeIcon}
                 title={authorCollege.name}
-              />
+               onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
             )}
           </Link>
           <div className={styles.postTime} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -211,7 +304,7 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
               <span className={styles.postUsername}>@{author.username}</span>
             )}
             <span className={styles.postTimeDot}>·</span>
-            <span>{livePost.createdAt ? timeAgo(livePost.createdAt) : time}</span>
+            <span>{livePost.createdAt ? timeAgo(livePost.createdAt) : (time ? timeAgo(time) : '')}</span>
           </div>
         </div>
 
@@ -254,21 +347,21 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
                   </button>
                 </>
               )}
-              {/* Report — for all posts (including own if needed) */}
+              {/* Report — for all posts */}
               {(!currentUser || authorId !== currentUser.id) && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (reportedPosts && !reportedPosts.includes(id)) {
-                      if (reportPost) reportPost(id);
-                    }
                     setShowMenu(false);
+                    if (!hasReported) {
+                      setShowReportModal(true);
+                    }
                   }}
-                  style={{ color: (reportedPosts && reportedPosts.includes(id)) ? 'var(--color-text-muted)' : 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}
-                  disabled={reportedPosts && reportedPosts.includes(id)}
+                  style={{ color: hasReported ? 'var(--color-text-muted)' : 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}
+                  disabled={hasReported}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
-                  {(reportedPosts && reportedPosts.includes(id)) ? 'Reported' : 'Report'}
+                  {hasReported ? 'Already Reported' : 'Report'}
                 </button>
               )}
             </div>
@@ -337,10 +430,24 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
         return (
           <div className={`${styles.collapsibleMedia} ${showMedia ? styles.expanded : ''}`}>
             {livePost.media && (() => {
-              const mediaSrc = typeof livePost.media === 'string' ? livePost.media : livePost.media?.url;
-              const isVideo = typeof livePost.media === 'string'
-                ? livePost.media.endsWith('.mp4') || livePost.media.startsWith('data:video')
-                : livePost.media.type === 'video';
+              let mediaSrc = null;
+              let isVideo = false;
+
+              if (Array.isArray(livePost.media)) {
+                if (livePost.media.length > 0) {
+                  mediaSrc = livePost.media[0].storageKey || livePost.media[0].url;
+                  isVideo = livePost.media[0].type === 'VIDEO' || (mediaSrc && (mediaSrc.endsWith('.mp4') || mediaSrc.startsWith('data:video')));
+                }
+              } else if (typeof livePost.media === 'string') {
+                mediaSrc = livePost.media;
+                isVideo = mediaSrc.endsWith('.mp4') || mediaSrc.startsWith('data:video');
+              } else if (livePost.media?.url) {
+                mediaSrc = livePost.media.url;
+                isVideo = livePost.media.type === 'video' || (mediaSrc && (mediaSrc.endsWith('.mp4') || mediaSrc.startsWith('data:video')));
+              }
+
+              if (!mediaSrc) return null;
+              
               const openMedia = (e) => {
                 e.stopPropagation();
                 const meta = {
@@ -378,7 +485,7 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
             })()}
             {livePost.linkPreview && (
               <a
-                href={livePost.linkPreview.url}
+                href={sanitizeUrl(livePost.linkPreview.url)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={styles.linkPreview}
@@ -453,11 +560,29 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
           onCancel={() => setShowDeleteConfirm(false)}
           onConfirm={async () => {
             setShowDeleteConfirm(false);
-            if (deletePost) await deletePost(id);
+            try {
+              await postsApi.deletePost(id);
+              queryClient.invalidateQueries(['feed']);
+              showToast('Post deleted');
+            } catch (err) {
+              showToast('Failed to delete post');
+            }
           }}
           confirmText="Delete"
         />
       </div>
+
+      <ReportModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        targetType="POST"
+        targetId={id}
+        targetPreview={text?.slice(0, 80)}
+        targetName={author?.displayName || author?.username}
+        targetAvatar={author?.avatar}
+        reportedFrom="feed"
+        onSubmitted={() => setHasReported(true)}
+      />
     </div>
   );
 }

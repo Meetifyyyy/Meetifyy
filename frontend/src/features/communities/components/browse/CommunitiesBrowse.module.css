@@ -355,3 +355,35 @@
     display: flex;
   }
 }
+
+/* Mobile FAB */
+.mobileFab {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .mobileFab {
+    display: flex;
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+    right: 1.25rem;
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(var(--color-primary-rgb), 0.45);
+    transition: transform 0.18s, box-shadow 0.18s;
+  }
+
+  .mobileFab:hover,
+  .mobileFab:active {
+    transform: scale(1.08);
+    box-shadow: 0 6px 28px rgba(var(--color-primary-rgb), 0.55);
+  }
+}

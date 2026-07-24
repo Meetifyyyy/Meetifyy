@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, memo } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import styles from './PostComposer.module.css';
 
@@ -13,10 +14,13 @@ const EMOJI_GROUPS = [
   { label: 'Nature', emojis: ['🌸','🌿','🌊','☀️','🌙','⚡','🦋','🐾','🌈','🍀','🌺','🍂'] },
 ];
 
+import { useR2Upload } from '@shared/hooks/useR2Upload';
+
 function PostComposer({ onSubmit }) {
   const { initial, currentUser } = useAuth();
   const [value, setValue] = useState({ text: '', mentions: [] });
   const [media, setMedia] = useState(null);
+  const [isPosting, setIsPosting] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [showPoll, setShowPoll] = useState(false);
   const [pollOptions, setPollOptions] = useState(['', '']);
@@ -27,6 +31,8 @@ function PostComposer({ onSubmit }) {
   const pollPanelRef = useRef(null);
   const emojiBtnRef = useRef(null);
   const pollBtnRef = useRef(null);
+
+  const { upload: uploadPostMedia } = useR2Upload('post-media');
 
   useEffect(() => {
     const handler = (e) => {
@@ -46,36 +52,60 @@ function PostComposer({ onSubmit }) {
       .replace(/\n{3,}/g, '\n\n');
   };
 
-  const handlePost = () => {
+  const handlePost = async () => {
     const rawText = typeof value === 'string' ? value : (value?.text || '');
     const text = normalizePostText(rawText);
     const mentions = value?.mentions || [];
+
     if (showPoll) {
       const opts = pollOptions.map((o) => o.trim()).filter(Boolean);
       if (!text && opts.length < 2 && !media) return;
-      onSubmit(text, { question: text || 'Poll', options: opts, multiSelect: pollMulti }, media, mentions);
-      setValue({ text: '', mentions: [] });
-      setMedia(null);
-      setPollOptions(['', '']);
-      setPollMulti(false);
-      setShowPoll(false);
     } else {
       if (!text && !media) return;
-      onSubmit(text, null, media, mentions);
+    }
+
+    setIsPosting(true);
+    let finalMedia = media;
+
+    try {
+      if (media?.file) {
+        const publicUrl = await uploadPostMedia(media.file);
+        finalMedia = { type: media.type, url: publicUrl };
+      }
+
+      if (showPoll) {
+        const opts = pollOptions.map((o) => o.trim()).filter(Boolean);
+        onSubmit(text, { question: text || 'Poll', options: opts, multiSelect: pollMulti }, finalMedia, mentions);
+        setPollOptions(['', '']);
+        setPollMulti(false);
+        setShowPoll(false);
+      } else {
+        onSubmit(text, null, finalMedia, mentions);
+      }
+
       setValue({ text: '', mentions: [] });
       setMedia(null);
+    } catch {
+      alert('Failed to upload media attachment. Try again.');
+    } finally {
+      setIsPosting(false);
     }
   };
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      alert('File too large. Maximum size is 50 MB.');
+      e.target.value = '';
+      return;
+    }
+
     const type = file.type.startsWith('video/') ? 'video' : 'image';
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setMedia({ type, url: event.target.result });
-    };
-    reader.readAsDataURL(file);
+    const previewUrl = URL.createObjectURL(file);
+    setMedia({ type, url: previewUrl, file });
     e.target.value = '';
   };
 
@@ -131,13 +161,7 @@ function PostComposer({ onSubmit }) {
 
       <div className={`${styles.postComposer}${showPoll ? ` ${styles.hasPoll}` : ''}`}>
         <div className={styles.composerTopRow}>
-          <div className={styles.composerAvatar}>
-            {isImageUrl(currentUser?.avatar) ? (
-              <img src={currentUser.avatar} alt={currentUser.displayName} className={styles.composerAvatarImg} />
-            ) : (
-              <DefaultAvatar />
-            )}
-          </div>
+          <Avatar src={currentUser?.avatar} name={currentUser?.displayName} size="40px" disableHover />
           <div style={{ flex: 1, minWidth: 0 }}>
             <MentionInput
               inputRef={inputRef}

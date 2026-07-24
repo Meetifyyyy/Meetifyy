@@ -2,11 +2,13 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import CrewCard from '@features/crew/components/cards/CrewCard';
 import ActivityTemplatesRow from '../components/ActivityTemplatesRow';
 import { Plus, Search, ArrowLeft } from 'lucide-react';
+import { useData } from '@shared/hooks/useData';
+
 
 export default function ActivitiesPage() {
   const navigate = useNavigate();

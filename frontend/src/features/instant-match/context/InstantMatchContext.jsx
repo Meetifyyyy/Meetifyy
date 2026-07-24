@@ -1,8 +1,10 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+import { useAuth, supabase } from '@shared/context/AuthContext';
+
 import matchSocketClient from '../utils/matchSocketClient';
+import { useData } from '@shared/hooks/useData';
+
 
 const InstantMatchContext = createContext(null);
 
@@ -38,7 +40,9 @@ export function InstantMatchProvider({ children }) {
   // Connect socket client
   useEffect(() => {
     if (currentUser) {
-      matchSocketClient.connect('mock_token', currentUser);
+      supabase?.auth.getSession().then(({ data: { session } }) => {
+        matchSocketClient.connect(session?.access_token || null, currentUser);
+      });
     }
 
     return () => {

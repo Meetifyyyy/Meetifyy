@@ -43,9 +43,7 @@
   padding: 4px;
   display: flex;
   align-items: center;
-  justify-content: center;
   box-shadow: var(--shadow-sm);
-  transition: var(--transition-theme);
 }
 
 :global([data-theme="dark"]) .avatarContainer {

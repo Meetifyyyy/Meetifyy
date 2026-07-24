@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+import { Sun, Moon } from 'lucide-react';
+
+import useUIStore from '@stores/uiStore';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import GlobalSearch from '@features/search/components/GlobalSearch';
-import { useNotifications } from '@shared/context/NotificationContext';
 import { useTheme } from '@shared/context/ThemeContext';
+import NotificationBell from '@features/notifications/components/NotificationBell';
 import { isImageUrl } from '@shared/utils/avatar';
 import {
   UserGroupIcon as CommunitiesOutline,
@@ -15,6 +17,8 @@ import {
   Cog6ToothIcon as SettingsIcon,
 } from '@heroicons/react/24/outline';
 import styles from './Header.module.css';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { communitiesApi } from '@shared/api/apiClient';
 
 const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
   const [imgError, setImgError] = useState(false);
@@ -32,7 +36,7 @@ const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
     >
       <div 
         className={styles.communityAvatar}
-        style={{ background: (!isImage || imgError) ? (comm.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
+        style={{ background: (!isImage || imgError) ? (comm.color || 'var(--color-bg-white)') : 'transparent' }}
       >
         {isImage && !imgError ? (
           <img src={comm.avatar} alt={comm.name} onError={() => setImgError(true)} />
@@ -49,8 +53,12 @@ const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
 
 export default function Header({ variant = 'dashboard' }) {
   const { initial, logout, currentUser } = useAuth();
-  const { searchQuery, setSearchQuery, resetDataState, communities } = useData();
-  const { unreadCount } = useNotifications();
+  const queryClient = useQueryClient();
+  const { data: communitiesData = [] } = useQuery({ queryKey: ['communities'], queryFn: communitiesApi.getAll });
+  const communities = communitiesData.reduce((acc, c) => ({ ...acc, [c.id]: c }), {});
+  
+  const searchQuery = useUIStore(state => state.searchQuery);
+  const setSearchQuery = useUIStore(state => state.setSearchQuery);
   const { theme, toggleTheme } = useTheme();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -73,7 +81,7 @@ export default function Header({ variant = 'dashboard' }) {
   }, []);
 
   const handleLogout = () => {
-    resetDataState();
+    queryClient.clear();
     logout();
     navigate('/');
   };
@@ -132,11 +140,11 @@ export default function Header({ variant = 'dashboard' }) {
             
             <div className={styles.drawerProfileStats}>
               <div className={styles.statItem} onClick={(e) => { e.stopPropagation(); navigate(`/profile/${username}?tab=followers`); setDrawerOpen(false); }}>
-                <span className={styles.statNumber}>{currentUser?.followers || 0}</span>
+                <span className={styles.statNumber}>{currentUser?.stats?.followers ?? currentUser?.followers ?? 0}</span>
                 <span className={styles.statLabel}>Followers</span>
               </div>
               <div className={styles.statItem} onClick={(e) => { e.stopPropagation(); navigate(`/profile/${username}?tab=following`); setDrawerOpen(false); }}>
-                <span className={styles.statNumber}>{currentUser?.following || 0}</span>
+                <span className={styles.statNumber}>{currentUser?.stats?.following ?? currentUser?.followingList?.length ?? currentUser?.following ?? 0}</span>
                 <span className={styles.statLabel}>Following</span>
               </div>
             </div>
@@ -192,27 +200,14 @@ export default function Header({ variant = 'dashboard' }) {
           
           <button
             className={styles.drawerThemeToggleBtn}
-            onClick={toggleTheme}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              toggleTheme({ clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
+            }}
             aria-label="Toggle theme"
-            title="Toggle theme"
+            title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
           >
-            {theme === 'light' ? (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-              </svg>
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="5"></circle>
-                <line x1="12" y1="1" x2="12" y2="3"></line>
-                <line x1="12" y1="21" x2="12" y2="23"></line>
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                <line x1="1" y1="12" x2="3" y2="12"></line>
-                <line x1="21" y1="12" x2="23" y2="12"></line>
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-              </svg>
-            )}
+            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
         </div>
       </div>
@@ -230,62 +225,16 @@ export default function Header({ variant = 'dashboard' }) {
           <button
             className={`${styles.notifIcon} ${styles.themeToggleBtn} ${styles.desktopOnlyTheme}`}
             aria-label="Toggle theme"
-            title="Toggle theme"
-            onClick={toggleTheme}
+            title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              toggleTheme({ clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
+            }}
           >
-            {theme === 'light' ? (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-              </svg>
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="5"></circle>
-                <line x1="12" y1="1" x2="12" y2="3"></line>
-                <line x1="12" y1="21" x2="12" y2="23"></line>
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                <line x1="1" y1="12" x2="3" y2="12"></line>
-                <line x1="21" y1="12" x2="23" y2="12"></line>
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-              </svg>
-            )}
+            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
           <div style={{ position: 'relative' }} ref={notifRef}>
-            <button
-              className={styles.notifIcon}
-              aria-label="Notifications"
-              title="Notifications"
-              onClick={(e) => { e.stopPropagation(); navigate('/notifications'); setDropdownOpen(false); }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-              </svg>
-              {unreadCount > 0 && (
-                <div style={{
-                  position: 'absolute',
-                  top: 2,
-                  right: 2,
-                  minWidth: 16,
-                  height: 16,
-                  padding: '0 4px',
-                  background: 'var(--color-danger)',
-                  borderRadius: 8,
-                  border: '2px solid var(--color-bg-white)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.6rem',
-                  fontWeight: 700,
-                  color: '#fff',
-                  lineHeight: 1,
-                }}>
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </div>
-              )}
-            </button>
-
+            <NotificationBell />
           </div>
           <div className={`${styles.avatarWrap} ${styles.desktopOnlyAvatar}`}>
             <div

@@ -3,13 +3,42 @@ import NotificationItem from './NotificationItem';
 
 export default function NotificationList({
   groupedNotifications,
-  resolveActor,
   timeAgo,
   onNotifClick,
   onAcceptJoinRequest,
   onRejectJoinRequest,
+  getUserById,
   pageStyles
 }) {
+  const resolveActor = (notif) => {
+    if (notif.actor && (notif.actor.displayName || notif.actor.username)) {
+      return {
+        name: notif.actor.displayName || notif.actor.username,
+        avatar: notif.actor.avatar || '',
+        username: notif.actor.username || ''
+      };
+    }
+    if (notif.metadata?.actorName || notif.metadata?.actorDisplayName || notif.metadata?.username || notif.metadata?.actorUsername) {
+      return { 
+        name: notif.metadata.actorName || notif.metadata.actorDisplayName || notif.metadata.username || notif.metadata.actorUsername, 
+        avatar: notif.metadata.actorAvatar || '',
+        username: notif.metadata.actorUsername || notif.metadata.username || '' 
+      };
+    }
+    const fallbackId = notif.actorId || notif.entityId;
+    if (fallbackId && getUserById) {
+      const u = getUserById(fallbackId);
+      if (u) {
+        return {
+          name: u.displayName || u.username,
+          avatar: u.avatar || '',
+          username: u.username || ''
+        };
+      }
+    }
+    return { name: 'Someone', avatar: '', username: '' };
+  };
+
   const formatTimeStr = (createdAt) => {
     return timeAgo(createdAt)
       .replace(' ago', '')
@@ -52,7 +81,7 @@ export default function NotificationList({
               <NotificationItem
                 key={notif.id}
                 notif={notif}
-                actor={resolveActor(notif.actorId)}
+                actor={resolveActor(notif)}
                 timeStr={formatTimeStr(notif.createdAt)}
                 onClick={onNotifClick}
                 onAcceptJoinRequest={onAcceptJoinRequest}

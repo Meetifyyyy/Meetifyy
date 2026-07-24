@@ -5,10 +5,12 @@ import styles from './BottomNav.module.css';
 import {
   HomeIcon as HomeOutline,
   ChatBubbleOvalLeftEllipsisIcon as MessagesOutline,
+  BellIcon as BellOutline,
 } from '@heroicons/react/24/outline';
 import {
   HomeIcon as HomeSolid,
   ChatBubbleOvalLeftEllipsisIcon as MessagesSolid,
+  BellIcon as BellSolid,
 } from '@heroicons/react/24/solid';
 
 const CompassOutline = () => (
@@ -53,6 +55,7 @@ export default function BottomNav() {
   const isHomeActive = location.pathname === '/home';
   const isCampusActive = location.pathname.startsWith('/campus');
   const isMessagesActive = location.pathname.startsWith('/messages');
+  const isNotificationsActive = location.pathname.startsWith('/notifications');
   const isCrewActive = location.pathname.startsWith('/crew');
   const isProfileActive = location.pathname.startsWith('/profile');
 
@@ -65,6 +68,7 @@ export default function BottomNav() {
       <button 
         className={`${styles.bottomNavItem}${isHomeActive ? ` ${styles.active}` : ''}`}
         onClick={() => handleTabClick('/home')}
+        onMouseEnter={() => import('@features/feed/pages/FeedRoute')}
       >
         {isHomeActive ? <HomeSolid /> : <HomeOutline />}
         <span>Home</span>
@@ -73,6 +77,7 @@ export default function BottomNav() {
       <button 
         className={`${styles.bottomNavItem}${isCampusActive ? ` ${styles.active}` : ''}`}
         onClick={() => handleTabClick('/campus')}
+        onMouseEnter={() => import('@features/campus/pages/CampusPage')}
       >
         {isCampusActive ? <CampusSolid /> : <CampusOutline />}
         <span>Campus</span>
@@ -81,6 +86,7 @@ export default function BottomNav() {
       <button 
         className={`${styles.bottomNavItem}${isMessagesActive ? ` ${styles.active}` : ''}`}
         onClick={() => handleTabClick('/messages')}
+        onMouseEnter={() => import('@features/messages/pages/MessagesRoute')}
       >
         {isMessagesActive ? <MessagesSolid /> : <MessagesOutline />}
         <span>Messages</span>
@@ -89,14 +95,24 @@ export default function BottomNav() {
       <button 
         className={`${styles.bottomNavItem}${isCrewActive ? ` ${styles.active}` : ''}`}
         onClick={() => handleTabClick('/crew')}
+        onMouseEnter={() => import('@features/crew/pages/FindYourCrewPage')}
       >
         {isCrewActive ? <CompassSolid /> : <CompassOutline />}
         <span>Crew</span>
       </button>
 
       <button 
+        className={`${styles.bottomNavItem}${isNotificationsActive ? ` ${styles.active}` : ''}`}
+        onClick={() => handleTabClick('/notifications')}
+      >
+        {isNotificationsActive ? <BellSolid /> : <BellOutline />}
+        <span>Alerts</span>
+      </button>
+
+      <button 
         className={`${styles.bottomNavItem}${isProfileActive ? ` ${styles.active}` : ''}`}
         onClick={() => handleTabClick(`/profile/${username}`)}
+        onMouseEnter={() => import('@features/profile/pages/ProfilePage')}
       >
         <Avatar
           src={currentUser?.avatar}

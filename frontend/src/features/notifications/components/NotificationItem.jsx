@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import FollowButton from '@shared/components/ui/FollowButton';
+import Avatar from '@shared/components/avatar/Avatar';
 import styles from './NotificationItem.module.css';
 
 export default function NotificationItem({
@@ -13,20 +12,55 @@ export default function NotificationItem({
   onRejectJoinRequest
 }) {
   const navigate = useNavigate();
-  const isFollow = notif.type === 'follow';
-  const targetUsername = actor.username || (actor.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const notifType = (notif.type || '').toLowerCase();
+  const isFollow = notifType === 'follow';
+  const targetUsername = actor?.username || notif.actor?.username || notif.metadata?.actorUsername || notif.metadata?.username || '';
+
+  const actorName = actor?.name || actor?.username || notif.actor?.displayName || notif.actor?.username || notif.metadata?.actorName || notif.metadata?.actorDisplayName || notif.metadata?.username || 'Someone';
+  const postMedia = notif.metadata?.postMedia || notif.metadata?.mediaUrl || notif.metadata?.postImage || notif.metadata?.thumbnailUrl || null;
+
+  let displayText = notif.body || notif.text || '';
+  if (isFollow) {
+    displayText = 'started following you.';
+  } else if (notifType === 'like') {
+    displayText = 'liked your post.';
+  } else if (notifType === 'comment_like') {
+    displayText = 'liked your comment.';
+  } else if (notifType === 'comment') {
+    if (notif.metadata?.isReply || displayText.includes('replied to your comment:')) {
+      if (displayText.includes('replied to your comment:')) {
+        displayText = displayText.substring(displayText.indexOf('replied to your comment:')).trim();
+      } else {
+        displayText = 'replied to your comment.';
+      }
+    } else if (displayText.includes('commented:')) {
+      displayText = displayText.substring(displayText.indexOf('commented:')).trim();
+    } else {
+      displayText = 'commented on your post.';
+    }
+  } else if (notifType === 'mention') {
+    displayText = 'mentioned you.';
+  } else if (notifType === 'message') {
+    displayText = 'sent you a message.';
+  } else if (notifType === 'join_request') {
+    displayText = 'requested to join your activity.';
+  } else if (displayText.startsWith(actorName)) {
+    displayText = displayText.substring(actorName.length).trim();
+  }
+
+  if (!displayText) {
+    displayText = notif.title || '';
+  }
+
+  const isRead = notif.read === true || !!notif.readAt;
 
   return (
     <div
-      className={`${styles.item} ${notif.read ? '' : styles.unread}`}
+      className={`${styles.item} ${isRead ? '' : styles.unread}`}
       onClick={() => onClick(notif)}
     >
       <div className={styles.avatar}>
-        {isImageUrl(actor.avatar) ? (
-          <img src={actor.avatar} className={styles.avatarImg} alt="" />
-        ) : (
-          <DefaultAvatar />
-        )}
+        <Avatar src={actor.avatar} name={actorName} size="34px" />
       </div>
 
       <div className={styles.content}>
@@ -34,21 +68,21 @@ export default function NotificationItem({
           <span 
             className={styles.actorName}
             onClick={(e) => {
-              if (actor.username) {
+              if (targetUsername) {
                 e.stopPropagation();
-                navigate(`/profile/${actor.username}`);
+                navigate(`/profile/${targetUsername}`);
               }
             }}
-            style={{ cursor: actor.username ? 'pointer' : 'default' }}
+            style={{ cursor: targetUsername ? 'pointer' : 'default' }}
           >
-            {actor.name}
+            {actorName}
           </span>
           {' '}
-          <span className={styles.text}>{notif.text}</span>
+          <span className={styles.text}>{displayText}</span>
           {' '}
           <span className={styles.time}>• {timeStr}</span>
         </div>
-        {notif.type === 'ACTIVITY_JOIN_REQUEST' && (
+        {notifType === 'activity_join_request' && (
           <div className={styles.joinBtnGroup}>
             <button 
               className={styles.joinAcceptBtn}
@@ -73,11 +107,11 @@ export default function NotificationItem({
       </div>
 
       <div className={styles.actionSlot}>
-        {isFollow ? (
+        {isFollow && targetUsername ? (
           <FollowButton targetUsername={targetUsername} size="sm" />
-        ) : (
-          <div className={styles.previewImg} />
-        )}
+        ) : postMedia ? (
+          <img src={postMedia} className={styles.previewImg} alt="" />
+        ) : null}
       </div>
     </div>
   );

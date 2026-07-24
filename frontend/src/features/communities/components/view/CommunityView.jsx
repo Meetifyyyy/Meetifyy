@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { useData } from '@shared/context/DataContext';
-import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
+import { useData } from '@shared/hooks/useData';
+import { useQueryClient } from '@tanstack/react-query';
+import { communitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
+import { useR2Upload } from '@shared/hooks/useR2Upload';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { ErrorState } from '@shared/components/ui/StateViews';
@@ -16,6 +18,7 @@ import CommunityAdminModal from '../modals/CommunityAdminModal';
 import styles from './CommunityView.module.css';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import ShareCommunityModal from '../modals/ShareCommunityModal';
+import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 
 function getActivityPhrase(comm) {
   if (comm.trending) return 'Growing Fast';
@@ -57,15 +60,25 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showDropdown]);
 
-  const handleImageUpload = (e, field) => {
+  const { upload: uploadToR2, uploading: imageUploading } = useR2Upload('community-icons');
+
+  const handleImageUpload = async (e, field) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        await onUpdateCommunity(comm.id, { [field]: ev.target.result });
-        showToast(`${field === 'coverImage' ? 'Cover' : 'Avatar'} updated successfully!`);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      showToast('File too large. Maximum size is 50 MB.');
+      e.target.value = '';
+      return;
+    }
+    try {
+      const publicUrl = await uploadToR2(file);
+      await onUpdateCommunity(comm.id, { [field]: publicUrl });
+      showToast(`${field === 'coverImage' ? 'Cover' : 'Icon'} updated!`);
+    } catch {
+      showToast('Upload failed. Try again.');
+    } finally {
+      e.target.value = '';
     }
   };
 
@@ -188,6 +201,8 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
                     </svg>
                     Joined
                   </>
+                ) : comm.privacy === 'private' ? (
+                  'Request to Join'
                 ) : (
                   'Join Community'
                 )}
@@ -281,7 +296,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
                         src={m.avatar}
                         alt={m.name || ''}
                         style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: '50%' }}
-                      />
+                       onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                     ) : (
                       <DefaultAvatar style={{ width: '100%', height: '100%', borderRadius: '50%', fontSize: '0.65rem' }} />
                     )}
@@ -512,11 +527,32 @@ function GuidelinesCard() {
 }
 
 
+function useSimulatedFetch(data, delay = 350, deps = []) {
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (data) {
+      const timer = setTimeout(() => {
+        setIsLoading(false);
+      }, delay);
+      return () => clearTimeout(timer);
+    } else {
+      setIsLoading(true);
+    }
+  }, [data, ...deps]);
+
+  return { isLoading: isLoading && !data, data, error: null, retry: () => {} };
+}
+
 export default function CommunityView({ communityId, onBack, onPostClick }) {
-  const { posts, communities: allCommunities, users, currentUser, toggleJoinCommunity, addPost, updateCommunity } = useData();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { posts, communities: allCommunities, users, currentUser, toggleJoinCommunity, requestToJoinGroup, addPost, updateCommunity } = useData();
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showMobileDetails, setShowMobileDetails] = useState(() => {
     const saved = localStorage.getItem('meetify_show_community_details');
     return saved !== null ? JSON.parse(saved) : true;
@@ -525,6 +561,8 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
   const [showMuteModal, setShowMuteModal] = useState(false);
   const [showMobileAbout, setShowMobileAbout] = useState(false);
   const [isMobileAboutClosing, setIsMobileAboutClosing] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [hasReported, setHasReported] = useState(false);
 
   const handleCloseMobileAbout = () => {
     setIsMobileAboutClosing(true);
@@ -579,6 +617,39 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
   const rawComm = allCommunities[communityId];
   const { isLoading, data: comm, error, retry } = useSimulatedFetch(rawComm, 350, [communityId]);
 
+  const [joining, setJoining] = useState(false);
+  const [postLimit, setPostLimit] = useState(15);
+  const loadMorePostsRef = useRef(null);
+
+  const userCommunities = useMemo(() => {
+    if (!currentUser || !comm) return [];
+    return users[currentUser.username]?.communities || currentUser.communities || [];
+  }, [users, currentUser, comm]);
+
+  const joined = comm ? userCommunities.includes(comm.name) : false;
+  const communityPosts = useMemo(() => {
+    if (!comm) return [];
+    return posts.filter(p => p.communityId === comm.id);
+  }, [posts, comm]);
+  const isAdmin = comm ? comm.memberList?.some(m => m.id === currentUser?.id && m.admin) : false;
+
+  const visibleCommunityPosts = useMemo(() => communityPosts.slice(0, postLimit), [communityPosts, postLimit]);
+  const hasMorePosts = communityPosts.length > visibleCommunityPosts.length;
+
+  useEffect(() => {
+    if (!hasMorePosts) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setPostLimit(prev => prev + 15);
+        }
+      },
+      { threshold: 0.1, rootMargin: '200px' }
+    );
+    if (loadMorePostsRef.current) observer.observe(loadMorePostsRef.current);
+    return () => observer.disconnect();
+  }, [hasMorePosts]);
+
   if (isLoading) {
     return (
       <div className={styles.wrapper}>
@@ -618,36 +689,17 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
 
   if (!comm) return null;
 
-  const userCommunities = users[currentUser?.username]?.communities || currentUser?.communities || [];
-  const joined = userCommunities.includes(comm.name);
-  const communityPosts = posts.filter(p => p.communityId === comm.id);
-  const isAdmin = comm.memberList?.some(m => m.id === currentUser?.id && m.admin);
-
-  const [joining, setJoining] = useState(false);
-  const [postLimit, setPostLimit] = useState(15);
-  const loadMorePostsRef = useRef(null);
-
-  const visibleCommunityPosts = useMemo(() => communityPosts.slice(0, postLimit), [communityPosts, postLimit]);
-  const hasMorePosts = communityPosts.length > visibleCommunityPosts.length;
-
-  useEffect(() => {
-    if (!hasMorePosts) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          setPostLimit(prev => prev + 15);
-        }
-      },
-      { threshold: 0.1, rootMargin: '200px' }
-    );
-    if (loadMorePostsRef.current) observer.observe(loadMorePostsRef.current);
-    return () => observer.disconnect();
-  }, [hasMorePosts]);
-
   const handleToggleJoin = (e) => {
     if (e) e.stopPropagation();
     if (joining) return;
     setJoining(true);
+    // Private communities require admin approval — send a join request instead of directly joining
+    if (!joined && comm.privacy === 'private') {
+      requestToJoinGroup(communityId);
+      showToast('Join request sent — waiting for admin approval.');
+      setJoining(false);
+      return;
+    }
     toggleJoinCommunity(communityId);
     setJoining(false);
     if (!joined) {
@@ -677,6 +729,23 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
         inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }, 150);
+  };
+
+  const handleDeleteCommunity = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await communitiesApi.delete(communityId);
+      queryClient.invalidateQueries(['communities']);
+      showToast('Community deleted.');
+      if (onBack) onBack();
+      else navigate('/communities');
+    } catch (err) {
+      showToast(err?.message || 'Could not delete community.');
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
   };
 
   return (
@@ -736,31 +805,47 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
                 Members
               </button>
               {isAdmin ? (
-                <button 
-                  onClick={() => {
-                    setShowAdminModal(true);
-                    setShowMobileMenu(false);
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                  </svg>
-                  Settings
-                </button>
+                <>
+                  <button 
+                    onClick={() => {
+                      setShowAdminModal(true);
+                      setShowMobileMenu(false);
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                    Settings
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowDeleteConfirm(true);
+                      setShowMobileMenu(false);
+                    }}
+                    style={{ color: 'var(--color-danger, #ef4444)' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                    Delete Community
+                  </button>
+                </>
               ) : (
                 <button 
                   onClick={() => {
-                    showToast('Community reported.');
                     setShowMobileMenu(false);
+                    if (!hasReported) setShowReportModal(true);
                   }}
+                  disabled={hasReported}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
                     <circle cx="12" cy="12" r="10" />
                     <line x1="12" y1="8" x2="12" y2="12" />
                     <line x1="12" y1="16" x2="12.01" y2="16" />
                   </svg>
-                  Report
+                  {hasReported ? 'Already Reported' : 'Report'}
                 </button>
               )}
             </div>
@@ -808,6 +893,39 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
           onClose={() => setShowShareModal(false)} 
           community={comm} 
         />
+      )}
+
+      {showDeleteConfirm && createPortal(
+        <div 
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+          onClick={() => setShowDeleteConfirm(false)}
+        >
+          <div 
+            style={{ background: 'var(--color-bg-white)', borderRadius: '16px', padding: '1.75rem', maxWidth: '360px', width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text-main)' }}>Delete community?</h3>
+            <p style={{ margin: '0 0 1.5rem', fontSize: '0.875rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+              <strong>{comm.name}</strong> and all its posts will be removed. This can't be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                style={{ flex: 1, padding: '0.7rem', borderRadius: '8px', border: '1.5px solid var(--color-border)', background: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-main)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteCommunity}
+                disabled={deleting}
+                style={{ flex: 1, padding: '0.7rem', borderRadius: '8px', border: 'none', background: '#ef4444', color: 'white', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', opacity: deleting ? 0.6 : 1 }}
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {showMobileAbout && createPortal(
@@ -881,7 +999,7 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
             </h2>
           </div>
 
-          {joined && (
+          {joined && (comm.allowMemberPosts !== false || isAdmin) && (
             <div className={styles.composerWrap}>
               <PostComposer onSubmit={(text, poll, media) => addPost(text, poll, comm.id, media)} />
             </div>
@@ -941,6 +1059,20 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
           <GuidelinesCard />
         </div>
       </div>
+
+      {comm && (
+        <ReportModal
+          isOpen={showReportModal}
+          onClose={() => setShowReportModal(false)}
+          targetType="COMMUNITY"
+          targetId={comm.id}
+          targetName={comm.name}
+          targetAvatar={comm.icon}
+          targetPreview={comm.desc || comm.description}
+          reportedFrom="community"
+          onSubmitted={() => setHasReported(true)}
+        />
+      )}
     </div>
   );
 }

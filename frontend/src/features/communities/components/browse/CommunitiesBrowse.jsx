@@ -1,13 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { categoriesList } from '@data/communities';
-import { useData } from '@shared/context/DataContext';
-import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
+import { useQuery } from '@tanstack/react-query';
+import { communitiesApi } from '@shared/api/apiClient';
+import { categoriesList } from '@constants/communityCategories';
+
 import { useDebounce } from '@shared/hooks/useDebounce';
 import { EmptyState, ErrorState } from '@shared/components/ui/StateViews';
-import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import CommunityCard from '../card/CommunityCard';
 import CommunityCardSkeleton from '../card/CommunityCardSkeleton';
 import CommunityGrid from '../card/CommunityGrid';
@@ -16,12 +14,11 @@ import PageHeader from '@layout/PageHeader';
 import styles from './CommunitiesBrowse.module.css';
 
 export default function CommunitiesBrowse({ onOpenCommunity }) {
-  const { communities, searchQuery, setSearchQuery, currentUser } = useData();
   const location = useLocation();
   const navigate = useNavigate();
-  const goBack = useSmartBack();
   const [activeCategory, setActiveCategory] = useState(location.state?.category || 'all');
   const [showCreate, setShowCreate] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 200);
 
   useEffect(() => {
@@ -30,50 +27,60 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
     }
   }, [location.state?.category]);
 
-  const allComms = Object.values(communities).filter((c) => {
-    if (c.collegeId) return false;
-    return true;
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['communities'],
+    queryFn: communitiesApi.getAll,
   });
 
+  const allComms = data || [];
+
   const filtered = allComms.filter((c) => {
-    if (c.isUniversity) return false;
     if (activeCategory === 'all') return true;
+    const catObj = categoriesList.find(cat => cat.id === activeCategory);
+    const catLabel = catObj?.label?.toLowerCase() || '';
+
     const catMap = {
-      technology: ['technology'],
-      programming: ['technology', 'coding'],
-      ai: ['ai', 'technology'],
-      design: ['design', 'art'],
-      art: ['art', 'design'],
-      startup: ['business', 'startup'],
-      science: ['science'],
-      engineering: ['technology', 'engineering'],
-      academics: ['education', 'academics'],
-      career: ['business', 'career'],
-      gaming: ['gaming'],
-      anime: ['anime', 'other'],
-      memes: ['other'],
-      music: ['music'],
-      photography: ['photography'],
-      videography: ['photography', 'film'],
-      film: ['film'],
-      sports: ['sports'],
-      fitness: ['health', 'fitness'],
-      travel: ['travel'],
-      food: ['food'],
-      fashion: ['fashion'],
-      books: ['books'],
-      pets: ['pets'],
-      volunteering: ['other', 'volunteering'],
-      campus: ['education', 'campus'],
-      entrepreneurship: ['business', 'startup'],
-      content: ['other', 'content'],
-      languages: ['language', 'languages'],
-      health: ['health'],
-      lifestyle: ['other', 'lifestyle'],
+      technology: ['technology', 'tech', 'coding'],
+      programming: ['technology', 'coding', 'programming'],
+      ai: ['ai', 'technology', 'artificial intelligence'],
+      design: ['design', 'art', 'ui', 'ux'],
+      art: ['art', 'design', 'drawing', 'painting'],
+      startup: ['business', 'startup', 'entrepreneurship'],
+      science: ['science', 'tech'],
+      engineering: ['technology', 'engineering', 'coding'],
+      academics: ['education', 'academics', 'study'],
+      career: ['business', 'career', 'jobs'],
+      gaming: ['gaming', 'games', 'esports'],
+      anime: ['anime', 'manga', 'other'],
+      memes: ['memes', 'humor', 'other'],
+      music: ['music', 'audio', 'songs'],
+      photography: ['photography', 'photos'],
+      videography: ['photography', 'film', 'video'],
+      movies: ['film', 'movies', 'cinema'],
+      sports: ['sports', 'fitness', 'athletics'],
+      fitness: ['health', 'fitness', 'gym', 'workout'],
+      travel: ['travel', 'explore'],
+      food: ['food', 'cooking', 'dining'],
+      fashion: ['fashion', 'style'],
+      books: ['books', 'literature', 'reading'],
+      pets: ['pets', 'animals', 'dogs', 'cats'],
+      volunteering: ['volunteering', 'other'],
+      campus: ['education', 'campus', 'college', 'university'],
+      entrepreneurship: ['business', 'startup', 'entrepreneurship'],
+      content: ['content', 'other', 'youtube'],
+      languages: ['language', 'languages', 'linguistics'],
+      health: ['health', 'wellness'],
+      lifestyle: ['lifestyle', 'other'],
       other: ['other'],
     };
     const matchedCats = catMap[activeCategory] || [activeCategory];
-    return c.categories?.some((cat) => matchedCats.includes(cat));
+    
+    if (c.category === activeCategory) return true;
+    if (c.categories?.some((cat) => matchedCats.includes(cat.toLowerCase()))) return true;
+    if (matchedCats.includes(c.slug?.toLowerCase())) return true;
+    if (catLabel && (c.name?.toLowerCase().includes(catLabel) || c.description?.toLowerCase().includes(catLabel))) return true;
+
+    return false;
   });
 
   const searched = filtered.filter((c) => {
@@ -81,14 +88,12 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
     const q = debouncedSearchQuery.toLowerCase();
     return (
       c.name?.toLowerCase().includes(q) ||
-      c.desc?.toLowerCase().includes(q) ||
-      c.categoryLabel?.toLowerCase().includes(q)
+      c.description?.toLowerCase().includes(q)
     );
   });
 
-
-
-  const { isLoading, data: remaining, error, retry } = useSimulatedFetch(searched, 350);
+  const remaining = searched;
+  const retry = refetch;
 
   return (
     <div className={styles.browse}>

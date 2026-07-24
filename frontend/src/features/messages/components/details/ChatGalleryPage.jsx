@@ -1,5 +1,7 @@
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './ChatGalleryPage.module.css';
+import { sanitizeUrl } from '@shared/utils/urlSanitize';
+import { Image as ImageIcon } from 'lucide-react';
 
 export default function ChatGalleryPage({ mediaList, onBack }) {
   return (
@@ -21,19 +23,29 @@ export default function ChatGalleryPage({ mediaList, onBack }) {
       </div>
       
       <div className={sharedStyles.scrollBody} key="gallery-scroll">
-        <div className={styles.galleryGrid}>
-          {mediaList.map((item, idx) => (
-            <div key={idx} className={styles.galleryGridItem}>
-              {item.type === 'video' ? (
-                <div className={sharedStyles.videoGridWrapper}>
-                  <video src={item.url} className={styles.galleryGridMedia} controls />
-                </div>
-              ) : (
-                <img src={item.url} alt="" className={styles.galleryGridMedia} onClick={() => window.open(item.url, '_blank')} />
-              )}
-            </div>
-          ))}
-        </div>
+        {mediaList && mediaList.length > 0 ? (
+          <div className={styles.galleryGrid}>
+            {mediaList.map((item, idx) => (
+              <div key={idx} className={styles.galleryGridItem}>
+                {item.type === 'video' ? (
+                  <div className={sharedStyles.videoGridWrapper}>
+                    <video src={item.url} className={styles.galleryGridMedia} controls />
+                  </div>
+                ) : (
+                  <img src={item.url} alt="" className={styles.galleryGridMedia} onClick={() => {
+                    const safe = sanitizeUrl(item.url);
+                    if (safe) window.open(safe, '_blank', 'noopener,noreferrer');
+                  }} />
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className={sharedStyles.noMediaContainer} style={{ padding: '4rem 1rem', justifyContent: 'center', flexDirection: 'column', gap: '0.75rem' }}>
+            <ImageIcon size={36} className={sharedStyles.noMediaIcon} />
+            <span style={{ fontSize: '0.95rem' }}>No media</span>
+          </div>
+        )}
       </div>
     </div>
   );

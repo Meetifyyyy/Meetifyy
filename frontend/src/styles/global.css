@@ -25,7 +25,6 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: var(--transition-theme);
 }
 
 html {
@@ -135,7 +134,6 @@ nav a.active {
   background: var(--color-bg-main);
   z-index: -1;
   pointer-events: none;
-  transition: var(--transition-theme);
 }
 
 .header-search {
@@ -380,39 +378,34 @@ nav a.active {
 }
 
 /* ---------- Theme Radial Transition ---------- */
+/* Freeze CSS transitions on the real page while the overlay animates */
+.theme-transitioning,
 .theme-transitioning * {
   transition: none !important;
 }
 
-::view-transition-old(root) {
+:root {
+  --vt-x: 50%;
+  --vt-y: 50%;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
   animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-image-pair(root) {
+  isolation: auto;
+}
+
+::view-transition-old(root) {
   z-index: 1;
 }
 
 ::view-transition-new(root) {
-  animation: reveal var(--vt-duration, 1200ms) cubic-bezier(0.25, 0, 0.15, 1) forwards;
   z-index: 2;
-}
-
-@keyframes reveal {
-  from { clip-path: circle(0px at var(--vt-x) var(--vt-y)); }
-  to   { clip-path: circle(var(--vt-r) at var(--vt-x) var(--vt-y)); }
-}
-
-/* Respect reduced motion — no animation, instant switch */
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-old(root),
-  ::view-transition-new(root) { animation-duration: 0ms; }
-}
-
-.theme-overlay {
-  will-change: clip-path;          /* Tells browser to composite this layer */
-  transform: translateZ(0);        /* Force GPU layer promotion */
-  contain: strict;                 /* Isolate painting scope */
-  pointer-events: none;            /* Never block interactions */
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
+  clip-path: circle(0px at var(--vt-x) var(--vt-y));
 }
 
 .dropdown.open {
@@ -551,20 +544,20 @@ button:active {
   font-family: var(--font-family-display, 'Inter', sans-serif);
   font-weight: 600;
   color: var(--color-text-inverse, #fff);
-  background: var(--color-bg-soft, #F1F5F9);
+  background: var(--color-bg-white, #FFFFFF);
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
   /* Fix for Safari border-radius overflow issues with images */
-  -webkit-mask-image: -webkit-radial-gradient(white, black);
-  mask-image: radial-gradient(white, black);
+  isolation: isolate;
+  transform: translateZ(0);
   box-shadow: var(--shadow-sm); /* Default standard shadow */
   transition: filter var(--transition-fast) ease, opacity var(--transition-fast) ease;
 }
 
 /* Dark mode fallback adjustment if needed */
 [data-theme="dark"] .ui-avatar {
-  background: var(--color-bg-soft, #2A2A2A);
+  background: var(--color-bg-white, #202020);
   color: var(--color-text-main, #fff);
 }
 
@@ -576,7 +569,7 @@ button:active {
   object-fit: cover;
   display: block;
   /* Fallback color when image is loading or broken */
-  background-color: var(--color-bg-soft);
+  background-color: var(--color-bg-white);
 }
 
 .ui-avatar-clickable {

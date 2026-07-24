@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+import { useData } from '@shared/hooks/useData';
 import { useTheme } from '@shared/context/ThemeContext';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -22,7 +22,7 @@ export default function CampusPage() {
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
 
   const userCollegeId = currentUser?.collegeId || 'gla';
-  const collegeCommunity = communities[userCollegeId] || { name: 'GLA University', members: 4200, online: 854 };
+  const collegeCommunity = communities[userCollegeId] || { name: 'Your College', members: 4200, online: 854 };
   const collegeName = collegeCommunity.name;
 
   const recentActivities = useMemo(() => {
@@ -58,7 +58,7 @@ export default function CampusPage() {
       {/* HEADER SECTION */}
       <div className={styles.headerBanner}>
         <header className={styles.header}>
-          <h1 className={styles.collegeTitle}>GLA University</h1>
+          <h1 className={styles.collegeTitle}>{collegeName}</h1>
 
           <div className={styles.headerActions}>
 

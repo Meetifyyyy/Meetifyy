@@ -1,42 +1,51 @@
-import { useState, useEffect } from 'react';
-import { useData } from '@shared/context/DataContext';
+import { useState, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { postsApi } from '@shared/api/apiClient';
+
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import Post from './Post';
 import { CommentTreeRoot } from './CommentNode';
 import styles from './PostView.module.css';
+import { useData } from '@shared/hooks/useData';
 
-// Persistent set to track posts whose comments have already been loaded once
-const loadedCommentsPosts = new Set();
+function buildCommentTree(comments) {
+  if (!comments || !Array.isArray(comments)) return [];
+  const map = {};
+  const roots = [];
+  
+  comments.forEach(c => {
+    map[c.id] = { ...c, replies: [] };
+  });
+  
+  comments.forEach(c => {
+    if (c.parentId && map[c.parentId]) {
+      map[c.parentId].replies.push(map[c.id]);
+    } else {
+      roots.push(map[c.id]);
+    }
+  });
+  
+  return roots;
+}
 
 export default function PostView({ post, onBack }) {
   const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
-  const { getPostById, addComment, currentUser } = useData();
+  const { addComment, currentUser } = useData();
 
-  // post passed in props might just be the initial reference, we should fetch live from context
-  const livePost = post ? getPostById(post.id) : null;
-
-  const [commentsLoading, setCommentsLoading] = useState(() => {
-    if (!livePost) return false;
-    return !loadedCommentsPosts.has(livePost.id);
+  const { data: fetchedPost, isLoading: isFetchingPost } = useQuery({
+    queryKey: ['post', post?.id],
+    queryFn: () => postsApi.getPostById(post.id),
+    enabled: !!post?.id,
+    staleTime: 30_000,
   });
 
-  useEffect(() => {
-    if (!livePost) return;
-    if (loadedCommentsPosts.has(livePost.id)) {
-      setCommentsLoading(false);
-      return;
-    }
 
-    setCommentsLoading(true);
-    const timer = setTimeout(() => {
-      loadedCommentsPosts.add(livePost.id);
-      setCommentsLoading(false);
-    }, 600); // 600ms simulated load for comments
-
-    return () => clearTimeout(timer);
-  }, [livePost?.id]);
+  const livePost = fetchedPost || post;
+  
+  const commentsLoading = isFetchingPost && !fetchedPost;
 
   if (!livePost) return null;
 
@@ -60,7 +69,10 @@ export default function PostView({ post, onBack }) {
     }
   }, [livePost.id]);
 
-  const replies = livePost.replies || [];
+  const replies = useMemo(() => {
+    if (livePost.comments) return buildCommentTree(livePost.comments);
+    return livePost.replies || [];
+  }, [livePost.comments, livePost.replies]);
 
   return (
     <div className={styles.postViewContainer}>
@@ -80,13 +92,7 @@ export default function PostView({ post, onBack }) {
 
       {/* Reply Composer (Top Level) */}
       <div className={styles.postViewComposer}>
-        <div className={styles.composerAvatar}>
-          {isImageUrl(currentUser.avatar) ? (
-            <img src={currentUser.avatar} alt={currentUser.displayName} className={styles.composerAvatarImg} />
-          ) : (
-            <DefaultAvatar />
-          )}
-        </div>
+        <Avatar src={currentUser?.avatar} name={currentUser?.displayName} size="40px" disableHover />
         <form onSubmit={handleMainReplySubmit} className={styles.replyForm}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <MentionInput

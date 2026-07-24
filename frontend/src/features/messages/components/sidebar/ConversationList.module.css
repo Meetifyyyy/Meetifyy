@@ -261,8 +261,8 @@
   /* fallback when no color is provided */
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   /* GPU compositing for crisp rounded corners */
-  -webkit-mask-image: -webkit-radial-gradient(white, black);
-  mask-image: radial-gradient(white, black);
+  isolation: isolate;
+  transform: translateZ(0);
 }
 
 .convAvatarImg {

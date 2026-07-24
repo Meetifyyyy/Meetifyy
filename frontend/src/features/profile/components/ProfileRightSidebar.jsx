@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useData } from '@shared/context/DataContext';
+
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
 import FollowButton from '@shared/components/ui/FollowButton';
 import { useNavigate } from 'react-router-dom';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import s from './ProfileRightSidebar.module.css';
+import { useQuery } from '@tanstack/react-query';
+import { usersApi, activitiesApi, communitiesApi } from '@shared/api/apiClient';
 
 const isImageUrl = (str) => {
   if (!str || typeof str !== 'string') return false;
@@ -44,30 +46,12 @@ function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
           const secsStr = String(secs).padStart(2, '0');
           return `Starts in ${mins}m ${secsStr}s`;
         }
+      } else {
+        return `Already started`;
       }
     }
   } catch (e) {
     // fallback
-  }
-  // mock fallback using nowTime to make it tick down slightly
-  const defaultDiff = index === 0 ? 59 * 60 * 1000 + 4 * 1000 : 4 * 60 * 60 * 1000 + 18 * 60 * 1000;
-  const targetMock = nowTime + defaultDiff - (nowTime % 3600000);
-  const diffMs = targetMock - nowTime;
-  if (diffMs > 0) {
-    if (diffMs >= 24 * 60 * 60 * 1000) {
-      const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-      const hours = Math.floor((diffMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-      return `Starts in ${days}d ${hours}hr`;
-    } else if (diffMs >= 60 * 60 * 1000) {
-      const hours = Math.floor(diffMs / (60 * 60 * 1000));
-      const mins = Math.floor((diffMs % (60 * 60 * 1000)) / (60 * 1000));
-      return `Starts in ${hours}hr ${mins}m`;
-    } else {
-      const mins = Math.floor(diffMs / (60 * 1000));
-      const secs = Math.floor((diffMs % (60 * 1000)) / 1000);
-      const secsStr = String(secs).padStart(2, '0');
-      return `Starts in ${mins}m ${secsStr}s`;
-    }
   }
   return `Starts soon`;
 }
@@ -79,7 +63,26 @@ function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
  */
 export default function ProfileRightSidebar({ embedded = false }) {
   const { currentUser } = useAuth();
-  const { users, crewActivities, communities, toggleJoinCommunity } = useData();
+  
+  const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
+  const users = useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
+  
+  const { data: crewActivities = [] } = useQuery({ queryKey: ['activities'], queryFn: activitiesApi.getAll });
+  
+  const { data: communitiesData = [] } = useQuery({ queryKey: ['communities'], queryFn: communitiesApi.getAll });
+  const communities = useMemo(() => communitiesData.reduce((acc, c) => ({ ...acc, [c.id]: c }), {}), [communitiesData]);
+  
+  const toggleJoinCommunity = async (id) => {
+    try {
+      const isJoined = currentUser?.communities?.includes(id);
+      if (isJoined) await communitiesApi.leave(id);
+      else await communitiesApi.join(id);
+      // Not invalidating query for instantaneous fake update in this simple UI
+    } catch (e) {
+      console.error(e);
+    }
+  };
+  
   const navigate = useNavigate();
 
   const [suggestedUsers, setSuggestedUsers] = useState([]);
@@ -191,7 +194,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
                   }}
                 >
                   {isImageUrl(c.avatar)
-                    ? <img src={c.avatar} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+                    ? <img src={c.avatar} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                     : <span style={{ color: '#FFF', fontWeight: 700, fontSize: '1.2rem' }}>{c.name.charAt(0).toUpperCase()}</span>
                   }
                 </div>

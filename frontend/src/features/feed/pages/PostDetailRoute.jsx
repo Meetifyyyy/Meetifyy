@@ -1,39 +1,55 @@
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { postsApi } from '@shared/api/apiClient';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { useData } from '@shared/context/DataContext';
+import { useData } from '@shared/hooks/useData';
 import { useFollow } from '@shared/context/FollowContext';
 import { EmptyState } from '@shared/components/ui/StateViews';
 import PostView from '../components/post/PostView';
 import RightPanel from '@layout/RightPanel';
 import rightPanelStyles from '@layout/RightPanel.module.css';
-import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import Avatar from '@shared/components/avatar/Avatar';
 
 export default function PostDetailRoute() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const location = useLocation();
   const { id } = useParams();
-  const { getUserById, getPostById, communities, currentUser } = useData();
+  const { getUserById, communities, currentUser } = useData();
   const { isFollowing, toggleFollow } = useFollow();
 
   const handleBack = () => {
     goBack('/home');
   };
 
-  // Always prefer live state from DataContext; use location.state only for context hints
-  const post = getPostById(id) || location.state?.post || null;
+  const initialPost = location.state?.post || null;
 
-  const sourceContext = location.state?.sourceContext || (post?.communityId ? 'community' : 'feed');
-  const communityId = location.state?.communityId || post?.communityId;
+  const { data: fetchedPost, isLoading, isError, error } = useQuery({
+    queryKey: ['post', id],
+    queryFn: () => postsApi.getPostById(id),
+    enabled: !!id,
+    retry: false,
+  });
 
-  // Only show empty state if we truly have no post data at all (e.g. direct URL navigation to invalid ID)
-  if (!post) {
+  const post = fetchedPost || initialPost;
+
+  if (isLoading && !post) {
+    return (
+      <main className="centre">
+        <div style={{ padding: '3rem 2rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+          Loading post...
+        </div>
+      </main>
+    );
+  }
+
+  if (isError || !post) {
+    const errorMsg = error?.response?.data?.message || 'This post may have been removed or deleted.';
     return (
       <main className="centre">
         <EmptyState 
           title="Post not found" 
-          message="This post may have been removed or the link is incorrect."
+          message={errorMsg}
           icon={
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-light)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem' }}>
               <circle cx="12" cy="12" r="10" />
@@ -64,6 +80,9 @@ export default function PostDetailRoute() {
       </main>
     );
   }
+
+  const sourceContext = location.state?.sourceContext || (post?.communityId ? 'community' : 'feed');
+  const communityId = location.state?.communityId || post?.communityId;
 
   const renderRightPanel = () => {
     if (sourceContext === 'community' && communityId) {
@@ -100,7 +119,7 @@ export default function PostDetailRoute() {
         </RightPanel>
       );
     } else {
-      const author = getUserById(post.authorId) || {
+      const author = post.author || getUserById(post.authorId) || {
         displayName: 'Unknown User',
         followers: 0,
         following: 0,
@@ -116,16 +135,12 @@ export default function PostDetailRoute() {
             {/* Profile Info */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               {/* Avatar */}
-              <div 
-                style={{ width: '80px', height: '80px', borderRadius: '50%', overflow: 'hidden', background: 'var(--color-bg-main)', cursor: 'pointer' }}
+              <Avatar 
+                src={author.avatarUrl || author.avatar} 
+                name={author.displayName} 
+                size="80px" 
                 onClick={() => navigate(`/profile/${author.username || author.displayName?.toLowerCase().replace(/\s+/g, '')}`)}
-              >
-                {isImageUrl(author.avatarUrl || author.avatar) ? (
-                  <img src={author.avatarUrl || author.avatar} alt={author.displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <DefaultAvatar size={80} />
-                )}
-              </div>
+              />
               
               <div 
                 style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', cursor: 'pointer' }}
@@ -208,7 +223,7 @@ export default function PostDetailRoute() {
                             src={commEntry[1].avatar} 
                             alt={commName} 
                             style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} 
-                          />
+                           onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                         ) : (
                           <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'linear-gradient(135deg, #22C55E, #10B981)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#FFFFFF', fontSize: '0.8rem', fontWeight: 700 }}>
                             {commName.charAt(0)}

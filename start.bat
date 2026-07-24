@@ -1,0 +1,3 @@
+@echo off
+echo Starting Meetifyy Backend, Main Frontend, and Admin Frontend...
+npm run dev

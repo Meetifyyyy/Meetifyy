@@ -1,19 +1,24 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/context/DataContext';
+
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ChatDetailsPanel.module.css';
-import { Pin, Trash2, LogOut, ChevronRight, User, Search, Ban, UserPlus } from 'lucide-react';
+import { Pin, Trash2, LogOut, ChevronRight, User, Search, Ban, UserPlus, Image as ImageIcon } from 'lucide-react';
 import InviteModal from '../modals/InviteModal';
+import SafetyNumberModal from '../modals/SafetyNumberModal';
 import { showToast } from '@shared/utils/toast';
 
 import ChatGalleryPage from './ChatGalleryPage';
 import GroupChangeOwnerPage from './GroupChangeOwnerPage';
 import GroupEditPage from './GroupEditPage';
 import GroupSettingsPage from './GroupSettingsPage';
+import { useData } from '@shared/hooks/useData';
+import { toast } from 'sonner';
+import { useR2Upload } from '@shared/hooks/useR2Upload';
+
 
 export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, onClearChat, onSearch }) {
   const navigate = useNavigate();
@@ -27,6 +32,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   
   // Modal States
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showSafetyModal, setShowSafetyModal] = useState(false);
   
   // Header Menu States
   const [showMenu, setShowMenu] = useState(false);
@@ -62,11 +68,14 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   const [showEditGroupPage, setShowEditGroupPage] = useState(false);
   const [showGalleryPage, setShowGalleryPage] = useState(false);
   const [showChangeOwnerPage, setShowChangeOwnerPage] = useState(false);
-  const [groupUpdatesActive, setGroupUpdatesActive] = useState(true);
+  const [groupUpdatesActive, setGroupUpdatesActive] = useState(conversation.groupUpdatesActive !== false);
   const [whoCanJoin, setWhoCanJoin] = useState(conversation.whoCanJoin || 'Anyone');
   const [visibility, setVisibility] = useState(() => {
     if (conversation.visibility) return conversation.visibility;
-    if (conversation.id && String(conversation.id).startsWith('c_')) return 'Visible only to Gla University';
+    if (conversation.id && String(conversation.id).startsWith('c_')) {
+      const uniName = currentUser?.university || currentUser?.college?.name || 'your university';
+      return `Visible only to ${uniName}`;
+    }
     return 'Hidden group';
   });
   const [allowSharing, setAllowSharing] = useState(conversation.allowSharing !== false);
@@ -117,23 +126,11 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
     }
 
     const seen = new Set();
-    const uniqueList = list.filter(item => {
+    return list.filter(item => {
       if (seen.has(item.url)) return false;
       seen.add(item.url);
       return true;
     });
-
-    if (uniqueList.length > 0) return uniqueList;
-
-    // Seed premium mock gallery images if no media has been shared yet
-    return [
-      { type: 'image', url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=600&auto=format&fit=crop&q=80' },
-      { type: 'image', url: 'https://images.unsplash.com/photo-1517649763962-0c623066013b?w=600&auto=format&fit=crop&q=80' },
-      { type: 'image', url: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=600&auto=format&fit=crop&q=80' },
-      { type: 'image', url: 'https://images.unsplash.com/photo-1610890716171-6b1bb98ffd09?w=600&auto=format&fit=crop&q=80' },
-      { type: 'image', url: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=600&auto=format&fit=crop&q=80' },
-      { type: 'image', url: 'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?w=600&auto=format&fit=crop&q=80' }
-    ];
   }, [conversation.messages]);
 
   if (!conversation) return null;
@@ -152,9 +149,10 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   const isOwner = conversation.ownerId === currentUser?.id || conversation.hostId === currentUser?.id || isHost;
   const isAdmin = isOwner || (conversation.admins || []).includes(currentUser?.id);
   const canEditGroupInfo = isAdmin || editGroupPermission === 'Everyone';
-  const memberIds = conversation.members || conversation.participants || (activity ? activity.participants : []) || [];
+  const rawParticipants = conversation.members || conversation.participants || (activity ? activity.participants : []) || [];
+  const memberIds = rawParticipants.map(p => p?.userId || p?.id || p);
   const isClosed = conversation.status === 'Closed';
-  const isMember = isGroup ? (conversation.members || conversation.participants || []).includes(currentUser?.id) : true;
+  const isMember = isGroup ? memberIds.map(String).includes(String(currentUser?.id)) : true;
 
   // Formatted date for group creation
   const formattedDate = conversation.createdAt 
@@ -168,16 +166,17 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
     }
   };
 
-  const handleFileChange = (e) => {
+  const { upload: uploadGroupIcon } = useR2Upload('group-icons');
+
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setEditAvatar(event.target.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      try {
+        const publicUrl = await uploadGroupIcon(file);
+        setEditAvatar(publicUrl);
+      } catch {
+        toast.error('Failed to upload avatar.');
+      }
     }
     e.target.value = '';
   };
@@ -281,9 +280,26 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   };
 
   // Find target user for one-on-one
-  const targetUser = isOneOnOne
-    ? Object.values(users).find(u => u.username === conversation.username || u.id === conversation.userId)
-    : null;
+  const targetUser = useMemo(() => {
+    if (!isOneOnOne) return null;
+    if (conversation.targetUser) return conversation.targetUser;
+    const found = Object.values(users).find(u => 
+      (conversation.username && u.username === conversation.username) || 
+      (conversation.userId && u.id === conversation.userId) ||
+      u.id === conversation.id
+    );
+    if (found) return found;
+    return {
+      id: conversation.id,
+      name: conversation.name || 'User',
+      displayName: conversation.name || 'User',
+      username: conversation.name ? conversation.name.toLowerCase().replace(/\s+/g, '') : 'user',
+      avatar: conversation.avatar || '',
+      bio: conversation.bio || null,
+      major: conversation.major || null,
+      university: conversation.university || conversation.college || null
+    };
+  }, [isOneOnOne, conversation, users]);
 
   if (showGalleryPage) {
     return (
@@ -351,20 +367,18 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             if (changes.length > 0) {
               let toastMsg = '';
               if (changes.length === 1) {
-                toastMsg = `${changes[0]} has been changed`;
+                toastMsg = `Updated ${changes[0]}`;
               } else if (changes.length === 2) {
-                toastMsg = `${changes[0]} and ${changes[1]} have been changed`;
+                toastMsg = `Updated ${changes[0]} and ${changes[1]}`;
               } else {
-                const last = changes.pop();
-                toastMsg = `${changes.join(', ')} and ${last} have been changed`;
+                toastMsg = 'Updated group info';
               }
-              // Capitalize the first letter of toastMsg
-              toastMsg = toastMsg.charAt(0).toUpperCase() + toastMsg.slice(1);
               showToast(toastMsg);
             }
 
             updateGroupInfo(conversation.id, editName.trim(), editAvatar, editDesc.trim());
           }
+          setShowEditGroupPage(false);
         }}
         handleAvatarClick={handleAvatarClick}
         handleFileChange={handleFileChange}
@@ -376,12 +390,8 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
     return (
       <GroupSettingsPage
         conversation={conversation}
-        isOwner={isOwner}
-        isAdmin={isAdmin}
-        isMember={isMember}
-        isClosed={isClosed}
-        isEventGroup={isEventGroup}
-        canEditGroupInfo={canEditGroupInfo}
+        groupUpdatesActive={groupUpdatesActive}
+        setGroupUpdatesActive={setGroupUpdatesActive}
         whoCanJoin={whoCanJoin}
         setWhoCanJoin={setWhoCanJoin}
         visibility={visibility}
@@ -390,15 +400,25 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         setAllowSharing={setAllowSharing}
         editGroupPermission={editGroupPermission}
         setEditGroupPermission={setEditGroupPermission}
-        groupUpdatesActive={groupUpdatesActive}
-        setGroupUpdatesActive={setGroupUpdatesActive}
-        updateGroupSettings={updateGroupSettings}
-        updateGroupEditPermission={updateGroupEditPermission}
+        isAdmin={isAdmin}
+        isOwner={isOwner}
+        isEventGroup={isEventGroup}
+        isGroup={isGroup}
+        activity={activity}
+        users={users}
+        memberIds={memberIds}
+        targetUserId={targetUserId}
+        showConfirm={showConfirm}
+        confirmType={confirmType}
         onBack={() => setShowSettingsPage(false)}
-        onGoToEdit={() => {
-          if (canEditGroupInfo) setShowEditGroupPage(true);
+        onShowChangeOwnerPage={() => setShowChangeOwnerPage(true)}
+        onSetConfirmTarget={(uid, type) => {
+          setTargetUserId(uid);
+          setConfirmType(type);
+          setShowConfirm(true);
         }}
-        onGoToChangeOwner={() => setShowChangeOwnerPage(true)}
+        onCancelConfirm={() => setShowConfirm(false)}
+        onConfirmAction={handleConfirmAction}
         handleLeaveGroup={handleLeaveGroup}
         handleEndActivity={handleEndActivity}
         handleEndGroup={handleEndGroup}
@@ -417,7 +437,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
           </svg>
         </button>
         <h2 className={styles.headerTitle}>
-          {isOneOnOne ? '' : isEventGroup ? '' : 'Group Info'}
+          {isOneOnOne ? 'Chat Details' : isEventGroup ? 'Activity Details' : 'Group Info'}
         </h2>
         <div className={styles.headerRight}>
           {isEventGroup && (
@@ -477,8 +497,8 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             />
           ) : (
             <Avatar
-              src={conversation.avatar}
-              name={conversation.name}
+              src={conversation.avatar || targetUser?.avatar}
+              name={conversation.name || targetUser?.displayName}
               size="120px"
               isGroup={isGroup}
               onClick={!isClosed && isMember ? handleAvatarClick : undefined}
@@ -492,7 +512,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
           )}
           
           <h1 className={styles.primaryName}>
-            {isOneOnOne && targetUser ? (targetUser.displayName || targetUser.name) : conversation.name}
+            {isOneOnOne && targetUser ? (targetUser.displayName || targetUser.name || conversation.name) : conversation.name}
             {isClosed && <span style={{ marginLeft: '10px', fontSize: '0.85rem', backgroundColor: '#ef4444', color: 'white', padding: '2px 8px', borderRadius: '12px', verticalAlign: 'middle', fontWeight: 'bold' }}>Closed</span>}
           </h1>
 
@@ -593,12 +613,58 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         {/* 1. ONE-ON-ONE CHAT DETAILS */}
         {isOneOnOne && targetUser && (
           <div className={styles.detailsList}>
-            {targetUser.university && (
+            {targetUser.bio && (
               <div className={styles.section}>
-                <h3 className={styles.sectionTitle}>College</h3>
-                <p className={styles.sectionValue}>{targetUser.university}</p>
+                <h3 className={styles.sectionTitle}>Bio</h3>
+                <p className={styles.sectionValue}>{targetUser.bio}</p>
               </div>
             )}
+
+            {(targetUser.university || targetUser.college) && (
+              <div className={styles.section}>
+                <h3 className={styles.sectionTitle}>College</h3>
+                <p className={styles.sectionValue}>{typeof (targetUser.university || targetUser.college) === 'object' ? (targetUser.college?.name || targetUser.university?.name) : (targetUser.university || targetUser.college)}</p>
+              </div>
+            )}
+
+            {targetUser.major && (
+              <div className={styles.section}>
+                <h3 className={styles.sectionTitle}>Major</h3>
+                <p className={styles.sectionValue}>{targetUser.major}</p>
+              </div>
+            )}
+
+            {/* End-to-End Encryption Section */}
+            <div className={styles.section} style={{ marginTop: '1rem' }}>
+              <div 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between',
+                  padding: '12px 16px',
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderRadius: '12px',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setShowSafetyModal(true)}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ color: '#10b981' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-primary)' }}>End-to-End Encrypted</h3>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      Click to verify safety numbers
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight size={20} color="var(--text-secondary)" />
+              </div>
+            </div>
 
             {/* Gallery Section */}
             <div className={styles.galleryCard}>
@@ -606,22 +672,29 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                 <span className={styles.galleryTitle}>Gallery</span>
                 <ChevronRight className={styles.galleryChevron} size={20} />
               </div>
-              <div className={styles.galleryRow}>
-                {mediaList.map((item, idx) => (
-                  <div key={idx} className={styles.galleryThumbnail} onClick={() => setShowGalleryPage(true)}>
-                    {item.type === 'video' ? (
-                      <div className={styles.videoGridWrapper} style={{ width: '100%', height: '100%' }}>
-                        <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        <div className={styles.playBadge}>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              {mediaList && mediaList.length > 0 ? (
+                <div className={styles.galleryRow}>
+                  {mediaList.map((item, idx) => (
+                    <div key={idx} className={styles.galleryThumbnail} onClick={() => setShowGalleryPage(true)}>
+                      {item.type === 'video' ? (
+                        <div className={styles.videoGridWrapper} style={{ width: '100%', height: '100%' }}>
+                          <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <div className={styles.playBadge}>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <img src={item.url} alt="" className={styles.galleryThumbImg} />
-                    )}
-                  </div>
-                ))}
-              </div>
+                      ) : (
+                        <img src={item.url} alt="" className={styles.galleryThumbImg} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.noMediaContainer}>
+                  <ImageIcon size={18} className={styles.noMediaIcon} />
+                  <span>No media</span>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -642,22 +715,29 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                 <span className={styles.galleryTitle}>Gallery</span>
                 <ChevronRight className={styles.galleryChevron} size={20} />
               </div>
-              <div className={styles.galleryRow}>
-                {mediaList.map((item, idx) => (
-                  <div key={idx} className={styles.galleryThumbnail} onClick={() => setShowGalleryPage(true)}>
-                    {item.type === 'video' ? (
-                      <div className={styles.videoGridWrapper} style={{ width: '100%', height: '100%' }}>
-                        <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        <div className={styles.playBadge}>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              {mediaList && mediaList.length > 0 ? (
+                <div className={styles.galleryRow}>
+                  {mediaList.map((item, idx) => (
+                    <div key={idx} className={styles.galleryThumbnail} onClick={() => setShowGalleryPage(true)}>
+                      {item.type === 'video' ? (
+                        <div className={styles.videoGridWrapper} style={{ width: '100%', height: '100%' }}>
+                          <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <div className={styles.playBadge}>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <img src={item.url} alt="" className={styles.galleryThumbImg} />
-                    )}
-                  </div>
-                ))}
-              </div>
+                      ) : (
+                        <img src={item.url} alt="" className={styles.galleryThumbImg} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.noMediaContainer}>
+                  <ImageIcon size={18} className={styles.noMediaIcon} />
+                  <span>No media</span>
+                </div>
+              )}
             </div>
 
             {isMember && (
@@ -959,6 +1039,12 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         isOpen={showInviteModal} 
         onClose={() => setShowInviteModal(false)} 
         group={conversation} 
+      />
+
+      <SafetyNumberModal
+        isOpen={showSafetyModal}
+        onClose={() => setShowSafetyModal(false)}
+        targetUser={targetUser}
       />
     </div>
   );

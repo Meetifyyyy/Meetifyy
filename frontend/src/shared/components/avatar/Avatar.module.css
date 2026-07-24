@@ -18,8 +18,8 @@
 }
 
 .avatarUser .avatarClip {
-  -webkit-mask-image: -webkit-radial-gradient(white, black);
-  mask-image: radial-gradient(white, black);
+  isolation: isolate;
+  transform: translateZ(0);
 }
 
 .avatarClip {
@@ -31,8 +31,8 @@
   border-radius: inherit;
   overflow: hidden;
   box-sizing: border-box;
-  background: var(--color-primary);
-  color: #ffffff;
+  background: var(--color-bg-white);
+  color: var(--color-icon-base);
 }
 
 .avatarImg {

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useData } from '@shared/context/DataContext';
+import { useQuery } from '@tanstack/react-query';
+import { messagesApi } from '@shared/api/apiClient';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
 import styles from '@features/crew/components/modals/ShareActivityModal.module.css';
@@ -10,8 +11,7 @@ export default function ShareProfileModal({ isOpen, onClose, profileUser }) {
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
   
-  const { conversations, sendDirectMessage } = useData();
-
+  const { data: conversations = [] } = useQuery({ queryKey: ['conversations'], queryFn: messagesApi.getConversations });
   const handleCopyLink = () => {
     const link = `${window.location.origin}/profile/${profileUser.username}`;
     navigator.clipboard.writeText(link).then(() => {
@@ -21,7 +21,7 @@ export default function ShareProfileModal({ isOpen, onClose, profileUser }) {
   };
 
   const handleSend = (convId) => {
-    sendDirectMessage(convId, '', null, { 
+    messagesApi.sendDirectMessage(convId, '', null, { 
       type: 'profileShare', 
       profile: { 
         id: profileUser.id, 
@@ -29,8 +29,8 @@ export default function ShareProfileModal({ isOpen, onClose, profileUser }) {
         displayName: profileUser.displayName, 
         avatar: profileUser.avatar,
         bio: profileUser.bio,
-        followers: profileUser.followers,
-        following: profileUser.following
+        followers: profileUser.stats?.followers ?? profileUser.followers ?? 0,
+        following: profileUser.stats?.following ?? profileUser.following ?? 0
       } 
     });
     setSentTo(prev => new Set(prev).add(convId));
@@ -88,7 +88,7 @@ export default function ShareProfileModal({ isOpen, onClose, profileUser }) {
                 <div key={conv.id} className={styles.listItem}>
                   <div className={styles.contactInfo}>
                     {isImageUrl(conv.avatar) ? (
-                      <img src={conv.avatar} alt={conv.name} className={styles.avatar} />
+                      <img src={conv.avatar} alt={conv.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                     ) : (
                       <DefaultAvatar size={40} className={styles.avatar} />
                     )}

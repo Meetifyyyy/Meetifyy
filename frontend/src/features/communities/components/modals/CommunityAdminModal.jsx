@@ -1,14 +1,18 @@
 import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useData } from '@shared/context/DataContext';
+import { useData } from '@shared/hooks/useData';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
+import { useR2Upload } from '@shared/hooks/useR2Upload';
 
 export default function CommunityAdminModal({ community, onClose }) {
   const { updateCommunity, kickMember } = useData();
   const [activeTab, setActiveTab] = useState('details');
   const avatarInputRef = useRef(null);
   const coverInputRef = useRef(null);
+
+  const { upload: uploadIcon } = useR2Upload('community-icons');
+  const { upload: uploadCover } = useR2Upload('community-covers');
 
   // Details State
   const [name, setName] = useState(community.name || '');
@@ -132,6 +136,7 @@ export default function CommunityAdminModal({ community, onClose }) {
                 value={interests} 
                 onChange={e => setInterests(e.target.value)} 
                 placeholder="e.g. UI/UX, Figma, Typography" 
+                maxLength={500}
                 style={inputStyle} 
               />
             </div>
@@ -141,6 +146,7 @@ export default function CommunityAdminModal({ community, onClose }) {
                 value={rules} 
                 onChange={e => setRules(e.target.value)} 
                 placeholder="e.g. Be respectful&#10;No spamming" 
+                maxLength={1000}
                 style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }} 
               />
             </div>
@@ -158,7 +164,7 @@ export default function CommunityAdminModal({ community, onClose }) {
               <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                 <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--color-bg-alt)', overflow: 'hidden', border: '2px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {isImageUrl(avatar) ? (
-                    <img src={avatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img src={avatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
                   ) : (
                     <span style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>
                       {avatar || (community.name ? community.name.charAt(0).toUpperCase() : 'C')}
@@ -182,12 +188,16 @@ export default function CommunityAdminModal({ community, onClose }) {
                     accept="image/*"
                     ref={avatarInputRef}
                     style={{ display: 'none' }}
-                    onChange={(e) => {
-                      const file = e.target.files[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (ev) => setAvatar(ev.target.result);
-                        reader.readAsDataURL(file);
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        const publicUrl = await uploadIcon(file);
+                        setAvatar(publicUrl);
+                      } catch {
+                        showToast('Failed to upload icon');
+                      } finally {
+                        e.target.value = '';
                       }
                     }}
                   />
@@ -220,12 +230,16 @@ export default function CommunityAdminModal({ community, onClose }) {
                 accept="image/*"
                 ref={coverInputRef}
                 style={{ display: 'none' }}
-                onChange={(e) => {
-                  const file = e.target.files[0];
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => setCoverImage(ev.target.result);
-                    reader.readAsDataURL(file);
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const publicUrl = await uploadCover(file);
+                    setCoverImage(publicUrl);
+                  } catch {
+                    showToast('Failed to upload cover');
+                  } finally {
+                    e.target.value = '';
                   }
                 }}
               />

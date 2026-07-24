@@ -1,14 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { Bookmark, List, Grid, ArrowLeft } from 'lucide-react';
-import { useData } from '@shared/context/DataContext';
-import { useSimulatedFetch } from '@shared/hooks/useSimulatedFetch';
+
+
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { postsApi } from '@shared/api/apiClient';
 import Post from '../components/post/Post';
 import PostSkeleton from '../components/skeletons/PostSkeleton';
 import Avatar from '@shared/components/avatar/Avatar';
 import styles from './SavedPage.module.css';
 import { showToast } from '@shared/utils/toast';
+import { useData } from '@shared/hooks/useData';
+
 
 /**
  * SavedPage displays the user's saved posts.
@@ -18,18 +22,48 @@ import { showToast } from '@shared/utils/toast';
 export default function SavedPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
-  const { savedPosts = [], getPostById, getUserById, toggleSavePost } = useData();
-  
-  // Keep posts in the list for the current session even if unbookmarked
-  const [sessionSavedPostIds, setSessionSavedPostIds] = useState(savedPosts);
+  const { savedPosts = [], toggleSavePost, getUserById } = useData();
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading
+  } = useInfiniteQuery({
+    queryKey: ['bookmarks'],
+    queryFn: async ({ pageParam = undefined }) => {
+      const res = await postsApi.getBookmarks(20, pageParam);
+      return res;
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
+  });
+
+  const fullPosts = data?.pages.flatMap(page => page.posts) ?? [];
+  const loadMoreRef = useRef(null);
 
   useEffect(() => {
-    // Add any newly bookmarked posts to the session list, but don't remove unbookmarked ones
-    const newIds = savedPosts.filter(id => !sessionSavedPostIds.includes(id));
-    if (newIds.length > 0) {
-      setSessionSavedPostIds(prev => [...newIds, ...prev]);
+    if (!hasNextPage || isLoading || isFetchingNextPage) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1, rootMargin: '200px' }
+    );
+    if (loadMoreRef.current) {
+      observer.observe(loadMoreRef.current);
     }
-  }, [savedPosts, sessionSavedPostIds]);
+    return () => observer.disconnect();
+  }, [hasNextPage, isLoading, isFetchingNextPage, fetchNextPage]);
+
+  const [sessionSavedPostIds, setSessionSavedPostIds] = useState([]);
+  
+  useEffect(() => {
+    if (fullPosts.length > 0) {
+       setSessionSavedPostIds(fullPosts.map(p => p.id));
+    }
+  }, [fullPosts.length]);
 
   const [viewMode, setViewMode] = useState(() => {
     return localStorage.getItem('saved_view_mode') || 'expanded';
@@ -39,18 +73,17 @@ export default function SavedPage() {
     localStorage.setItem('saved_view_mode', viewMode);
   }, [viewMode]);
 
-  const handleToggleSaved = (e, postId) => {
+  const handleToggleSaved = async (e, postId) => {
     e.stopPropagation();
     e.preventDefault();
-    if (toggleSavePost) {
-        toggleSavePost(postId);
-    }
-    // TODO: call DELETE /saved/:postId or POST /saved/:postId depending on state
     const isCurrentlySaved = savedPosts.includes(postId);
+    if (toggleSavePost) {
+      await toggleSavePost(postId);
+    }
     showToast(isCurrentlySaved ? 'Post removed from saved' : 'Post saved');
   };
 
-  const fullPosts = sessionSavedPostIds.map(id => getPostById ? getPostById(id) : null).filter(Boolean);
+
 
   return (
     <main className="centre animate-in">
@@ -100,8 +133,11 @@ export default function SavedPage() {
               const isSaved = savedPosts.includes(post.id);
               return (
                 <div key={post.id} className={styles.postWrapper}>
-                  <Post postData={post} hideCommunityTag={false} />
-
+                  <Post 
+                    postData={post} 
+                    hideCommunityTag={false} 
+                    onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved' } })} 
+                  />
                 </div>
               );
             })}
@@ -116,7 +152,7 @@ export default function SavedPage() {
               const isSaved = savedPosts.includes(post.id);
 
               return (
-                <div key={post.id} className={styles.compactRow} onClick={() => navigate(`/post/${post.id}`)}>
+                <div key={post.id} className={styles.compactRow} onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved' } })}>
                   <div className={styles.compactAvatar}>
                     <Avatar 
                       src={avatar} 
@@ -138,6 +174,11 @@ export default function SavedPage() {
           </div>
         )}
       </div>
+      {hasNextPage && (
+        <div ref={loadMoreRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
+          <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '3px' }} />
+        </div>
+      )}
     </main>
   );
 }

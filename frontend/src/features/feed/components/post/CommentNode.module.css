@@ -128,9 +128,10 @@
 }
 
 .username {
-  font-weight: 700;
+  font-family: var(--font-family-display);
+  font-weight: 600;
   color: var(--color-text-main);
-  font-size: calc(0.95rem * var(--font-scale, 1));
+  font-size: calc(0.88rem * var(--font-scale, 1));
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
@@ -152,9 +153,9 @@
   min-width: 0;
 }
 
-.handle  { color: var(--color-text-muted); font-size: calc(0.78rem * var(--font-scale, 1)); }
-.metaDot { color: var(--color-text-muted); font-size: calc(0.75rem * var(--font-scale, 1)); opacity: .45; }
-.time    { color: var(--color-text-muted); font-size: calc(0.78rem * var(--font-scale, 1)); }
+.handle  { font-weight: 500; color: var(--color-text-muted, #64748b); font-size: calc(0.72rem * var(--font-scale, 1)); }
+.metaDot { font-weight: 600; color: var(--color-text-light); font-size: calc(0.72rem * var(--font-scale, 1)); opacity: .45; }
+.time    { font-weight: 400; color: var(--color-text-light); font-size: calc(0.72rem * var(--font-scale, 1)); margin-top: 1px; }
 
 .replyCountBadge {
   font-size: calc(0.74rem * var(--font-scale, 1));

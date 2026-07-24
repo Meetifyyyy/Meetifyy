@@ -1,7 +1,9 @@
 import { useNavigate, useParams, Navigate } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { useData } from '@shared/context/DataContext';
+
 import CommunityView from '../components/view/CommunityView';
+import { useData } from '@shared/hooks/useData';
+
 
 export default function CommunityDetailRoute() {
   const navigate = useNavigate();
