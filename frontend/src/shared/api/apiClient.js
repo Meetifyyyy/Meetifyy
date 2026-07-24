@@ -47,7 +47,8 @@ async function request(method, path, body) {
     options.body = JSON.stringify(body);
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, options);
+  const cleanUrl = `${BASE_URL.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+  const res = await fetch(cleanUrl, options);
 
   if (res.status === 401) {
     // Only treat as a real session expiry if there's actually a live session.

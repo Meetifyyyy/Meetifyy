@@ -20,6 +20,14 @@ Sentry.init({
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Normalize double slashes in incoming request URLs
+  app.use((req: any, _res: any, next: any) => {
+    if (req.url && req.url.startsWith('//')) {
+      req.url = req.url.replace(/^\/+/, '/');
+    }
+    next();
+  });
+
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
 
