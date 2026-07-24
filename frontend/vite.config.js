@@ -89,13 +89,12 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-react': ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query', '@tanstack/react-virtual'],
           'vendor-framer': ['framer-motion'],
           'vendor-emoji': ['emoji-mart', '@emoji-mart/data', '@emoji-mart/react'],
           'vendor-html2canvas': ['html2canvas'],
           'vendor-icons': ['lucide-react', '@heroicons/react'],
-          'vendor-tanstack':   ['@tanstack/react-query', '@tanstack/react-virtual'],
-          'vendor-zustand':    ['zustand', 'immer']
+          'vendor-zustand': ['zustand', 'immer']
         }
       }
     },
