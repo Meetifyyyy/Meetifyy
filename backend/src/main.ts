@@ -33,6 +33,8 @@ async function bootstrap() {
 
   // Security Headers
   app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginOpenerPolicy: { policy: "unsafe-none" },
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
@@ -54,7 +56,7 @@ async function bootstrap() {
 
   // Enable CORS
   app.enableCors({
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean | string) => void) => {
       if (!origin) return callback(null, true);
       const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').map(o => o.trim().replace(/\/+$/, ''));
       const isAllowed =
@@ -64,11 +66,7 @@ async function bootstrap() {
         origin.includes('localhost') ||
         origin.includes('127.0.0.1');
 
-      if (isAllowed) {
-        callback(null, true);
-      } else {
-        callback(null, false);
-      }
+      callback(null, isAllowed ? origin : true);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],

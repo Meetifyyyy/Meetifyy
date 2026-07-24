@@ -19,18 +19,7 @@ import { checkPresenceVisibility } from '../users/privacy.helper';
 
 @WebSocketGateway({
   cors: {
-    origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
-      if (!origin) return callback(null, true);
-      const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').map(o => o.trim().replace(/\/+$/, ''));
-      const isAllowed =
-        process.env.NODE_ENV !== 'production' ||
-        corsOrigins.includes(origin) ||
-        origin.endsWith('.vercel.app') ||
-        origin.includes('localhost') ||
-        origin.includes('127.0.0.1');
-
-      callback(null, isAllowed);
-    },
+    origin: true,
     credentials: true,
   },
 })
