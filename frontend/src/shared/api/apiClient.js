@@ -7,14 +7,16 @@
 import { supabase } from '@shared/context/AuthContext';
 
 export const getBackendUrl = () => {
-  const envUrl = import.meta.env.VITE_API_URL;
-  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+  const envUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+  if (envUrl) {
     return envUrl;
   }
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-    return `${window.location.protocol}//${window.location.hostname}:4000`;
+    if (window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')) {
+      return `${window.location.protocol}//${window.location.hostname}:4000`;
+    }
   }
-  return envUrl || 'http://localhost:4000';
+  return 'http://localhost:4000';
 };
 
 const BASE_URL = getBackendUrl();
