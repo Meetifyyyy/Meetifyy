@@ -17,15 +17,19 @@ import { InstantMatchService, setRealtimeGatewayRef, MatchFoundPayload, QueueSta
 import { PrismaService } from '../prisma/prisma.service';
 import { checkPresenceVisibility } from '../users/privacy.helper';
 
-const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:5173').split(',');
-
 @WebSocketGateway({
   cors: {
     origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
-      if (!origin || process.env.NODE_ENV !== 'production') {
-        return callback(null, true);
-      }
-      callback(null, corsOrigins.includes(origin));
+      if (!origin) return callback(null, true);
+      const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').map(o => o.trim().replace(/\/+$/, ''));
+      const isAllowed =
+        process.env.NODE_ENV !== 'production' ||
+        corsOrigins.includes(origin) ||
+        origin.endsWith('.vercel.app') ||
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1');
+
+      callback(null, isAllowed);
     },
     credentials: true,
   },
