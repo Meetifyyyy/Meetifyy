@@ -53,17 +53,21 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // Enable CORS
-  const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:5173,http://localhost:5174').split(',');
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-      if (!origin || process.env.NODE_ENV !== 'production') {
-        return callback(null, true);
-      }
-      const isAllowed = corsOrigins.includes(origin);
+      if (!origin) return callback(null, true);
+      const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').map(o => o.trim().replace(/\/+$/, ''));
+      const isAllowed =
+        process.env.NODE_ENV !== 'production' ||
+        corsOrigins.includes(origin) ||
+        origin.endsWith('.vercel.app') ||
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1');
+
       if (isAllowed) {
         callback(null, true);
       } else {
-        callback(new Error('Not allowed by CORS'));
+        callback(null, false);
       }
     },
     credentials: true,
