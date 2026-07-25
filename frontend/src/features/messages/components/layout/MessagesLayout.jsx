@@ -5,13 +5,18 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useData } from '@shared/hooks/useData';
 import { messagesApi } from '@shared/api/apiClient';
 import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
+import { parseConversationRoute, generateConversationUrl, correctConversationUrl } from '@shared/utils/conversationUrl';
 import ConversationList from '../sidebar/ConversationList';
 import ChatArea from '../chat/ChatArea';
 import styles from './MessagesLayout.module.css';
 
 export default function MessagesLayout() {
-  const { conversationId } = useParams();
+  const { param1, param2 } = useParams();
   const navigate = useNavigate();
+
+  const routeInfo = useMemo(() => parseConversationRoute(param1, param2), [param1, param2]);
+  const conversationId = routeInfo.publicId;
+
   const queryClient = useQueryClient();
   const { socket } = useGlobalSocketStore();
   const { 
@@ -48,7 +53,7 @@ export default function MessagesLayout() {
         messagesApi.markAsRead(conversationId).catch(() => {});
         queryClient.setQueryData(['conversations'], (old) => {
           if (!Array.isArray(old)) return old;
-          return old.map(c => c.id === conversationId ? { ...c, unread: 0, unreadCount: 0 } : c);
+          return old.map(c => (c.id === conversationId || c.publicId === conversationId) ? { ...c, unread: 0, unreadCount: 0 } : c);
         });
       }
     } else {
@@ -58,27 +63,48 @@ export default function MessagesLayout() {
     }
   }, [conversationId, initializeCampusGroupConversation, queryClient]);
 
-  // Fetch message history for active conversation
+  // Fetch message history for active conversation (Initial load: 10 messages)
   const { data: historyData, isLoading: isMessagesLoading, error: messagesError } = useQuery({
     queryKey: ['messages', activeChatId],
-    queryFn: () => messagesApi.getHistory(activeChatId),
+    queryFn: () => messagesApi.getHistory(activeChatId, null, null, 10),
     enabled: !!activeChatId,
-    staleTime: 10_000,
+    staleTime: 5 * 60 * 1000,
   });
 
   // Listen for realtime incoming messages
   useEffect(() => {
-    if (!socket || !activeChatId) return;
+    if (!socket) return;
+
+    const isMatchingConv = (cId, activeId) => {
+      if (!cId || !activeId) return false;
+      const s1 = String(cId).replace(/^(act_)+/, '');
+      const s2 = String(activeId).replace(/^(act_)+/, '');
+      if (s1 === s2) return true;
+      if (baseConv) {
+        const cleanCid = String(baseConv.id).replace(/^(act_)+/, '');
+        const cleanPublicId = baseConv.publicId ? String(baseConv.publicId).replace(/^(act_)+/, '') : null;
+        const cleanInternalId = baseConv.internalId ? String(baseConv.internalId).replace(/^(act_)+/, '') : null;
+        
+        // We only want to know if the INCOMING cId (s1) matches the active baseConv
+        if (s1 === cleanCid || s1 === cleanPublicId || s1 === cleanInternalId) return true;
+      }
+      return false;
+    };
 
     const handleNewMessage = (newMsg) => {
-      if (newMsg.conversationId === activeChatId) {
+      const msgCid = newMsg.publicId || newMsg.conversationId || newMsg.internalId;
+      if (isMatchingConv(msgCid, activeChatId)) {
+        const isMe = String(newMsg.senderId) === String(currentUser?.id);
+        if (!isMe) {
+          messagesApi.markAsRead(activeChatId).catch(() => {});
+        }
+
         queryClient.setQueryData(['messages', activeChatId], (old) => {
           if (!old) return { messages: [newMsg], participants: [] };
           const msgs = old.messages || [];
 
           if (msgs.some(m => m.id === newMsg.id)) return old;
 
-          const isMe = String(newMsg.senderId) === String(currentUser?.id);
           const formatted = {
             ...newMsg,
             from: isMe ? 'me' : 'them'
@@ -101,8 +127,81 @@ export default function MessagesLayout() {
       }
     };
 
+    const handleConversationSeen = ({ conversationId: cId, readerId, lastReadAt, isAllRead, minOtherReadAt }) => {
+      if (String(readerId) === String(currentUser?.id)) return;
+      const targetId = activeChatId;
+      if (isMatchingConv(cId, targetId)) {
+        queryClient.setQueryData(['messages', targetId], (old) => {
+          if (!old || !old.messages) return old;
+          const readTimestamp = minOtherReadAt ? new Date(minOtherReadAt).getTime() : new Date(lastReadAt).getTime();
+          const updatedMessages = old.messages.map(m => {
+            if (m.from === 'me' || String(m.senderId) === String(currentUser?.id)) {
+              const mTime = new Date(m.createdAt || m.timestamp).getTime();
+              if (isAllRead !== undefined) {
+                if (isAllRead && mTime <= readTimestamp) {
+                  return { ...m, status: 'read' };
+                }
+                return { ...m, status: 'sent' };
+              }
+              if (mTime <= readTimestamp) {
+                return { ...m, status: 'read' };
+              }
+            }
+            return m;
+          });
+          return {
+            ...old,
+            messages: updatedMessages
+          };
+        });
+      }
+    };
+
+    const handleGroupMemberRemoved = ({ conversationId: cId, targetUserId, message }) => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['messages', cId] });
+
+      queryClient.setQueryData(['conversations'], (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map(c => {
+          if (String(c.id) === String(cId)) {
+            const isMeRemoved = String(targetUserId) === String(currentUser?.id);
+            const updatedMembers = (c.members || c.participants || []).filter(m => {
+              const id = typeof m === 'string' ? m : (m.id || m.userId);
+              return String(id) !== String(targetUserId);
+            });
+            return {
+              ...c,
+              members: updatedMembers,
+              participants: updatedMembers,
+              ...(isMeRemoved ? { isMember: false } : {}),
+              ...(isMeRemoved && c.memberCount ? { memberCount: Math.max(0, c.memberCount - 1) } : {})
+            };
+          }
+          return c;
+        });
+      });
+
+      if (message) {
+        queryClient.setQueryData(['messages', cId], (old) => {
+          if (!old || !old.messages) return old;
+          if (old.messages.some(m => m.id === message.id)) return old;
+          return {
+            ...old,
+            messages: [...old.messages, message]
+          };
+        });
+      }
+    };
+
     socket.on('message:new', handleNewMessage);
-    return () => socket.off('message:new', handleNewMessage);
+    socket.on('conversation:seen', handleConversationSeen);
+    socket.on('group:member_removed', handleGroupMemberRemoved);
+    return () => {
+      socket.off('message:new', handleNewMessage);
+      socket.off('conversation:seen', handleConversationSeen);
+      socket.off('group:member_removed', handleGroupMemberRemoved);
+    };
   }, [socket, activeChatId, currentUser?.id, queryClient]);
 
   const baseConv = conversations.find((c) => {
@@ -113,34 +212,66 @@ export default function MessagesLayout() {
     return cleanCid === cleanAid || cleanActId === cleanAid;
   }) || (activeChatId ? { id: activeChatId, type: 'DM' } : null);
 
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+  const handleLoadMore = async () => {
+    const currentNextCursor = historyData?.nextCursor;
+    if (!activeChatId || !currentNextCursor || isFetchingMore) return;
+
+    setIsFetchingMore(true);
+    try {
+      // Load 15 older messages on each page
+      const olderData = await messagesApi.getHistory(activeChatId, null, currentNextCursor, 15);
+      if (olderData && olderData.messages) {
+        queryClient.setQueryData(['messages', activeChatId], (old) => {
+          if (!old) return olderData;
+          return {
+            ...old,
+            messages: [...olderData.messages, ...(old.messages || [])],
+            nextCursor: olderData.nextCursor
+          };
+        });
+      }
+    } catch {
+      // ignore error
+    } finally {
+      setIsFetchingMore(false);
+    }
+  };
+
   const activeConv = useMemo(() => {
     if (!baseConv) return null;
-    let msgs = historyData?.messages || baseConv.messages || [];
-    
-    // Optimistically show the last message from the conversation list while loading
-    if (msgs.length === 0 && baseConv.lastMessage && isMessagesLoading) {
-      msgs = [{
-        id: 'temp_last_msg',
-        text: baseConv.lastMessage.text,
-        senderId: baseConv.lastMessage.senderId,
-        createdAt: baseConv.lastMessage.createdAt,
-        timestamp: baseConv.lastMessage.createdAt,
-        from: String(baseConv.lastMessage.senderId) === String(currentUser?.id) ? 'me' : 'them',
-        type: 'chat'
-      }];
-    }
+    const msgs = historyData?.messages || baseConv.messages || [];
 
     return {
       ...baseConv,
       messages: msgs,
-      participants: historyData?.participants || baseConv.participants || []
+      participants: historyData?.participants || baseConv.participants || [],
+      nextCursor: historyData?.nextCursor || null
     };
-  }, [baseConv, historyData, isMessagesLoading, currentUser]);
+  }, [baseConv, historyData]);
 
-  const handleSelectChat = (id) => {
-    setActiveChatId(id);
+  // Synchronize canonical URL (/inbox/:slug/:publicId) without reloading page or refetching
+  useEffect(() => {
+    if (!activeChatId || !activeConv) return;
+
+    const targetPath = correctConversationUrl(activeConv, currentUser?.id, window.location.pathname);
+
+    if (window.location.pathname !== targetPath) {
+      navigate(targetPath, { replace: true });
+    }
+  }, [activeChatId, activeConv, currentUser?.id, navigate]);
+
+  const handleSelectChat = (id, selectedConv) => {
+    const targetConv = selectedConv || conversations.find(c => String(c.id) === String(id) || String(c.publicId) === String(id));
+    const targetId = targetConv?.publicId || targetConv?.id || id;
+    setActiveChatId(targetId);
     setShowChatOnMobile(true);
-    navigate(`/messages/${id}`);
+
+    const isInbox = window.location.pathname.startsWith('/inbox');
+    const basePath = isInbox ? '/inbox' : '/messages';
+    const targetPath = generateConversationUrl(targetConv || { id: targetId }, currentUser?.id, basePath);
+    navigate(targetPath);
   };
 
   const goBack = useSmartBack();
@@ -257,6 +388,9 @@ export default function MessagesLayout() {
           onBack={handleBack}
           showChatOnMobile={showChatOnMobile}
           isLoading={isMessagesLoading}
+          hasMore={!!activeConv?.nextCursor}
+          isLoadingMore={isFetchingMore}
+          onLoadMore={handleLoadMore}
         />
       </div>
     </div>

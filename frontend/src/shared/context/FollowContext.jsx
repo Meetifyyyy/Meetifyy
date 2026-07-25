@@ -1,204 +1,160 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { useAuth } from './AuthContext';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from './AuthContext';
 import { usersApi } from '../api/apiClient';
 import { showToast } from '../utils/toast';
 
 const FollowContext = createContext(null);
 
-export function FollowProvider({ children }) {
-  const { currentUser, updateCurrentUser } = useAuth();
+export const FollowProvider = ({ children }) => {
+  const { currentUser } = useAuth();
   const queryClient = useQueryClient();
-  const [following, setFollowing] = useState([]);
-  const [pendingFollows, setPendingFollows] = useState({});
 
+  // Core state: Set of usernames the current user follows
+  const [followingSet, setFollowingSet] = useState(new Set());
+  const [initialized, setInitialized] = useState(false);
+
+  // ── Load following list on login ──────────────────────────────────
   useEffect(() => {
-    if (currentUser?.followingList && Array.isArray(currentUser.followingList)) {
-      setFollowing(currentUser.followingList);
+    if (!currentUser?.username) {
+      // Logged out — clear everything
+      setFollowingSet(new Set());
+      setInitialized(false);
+      return;
     }
-  }, [currentUser?.followingList]);
 
-  const isFollowing = useCallback((uName) => {
-    if (!uName) return false;
-    return following.includes(uName);
-  }, [following]);
+    let cancelled = false;
 
-  const isPending = useCallback((uName) => {
-    if (!uName) return false;
-    return !!pendingFollows[uName];
-  }, [pendingFollows]);
+    const loadFollowing = async () => {
+      try {
+        const usernames = await usersApi.getFollowingUsernames(currentUser.username);
+        if (!cancelled) {
+          setFollowingSet(new Set(usernames));
+          setInitialized(true);
+        }
+      } catch (err) {
+        console.error('[FollowContext] Failed to load following list:', err);
+        if (!cancelled) {
+          // Still mark initialized so UI doesn't stay in loading state forever
+          setInitialized(true);
+        }
+      }
+    };
 
-  const toggleFollow = async (uName) => {
-    if (!uName || uName === currentUser?.username) return;
-    if (pendingFollows[uName]) return; // Prevent duplicate inflight requests / race conditions
+    loadFollowing();
+    return () => { cancelled = true; };
+  }, [currentUser?.username]);
 
-    setPendingFollows((prev) => ({ ...prev, [uName]: true }));
+  // ── Selector ──────────────────────────────────────────────────────
+  const isFollowing = useCallback(
+    (targetUsername) => followingSet.has(targetUsername),
+    [followingSet]
+  );
 
-    const currentlyFollowing = following.includes(uName);
-    const prevFollowingList = [...following];
-    const nextFollowingList = currentlyFollowing
-      ? following.filter((x) => x !== uName)
-      : [...following, uName];
+  // ── Toggle with optimistic update + rollback ───────────────────────
+  const toggleFollow = useCallback(async (targetUsername) => {
+    if (!currentUser?.username || !targetUsername) return;
+    if (targetUsername === currentUser.username) return; // can't follow yourself
 
-    // Snapshot query caches for rollback
-    const targetProfileKey = ['profile', uName];
-    const myProfileKey = ['profile', currentUser?.username];
-    const prevTargetProfile = queryClient.getQueryData(targetProfileKey);
-    const prevMyProfile = currentUser?.username ? queryClient.getQueryData(myProfileKey) : null;
+    const wasFollowing = followingSet.has(targetUsername);
 
-    // 1. Optimistic Local State Update
-    setFollowing(nextFollowingList);
-    if (currentUser && updateCurrentUser) {
-      updateCurrentUser({
-        ...currentUser,
-        followingList: nextFollowingList,
+    // 1. Optimistic update — local state
+    setFollowingSet((prev) => {
+      const next = new Set(prev);
+      if (wasFollowing) next.delete(targetUsername);
+      else next.add(targetUsername);
+      return next;
+    });
+
+    // 2. Optimistic update — react-query cache for profile stats
+    queryClient.setQueryData(['profile', targetUsername], (old) => {
+      if (!old) return old;
+      return {
+        ...old,
         stats: {
-          ...(currentUser.stats || {}),
-          following: Math.max(0, (currentUser.stats?.following ?? prevFollowingList.length) + (currentlyFollowing ? -1 : 1))
+          ...(old.stats || {}),
+          followers: wasFollowing
+            ? Math.max(0, (old.stats?.followers ?? 0) - 1)
+            : (old.stats?.followers ?? 0) + 1,
         }
-      });
-    }
+      };
+    });
 
-    // 2. Optimistic Cache Update for Target Profile
-    if (prevTargetProfile) {
-      queryClient.setQueryData(targetProfileKey, (old) => {
-        if (!old) return old;
-        const currentFollowers = old.stats?.followers ?? 0;
-        const nextFollowers = currentlyFollowing ? Math.max(0, currentFollowers - 1) : currentFollowers + 1;
-        let nextFollowersList = old.followersList || [];
-        if (currentUser?.username) {
-          if (currentlyFollowing) {
-            nextFollowersList = nextFollowersList.filter(u => u !== currentUser.username);
-          } else if (!nextFollowersList.includes(currentUser.username)) {
-            nextFollowersList = [...nextFollowersList, currentUser.username];
-          }
+    queryClient.setQueryData(['profile', currentUser.username], (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        stats: {
+          ...(old.stats || {}),
+          following: wasFollowing
+            ? Math.max(0, (old.stats?.following ?? 0) - 1)
+            : (old.stats?.following ?? 0) + 1,
         }
-        return {
-          ...old,
-          stats: {
-            ...(old.stats || {}),
-            followers: nextFollowers,
-          },
-          followersList: nextFollowersList,
-          isFollowing: !currentlyFollowing,
-        };
-      });
-    }
-
-    // 3. Optimistic Cache Update for My Profile
-    if (prevMyProfile) {
-      queryClient.setQueryData(myProfileKey, (old) => {
-        if (!old) return old;
-        const currentFollowingCount = old.stats?.following ?? 0;
-        const nextFollowingCount = currentlyFollowing ? Math.max(0, currentFollowingCount - 1) : currentFollowingCount + 1;
-        return {
-          ...old,
-          stats: {
-            ...(old.stats || {}),
-            following: nextFollowingCount,
-          },
-          followingList: nextFollowingList,
-        };
-      });
-    }
-
-    // 4. Optimistic Cache Update for Users Query List
-    queryClient.setQueryData(['users'], (oldUsers) => {
-      if (!Array.isArray(oldUsers)) return oldUsers;
-      return oldUsers.map(u => {
-        if (u.username === uName) {
-          return { ...u, isFollowing: !currentlyFollowing };
-        }
-        return u;
-      });
+      };
     });
 
     try {
-      let res;
-      if (currentlyFollowing) {
-        res = await usersApi.unfollow(uName);
+      // 3. Real API call
+      if (wasFollowing) {
+        await usersApi.unfollow(targetUsername);
       } else {
-        res = await usersApi.follow(uName);
+        await usersApi.follow(targetUsername);
       }
 
-      // Reconcile exact stats returned by server
-      if (res?.targetUser) {
-        queryClient.setQueryData(targetProfileKey, (old) => {
-          if (!old) return old;
-          return {
-            ...old,
-            stats: {
-              ...(old.stats || {}),
-              followers: res.targetUser.followersCount ?? old.stats?.followers,
-              following: res.targetUser.followingCount ?? old.stats?.following,
-            },
-            isFollowing: res.isFollowing,
-          };
-        });
-      }
+      // 4. Invalidate so next profile visit gets fresh data from DB
+      queryClient.invalidateQueries({ queryKey: ['profile', targetUsername] });
+      queryClient.invalidateQueries({ queryKey: ['profile', currentUser.username] });
 
-      if (res?.currentUserStats && prevMyProfile) {
-        queryClient.setQueryData(myProfileKey, (old) => {
-          if (!old) return old;
-          return {
-            ...old,
-            stats: {
-              ...(old.stats || {}),
-              following: res.currentUserStats.followingCount ?? old.stats?.following,
-            },
-          };
-        });
-      }
-
-      // Invalidate relevant queries for eventual consistency
-      queryClient.invalidateQueries({ queryKey: ['profile', uName] });
-      if (currentUser?.username) {
-        queryClient.invalidateQueries({ queryKey: ['profile', currentUser.username] });
-        queryClient.invalidateQueries({ queryKey: ['followers', currentUser.username] });
-        queryClient.invalidateQueries({ queryKey: ['following', currentUser.username] });
-      }
-      queryClient.invalidateQueries({ queryKey: ['followers', uName] });
-      queryClient.invalidateQueries({ queryKey: ['following', uName] });
-      queryClient.invalidateQueries({ queryKey: ['users'] });
     } catch (err) {
-      console.error('Failed to toggle follow state', err);
-      showToast(err.message || 'Action failed. Please try again.');
+      console.error('[FollowContext] toggleFollow failed:', err);
 
-      // Rollback local state
-      setFollowing(prevFollowingList);
-      if (currentUser && updateCurrentUser) {
-        updateCurrentUser({
-          ...currentUser,
-          followingList: prevFollowingList,
-        });
-      }
-
-      // Rollback query cache
-      if (prevTargetProfile) {
-        queryClient.setQueryData(targetProfileKey, prevTargetProfile);
-      }
-      if (prevMyProfile) {
-        queryClient.setQueryData(myProfileKey, prevMyProfile);
-      }
-      queryClient.invalidateQueries({ queryKey: ['users'] });
-    } finally {
-      setPendingFollows((prev) => {
-        const next = { ...prev };
-        delete next[uName];
+      // 5. Rollback local state
+      setFollowingSet((prev) => {
+        const next = new Set(prev);
+        if (wasFollowing) next.add(targetUsername);  // restore
+        else next.delete(targetUsername);             // restore
         return next;
       });
+
+      // 6. Rollback react-query cache
+      queryClient.setQueryData(['profile', targetUsername], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          stats: {
+            ...(old.stats || {}),
+            followers: wasFollowing
+              ? (old.stats?.followers ?? 0) + 1
+              : Math.max(0, (old.stats?.followers ?? 0) - 1),
+          }
+        };
+      });
+      queryClient.setQueryData(['profile', currentUser.username], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          stats: {
+            ...(old.stats || {}),
+            following: wasFollowing
+              ? (old.stats?.following ?? 0) + 1
+              : Math.max(0, (old.stats?.following ?? 0) - 1),
+          }
+        };
+      });
+
+      showToast('Something went wrong. Please try again.');
     }
-  };
+  }, [currentUser?.username, followingSet, queryClient]);
 
   return (
-    <FollowContext.Provider value={{ following, isFollowing, isPending, toggleFollow }}>
+    <FollowContext.Provider value={{ isFollowing, toggleFollow, initialized }}>
       {children}
     </FollowContext.Provider>
   );
-}
+};
 
-export function useFollow() {
+export const useFollow = () => {
   const ctx = useContext(FollowContext);
-  if (!ctx) throw new Error('useFollow must be used within FollowProvider');
+  if (!ctx) throw new Error('useFollow must be used inside FollowProvider');
   return ctx;
-}
+};

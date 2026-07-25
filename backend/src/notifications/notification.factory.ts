@@ -177,7 +177,13 @@ export class NotificationFactory {
     const actorName = actor?.displayName || actor?.username || 'Someone';
     const actorUsername = actor?.username || '';
     const textSnippet = messageText ? messageText.substring(0, 80) : '';
+
+    const isGroup = conversation?.type === 'GROUP';
+    const convName = conversation?.name || (isGroup ? 'Group' : actorName);
+    const convAvatar = conversation?.avatarMedia?.url || conversation?.avatarKey || null;
+
     const bodyText = textSnippet ? `${actorName}: ${textSnippet}` : `${actorName} sent you a message.`;
+    const titleText = isGroup ? convName : actorName;
 
     return {
       recipientId: targetUserId,
@@ -185,7 +191,7 @@ export class NotificationFactory {
       type: NotificationType.MESSAGE,
       entityType: NotificationEntityType.MESSAGE,
       entityId: conversation.id,
-      title: 'New Message',
+      title: titleText,
       body: bodyText,
       metadata: {
         version: 1,
@@ -193,8 +199,11 @@ export class NotificationFactory {
         actorUsername,
         actorAvatar: actor?.avatar || null,
         conversationId: conversation.id,
-        conversationName: conversation.name || actorName,
+        conversationName: convName,
+        conversationType: conversation?.type || 'DIRECT',
+        conversationAvatar: convAvatar,
         messageText: textSnippet,
+        isGroup,
       },
     };
   }

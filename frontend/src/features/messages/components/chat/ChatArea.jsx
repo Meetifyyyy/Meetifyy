@@ -28,7 +28,10 @@ export default function ChatArea({
   onJoinGroup, 
   onBack, 
   showChatOnMobile,
-  isLoading
+  isLoading,
+  hasMore,
+  isLoadingMore,
+  onLoadMore
 }) {
   const { openViewer } = useMediaViewer();
   const { initial, currentUser } = useAuth();
@@ -80,6 +83,37 @@ export default function ChatArea({
   useEffect(() => {
     setShowDetails(false);
   }, [conversation?.id]);
+
+  useEffect(() => {
+    if (!window.visualViewport) return;
+    
+    const adjustViewport = () => {
+      const vvp = window.visualViewport;
+      // Only apply these adjustments on mobile screens
+      if (window.innerWidth <= 768) {
+        document.documentElement.style.setProperty('--vvp-height', `${vvp.height}px`);
+        document.documentElement.style.setProperty('--vvp-offset-top', `${vvp.offsetTop}px`);
+      } else {
+        document.documentElement.style.removeProperty('--vvp-height');
+        document.documentElement.style.removeProperty('--vvp-offset-top');
+      }
+    };
+
+    window.visualViewport.addEventListener('resize', adjustViewport);
+    window.visualViewport.addEventListener('scroll', adjustViewport);
+    // Also listen to window resize just in case
+    window.addEventListener('resize', adjustViewport);
+    
+    adjustViewport();
+    
+    return () => {
+      window.visualViewport.removeEventListener('resize', adjustViewport);
+      window.visualViewport.removeEventListener('scroll', adjustViewport);
+      window.removeEventListener('resize', adjustViewport);
+      document.documentElement.style.removeProperty('--vvp-height');
+      document.documentElement.style.removeProperty('--vvp-offset-top');
+    };
+  }, []);
 
   const currentActivity = useMemo(() => {
     if (!conversation?.isActivityChat || !conversation?.activityId) return null;
@@ -192,6 +226,9 @@ export default function ChatArea({
         onUnsend={handleUnsend}
         isTyping={isTyping}
         replyingTo={replyingTo}
+        hasMore={hasMore}
+        isLoadingMore={isLoadingMore}
+        onLoadMore={onLoadMore}
       />
 
       <ChatInputArea 
@@ -215,17 +252,7 @@ export default function ChatArea({
         confirmText="End Activity"
       />
 
-      {showGroupSettings && (
-        <GroupSettingsModal
-          conversation={conversation}
-          onClose={() => setShowGroupSettings(false)}
-          onLeaveGroup={() => {
-            if (leaveGroup) leaveGroup(conversation.id);
-            setShowGroupSettings(false);
-            if (onBack) onBack();
-          }}
-        />
-      )}
+
 
       {showActivityDetails && (
         <ActivityChatDetailsModal 

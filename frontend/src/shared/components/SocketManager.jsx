@@ -29,13 +29,18 @@ export default function SocketManager() {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
 
       // Smart toast logic: suppress if user is on the exact screen
+      const currentEntityId = notification.entityId || notification.metadata?.conversationId;
       const isViewingEntity =
-        (notification.type === 'MESSAGE' && window.location.pathname.includes(`/messages/${notification.entityId}`));
+        (notification.type?.toUpperCase() === 'MESSAGE' && currentEntityId && window.location.pathname.includes(`/messages/${currentEntityId}`));
 
       if (!isViewingEntity) {
         toast.custom((t) => {
+          const isGroupMessage = Boolean(notification.metadata?.isGroup || notification.metadata?.conversationType === 'GROUP');
           const actorName = notification.actor?.displayName || notification.actor?.username || notification.metadata?.actorDisplayName || notification.metadata?.actorName || notification.metadata?.username || 'Someone';
           const actorAvatar = notification.actor?.avatar || notification.metadata?.actorAvatar || '';
+          const groupName = notification.metadata?.conversationName || notification.title || 'Group';
+          const groupAvatar = notification.metadata?.conversationAvatar || '';
+
           const notifType = (notification.type || '').toLowerCase();
 
           let bodyText = notification.body || notification.title || '';
@@ -60,7 +65,12 @@ export default function SocketManager() {
           } else if (notifType === 'mention') {
             bodyText = 'mentioned you.';
           } else if (notifType === 'message') {
-            bodyText = notification.metadata?.messageText || 'sent you a message.';
+            const textSnippet = notification.metadata?.messageText || notification.body || '';
+            if (isGroupMessage) {
+              bodyText = `${actorName}: ${textSnippet}`;
+            } else {
+              bodyText = textSnippet;
+            }
           } else if (notifType === 'join_request') {
             bodyText = 'requested to join your activity.';
           } else if (bodyText.startsWith(actorName)) {
@@ -103,17 +113,33 @@ export default function SocketManager() {
               }}
             >
               <div style={{ flexShrink: 0 }}>
-                <Avatar src={actorAvatar} name={actorName} size="40px" />
+                <Avatar 
+                  src={isGroupMessage ? groupAvatar : actorAvatar} 
+                  name={isGroupMessage ? groupName : actorName} 
+                  size="40px" 
+                  isGroup={isGroupMessage} 
+                />
               </div>
 
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <div style={{ fontSize: '0.85rem', lineHeight: '1.3', color: 'var(--color-text-muted, #475569)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  <strong style={{ color: 'var(--color-text-main, #0f172a)', fontWeight: 700 }}>{actorName}</strong>{' '}
-                  {bodyText}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%' }}>
+                  <strong style={{ color: 'var(--color-text-main, #0f172a)', fontWeight: 700, fontSize: '0.86rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {isGroupMessage ? groupName : actorName}
+                  </strong>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--color-text-light, #94a3b8)', fontWeight: 500, flexShrink: 0 }}>
+                    just now
+                  </span>
                 </div>
-                <span style={{ fontSize: '0.72rem', color: 'var(--color-text-light, #94a3b8)', fontWeight: 500 }}>
-                  just now
-                </span>
+
+                {isGroupMessage ? (
+                  <div style={{ fontSize: '0.82rem', color: 'var(--color-text-muted, #475569)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <span style={{ fontWeight: 600, color: 'var(--color-text-main, #0f172a)' }}>{actorName}:</span> {notification.metadata?.messageText || ''}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.83rem', color: 'var(--color-text-muted, #475569)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {bodyText}
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -147,10 +173,15 @@ export default function SocketManager() {
     const handleConversationUpdated = ({ conversationId, lastMessage }) => {
       queryClient.setQueryData(['conversations'], (old) => {
         if (!Array.isArray(old)) return old;
-        const isViewing = window.location.pathname.includes(`/messages/${conversationId}`);
+        const currentPath = window.location.pathname;
+        const isViewing = currentPath.includes(`/messages/`) && (
+          currentPath.endsWith(`/${conversationId}`) || currentPath.includes(`/${conversationId}/`) ||
+          (publicId && (currentPath.endsWith(`/${publicId}`) || currentPath.includes(`/${publicId}/`))) ||
+          (internalId && (currentPath.endsWith(`/${internalId}`) || currentPath.includes(`/${internalId}/`)))
+        );
 
         return old.map((c) => {
-          if (c.id === conversationId) {
+          if (c.id === conversationId || c.publicId === conversationId || c.internalId === conversationId) {
             return {
               ...c,
               lastMessage,

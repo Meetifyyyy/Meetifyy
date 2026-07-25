@@ -547,19 +547,13 @@ export class PostsService {
 
     const postIds = bookmarks.map(b => b.postId).filter(Boolean);
 
-    const [userLikes, userBookmarks] = await Promise.all([
-      this.prisma.postLike.findMany({
-        where: { userId, postId: { in: postIds } },
-        select: { postId: true }
-      }),
-      this.prisma.postBookmark.findMany({
-        where: { userId, postId: { in: postIds } },
-        select: { postId: true }
-      }),
-    ]);
+    const userLikes = await this.prisma.postLike.findMany({
+      where: { userId, postId: { in: postIds } },
+      select: { postId: true }
+    });
 
     const likedSet = new Set(userLikes.map(l => l.postId));
-    const bookmarkedSet = new Set(userBookmarks.map(b => b.postId));
+    const bookmarkedSet = new Set(postIds);
 
     const formattedPosts = bookmarks.map((b) => {
       if (!b.post || b.post.deletedAt) return null;

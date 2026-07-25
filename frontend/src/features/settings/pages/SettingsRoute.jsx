@@ -136,18 +136,26 @@ function CustomSelect({ value, onChange, options, disabled, placeholder, searcha
 }
 
 export default function SettingsRoute() {
-  const { currentUser, updateProfile, updateSettings, changePassword, logout } = useAuth();
+  const { currentUser, updateProfile, updateSettings, updateCurrentUser, changePassword, logout, collegeName } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const goBack = useSmartBack();
 
-  const [activePanel, setActivePanel] = useState(location.state?.panel || null); // null = main list
+  const rawPanel = location.state?.panel;
+  const initialPanel = rawPanel === 'account' ? 'profile' : (rawPanel || null);
+  const [activePanel, setActivePanel] = useState(initialPanel); // null = main list
 
   // Account & Profile state
+  const getInitialMajor = (major) => {
+    if (!major) return '';
+    if (major.includes(' - ')) return major.split(' - ')[0];
+    return major;
+  };
+
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [bio, setBio] = useState(currentUser?.bio || '');
   const [birthday, setBirthday] = useState(currentUser?.birthday || '');
-  const [course, setCourse] = useState(currentUser?.major || '');
+  const [course, setCourse] = useState(getInitialMajor(currentUser?.major));
   const [year, setYear] = useState(currentUser?.graduationYear ? String(currentUser.graduationYear) : '');
 
   // Interests state
@@ -170,9 +178,7 @@ export default function SettingsRoute() {
 
   // Presence settings
   const [showOnlineStatus, setShowOnlineStatus] = useState(settingsObj.showOnlineStatus ?? true);
-  const [showLastSeen, setShowLastSeen] = useState(settingsObj.showLastSeen ?? true);
   const [whoCanSeeOnline, setWhoCanSeeOnline] = useState(settingsObj.whoCanSeeOnline || 'everyone');
-  const [whoCanSeeLastSeen, setWhoCanSeeLastSeen] = useState(settingsObj.whoCanSeeLastSeen || 'everyone');
   const [readReceipts, setReadReceipts] = useState(settingsObj.readReceipts ?? true);
 
 
@@ -198,9 +204,12 @@ export default function SettingsRoute() {
             setDisplayName(user.displayName || '');
             setBio(user.bio || '');
             setBirthday(user.birthday || '');
-            setCourse(user.major || '');
+            setCourse(getInitialMajor(user.major));
             setYear(user.graduationYear ? String(user.graduationYear) : '');
             setSelectedInterests(user.interests || []);
+            if (updateCurrentUser) {
+              updateCurrentUser({ ...currentUser, ...user });
+            }
           }
           const s = settingsRes || user?.settings || user?.preferences;
           if (s) {
@@ -208,9 +217,7 @@ export default function SettingsRoute() {
             setPushNotifs(s.pushNotifs ?? false);
             setPrivateProfile(s.privateProfile ?? false);
             setShowOnlineStatus(s.showOnlineStatus ?? true);
-            setShowLastSeen(s.showLastSeen ?? true);
             setWhoCanSeeOnline(s.whoCanSeeOnline || 'everyone');
-            setWhoCanSeeLastSeen(s.whoCanSeeLastSeen || 'everyone');
             setReadReceipts(s.readReceipts ?? true);
           }
         }
@@ -235,6 +242,9 @@ export default function SettingsRoute() {
         major: course, 
         graduationYear: year ? parseInt(year, 10) : null 
       });
+      // Immediately update local context to match what was saved
+      const updatedUser = { ...currentUser, major: course, graduationYear: year ? parseInt(year, 10) : null };
+      updateProfile(updatedUser);
       showToast('Academic details updated');
     } else if (activePanel === 'security') {
       const errors = {};
@@ -273,9 +283,7 @@ export default function SettingsRoute() {
       await updateSettings({
         privateProfile,
         showOnlineStatus,
-        showLastSeen,
         whoCanSeeOnline,
-        whoCanSeeLastSeen,
         readReceipts,
       });
       showToast('Privacy settings saved');
@@ -321,6 +329,7 @@ export default function SettingsRoute() {
 
   const panelTitle = {
     profile: 'Edit Profile',
+    account: 'Edit Profile',
     academic: 'Academic Info',
     security: 'Change Password',
     privacy: 'Privacy Settings',
@@ -549,13 +558,13 @@ export default function SettingsRoute() {
               <span className={styles.lockedHeaderTitle}>Verified Student Identity</span>
             </div>
             <div className={styles.lockedField}>
-              <span className={styles.lockedLabel}>University</span>
-              <span className={styles.lockedValue}>{currentUser?.university || 'GLA University'}</span>
+              <span className={styles.lockedLabel}>College</span>
+              <span className={styles.lockedValue}>{collegeName}</span>
             </div>
             <div className={styles.lockedFieldDivider} />
             <div className={styles.lockedField}>
               <span className={styles.lockedLabel}>College Email</span>
-              <span className={styles.lockedValue}>{currentUser?.email || ''}</span>
+              <span className={styles.lockedValue}>{currentUser?.collegeEmail || currentUser?.email || ''}</span>
             </div>
             <div className={styles.lockedHint}>
               Linked to your verified student login and cannot be modified.
@@ -748,39 +757,6 @@ export default function SettingsRoute() {
                   { value: 'nobody', label: 'Nobody' }
                 ]}
                 disabled={!showOnlineStatus}
-              />
-            </div>
-
-            <div className={styles.nestedDivider} />
-
-            <div className={styles.toggleRow}>
-              <div className={styles.toggleInfo}>
-                <span className={styles.rowLabel}>Show Last Seen</span>
-                <span className={styles.toggleDesc}>Allow others to see when you were last active.</span>
-              </div>
-              <label className={styles.toggle}>
-                <input type="checkbox" checked={showLastSeen} onChange={e => setShowLastSeen(e.target.checked)} />
-                <span className={styles.slider} />
-              </label>
-            </div>
-
-            <div className={styles.nestedDivider} />
-
-            <div className={`${styles.selectRow} ${!showLastSeen ? styles.disabledRow : ''}`}>
-              <div className={styles.toggleInfo}>
-                <span className={styles.rowLabel}>Who Can See My Last Seen</span>
-                <span className={styles.toggleDesc}>Manage visibility rules for your last active time</span>
-              </div>
-              <CustomSelect 
-                value={whoCanSeeLastSeen}
-                onChange={setWhoCanSeeLastSeen}
-                options={[
-                  { value: 'everyone', label: 'Everyone' },
-                  { value: 'following', label: 'People I Follow' },
-                  { value: 'mutual', label: 'Mutual Connections' },
-                  { value: 'nobody', label: 'Nobody' }
-                ]}
-                disabled={!showLastSeen}
               />
             </div>
 

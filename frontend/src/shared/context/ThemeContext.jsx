@@ -53,16 +53,17 @@ export function ThemeProvider({ children }) {
     });
 
     transition.ready.then(() => {
+      const clipPathFrames = newTheme === 'dark'
+        ? ['inset(0 0 100% 0)', 'inset(0 0 0% 0)']
+        : ['inset(100% 0 0 0)', 'inset(0% 0 0 0)'];
+
       document.documentElement.animate(
         {
-          clipPath: [
-            'inset(0 0 100% 0)',
-            'inset(0 0 0% 0)',
-          ],
+          clipPath: clipPathFrames,
         },
         {
-          duration: 900,
-          easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          duration: 1200,
+          easing: 'cubic-bezier(0.25, 1, 0.35, 1)',
           fill: 'forwards',
           pseudoElement: '::view-transition-new(root)',
         }

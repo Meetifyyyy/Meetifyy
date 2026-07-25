@@ -2,8 +2,6 @@ import { io } from 'socket.io-client';
 import { getAcceptTimer } from './timerByActivity';
 import { getBackendUrl } from '@shared/api/apiClient';
 
-const BACKEND_URL = getBackendUrl();
-
 class MatchSocketClient {
   constructor() {
     this.socket = null;
@@ -27,12 +25,15 @@ class MatchSocketClient {
   }
 
   connect(token, _currentUser) {
-    if (this.socket?.connected) return;
+    if (this.socket && (this.socket.connected || this.socket.active)) return;
 
-    this.socket = io(BACKEND_URL, {
+    const backendUrl = getBackendUrl();
+    this.socket = io(backendUrl, {
       auth: { token },
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: 5,
     });
 
     // Re-attach any callbacks that were registered before connect()
@@ -66,6 +67,7 @@ class MatchSocketClient {
 
   disconnect() {
     if (this.socket) {
+      this.socket.removeAllListeners();
       this.socket.disconnect();
       this.socket = null;
     }

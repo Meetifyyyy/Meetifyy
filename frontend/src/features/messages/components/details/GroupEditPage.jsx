@@ -12,6 +12,7 @@ export default function GroupEditPage({
   editAvatar,
   setEditAvatar,
   isAdmin,
+  canEditGroupInfo,
   isGroup,
   isEventGroup,
   fileInputRef,
@@ -22,6 +23,8 @@ export default function GroupEditPage({
   handleAvatarClick,
   handleFileChange
 }) {
+  const canEdit = canEditGroupInfo ?? isAdmin;
+
   return (
     <div className={sharedStyles.container}>
       <div className={sharedStyles.header}>
@@ -44,7 +47,7 @@ export default function GroupEditPage({
           disabled={
             editName.trim() === conversation.name && 
             editDesc.trim() === (conversation.description || '') &&
-            editAvatar === (conversation.avatar || '')
+            editAvatar === (conversation.avatar || conversation.avatarKey || '')
           }
         >
           Save
@@ -70,10 +73,10 @@ export default function GroupEditPage({
                 isGroup={isGroup}
                 onClick={handleAvatarClick}
                 disableHover={true}
-                className={isAdmin ? sharedStyles.avatarWrapperClickable : ''}
+                className={canEdit ? sharedStyles.avatarWrapperClickable : ''}
               />
             )}
-            {isAdmin && !isEventGroup && (
+            {canEdit && !isEventGroup && (
               <button 
                 type="button"
                 className={styles.changePhotoBtn}

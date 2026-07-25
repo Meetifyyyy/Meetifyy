@@ -8,14 +8,14 @@ import { useTheme } from '@shared/context/ThemeContext';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
-import pageStyles from './GroupsPage.module.css';
+import pageStyles from './CampusCommunitiesPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import { Plus, Search, ArrowLeft, Users } from 'lucide-react';
-import GroupCreationModal from '@shared/components/modals/GroupCreationModal';
+import CreateCommunityModal from '@features/communities/components/modals/CreateCommunityModal';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useData } from '@shared/hooks/useData';
 
-export default function GroupsPage() {
+export default function CampusCommunitiesPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
@@ -46,26 +46,19 @@ export default function GroupsPage() {
     }
   };
 
-  const { createCampusGroup, requestToJoinGroup } = useData();
-
-  const { data: communitiesData = [] } = useQuery({ 
-    queryKey: ['communities'], 
-    queryFn: communitiesApi.getAll 
-  });
+  const { createCampusGroup, requestToJoinGroup, campusCommunities } = useData();
   
-  const campusGroups = communitiesData;
-
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [selectedCommunity, setSelectedCommunity] = useState(null);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
 
-  const userCollegeId = currentUser?.collegeId || 'gla';
+  const userCollegeId = currentUser?.collegeId;
 
-  const collegeGroups = useMemo(() => {
-    let list = campusGroups.filter(c => c.collegeId === userCollegeId);
+  const collegeCommunities = useMemo(() => {
+    let list = campusCommunities;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -80,46 +73,45 @@ export default function GroupsPage() {
     }
 
     return list;
-  }, [campusGroups, userCollegeId, searchQuery, selectedCategory]);
+  }, [campusCommunities, searchQuery, selectedCategory]);
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
-    showToast('Groups link copied! 🔗');
+    showToast('Communities link copied! 🔗');
   };
 
-  const handleToggleGroup = (grpId) => {
+  const handleToggleCommunity = (grpId) => {
     toggleJoinCampusGroup(grpId);
-    showToast('Group preference updated! ✨');
+    showToast('Community preference updated! ✨');
   };
 
-  const handleCreateGroup = async (name, desc, avatar) => {
-    const newId = await createCampusGroup(name, desc, avatar);
-    showToast('Group created successfully! 🚀');
-    navigate(`/messages/${newId}`);
+  const handleCreateCommunity = async (id) => {
+    showToast('Community created successfully! 🚀');
+    navigate(`/communities/${id}`);
   };
 
-  const handleGroupClick = (group) => {
-    const isMember = currentUser?.campusGroups?.map(String).includes(String(group.id));
+  const handleCommunityClick = (community) => {
+    const isMember = currentUser?.campusGroups?.map(String).includes(String(community.id));
     if (isMember) {
-      navigate(`/messages/${group.id}`);
+      navigate(`/messages/${community.id}`);
     } else {
-      setSelectedGroup(group);
+      setSelectedCommunity(community);
       setIsJoinModalOpen(true);
     }
   };
 
   const handleJoinConfirm = () => {
-    if (!selectedGroup) return;
-    if (selectedGroup.whoCanJoin === 'Request required') {
-      requestToJoinGroup(selectedGroup.id, currentUser?.id);
+    if (!selectedCommunity) return;
+    if (selectedCommunity.whoCanJoin === 'Request required') {
+      requestToJoinGroup(selectedCommunity.id, currentUser?.id);
       showToast('Join request sent successfully! 📨');
     } else {
-      toggleJoinCampusGroup(selectedGroup.id);
-      showToast('Joined group successfully! 🎉');
-      navigate(`/messages/${selectedGroup.id}`);
+      toggleJoinCampusGroup(selectedCommunity.id);
+      showToast('Joined community successfully! 🎉');
+      navigate(`/messages/${selectedCommunity.id}`);
     }
     setIsJoinModalOpen(false);
-    setSelectedGroup(null);
+    setSelectedCommunity(null);
   };
 
   return (
@@ -134,7 +126,7 @@ export default function GroupsPage() {
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: 'transparent', borderRadius: '12px', padding: '0', border: 'none' }}>
                 <input
                   type="text"
-                  placeholder="Search groups..."
+                  placeholder="Search communities..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className={styles.headerSearchInput}
@@ -149,13 +141,13 @@ export default function GroupsPage() {
                 <button className={styles.headerSquareBtn} onClick={() => goBack('/campus')} title="Back to Campus">
                   <ArrowLeft size={20} />
                 </button>
-                <h1 className={styles.collegeTitle} style={{ margin: 0 }}>Campus Groups</h1>
+                <h1 className={styles.collegeTitle} style={{ margin: 0 }}>Campus Communities</h1>
               </div>
               <div className={styles.headerActions}>
-                <button className={styles.headerSquareBtn} onClick={() => setShowSearch(true)} title="Search Groups">
+                <button className={styles.headerSquareBtn} onClick={() => setShowSearch(true)} title="Search Communities">
                   <Search size={20} />
                 </button>
-                <button className={styles.headerSquareBtn} onClick={() => setIsCreateModalOpen(true)} title="Create Group">
+                <button className={styles.headerSquareBtn} onClick={() => setIsCreateModalOpen(true)} title="Create Community">
                   <Plus size={20} />
                 </button>
               </div>
@@ -164,27 +156,27 @@ export default function GroupsPage() {
         </header>
       </div>
 
-      <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: collegeGroups.length > 0 ? 'stretch' : 'center', justifyContent: collegeGroups.length > 0 ? 'flex-start' : 'center', padding: collegeGroups.length > 0 ? '0 1rem' : '2rem 1rem', textAlign: 'center' }}>
-        {collegeGroups.length > 0 ? (
+      <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: collegeCommunities.length > 0 ? 'stretch' : 'center', justifyContent: collegeCommunities.length > 0 ? 'flex-start' : 'center', padding: collegeCommunities.length > 0 ? '0 1rem' : '2rem 1rem', textAlign: 'center' }}>
+        {collegeCommunities.length > 0 ? (
           <div className={styles.directoryGrid} style={{ textAlign: 'left' }}>
-            {collegeGroups.map(group => (
+            {collegeCommunities.map(community => (
               <div
-                key={group.id}
+                key={community.id}
                 className={styles.directoryCard}
-                onClick={() => handleGroupClick(group)}
+                onClick={() => handleCommunityClick(community)}
               >
                 <Avatar
-                  src={group.avatar || (group.name ? group.name.substring(0, 2).toUpperCase() : 'GR')}
-                  name={group.name}
+                  src={community.avatar || (community.name ? community.name.substring(0, 2).toUpperCase() : 'CO')}
+                  name={community.name}
                   size="56px"
                   isGroup={true}
                 />
                 <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
                   <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '500', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {group.name}
+                    {community.name}
                   </h4>
                   <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {group.desc || `${group.members || 1} ${(group.members || 1) === 1 ? 'member' : 'members'}`}
+                    {community.desc || `${community.members || 1} ${(community.members || 1) === 1 ? 'member' : 'members'}`}
                   </p>
                 </div>
               </div>
@@ -193,8 +185,8 @@ export default function GroupsPage() {
         ) : (
           <>
             <div style={{ fontSize: '4.5rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'center', alignItems: 'center', filter: 'drop-shadow(0 8px 16px rgba(0,0,0,0.2))' }}>🚀</div>
-            <h2 style={{ margin: '0', color: 'var(--color-text-main)', fontSize: '1.5rem', fontWeight: '700', letterSpacing: '-0.02em' }}>Your Campus Needs Its First Group</h2>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', margin: '-0.75rem 0 1.25rem 0', maxWidth: '300px', lineHeight: 1.15 }}>Be the pioneer. Create a group around your shared interests.</p>
+            <h2 style={{ margin: '0', color: 'var(--color-text-main)', fontSize: '1.5rem', fontWeight: '700', letterSpacing: '-0.02em' }}>Your Campus Needs Its First Community</h2>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', margin: '-0.75rem 0 1.25rem 0', maxWidth: '300px', lineHeight: 1.15 }}>Be the pioneer. Create a community around your shared interests.</p>
             <button
               onClick={() => setIsCreateModalOpen(true)}
               style={{
@@ -217,45 +209,45 @@ export default function GroupsPage() {
               onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)'; }}
             >
               <Plus size={18} />
-              Create Group
+              Create Community
             </button>
           </>
         )}
       </div>
 
       {isCreateModalOpen && (
-        <GroupCreationModal 
+        <CreateCommunityModal 
           onClose={() => setIsCreateModalOpen(false)} 
-          onCreate={handleCreateGroup} 
-          isDark={theme === 'dark'} 
+          onCreated={handleCreateCommunity}
+          isCampusCommunity={true}
         />
       )}
 
-      {isJoinModalOpen && selectedGroup && (
-        <div className={styles.modalOverlay} onClick={() => { setIsJoinModalOpen(false); setSelectedGroup(null); }}>
+      {isJoinModalOpen && selectedCommunity && (
+        <div className={styles.modalOverlay} onClick={() => { setIsJoinModalOpen(false); setSelectedCommunity(null); }}>
           <div className={styles.joinModal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.joinAvatarWrapper}>
               <Avatar
-                src={selectedGroup.avatar || (selectedGroup.name ? selectedGroup.name.substring(0, 2).toUpperCase() : 'GR')}
-                name={selectedGroup.name}
+                src={selectedCommunity.avatar || (selectedCommunity.name ? selectedCommunity.name.substring(0, 2).toUpperCase() : 'CO')}
+                name={selectedCommunity.name}
                 size="80px"
                 isGroup={true}
               />
             </div>
-            <h3 className={styles.joinGroupName}>{selectedGroup.name}</h3>
+            <h3 className={styles.joinGroupName}>{selectedCommunity.name}</h3>
             <p style={{ fontSize: '0.88rem', color: 'var(--color-text-muted)', marginTop: '-0.75rem', marginBottom: '0.25rem' }}>
-              {selectedGroup.members || 1} {(selectedGroup.members || 1) === 1 ? 'member' : 'members'}
+              {selectedCommunity.members || 1} {(selectedCommunity.members || 1) === 1 ? 'member' : 'members'}
             </p>
-            {selectedGroup.desc && (
+            {selectedCommunity.desc && (
               <p className={styles.joinGroupDesc}>
-                {selectedGroup.desc}
+                {selectedCommunity.desc}
               </p>
             )}
             <div className={styles.joinModalButtons}>
               <button className={styles.joinPrimaryBtn} onClick={handleJoinConfirm}>
-                {selectedGroup.whoCanJoin === 'Request required' ? 'Request to Join' : 'Join'}
+                {selectedCommunity.whoCanJoin === 'Request required' ? 'Request to Join' : 'Join'}
               </button>
-              <button className={styles.joinCancelBtn} onClick={() => { setIsJoinModalOpen(false); setSelectedGroup(null); }}>
+              <button className={styles.joinCancelBtn} onClick={() => { setIsJoinModalOpen(false); setSelectedCommunity(null); }}>
                 Cancel
               </button>
             </div>

@@ -38,7 +38,7 @@
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: transform 0.15s ease, background 0.15s ease;
+  transition: opacity 0.15s ease, background 0.15s ease;
 }
 
 .voicePlayerMe .voicePlayBtn {
@@ -47,7 +47,7 @@
 }
 
 .voicePlayBtn:hover {
-  transform: scale(1.06);
+  opacity: 0.92;
 }
 
 .voicePlayerCenter {
@@ -96,6 +96,74 @@
   background: var(--color-primary);
   cursor: pointer;
   transition: transform 0.1s ease;
+}
+
+.voicePlayerMe .voiceScrubber::-webkit-slider-thumb {
+  background: white;
+}
+
+.voiceTimeText {
+  position: absolute;
+  bottom: -12px;
+  left: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748B;
+}
+
+.voicePlayerMe .voiceTimeText {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.voiceSpeedBtn {
+  padding: 2px 7px;
+  border-radius: 10px;
+  border: none;
+  background: rgba(0, 0, 0, 0.05);
+  color: #475569;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transform: none !important;
+  transition: opacity 0.15s ease;
+}
+
+.voiceSpeedBtn:hover {
+  transform: none !important;
+  opacity: 0.85;
+}
+
+.voicePlayerMe .voiceSpeedBtn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+}
+
+.voiceFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 0.68rem;
+}
+
+.voicePlayerMe .voiceFooter {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.voicePlayerThem .voiceFooter {
+  color: var(--text-secondary, #94a3b8);
+}
+
+.voiceFooterTime {
+  font-size: 0.68rem;
+}
+
+.voiceFooterIcon {
+  display: inline-flex;
+  align-items: center;
 }
 
 .voicePlayerMe .voiceScrubber::-webkit-slider-thumb {

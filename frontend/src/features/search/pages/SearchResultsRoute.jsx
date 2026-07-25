@@ -99,7 +99,7 @@ function ActivityRow({ activity, onClick }) {
                     style={{ zIndex: 10 - idx }}
                   >
                     {isImageUrl(avatarUrl) ? (
-                      <img src={avatarUrl} alt="Going"  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                      <img src={avatarUrl} alt="Going"  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     ) : (
                       <span className={styles.goingAvatarFallback}>
                         {String.fromCharCode(65 + idx)}
@@ -154,7 +154,7 @@ function CommunityRow({ comm, onClick }) {
         style={(!isImageUrl(comm.avatar)) ? (comm.color ? { background: comm.color } : { background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }) : { background: 'var(--color-bg-white)' }}
       >
         {isImageUrl(comm.avatar)
-          ? <img src={comm.avatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+          ? <img src={comm.avatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
           : <span style={{ fontWeight: 700, color: '#FFFFFF' }}>{comm.avatar || comm.name?.charAt(0).toUpperCase()}</span>
         }
       </div>
@@ -177,10 +177,20 @@ function CommunityRow({ comm, onClick }) {
 
 // Person row in search results
 function PersonRow({ user }) {
-  const { toggleFollow, isFollowing: checkIsFollowing, isPending } = useFollow();
+  const { toggleFollow, isFollowing: checkIsFollowing, initialized } = useFollow();
   const navigate = useNavigate();
   const isFollowing = checkIsFollowing(user.username);
-  const pending = isPending(user.username);
+  const [loading, setLoading] = useState(false);
+
+  const pending = loading || !initialized;
+
+  const handleToggle = async (e) => {
+    e.stopPropagation();
+    if (pending) return;
+    setLoading(true);
+    await toggleFollow(user.username);
+    setLoading(false);
+  };
 
   return (
     <div className={styles.personRow} onClick={() => navigate(`/profile/${user.username}`)}>
@@ -199,7 +209,7 @@ function PersonRow({ user }) {
         className={`${styles.followBtn} ${isFollowing ? styles.followBtnActive : ''}`}
         title={isFollowing ? 'Unfollow' : 'Follow'}
         disabled={pending}
-        onClick={(e) => { e.stopPropagation(); if (!pending) toggleFollow(user.username); }}
+        onClick={handleToggle}
         style={{ opacity: pending ? 0.6 : 1, cursor: pending ? 'not-allowed' : 'pointer' }}
       >
         {isFollowing ? <UserCheck size={15} /> : <UserPlus size={15} />}

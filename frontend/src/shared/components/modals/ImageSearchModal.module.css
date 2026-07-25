@@ -4,23 +4,28 @@
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   z-index: 9999;
-  padding: 1rem;
+  padding: 0;
 }
 
 .isModal {
-  width: 90%;
-  max-width: 420px;
+  width: 100%;
+  max-width: 480px;
   background: var(--color-bg-main);
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-premium);
+  border-bottom: none;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
-  max-height: 85vh;
-  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  max-height: 82vh;
+  animation: slideUpFromBottom 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  overflow: hidden;
 }
 
 .isHeader {
@@ -166,10 +171,10 @@
   display: block;
 }
 
-@keyframes slideUp {
+@keyframes slideUpFromBottom {
   from {
-    transform: translateY(20px);
-    opacity: 0;
+    transform: translateY(100%);
+    opacity: 0.5;
   }
   to {
     transform: translateY(0);
@@ -184,17 +189,22 @@
   width: 100%;
   margin-top: 0.75rem;
   padding: 0.7rem 1rem;
-  background: #ffffff;
-  color: #000000;
+  background: #0f172a;
+  color: #ffffff;
   border: none;
   border-radius: var(--radius-md);
   font-family: var(--font-family-sans);
   font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease;
 }
 
 .uploadBtn:hover {
   opacity: 0.9;
+}
+
+:global([data-theme="dark"]) .uploadBtn {
+  background: #ffffff;
+  color: #0f172a;
 }

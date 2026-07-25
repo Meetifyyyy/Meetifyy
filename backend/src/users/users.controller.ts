@@ -14,6 +14,14 @@ export class UsersController {
     return this.usersService.getAllUsers(limitNum, offsetNum);
   }
 
+  @Get('campus')
+  @UseGuards(JwtGuard)
+  async getCampusUsers(@Req() req: any, @Query('limit') limit?: string, @Query('offset') offset?: string) {
+    const limitNum = limit ? parseInt(limit, 10) : 100;
+    const offsetNum = offset ? parseInt(offset, 10) : 0;
+    return this.usersService.getCampusUsers(req.user.collegeId, limitNum, offsetNum);
+  }
+
   @Get('id/:id')
   @UseGuards(JwtGuard)
   async getUserById(@Param('id') id: string) {

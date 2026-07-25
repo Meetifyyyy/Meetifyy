@@ -16,30 +16,55 @@ export function useData() {
 
   // Queries
   const { data: communities = [] } = useQuery({ queryKey: ['communities'], queryFn: communitiesApi.getAll, staleTime: 30_000 });
+  const { data: campusCommunities = [] } = useQuery({ queryKey: ['campusCommunities'], queryFn: communitiesApi.getCampusCommunities, staleTime: 30_000 });
   const { data: rawActivities = [] } = useQuery({ queryKey: ['activities'], queryFn: activitiesApi.getAll, staleTime: 30_000 });
+  const { data: rawCampusActivities = [] } = useQuery({ queryKey: ['campusActivities'], queryFn: activitiesApi.getCampusActivities, staleTime: 30_000 });
   const { data: rawConversations = [], isLoading: isConversationsLoading, error: conversationsError } = useQuery({ queryKey: ['conversations'], queryFn: messagesApi.getConversations, staleTime: 10_000 });
   const { data: rawUsers = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll(50, 0), staleTime: 60_000 });
+  const { data: rawCampusUsers = [] } = useQuery({ queryKey: ['campusUsers'], queryFn: () => usersApi.getCampusUsers(200, 0), staleTime: 60_000 });
 
   const conversations = useMemo(() => {
-    return (rawConversations || []).map(c => ({
-      ...c,
-      blocked: c.blocked || false,
-      isBlockedByMe: c.isBlockedByMe || false,
-      isBlockedByThem: c.isBlockedByThem || false,
-      lastMsg: c.lastMessage?.text || '',
-      timestamp: c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).getTime() : (c.updatedAt ? new Date(c.updatedAt).getTime() : 0),
-      unread: c.unreadCount || c.unread || 0,
-      online: c.targetUser?.isOnline || false,
-      isGroup: c.type === 'GROUP',
-      name: c.name || c.targetUser?.displayName || c.targetUser?.username || 'Chat',
-      avatar: c.avatar || c.targetUser?.avatar || null,
-      username: c.targetUser?.username || null,
-      userId: c.targetUser?.id || null,
-    }));
-  }, [rawConversations]);
+    return (rawConversations || []).map(c => {
+      const pList = c.participants || c.members || [];
+      const calculatedIsMember = (!c.type || c.type === 'DIRECT') 
+        ? true 
+        : pList.some(p => {
+            const id = typeof p === 'string' ? p : (p.id || p.userId);
+            return String(id) === String(currentUser?.id);
+          });
+      const isMember = c.isMember !== undefined ? c.isMember : calculatedIsMember;
 
-  // Map backend activity structure to frontend expectations
-  const crewActivities = rawActivities.map(a => {
+      return {
+        ...c,
+        isMember,
+        blocked: c.blocked || false,
+        isBlockedByMe: c.isBlockedByMe || false,
+        isBlockedByThem: c.isBlockedByThem || false,
+        lastMsg: (() => {
+          if (!c.lastMessage) return '';
+          if (c.lastMessage.text) return c.lastMessage.text;
+          if (c.lastMessage.mediaUrl) {
+            if (c.lastMessage.mediaType === 'image') return 'Photo';
+            if (c.lastMessage.mediaType === 'video') return 'Video';
+            return 'Audio';
+          }
+          return '';
+        })(),
+        lastSenderId: c.lastMessage?.senderId || null,
+        lastSenderName: c.lastMessage?.senderName || null,
+        timestamp: c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).getTime() : (c.updatedAt ? new Date(c.updatedAt).getTime() : 0),
+        unread: c.unreadCount || c.unread || 0,
+        online: c.targetUser?.isOnline || false,
+        isGroup: c.type === 'GROUP',
+        name: c.name || c.targetUser?.displayName || c.targetUser?.username || 'Chat',
+        avatar: c.avatar || c.targetUser?.avatar || null,
+        username: c.targetUser?.username || null,
+        userId: c.targetUser?.id || null,
+      };
+    });
+  }, [rawConversations, currentUser?.id]);
+
+  const mapActivity = (a) => {
     const startDate = a.startDate ? new Date(a.startDate) : null;
     const dateFormatted = startDate ? startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
     const dateLabelFormatted = startDate ? startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
@@ -61,7 +86,10 @@ export function useData() {
       slotsNeeded: a.maxMembers || 999,
       _membersData: a.members?.map(m => m.user) || [] // Keep full user objects for UI
     };
-  });
+  };
+  
+  const crewActivities = rawActivities.map(mapActivity);
+  const campusCrewActivities = rawCampusActivities.map(mapActivity);
 
   // Aliases for old properties
   const communitiesWithLookup = useMemo(() => {
@@ -84,6 +112,14 @@ export function useData() {
     });
     return map;
   }, [rawUsers]);
+
+  const campusUsers = useMemo(() => {
+    const map = {};
+    rawCampusUsers.forEach(u => {
+      map[u.id] = u;
+    });
+    return map;
+  }, [rawCampusUsers]);
   const posts = [];
 
   // Mutations
@@ -121,6 +157,16 @@ export function useData() {
   
   const createCampusGroup = async (name, desc, avatar) => {
     const res = await createCommMutation.mutateAsync({ name, description: desc, avatarKey: avatar });
+    return res.id;
+  };
+
+  const addCommunity = async (data) => {
+    const res = await createCommMutation.mutateAsync({
+      name: data.name,
+      description: data.desc,
+      avatarKey: data.avatar,
+      isCampusCommunity: data.isCampusCommunity
+    });
     return res.id;
   };
   
@@ -194,10 +240,19 @@ export function useData() {
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
     return res;
   };
+  const normalizeUserIds = (input) => {
+    if (!input) return [];
+    if (Array.isArray(input)) {
+      return input.map(item => typeof item === 'string' ? item : (item?.id || item?.userId)).filter(Boolean);
+    }
+    if (typeof input === 'string') return [input];
+    if (typeof input === 'object' && (input.id || input.userId)) return [input.id || input.userId];
+    return [];
+  };
   const reactToMessage = (messageId, reaction) => messagesApi.reactToMessage(messageId, reaction);
-  const startConversation = (userIds, name) => messagesApi.startConversation(userIds, name).then(res => res.id);
+  const startConversation = (userIds, name) => messagesApi.startConversation(normalizeUserIds(userIds), name).then(res => res.id);
   const createGroupConversation = async (groupName, userIds) => {
-    const res = await messagesApi.startConversation(userIds, groupName);
+    const res = await messagesApi.startConversation(normalizeUserIds(userIds), groupName);
     queryClient.invalidateQueries(['conversations']);
     return res.id;
   };
@@ -243,18 +298,54 @@ export function useData() {
     queryClient.invalidateQueries(['users']);
   };
   const updateGroupInfo = async (convId, name, avatarKey, description) => {
+    queryClient.setQueryData(['conversations'], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(c => {
+        if (c.id === convId) {
+          return {
+            ...c,
+            ...(name !== undefined ? { name } : {}),
+            ...(description !== undefined ? { description } : {}),
+            ...(avatarKey !== undefined ? { avatar: avatarKey, avatarKey } : {})
+          };
+        }
+        return c;
+      });
+    });
     if (String(convId).startsWith('c_')) {
       const actualId = convId.replace('c_', '');
-      return communitiesApi.updateGroupInfo(actualId, { name, description, avatarKey }).then(() => queryClient.invalidateQueries(['communities']));
+      return communitiesApi.updateGroupInfo(actualId, { name, description, avatarKey }).then(() => {
+        queryClient.invalidateQueries(['communities']);
+        queryClient.invalidateQueries(['conversations']);
+      });
     }
     await messagesApi.updateGroup(convId, { name, description, avatarKey });
     queryClient.invalidateQueries(['conversations']);
   };
 
   const removeGroupMember = async (convId, memberId) => {
+    queryClient.setQueryData(['conversations'], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(c => {
+        if (c.id === convId) {
+          const currentMembers = c.members || [];
+          const currentAdmins = c.admins || [];
+          return {
+            ...c,
+            members: currentMembers.filter(m => (m.userId || m.id || m) !== memberId),
+            admins: currentAdmins.filter(id => id !== memberId),
+            memberCount: Math.max(0, (c.memberCount || 1) - 1)
+          };
+        }
+        return c;
+      });
+    });
     if (String(convId).startsWith('c_')) {
       const actualId = convId.replace('c_', '');
-      return communitiesApi.removeGroupMember(actualId, memberId).then(() => queryClient.invalidateQueries(['communities']));
+      return communitiesApi.removeGroupMember(actualId, memberId).then(() => {
+        queryClient.invalidateQueries(['communities']);
+        queryClient.invalidateQueries(['conversations']);
+      });
     }
     await messagesApi.removeMember(convId, memberId);
     queryClient.invalidateQueries(['conversations']);
@@ -281,30 +372,85 @@ export function useData() {
   const joinCrewActivity = (id) => activitiesApi.join(id).then(() => queryClient.invalidateQueries(['activities']));
   const leaveCrewActivity = (id) => leaveActivityMutation.mutateAsync(id);
   const requestToJoinActivity = (id) => activitiesApi.requestToJoinActivity(id).then(() => queryClient.invalidateQueries(['activities']));
-  const requestToJoinGroup = (id) => communitiesApi.join(id).then(() => queryClient.invalidateQueries(['communities']));
+  const requestToJoinGroup = (id) => {
+    return messagesApi.requestToJoinGroup(id)
+      .catch(() => communitiesApi.join(id))
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        queryClient.invalidateQueries({ queryKey: ['communities'] });
+      });
+  };
   const endCrewActivity = (id) => activitiesApi.endCrewActivity(id).then(() => queryClient.invalidateQueries(['activities']));
 
   const updateGroupSettings = async (convId, data) => {
+    queryClient.setQueryData(['conversations'], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(c => c.id === convId ? { ...c, ...data } : c);
+    });
+    if (String(convId).startsWith('c_')) {
+      const actualId = String(convId).replace('c_', '');
+      return communitiesApi.updateGroupInfo(actualId, data).then(() => {
+        queryClient.invalidateQueries(['communities']);
+        queryClient.invalidateQueries(['conversations']);
+      });
+    }
     await messagesApi.updateSettings(convId, data);
     queryClient.invalidateQueries(['conversations']);
   };
 
   const updateGroupEditPermission = async (convId, permission) => {
+    queryClient.setQueryData(['conversations'], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(c => c.id === convId ? { ...c, editGroupPermission: permission } : c);
+    });
+    if (String(convId).startsWith('c_')) {
+      const actualId = String(convId).replace('c_', '');
+      return communitiesApi.updateGroupInfo(actualId, { editGroupPermission: permission }).then(() => {
+        queryClient.invalidateQueries(['communities']);
+        queryClient.invalidateQueries(['conversations']);
+      });
+    }
     await messagesApi.updatePermissions(convId, permission);
     queryClient.invalidateQueries(['conversations']);
   };
 
   const changeGroupOwner = async (convId, targetUserId) => {
+    queryClient.setQueryData(['conversations'], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(c => c.id === convId ? { ...c, ownerId: targetUserId } : c);
+    });
     await messagesApi.changeOwner(convId, targetUserId);
     queryClient.invalidateQueries(['conversations']);
   };
 
   const promoteToAdmin = async (convId, targetUserId) => {
+    queryClient.setQueryData(['conversations'], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(c => {
+        if (c.id === convId) {
+          const currentAdmins = c.admins || [];
+          if (!currentAdmins.includes(targetUserId)) {
+            return { ...c, admins: [...currentAdmins, targetUserId] };
+          }
+        }
+        return c;
+      });
+    });
     await messagesApi.promoteAdmin(convId, targetUserId);
     queryClient.invalidateQueries(['conversations']);
   };
 
   const demoteFromAdmin = async (convId, targetUserId) => {
+    queryClient.setQueryData(['conversations'], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(c => {
+        if (c.id === convId) {
+          const currentAdmins = c.admins || [];
+          return { ...c, admins: currentAdmins.filter(id => id !== targetUserId) };
+        }
+        return c;
+      });
+    });
     await messagesApi.demoteAdmin(convId, targetUserId);
     queryClient.invalidateQueries(['conversations']);
   };
@@ -407,9 +553,14 @@ export function useData() {
     conversations,
     isConversationsLoading,
     conversationsError,
+    campusCommunities,
+    campusCrewActivities,
+    campusUsers,
+    joinCommunity: joinCommMutation.mutate,
     toggleJoinCommunity,
     toggleJoinCampusGroup,
     createCampusGroup,
+    addCommunity,
     sendDirectMessage,
     reactToMessage,
     startConversation,

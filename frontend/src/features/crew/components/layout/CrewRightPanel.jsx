@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './CrewRightPanel.module.css';
 
-import createActivityBackgroundCharacter from '@assets/images/createactivitybackgroundcharacter.png';
+import createActivityBackgroundCharacter from '@assets/images/createactivitybackgroundcharacter.webp';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import { useData } from '@shared/hooks/useData';
 

@@ -168,7 +168,7 @@ export default function ReportModal({
           {(targetName || targetPreview || targetAvatar) && (
             <div className={styles.previewCard}>
               {targetAvatar && (
-                <img src={targetAvatar} alt="" className={styles.previewAvatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                <img src={targetAvatar} alt="" className={styles.previewAvatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
               )}
               <div className={styles.previewTextGroup}>
                 {targetName && <div className={styles.previewName}>{targetName}</div>}

@@ -8,47 +8,46 @@ import Avatar from '@shared/components/avatar/Avatar';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './CampusPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
-import GroupCreationModal from '@shared/components/modals/GroupCreationModal';
+import CreateCommunityModal from '@features/communities/components/modals/CreateCommunityModal';
 import CrewCard from '@features/crew/components/cards/CrewCard';
 import { Plus, Users } from 'lucide-react';
 import ActivityTemplatesRow from '../components/ActivityTemplatesRow';
 
 export default function CampusPage() {
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
-  const { crewActivities, users, communities, createCampusGroup } = useData();
+  const { currentUser, collegeName: authCollegeName } = useAuth();
+  const { campusCrewActivities, campusUsers, campusCommunities, createCampusGroup } = useData();
   const { theme } = useTheme();
 
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
 
-  const userCollegeId = currentUser?.collegeId || 'gla';
-  const collegeCommunity = communities[userCollegeId] || { name: 'Your College', members: 4200, online: 854 };
-  const collegeName = collegeCommunity.name;
+  const userCollegeId = currentUser?.collegeId || 'unknown';
+  const collegeCommunity = campusCommunities[userCollegeId];
+  const collegeName = collegeCommunity?.name || authCollegeName;
 
   const recentActivities = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    return crewActivities
+    return campusCrewActivities
       .filter(act => {
         if (!act.date) return false;
         const d = new Date(act.date);
         d.setHours(0, 0, 0, 0);
-        return d >= today && (!act.shareToSchool || act.hostCollege === collegeName);
+        return d >= today;
       })
       .sort((a, b) => new Date(a.date) - new Date(b.date))
       .slice(0, 2);
-  }, [crewActivities, collegeName]);
+  }, [campusCrewActivities]);
 
   const suggestedUsers = useMemo(() => {
-    let list = Object.values(users).filter(u => u.collegeId === userCollegeId);
+    let list = Object.values(campusUsers).filter(u => u.collegeId === userCollegeId);
     list = list.filter(u => u.id !== currentUser?.id);
     return list.slice(0, 4);
-  }, [users, userCollegeId, currentUser]);
+  }, [campusUsers, userCollegeId, currentUser]);
 
-  const handleCreateGroup = async (name, desc, avatar) => {
-    const newId = await createCampusGroup(name, desc, avatar);
-    showToast('Group created successfully! 🚀');
-    navigate(`/messages/${newId}`);
+  const handleCreateGroup = async (id) => {
+    showToast('Community created successfully! 🚀');
+    navigate(`/communities/${id}`);
   };
 
 
@@ -89,10 +88,10 @@ export default function CampusPage() {
           </button>
           <button
             className={styles.navTab}
-            onClick={() => navigate('/campus/groups')}
+            onClick={() => navigate('/campus/communities')}
           >
             <span className={styles.tabEmoji}>🫧</span>
-            <span>Groups</span>
+            <span>Communities</span>
           </button>
         </div>
       </div>
@@ -150,11 +149,11 @@ export default function CampusPage() {
             </button>
           </section>
 
-          {/* Section 3: discover groups */}
+          {/* Section 3: discover communities */}
           <section className={styles.section}>
             <div className={styles.sectionHeaderRow}>
               <span className={styles.sectionEmoji}>🫧</span>
-              <h2 className={styles.sectionTitleText}>discover groups</h2>
+              <h2 className={styles.sectionTitleText}>discover communities</h2>
             </div>
             <div className={styles.discoverGroupsCard} onClick={() => {
               setIsGroupModalOpen(true);
@@ -163,7 +162,7 @@ export default function CampusPage() {
                 <Users size={20} />
                 <span className={styles.plusOverlay}>+</span>
               </div>
-              <span className={styles.discoverGroupsText}>Create a campus group</span>
+              <span className={styles.discoverGroupsText}>Create a campus community</span>
             </div>
           </section>
         </div>
@@ -171,10 +170,10 @@ export default function CampusPage() {
 
 
       {isGroupModalOpen && (
-        <GroupCreationModal 
+        <CreateCommunityModal 
           onClose={() => setIsGroupModalOpen(false)} 
-          onCreate={handleCreateGroup} 
-          isDark={theme === 'dark'} 
+          onCreated={handleCreateGroup} 
+          isCampusCommunity={true}
         />
       )}
     </main>

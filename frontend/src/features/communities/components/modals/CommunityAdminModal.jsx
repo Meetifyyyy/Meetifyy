@@ -3,16 +3,19 @@ import { createPortal } from 'react-dom';
 import { useData } from '@shared/hooks/useData';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
-import { useMediaUpload } from '@shared/hooks/useMediaUpload';
+import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import MediaCropper from '@shared/components/media/MediaCropper';
+import defaultCommunityCover from '@assets/images/default_community_cover.webp';
 
 export default function CommunityAdminModal({ community, onClose }) {
   const { updateCommunity, kickMember } = useData();
   const [activeTab, setActiveTab] = useState('details');
   const avatarInputRef = useRef(null);
   const coverInputRef = useRef(null);
-
-  const { upload: uploadIcon } = useMediaUpload('community-icons');
-  const { upload: uploadCover } = useMediaUpload('community-covers');
+  
+  const [cropFile, setCropFile] = useState(null);
+  const [cropType, setCropType] = useState(null); // 'avatar' or 'cover'
+  const [isUploading, setIsUploading] = useState(false);
 
   // Details State
   const [name, setName] = useState(community.name || '');
@@ -56,6 +59,30 @@ export default function CommunityAdminModal({ community, onClose }) {
     if (window.confirm('Are you sure you want to kick this member? They will be banned from joining for 7 days.')) {
       await kickMember(community.id, memberId);
       showToast('Member kicked successfully');
+    }
+  };
+
+  const handleCropComplete = async (croppedFile) => {
+    setCropFile(null);
+    setIsUploading(true);
+    try {
+      const folder = cropType === 'avatar' ? 'community-icons' : 'community-covers';
+      const { publicUrl } = await processAndUploadImage(croppedFile, folder, {
+        maxWidthOrHeight: cropType === 'avatar' ? 512 : 1920
+      });
+      
+      if (cropType === 'avatar') {
+        setAvatar(publicUrl);
+      } else {
+        setCoverImage(publicUrl);
+      }
+      showToast(`${cropType === 'avatar' ? 'Avatar' : 'Cover'} uploaded successfully!`);
+    } catch (e) {
+      console.error(e);
+      showToast('Upload failed');
+    } finally {
+      setIsUploading(false);
+      setCropType(null);
     }
   };
 
@@ -164,7 +191,7 @@ export default function CommunityAdminModal({ community, onClose }) {
               <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                 <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--color-bg-alt)', overflow: 'hidden', border: '2px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {isImageUrl(avatar) ? (
-                    <img src={avatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                    <img src={avatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                   ) : (
                     <span style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>
                       {avatar || (community.name ? community.name.charAt(0).toUpperCase() : 'C')}
@@ -188,17 +215,12 @@ export default function CommunityAdminModal({ community, onClose }) {
                     accept="image/*"
                     ref={avatarInputRef}
                     style={{ display: 'none' }}
-                    onChange={async (e) => {
+                    onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
-                      try {
-                        const publicUrl = await uploadIcon(file);
-                        setAvatar(publicUrl);
-                      } catch {
-                        showToast('Failed to upload icon');
-                      } finally {
-                        e.target.value = '';
-                      }
+                      setCropFile(file);
+                      setCropType('avatar');
+                      e.target.value = '';
                     }}
                   />
                 </div>
@@ -208,11 +230,7 @@ export default function CommunityAdminModal({ community, onClose }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <label style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text-main)' }}>Cover Image</label>
               <div style={{ width: '100%', height: '120px', borderRadius: 'var(--radius-lg)', background: 'var(--color-bg-alt)', overflow: 'hidden', border: '1px solid var(--color-border)', position: 'relative' }}>
-                {coverImage ? (
-                  <img src={coverImage} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>No Cover Image</div>
-                )}
+                <img src={coverImage || defaultCommunityCover} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
               <button 
                 type="button"
@@ -230,26 +248,33 @@ export default function CommunityAdminModal({ community, onClose }) {
                 accept="image/*"
                 ref={coverInputRef}
                 style={{ display: 'none' }}
-                onChange={async (e) => {
+                onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  try {
-                    const publicUrl = await uploadCover(file);
-                    setCoverImage(publicUrl);
-                  } catch {
-                    showToast('Failed to upload cover');
-                  } finally {
-                    e.target.value = '';
-                  }
+                  setCropFile(file);
+                  setCropType('cover');
+                  e.target.value = '';
                 }}
               />
             </div>
             
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
               <button type="button" onClick={onClose} style={{ padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-bg-soft)', color: 'var(--color-text-main)', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button type="submit" disabled={isSaving} style={{ padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 600, cursor: 'pointer', opacity: isSaving ? 0.7 : 1 }}>{isSaving ? 'Saving...' : 'Save Changes'}</button>
+              <button type="submit" disabled={isSaving || isUploading} style={{ padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 600, cursor: 'pointer', opacity: (isSaving || isUploading) ? 0.7 : 1 }}>{isSaving ? 'Saving...' : 'Save Changes'}</button>
             </div>
           </form>
+        )}
+
+        {cropFile && (
+          <MediaCropper
+            imageFile={cropFile}
+            aspect={cropType === 'avatar' ? 1 : 3}
+            onCropComplete={handleCropComplete}
+            onCancel={() => {
+              setCropFile(null);
+              setCropType(null);
+            }}
+          />
         )}
 
 

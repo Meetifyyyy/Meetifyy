@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import chaiCollab from '@assets/images/chai_collab.png';
+import chaiCollab from '@assets/images/chai_collab.webp';
 import styles from './InteractiveHeroCollage.module.css';
 
 function InteractiveCollageCard({ children, initialX, initialY, rotate, delay, className }) {

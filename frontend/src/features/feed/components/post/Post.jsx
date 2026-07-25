@@ -256,7 +256,7 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
           <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none' }} onClick={(e) => e.stopPropagation()}>
             <div className={styles.postAvatar}>
               {isImageUrl(author.avatar) ? (
-                <img src={getProcessedAvatarUrl(author.avatar)} alt={author.displayName} loading="lazy" className={styles.postAvatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                <img src={getProcessedAvatarUrl(author.avatar)} alt={author.displayName} loading="lazy" className={styles.postAvatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
               ) : (
                 <DefaultAvatar />
               )}
@@ -271,7 +271,7 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
               style={{ background: (!isImageUrl(postCommunity.avatar)) ? (postCommunity.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
             >
               {isImageUrl(postCommunity.avatar) ? (
-                <img src={postCommunity.avatar} alt="" loading="lazy"  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                <img src={postCommunity.avatar} alt="" loading="lazy"  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
               ) : (
                 <span>{postCommunity.avatar || postCommunity.name?.charAt(0).toUpperCase()}</span>
               )}
@@ -289,7 +289,7 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
                 loading="lazy"
                 className={styles.postCollegeIcon}
                 title={authorCollege.name}
-               onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+               onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
             )}
           </Link>
           <div className={styles.postTime} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>

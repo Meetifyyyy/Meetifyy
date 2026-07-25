@@ -14,20 +14,14 @@ export default function ActivitiesPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
-  const { crewActivities, communities } = useData();
+  const { campusCrewActivities } = useData();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
 
-  const userCollegeId = currentUser?.collegeId || 'gla';
-  const collegeCommunity = communities[userCollegeId] || { name: 'GLA University' };
-  const collegeName = collegeCommunity.name;
-
   const filteredActivities = useMemo(() => {
     // Only show activities visible to this college
-    let list = crewActivities.filter(act =>
-      !act.shareToSchool || act.hostCollege === collegeName
-    );
+    let list = campusCrewActivities;
 
     // Filter out past activities
     const today = new Date();
@@ -48,7 +42,7 @@ export default function ActivitiesPage() {
     }
 
     return list;
-  }, [crewActivities, collegeName, searchQuery, userCollegeId]);
+  }, [campusCrewActivities, searchQuery]);
 
   return (
     <main className={`centre centre-wide ${sharedStyles.hubContainer}`}>

@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 import { CheckCheck, Check } from 'lucide-react';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -11,6 +13,99 @@ import { SharedActivityPreview } from '../previews/SharedActivityPreview';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import styles from './ChatMessageList.module.css';
 import { useData } from '@shared/hooks/useData';
+
+function GroupInviteCard({ msg, currentUser, conversations, navigate, toggleJoinCampusGroup, requestToJoinGroup }) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const targetGroupId = msg.inviteData?.groupId || msg.inviteData?.conversationId;
+  const isCampusGroup = String(targetGroupId).startsWith('c_');
+  const targetConv = conversations?.find(c => String(c.id) === String(targetGroupId));
+  
+  const memberIds = new Set();
+  if (targetConv) {
+    (targetConv.members || targetConv.participants || []).forEach(m => {
+      const id = typeof m === 'string' ? m : (m.id || m.userId || m.user?.id);
+      if (id) memberIds.add(String(id));
+    });
+  }
+  const isMember = memberIds.has(String(currentUser?.id));
+  const isJoinedCampus = isCampusGroup && currentUser?.campusGroups?.map(String).includes(String(targetGroupId));
+  const alreadyJoined = isMember || isJoinedCampus;
+  
+  const isApprovalRequired = (
+    targetConv?.whoCanJoin === 'APPROVAL' ||
+    targetConv?.whoCanJoin === 'Request required' ||
+    targetConv?.whoCanJoin === 'APPROVAL_REQUIRED' ||
+    msg.inviteData?.whoCanJoin === 'APPROVAL' ||
+    msg.inviteData?.whoCanJoin === 'Request required' ||
+    msg.inviteData?.whoCanJoin === 'APPROVAL_REQUIRED'
+  );
+
+  const pendingReqs = (targetConv?.pendingRequests || []).map(item => typeof item === 'string' ? item : (item.userId || item.user?.id));
+  const isRequested = pendingReqs.includes(currentUser?.id);
+
+  const fromText = msg.from === 'me' ? 'you' : (msg.senderName || 'someone');
+
+  const handleJoinGroup = async () => {
+    if (alreadyJoined) {
+      navigate(`/messages/${targetGroupId}`);
+      return;
+    }
+
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
+    try {
+      if (isApprovalRequired) {
+        if (!isRequested) {
+          await requestToJoinGroup(targetGroupId);
+          toast.success('Join request sent! 📨');
+        }
+      } else {
+        if (isCampusGroup) {
+          await toggleJoinCampusGroup(targetGroupId);
+        } else {
+          await requestToJoinGroup(targetGroupId);
+        }
+        navigate(`/messages/${targetGroupId}`);
+      }
+    } catch {
+      toast.error('Failed to send request');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className={styles.groupInviteCard}>
+      <div className={styles.groupInviteHeader}>
+        <Avatar src={msg.inviteData?.groupAvatar} name={msg.inviteData?.groupName} size="48px" isGroup={true} />
+        <div className={styles.groupInviteInfo}>
+          <h4>{msg.inviteData?.groupName || 'Group'}</h4>
+          <p>Group invite from {fromText}</p>
+        </div>
+      </div>
+      <div className={styles.groupInviteActions}>
+        <button 
+          className={styles.groupInviteBtn}
+          onClick={handleJoinGroup}
+          disabled={isSubmitting || (!alreadyJoined && isRequested)}
+          style={(!alreadyJoined && isRequested) ? { opacity: 0.6, cursor: 'default' } : undefined}
+        >
+          {isSubmitting ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg style={{ animation: 'spin 0.8s linear infinite' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="10" />
+              </svg>
+            </span>
+          ) : (
+            alreadyJoined ? 'View Group' : (isRequested ? 'Requested' : 'Join Group')
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 
 const formatToClockTime = (dateInput) => {
@@ -92,15 +187,32 @@ export default function MessageBubble({
       return null;
     }
 
-    if (msg.status === 'read' && bothHaveReadReceipts) {
+    if (msg.status === 'read') {
       return <div className={styles.msgStatusLabel}>Seen</div>;
     }
 
     return <div className={styles.msgStatusLabel}>Sent</div>;
   };
 
-  if (msg.type === 'system') {
-    const parts = msg.text.split(/(@[a-zA-Z0-9_]+)/g);
+  if (msg.type === 'system' || msg.type === 'SYSTEM') {
+    let formattedText = msg.text || '';
+    if (users && typeof users === 'object') {
+      Object.values(users).forEach(u => {
+        if (!u || !u.username) return;
+        const handle = u.username.startsWith('@') ? u.username : `@${u.username}`;
+        
+        if (u.displayName && u.displayName !== u.username) {
+          const escaped = u.displayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          formattedText = formattedText.replace(new RegExp(`\\b${escaped}\\b`, 'g'), handle);
+        }
+        if (u.name && u.name !== u.username && u.name !== u.displayName) {
+          const escaped = u.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          formattedText = formattedText.replace(new RegExp(`\\b${escaped}\\b`, 'g'), handle);
+        }
+      });
+    }
+
+    const parts = formattedText.split(/(@[a-zA-Z0-9_.]+)/g);
     return (
       <div className={styles.systemMessageContainer}>
         <div className={styles.systemMessageText}>
@@ -131,11 +243,12 @@ export default function MessageBubble({
 
   const hasQuery = searchQuery && msg.text && typeof msg.text === 'string' && msg.text.toLowerCase().includes(searchQuery.toLowerCase());
   const shouldDim = searchQuery && !hasQuery;
-  const isGroupInvite = msg.inviteData && !msg.inviteData.type;
+  const isGroupInvite = Boolean(msg.inviteData);
   
   return (
     <div 
       id={`msg-${msg.id}`}
+      data-msg-id={msg.id}
       className={`${styles.msgBubbleContainer} ${msg.from === 'me' ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}
       style={{ opacity: shouldDim ? 0.45 : 1 }}
     >
@@ -182,7 +295,17 @@ export default function MessageBubble({
             </div>
           )}
           {/* ── Audio Card ── */}
-          {msg.mediaUrl && msg.mediaType === 'audio' && (
+          {Boolean(
+            msg.mediaUrl && (
+              msg.mediaType === 'audio' ||
+              msg.mediaType === 'voice' ||
+              msg.type === 'voice' ||
+              msg.type === 'VOICE' ||
+              msg.isVoiceNote ||
+              /\.(mp3|wav|ogg|m4a|aac)/i.test(msg.mediaUrl) ||
+              msg.mediaUrl.startsWith('data:audio/')
+            )
+          ) && (
             <div className={styles.msgAudioCardContainer}>
               <VoiceMessagePlayer src={msg.mediaUrl} fromMe={msg.from === 'me'} />
               {(!msg.text && !msg.linkPreview && !msg.inviteData) && (
@@ -286,70 +409,15 @@ export default function MessageBubble({
               />
             ) : msg.inviteData && msg.inviteData.type === 'communityShare' ? (
               <SharedCommunityPreview community={msg.inviteData.community} currentUserId={currentUser?.id} />
-            ) : msg.inviteData ? ( (() => {
-              const targetGroupId = msg.inviteData.groupId;
-              const isCampusGroup = String(targetGroupId).startsWith('c_');
-              const targetConv = conversations?.find(c => String(c.id) === String(targetGroupId));
-              const isMember = targetConv 
-                ? (targetConv.members || targetConv.participants || []).map(String).includes(String(currentUser?.id))
-                : false;
-              const isJoinedCampus = isCampusGroup && currentUser?.campusGroups?.map(String).includes(String(targetGroupId));
-              const alreadyJoined = isMember || isJoinedCampus;
-              
-              const inviteAuthorId = typeof msg.inviteData.inviterId === 'string' ? msg.inviteData.inviterId : String(msg.inviteData.inviterId);
-              let fromText = msg.from === 'me' ? 'you' : (msg.senderName || 'someone');
-              
-              const isRequested = targetConv?.pendingRequests?.includes(currentUser?.id);
-              const buttonText = alreadyJoined 
-                ? 'View Group' 
-                : isRequested 
-                  ? 'Requested' 
-                  : 'Join Group';
-              
-              const handleJoinGroup = () => {
-                if (!alreadyJoined) {
-                  if (targetConv?.whoCanJoin === 'Request required' || msg.inviteData.whoCanJoin === 'Request required') {
-                    if (!isRequested) {
-                      requestToJoinGroup(targetGroupId, currentUser?.id);
-                      if (window.showToast) {
-                        window.showToast('Join request sent! 📨');
-                      }
-                    }
-                  } else {
-                    if (isCampusGroup) {
-                      toggleJoinCampusGroup(targetGroupId);
-                    } else {
-                      addGroupMember(targetGroupId, currentUser?.id);
-                    }
-                    navigate(`/messages/${targetGroupId}`);
-                  }
-                } else {
-                  navigate(`/messages/${targetGroupId}`);
-                }
-              };
-              
-              return (
-                <div className={styles.groupInviteCard}>
-                  <div className={styles.groupInviteHeader}>
-                    <Avatar src={msg.inviteData.groupAvatar} name={msg.inviteData.groupName} size="48px" isGroup={true} />
-                    <div className={styles.groupInviteInfo}>
-                      <h4>{msg.inviteData.groupName}</h4>
-                      <p>Group invite from {fromText}</p>
-                    </div>
-                  </div>
-                  <div className={styles.groupInviteActions}>
-                    <button 
-                      className={styles.groupInviteBtn}
-                      onClick={handleJoinGroup}
-                      disabled={!alreadyJoined && isRequested}
-                      style={(!alreadyJoined && isRequested) ? { opacity: 0.6, cursor: 'default' } : undefined}
-                    >
-                      {buttonText}
-                    </button>
-                  </div>
-                </div>
-              );
-            })()
+            ) : msg.inviteData ? (
+              <GroupInviteCard
+                msg={msg}
+                currentUser={currentUser}
+                conversations={conversations}
+                navigate={navigate}
+                toggleJoinCampusGroup={toggleJoinCampusGroup}
+                requestToJoinGroup={requestToJoinGroup}
+              />
             ) : null}
             </div>
             

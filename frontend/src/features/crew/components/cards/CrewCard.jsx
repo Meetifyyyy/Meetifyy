@@ -208,7 +208,7 @@ export default function CrewCard({ activity, onClick }) {
                     style={{ zIndex: 5 - i }}
                   >
                     {u.avatar && isImageUrl(u.avatar) ? (
-                      <img src={getProcessedAvatarUrl(u.avatar)} alt={u.displayName || "Participant"} className={styles.goingAvatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                      <img src={getProcessedAvatarUrl(u.avatar)} alt={u.displayName || "Participant"} className={styles.goingAvatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     ) : (
                       <DefaultAvatar />
                     )}

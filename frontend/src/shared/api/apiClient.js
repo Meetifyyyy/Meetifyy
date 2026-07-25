@@ -8,13 +8,18 @@ import { supabase } from '@shared/context/AuthContext';
 
 export const getBackendUrl = () => {
   const envUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+    const host = window.location.hostname;
+    const isLocalHost = host === 'localhost' || host === '127.0.0.1';
+    const isProdDomain = host.includes('meetifyy.com') || host.includes('vercel.app') || host.includes('railway.app');
+
+    // If accessing from network IP in dev mode (e.g. 192.168.x.x), direct backend calls to host:4000
+    if (!isLocalHost && !isProdDomain) {
+      return `${window.location.protocol}//${host}:4000`;
+    }
+  }
   if (envUrl) {
     return envUrl;
-  }
-  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-    if (window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')) {
-      return `${window.location.protocol}//${window.location.hostname}:4000`;
-    }
   }
   return 'https://meetifyy-production.up.railway.app';
 };
@@ -24,10 +29,12 @@ export const getMediaUrl = (pathOrUrl) => {
 
   let finalUrl = pathOrUrl;
 
-  // On production (non-localhost), rewrite legacy http://localhost:4000 URLs to current backend host
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-    const isLocal = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1');
-    if (!isLocal) {
+    const host = window.location.hostname;
+    const isProdDomain = host.includes('meetifyy.com') || host.includes('vercel.app') || host.includes('railway.app');
+    if (!isProdDomain) {
+      finalUrl = finalUrl.replace(/^http:\/\/(?:localhost|127\.0\.0\.1):4000/g, `${window.location.protocol}//${host}:4000`);
+    } else {
       finalUrl = finalUrl.replace(/^http:\/\/(?:localhost|127\.0\.0\.1):4000/g, getBackendUrl());
     }
   }
@@ -41,8 +48,6 @@ export const getMediaUrl = (pathOrUrl) => {
   const backendUrl = getBackendUrl();
   return `${backendUrl.replace(/\/+$/, '')}${cleanPath}`;
 };
-
-const BASE_URL = getBackendUrl();
 
 async function getToken() {
   if (!supabase) return '';
@@ -75,7 +80,8 @@ async function request(method, path, body) {
     }
   }
 
-  const cleanUrl = `${BASE_URL.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+  const baseUrl = getBackendUrl();
+  const cleanUrl = `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
   const res = await fetch(cleanUrl, options);
 
   if (res.status === 401) {
@@ -213,6 +219,7 @@ export const linkPreviewApi = {
 
 export const communitiesApi = {
   getAll: () => apiClient.get('/api/communities'),
+  getCampusCommunities: () => apiClient.get('/api/communities/campus'),
   getById: (id) => apiClient.get(`/api/communities/${id}`),
   create: (data) => apiClient.post('/api/communities', data),
   join: (id) => apiClient.post(`/api/communities/${id}/join`),
@@ -224,6 +231,7 @@ export const communitiesApi = {
 
 export const activitiesApi = {
   getAll: () => apiClient.get('/api/activities'),
+  getCampusActivities: () => apiClient.get('/api/activities/campus'),
   getById: (id) => apiClient.get(`/api/activities/${id}`),
   create: (data) => apiClient.post('/api/activities', data),
   join: (id) => apiClient.post(`/api/activities/${id}/join`),
@@ -240,6 +248,10 @@ export const usersApi = {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     return apiClient.get(`/api/users?${params.toString()}`);
   },
+  getCampusUsers: (limit = 100, offset = 0) => {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    return apiClient.get(`/api/users/campus?${params.toString()}`);
+  },
   getByUsername: (username) => apiClient.get(`/api/users/${username}`),
   getFollowers: (username, limit = 50, offset = 0) => {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
@@ -248,6 +260,15 @@ export const usersApi = {
   getFollowing: (username, limit = 50, offset = 0) => {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     return apiClient.get(`/api/users/${username}/following?${params.toString()}`);
+  },
+  getFollowingUsernames: async (username) => {
+    if (!username) return [];
+    try {
+      const res = await apiClient.get(`/api/users/${username}/following?limit=1000`);
+      return Array.isArray(res) ? res.map(u => u?.username).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
   },
   follow: (username) => apiClient.post(`/api/users/${username}/follow`),
   unfollow: (username) => apiClient.post(`/api/users/${username}/unfollow`),
@@ -261,9 +282,11 @@ export const usersApi = {
 
 export const messagesApi = {
   getConversations: () => apiClient.get('/api/messages'),
-  getHistory: (conversationId, deviceId) => {
+  getHistory: (conversationId, deviceId, beforeCursor, limit) => {
     const params = new URLSearchParams();
     if (deviceId) params.set('deviceId', deviceId);
+    if (beforeCursor) params.set('before', beforeCursor);
+    if (limit) params.set('limit', String(limit));
     const query = params.toString();
     return apiClient.get(`/api/messages/${conversationId}${query ? `?${query}` : ''}`);
   },
@@ -289,6 +312,8 @@ export const messagesApi = {
   endGroup: (conversationId) => apiClient.post(`/api/messages/${conversationId}/end`),
   acceptJoinRequest: (conversationId, targetUserId) => apiClient.post(`/api/messages/${conversationId}/requests/${targetUserId}/accept`),
   declineJoinRequest: (conversationId, targetUserId) => apiClient.post(`/api/messages/${conversationId}/requests/${targetUserId}/decline`),
+  requestToJoinGroup: (conversationId) => apiClient.post(`/api/messages/${conversationId}/request`),
+  joinGroup: (conversationId) => apiClient.post(`/api/messages/${conversationId}/join`),
 };
 
 export const healthApi = {

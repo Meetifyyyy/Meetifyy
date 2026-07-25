@@ -1,18 +1,31 @@
 .saveHeaderBtn {
-  background: var(--color-primary);
-  color: #fff;
+  background: #2563eb;
+  color: #ffffff;
   border: none;
-  border-radius: 6px;
-  padding: 0.4rem 1rem;
+  border-radius: 9999px;
+  padding: 0.45rem 1.15rem;
+  height: 34px;
   font-weight: 600;
   font-size: 0.85rem;
+  font-family: var(--font-family-sans);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: background-color 0.2s, opacity 0.2s;
+  box-shadow: 0 2px 5px rgba(37, 99, 235, 0.25);
+  z-index: 2;
+  flex-shrink: 0;
+}
+
+.saveHeaderBtn:hover:not(:disabled) {
+  background: #3b82f6;
 }
 
 .saveHeaderBtn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .settingsForm {

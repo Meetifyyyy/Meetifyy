@@ -1,15 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import styles from './ImageSearchModal.module.css';
 import { X, Search, Upload } from 'lucide-react';
-import { useMediaUpload } from '@shared/hooks/useMediaUpload';
+import { processAndUploadImage, processAndUploadRemoteUrl } from '@shared/utils/mediaPipeline';
 
 export default function ImageSearchModal({ onClose, onSelect }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCompressingRemote, setIsCompressingRemote] = useState(false);
   const [activeTab, setActiveTab] = useState('images'); // 'images' or 'gifs'
   const fileInputRef = useRef(null);
-  const { upload: uploadImage } = useMediaUpload('covers');
+
 
   useEffect(() => {
     let active = true;
@@ -29,8 +30,16 @@ export default function ImageSearchModal({ onClose, onSelect }) {
             
             if (active) {
               let combined = [];
+              const seen = new Set();
               resultsArr.forEach(data => {
-                if (data.results) combined = combined.concat(data.results);
+                if (data.results) {
+                  data.results.forEach(photo => {
+                    if (!seen.has(photo.id)) {
+                      seen.add(photo.id);
+                      combined.push(photo);
+                    }
+                  });
+                }
               });
               setResults(combined.map(photo => ({
                 id: photo.id,
@@ -69,8 +78,16 @@ export default function ImageSearchModal({ onClose, onSelect }) {
             
             if (active) {
               let combined = [];
+              const seen = new Set();
               resultsArr.forEach(data => {
-                if (data.data) combined = combined.concat(data.data);
+                if (data.data) {
+                  data.data.forEach(gif => {
+                    if (!seen.has(gif.id)) {
+                      seen.add(gif.id);
+                      combined.push(gif);
+                    }
+                  });
+                }
               });
               setResults(combined.map(gif => ({
                 id: gif.id,
@@ -127,13 +144,25 @@ export default function ImageSearchModal({ onClose, onSelect }) {
         return;
       }
       try {
-        const publicUrl = await uploadImage(file);
+        const { publicUrl } = await processAndUploadImage(file, 'covers', { maxWidthOrHeight: 1920 });
         onSelect(publicUrl);
       } catch {
         alert('Failed to upload image.');
       }
     }
     e.target.value = '';
+  };
+
+  const handleSelectItem = async (itemUrl) => {
+    setIsCompressingRemote(true);
+    try {
+      const finalUrl = await processAndUploadRemoteUrl(itemUrl, 'covers', { maxWidthOrHeight: 1280 });
+      onSelect(finalUrl);
+    } catch {
+      onSelect(itemUrl);
+    } finally {
+      setIsCompressingRemote(false);
+    }
   };
 
   return (
@@ -158,7 +187,6 @@ export default function ImageSearchModal({ onClose, onSelect }) {
               placeholder={`Search for ${activeTab}...`}
               value={query}
               onChange={e => setQuery(e.target.value)}
-              autoFocus
             />
           </div>
 
@@ -181,12 +209,14 @@ export default function ImageSearchModal({ onClose, onSelect }) {
         </div>
 
         <div className={styles.isBody}>
-          {isLoading ? (
-            <div className={styles.isLoading}>Loading...</div>
+          {isLoading || isCompressingRemote ? (
+            <div className={styles.isLoading}>
+              {isCompressingRemote ? 'Optimizing image...' : 'Loading...'}
+            </div>
           ) : (
             <div className={styles.isGrid}>
               {results.map(item => (
-                <button key={item.id} className={styles.isResultBtn} onClick={() => onSelect(item.url)}>
+                <button key={item.id} className={styles.isResultBtn} onClick={() => handleSelectItem(item.url)}>
                   <img src={item.url} alt={item.title} loading="lazy" />
                 </button>
               ))}

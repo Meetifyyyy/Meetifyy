@@ -101,16 +101,10 @@ export default function Step2Academic() {
     }
 
     if (isValid && emailAvailability?.available !== false) {
-      let university = 'GLA University';
+      let university = 'University';
       const domain = email.toLowerCase().split('@')[1] || '';
-      if (domain === 'stanford.edu' || domain.endsWith('.stanford.edu')) {
-        university = 'Stanford University';
-      } else if (domain === 'mit.edu' || domain.endsWith('.mit.edu')) {
-        university = 'MIT';
-      } else if (domain === 'gla.ac.in' || domain.endsWith('.gla.ac.in') || domain === 'gla.in') {
-        university = 'GLA University';
-      } else {
-        const parts = domain.split('.')[0];
+      const parts = domain.split('.')[0];
+      if (parts) {
         university = parts.charAt(0).toUpperCase() + parts.slice(1) + ' University';
       }
 

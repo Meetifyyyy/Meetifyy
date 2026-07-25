@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { useFollow } from '@shared/context/FollowContext';
 import FollowButton from '@shared/components/ui/FollowButton';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import { useNotifications } from '@shared/hooks/useNotifications';
@@ -24,7 +23,6 @@ export function NotificationsActivity() {
   const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
   const users = React.useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
   const navigate = useNavigate();
-  const { isFollowing, toggleFollow } = useFollow();
 
   const displayNotifs = notifications.slice(0, 4);
 
@@ -342,7 +340,6 @@ export function UniversityMembers({ members, title = 'Members', onViewAll }) {
   const { currentUser } = useAuth();
   const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
   const users = React.useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
-  const { isFollowing, toggleFollow } = useFollow();
   const navigate = useNavigate();
   if (!members || members.length === 0) return null;
 
@@ -353,7 +350,6 @@ export function UniversityMembers({ members, title = 'Members', onViewAll }) {
       <h3 className={styles.panelTitle}>{title}</h3>
       {displayMembers.map((m, i) => {
         const targetUsername = m.username || m.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const isFollowingUser = isFollowing(targetUsername);
         const isSelf = targetUsername === currentUser?.username;
         const targetUser = Object.values(users).find(u => u.username === targetUsername);
         const canSee = targetUser ? canSeeOnlineStatus(currentUser, targetUser) : true;

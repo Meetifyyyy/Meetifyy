@@ -11,8 +11,7 @@ import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './DirectoryPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import { MAJORS_LIST } from '../data/majors';
-import { useQuery } from '@tanstack/react-query';
-import { usersApi } from '@shared/api/apiClient';
+import { useData } from '@shared/hooks/useData';
 
 const SearchableMajorSelect = ({ value, onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -166,29 +165,17 @@ export default function DirectoryPage() {
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
 
-  const { data: usersData = [] } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => usersApi.getAll().then(res => res),
-  });
-
-  // Re-map array to the object format expected by the rest of the component
-  const users = useMemo(() => {
-    return usersData.reduce((acc, user) => {
-      acc[user.id] = user;
-      return acc;
-    }, {});
-  }, [usersData]);
+  const { campusUsers: users } = useData();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [dirBranch, setDirBranch] = useState('All');
   const [dirYear, setDirYear] = useState('All');
 
-  const userCollegeId = currentUser?.collegeId || 'gla';
+  const userCollegeId = currentUser?.collegeId;
 
   const collegeStudents = useMemo(() => {
-    let list = Object.values(users).filter(u => u.collegeId === userCollegeId);
-    list = list.filter(u => u.id !== currentUser?.id);
+    let list = Object.values(users).filter(u => u.id !== currentUser?.id);
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();

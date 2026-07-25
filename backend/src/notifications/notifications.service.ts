@@ -4,7 +4,8 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CreateNotificationDto } from './notification.factory';
 import { NotificationType, Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
-import { Redis } from '@upstash/redis';
+import { RedisService } from '../redis/redis.service';
+import Redis from 'ioredis';
 
 @Injectable()
 export class NotificationsService {
@@ -15,16 +16,11 @@ export class NotificationsService {
     private readonly prisma: PrismaService,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly configService: ConfigService,
+    private readonly redisService: RedisService,
   ) {
-    const redisUrl = this.configService.get<string>('UPSTASH_REDIS_REST_URL');
-    const redisToken = this.configService.get<string>('UPSTASH_REDIS_REST_TOKEN');
-
-    if (redisUrl && redisToken && !redisUrl.includes('placeholder')) {
-      this.redis = new Redis({
-        url: redisUrl,
-        token: redisToken,
-      });
-      this.logger.log('Redis connected');
+    this.redis = this.redisService.getClient();
+    if (this.redis) {
+      this.logger.log('Redis connected for Notifications Service');
     }
   }
 
@@ -47,7 +43,7 @@ export class NotificationsService {
     try {
       const exists = await this.redis.exists(redisKey);
       if (exists) {
-        const countStr = await this.redis.get<string>(redisKey);
+        const countStr = await this.redis.get(redisKey);
         if (countStr && parseInt(countStr, 10) > 0) {
           await this.redis.decr(redisKey);
         }
@@ -61,7 +57,7 @@ export class NotificationsService {
     if (!this.redis) return;
     const redisKey = `notifications:unread:${userId}`;
     try {
-      await this.redis.set(redisKey, '0', { ex: 3600 });
+      await this.redis.set(redisKey, '0', 'EX', 3600);
     } catch (err) {
       this.logger.error('Failed to set unread count to 0 in Redis', err);
     }
@@ -246,8 +242,10 @@ export class NotificationsService {
       }
 
       this.realtimeGateway.emitNotification(dto.recipientId, populatedNotif);
-      await this.incrementUnreadCount(dto.recipientId);
-      await this.emitUnreadCount(dto.recipientId);
+      if (dto.type !== NotificationType.MESSAGE) {
+        await this.incrementUnreadCount(dto.recipientId);
+        await this.emitUnreadCount(dto.recipientId);
+      }
 
       this.logger.log(`Notification delivered type=${dto.type} to=${dto.recipientId}`);
 
@@ -298,7 +296,7 @@ export class NotificationsService {
     const redisKey = `notifications:unread:${userId}`;
     if (this.redis) {
       try {
-        const cached = await this.redis.get<string>(redisKey);
+        const cached = await this.redis.get(redisKey);
         if (cached !== null && cached !== undefined) {
           return { count: parseInt(cached, 10) };
         }
@@ -313,7 +311,7 @@ export class NotificationsService {
 
     if (this.redis) {
       try {
-        await this.redis.set(redisKey, count.toString(), { ex: 3600 });
+        await this.redis.set(redisKey, count.toString(), 'EX', 3600);
       } catch (err) {
         this.logger.error('Failed to cache count in Redis', err);
       }

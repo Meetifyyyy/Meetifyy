@@ -341,7 +341,7 @@ export default function CreateActivityPage() {
   const location = useLocation();
   const prefill = location.state?.prefill || {};
   const returnTo = location.state?.returnTo || '/crew';
-  const { currentUser } = useAuth();
+  const { currentUser, collegeName } = useAuth();
   const queryClient = useQueryClient();
   const today = new Date();
 
@@ -502,7 +502,7 @@ export default function CreateActivityPage() {
       coverImage: formData.coverImage,
       createActivityGroup: fd.createEventGroup,
       shareToSchool: fd.whoCanJoin === 'College',
-      hostCollege: currentUser?.college?.name || currentUser?.college || null,
+      hostCollege: collegeName,
       startDate: finalStart.toISOString(),
       endDate: finalEnd.toISOString(),
     });
@@ -710,7 +710,7 @@ export default function CreateActivityPage() {
                   <span className={styles.rowTitle}>Who can see this activity</span>
                 </div>
                 <div className={styles.rowRight}>
-                  <span>{formData.whoCanJoin === 'College' ? (currentUser?.university || 'GLA University') : formData.whoCanJoin}</span>
+                  <span>{formData.whoCanJoin === 'College' ? collegeName : formData.whoCanJoin}</span>
                   <ChevronsUpDown size={14} className={styles.selectIcon} />
                 </div>
               </button>
@@ -718,7 +718,7 @@ export default function CreateActivityPage() {
                 <div className={styles.reminderDrop}>
                   {['Anyone', 'College', 'No one'].map(opt => {
                     let label = opt;
-                    if (opt === 'College') label = currentUser?.university || 'GLA University';
+                    if (opt === 'College') label = collegeName;
                     return (
                       <button key={opt}
                         className={`${styles.reminderOpt} ${formData.whoCanJoin === opt ? styles.reminderOptOn : ''}`}

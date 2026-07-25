@@ -35,14 +35,18 @@ export default function VoiceMessagePlayer({ src, fromMe }) {
     };
   }, [isPlaying, duration]);
 
-  const togglePlay = () => {
+  const togglePlay = async () => {
     if (!audioRef.current) return;
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
-      audioRef.current.play();
-      setIsPlaying(true);
+      try {
+        await audioRef.current.play();
+        setIsPlaying(true);
+      } catch (err) {
+        setIsPlaying(false);
+      }
     }
   };
 
@@ -94,19 +98,25 @@ export default function VoiceMessagePlayer({ src, fromMe }) {
     return `${m}:${s}`;
   };
 
-  const activeDuration = duration || 100;
+  const activeDuration = duration && isFinite(duration) ? duration : 100;
   const progressPercent = activeDuration > 0 ? Math.min(100, Math.max(0, (currentTime / activeDuration) * 100)) : 0;
+
+  const [isInvalidBlob, setIsInvalidBlob] = useState(false);
 
   return (
     <div className={`${styles.voicePlayerContainer} ${fromMe ? styles.voicePlayerMe : ''}`}>
       <audio
         ref={audioRef}
-        src={src}
-        preload="metadata"
+        src={isInvalidBlob ? null : src}
+        preload="none"
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onDurationChange={handleDurationChange}
         onEnded={handleEnded}
+        onError={() => {
+          setIsPlaying(false);
+          setIsInvalidBlob(true);
+        }}
       />
       <button
         type="button"
@@ -120,7 +130,7 @@ export default function VoiceMessagePlayer({ src, fromMe }) {
             <rect x="14" y="4" width="4" height="16" rx="1.5" />
           </svg>
         ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: '2px' }}>
             <path d="M6 4l14 8-14 8V4z" />
           </svg>
         )}

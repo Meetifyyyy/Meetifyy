@@ -163,9 +163,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
         settings: {
           select: {
             showOnlineStatus: true,
-            whoCanSeeOnline: true,
-            showLastSeen: true,
-            whoCanSeeLastSeen: true
+            whoCanSeeOnline: true
           }
         }
       }
@@ -187,18 +185,10 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       this.prisma
     );
 
-    const canSeeLastSeen = await checkPresenceVisibility(
-      targetUserId,
-      viewerId,
-      targetUser.settings?.whoCanSeeLastSeen || 'everyone',
-      targetUser.settings?.showLastSeen !== false,
-      this.prisma
-    );
-
     return {
       userId: targetUserId,
       status: canSeeOnline ? (presence?.status || 'offline') : 'offline',
-      lastActive: canSeeLastSeen ? (presence?.lastSeen || null) : null
+      lastActive: presence?.lastSeen || null
     };
   }
 
@@ -265,21 +255,12 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('conversation:read')
   async handleConversationRead(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string, participants: string[] }
+    @MessageBody() data: { conversationId: string, participants?: string[] }
   ) {
     const readerId = (client as any).userId;
+    if (!readerId || !data?.conversationId) return;
     this.chatLogger.log(`Conversation Read chat=${data.conversationId} user=${readerId}`);
-    
-    // Broadcast to all participants so their UI can update
-    for (const userId of data.participants) {
-      if (userId !== readerId) {
-        this.server.to(userId).emit('conversation:seen', {
-          conversationId: data.conversationId,
-          readerId,
-          lastReadAt: new Date().toISOString()
-        });
-      }
-    }
+    await this.messagesService.markAsRead(data.conversationId, readerId);
   }
 
   // --- API for other modules to emit events ---
@@ -288,6 +269,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     this.server.to(userId).emit('notification:new', {
       id: notification.id,
       type: notification.type,
+      entityType: notification.entityType,
+      entityId: notification.entityId,
       title: notification.title,
       body: notification.body,
       readAt: notification.readAt,

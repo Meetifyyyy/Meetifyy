@@ -6,7 +6,7 @@ import { useVoiceRecorder } from '../../hooks/useVoiceRecorder';
 
 const Picker = lazy(() => import('@emoji-mart/react'));
 
-import { useMediaUpload } from '@shared/hooks/useMediaUpload';
+import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
 
 export default function ChatInputArea({
   conversation,
@@ -23,7 +23,8 @@ export default function ChatInputArea({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const fileInputRef = useRef(null);
-  const { upload: uploadChatMedia } = useMediaUpload('chat-media');
+  const inputRef = useRef(null);
+
 
   const hasText = !!(typeof inputValue === 'string' ? inputValue : (inputValue?.text || '')).trim();
 
@@ -61,7 +62,14 @@ export default function ChatInputArea({
 
     setIsUploadingMedia(true);
     try {
-      const publicUrl = await uploadChatMedia(file);
+      let publicUrl;
+      if (mediaType === 'video') {
+        const result = await uploadFileDirect(file, 'chat-media');
+        publicUrl = result.publicUrl;
+      } else {
+        const result = await processAndUploadImage(file, 'chat-media', { maxWidthOrHeight: 1920 });
+        publicUrl = result.publicUrl;
+      }
       onSendMessage(conversation.id, '', replyingTo, [], publicUrl, mediaType);
       if (onCancelReply) onCancelReply();
     } catch {
@@ -81,16 +89,26 @@ export default function ChatInputArea({
     setInputValue({ text: '', mentions: [] });
     setShowEmojiPicker(false);
     if (onCancelReply) onCancelReply();
+
+    // Retain cursor inside textbox on mobile and desktop after sending
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
   };
 
   const isClosed = conversation?.status === 'Closed';
   const isExpiredInstantMatch = conversation?.isInstantMatch && conversation?.expiresAt && new Date(conversation.expiresAt).getTime() < Date.now();
+  const isNotMember = (conversation?.type === 'GROUP' || conversation?.isGroup || conversation?.activityId) && conversation?.isMember === false;
 
-  if (isClosed || isExpiredInstantMatch) {
+  if (isClosed || isExpiredInstantMatch || isNotMember) {
     return (
       <div className={styles.msgChatInputWrap} style={{ justifyContent: 'center', padding: '1rem' }}>
         <div className={styles.msgBlockedNotice} style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-          {isClosed ? 'This activity/conversation has ended.' : 'This 24-hour instant match has expired.'}
+          {isClosed 
+            ? 'This activity/conversation has ended.' 
+            : isExpiredInstantMatch 
+              ? 'This 24-hour instant match has expired.' 
+              : "You can't send messages because you're no longer in this group."}
         </div>
       </div>
     );
@@ -236,6 +254,7 @@ export default function ChatInputArea({
             <div className={styles.inputWrapper}>
 
               <MentionInput
+                inputRef={inputRef}
                 className={styles.msgInput}
                 placeholder="Type a message..."
                 value={inputValue}
@@ -252,6 +271,7 @@ export default function ChatInputArea({
                   type="button"
                   className={styles.msgSendBtn} 
                   onClick={handleSend}
+                  onMouseDown={(e) => e.preventDefault()}
                   title="Send"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

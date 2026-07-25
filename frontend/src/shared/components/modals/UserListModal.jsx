@@ -66,24 +66,31 @@ export default function UserListModal({ type, profileUsername, onClose }) {
               </p>
             </div>
           ) : (
-            usersList.map((user) => (
-              <div 
-                key={user.id || user.username} 
-                className={styles.userItem} 
-                onClick={() => { navigate(`/profile/${user.username}`); onClose(); }}
-              >
-                <div className={styles.userAvatar}>
-                  <Avatar src={user.avatar} name={user.displayName || user.username} size="40px" />
+            usersList.map((user) => {
+              return (
+                <div 
+                  key={user.id || user.username} 
+                  className={styles.userItem} 
+                  onClick={() => { navigate(`/profile/${user.username}`); onClose(); }}
+                >
+                  <div className={styles.userAvatar}>
+                    <Avatar src={user.avatar} name={user.displayName || user.username} size="40px" />
+                  </div>
+                  <div className={styles.userInfo}>
+                    <div className={styles.userName}>{user.displayName || user.username}</div>
+                    <div className={styles.userUsername}>@{user.username}</div>
+                  </div>
+                  <div className={styles.followBtnWrap} onClick={(e) => e.stopPropagation()}>
+                    {user.username !== currentUser && (
+                      <FollowButton 
+                        targetUsername={user.username} 
+                        size="sm"
+                      />
+                    )}
+                  </div>
                 </div>
-                <div className={styles.userInfo}>
-                  <div className={styles.userName}>{user.displayName || user.username}</div>
-                  <div className={styles.userUsername}>@{user.username}</div>
-                </div>
-                <div className={styles.followBtnWrap} onClick={(e) => e.stopPropagation()}>
-                  {user.username !== currentUser && <FollowButton targetUsername={user.username} size="sm" />}
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

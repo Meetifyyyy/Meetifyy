@@ -6,7 +6,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { communitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
-import { useMediaUpload } from '@shared/hooks/useMediaUpload';
+import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import MediaCropper from '@shared/components/media/MediaCropper';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { ErrorState } from '@shared/components/ui/StateViews';
@@ -18,6 +19,7 @@ import CommunityAdminModal from '../modals/CommunityAdminModal';
 import styles from './CommunityView.module.css';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import ShareCommunityModal from '../modals/ShareCommunityModal';
+import defaultCommunityCover from '@assets/images/default_community_cover.webp';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 
 function getActivityPhrase(comm) {
@@ -44,6 +46,10 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
   const [showDropdown, setShowDropdown] = useState(false);
   const [imgError, setImgError] = useState(false);
   const dropdownRef = useRef(null);
+  
+  const [cropFile, setCropFile] = useState(null);
+  const [cropType, setCropType] = useState(null); // 'avatar' or 'coverImage'
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     setImgError(false);
@@ -60,9 +66,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showDropdown]);
 
-  const { upload: uploadToR2, uploading: imageUploading } = useMediaUpload('community-icons');
-
-  const handleImageUpload = async (e, field) => {
+  const handleImageUpload = (e, field) => {
     const file = e.target.files[0];
     if (!file) return;
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -71,14 +75,26 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
       e.target.value = '';
       return;
     }
+    setCropFile(file);
+    setCropType(field);
+    e.target.value = '';
+  };
+
+  const handleCropComplete = async (croppedFile) => {
+    setCropFile(null);
+    setIsUploading(true);
     try {
-      const publicUrl = await uploadToR2(file);
-      await onUpdateCommunity(comm.id, { [field]: publicUrl });
-      showToast(`${field === 'coverImage' ? 'Cover' : 'Icon'} updated!`);
+      const folder = cropType === 'avatar' ? 'community-icons' : 'community-covers';
+      const { publicUrl } = await processAndUploadImage(croppedFile, folder, {
+        maxWidthOrHeight: cropType === 'avatar' ? 512 : 1920
+      });
+      await onUpdateCommunity(comm.id, { [cropType]: publicUrl });
+      showToast(`${cropType === 'coverImage' ? 'Cover' : 'Icon'} updated!`);
     } catch {
       showToast('Upload failed. Try again.');
     } finally {
-      e.target.value = '';
+      setIsUploading(false);
+      setCropType(null);
     }
   };
 
@@ -86,7 +102,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
     <div className={styles.heroSection}>
       <div className={styles.heroCover}>
         <img
-          src={comm.coverImage}
+          src={comm.coverImage || defaultCommunityCover}
           alt=""
           className={styles.heroCoverImg}
           draggable={false}
@@ -296,7 +312,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
                         src={m.avatar}
                         alt={m.name || ''}
                         style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: '50%' }}
-                       onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                       onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     ) : (
                       <DefaultAvatar style={{ width: '100%', height: '100%', borderRadius: '50%', fontSize: '0.65rem' }} />
                     )}
@@ -892,6 +908,18 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
           isOpen={showShareModal} 
           onClose={() => setShowShareModal(false)} 
           community={comm} 
+        />
+      )}
+
+      {cropFile && (
+        <MediaCropper
+          imageFile={cropFile}
+          aspect={cropType === 'avatar' ? 1 : 3}
+          onCropComplete={handleCropComplete}
+          onCancel={() => {
+            setCropFile(null);
+            setCropType(null);
+          }}
         />
       )}
 

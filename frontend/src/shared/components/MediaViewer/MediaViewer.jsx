@@ -298,7 +298,7 @@ export default function MediaViewer() {
       {meta && (
         <div className={`${styles.infoPanel} ${fromPost ? styles.infoPanelStandalone : ''} ${controlsVisible ? styles.controlsVisible : ''}`}>
           {meta.authorAvatar && isImageUrl(meta.authorAvatar) ? (
-            <img src={meta.authorAvatar} alt={meta.authorName} className={styles.infoAvatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+            <img src={meta.authorAvatar} alt={meta.authorName} className={styles.infoAvatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
           ) : (
             <div className={styles.infoAvatarPlaceholder}>
               {(meta.authorName || 'U').charAt(0).toUpperCase()}

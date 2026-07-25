@@ -7,9 +7,9 @@ import AnimatedStep from './AnimatedStep';
 import { motion } from 'framer-motion';
 import { ArrowRight, Camera, Upload, Check, Loader2 } from 'lucide-react';
 import styles from '../SignupFlow.module.css';
-import defaultAvatarImg from '../../../../assets/images/default_avatar.png';
+import defaultAvatarImg from '../../../../assets/images/default_avatar.webp';
 
-import { useMediaUpload } from '@shared/hooks/useMediaUpload';
+import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 
 const presetAvatars = [
   'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix',
@@ -24,7 +24,7 @@ export default function Step5Avatar() {
   const { updateProfile, currentUser } = useAuth();
   const { theme } = useTheme();
   const navigate = useNavigate();
-  const { upload: uploadToR2 } = useMediaUpload('avatars');
+
   
   const [avatar, setAvatar] = useState(signupData.avatar || '');
   const [isUploading, setIsUploading] = useState(false);
@@ -48,7 +48,7 @@ export default function Step5Avatar() {
 
     setIsUploading(true);
     try {
-      const publicUrl = await uploadToR2(file);
+      const { publicUrl } = await processAndUploadImage(file, 'avatars', { maxWidthOrHeight: 512 });
       setAvatar(publicUrl);
     } catch {
       alert('Upload failed. Try again.');
@@ -96,9 +96,9 @@ export default function Step5Avatar() {
             {isUploading ? (
               <Loader2 size={36} className="animate-spin" style={{ color: 'var(--color-text-muted)' }} />
             ) : avatar ? (
-              <img src={getProcessedAvatarUrl(avatar)} alt="Profile Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+              <img src={getProcessedAvatarUrl(avatar)} alt="Profile Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
             ) : (
-              <img src={defaultAvatarImg} alt="Default Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+              <img src={defaultAvatarImg} alt="Default Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
             )}
           </div>
           

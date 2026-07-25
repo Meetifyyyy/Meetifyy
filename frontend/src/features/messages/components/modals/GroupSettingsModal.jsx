@@ -1,15 +1,15 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/hooks/useData';
-import { useMediaUpload } from '@shared/hooks/useMediaUpload';
+import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
+import { sortGroupMembers } from '@shared/utils/memberSort';
 import styles from './GroupSettingsModal.module.css';
 
 export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup }) {
   const { currentUser } = useAuth();
   const { users, updateGroupInfo, removeGroupMember } = useData();
-  const { upload: uploadGroupIcon } = useMediaUpload('avatars');
   const [editName, setEditName] = useState(conversation.name || '');
   const [editDesc, setEditDesc] = useState(conversation.description || '');
 
@@ -18,7 +18,16 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
   const isOwner = currentUser?.id === conversation.ownerId || currentUser?.id === conversation.hostId;
   const isAdmin = isOwner || (conversation.admins || []).includes(currentUser?.id);
   const rawParticipants = conversation.members || conversation.participants || [];
-  const memberIds = rawParticipants.map(p => p?.userId || p?.id || p);
+  const sortedParticipants = useMemo(() => {
+    return sortGroupMembers(rawParticipants, {
+      ownerId: conversation.ownerId,
+      hostId: conversation.hostId,
+      admins: conversation.admins,
+      users
+    });
+  }, [rawParticipants, conversation.ownerId, conversation.hostId, conversation.admins, users]);
+  const memberIds = sortedParticipants.map(p => p?.userId || p?.id || (typeof p === 'string' ? p : ''));
+
 
   const formattedDate = conversation.createdAt 
     ? new Date(conversation.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
@@ -49,7 +58,7 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
         return;
       }
       try {
-        const publicUrl = await uploadGroupIcon(file);
+        const { publicUrl } = await processAndUploadImage(file, 'avatars', { maxWidthOrHeight: 512 });
         updateGroupInfo(conversation.id, undefined, publicUrl, undefined);
       } catch {
         alert('Failed to upload group icon.');

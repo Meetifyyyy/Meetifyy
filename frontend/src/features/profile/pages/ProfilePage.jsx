@@ -4,20 +4,23 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { messagesApi, usersApi, postsApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMediaUpload } from '@shared/hooks/useMediaUpload';
+
 import { showToast } from '@shared/utils/toast';
 import Post from '@features/feed/components/post/Post';
 import UserListModal from '@shared/components/modals/UserListModal';
 import { ErrorState } from '@shared/components/ui/StateViews';
 import Avatar from '@shared/components/avatar/Avatar';
 import s from './ProfilePage.module.css';
-import defaultCover from '@assets/images/default_cover.png';
+import defaultCover from '@assets/images/default_cover.webp';
+import MediaCropper from '@shared/components/media/MediaCropper';
+import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import FollowButton from '@shared/components/ui/FollowButton';
 import ProfileRightSidebar from '../components/ProfileRightSidebar';
 import ShareProfileModal from '../components/ShareProfileModal';
 import ProfilePageSkeleton from '../components/skeletons/ProfilePageSkeleton';
 import { createPortal } from 'react-dom';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import { getCollegeName } from '@shared/utils/user';
 
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
 
@@ -57,10 +60,11 @@ export default function ProfilePage() {
   const [savingCover, setSavingCover] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
+  const [cropFile, setCropFile] = useState(null);
+  const [cropType, setCropType] = useState(null); // 'avatar' or 'cover'
   const coverFileRef = useRef(null);
+  const avatarFileRef = useRef(null);
   const menuRef = useRef(null);
-
-  const { upload: uploadCover, uploading: coverUploading } = useMediaUpload('covers');
 
   // Gradient presets for the cover editor
   const GRADIENT_PRESETS = [
@@ -87,7 +91,7 @@ export default function ProfilePage() {
     }
   }, [queryClient, targetUsername, updateProfile]);
 
-  const handleCoverImageUpload = useCallback(async (e) => {
+  const handleCoverImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
@@ -95,21 +99,47 @@ export default function ProfilePage() {
       e.target.value = '';
       return;
     }
-    setSavingCover(true);
+    setCropFile(file);
+    setCropType('cover');
+    e.target.value = '';
+  };
+
+  const handleAvatarUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('Image too large — max 10 MB.');
+      e.target.value = '';
+      return;
+    }
+    setCropFile(file);
+    setCropType('avatar');
+    e.target.value = '';
+  };
+
+  const handleCropComplete = async (croppedFile) => {
+    setCropFile(null);
+    setSavingCover(true); // Reusing for both to show loading state
     try {
-      const publicUrl = await uploadCover(file);
-      await usersApi.updateProfile({ cover: publicUrl });
-      await updateProfile({ cover: publicUrl });
+      const folder = cropType === 'avatar' ? 'avatars' : 'covers';
+      const { publicUrl } = await processAndUploadImage(croppedFile, folder, {
+        maxWidthOrHeight: cropType === 'avatar' ? 512 : 1920
+      });
+      
+      const updateData = cropType === 'avatar' ? { avatar: publicUrl } : { cover: publicUrl };
+      await usersApi.updateProfile(updateData);
+      await updateProfile(updateData);
       queryClient.invalidateQueries(['profile', targetUsername]);
-      showToast('Cover updated!');
-      setShowCoverEditor(false);
-    } catch {
+      showToast(`${cropType === 'avatar' ? 'Avatar' : 'Cover'} updated!`);
+      if (cropType === 'cover') setShowCoverEditor(false);
+    } catch (e) {
+      console.error(e);
       showToast('Upload failed.');
     } finally {
       setSavingCover(false);
-      e.target.value = '';
+      setCropType(null);
     }
-  }, [uploadCover, queryClient, targetUsername, updateProfile]);
+  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -156,7 +186,7 @@ export default function ProfilePage() {
 
   // Build dynamic user tags list
   const userTags = [];
-  const universityName = profileUser.college?.name || profileUser.college || 'University';
+  const universityName = getCollegeName(profileUser);
   const gradYear = profileUser.graduationYear || '';
   if (universityName || gradYear) {
     userTags.push({ icon: '🎓', label: `${universityName}${gradYear ? ` - ${gradYear}` : ''}` });
@@ -272,6 +302,28 @@ export default function ProfilePage() {
                   name={profileUser.displayName || profileUser.name || profileUser.username}
                   size="96px"
                 />
+                {isOwnProfile && (
+                  <>
+                    <button
+                      className={s.editAvatarBtn}
+                      onClick={() => avatarFileRef.current?.click()}
+                      title="Edit avatar"
+                      aria-label="Edit avatar"
+                      disabled={savingCover}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                      </svg>
+                    </button>
+                    <input
+                      ref={avatarFileRef}
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={handleAvatarUpload}
+                    />
+                  </>
+                )}
               </div>
 
               <h1 className={s.name}>
@@ -326,7 +378,7 @@ export default function ProfilePage() {
                 </div>
               ) : (
                 <div className={s.actionButtons}>
-                  <button className={s.primaryBtn} onClick={() => navigate('/settings', { state: { panel: 'account' } })}>
+                  <button className={s.primaryBtn} onClick={() => navigate('/settings', { state: { panel: 'profile' } })}>
                     Edit Profile
                   </button>
                   <button className={s.secondaryBtn} onClick={() => setShareModalOpen(true)}>
@@ -431,15 +483,27 @@ export default function ProfilePage() {
             />
             <button
               onClick={() => coverFileRef.current?.click()}
-              disabled={savingCover || coverUploading}
+              disabled={savingCover}
               style={{ width: '100%', padding: '0.85rem', borderRadius: '10px', border: '1.5px dashed var(--color-border)', background: 'var(--color-bg-soft)', cursor: 'pointer', color: 'var(--color-text-muted)', fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
-              {(savingCover || coverUploading) ? 'Uploading…' : 'Upload photo'}
+              {savingCover ? 'Uploading…' : 'Upload photo'}
             </button>
           </div>
         </div>,
         document.body
+      )}
+      
+      {cropFile && (
+        <MediaCropper
+          imageFile={cropFile}
+          aspect={cropType === 'avatar' ? 1 : 3}
+          onCropComplete={handleCropComplete}
+          onCancel={() => {
+            setCropFile(null);
+            setCropType(null);
+          }}
+        />
       )}
 
       {profileUser && (
