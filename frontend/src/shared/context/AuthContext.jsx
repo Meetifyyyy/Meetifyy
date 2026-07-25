@@ -226,7 +226,10 @@ export function AuthProvider({ children }) {
     });
     
     if (error) {
-      throw new Error(error.message);
+      const msg = typeof error.message === 'string' && error.message.trim() !== '' && error.message !== '{}'
+        ? error.message
+        : (error.error_description || error.msg || 'Signup failed. Please try again.');
+      throw new Error(msg);
     }
     
     // We don't log them in yet, they must verify OTP first.
@@ -242,7 +245,10 @@ export function AuthProvider({ children }) {
     });
     
     if (error) {
-      throw new Error(error.message);
+      const msg = typeof error.message === 'string' && error.message.trim() !== '' && error.message !== '{}'
+        ? error.message
+        : (error.error_description || error.msg || 'Failed to resend code. Please try again.');
+      throw new Error(msg);
     }
     return true;
   }, []);
@@ -257,7 +263,10 @@ export function AuthProvider({ children }) {
     });
 
     if (error) {
-      throw new Error(error.message);
+      const msg = typeof error.message === 'string' && error.message.trim() !== '' && error.message !== '{}'
+        ? error.message
+        : (error.error_description || error.msg || 'Invalid verification code.');
+      throw new Error(msg);
     }
 
     if (data.session) {

@@ -19,6 +19,18 @@ export const getBackendUrl = () => {
   return 'http://localhost:4000';
 };
 
+export const getMediaUrl = (pathOrUrl) => {
+  if (!pathOrUrl || typeof pathOrUrl !== 'string') return '';
+  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://') || pathOrUrl.startsWith('data:') || pathOrUrl.startsWith('blob:')) {
+    return pathOrUrl;
+  }
+  const cleanPath = pathOrUrl.startsWith('/api/media/')
+    ? pathOrUrl
+    : `/api/media/${pathOrUrl.replace(/^\/+/, '')}`;
+  const backendUrl = getBackendUrl();
+  return `${backendUrl.replace(/\/+$/, '')}${cleanPath}`;
+};
+
 const BASE_URL = getBackendUrl();
 
 async function getToken() {

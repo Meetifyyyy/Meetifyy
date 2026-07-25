@@ -41,7 +41,8 @@ export default function Step3Password() {
           nextStep();
         }
       } catch (err) {
-        alert(err.message || 'Failed to initiate signup. Please try again.');
+        const message = typeof err === 'string' ? err : (err?.message || 'Failed to initiate signup. Please try again.');
+        alert(message);
       } finally {
         setIsSubmitting(false);
       }
