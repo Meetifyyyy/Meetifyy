@@ -14,6 +14,11 @@ export class ActivitiesController {
     return this.activitiesService.getAllActivities(user?.id);
   }
 
+  @Get('campus')
+  async getCampusActivities(@CurrentUser() user: any) {
+    return this.activitiesService.getCampusActivities(user?.id);
+  }
+
   @Get(':id')
   async getActivityById(@Param('id') id: string, @CurrentUser() user: any) {
     return this.activitiesService.getActivityById(id, user?.id);

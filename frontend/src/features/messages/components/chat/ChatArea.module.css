@@ -5,6 +5,8 @@
   display: flex;
   flex-direction: column;
   background: transparent;
+  position: relative;
+  overflow: hidden;
 }
 
 .msgBlockedInputOverlay {
@@ -119,6 +121,21 @@
 }
 
 @media (max-width: 768px) {
+  .msgChatArea {
+    position: fixed;
+    top: var(--vvp-offset-top, 0px);
+    left: 0;
+    right: 0;
+    height: var(--vvp-height, 100dvh);
+    z-index: 990;
+    background: var(--color-bg-white);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
   .hideOnMobile {
     display: none !important;
   }

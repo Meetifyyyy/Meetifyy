@@ -618,6 +618,8 @@ button:active {
   animation: none !important;
   mix-blend-mode: normal !important;
   will-change: clip-path;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 ::view-transition-old(root) {
   z-index: 1 !important;

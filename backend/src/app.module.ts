@@ -30,6 +30,7 @@ import { InstantMatchModule } from './instant-match/instant-match.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { ModerationModule } from './moderation/moderation.module';
 import { AdminModule } from './admin/admin.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { AdminModule } from './admin/admin.module';
           : undefined,
       },
     }),
+    RedisModule,
     SupabaseModule,
     PrismaModule,
     LinkPreviewModule,
@@ -97,23 +99,32 @@ import { AdminModule } from './admin/admin.module';
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => {
-        const upstashUrl = configService.get<string>('UPSTASH_REDIS_REST_URL') || '';
-        const upstashToken = configService.get<string>('UPSTASH_REDIS_REST_TOKEN') || '';
-        const upstashHost = upstashUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+        let connection: any = {};
+        const redisUrlString = configService.get<string>('REDIS_URL');
 
-        const host = configService.get<string>('REDIS_HOST');
-        const isLocalHost = !host || host === 'localhost' || host === '127.0.0.1';
-
-        const finalHost = (isLocalHost && upstashHost && upstashHost !== 'placeholder.upstash.io') ? upstashHost : (host || 'localhost');
-        const finalPassword = configService.get<string>('REDIS_PASSWORD') || ((finalHost === upstashHost) ? upstashToken : undefined);
-        const isTls = finalHost.includes('upstash.io') || configService.get<string>('REDIS_TLS') === 'true';
+        if (redisUrlString) {
+          const url = new URL(redisUrlString);
+          connection = {
+            host: url.hostname,
+            port: parseInt(url.port, 10) || 6379,
+            username: url.username || undefined,
+            password: url.password || undefined,
+            tls: url.protocol === 'rediss:' ? { rejectUnauthorized: false } : undefined,
+          };
+        } else {
+          connection = {
+            host: configService.get<string>('REDIS_HOST') || 'localhost',
+            port: configService.get<number>('REDIS_PORT') || 6379,
+            password: configService.get<string>('REDIS_PASSWORD'),
+            tls: configService.get<string>('REDIS_TLS') === 'true' ? { rejectUnauthorized: false } : undefined,
+          };
+        }
 
         return {
-          connection: {
-            host: finalHost,
-            port: configService.get<number>('REDIS_PORT') || 6379,
-            ...(finalPassword && { password: finalPassword }),
-            ...(isTls && { tls: { rejectUnauthorized: false } }),
+          connection,
+          defaultJobOptions: {
+            removeOnComplete: true,
+            removeOnFail: { count: 100 },
           },
         };
       },

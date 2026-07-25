@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 
 import { Link } from 'react-router-dom';
@@ -8,19 +8,16 @@ import { isImageUrl } from '@shared/utils/avatar';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ActivityChatDetailsModal.module.css';
 import { useData } from '@shared/hooks/useData';
+import { sortGroupMembers } from '@shared/utils/memberSort';
 
 
 export default function ActivityChatDetailsModal({ conversation, onClose, onEndActivity }) {
   const { currentUser } = useAuth();
   const { crewActivities, users, endCrewActivity } = useData();
-  const [showEndConfirm, setShowEndConfirm] = useState(false);
 
-  if (!conversation || !conversation.activityId) return null;
-
-  const activity = crewActivities.find(a => a.id === conversation.activityId);
-  if (!activity) return null;
-
+  const activity = crewActivities.find(a => a.id === conversation.activityId) || conversation;
   const isHost = activity.hostId === currentUser?.id;
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
 
   const handleEndActivity = () => {
     setShowEndConfirm(true);
@@ -35,28 +32,35 @@ export default function ActivityChatDetailsModal({ conversation, onClose, onEndA
 
   // Use conversation participants or fallback to activity participants
   const rawParticipants = conversation.participants || activity.participants || [];
-  const participantIds = rawParticipants.map(p => p?.userId || p?.id || p);
+  const sortedParticipants = useMemo(() => {
+    return sortGroupMembers(rawParticipants, {
+      hostId: activity?.hostId,
+      users
+    });
+  }, [rawParticipants, activity?.hostId, users]);
+  const participantIds = sortedParticipants.map(p => p?.userId || p?.id || (typeof p === 'string' ? p : ''));
 
   return (
     <>
       <div className={styles.overlay} onClick={onClose}>
         <div className={styles.modal} onClick={e => e.stopPropagation()}>
-        <div className={styles.header}>
-          <h2 className={styles.title}>{activity.title}</h2>
-          <button className={styles.closeBtn} onClick={onClose} title="Close">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
+          <div className={styles.header}>
+            <h2 className={styles.title}>{activity.title}</h2>
+            <button className={styles.closeBtn} onClick={onClose} title="Close">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
 
-        <div className={styles.body}>
-          <div className={styles.section}>
-            <h3 className={styles.sectionTitle}>Activity Details</h3>
-            <div className={styles.detailCard}>
-              <div className={styles.detailItem} style={{ gap: '0.75rem', alignItems: 'center' }}>
-                <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
+          <div className={styles.body}>
+            <div className={styles.section}>
+              <h3 className={styles.sectionTitle}>Activity Details</h3>
+              <div className={styles.detailCard}>
+                <div className={styles.detailItem} style={{ gap: '0.75rem', alignItems: 'center' }}>
+                  <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
+
                 <div className={styles.detailText} style={{ fontWeight: '500' }}>{activity.date}</div>
               </div>
               <div className={styles.detailItem}>
@@ -97,7 +101,7 @@ export default function ActivityChatDetailsModal({ conversation, onClose, onEndA
                 return (
                   <Link key={uid} to={`/profile/${userObj.username}`} className={styles.memberItem} onClick={onClose}>
                     {isImageUrl(userObj.avatar) ? (
-                      <img src={userObj.avatar} alt={userObj.name} className={styles.memberAvatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                      <img src={userObj.avatar} alt={userObj.name} className={styles.memberAvatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     ) : (
                       <div className={styles.memberAvatar} style={{ background: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <DefaultAvatar />

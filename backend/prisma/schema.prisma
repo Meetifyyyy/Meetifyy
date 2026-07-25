@@ -29,6 +29,8 @@ model College {
   deletedAt     DateTime?
   domains       CollegeDomain[]
   users         User[]
+  communities   Community[]     @relation("CommunityCollege")
+  activities    CrewActivity[]  @relation("ActivityCollege")
   logoMedia     Media?          @relation("CollegeLogo", fields: [logoMediaId], references: [id])
   bannerMedia   Media?          @relation("CollegeBanner", fields: [bannerMediaId], references: [id])
 }
@@ -278,7 +280,10 @@ model Community {
   deletedAt     DateTime?
   ownerId       String?
   updatedAt     DateTime          @updatedAt
+  collegeId     String?
+  isCampusCommunity Boolean       @default(false)
   owner         User?             @relation("CommunityOwner", fields: [ownerId], references: [id])
+  college       College?          @relation("CommunityCollege", fields: [collegeId], references: [id])
   members       CommunityMember[]
   posts         Post[]
 
@@ -287,6 +292,7 @@ model Community {
 
   @@index([ownerId])
   @@index([deletedAt, memberCount(sort: Desc)])
+  @@index([collegeId, isCampusCommunity, deletedAt])
 }
 
 model CommunityMember {
@@ -318,6 +324,7 @@ model Follow {
 
 model Conversation {
   id                  String                    @id @default(uuid())
+  publicId            String?                   @unique
   name                String?
   avatarKey           String?
   avatarMediaId       String?
@@ -359,6 +366,7 @@ model ConversationParticipant {
   isPinned           Boolean          @default(false)
   groupUpdatesActive Boolean          @default(true)
   clearedAt          DateTime?
+  leftAt             DateTime?
   deletedAt          DateTime?
   conversation       Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -392,7 +400,7 @@ model Message {
   attachmentMedia Media? @relation("MessageAttachment", fields: [attachmentMediaId], references: [id])
 
   @@index([conversationId, createdAt])
-  @@index([conversationId, deletedAt, createdAt])
+  @@index([conversationId, deletedAt, createdAt(sort: Desc)])
   @@index([senderId])
 }
 
@@ -462,9 +470,11 @@ model CrewActivity {
   status              CrewActivityStatus    @default(OPEN)
   updatedAt           DateTime              @updatedAt
   hostCollege         String?
+  collegeId           String?
   participationType   CrewParticipationType @default(OPEN)
-  shareToSchool       Boolean               @default(false)
+  shareToCampus       Boolean               @default(false)
   creator             User                  @relation("ActivityCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  college             College?              @relation("ActivityCollege", fields: [collegeId], references: [id])
   members             CrewActivityMember[]
 
   coverMedia Media? @relation("ActivityCover", fields: [coverMediaId], references: [id])

@@ -2,7 +2,7 @@ import { forwardRef, useState, useEffect } from 'react';
 import { UsersIcon, UserIcon } from '@heroicons/react/24/solid';
 import { useTheme } from '@shared/context/ThemeContext';
 import { getMediaUrl } from '@shared/api/apiClient';
-import defaultAvatarImg from '../../../assets/images/default_avatar.png';
+import defaultAvatarImg from '../../../assets/images/default_avatar.webp';
 import styles from './Avatar.module.css';
 
 const isImageUrl = (str) => {
@@ -14,7 +14,7 @@ const isImageUrl = (str) => {
 const INITIALS_BG = '#7a8a9e';
 
 export function getProcessedAvatarUrl(src) {
-  if (!src || typeof src !== 'string' || src.includes('default_avatar')) {
+  if (!src || typeof src !== 'string' || src.length <= 2 || src.includes('default_avatar')) {
     return null;
   }
   if (src.includes('api.dicebear.com/7.x/initials')) {

@@ -2,9 +2,11 @@ import Avatar from '@shared/components/avatar/Avatar';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import { timeAgo } from '@shared/utils/time';
 import { Pin, VolumeX, CalendarDays } from 'lucide-react';
+import { useAuth } from '@shared/context/AuthContext';
 import styles from './ConversationList.module.css';
 
 export default function ConversationItem({ conv, activeChatId, onSelect, onContextMenu }) {
+  const { currentUser } = useAuth();
   const isCampusGroup = String(conv.id).startsWith('c_');
   const cleanAid = activeChatId != null ? String(activeChatId).replace(/^(act_)+/, '') : null;
   const cleanCid = String(conv.id).replace(/^(act_)+/, '');
@@ -30,7 +32,7 @@ export default function ConversationItem({ conv, activeChatId, onSelect, onConte
   return (
     <div
       className={`${styles.convItem}${isMatch ? ` ${styles.convItemActive}` : ''}`}
-      onClick={() => onSelect(conv.id)}
+      onClick={() => onSelect(conv.id, conv)}
       onContextMenu={(e) => onContextMenu(e, conv.id)}
     >
       <div className={styles.convAvatar}>
@@ -77,16 +79,95 @@ export default function ConversationItem({ conv, activeChatId, onSelect, onConte
           </span>
         </div>
         {(() => {
-          let previewText = conv.lastMsg || '';
-          if (conv.isGroup || conv.isActivityChat) {
-            const lastMsgObj = conv.messages && conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
-            if (lastMsgObj && lastMsgObj.type !== 'system') {
-              const sender = lastMsgObj.from === 'me' 
-                ? 'You' 
-                : (lastMsgObj.senderName || 'Member');
-              previewText = `${sender}: ${lastMsgObj.text || conv.lastMsg}`;
+          let previewText = '';
+          const lastMsgObj = (Array.isArray(conv.messages) && conv.messages.length > 0) 
+            ? conv.messages[conv.messages.length - 1] 
+            : conv.lastMessage;
+          const isSystem = lastMsgObj?.type === 'system' || lastMsgObj?.type === 'SYSTEM' || lastMsgObj?.isSystem;
+
+          if (lastMsgObj) {
+            let text = lastMsgObj.text || lastMsgObj.payload?.text;
+            if (lastMsgObj.inviteData || lastMsgObj.type === 'group_invite' || (typeof text === 'string' && text.startsWith('Join "') && text.includes('on Meetifyy'))) {
+              const groupName = lastMsgObj.inviteData?.groupName;
+              text = groupName ? `Group Invite: ${groupName}` : 'Group Invite';
+            } else if (!text && lastMsgObj.mediaUrl) {
+              text = lastMsgObj.mediaType === 'image' ? 'Photo' : lastMsgObj.mediaType === 'video' ? 'Video' : 'Audio';
+            }
+
+            if (text) {
+              if ((conv.isGroup || conv.isActivityChat) && !isSystem) {
+                const sId = lastMsgObj.senderId || lastMsgObj.from;
+                const isMe = lastMsgObj.from === 'me' || (currentUser?.id && String(sId) === String(currentUser.id));
+
+                let senderName = '';
+                if (isMe) {
+                  senderName = 'You';
+                } else {
+                  if (lastMsgObj.senderName && lastMsgObj.senderName !== 'Member') {
+                    senderName = lastMsgObj.senderName;
+                  } else if (lastMsgObj.sender?.displayName) {
+                    senderName = lastMsgObj.sender.displayName;
+                  } else if (lastMsgObj.sender?.username) {
+                    senderName = lastMsgObj.sender.username;
+                  } else {
+                    const members = conv.members || conv.participants || [];
+                    const found = members.find(m => {
+                      const id = typeof m === 'string' ? m : (m.id || m.userId || m.user?.id);
+                      return String(id) === String(sId);
+                    });
+                    if (found) {
+                      const u = found.user || found;
+                      senderName = u.displayName || u.username || u.name;
+                    }
+                  }
+                  if (!senderName) senderName = lastMsgObj.senderName || 'Member';
+                }
+
+                previewText = `${senderName}: ${text}`;
+              } else {
+                previewText = text;
+              }
+            }
+          } else if (conv.lastMsg) {
+            let text = conv.lastMsg;
+            if (typeof text === 'string' && text.startsWith('Join "') && text.includes('on Meetifyy')) {
+              text = 'Group Invite';
+            }
+            const isLastMsgSystem = conv.lastMessage?.type === 'system' || conv.lastMessage?.type === 'SYSTEM' || conv.lastMessage?.isSystem;
+            if ((conv.isGroup || conv.isActivityChat) && !isLastMsgSystem) {
+              const sId = conv.lastSenderId || conv.lastMessage?.senderId;
+              const isMe = (currentUser?.id && String(sId) === String(currentUser.id));
+
+              let senderName = '';
+              if (isMe) {
+                senderName = 'You';
+              } else {
+                if (conv.lastSenderName && conv.lastSenderName !== 'Member') {
+                  senderName = conv.lastSenderName;
+                } else if (conv.lastMessage?.senderName && conv.lastMessage.senderName !== 'Member') {
+                  senderName = conv.lastMessage.senderName;
+                } else {
+                  const members = conv.members || conv.participants || [];
+                  const found = members.find(m => {
+                    const id = typeof m === 'string' ? m : (m.id || m.userId || m.user?.id);
+                    return String(id) === String(sId);
+                  });
+                  if (found) {
+                    const u = found.user || found;
+                    senderName = u.displayName || u.username || u.name;
+                  }
+                }
+                if (!senderName) senderName = conv.lastSenderName || conv.lastMessage?.senderName || 'Member';
+              }
+
+              previewText = `${senderName}: ${text}`;
+            } else {
+              previewText = text;
             }
           }
+
+          if (!previewText) return null;
+
           return (
             <div className={`${styles.convPreview} ${isUnread ? styles.convPreviewUnread : ''}`}>
               {previewText}

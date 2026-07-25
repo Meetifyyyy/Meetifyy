@@ -20,6 +20,17 @@ export class CommunitiesController {
     return this.communitiesService.getAllCommunities(user?.id, limitNum, offsetNum);
   }
 
+  @Get('campus')
+  async getCampusCommunities(
+    @CurrentUser() user: any,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const limitNum = limit ? parseInt(limit, 10) : 100;
+    const offsetNum = offset ? parseInt(offset, 10) : 0;
+    return this.communitiesService.getCampusCommunities(user?.id, limitNum, offsetNum);
+  }
+
   @Get(':id')
   async getCommunityById(@Param('id') id: string, @CurrentUser() user: any) {
     return this.communitiesService.getCommunityById(id, user?.id);

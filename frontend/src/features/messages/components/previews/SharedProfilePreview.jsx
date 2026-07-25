@@ -5,7 +5,7 @@ import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import ProfilePreviewSkeleton from '@shared/components/skeletons/ProfilePreviewSkeleton';
 import { UserX } from 'lucide-react';
-import defaultCover from '@assets/images/default_cover.png';
+import defaultCover from '@assets/images/default_cover.webp';
 import styles from './SharedProfilePreview.module.css';
 import { useData } from '@shared/hooks/useData';
 
@@ -69,7 +69,7 @@ export function SharedProfilePreview({
             src={avatar} 
             alt={displayName} 
             className={styles.avatar} 
-           onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+           onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
         ) : (
           <DefaultAvatar 
             name={displayName} 

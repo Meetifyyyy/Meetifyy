@@ -14,7 +14,7 @@ import styles from './FindYourCrewPage.module.css';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 
 export default function FindYourCrewPage() {
-  const { currentUser } = useAuth();
+  const { currentUser, collegeName } = useAuth();
   const { data: rawActivities = [], isLoading: loading } = useQuery({
     queryKey: ['activities'],
     queryFn: activitiesApi.getAll,
@@ -66,7 +66,7 @@ export default function FindYourCrewPage() {
       const activityDate = new Date(a.date);
       activityDate.setHours(0, 0, 0, 0);
       return activityDate >= today;
-    }).filter(a => !a.shareToSchool || a.hostCollege === (currentUser?.college?.name || currentUser?.college)); 
+    }).filter(a => !a.shareToSchool || a.hostCollege === collegeName); 
 
     // Filter by tab
     if (selectedTab === 'For You') {

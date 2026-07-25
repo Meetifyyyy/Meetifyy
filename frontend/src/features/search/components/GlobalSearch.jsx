@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import logo from '@assets/images/meetify logo.png';
+import logo from '@assets/images/meetify_logo.webp';
 import styles from './GlobalSearch.module.css';
 
 export default function GlobalSearch({ variant = 'header', isActive = false, autoFocus = false }) {
@@ -55,7 +55,7 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
   const suggestedSearches = [
     { text: 'React Developers', type: 'user' },
     { text: 'Frontend Architecture', type: 'post' },
-    { text: 'GLA University', type: 'college' },
+    { text: 'Stanford University', type: 'college' },
     { text: 'UI/UX Designers', type: 'community' }
   ];
 

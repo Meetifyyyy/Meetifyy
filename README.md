@@ -84,9 +84,8 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-supabase-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 
-# Redis Configuration
-REDIS_HOST=localhost
-REDIS_PORT=6379
+# Redis Configuration (Redis Cloud / Standard Redis)
+REDIS_URL=redis://default:password@host:port
 
 # Resend Email Service
 RESEND_API_KEY=re_your_api_key
@@ -119,7 +118,7 @@ npx prisma generate
 
 ## 🧰 Tech Stack
 
-- **Backend**: NestJS, TypeScript, Prisma ORM, Supabase PostgreSQL, Redis (BullMQ, Socket.io), Resend API
+- **Backend**: NestJS, TypeScript, Prisma ORM, Supabase (PostgreSQL & Storage), Redis (BullMQ async queues, Rate Limiting, Presence), Resend API
 - **User Application**: React, Vite, CSS Modules, Lucide React, Supabase Client
 - **Super Admin Portal**: React, Vite, TypeScript, TailwindCSS / Lucide Icons
 - **Tooling**: Concurrently, ESLint, Prettier

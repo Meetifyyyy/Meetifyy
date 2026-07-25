@@ -3,19 +3,64 @@ import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class CommunitiesService {
+  private communitiesCache = new Map<string, { data: any[]; timestamp: number }>();
+
   constructor(private readonly prisma: PrismaService) {}
 
   async getAllCommunities(userId?: string, limit = 30, offset = 0) {
-    const communities = await this.prisma.community.findMany({
-      where: { deletedAt: null },
-      orderBy: { memberCount: 'desc' },
-      take: limit,
-      skip: offset,
-    });
+    const cacheKey = `all:${limit}:${offset}`;
+    let communities;
+    const cached = this.communitiesCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < 60000) {
+      communities = cached.data;
+    } else {
+      communities = await this.prisma.community.findMany({
+        where: { deletedAt: null },
+        orderBy: { memberCount: 'desc' },
+        take: limit,
+        skip: offset,
+      });
+      this.communitiesCache.set(cacheKey, { data: communities, timestamp: Date.now() });
+    }
 
     if (!userId || communities.length === 0) {
       return communities.map(c => ({ ...c, isJoined: false, userRole: null }));
     }
+
+    const userMemberships = await this.prisma.communityMember.findMany({
+      where: { userId, communityId: { in: communities.map(c => c.id) } },
+      select: { communityId: true, role: true },
+    });
+
+    const membershipMap = new Map(userMemberships.map(m => [m.communityId, m.role]));
+
+    return communities.map(c => ({
+      ...c,
+      isJoined: membershipMap.has(c.id),
+      userRole: membershipMap.get(c.id) || null,
+    }));
+  }
+
+  async getCampusCommunities(userId: string, limit = 30, offset = 0) {
+    if (!userId) return [];
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { collegeId: true } });
+    if (!user?.collegeId) return [];
+    const cacheKey = `campus:${user.collegeId}:${limit}:${offset}`;
+    let communities;
+    const cached = this.communitiesCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < 60000) {
+      communities = cached.data;
+    } else {
+      communities = await this.prisma.community.findMany({
+        where: { deletedAt: null, isCampusCommunity: true, collegeId: user.collegeId },
+        orderBy: { memberCount: 'desc' },
+        take: limit,
+        skip: offset,
+      });
+      this.communitiesCache.set(cacheKey, { data: communities, timestamp: Date.now() });
+    }
+
+    if (communities.length === 0) return [];
 
     const userMemberships = await this.prisma.communityMember.findMany({
       where: { userId, communityId: { in: communities.map(c => c.id) } },
@@ -57,6 +102,24 @@ export class CommunitiesService {
       throw new NotFoundException('Community not found');
     }
 
+    if (community.members) {
+      const getCommunityRoleRank = (m: any) => {
+        if ((community.ownerId && m.userId === community.ownerId) || (m as any).role === 'OWNER') return 0;
+        if (m.role === 'ADMIN') return 1;
+        if (m.role === 'MODERATOR') return 2;
+        return 3;
+      };
+
+      community.members.sort((a, b) => {
+        const rankA = getCommunityRoleRank(a);
+        const rankB = getCommunityRoleRank(b);
+        if (rankA !== rankB) return rankA - rankB;
+        const timeA = a.joinedAt ? new Date(a.joinedAt).getTime() : 0;
+        const timeB = b.joinedAt ? new Date(b.joinedAt).getTime() : 0;
+        return timeA - timeB;
+      });
+    }
+
     const currentMember = userId ? community.members.find(m => m.userId === userId) : null;
 
     return {
@@ -64,6 +127,7 @@ export class CommunitiesService {
       isJoined: !!currentMember,
       userRole: currentMember?.role || null,
     };
+
   }
 
   async joinCommunity(communityId: string, userId: string) {
@@ -127,6 +191,14 @@ export class CommunitiesService {
         create: [{ userId: creatorId, role: 'ADMIN' }]
       }
     };
+
+    if (data.isCampusCommunity) {
+      const user = await this.prisma.user.findUnique({ where: { id: creatorId }, select: { collegeId: true } });
+      if (user?.collegeId) {
+        createData.isCampusCommunity = true;
+        createData.collegeId = user.collegeId;
+      }
+    }
 
     if (data.avatarKey && typeof data.avatarKey === 'string') {
       if (data.avatarKey.startsWith('/api/media/')) {

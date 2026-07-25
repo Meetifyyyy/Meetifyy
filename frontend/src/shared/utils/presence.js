@@ -24,28 +24,7 @@ export function canSeeOnlineStatus(currentUser, targetUser) {
 }
 
 export function canSeeLastSeen(currentUser, targetUser) {
-  if (!targetUser) return false;
-  if (currentUser && targetUser.username === currentUser.username) return true;
-
-  const prefs = targetUser.preferences || {};
-  const showLastSeen = prefs.showLastSeen ?? true;
-  if (!showLastSeen) return false;
-
-  const whoCanSee = prefs.whoCanSeeLastSeen || 'everyone';
-  if (whoCanSee === 'everyone') return true;
-  if (whoCanSee === 'nobody') return false;
-
-  const isFollowedByTarget = targetUser.followingList?.includes(currentUser?.username);
-  if (whoCanSee === 'following') {
-    return !!isFollowedByTarget;
-  }
-  
-  if (whoCanSee === 'mutual') {
-    const followsTarget = currentUser?.followingList?.includes(targetUser.username);
-    return !!(isFollowedByTarget && followsTarget);
-  }
-
-  return true;
+  return !!targetUser;
 }
 
 export function formatLastSeen(timestamp) {

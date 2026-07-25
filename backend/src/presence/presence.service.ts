@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { Redis } from '@upstash/redis';
+import { RedisService } from '../redis/redis.service';
+import Redis from 'ioredis';
 
 export interface UserPresence {
   lastSeen: string;
@@ -13,18 +13,12 @@ export class PresenceService {
   private redis: Redis | null = null;
   private readonly logger = new Logger('PRESENCE');
 
-  constructor(private configService: ConfigService) {
-    const redisUrl = this.configService.get<string>('UPSTASH_REDIS_REST_URL');
-    const redisToken = this.configService.get<string>('UPSTASH_REDIS_REST_TOKEN');
-
-    if (redisUrl && redisToken && !redisUrl.includes('placeholder')) {
-      this.redis = new Redis({
-        url: redisUrl,
-        token: redisToken,
-      });
-      this.logger.log('Upstash Redis connected for Presence Service');
+  constructor(private readonly redisService: RedisService) {
+    this.redis = this.redisService.getClient();
+    if (this.redis) {
+      this.logger.log('Redis connected for Presence Service');
     } else {
-      this.logger.warn('Upstash Redis not configured. Presence features will be mocked in-memory.');
+      this.logger.warn('Redis not configured. Presence features will be mocked in-memory.');
     }
   }
 
@@ -39,7 +33,8 @@ export class PresenceService {
     try {
       if (this.redis) {
         const key = this.getPresenceKey(userId);
-        let presence: UserPresence | null = await this.redis.get(key);
+        const data = await this.redis.get(key);
+        let presence: UserPresence | null = data ? JSON.parse(data) : null;
         
         if (!presence) {
           presence = { lastSeen: new Date().toISOString(), status: 'online', socketIds: [] };
@@ -56,7 +51,7 @@ export class PresenceService {
           this.logger.log(`Online user=${userId}`);
         }
         
-        await this.redis.set(key, presence);
+        await this.redis.set(key, JSON.stringify(presence));
       } else {
         const presence = this.memoryPresence.get(userId) || { lastSeen: new Date().toISOString(), status: 'online', socketIds: [] };
         if (!presence.socketIds.includes(socketId)) {
@@ -75,7 +70,8 @@ export class PresenceService {
     try {
       if (this.redis) {
         const key = this.getPresenceKey(userId);
-        const presence: UserPresence | null = await this.redis.get(key);
+        const data = await this.redis.get(key);
+        const presence: UserPresence | null = data ? JSON.parse(data) : null;
         
         if (presence) {
           presence.socketIds = presence.socketIds.filter(id => id !== socketId);
@@ -84,7 +80,7 @@ export class PresenceService {
             presence.status = 'offline';
             this.logger.log(`Offline user=${userId}`);
           }
-          await this.redis.set(key, presence);
+          await this.redis.set(key, JSON.stringify(presence));
         }
       } else {
         const presence = this.memoryPresence.get(userId);
@@ -106,7 +102,8 @@ export class PresenceService {
     try {
       if (this.redis) {
         const key = this.getPresenceKey(userId);
-        return await this.redis.get(key);
+        const data = await this.redis.get(key);
+        return data ? JSON.parse(data) : null;
       } else {
         return this.memoryPresence.get(userId) || null;
       }
@@ -114,5 +111,32 @@ export class PresenceService {
       this.logger.error(`Failed to get presence for ${userId}`, err);
       return null;
     }
+  }
+
+  async getPresenceMany(userIds: string[]): Promise<Map<string, UserPresence>> {
+    const result = new Map<string, UserPresence>();
+    if (!userIds || userIds.length === 0) return result;
+    try {
+      if (this.redis) {
+        const keys = userIds.map(uId => this.getPresenceKey(uId));
+        const values = await this.redis.mget(...keys);
+        userIds.forEach((uId, idx) => {
+          const val = values[idx];
+          if (val) {
+            try {
+              result.set(uId, JSON.parse(val));
+            } catch {}
+          }
+        });
+      } else {
+        userIds.forEach(uId => {
+          const pres = this.memoryPresence.get(uId);
+          if (pres) result.set(uId, pres);
+        });
+      }
+    } catch (err) {
+      this.logger.error(`Failed to get batch presence`, err);
+    }
+    return result;
   }
 }

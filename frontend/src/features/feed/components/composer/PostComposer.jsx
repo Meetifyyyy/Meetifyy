@@ -15,7 +15,7 @@ const EMOJI_GROUPS = [
   { label: 'Nature', emojis: ['🌸','🌿','🌊','☀️','🌙','⚡','🦋','🐾','🌈','🍀','🌺','🍂'] },
 ];
 
-import { useMediaUpload } from '@shared/hooks/useMediaUpload';
+import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 
 function PostComposer({ onSubmit }) {
   const { initial, currentUser } = useAuth();
@@ -26,6 +26,9 @@ function PostComposer({ onSubmit }) {
   const [showPoll, setShowPoll] = useState(false);
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [pollMulti, setPollMulti] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const composerRef = useRef(null);
   const inputRef = useRef(null);
   const fileRef = useRef(null);
   const emojiPanelRef = useRef(null);
@@ -33,17 +36,25 @@ function PostComposer({ onSubmit }) {
   const emojiBtnRef = useRef(null);
   const pollBtnRef = useRef(null);
 
-  const { upload: uploadPostMedia } = useMediaUpload('post-media');
+  const hasContent = Boolean(
+    (typeof value === 'string' ? value : value?.text)?.trim() ||
+    media ||
+    showPoll ||
+    showEmoji
+  );
 
   useEffect(() => {
     const handler = (e) => {
       if (showEmoji && emojiPanelRef.current && !emojiPanelRef.current.contains(e.target) && !emojiBtnRef.current?.contains(e.target)) {
         setShowEmoji(false);
       }
+      if (composerRef.current && !composerRef.current.contains(e.target) && !hasContent) {
+        setIsExpanded(false);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showEmoji]);
+  }, [showEmoji, hasContent]);
 
   const normalizePostText = (str) => {
     if (!str) return '';
@@ -70,8 +81,13 @@ function PostComposer({ onSubmit }) {
 
     try {
       if (media?.file) {
-        const publicUrl = await uploadPostMedia(media.file);
-        finalMedia = { type: media.type, url: publicUrl };
+        if (media.type === 'video') {
+           // Skip video processing for now
+           finalMedia = { type: media.type, url: URL.createObjectURL(media.file) }; // Temporary for UI
+        } else {
+           const { publicUrl } = await processAndUploadImage(media.file, 'post-media', { maxWidthOrHeight: 1920 });
+           finalMedia = { type: media.type, url: publicUrl };
+        }
       }
 
       if (showPoll) {
@@ -86,6 +102,7 @@ function PostComposer({ onSubmit }) {
 
       setValue({ text: '', mentions: [] });
       setMedia(null);
+      setIsExpanded(false);
     } catch {
       alert('Failed to upload media attachment. Try again.');
     } finally {
@@ -107,6 +124,7 @@ function PostComposer({ onSubmit }) {
     const type = file.type.startsWith('video/') ? 'video' : 'image';
     const previewUrl = URL.createObjectURL(file);
     setMedia({ type, url: previewUrl, file });
+    setIsExpanded(true);
     e.target.value = '';
   };
 
@@ -117,6 +135,7 @@ function PostComposer({ onSubmit }) {
     }
     setShowPoll(!showPoll);
     setShowEmoji(false);
+    setIsExpanded(true);
   };
 
   const insertEmoji = (emoji) => {
@@ -125,6 +144,7 @@ function PostComposer({ onSubmit }) {
       const currentMentions = v?.mentions || [];
       return { text: currentText + emoji, mentions: currentMentions };
     });
+    setIsExpanded(true);
     inputRef.current?.focus();
   };
 
@@ -142,8 +162,10 @@ function PostComposer({ onSubmit }) {
     setPollOptions(next);
   };
 
+  const expandedState = isExpanded || hasContent;
+
   return (
-    <div className={styles.postComposerWrapper}>
+    <div className={styles.postComposerWrapper} ref={composerRef}>
       {/* Popups rendered above the composer */}
       {showEmoji && (
         <div className={styles.emojiPicker} ref={emojiPanelRef}>
@@ -160,7 +182,10 @@ function PostComposer({ onSubmit }) {
         </div>
       )}
 
-      <div className={`${styles.postComposer}${showPoll ? ` ${styles.hasPoll}` : ''}`}>
+      <div
+        className={`${styles.postComposer}${showPoll ? ` ${styles.hasPoll}` : ''}${expandedState ? ` ${styles.expanded}` : ''}`}
+        onClick={() => { if (!expandedState) setIsExpanded(true); }}
+      >
         <div className={styles.composerTopRow}>
           <Avatar src={currentUser?.avatar} name={currentUser?.displayName} size="40px" disableHover />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -169,35 +194,43 @@ function PostComposer({ onSubmit }) {
               className={styles.composerInput}
               placeholder={showPoll ? "Ask a question?" : "What's on your mind?"}
               value={value}
-              onChange={(val) => setValue(val)}
+              onChange={(val) => {
+                setValue(val);
+                if (!isExpanded) setIsExpanded(true);
+              }}
+              onFocus={() => setIsExpanded(true)}
               onSubmit={() => { if (!showPoll) handlePost(); }}
               singleLine={false}
             />
           </div>
-          <button
-            ref={emojiBtnRef}
-            className={`${styles.composerEmojiBtn}${showEmoji ? ` ${styles.active}` : ''}`}
-            title="Emoji"
-            onClick={() => {
-              if (showPoll) {
-                setPollOptions(['', '']);
-                setPollMulti(false);
-                setShowPoll(false);
-                setValue({ text: '', mentions: [] });
-              }
-              setShowEmoji(!showEmoji);
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-              <line x1="9" y1="9" x2="9.01" y2="9" />
-              <line x1="15" y1="9" x2="15.01" y2="9" />
-            </svg>
-          </button>
+          {expandedState && (
+            <button
+              ref={emojiBtnRef}
+              className={`${styles.composerEmojiBtn}${showEmoji ? ` ${styles.active}` : ''}`}
+              title="Emoji"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (showPoll) {
+                  setPollOptions(['', '']);
+                  setPollMulti(false);
+                  setShowPoll(false);
+                  setValue({ text: '', mentions: [] });
+                }
+                setShowEmoji(!showEmoji);
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                <line x1="9" y1="9" x2="9.01" y2="9" />
+                <line x1="15" y1="9" x2="15.01" y2="9" />
+              </svg>
+            </button>
+          )}
         </div>
 
-        <div className={styles.composerContentArea}>
+        <div className={`${styles.composerExpandContainer}${expandedState ? ` ${styles.expanded}` : ''}`}>
+          <div className={styles.composerExpandInner}>
           {showPoll && (
             <div className={styles.inlinePollCreator}>
               <div className={styles.pollOptionsList}>
@@ -322,6 +355,7 @@ function PostComposer({ onSubmit }) {
         </div>
       </div>
     </div>
+  </div>
   );
 }
 

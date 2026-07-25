@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { uploadsApi } from '../../../shared/api/apiClient';
 
 export function useVoiceRecorder({ onSend, showToast }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -65,15 +66,45 @@ export function useVoiceRecorder({ onSend, showToast }) {
   const sendRecording = () => {
     if (!mediaRecorderRef.current) return;
 
-    mediaRecorderRef.current.onstop = () => {
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-      const audioUrl = URL.createObjectURL(audioBlob);
-      onSend(audioUrl);
-      
-      if (mediaRecorderRef.current.stream) {
-        mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+    mediaRecorderRef.current.onstop = async () => {
+      try {
+        const mimeType = audioChunksRef.current[0]?.type || 'audio/webm';
+        const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('wav') ? 'wav' : 'webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        const audioFile = new File([audioBlob], `voicenote_${Date.now()}.${ext}`, { type: mimeType });
+
+        // Upload voice note directly to Supabase Storage in 'voice' folder
+        const uploadRes = await uploadsApi.uploadMedia(audioFile, 'voice');
+        const publicUrl = uploadRes.publicUrl || uploadRes.url || uploadRes.data?.publicUrl;
+
+        if (publicUrl) {
+          onSend(publicUrl);
+        } else {
+          // Fallback to data URL
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (reader.result) onSend(reader.result);
+          };
+          reader.readAsDataURL(audioBlob);
+        }
+      } catch (err) {
+        console.error('Failed to upload voice note to Supabase Storage:', err);
+        // Fallback to data URL on network/storage error
+        if (audioChunksRef.current.length > 0) {
+          const mimeType = audioChunksRef.current[0]?.type || 'audio/webm';
+          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (reader.result) onSend(reader.result);
+          };
+          reader.readAsDataURL(audioBlob);
+        }
+      } finally {
+        if (mediaRecorderRef.current?.stream) {
+          mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+        }
+        audioChunksRef.current = [];
       }
-      audioChunksRef.current = [];
     };
 
     mediaRecorderRef.current.stop();

@@ -38,7 +38,11 @@ export class StorageService {
         provider: this.providerName,
         bucket: this.bucketName,
         storageKey: key, // Legacy fallback
-        type: file.mimetype.startsWith('video') ? 'VIDEO' : 'IMAGE', // Legacy fallback
+        type: file.mimetype.startsWith('video')
+          ? 'VIDEO'
+          : file.mimetype.startsWith('audio')
+          ? 'AUDIO'
+          : 'IMAGE', // Legacy fallback
         mimeType: file.mimetype,
         fileSize: file.size,
       },
@@ -48,6 +52,46 @@ export class StorageService {
     const publicUrl = `/api/media/${key}`;
 
     return { publicUrl, key, mediaId: media.id, media };
+  }
+
+  /**
+   * Generate a presigned URL for direct client upload and register Media.
+   */
+  async getPresignedUrl(
+    userId: string,
+    filename: string,
+    contentType: string,
+    folder = 'general',
+    fileSize = 0,
+  ) {
+    const { uploadUrl, publicUrl: providerUrl, key } = await this.storageProvider.createSignedUploadUrl(
+      filename,
+      contentType,
+      folder,
+    );
+
+    // Register media in database (pending state)
+    const media = await this.prisma.media.create({
+      data: {
+        ownerId: userId,
+        objectKey: key,
+        provider: this.providerName,
+        bucket: this.bucketName,
+        storageKey: key, // Legacy fallback
+        type: contentType.startsWith('video')
+          ? 'VIDEO'
+          : contentType.startsWith('audio')
+          ? 'AUDIO'
+          : 'IMAGE', // Legacy fallback
+        mimeType: contentType,
+        fileSize: fileSize,
+      },
+    });
+
+    // Provide a generic, provider-agnostic URL to the frontend
+    const publicUrl = `/api/media/${key}`;
+
+    return { uploadUrl, publicUrl, key, mediaId: media.id, media };
   }
 
   getPublicUrl(key: string): string {

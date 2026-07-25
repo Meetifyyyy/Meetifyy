@@ -85,7 +85,7 @@ export function CommunityResult({ result, isSelected, onClick }) {
         style={item.color ? { background: item.color } : { background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }}
       >
         {isImageUrl(item.avatar) ? (
-           <img src={item.avatar} alt={item.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+           <img src={item.avatar} alt={item.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
         ) : (
           <span style={{ fontWeight: 700, color: '#FFFFFF' }}>{item.avatar || item.name?.charAt(0).toUpperCase()}</span>
         )}
@@ -144,7 +144,7 @@ export function CollegeResult({ result, isSelected, onClick }) {
         style={item.color ? { background: item.color } : {}}
       >
         {isImageUrl(item.avatar) ? (
-           <img src={item.avatar} alt={item.name} className={`${styles.avatar} ${styles.collegeAvatar}`}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+           <img src={item.avatar} alt={item.name} className={`${styles.avatar} ${styles.collegeAvatar}`}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
         ) : (
           <DefaultAvatar isGroup={true} />
         )}
@@ -180,7 +180,7 @@ export function CrewResult({ result, isSelected, onClick }) {
     >
       <div className={styles.avatar} style={{ borderRadius: '12px', overflow: 'hidden' }}>
         {isImageUrl(eventImage) ? (
-          <img src={eventImage} alt={item.title} className={styles.avatar} style={{ borderRadius: 'inherit', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+          <img src={eventImage} alt={item.title} className={styles.avatar} style={{ borderRadius: 'inherit', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
         ) : (
           <DefaultAvatar />
         )}

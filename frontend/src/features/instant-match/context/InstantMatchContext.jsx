@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, supabase } from '@shared/context/AuthContext';
+import { getCollegeName } from '@shared/utils/user';
 
 import matchSocketClient from '../utils/matchSocketClient';
 import { useData } from '@shared/hooks/useData';
@@ -39,7 +40,7 @@ export function InstantMatchProvider({ children }) {
 
   // Connect socket client
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser?.id) {
       supabase?.auth.getSession().then(({ data: { session } }) => {
         matchSocketClient.connect(session?.access_token || null, currentUser);
       });
@@ -48,7 +49,7 @@ export function InstantMatchProvider({ children }) {
     return () => {
       matchSocketClient.disconnect();
     };
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   // Subscribe to real-time events
   useEffect(() => {
@@ -151,7 +152,7 @@ export function InstantMatchProvider({ children }) {
     // Standardize request format
     const request = {
       userId: currentUser?.id,
-      campus: currentUser?.campus || 'GLA University',
+      campus: getCollegeName(currentUser),
       activity: formData.activity,
       timePreference: formData.timePreference,
       optionalDetail: formData.optionalDetail,

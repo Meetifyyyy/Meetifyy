@@ -8,6 +8,7 @@ import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import s from './ProfileRightSidebar.module.css';
 import { useQuery } from '@tanstack/react-query';
 import { usersApi, activitiesApi, communitiesApi } from '@shared/api/apiClient';
+import { useData } from '@shared/hooks/useData';
 
 const isImageUrl = (str) => {
   if (!str || typeof str !== 'string') return false;
@@ -64,13 +65,7 @@ function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
 export default function ProfileRightSidebar({ embedded = false }) {
   const { currentUser } = useAuth();
   
-  const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
-  const users = useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
-  
-  const { data: crewActivities = [] } = useQuery({ queryKey: ['activities'], queryFn: activitiesApi.getAll });
-  
-  const { data: communitiesData = [] } = useQuery({ queryKey: ['communities'], queryFn: communitiesApi.getAll });
-  const communities = useMemo(() => communitiesData.reduce((acc, c) => ({ ...acc, [c.id]: c }), {}), [communitiesData]);
+  const { users, crewActivities, communities } = useData();
   
   const toggleJoinCommunity = async (id) => {
     try {
@@ -194,7 +189,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
                   }}
                 >
                   {isImageUrl(c.avatar)
-                    ? <img src={c.avatar} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                    ? <img src={c.avatar} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     : <span style={{ color: '#FFF', fontWeight: 700, fontSize: '1.2rem' }}>{c.name.charAt(0).toUpperCase()}</span>
                   }
                 </div>

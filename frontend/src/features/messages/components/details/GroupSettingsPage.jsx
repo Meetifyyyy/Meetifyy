@@ -65,7 +65,7 @@ export default function GroupSettingsPage({
               <button 
                 type="button" 
                 className={styles.settingRow} 
-                onClick={onGoToEdit}
+                onClick={canEditGroupInfo ? onGoToEdit : undefined}
                 style={{ cursor: canEditGroupInfo ? 'pointer' : 'default', opacity: canEditGroupInfo ? 1 : 0.7 }}
               >
                 <span className={styles.settingLabel}>Edit group</span>
@@ -120,7 +120,7 @@ export default function GroupSettingsPage({
                 className={styles.settingRow}
                 onClick={() => {
                   if (isAdmin) {
-                    const newVal = whoCanJoin === 'Anyone' ? 'Request required' : 'Anyone';
+                    const newVal = (whoCanJoin === 'ANYONE' || whoCanJoin === 'Anyone') ? 'APPROVAL' : 'ANYONE';
                     setWhoCanJoin(newVal);
                     updateGroupSettings(conversation.id, { whoCanJoin: newVal });
                   }
@@ -129,7 +129,9 @@ export default function GroupSettingsPage({
               >
                 <span className={styles.settingLabel}>Who can join</span>
                 <div className={styles.settingRight}>
-                  <span className={styles.settingValue}>{whoCanJoin}</span>
+                  <span className={styles.settingValue}>
+                    {(whoCanJoin === 'APPROVAL' || whoCanJoin === 'Request required') ? 'Approval required' : 'Anyone'}
+                  </span>
                   {isAdmin ? (
                     <svg className={styles.chevronIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <polyline points="9 18 15 12 9 6"></polyline>
@@ -149,8 +151,10 @@ export default function GroupSettingsPage({
                 className={styles.settingRow}
                 onClick={() => {
                   if (isAdmin) {
-                    const uniName = visibility.startsWith('Visible') ? visibility.split('Visible only to ')[1] || 'your university' : 'your university';
-                    const newVal = visibility.startsWith('Visible') ? 'Hidden group' : `Visible only to ${uniName}`;
+                    let newVal = 'PUBLIC';
+                    if (visibility === 'PUBLIC' || visibility.startsWith('Visible to everyone')) newVal = 'COLLEGE';
+                    else if (visibility === 'COLLEGE' || visibility.startsWith('Visible only to your college')) newVal = 'HIDDEN';
+                    else newVal = 'PUBLIC';
                     setVisibility(newVal);
                     updateGroupSettings(conversation.id, { visibility: newVal });
                   }
@@ -160,7 +164,8 @@ export default function GroupSettingsPage({
                 <span className={styles.settingLabel}>Visibility</span>
                 <div className={styles.settingRight}>
                   <span className={styles.settingValue} style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {visibility}
+                    {(visibility === 'COLLEGE' || visibility.includes('college')) ? 'Visible only to your college' :
+                     (visibility === 'HIDDEN' || visibility.includes('Hidden')) ? 'Hidden group' : 'Visible to everyone'}
                   </span>
                   {isAdmin ? (
                     <svg className={styles.chevronIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -212,7 +217,7 @@ export default function GroupSettingsPage({
                 className={styles.settingRow}
                 onClick={() => {
                   if (isAdmin) {
-                    const newVal = editGroupPermission === 'Everyone' ? 'Owner and Admins' : 'Everyone';
+                    const newVal = (editGroupPermission === 'EVERYONE' || editGroupPermission === 'Everyone') ? 'ADMIN' : 'EVERYONE';
                     setEditGroupPermission(newVal);
                     updateGroupEditPermission(conversation.id, newVal);
                   }
@@ -221,7 +226,9 @@ export default function GroupSettingsPage({
               >
                 <span className={styles.settingLabel}>Who can edit the group</span>
                 <div className={styles.settingRight}>
-                  <span className={styles.settingValue}>{editGroupPermission === 'Admin' ? 'Owner and Admins' : editGroupPermission}</span>
+                  <span className={styles.settingValue}>
+                    {(editGroupPermission === 'ADMIN' || editGroupPermission === 'Admin' || editGroupPermission === 'Owner and Admins') ? 'Owner and Admins' : 'Everyone'}
+                  </span>
                   {isAdmin ? (
                     <svg className={styles.chevronIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <polyline points="9 18 15 12 9 6"></polyline>

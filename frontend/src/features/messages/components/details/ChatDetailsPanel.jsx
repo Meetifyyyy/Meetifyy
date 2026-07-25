@@ -6,18 +6,21 @@ import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ChatDetailsPanel.module.css';
-import { Pin, Trash2, LogOut, ChevronRight, User, Search, Ban, UserPlus, Image as ImageIcon } from 'lucide-react';
+import { Pin, Trash2, LogOut, ChevronRight, User, Search, Ban, UserPlus, UserCheck, Check, X, Image as ImageIcon } from 'lucide-react';
 import InviteModal from '../modals/InviteModal';
 import SafetyNumberModal from '../modals/SafetyNumberModal';
+import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { showToast } from '@shared/utils/toast';
 
 import ChatGalleryPage from './ChatGalleryPage';
 import GroupChangeOwnerPage from './GroupChangeOwnerPage';
 import GroupEditPage from './GroupEditPage';
 import GroupSettingsPage from './GroupSettingsPage';
+import GroupJoinRequestsPage from './GroupJoinRequestsPage';
 import { useData } from '@shared/hooks/useData';
 import { toast } from 'sonner';
-import { useMediaUpload } from '@shared/hooks/useMediaUpload';
+import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import { sortGroupMembers } from '@shared/utils/memberSort';
 
 
 export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, onClearChat, onSearch }) {
@@ -33,6 +36,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   // Modal States
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showSafetyModal, setShowSafetyModal] = useState(false);
+  const [reportUserTarget, setReportUserTarget] = useState(null);
   
   // Header Menu States
   const [showMenu, setShowMenu] = useState(false);
@@ -68,70 +72,110 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   const [showEditGroupPage, setShowEditGroupPage] = useState(false);
   const [showGalleryPage, setShowGalleryPage] = useState(false);
   const [showChangeOwnerPage, setShowChangeOwnerPage] = useState(false);
+  const [showRequestsPage, setShowRequestsPage] = useState(false);
   const [groupUpdatesActive, setGroupUpdatesActive] = useState(conversation.groupUpdatesActive !== false);
-  const [whoCanJoin, setWhoCanJoin] = useState(conversation.whoCanJoin || 'Anyone');
+  const [whoCanJoin, setWhoCanJoin] = useState(conversation.whoCanJoin || 'ANYONE');
   const [visibility, setVisibility] = useState(() => {
     if (conversation.visibility) return conversation.visibility;
     if (conversation.id && String(conversation.id).startsWith('c_')) {
-      const uniName = currentUser?.university || currentUser?.college?.name || 'your university';
-      return `Visible only to ${uniName}`;
+      return 'COLLEGE';
     }
-    return 'Hidden group';
+    return 'HIDDEN';
   });
   const [allowSharing, setAllowSharing] = useState(conversation.allowSharing !== false);
-  const [editGroupPermission, setEditGroupPermission] = useState(conversation.editGroupPermission || 'Everyone');
+  const [editGroupPermission, setEditGroupPermission] = useState(conversation.editGroupPermission || 'ADMIN');
   const [showImageSearch, setShowImageSearch] = useState(false);
 
-  // Sync states when conversation updates or changes
   useEffect(() => {
     setEditName(conversation.name || '');
     setEditDesc(conversation.description || '');
-    setEditAvatar(conversation.avatar || '');
-    setWhoCanJoin(conversation.whoCanJoin || 'Anyone');
+    setEditAvatar(conversation.avatar || conversation.avatarKey || '');
+    setWhoCanJoin(conversation.whoCanJoin || 'ANYONE');
     setVisibility(
       conversation.visibility ||
-      (conversation.id && String(conversation.id).startsWith('c_') ? 'Visible only to Gla University' : 'Hidden group')
+      (conversation.id && String(conversation.id).startsWith('c_') ? 'COLLEGE' : 'HIDDEN')
     );
     setAllowSharing(conversation.allowSharing !== false);
+    setEditGroupPermission(conversation.editGroupPermission || 'ADMIN');
+    setGroupUpdatesActive(conversation.groupUpdatesActive !== false);
+  }, [conversation.id, conversation.name, conversation.description, conversation.avatar, conversation.avatarKey, conversation.whoCanJoin, conversation.visibility, conversation.allowSharing, conversation.editGroupPermission, conversation.groupUpdatesActive]);
+
+  useEffect(() => {
     setShowEditGroupPage(false);
     setShowSettingsPage(false);
     setShowGalleryPage(false);
     setShowChangeOwnerPage(false);
+    setShowRequestsPage(false);
   }, [conversation.id]);
 
-  // Extract shared media from message history
+  // Extract shared media from message history (ONLY images and videos, EXCLUDING voice notes/audio)
   const mediaList = useMemo(() => {
     const list = [];
-    if (conversation.messages && conversation.messages.length > 0) {
-      conversation.messages.forEach(msg => {
-        if (msg.text) {
-          const urls = msg.text.match(/\bhttps?:\/\/\S+/gi) || [];
-          urls.forEach(url => {
-            const cleanUrl = url.split(/[?#]/)[0];
-            const isImg = /\.(png|jpe?g|gif|webp)/i.test(cleanUrl) || url.includes('giphy.com') || url.includes('unsplash.com') || url.startsWith('data:image/');
-            const isVid = /\.(mp4|mov|webm)/i.test(cleanUrl) || url.startsWith('data:video/');
-            if (isImg) list.push({ type: 'image', url });
-            else if (isVid) list.push({ type: 'video', url });
-          });
+    const messages = conversation?.messages || [];
+
+    messages.forEach(msg => {
+      const text = msg.text || msg.payload?.text || '';
+      const mediaUrl = msg.mediaUrl || msg.payload?.mediaUrl || (msg.type === 'media' ? (msg.text || msg.payload?.text) : null) || '';
+      const mediaType = (msg.mediaType || msg.payload?.mediaType || msg.type || '').toLowerCase();
+      const createdAt = msg.createdAt || msg.timestamp || new Date();
+
+      // Skip voice notes & audio files completely
+      const isAudio = (
+        mediaType.includes('audio') || 
+        mediaType.includes('voice') || 
+        msg.type === 'voice' || 
+        msg.type === 'VOICE' || 
+        msg.isVoiceNote ||
+        /\.(mp3|wav|ogg|m4a|aac|flac)/i.test(mediaUrl) ||
+        mediaUrl.startsWith('data:audio/')
+      );
+      if (isAudio) return;
+
+      // Direct media attachments (uploaded image/video in chat)
+      if (mediaUrl && typeof mediaUrl === 'string') {
+        const isVid = mediaType.includes('video') || /\.(mp4|mov|mkv)/i.test(mediaUrl) || mediaUrl.startsWith('data:video/');
+        const isImg = mediaType.includes('image') || /\.(png|jpe?g|gif|webp|svg)/i.test(mediaUrl) || mediaUrl.startsWith('data:image/');
+        if (isVid) list.push({ type: 'video', url: mediaUrl, createdAt: new Date(createdAt).getTime() });
+        else if (isImg) list.push({ type: 'image', url: mediaUrl, createdAt: new Date(createdAt).getTime() });
+      }
+
+      // Embedded links & data URLs in text
+      if (text && typeof text === 'string') {
+        const urls = text.match(/\bhttps?:\/\/\S+/gi) || [];
+        urls.forEach(url => {
+          const cleanUrl = url.split(/[?#]/)[0];
+          const isImg = /\.(png|jpe?g|gif|webp)/i.test(cleanUrl) || url.includes('giphy.com') || url.includes('unsplash.com') || url.startsWith('data:image/');
+          const isVid = /\.(mp4|mov)/i.test(cleanUrl) || url.startsWith('data:video/');
+          if (isImg) list.push({ type: 'image', url, createdAt: new Date(createdAt).getTime() });
+          else if (isVid) list.push({ type: 'video', url, createdAt: new Date(createdAt).getTime() });
+        });
+
+        if (text.startsWith('data:image/')) {
+          list.push({ type: 'image', url: text, createdAt: new Date(createdAt).getTime() });
+        } else if (text.startsWith('data:video/')) {
+          list.push({ type: 'video', url: text, createdAt: new Date(createdAt).getTime() });
         }
-        if (msg.text && msg.text.startsWith('data:image/')) {
-          list.push({ type: 'image', url: msg.text });
-        } else if (msg.text && msg.text.startsWith('data:video/')) {
-          list.push({ type: 'video', url: msg.text });
-        }
-        if (msg.linkPreview?.image) {
-          list.push({ type: 'image', url: msg.linkPreview.image });
-        }
-      });
-    }
+      }
+
+      // Link previews
+      if (msg.linkPreview?.image) {
+        list.push({ type: 'image', url: msg.linkPreview.image, createdAt: new Date(createdAt).getTime() });
+      }
+    });
 
     const seen = new Set();
-    return list.filter(item => {
-      if (seen.has(item.url)) return false;
-      seen.add(item.url);
-      return true;
-    });
-  }, [conversation.messages]);
+    const uniqueList = [];
+    for (let i = 0; i < list.length; i++) {
+      const item = list[i];
+      if (!seen.has(item.url)) {
+        seen.add(item.url);
+        uniqueList.push(item);
+      }
+    }
+
+    // Sort LATEST FIRST (most recent media items first)
+    return uniqueList.sort((a, b) => b.createdAt - a.createdAt);
+  }, [conversation?.messages]);
 
   if (!conversation) return null;
 
@@ -148,9 +192,18 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   const isHost = activity ? activity.hostId === currentUser?.id : false;
   const isOwner = conversation.ownerId === currentUser?.id || conversation.hostId === currentUser?.id || isHost;
   const isAdmin = isOwner || (conversation.admins || []).includes(currentUser?.id);
-  const canEditGroupInfo = isAdmin || editGroupPermission === 'Everyone';
+  const canEditGroupInfo = isAdmin || (editGroupPermission || '').toUpperCase() === 'EVERYONE';
   const rawParticipants = conversation.members || conversation.participants || (activity ? activity.participants : []) || [];
-  const memberIds = rawParticipants.map(p => p?.userId || p?.id || p);
+  const sortedParticipants = useMemo(() => {
+    return sortGroupMembers(rawParticipants, {
+      ownerId: conversation.ownerId,
+      hostId: conversation.hostId || (activity ? activity.hostId : null),
+      admins: conversation.admins,
+      users
+    });
+  }, [rawParticipants, conversation.ownerId, conversation.hostId, activity, conversation.admins, users]);
+  const memberIds = sortedParticipants.map(p => p?.userId || p?.id || (typeof p === 'string' ? p : ''));
+
   const isClosed = conversation.status === 'Closed';
   const isMember = isGroup ? (isOwner || memberIds.map(String).includes(String(currentUser?.id))) : true;
 
@@ -161,18 +214,18 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
 
   // Handlers
   const handleAvatarClick = () => {
-    if (isAdmin) {
+    if (canEditGroupInfo) {
       setShowImageSearch(true);
     }
   };
 
-  const { upload: uploadGroupIcon } = useMediaUpload('group-icons');
+
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (file) {
       try {
-        const publicUrl = await uploadGroupIcon(file);
+        const { publicUrl } = await processAndUploadImage(file, 'group-icons', { maxWidthOrHeight: 512 });
         setEditAvatar(publicUrl);
       } catch {
         toast.error('Failed to upload avatar.');
@@ -301,6 +354,19 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
     };
   }, [isOneOnOne, conversation, users]);
 
+  if (showRequestsPage) {
+    return (
+      <GroupJoinRequestsPage
+        conversation={conversation}
+        pendingRequests={conversation.pendingRequests || []}
+        users={users}
+        onAccept={(reqUserId) => acceptGroupJoinRequest(conversation.id, reqUserId)}
+        onReject={(reqUserId) => declineGroupJoinRequest(conversation.id, reqUserId)}
+        onBack={() => setShowRequestsPage(false)}
+      />
+    );
+  }
+
   if (showGalleryPage) {
     return (
       <ChatGalleryPage
@@ -342,6 +408,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         editAvatar={editAvatar}
         setEditAvatar={setEditAvatar}
         isAdmin={isAdmin}
+        canEditGroupInfo={canEditGroupInfo}
         isGroup={isGroup}
         isEventGroup={isEventGroup}
         fileInputRef={fileInputRef}
@@ -416,7 +483,8 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         updateGroupSettings={updateGroupSettings}
         updateGroupEditPermission={updateGroupEditPermission}
         onBack={() => setShowSettingsPage(false)}
-        onShowChangeOwnerPage={() => setShowChangeOwnerPage(true)}
+        onGoToEdit={() => setShowEditGroupPage(true)}
+        onGoToChangeOwner={() => setShowChangeOwnerPage(true)}
         onSetConfirmTarget={(uid, type) => {
           setTargetUserId(uid);
           setConfirmType(type);
@@ -508,9 +576,9 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
               isGroup={isGroup}
               onClick={!isClosed && isMember ? handleAvatarClick : undefined}
               disableHover={isClosed || !isMember}
-              className={`${isGroup && isAdmin && !isClosed && isMember ? styles.avatarWrapperClickable : ''}`}
+              className={`${isGroup && canEditGroupInfo && !isClosed && isMember ? styles.avatarWrapperClickable : ''}`}
             >
-              {isGroup && isAdmin && !isClosed && isMember && (
+              {isGroup && canEditGroupInfo && !isClosed && isMember && (
                 <div className={styles.avatarOverlay}>Change Photo</div>
               )}
             </Avatar>
@@ -573,35 +641,67 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             </>
           )}
 
-          {isGroup && !isClosed && (
-            <div className={styles.actionButtonsRow}>
-              <div className={styles.actionIconContainer}>
-                <button
-                  type="button"
-                  className={styles.actionIconButton}
-                  onClick={() => setShowInviteModal(true)}
-                  title="Invite"
-                >
-                  <UserPlus size={24} />
-                </button>
-                <span className={styles.actionIconLabel}>Invite</span>
-              </div>
+          {isGroup && !isClosed && (() => {
+            const isApprovalRequired = (
+              whoCanJoin === 'APPROVAL' || 
+              whoCanJoin === 'Request required' || 
+              whoCanJoin === 'APPROVAL_REQUIRED' || 
+              conversation.whoCanJoin === 'APPROVAL' || 
+              conversation.whoCanJoin === 'Request required' || 
+              conversation.whoCanJoin === 'APPROVAL_REQUIRED'
+            );
+            const pendingCount = conversation.pendingRequests?.length || 0;
 
-              <div className={styles.actionIconContainer}>
-                <button
-                  type="button"
-                  className={styles.actionIconButton}
-                  onClick={() => {
-                    if (onSearch) onSearch();
-                  }}
-                  title="Search Messages"
-                >
-                  <Search size={24} />
-                </button>
-                <span className={styles.actionIconLabel}>Search</span>
+            return (
+              <div className={styles.actionButtonsRow}>
+                <div className={styles.actionIconContainer}>
+                  <button
+                    type="button"
+                    className={styles.actionIconButton}
+                    onClick={() => setShowInviteModal(true)}
+                    title="Invite"
+                  >
+                    <UserPlus size={24} />
+                  </button>
+                  <span className={styles.actionIconLabel}>Invite</span>
+                </div>
+
+                <div className={styles.actionIconContainer}>
+                  <button
+                    type="button"
+                    className={styles.actionIconButton}
+                    onClick={() => {
+                      if (onSearch) onSearch();
+                    }}
+                    title="Search Messages"
+                  >
+                    <Search size={24} />
+                  </button>
+                  <span className={styles.actionIconLabel}>Search</span>
+                </div>
+
+                {isApprovalRequired && (
+                  <div className={styles.actionIconContainer}>
+                    <button
+                      type="button"
+                      className={styles.actionIconButton}
+                      onClick={() => setShowRequestsPage(true)}
+                      title="Join Requests"
+                      style={{ position: 'relative' }}
+                    >
+                      <UserCheck size={24} />
+                      {pendingCount > 0 && (
+                        <span className={styles.requestBadge}>
+                          {pendingCount}
+                        </span>
+                      )}
+                    </button>
+                    <span className={styles.actionIconLabel}>Requests</span>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {isEventGroup && activity && (
             <div className={styles.eventInfoRow}>
@@ -760,52 +860,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
               </button>
             )}
 
-            {/* Join Requests */}
-            {isAdmin && conversation.pendingRequests && conversation.pendingRequests.length > 0 && (
-              <div className={styles.section} style={{ borderColor: 'var(--color-primary)' }}>
-                <h3 className={styles.sectionTitle} style={{ color: 'var(--color-primary)' }}>Join Requests ({conversation.pendingRequests.length})</h3>
-                <div className={styles.memberList}>
-                  {conversation.pendingRequests.map(uid => {
-                    const userObj = Object.values(users).find(u => u.id === uid);
-                    if (!userObj) return null;
-                    
-                    return (
-                      <div key={uid} className={styles.memberItem}>
-                        <Link to={`/profile/${userObj.username}`} className={styles.memberLink}>
-                          <Avatar 
-                            src={userObj.avatar} 
-                            name={userObj.name} 
-                            size="38px" 
-                          />
-                          <div className={styles.memberMeta}>
-                            <span className={styles.memberName}>{userObj.displayName || userObj.name}</span>
-                            <span className={styles.memberUsername}>@{userObj.username}</span>
-                          </div>
-                        </Link>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button
-                            type="button"
-                            className={styles.saveHeaderBtn}
-                            style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem', marginTop: 0 }}
-                            onClick={() => acceptGroupJoinRequest(conversation.id, uid)}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.cancelBtn}
-                            style={{ margin: 0, padding: '0.4rem 0.85rem', fontSize: '0.8rem' }}
-                            onClick={() => declineGroupJoinRequest(conversation.id, uid)}
-                          >
-                            Ignore
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+
 
             <div className={styles.section}>
               <h3 className={styles.sectionTitle}>Members ({memberIds.length})</h3>
@@ -814,13 +869,14 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                   const userObj = Object.values(users).find(u => u.id === uid);
                   if (!userObj) return null;
                   
+                  const isMe = uid === currentUser?.id;
                   const isUserOwner = uid === conversation.ownerId || (activity && uid === activity.hostId);
                   const isUserAdmin = (conversation.admins || []).includes(uid);
                   
-                  const canPromote = isOwner && !isUserOwner && !isUserAdmin;
-                  const canDemote = isOwner && isUserAdmin;
-                  const canRemove = isAdmin && uid !== currentUser?.id && !isUserOwner && (isOwner || !isUserAdmin);
-                  const hasActions = (canPromote || canDemote || canRemove) && !isClosed && isMember;
+                  const canPromote = isOwner && !isMe && !isUserOwner && !isUserAdmin;
+                  const canDemote = isOwner && !isMe && !isUserOwner && isUserAdmin;
+                  const canRemove = !isMe && !isClosed && isMember && !isUserOwner && (isOwner || (isAdmin && !isUserAdmin));
+                  const canReport = !isMe;
                   
                   return (
                     <div key={uid} className={styles.memberItem}>
@@ -831,72 +887,100 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                           size="38px" 
                         />
                         <div className={styles.memberMeta}>
-                          <span className={styles.memberName}>{userObj.displayName || userObj.name}</span>
+                          <span className={styles.memberName}>
+                            {userObj.displayName || userObj.name} {isMe && '(You)'}
+                          </span>
                           <span className={styles.memberUsername}>@{userObj.username}</span>
                         </div>
                       </Link>
 
                       <div className={styles.memberRight}>
                         {isUserOwner && <span className={styles.roleTag}>Owner</span>}
-                        {isUserAdmin && <span className={styles.roleTag} style={{ background: 'rgba(99, 102, 241, 0.1)', color: '#6366f1' }}>Admin</span>}
+                        {isUserAdmin && !isUserOwner && <span className={styles.roleTag} style={{ background: 'rgba(99, 102, 241, 0.1)', color: '#6366f1' }}>Admin</span>}
                         
-                        {hasActions && (
-                          <div className={styles.menuContainer} ref={activeMemberMenu === uid ? memberMenuRef : null}>
-                            <button 
-                              className={styles.moreBtn}
-                              style={{ marginLeft: '4px' }}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setActiveMemberMenu(activeMemberMenu === uid ? null : uid);
-                              }}
-                            >
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="12" r="1"></circle>
-                                <circle cx="12" cy="5" r="1"></circle>
-                                <circle cx="12" cy="19" r="1"></circle>
-                              </svg>
-                            </button>
-                            {activeMemberMenu === uid && (
-                              <div className={styles.dropdownMenu} style={{ top: '100%', right: '0' }}>
-                                {canPromote && (
-                                  <button 
-                                    className={styles.dropdownItem}
-                                    onClick={() => {
-                                      promoteToAdmin(conversation.id, uid);
-                                      setActiveMemberMenu(null);
-                                    }}
-                                  >
-                                    Promote to Admin
-                                  </button>
-                                )}
-                                {canDemote && (
-                                  <button 
-                                    className={styles.dropdownItem}
-                                    onClick={() => {
-                                      demoteFromAdmin(conversation.id, uid);
-                                      setActiveMemberMenu(null);
-                                    }}
-                                  >
-                                    Demote to Member
-                                  </button>
-                                )}
-                                {canRemove && (
-                                  <button 
-                                    className={styles.dropdownItem}
-                                    style={{ color: '#ef4444' }}
-                                    onClick={() => {
-                                      handleRemoveMember(uid);
-                                      setActiveMemberMenu(null);
-                                    }}
-                                  >
-                                    Remove from Group
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
+                        <div className={styles.menuContainer} ref={activeMemberMenu === uid ? memberMenuRef : null}>
+                          <button 
+                            type="button"
+                            className={styles.moreBtn}
+                            style={{ marginLeft: '4px' }}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setActiveMemberMenu(activeMemberMenu === uid ? null : uid);
+                            }}
+                            title="Member Actions"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="12" r="1"></circle>
+                              <circle cx="12" cy="5" r="1"></circle>
+                              <circle cx="12" cy="19" r="1"></circle>
+                            </svg>
+                          </button>
+                          {activeMemberMenu === uid && (
+                            <div className={styles.dropdownMenu} style={{ top: '100%', right: '0', zIndex: 20 }}>
+                              <button 
+                                type="button"
+                                className={styles.dropdownItem}
+                                onClick={() => {
+                                  setActiveMemberMenu(null);
+                                  navigate(`/profile/${userObj.username}`);
+                                }}
+                              >
+                                View Profile
+                              </button>
+                              {canPromote && (
+                                <button 
+                                  type="button"
+                                  className={styles.dropdownItem}
+                                  onClick={() => {
+                                    promoteToAdmin(conversation.id, uid);
+                                    setActiveMemberMenu(null);
+                                  }}
+                                >
+                                  Promote to Admin
+                                </button>
+                              )}
+                              {canDemote && (
+                                <button 
+                                  type="button"
+                                  className={styles.dropdownItem}
+                                  onClick={() => {
+                                    demoteFromAdmin(conversation.id, uid);
+                                    setActiveMemberMenu(null);
+                                  }}
+                                >
+                                  Demote to Member
+                                </button>
+                              )}
+                              {canRemove && (
+                                <button 
+                                  type="button"
+                                  className={styles.dropdownItem}
+                                  style={{ color: '#ef4444' }}
+                                  onClick={() => {
+                                    handleRemoveMember(uid);
+                                    setActiveMemberMenu(null);
+                                  }}
+                                >
+                                  Remove from Group
+                                </button>
+                              )}
+                              {canReport && (
+                                <button 
+                                  type="button"
+                                  className={styles.dropdownItem}
+                                  style={{ color: '#ef4444' }}
+                                  onClick={() => {
+                                    setReportUserTarget(userObj);
+                                    setActiveMemberMenu(null);
+                                  }}
+                                >
+                                  Report User
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -1051,6 +1135,18 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         onClose={() => setShowSafetyModal(false)}
         targetUser={targetUser}
       />
+
+      {reportUserTarget && (
+        <ReportModal
+          isOpen={!!reportUserTarget}
+          onClose={() => setReportUserTarget(null)}
+          targetType="user"
+          targetId={reportUserTarget.id}
+          targetName={reportUserTarget.displayName || reportUserTarget.name || reportUserTarget.username}
+          targetAvatar={reportUserTarget.avatar}
+          reportedFrom="group_chat_members"
+        />
+      )}
     </div>
   );
 }

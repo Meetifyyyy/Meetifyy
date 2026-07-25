@@ -6,10 +6,10 @@ import { useSavedPostsStore } from '../stores/savedPostsStore';
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
 import usePostStore from '../stores/postStore';
 import { showToast } from '@shared/utils/toast';
+import { getCollegeName } from '@shared/utils/user';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-const apiUrl = getBackendUrl();
 
 const isSupabaseConfigured = supabaseUrl && !supabaseUrl.includes('placeholder') && supabaseUrl.trim().length > 0;
 
@@ -23,10 +23,7 @@ function isValidUser(u) {
   return (
     u !== null &&
     typeof u === 'object' &&
-    typeof u.id === 'string' &&
-    typeof u.email === 'string' &&
-    typeof u.username === 'string' &&
-    (!u.role || ['Student', 'New User', 'Admin'].includes(u.role))
+    typeof u.id === 'string'
   );
 }
 
@@ -106,7 +103,8 @@ export function AuthProvider({ children }) {
               if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
               syncDebounceRef.current = setTimeout(async () => {
                 try {
-                  const { user: syncedUser } = await apiClient.post('/api/auth/sync');
+                  const syncRes = await apiClient.post('/api/auth/sync');
+                  const syncedUser = syncRes?.user || syncRes;
                   lastSyncAtRef.current = Date.now();
                   if (isValidUser(syncedUser)) {
                     setCurrentUser(prev => {
@@ -190,9 +188,8 @@ export function AuthProvider({ children }) {
     const user = data.user;
     const accessToken = data.session?.access_token;
 
-    // Trigger new login email — use the token directly from the fresh session
-    // to avoid the race where apiClient.getSession() returns nothing yet.
     try {
+      const apiUrl = getBackendUrl();
       await fetch(`${apiUrl}/api/auth/events/login`, {
         method: 'POST',
         headers: {
@@ -389,14 +386,18 @@ export function AuthProvider({ children }) {
   }, []);
 
   const updateCurrentUser = useCallback((user) => {
+    if (user === null) {
+      setCurrentUser(null);
+      localStorage.removeItem('currentUser');
+      return;
+    }
     if (isValidUser(user)) {
       const safeUser = { ...user };
       delete safeUser.password;
       setCurrentUser(safeUser);
       localStorage.setItem('currentUser', JSON.stringify(safeUser));
     } else {
-      setCurrentUser(null);
-      localStorage.removeItem('currentUser');
+      console.warn('updateCurrentUser received invalid user object, ignoring update:', user);
     }
   }, []);
 
@@ -453,6 +454,7 @@ export function AuthProvider({ children }) {
   const username = currentUser?.username || '';
   const initial = username ? username.charAt(0).toUpperCase() : '?';
   const displayName = currentUser?.displayName || '';
+  const collegeName = getCollegeName(currentUser);
 
   return (
     <AuthContext.Provider
@@ -464,6 +466,7 @@ export function AuthProvider({ children }) {
         username,
         displayName,
         initial,
+        collegeName,
         login,
         initiateSignup,
         resendSignupOtp,

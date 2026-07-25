@@ -6,6 +6,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private domainCache = new Map<string, { collegeId: string | null; timestamp: number }>();
+  private syncCache = new Map<string, { data: any; timestamp: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -15,6 +16,12 @@ export class AuthService {
   async syncProfile(user: any) {
     if (!this.supabaseService.isConfigured) {
       throw new UnauthorizedException('Supabase is not configured');
+    }
+
+    const now = Date.now();
+    const cached = this.syncCache.get(user.id);
+    if (cached && now - cached.timestamp < 60000) {
+      return cached.data;
     }
 
     // Fast-path: If user already exists in database, return with following list for client hydration
@@ -38,7 +45,29 @@ export class AuthService {
       if (!userSettings) {
         userSettings = await this.prisma.userSettings.create({ data: { userId: existingUser.id } }).catch(() => null);
       }
-      return { ...existingUser, settings: userSettings, followingList };
+
+      // Auto-heal missing college linkage for existing users
+      if (!existingUser.collegeId && existingUser.email) {
+        const domain = existingUser.email.split('@')[1];
+        if (domain) {
+          const collegeDomain = await this.prisma.collegeDomain.findUnique({
+            where: { domain },
+            include: { college: true },
+          });
+          if (collegeDomain && collegeDomain.college && collegeDomain.college.isActive && collegeDomain.college.status !== 'DISABLED') {
+            await this.prisma.user.update({
+              where: { id: existingUser.id },
+              data: { collegeId: collegeDomain.college.id }
+            });
+            existingUser.collegeId = collegeDomain.college.id;
+            existingUser.college = { id: collegeDomain.college.id, name: collegeDomain.college.name };
+          }
+        }
+      }
+
+      const result = { ...existingUser, settings: userSettings, followingList };
+      this.syncCache.set(user.id, { data: result, timestamp: Date.now() });
+      return result;
     }
 
     // Only call the admin API when BOTH email AND user_metadata are absent from the JWT payload.
@@ -153,7 +182,9 @@ export class AuthService {
     
     this.logger.log(`User login ${userRecord.username}`);
     const followingList = userRecord.following?.map(f => f.following.username) || [];
-    return { ...userRecord, followingList };
+    const result = { ...userRecord, followingList };
+    this.syncCache.set(user.id, { data: result, timestamp: Date.now() });
+    return result;
   }
   async lookupEmailByUsername(username: string): Promise<{ email: string }> {
     const user = await this.prisma.user.findUnique({

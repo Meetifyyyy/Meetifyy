@@ -25,7 +25,9 @@ export class ActivitiesService {
       },
       take: 50,
       include: {
+        _count: { select: { members: true } },
         members: {
+          take: 5,
           include: { 
             user: {
               select: {
@@ -41,12 +43,66 @@ export class ActivitiesService {
       orderBy: { createdAt: 'desc' },
     });
 
+    const myMemberships = userId ? await this.prisma.crewActivityMember.findMany({
+      where: { userId, activityId: { in: activities.map(a => a.id) } }
+    }) : [];
+    const membershipMap = new Map(myMemberships.map(m => [m.activityId, m.status]));
+
     return activities.map(a => {
-      const myMembership = userId ? a.members.find(m => m.userId === userId) : null;
+      const myStatus = membershipMap.get(a.id);
       return {
         ...a,
-        isJoined: myMembership?.status === 'MEMBER',
-        myStatus: myMembership?.status || null,
+        isJoined: myStatus === 'MEMBER',
+        myStatus: myStatus || null,
+      };
+    });
+  }
+
+  async getCampusActivities(userId: string) {
+    if (!userId) return [];
+    const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { collegeId: true } });
+    if (!user?.collegeId) return [];
+
+    const activities = await this.prisma.crewActivity.findMany({
+      where: {
+        status: 'OPEN',
+        deletedAt: null,
+        creatorId: { notIn: excludedUserIds },
+        shareToCampus: true,
+        collegeId: user.collegeId,
+      },
+      take: 50,
+      include: {
+        _count: { select: { members: true } },
+        members: {
+          take: 5,
+          include: { 
+            user: {
+              select: {
+                id: true,
+                username: true,
+                displayName: true,
+                avatar: true
+              }
+            }
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const myMemberships = await this.prisma.crewActivityMember.findMany({
+      where: { userId, activityId: { in: activities.map(a => a.id) } }
+    });
+    const membershipMap = new Map(myMemberships.map(m => [m.activityId, m.status]));
+
+    return activities.map(a => {
+      const myStatus = membershipMap.get(a.id);
+      return {
+        ...a,
+        isJoined: myStatus === 'MEMBER',
+        myStatus: myStatus || null,
       };
     });
   }
@@ -74,21 +130,31 @@ export class ActivitiesService {
   }
 
   async createActivity(data: any, creatorId: string) {
-    return this.prisma.crewActivity.create({
-      data: {
-        creatorId,
-        title: data.title,
-        description: data.description,
-        coverImage: data.coverImage,
-        startDate: data.startDate,
-        endDate: data.endDate,
-        location: data.location,
-        createActivityGroup: data.createActivityGroup,
-        maxMembers: data.maxMembers ? parseInt(data.maxMembers, 10) : null,
-        members: {
-          create: [{ userId: creatorId, status: 'MEMBER' }],
-        },
+    const createData: any = {
+      creatorId,
+      title: data.title,
+      description: data.description,
+      coverImage: data.coverImage,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      location: data.location,
+      createActivityGroup: data.createActivityGroup,
+      maxMembers: data.maxMembers ? parseInt(data.maxMembers, 10) : null,
+      members: {
+        create: [{ userId: creatorId, status: 'MEMBER' }],
       },
+    };
+
+    if (data.shareToCampus) {
+      const user = await this.prisma.user.findUnique({ where: { id: creatorId }, select: { collegeId: true } });
+      if (user?.collegeId) {
+        createData.shareToCampus = true;
+        createData.collegeId = user.collegeId;
+      }
+    }
+
+    return this.prisma.crewActivity.create({
+      data: createData,
       include: {
         members: { include: { user: true } },
       },

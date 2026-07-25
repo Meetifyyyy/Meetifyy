@@ -26,6 +26,26 @@ export class UploadsController {
   }
 
   /**
+   * POST /api/media/presigned-url
+   * Generate a presigned URL for direct client upload.
+   */
+  @UseGuards(JwtGuard)
+  @Post('presigned-url')
+  async getPresignedUrl(
+    @Body('filename') filename: string,
+    @Body('contentType') contentType: string,
+    @Body('folder') folder: string = 'general',
+    @Body('fileSize') fileSize: number = 0,
+    @Req() req: any
+  ) {
+    if (!filename || !contentType) {
+      throw new BadRequestException('filename and contentType are required');
+    }
+    const userId = req.user.id;
+    return this.storageService.getPresignedUrl(userId, filename, contentType, folder, fileSize);
+  }
+
+  /**
    * GET /api/media/:folder/:filename
    * Redirects to the actual storage provider's public URL
    */

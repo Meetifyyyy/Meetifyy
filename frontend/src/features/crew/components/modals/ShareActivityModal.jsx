@@ -94,7 +94,7 @@ export default function ShareActivityModal({ isOpen, onClose, activity }) {
                 <div key={conv.id} className={styles.listItem}>
                   <div className={styles.contactInfo}>
                     {isImageUrl(conv.avatar) ? (
-                      <img src={conv.avatar} alt={conv.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                      <img src={conv.avatar} alt={conv.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     ) : (
                       <DefaultAvatar size={40} className={styles.avatar} />
                     )}

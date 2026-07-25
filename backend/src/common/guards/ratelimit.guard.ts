@@ -1,27 +1,25 @@
 import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
-import { Ratelimit } from '@upstash/ratelimit';
-import { Redis } from '@upstash/redis';
+import { RateLimiterRedis } from 'rate-limiter-flexible';
 import { ConfigService } from '@nestjs/config';
+import { RedisService } from '../../redis/redis.service';
 
 @Injectable()
 export class RateLimitGuard implements CanActivate {
-  private ratelimit: Ratelimit | null = null;
+  private ratelimit: RateLimiterRedis | null = null;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly redisService: RedisService,
+  ) {
     const isProd = process.env.NODE_ENV === 'production';
-    const redisUrl = this.configService.get<string>('UPSTASH_REDIS_REST_URL');
-    const redisToken = this.configService.get<string>('UPSTASH_REDIS_REST_TOKEN');
+    const redis = this.redisService.getClient();
 
-    if (isProd && redisUrl && redisToken && !redisUrl.includes('placeholder')) {
-      const redis = new Redis({
-        url: redisUrl,
-        token: redisToken,
-      });
-
-      this.ratelimit = new Ratelimit({
-        redis,
-        limiter: Ratelimit.slidingWindow(100, '60 s'),
-        analytics: false,
+    if (isProd && redis) {
+      this.ratelimit = new RateLimiterRedis({
+        storeClient: redis,
+        points: 100, // 100 requests
+        duration: 60, // per 60 seconds
+        keyPrefix: 'ratelimit:global',
       });
     }
   }
@@ -35,17 +33,16 @@ export class RateLimitGuard implements CanActivate {
     const identifier = request.user?.id || request.ip || 'anonymous';
 
     try {
-      const { success } = await this.ratelimit.limit(identifier);
-
-      if (!success) {
-        throw new HttpException('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS);
-      }
+      await this.ratelimit.consume(identifier);
     } catch (e) {
-      if (e instanceof HttpException) {
-        throw e;
+      if (e instanceof Error) {
+        // Log and fail open if redis is down
+        console.warn('Rate limit check error (failing open)', e);
+        return true;
       }
-      // Log and fail open if redis is down
-      console.warn('Rate limit check failed (failing open)', e);
+      
+      // rate-limiter-flexible throws an object with remaining points etc. if limit is exceeded
+      throw new HttpException('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS);
     }
 
     return true;

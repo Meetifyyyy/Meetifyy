@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
@@ -9,6 +9,8 @@ import { useData } from '@shared/hooks/useData';
 import { usersApi, communitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import { sortGroupMembers } from '@shared/utils/memberSort';
+
 
 /**
  * Per-member action menu (⋯ button)
@@ -106,6 +108,10 @@ export default function CommunityMembersModal({ members: initialMembers, title, 
   const { users, currentUser } = useData();
   const [members, setMembers] = useState(initialMembers || []);
 
+  const sortedMembers = useMemo(() => {
+    return sortGroupMembers(members, { users });
+  }, [members, users]);
+
   const handleNameClick = (e, memberName) => {
     e.stopPropagation();
     const matchedUser = Object.values(users).find(u => u.displayName === memberName);
@@ -133,12 +139,13 @@ export default function CommunityMembersModal({ members: initialMembers, title, 
         </div>
 
         <div className={styles.body}>
-          {!members || members.length === 0 ? (
+          {!sortedMembers || sortedMembers.length === 0 ? (
             <div className={styles.empty}>
               No members found.
             </div>
           ) : (
-            members.map((member, i) => {
+            sortedMembers.map((member, i) => {
+
               const matchedUser =
                 (member.id && Object.values(users).find(u => u.id === member.id)) ||
                 (member.username && Object.values(users).find(u => u.username === member.username)) ||
@@ -149,7 +156,7 @@ export default function CommunityMembersModal({ members: initialMembers, title, 
                 <div key={i} className={styles.userItem} style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
                   <div className={styles.userAvatar}>
                     {isImageUrl(member.avatar) ? (
-                      <img src={member.avatar} alt="avatar" className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                      <img src={member.avatar} alt="avatar" className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     ) : (
                       <DefaultAvatar style={{ width: '100%', height: '100%' }} />
                     )}

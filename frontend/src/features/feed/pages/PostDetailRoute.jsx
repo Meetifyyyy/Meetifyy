@@ -223,7 +223,7 @@ export default function PostDetailRoute() {
                             src={commEntry[1].avatar} 
                             alt={commName} 
                             style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} 
-                           onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                           onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                         ) : (
                           <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'linear-gradient(135deg, #22C55E, #10B981)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#FFFFFF', fontSize: '0.8rem', fontWeight: 700 }}>
                             {commName.charAt(0)}

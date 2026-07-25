@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { showToast } from '@shared/utils/toast';
 import styles from './CreateCommunityModal.module.css';
 import { useData } from '@shared/hooks/useData';
-import { useMediaUpload } from '@shared/hooks/useMediaUpload';
+import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 
 const colors26 = [
   'linear-gradient(135deg, #FF6B6B, #FF8E53)',
@@ -70,16 +70,15 @@ const categories = [
   { id: 'other', label: 'Other', icon: '✨' }
 ];
 
-export default function CreateCommunityModal({ onClose, onCreated }) {
+export default function CreateCommunityModal({ onClose, onCreated, isCampusCommunity = false }) {
   const { addCommunity } = useData();
-  const { upload: uploadCommunityIcon } = useMediaUpload('community-icons');
 
   // Wizard Steps state
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [selectedCat, setSelectedCat] = useState(null);
-  const [privacy, setPrivacy] = useState('public');
+  const [privacy, setPrivacy] = useState(isCampusCommunity ? 'campus' : 'public');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Avatar crop & upload state
@@ -164,17 +163,34 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
-    let newX = clientX - dragStart.x;
-    let newY = clientY - dragStart.y;
+    const rawX = clientX - dragStart.x;
+    const rawY = clientY - dragStart.y;
     
-    const limit = 120 * cropState.zoom;
-    if (Math.abs(newX) > limit) newX = Math.sign(newX) * limit;
-    if (Math.abs(newY) > limit) newY = Math.sign(newY) * limit;
+    const currentW = baseDimensions.w * cropState.zoom;
+    const currentH = baseDimensions.h * cropState.zoom;
+    const maxX = Math.max(0, (currentW - 150) / 2);
+    const maxY = Math.max(0, (currentH - 150) / 2);
+
+    const clampedX = Math.max(-maxX, Math.min(maxX, rawX));
+    const clampedY = Math.max(-maxY, Math.min(maxY, rawY));
 
     setCropState(prev => ({
       ...prev,
-      x: newX,
-      y: newY
+      x: clampedX,
+      y: clampedY
+    }));
+  };
+
+  const handleZoomChange = (newZoom) => {
+    const currentW = baseDimensions.w * newZoom;
+    const currentH = baseDimensions.h * newZoom;
+    const maxX = Math.max(0, (currentW - 150) / 2);
+    const maxY = Math.max(0, (currentH - 150) / 2);
+
+    setCropState(prev => ({
+      zoom: newZoom,
+      x: Math.max(-maxX, Math.min(maxX, prev.x)),
+      y: Math.max(-maxY, Math.min(maxY, prev.y))
     }));
   };
 
@@ -250,7 +266,8 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
       if (avatarPreview) {
         const croppedFile = await getCroppedAvatarFile();
         if (croppedFile) {
-          finalAvatar = await uploadCommunityIcon(croppedFile);
+          const { publicUrl } = await processAndUploadImage(croppedFile, 'community-icons', { maxWidthOrHeight: 512 });
+          finalAvatar = publicUrl;
           hasCustomAvatar = true;
         }
       }
@@ -263,7 +280,8 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
         categoryLabel: `${selectedCat.icon} ${selectedCat.label}`,
         categories: [selectedCat.id],
         privacy: privacy,
-        hasCustomAvatar
+        hasCustomAvatar,
+        isCampusCommunity: isCampusCommunity || privacy === 'campus'
       });
 
       showToast('Community created!');
@@ -348,35 +366,35 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
               </div>
 
               <div className={styles.fieldGroup}>
-                <label className={styles.fieldLabel}>Name</label>
                 <div className={styles.inputWrap}>
                   <input
                     ref={nameInputRef}
                     type="text"
-                    placeholder="e.g. Design Enthusiasts"
+                    placeholder=" "
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     onKeyDown={handleKeyDown}
                     maxLength={30}
                     className={styles.textInput}
                   />
-                  <span className={styles.charCounter}>{name.length}/30</span>
+                  <label className={styles.fieldLabel}>Name</label>
                 </div>
+                <div className={styles.counterRow}>{name.length}/30</div>
               </div>
 
               <div className={styles.fieldGroup}>
-                <label className={styles.fieldLabel}>Description</label>
                 <div className={styles.inputWrap}>
                   <textarea
-                    placeholder="What is this community about?"
+                    placeholder=" "
                     value={desc}
                     onChange={(e) => setDesc(e.target.value)}
                     rows={3}
                     maxLength={250}
-                    className={styles.textArea}
+                    className={styles.textareaInput}
                   />
-                  <span className={styles.charCounter}>{desc.length}/250</span>
+                  <label className={styles.textareaLabel}>Description</label>
                 </div>
+                <div className={styles.counterRow}>{desc.length}/250</div>
               </div>
             </>
           )}
@@ -398,25 +416,29 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
                 />
 
                 {!avatarPreview ? (
-                  <div
-                    className={styles.avatarPreviewPlaceholder}
-                    style={{ background: gradient }}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <span className={styles.avatarPreviewLetter}>
-                      {name.trim() ? name.trim().charAt(0).toUpperCase() : '?'}
-                    </span>
-                    <div className={styles.avatarPreviewOverlay}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                        <circle cx="12" cy="13" r="4" />
-                      </svg>
+                  <div className={styles.avatarSection}>
+                    <div
+                      className={styles.avatarCropperContainer}
+                      style={{ background: gradient, cursor: 'pointer' }}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <span className={styles.letterAvatar} style={{ background: 'transparent' }}>
+                        {name.trim() ? name.trim().charAt(0).toUpperCase() : '?'}
+                      </span>
                     </div>
+                    <button type="button" className={styles.uploadTriggerButton} onClick={() => fileInputRef.current?.click()}>
+                      <svg className={styles.uploadTriggerIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      Upload Image
+                    </button>
                   </div>
                 ) : (
-                  <div className={styles.cropperContainer}>
+                  <div className={styles.avatarSection}>
                     <div
-                      className={styles.cropWindow}
+                      className={styles.cropperWrapper}
                       onMouseDown={handleDragStart}
                       onMouseMove={handleDragMove}
                       onMouseUp={handleDragEnd}
@@ -428,26 +450,27 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
                       <img
                         src={avatarPreview}
                         alt="Crop preview"
-                        className={styles.cropImg}
+                        className={styles.cropperImage}
                         style={{
                           width: `${baseDimensions.w}px`,
                           height: `${baseDimensions.h}px`,
-                          transform: `translate(${cropState.x}px, ${cropState.y}px) scale(${cropState.zoom})`
+                          transform: `translate(-50%, -50%) translate(${cropState.x}px, ${cropState.y}px) scale(${cropState.zoom})`
                         }}
-                       onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                       onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     </div>
-                    <div className={styles.cropControls}>
-                      <label className={styles.zoomLabel}>Zoom</label>
+                    <div className={styles.zoomSliderRow}>
+                      <span className={styles.zoomIcon}>🔍</span>
                       <input
                         type="range"
                         min="1"
                         max="3"
                         step="0.05"
                         value={cropState.zoom}
-                        onChange={(e) => setCropState(prev => ({ ...prev, zoom: parseFloat(e.target.value) }))}
-                        className={styles.zoomRange}
+                        onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+                        className={styles.zoomInput}
                       />
-                      <button
+                    </div>
+                    <button
                         type="button"
                         onClick={() => {
                           setAvatarPreview(null);
@@ -457,7 +480,6 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
                       >
                         Remove photo
                       </button>
-                    </div>
                   </div>
                 )}
               </div>
@@ -471,16 +493,19 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
                 <p className={styles.stepSubtitle}>Choose privacy settings for your community.</p>
               </div>
 
-              <div className={styles.privacyOptions}>
+              <div className={styles.privacyContainer}>
                 <button
                   type="button"
                   onClick={() => setPrivacy('public')}
                   className={`${styles.privacyCard} ${privacy === 'public' ? styles.privacyCardSelected : ''}`}
                 >
                   <div className={styles.privacyIcon}>🌐</div>
-                  <div className={styles.privacyDetails}>
-                    <div className={styles.privacyName}>Public</div>
+                  <div className={styles.privacyText}>
+                    <div className={styles.privacyLabel}>Public</div>
                     <div className={styles.privacyDesc}>Anyone can view and join this community.</div>
+                  </div>
+                  <div className={styles.radioCircle}>
+                    <div className={styles.radioDot} />
                   </div>
                 </button>
 
@@ -490,9 +515,27 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
                   className={`${styles.privacyCard} ${privacy === 'private' ? styles.privacyCardSelected : ''}`}
                 >
                   <div className={styles.privacyIcon}>🔒</div>
-                  <div className={styles.privacyDetails}>
-                    <div className={styles.privacyName}>Private</div>
+                  <div className={styles.privacyText}>
+                    <div className={styles.privacyLabel}>Private</div>
                     <div className={styles.privacyDesc}>Only approved members can view posts and join.</div>
+                  </div>
+                  <div className={styles.radioCircle}>
+                    <div className={styles.radioDot} />
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPrivacy('campus')}
+                  className={`${styles.privacyCard} ${privacy === 'campus' ? styles.privacyCardSelected : ''}`}
+                >
+                  <div className={styles.privacyIcon}>🎓</div>
+                  <div className={styles.privacyText}>
+                    <div className={styles.privacyLabel}>Campus</div>
+                    <div className={styles.privacyDesc}>Visible only to students in your college. Appears on the Campus page.</div>
+                  </div>
+                  <div className={styles.radioCircle}>
+                    <div className={styles.radioDot} />
                   </div>
                 </button>
               </div>
@@ -503,19 +546,25 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
         {/* Footer Navigation */}
         <div className={styles.footer}>
           {step > 1 ? (
-            <button type="button" onClick={() => setStep(step - 1)} className={styles.backBtn}>
+            <button type="button" onClick={() => setStep(step - 1)} className={styles.buttonBack}>
               Back
             </button>
           ) : (
-            <div />
+            <div style={{ width: '80px' }} />
           )}
+
+          <div className={styles.dotsProgress}>
+            {[1, 2, 3, 4].map((s) => (
+              <div key={s} className={`${styles.dot} ${step === s ? styles.dotActive : ''}`} />
+            ))}
+          </div>
 
           {step < 4 ? (
             <button
               type="button"
               onClick={handleContinue}
               disabled={step === 1 ? !isCategoryValid : !isStep2Valid}
-              className={styles.continueBtn}
+              className={styles.buttonContinue}
             >
               Continue
             </button>
@@ -524,7 +573,7 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
               type="button"
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className={styles.submitBtn}
+              className={styles.buttonCreate}
             >
               {isSubmitting ? 'Creating...' : 'Create Community'}
             </button>

@@ -197,7 +197,7 @@ export default function OnboardingRoute() {
                         }}
                       >
                         {isImage ? (
-                          <img src={comm.avatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                          <img src={comm.avatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                         ) : (
                           comm.avatar || comm.name.charAt(0).toUpperCase()
                         )}

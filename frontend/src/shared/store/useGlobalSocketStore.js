@@ -2,8 +2,6 @@ import { create } from 'zustand';
 import { io } from 'socket.io-client';
 import { getBackendUrl } from '@shared/api/apiClient';
 
-const SOCKET_URL = getBackendUrl();
-
 export const useGlobalSocketStore = create((set, get) => ({
   socket: null,
   isConnected: false,
@@ -21,7 +19,8 @@ export const useGlobalSocketStore = create((set, get) => ({
       socket.disconnect();
     }
 
-    const newSocket = io(SOCKET_URL, {
+    const socketUrl = getBackendUrl();
+    const newSocket = io(socketUrl, {
       auth: { token, deviceId },
       transports: ['polling', 'websocket'],
       withCredentials: true,

@@ -90,7 +90,7 @@ export function SharedPostPreview({ post, isLoading = false }) {
         {/* Author Info */}
         <div className={styles.authorRow}>
           {isImageUrl(authorAvatar) ? (
-            <img src={authorAvatar} alt={authorName} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+            <img src={authorAvatar} alt={authorName} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
           ) : (
             <DefaultAvatar name={authorName} size={24} className={styles.avatar} />
           )}

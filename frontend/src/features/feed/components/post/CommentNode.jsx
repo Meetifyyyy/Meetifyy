@@ -420,7 +420,7 @@ export default function CommentNode({
                       alt={authorCollege.name}
                       className={styles.commentCollegeIcon}
                       title={authorCollege.name}
-                     onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                     onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                   )}
                 </button>
                 <div className={styles.commentMeta}>

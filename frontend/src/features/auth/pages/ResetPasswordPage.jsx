@@ -8,8 +8,6 @@ import { ArrowRight, CheckCircle, Eye, EyeOff } from 'lucide-react';
 import { getBackendUrl } from '@shared/api/apiClient';
 import styles from './ForgotPasswordPage.module.css';
 
-const apiUrl = getBackendUrl();
-
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

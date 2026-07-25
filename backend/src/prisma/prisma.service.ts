@@ -19,10 +19,14 @@ export class PrismaService extends PrismaClient<
   }
 
   async onModuleInit() {
+    const isDev = process.env.NODE_ENV !== 'production';
+
     // @ts-ignore
     this.$on('query', (e: any) => {
       if (e.duration >= 500) {
         this.logger.warn(`Slow Query (${e.duration}ms) - ${e.query}`);
+      } else if (isDev) {
+        this.logger.debug(`Query (${e.duration}ms) - ${e.query}`);
       }
     });
 

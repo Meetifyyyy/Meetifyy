@@ -57,7 +57,7 @@ const NotificationsRoute = lazyWithRetry(() => import('./features/notifications/
 const CampusPage = lazyWithRetry(() => import('./features/campus/pages/CampusPage'));
 const DirectoryPage = lazyWithRetry(() => import('./features/campus/pages/DirectoryPage'));
 const ActivitiesPage = lazyWithRetry(() => import('./features/campus/pages/ActivitiesPage'));
-const GroupsPage = lazyWithRetry(() => import('./features/campus/pages/GroupsPage'));
+const CampusCommunitiesPage = lazyWithRetry(() => import('./features/campus/pages/CampusCommunitiesPage'));
 const SavedPage = lazyWithRetry(() => import('./features/feed/pages/SavedPage'));
 const AboutPage = lazyWithRetry(() => import('./features/info/pages/AboutPage'));
 const CommunityGuidelinesPage = lazyWithRetry(() => import('./features/info/pages/CommunityGuidelinesPage'));
@@ -243,7 +243,8 @@ export default function App() {
             { path: '/search',                     element: withBoundary(<SearchResultsRoute />, <SearchSkeleton />), handle: { wide: true } },
             { path: '/communities',                element: withBoundary(<CommunitiesRoute />, <CommunitiesSkeleton />), handle: { wide: true } },
             { path: '/communities/:id',            element: withBoundary(<CommunityDetailRoute />, null), handle: { wide: true } },
-            { path: '/messages/:conversationId?',  element: withBoundary(<MessagesRoute />, null), handle: { wide: true } },
+            { path: '/messages/:param1?/:param2?', element: withBoundary(<MessagesRoute />, null), handle: { wide: true } },
+            { path: '/inbox/:param1?/:param2?',    element: withBoundary(<MessagesRoute />, null), handle: { wide: true } },
             { path: '/post/:id',                   element: withBoundary(<PostDetailRoute />, null) },
             { path: '/profile/:profileUsername?',  element: withBoundary(<ProfilePage />, <ProfilePageSkeleton />), handle: { wide: true } },
             { path: '/settings',                   element: withBoundary(<SettingsRoute />, <SettingsSkeleton />) },
@@ -251,7 +252,7 @@ export default function App() {
             { path: '/campus',                     element: withBoundary(<CampusPage />, <CampusSkeleton />), handle: { wide: true } },
             { path: '/campus/directory',           element: withBoundary(<DirectoryPage />, null), handle: { wide: true } },
             { path: '/campus/activities',          element: withBoundary(<ActivitiesPage />, null), handle: { wide: true } },
-            { path: '/campus/groups',              element: withBoundary(<GroupsPage />, null), handle: { wide: true } },
+            { path: '/campus/communities',         element: withBoundary(<CampusCommunitiesPage />, null), handle: { wide: true } },
             { path: '/crew',                       element: withBoundary(<FindYourCrewPage />, <CrewSkeleton />), handle: { wide: true } },
             { path: '/crew/create',                element: withBoundary(<CreateActivityPage />, null), handle: { wide: true } },
             { path: '/crew/:id',                   element: withBoundary(<ActivityDetailPage />, null), handle: { wide: true } },

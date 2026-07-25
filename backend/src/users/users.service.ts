@@ -30,6 +30,27 @@ export class UsersService {
     });
   }
 
+  async getCampusUsers(collegeId: string, limit: number, offset: number) {
+    if (!collegeId) return [];
+    return this.prisma.user.findMany({
+      where: { collegeId },
+      take: limit,
+      skip: offset,
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatar: true,
+        bio: true,
+        collegeId: true,
+        major: true,
+        graduationYear: true,
+        college: { select: { name: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
   async getUserById(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
@@ -60,6 +81,7 @@ export class UsersService {
         major: true,
         graduationYear: true,
         location: true,
+        interests: true,
         emailVerified: true,
         createdAt: true,
         college: { select: { name: true } },
@@ -67,9 +89,7 @@ export class UsersService {
           select: {
             privateProfile: true,
             showOnlineStatus: true,
-            whoCanSeeOnline: true,
-            showLastSeen: true,
-            whoCanSeeLastSeen: true
+            whoCanSeeOnline: true
           }
         },
         _count: {
@@ -121,6 +141,7 @@ export class UsersService {
       major: user.major,
       graduationYear: user.graduationYear,
       location: user.location,
+      interests: user.interests,
       verified: user.emailVerified,
       createdAt: user.createdAt,
       settings: user.settings || null,
@@ -304,7 +325,8 @@ export class UsersService {
       },
     });
 
-    const followerUserIds = follows.map(f => f.follower.id);
+    const validFollows = follows.filter(f => f.follower != null);
+    const followerUserIds = validFollows.map(f => f.follower.id);
 
     let myFollowingSet = new Set<string>();
     if (currentUserId && followerUserIds.length > 0) {
@@ -318,7 +340,7 @@ export class UsersService {
       myFollowingSet = new Set(myFollows.map(f => f.followingId));
     }
 
-    return follows.map(f => ({
+    return validFollows.map(f => ({
       ...f.follower,
       isFollowing: currentUserId ? myFollowingSet.has(f.follower.id) : false,
     }));
@@ -347,7 +369,8 @@ export class UsersService {
       },
     });
 
-    const followingUserIds = follows.map(f => f.following.id);
+    const validFollows = follows.filter(f => f.following != null);
+    const followingUserIds = validFollows.map(f => f.following.id);
 
     let myFollowingSet = new Set<string>();
     if (currentUserId && followingUserIds.length > 0) {
@@ -361,7 +384,7 @@ export class UsersService {
       myFollowingSet = new Set(myFollows.map(f => f.followingId));
     }
 
-    return follows.map(f => ({
+    return validFollows.map(f => ({
       ...f.following,
       isFollowing: currentUserId ? myFollowingSet.has(f.following.id) : false,
     }));
@@ -514,15 +537,11 @@ export class UsersService {
     if (typeof data.pushNotifs === 'boolean') payload.pushNotifs = data.pushNotifs;
     if (typeof data.privateProfile === 'boolean') payload.privateProfile = data.privateProfile;
     if (typeof data.showOnlineStatus === 'boolean') payload.showOnlineStatus = data.showOnlineStatus;
-    if (typeof data.showLastSeen === 'boolean') payload.showLastSeen = data.showLastSeen;
     if (typeof data.readReceipts === 'boolean') payload.readReceipts = data.readReceipts;
 
     const validWho = ['everyone', 'following', 'mutual', 'nobody'];
     if (typeof data.whoCanSeeOnline === 'string' && validWho.includes(data.whoCanSeeOnline)) {
       payload.whoCanSeeOnline = data.whoCanSeeOnline;
-    }
-    if (typeof data.whoCanSeeLastSeen === 'string' && validWho.includes(data.whoCanSeeLastSeen)) {
-      payload.whoCanSeeLastSeen = data.whoCanSeeLastSeen;
     }
 
     return this.prisma.userSettings.upsert({

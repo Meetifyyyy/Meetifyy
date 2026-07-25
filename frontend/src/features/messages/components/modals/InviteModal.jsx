@@ -1,19 +1,24 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-
+import { useAuth } from '@shared/context/AuthContext';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
 import styles from './InviteModal.module.css';
 import { useData } from '@shared/hooks/useData';
-
+import { toast } from 'sonner';
+import { generateConversationUrl } from '@shared/utils/conversationUrl';
 
 export default function InviteModal({ isOpen, onClose, group }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
+  const [sendingIds, setSendingIds] = useState(new Set());
 
-  const { users, conversations, addGroupMember, startConversation, sendDirectMessage } = useData();
+  const { currentUser } = useAuth();
+  const { users, conversations, startConversation, sendDirectMessage } = useData();
   const modalRef = useRef(null);
+  const lastSendTimeRef = useRef(0);
+  const copyLockRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -25,37 +30,108 @@ export default function InviteModal({ isOpen, onClose, group }) {
   }, [isOpen]);
 
   const handleCopyLink = () => {
-    const link = `${window.location.origin}/join/${group?.id || 'group'}`;
+    if (copyLockRef.current) return;
+    copyLockRef.current = true;
+
+    const relativeUrl = generateConversationUrl(group, currentUser?.id, '/inbox');
+    const link = `${window.location.origin}${relativeUrl}`;
     navigator.clipboard.writeText(link).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      toast.success('Invite link copied!');
+      setTimeout(() => {
+        setCopied(false);
+        copyLockRef.current = false;
+      }, 2000);
+    }).catch(() => {
+      copyLockRef.current = false;
     });
   };
 
   const handleSend = async (user) => {
-    if (!group?.id || sentTo.has(user.id)) return;
+    if (!group?.id || sentTo.has(user.id) || sendingIds.has(user.id)) return;
 
-    // Send them a DM so they know
-    const dmConvId = await startConversation(user);
-    sendDirectMessage(dmConvId, `You've been invited to join the group "${group.name || 'a group'}".`, null, {
-      groupId: group.id,
-      groupName: group.name || 'Group'
-    });
+    // Rate limiting: 500ms minimum interval between consecutive invites
+    const now = Date.now();
+    if (now - lastSendTimeRef.current < 500) {
+      toast.info('Please wait a moment before sending another invite.');
+      return;
+    }
+    lastSendTimeRef.current = now;
 
-    setSentTo(prev => new Set(prev).add(user.id));
+    setSendingIds(prev => new Set(prev).add(user.id));
+    try {
+      const dmConvId = await startConversation(user.id);
+      
+      const inviteData = {
+        groupId: group.id,
+        conversationId: group.id,
+        groupName: group.name || 'Group',
+        groupAvatar: group.avatar || group.avatarKey || null,
+        description: group.description || '',
+        whoCanJoin: group.whoCanJoin || 'ANYONE',
+        memberCount: group.memberCount || group.members?.length || 1,
+        type: 'group_invite'
+      };
+
+      await sendDirectMessage(
+        dmConvId,
+        '',
+        null,
+        null,
+        null,
+        null,
+        null,
+        inviteData
+      );
+
+      setSentTo(prev => new Set(prev).add(user.id));
+    } catch {
+      toast.error('Failed to send invite.');
+    } finally {
+      setSendingIds(prev => {
+        const next = new Set(prev);
+        next.delete(user.id);
+        return next;
+      });
+    }
   };
 
-  // Current group members
+  // Current group members & current user
   const currentMemberIds = useMemo(() => {
-    const conv = (conversations || []).find(c => c.id === group?.id);
-    return new Set((conv?.members || conv?.participants || []).map(String));
-  }, [conversations, group?.id]);
+    const ids = new Set();
+    if (currentUser?.id) ids.add(String(currentUser.id));
 
-  // All users except current group members
+    if (group?.members && Array.isArray(group.members)) {
+      group.members.forEach(m => {
+        const id = typeof m === 'string' ? m : (m.id || m.userId || m.user?.id);
+        if (id) ids.add(String(id));
+      });
+    }
+    if (group?.participants && Array.isArray(group.participants)) {
+      group.participants.forEach(p => {
+        const id = typeof p === 'string' ? p : (p.id || p.userId || p.user?.id);
+        if (id) ids.add(String(id));
+      });
+    }
+
+    const conv = (conversations || []).find(c => c.id === group?.id);
+    if (conv) {
+      const list = conv.members || conv.participants || [];
+      list.forEach(m => {
+        const id = typeof m === 'string' ? m : (m.id || m.userId || m.user?.id);
+        if (id) ids.add(String(id));
+      });
+    }
+
+    return ids;
+  }, [conversations, group, currentUser?.id]);
+
+  // All users except current user and current group members
   const filteredUsers = useMemo(() => {
     const allUsers = Object.values(users || {});
     const term = searchTerm.toLowerCase().trim();
     return allUsers
+      .filter(u => String(u.id) !== String(currentUser?.id) && u.username !== currentUser?.username)
       .filter(u => !currentMemberIds.has(String(u.id)))
       .filter(u =>
         !term ||
@@ -63,7 +139,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
         u.displayName?.toLowerCase().includes(term) ||
         u.username?.toLowerCase().includes(term)
       );
-  }, [users, searchTerm, currentMemberIds]);
+  }, [users, searchTerm, currentMemberIds, currentUser]);
 
   if (!isOpen) return null;
 
@@ -102,7 +178,6 @@ export default function InviteModal({ isOpen, onClose, group }) {
             className={styles.searchInput}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            autoFocus
           />
         </div>
 
@@ -110,11 +185,12 @@ export default function InviteModal({ isOpen, onClose, group }) {
           {filteredUsers.length > 0 ? (
             filteredUsers.map(user => {
               const isSent = sentTo.has(user.id);
+              const isSending = sendingIds.has(user.id);
               return (
                 <div key={user.id} className={styles.listItem}>
                   <div className={styles.contactInfo}>
                     {isImageUrl(user.avatar) ? (
-                      <img src={user.avatar} alt={user.displayName || user.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.png'; }} />
+                      <img src={user.avatar} alt={user.displayName || user.name} className={styles.avatar} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     ) : (
                       <DefaultAvatar size={40} name={user.displayName || user.name} className={styles.avatar} />
                     )}
@@ -126,9 +202,9 @@ export default function InviteModal({ isOpen, onClose, group }) {
                   <button
                     className={styles.sendBtn}
                     onClick={() => handleSend(user)}
-                    disabled={isSent}
+                    disabled={isSent || isSending}
                   >
-                    {isSent ? 'Invited' : 'Invite'}
+                    {isSent ? 'Invited' : (isSending ? 'Sending...' : 'Invite')}
                   </button>
                 </div>
               );
