@@ -23,7 +23,12 @@ export const useGlobalSocketStore = create((set, get) => ({
 
     const newSocket = io(SOCKET_URL, {
       auth: { token, deviceId },
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],
+      withCredentials: true,
+      autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
     });
 
     newSocket.on('connect', () => {
