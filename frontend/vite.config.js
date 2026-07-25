@@ -2,10 +2,26 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import fs from 'fs';
 import { visualizer } from 'rollup-plugin-visualizer';
+
+function versionBuildPlugin() {
+  return {
+    name: 'version-build-plugin',
+    buildStart() {
+      const versionData = JSON.stringify({ version: Date.now(), buildTime: new Date().toISOString() });
+      const publicDir = path.resolve(__dirname, 'public');
+      if (!fs.existsSync(publicDir)) {
+        fs.mkdirSync(publicDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(publicDir, 'version.json'), versionData);
+    }
+  };
+}
 
 export default defineConfig({
   plugins: [
+    versionBuildPlugin(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',
