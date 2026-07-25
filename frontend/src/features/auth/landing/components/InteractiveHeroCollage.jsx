@@ -38,7 +38,7 @@ export default function InteractiveHeroCollage() {
         {/* Polaroid photo card — top left */}
         <InteractiveCollageCard
           initialX="10%"
-          initialY="10%"
+          initialY="22%"
           rotate="-6deg"
           delay={0.2}
           className={`${styles.card} ${styles.cardVisible}`}

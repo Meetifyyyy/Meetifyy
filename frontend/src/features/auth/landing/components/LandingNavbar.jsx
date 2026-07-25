@@ -12,13 +12,13 @@ export default function LandingNavbar() {
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   return (
     <>
-      {/* Base interactive header */}
       <header className={`${styles.header} ${scrolled ? styles.scrolled : styles.top}`}>
         <div className={styles.inner}>
           {/* Logo */}
@@ -51,20 +51,6 @@ export default function LandingNavbar() {
           </button>
         </div>
       </header>
-
-      {/* Blended text overlay (mix-blend-difference trick) */}
-      <div className={`${styles.blendOverlay} ${scrolled ? styles.scrolled : styles.top}`}>
-        <div className={styles.inner}>
-          <div className={styles.blendBrand}>
-            <div className={styles.logoMarkBlank} />
-            <span className={`${styles.brandNameBlend} landing-font-display`}>Meetifyy</span>
-          </div>
-          <div className={styles.desktopActions}>
-            <div className={styles.blendSignIn}>Sign In</div>
-            <div className={styles.blendCtaHide}>Create Account</div>
-          </div>
-        </div>
-      </div>
 
       {/* Mobile full-screen menu */}
       <AnimatePresence>

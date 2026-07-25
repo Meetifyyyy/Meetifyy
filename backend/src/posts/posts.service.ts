@@ -42,11 +42,7 @@ export class PostsService {
         text,
         communityId,
         media: mediaKey ? {
-          create: [{
-            ownerId: authorId,
-            type: 'IMAGE',
-            storageKey: mediaKey
-          }]
+          connect: { objectKey: mediaKey.replace('/api/media/', '') }
         } : undefined,
       },
       include: {

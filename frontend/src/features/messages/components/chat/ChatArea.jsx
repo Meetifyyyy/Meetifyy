@@ -27,7 +27,8 @@ export default function ChatArea({
   onBlockUser, 
   onJoinGroup, 
   onBack, 
-  showChatOnMobile 
+  showChatOnMobile,
+  isLoading
 }) {
   const { openViewer } = useMediaViewer();
   const { initial, currentUser } = useAuth();
@@ -38,7 +39,6 @@ export default function ChatArea({
     return crewActivities?.find(act => String(act.id) === String(conversation.activityId) || `act_${act.id}` === String(conversation.id) || String(act.id) === String(conversation.id));
   }, [conversation, crewActivities]);
 
-  const isLoading = false;
   const error = null;
   const loadedMessages = conversation?.messages || [];
   const retry = () => {};

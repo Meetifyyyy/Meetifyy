@@ -391,8 +391,48 @@ export class UsersService {
     }
     
     if (bio !== undefined) updateData.bio = bio;
-    if (avatar !== undefined) updateData.avatar = avatar;
-    if (cover !== undefined) updateData.cover = cover;
+    
+    if (avatar !== undefined) {
+      updateData.avatar = avatar;
+      if (avatar && typeof avatar === 'string') {
+        if (avatar.startsWith('/api/media/')) {
+          const objectKey = avatar.replace('/api/media/', '');
+          updateData.avatarMedia = { connect: { objectKey } };
+        } else if (avatar.startsWith('http')) {
+          updateData.avatarMedia = {
+            create: {
+              provider: 'external',
+              bucket: 'external',
+              objectKey: avatar,
+              mimeType: 'image/jpeg',
+              fileSize: 0,
+              ownerId: userId,
+            }
+          };
+        }
+      }
+    }
+    
+    if (cover !== undefined) {
+      updateData.cover = cover;
+      if (cover && typeof cover === 'string') {
+        if (cover.startsWith('/api/media/')) {
+          const objectKey = cover.replace('/api/media/', '');
+          updateData.coverMedia = { connect: { objectKey } };
+        } else if (cover.startsWith('http')) {
+          updateData.coverMedia = {
+            create: {
+              provider: 'external',
+              bucket: 'external',
+              objectKey: cover,
+              mimeType: 'image/jpeg',
+              fileSize: 0,
+              ownerId: userId,
+            }
+          };
+        }
+      }
+    }
     
     // Map major / course / branch cleanly
     const computedMajor = major || [data.course, data.branch].filter(Boolean).join(' - ');

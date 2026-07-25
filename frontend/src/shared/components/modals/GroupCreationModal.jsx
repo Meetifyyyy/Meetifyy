@@ -4,7 +4,7 @@ import { ArrowLeft, Check, Camera, RefreshCw } from 'lucide-react';
 import { GROUP_NAME_MIN_LENGTH, GROUP_NAME_MAX_LENGTH, GROUP_DESC_MAX_LENGTH } from '@/constants/group';
 import styles from './GroupCreationModal.module.css';
 
-import { useR2Upload } from '@shared/hooks/useR2Upload';
+import { useMediaUpload } from '@shared/hooks/useMediaUpload';
 
 export default function GroupCreationModal({ isOpen, onClose, onCreate }) {
   const [name, setName] = useState('');
@@ -24,7 +24,7 @@ export default function GroupCreationModal({ isOpen, onClose, onCreate }) {
   const [showSuccess, setShowSuccess] = useState(false);
 
   const fileInputRef = useRef(null);
-  const { upload: uploadGroupIcon } = useR2Upload('group-icons');
+  const { upload: uploadGroupIcon } = useMediaUpload('group-icons');
 
   const handleAvatarClick = () => {
     if (isSubmitting || showSuccess) return;

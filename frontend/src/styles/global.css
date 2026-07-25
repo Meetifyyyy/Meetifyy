@@ -501,28 +501,42 @@ button:active {
   display: none;
 }
 
-/* Custom Scrollbar Theme */
+/* Custom Scrollbar System */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.03);
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: var(--color-border-dark);
-  border-radius: var(--radius-full);
-  border: 2px solid var(--color-bg-main);
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-text-light);
+  background-color: rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.35);
 }
 
 * {
-  scrollbar-color: var(--color-border-dark) transparent;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(140, 140, 140, 0.35) transparent;
 }
 
 @keyframes spin {
@@ -596,4 +610,38 @@ button:active {
   border-radius: 50%;
   animation: spin 0.65s linear infinite;
   flex-shrink: 0;
+}
+
+/* === Top-to-Bottom View Transition Theme Curtain === */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none !important;
+  mix-blend-mode: normal !important;
+  will-change: clip-path;
+}
+::view-transition-old(root) {
+  z-index: 1 !important;
+}
+::view-transition-new(root) {
+  z-index: 9999 !important;
+}
+
+/* Disable element-level CSS transitions during View Transition to prevent double fading/flashing */
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition: none !important;
+}
+
+/* Smooth color transitions for UI elements */
+body,
+header,
+main,
+nav,
+aside,
+button,
+input,
+textarea,
+select {
+  transition: background-color 0.4s ease, color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
 }

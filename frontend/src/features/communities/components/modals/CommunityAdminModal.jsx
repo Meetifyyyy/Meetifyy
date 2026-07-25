@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useData } from '@shared/hooks/useData';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
-import { useR2Upload } from '@shared/hooks/useR2Upload';
+import { useMediaUpload } from '@shared/hooks/useMediaUpload';
 
 export default function CommunityAdminModal({ community, onClose }) {
   const { updateCommunity, kickMember } = useData();
@@ -11,8 +11,8 @@ export default function CommunityAdminModal({ community, onClose }) {
   const avatarInputRef = useRef(null);
   const coverInputRef = useRef(null);
 
-  const { upload: uploadIcon } = useR2Upload('community-icons');
-  const { upload: uploadCover } = useR2Upload('community-covers');
+  const { upload: uploadIcon } = useMediaUpload('community-icons');
+  const { upload: uploadCover } = useMediaUpload('community-covers');
 
   // Details State
   const [name, setName] = useState(community.name || '');

@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/hooks/useData';
-import { useR2Upload } from '@shared/hooks/useR2Upload';
+import { useMediaUpload } from '@shared/hooks/useMediaUpload';
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import styles from './GroupSettingsModal.module.css';
@@ -9,7 +9,7 @@ import styles from './GroupSettingsModal.module.css';
 export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup }) {
   const { currentUser } = useAuth();
   const { users, updateGroupInfo, removeGroupMember } = useData();
-  const { upload: uploadGroupIcon } = useR2Upload('avatars');
+  const { upload: uploadGroupIcon } = useMediaUpload('avatars');
   const [editName, setEditName] = useState(conversation.name || '');
   const [editDesc, setEditDesc] = useState(conversation.description || '');
 

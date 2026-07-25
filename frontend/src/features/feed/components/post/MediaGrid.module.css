@@ -1,0 +1,257 @@
+/* MediaGrid.module.css — Production-Grade Social Media Media Layout */
+
+.mediaContainer {
+  position: relative;
+  width: 100%;
+  margin-top: 0.65rem;
+  margin-bottom: 0.75rem;
+  border-radius: var(--radius-lg, 16px);
+  overflow: hidden;
+  border: 1px solid var(--color-border-light, rgba(0, 0, 0, 0.08));
+  background: transparent;
+}
+
+/* Single Media Layouts */
+.singleMediaContainer {
+  position: relative;
+  width: 100%;
+  margin-top: 0.65rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: transparent;
+}
+
+.singleMediaLandscape {
+  justify-content: center;
+}
+
+.singleMediaPortrait {
+  justify-content: center;
+}
+
+/* Single Image Wrapper */
+.singleImageWrapper {
+  position: relative;
+  display: inline-block;
+  border-radius: var(--radius-lg, 16px);
+  overflow: hidden;
+  border: none;
+  background: transparent;
+}
+
+.singleMediaLandscape .singleImageWrapper,
+.singleMediaPortrait .singleImageWrapper {
+  width: auto;
+  max-width: 100%;
+}
+
+.loadingWrapper {
+  width: 100% !important;
+  min-height: 180px;
+  background: var(--color-bg-subtle, #f1f5f9);
+}
+
+.singleMediaPortrait.loadingWrapper {
+  width: 220px !important;
+  min-height: 240px;
+}
+
+.loadedWrapper {
+  min-height: 0 !important;
+  background: transparent !important;
+}
+
+/* Single Image Element */
+.singleImage {
+  display: block;
+  cursor: pointer;
+  transition: filter 0.25s ease;
+  border-radius: var(--radius-lg, 16px);
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 360px;
+}
+
+.singleImage:hover {
+  filter: brightness(0.97);
+}
+
+/* Shimmer Loading State — Shining Screen Loader */
+.skeleton {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(226, 232, 240, 0.5) 0%,
+    rgba(241, 245, 249, 0.9) 30%,
+    rgba(255, 255, 255, 1) 50%,
+    rgba(241, 245, 249, 0.9) 70%,
+    rgba(226, 232, 240, 0.5) 100%
+  );
+  background-size: 250% 100%;
+  animation: shimmerWave 1.4s infinite linear;
+  z-index: 5;
+  pointer-events: none;
+}
+
+@keyframes shimmerWave {
+  0% {
+    background-position: 250% 0;
+  }
+  100% {
+    background-position: -250% 0;
+  }
+}
+
+.loaded {
+  opacity: 1;
+  transition: opacity 0.3s ease-in;
+}
+
+.loading {
+  opacity: 0;
+}
+
+/* Multi-Image Grid Layouts */
+.gridTwo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  width: 100%;
+  height: 180px;
+}
+
+.gridThree {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 2px;
+  width: 100%;
+  height: 200px;
+}
+
+.gridThreeRight {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  height: 100%;
+}
+
+.gridFour {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  width: 100%;
+  height: 200px;
+}
+
+.gridItem {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  cursor: pointer;
+  background: #f1f5f9;
+}
+
+.gridImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), filter 0.25s ease;
+}
+
+.gridItem:hover .gridImage {
+  filter: brightness(0.96);
+}
+
+/* Overlay count badge (+N remaining) */
+.moreOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-family: var(--font-family-display, sans-serif);
+  font-size: 1.6rem;
+  font-weight: 700;
+  z-index: 2;
+  transition: background 0.2s ease;
+}
+
+.gridItem:hover .moreOverlay {
+  background: rgba(15, 23, 42, 0.65);
+}
+
+/* Single Video Wrapper & Element */
+.videoWrapper {
+  position: relative;
+  display: inline-block;
+  border-radius: var(--radius-lg, 16px);
+  overflow: hidden;
+  border: none;
+  background: #000000;
+}
+
+.singleMediaLandscape .videoWrapper {
+  width: 100%;
+}
+
+.singleMediaPortrait .videoWrapper {
+  width: 220px;
+  max-width: 100%;
+}
+
+.singleVideo {
+  display: block;
+  border-radius: var(--radius-lg, 16px);
+}
+
+.singleMediaLandscape .singleVideo {
+  width: 100%;
+  height: auto;
+  max-height: 360px;
+  object-fit: contain;
+}
+
+.singleMediaPortrait .singleVideo {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 360px;
+  object-fit: contain;
+}
+
+/* Mobile Adjustments */
+@media (max-width: 640px) {
+  .singleMediaContainer {
+    margin-top: 0.5rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .singleMediaLandscape .singleImage,
+  .singleMediaPortrait .singleImage,
+  .singleMediaLandscape .singleVideo,
+  .singleMediaPortrait .singleVideo {
+    max-height: 300px;
+  }
+
+  .gridTwo {
+    height: 150px;
+  }
+
+  .gridThree,
+  .gridFour {
+    height: 170px;
+  }
+}

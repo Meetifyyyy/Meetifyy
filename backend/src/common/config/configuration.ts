@@ -4,12 +4,14 @@ export const appConfig = registerAs('app', () => ({
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '4000', 10),
   corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:3000').split(','),
+  storageProvider: process.env.STORAGE_PROVIDER || 'supabase',
 }));
 
 export const supabaseConfig = registerAs('supabase', () => ({
   url: process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
   anonKey: process.env.SUPABASE_ANON_KEY || 'placeholder-anon-key',
   serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-service-role-key',
+  bucketName: process.env.SUPABASE_BUCKET_NAME || 'meetifyy-dev',
 }));
 
 export const redisConfig = registerAs('redis', () => ({

@@ -44,7 +44,12 @@ async function request(method, path, body) {
 
   const options = { method, headers, cache: 'no-store' };
   if (body !== undefined) {
-    options.body = JSON.stringify(body);
+    if (body instanceof FormData) {
+      delete headers['Content-Type'];
+      options.body = body;
+    } else {
+      options.body = JSON.stringify(body);
+    }
   }
 
   const cleanUrl = `${BASE_URL.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
@@ -253,10 +258,27 @@ export const messagesApi = {
   removeMember: (conversationId, targetUserId) => apiClient.delete(`/api/messages/${conversationId}/members/${targetUserId}`),
   leaveGroup: (conversationId) => apiClient.post(`/api/messages/${conversationId}/leave`),
   unsendMessage: (messageId) => apiClient.delete(`/api/messages/${messageId}`),
+  updateSettings: (conversationId, data) => apiClient.patch(`/api/messages/${conversationId}/settings`, data),
+  updatePermissions: (conversationId, permission) => apiClient.patch(`/api/messages/${conversationId}/permissions`, { permission }),
+  changeOwner: (conversationId, targetUserId) => apiClient.post(`/api/messages/${conversationId}/owner`, { targetUserId }),
+  promoteAdmin: (conversationId, targetUserId) => apiClient.post(`/api/messages/${conversationId}/admins`, { targetUserId }),
+  demoteAdmin: (conversationId, targetUserId) => apiClient.delete(`/api/messages/${conversationId}/admins/${targetUserId}`),
+  endGroup: (conversationId) => apiClient.post(`/api/messages/${conversationId}/end`),
+  acceptJoinRequest: (conversationId, targetUserId) => apiClient.post(`/api/messages/${conversationId}/requests/${targetUserId}/accept`),
+  declineJoinRequest: (conversationId, targetUserId) => apiClient.post(`/api/messages/${conversationId}/requests/${targetUserId}/decline`),
 };
 
 export const healthApi = {
   check: () => apiClient.get('/health'),
+};
+
+export const uploadsApi = {
+  uploadMedia: (file, folder = 'general') => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folder);
+    return apiClient.post('/api/media/upload', formData);
+  }
 };
 
 export const keysApi = {
@@ -286,16 +308,6 @@ export const searchApi = {
   }
 };
 
-export const uploadsApi = {
-  /**
-   * Request a presigned URL for direct browser → R2 uploads.
-   * @param {string} filename - Original filename (used to determine extension)
-   * @param {string} contentType - MIME type
-   * @param {string} folder - R2 storage prefix, e.g. 'avatars', 'covers', 'chat-media'
-   */
-  presign: (filename, contentType, folder = 'general') =>
-    apiClient.post('/api/uploads/presign', { filename, contentType, folder }),
-};
 
 export const reportsApi = {
   /**

@@ -117,18 +117,35 @@ export class CommunitiesService {
     const existing = await this.prisma.community.findUnique({ where: { slug } });
     const finalSlug = existing ? `${slug}-${Date.now()}` : slug;
 
-    return this.prisma.community.create({
-      data: {
-        name: data.name,
-        description: data.description,
-        avatarKey: data.avatarKey,
-        slug: finalSlug,
-        memberCount: 1,
-        members: {
-          create: [{ userId: creatorId, role: 'ADMIN' }]
-        }
+    const createData: any = {
+      name: data.name,
+      description: data.description,
+      avatarKey: data.avatarKey,
+      slug: finalSlug,
+      memberCount: 1,
+      members: {
+        create: [{ userId: creatorId, role: 'ADMIN' }]
       }
-    });
+    };
+
+    if (data.avatarKey && typeof data.avatarKey === 'string') {
+      if (data.avatarKey.startsWith('/api/media/')) {
+        createData.avatarMedia = { connect: { objectKey: data.avatarKey.replace('/api/media/', '') } };
+      } else if (data.avatarKey.startsWith('http')) {
+        createData.avatarMedia = { create: { provider: 'external', bucket: 'external', objectKey: data.avatarKey, mimeType: 'image/jpeg', fileSize: 0, ownerId: creatorId } };
+      }
+    }
+
+    if (data.coverKey && typeof data.coverKey === 'string') {
+      createData.coverKey = data.coverKey;
+      if (data.coverKey.startsWith('/api/media/')) {
+        createData.coverMedia = { connect: { objectKey: data.coverKey.replace('/api/media/', '') } };
+      } else if (data.coverKey.startsWith('http')) {
+        createData.coverMedia = { create: { provider: 'external', bucket: 'external', objectKey: data.coverKey, mimeType: 'image/jpeg', fileSize: 0, ownerId: creatorId } };
+      }
+    }
+
+    return this.prisma.community.create({ data: createData });
   }
 
   async updateCommunity(communityId: string, data: any, requestingUserId: string) {
@@ -140,13 +157,35 @@ export class CommunitiesService {
       throw new ForbiddenException('Only admins can update community info');
     }
 
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.description !== undefined) updateData.description = data.description;
+    
+    if (data.avatarKey !== undefined) {
+      updateData.avatarKey = data.avatarKey;
+      if (data.avatarKey && typeof data.avatarKey === 'string') {
+        if (data.avatarKey.startsWith('/api/media/')) {
+          updateData.avatarMedia = { connect: { objectKey: data.avatarKey.replace('/api/media/', '') } };
+        } else if (data.avatarKey.startsWith('http')) {
+          updateData.avatarMedia = { create: { provider: 'external', bucket: 'external', objectKey: data.avatarKey, mimeType: 'image/jpeg', fileSize: 0, ownerId: requestingUserId } };
+        }
+      }
+    }
+
+    if (data.coverKey !== undefined) {
+      updateData.coverKey = data.coverKey;
+      if (data.coverKey && typeof data.coverKey === 'string') {
+        if (data.coverKey.startsWith('/api/media/')) {
+          updateData.coverMedia = { connect: { objectKey: data.coverKey.replace('/api/media/', '') } };
+        } else if (data.coverKey.startsWith('http')) {
+          updateData.coverMedia = { create: { provider: 'external', bucket: 'external', objectKey: data.coverKey, mimeType: 'image/jpeg', fileSize: 0, ownerId: requestingUserId } };
+        }
+      }
+    }
+
     return this.prisma.community.update({
       where: { id: communityId },
-      data: {
-        name: data.name,
-        description: data.description,
-        avatarKey: data.avatarKey
-      }
+      data: updateData
     });
   }
 

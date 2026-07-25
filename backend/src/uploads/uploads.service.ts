@@ -1,85 +1,64 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
+import type { StorageProvider } from './providers/storage-provider.interface';
+import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { randomUUID } from 'crypto';
 
 @Injectable()
-export class UploadsService {
-  private readonly logger = new Logger(UploadsService.name);
-  private s3: S3Client | null = null;
-  private bucketName: string;
-  private publicUrl: string;
-  private readonly isConfigured: boolean;
+export class StorageService {
+  private readonly logger = new Logger(StorageService.name);
+  private readonly providerName: string;
+  private readonly bucketName: string;
 
-  constructor(private configService: ConfigService) {
-    const accountId = this.configService.get<string>('r2.accountId');
-    const accessKeyId = this.configService.get<string>('r2.accessKeyId');
-    const secretAccessKey = this.configService.get<string>('r2.secretAccessKey');
-    this.bucketName = this.configService.get<string>('r2.bucketName') || 'meetifyy-dev';
-    this.publicUrl = this.configService.get<string>('r2.publicUrl') || '';
-
-    // R2 is configured only if all credentials are present
-    this.isConfigured =
-      !!(accountId && accessKeyId && secretAccessKey &&
-        accountId !== '' && accessKeyId !== '' && secretAccessKey !== '');
-
-    if (this.isConfigured) {
-      this.s3 = new S3Client({
-        region: 'auto',
-        endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-        credentials: { accessKeyId: accessKeyId!, secretAccessKey: secretAccessKey! },
-      });
-      this.logger.log('Cloudflare R2 configured — real presigned uploads active');
-    } else {
-      this.logger.warn(
-        'R2 credentials not set — uploads will return mock URLs. ' +
-        'Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_PUBLIC_URL to enable real uploads.',
-      );
-    }
+  constructor(
+    @Inject('STORAGE_PROVIDER') private storageProvider: StorageProvider,
+    private prisma: PrismaService,
+    private configService: ConfigService,
+  ) {
+    this.providerName = this.configService.get<string>('app.storageProvider') || 'supabase';
+    this.bucketName = this.providerName === 'r2' 
+      ? (this.configService.get<string>('r2.bucketName') || 'meetifyy-dev')
+      : (this.configService.get<string>('supabase.bucketName') || 'meetifyy-dev');
   }
 
   /**
-   * Generate a presigned PUT URL for direct browser → R2 uploads.
-   * Falls back to a mock response when R2 isn't configured (local dev).
-   *
-   * @param filename  Original filename (used to derive extension)
-   * @param contentType  MIME type of the file
-   * @param folder  R2 "folder" prefix, e.g. "avatars", "covers", "chat-media"
-   * @param expiresIn  TTL in seconds (default 15 minutes)
+   * Upload file securely (pass-through) and register Media.
    */
-  async presign(
-    filename: string,
-    contentType: string,
-    folder = 'general',
-    expiresIn = 900,
-  ): Promise<{ uploadUrl: string; publicUrl: string; key: string }> {
-    const ext = filename.split('.').pop() || 'bin';
-    const key = `${folder}/${randomUUID()}.${ext}`;
+  async uploadFile(userId: string, file: Express.Multer.File, folder = 'general') {
+    const ext = file.originalname.split('.').pop() || 'bin';
+    const randomHex = require('crypto').randomBytes(16).toString('hex');
+    const key = `${folder}/${randomHex}.${ext}`;
 
-    // ── Local mock: no real upload, just return a placeholder ──────────────
-    if (!this.isConfigured || !this.s3) {
-      const mockPublicUrl = `/mock-upload/${key}`;
-      this.logger.debug(`[MOCK] presign called for ${key}`);
-      return {
-        uploadUrl: mockPublicUrl, // frontend will PUT here but it'll fail gracefully
-        publicUrl: mockPublicUrl,
-        key,
-      };
-    }
+    await this.storageProvider.upload(key, file.buffer, file.mimetype);
 
-    // ── Production: real R2 presigned URL ──────────────────────────────────
-    const command = new PutObjectCommand({
-      Bucket: this.bucketName,
-      Key: key,
-      ContentType: contentType,
+    // Register media in database
+    const media = await this.prisma.media.create({
+      data: {
+        ownerId: userId,
+        objectKey: key,
+        provider: this.providerName,
+        bucket: this.bucketName,
+        storageKey: key, // Legacy fallback
+        type: file.mimetype.startsWith('video') ? 'VIDEO' : 'IMAGE', // Legacy fallback
+        mimeType: file.mimetype,
+        fileSize: file.size,
+      },
     });
 
-    const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn });
-    const filePublicUrl = this.publicUrl
-      ? `${this.publicUrl.replace(/\/$/, '')}/${key}`
-      : `https://${this.bucketName}.r2.dev/${key}`;
+    // Provide a generic, provider-agnostic URL to the frontend
+    const publicUrl = `/api/media/${key}`;
 
-    return { uploadUrl, publicUrl: filePublicUrl, key };
+    return { publicUrl, key, mediaId: media.id, media };
+  }
+
+  getPublicUrl(key: string): string {
+    return this.storageProvider.getPublicUrl(key);
+  }
+
+  async delete(key: string): Promise<boolean> {
+    const deleted = await this.storageProvider.delete(key);
+    if (deleted) {
+      await this.prisma.media.deleteMany({ where: { objectKey: key } });
+    }
+    return deleted;
   }
 }
