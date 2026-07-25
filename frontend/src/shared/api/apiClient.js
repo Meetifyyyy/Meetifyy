@@ -16,17 +16,28 @@ export const getBackendUrl = () => {
       return `${window.location.protocol}//${window.location.hostname}:4000`;
     }
   }
-  return 'http://localhost:4000';
+  return 'https://meetifyy-production.up.railway.app';
 };
 
 export const getMediaUrl = (pathOrUrl) => {
   if (!pathOrUrl || typeof pathOrUrl !== 'string') return '';
-  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://') || pathOrUrl.startsWith('data:') || pathOrUrl.startsWith('blob:')) {
-    return pathOrUrl;
+
+  let finalUrl = pathOrUrl;
+
+  // On production (non-localhost), rewrite legacy http://localhost:4000 URLs to current backend host
+  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+    const isLocal = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1');
+    if (!isLocal) {
+      finalUrl = finalUrl.replace(/^http:\/\/(?:localhost|127\.0\.0\.1):4000/g, getBackendUrl());
+    }
   }
-  const cleanPath = pathOrUrl.startsWith('/api/media/')
-    ? pathOrUrl
-    : `/api/media/${pathOrUrl.replace(/^\/+/, '')}`;
+
+  if (finalUrl.startsWith('http://') || finalUrl.startsWith('https://') || finalUrl.startsWith('data:') || finalUrl.startsWith('blob:')) {
+    return finalUrl;
+  }
+  const cleanPath = finalUrl.startsWith('/api/media/')
+    ? finalUrl
+    : `/api/media/${finalUrl.replace(/^\/+/, '')}`;
   const backendUrl = getBackendUrl();
   return `${backendUrl.replace(/\/+$/, '')}${cleanPath}`;
 };
