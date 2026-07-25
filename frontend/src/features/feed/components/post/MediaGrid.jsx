@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getMediaUrl } from '@shared/api/apiClient';
 import styles from './MediaGrid.module.css';
 
 /**
@@ -17,16 +18,8 @@ function normalizeMedia(mediaInput) {
   }
 
   return rawList.map((item) => {
-    let src = item.storageKey || item.url || item.path || '';
-    if (
-      src &&
-      !src.startsWith('http') &&
-      !src.startsWith('data:') &&
-      !src.startsWith('/api/media/') &&
-      !src.startsWith('blob:')
-    ) {
-      src = `/api/media/${src}`;
-    }
+    const rawSrc = item.storageKey || item.url || item.path || '';
+    const src = getMediaUrl(rawSrc);
 
     const typeStr = (item.type || item.mimeType || '').toLowerCase();
     const isVideo =

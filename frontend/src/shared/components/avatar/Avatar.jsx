@@ -1,6 +1,7 @@
 import { forwardRef, useState, useEffect } from 'react';
 import { UsersIcon, UserIcon } from '@heroicons/react/24/solid';
 import { useTheme } from '@shared/context/ThemeContext';
+import { getMediaUrl } from '@shared/api/apiClient';
 import defaultAvatarImg from '../../../assets/images/default_avatar.png';
 import styles from './Avatar.module.css';
 
@@ -20,18 +21,20 @@ export function getProcessedAvatarUrl(src) {
     return null;
   }
 
+  let finalUrl = getMediaUrl(src);
+
   // Rewrite localhost backend URLs to current network host when accessing from another device (e.g. mobile)
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
     const host = window.location.hostname;
     if (host !== 'localhost' && host !== '127.0.0.1') {
-      src = src.replace(/http:\/\/(?:localhost|127\.0\.0\.1):4000/g, `${window.location.protocol}//${host}:4000`);
+      finalUrl = finalUrl.replace(/http:\/\/(?:localhost|127\.0\.0\.1):4000/g, `${window.location.protocol}//${host}:4000`);
     }
   }
 
-  if (!src.startsWith('https://api.dicebear.com/')) {
-    return src;
+  if (finalUrl.startsWith('https://api.dicebear.com/')) {
+    return finalUrl.split('&backgroundColor=')[0].split('?backgroundColor=')[0];
   }
-  return src.split('&backgroundColor=')[0].split('?backgroundColor=')[0];
+  return finalUrl;
 }
 
 const Avatar = forwardRef(({
