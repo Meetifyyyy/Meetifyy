@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import styles from './ImageSearchModal.module.css';
 import { X, Search, Upload } from 'lucide-react';
-import { useR2Upload } from '@shared/hooks/useR2Upload';
+import { useMediaUpload } from '@shared/hooks/useMediaUpload';
 
 export default function ImageSearchModal({ onClose, onSelect }) {
   const [query, setQuery] = useState('');
@@ -9,7 +9,7 @@ export default function ImageSearchModal({ onClose, onSelect }) {
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('images'); // 'images' or 'gifs'
   const fileInputRef = useRef(null);
-  const { upload: uploadImage } = useR2Upload('covers');
+  const { upload: uploadImage } = useMediaUpload('covers');
 
   useEffect(() => {
     let active = true;

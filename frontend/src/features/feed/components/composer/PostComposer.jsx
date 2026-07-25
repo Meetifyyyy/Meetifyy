@@ -4,6 +4,7 @@ import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import Avatar from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
+import MediaGrid from '../post/MediaGrid';
 import styles from './PostComposer.module.css';
 
 const EMOJI_GROUPS = [
@@ -14,7 +15,7 @@ const EMOJI_GROUPS = [
   { label: 'Nature', emojis: ['🌸','🌿','🌊','☀️','🌙','⚡','🦋','🐾','🌈','🍀','🌺','🍂'] },
 ];
 
-import { useR2Upload } from '@shared/hooks/useR2Upload';
+import { useMediaUpload } from '@shared/hooks/useMediaUpload';
 
 function PostComposer({ onSubmit }) {
   const { initial, currentUser } = useAuth();
@@ -32,7 +33,7 @@ function PostComposer({ onSubmit }) {
   const emojiBtnRef = useRef(null);
   const pollBtnRef = useRef(null);
 
-  const { upload: uploadPostMedia } = useR2Upload('post-media');
+  const { upload: uploadPostMedia } = useMediaUpload('post-media');
 
   useEffect(() => {
     const handler = (e) => {
@@ -249,18 +250,32 @@ function PostComposer({ onSubmit }) {
           )}
 
           {media && (
-            <div style={{ position: 'relative', marginTop: '1rem', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--color-bg-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <button 
-                onClick={() => setMedia(null)} 
-                style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10 }}
+            <div style={{ position: 'relative', width: '100%' }}>
+              <button
+                onClick={() => setMedia(null)}
+                style={{
+                  position: 'absolute',
+                  top: '14px',
+                  right: '10px',
+                  background: 'rgba(15, 23, 42, 0.75)',
+                  backdropFilter: 'blur(4px)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 20,
+                  transition: 'background 0.2s ease',
+                }}
+                title="Remove attachment"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
-              {media.type === 'image' ? (
-                <img src={media.url} alt="Upload preview" style={{ maxWidth: '100%', maxHeight: '300px', objectFit: 'contain' }} />
-              ) : (
-                <video src={media.url} controls style={{ maxWidth: '100%', maxHeight: '300px', objectFit: 'contain' }} />
-              )}
+              <MediaGrid media={[{ url: media.url, type: media.type }]} />
             </div>
           )}
 

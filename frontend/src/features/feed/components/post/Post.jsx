@@ -18,6 +18,7 @@ import VideoPlayer from '@shared/components/media/VideoPlayer';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import MediaGrid from './MediaGrid';
 
 function PollCard({ poll, postId }) {
   const { voteInPoll, currentUser } = useData();
@@ -429,60 +430,24 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
         const showMedia = !needsTruncation || isExpanded;
         return (
           <div className={`${styles.collapsibleMedia} ${showMedia ? styles.expanded : ''}`}>
-            {livePost.media && (() => {
-              let mediaSrc = null;
-              let isVideo = false;
-
-              if (Array.isArray(livePost.media)) {
-                if (livePost.media.length > 0) {
-                  mediaSrc = livePost.media[0].storageKey || livePost.media[0].url;
-                  isVideo = livePost.media[0].type === 'VIDEO' || (mediaSrc && (mediaSrc.endsWith('.mp4') || mediaSrc.startsWith('data:video')));
-                }
-              } else if (typeof livePost.media === 'string') {
-                mediaSrc = livePost.media;
-                isVideo = mediaSrc.endsWith('.mp4') || mediaSrc.startsWith('data:video');
-              } else if (livePost.media?.url) {
-                mediaSrc = livePost.media.url;
-                isVideo = livePost.media.type === 'video' || (mediaSrc && (mediaSrc.endsWith('.mp4') || mediaSrc.startsWith('data:video')));
-              }
-
-              if (!mediaSrc) return null;
-              
-              const openMedia = (e) => {
-                e.stopPropagation();
-                const meta = {
-                  authorName: author.displayName,
-                  authorAvatar: author.avatar,
-                  authorUsername: author.username,
-                  timestamp: livePost.createdAt ? new Date(livePost.createdAt).toLocaleString() : time,
-                  source: 'Post',
-                  isOwner: currentUser?.id === authorId,
-                  post: livePost,
-                  author,
-                };
-                openViewer(
-                  [{ url: mediaSrc, type: isVideo ? 'video' : 'image', caption: livePost.text || '' }],
-                  0,
-                  meta,
-                );
-              };
-              return (
-                <div className={styles.postMedia} onClick={(e) => e.stopPropagation()}>
-                  {isVideo ? (
-                    <VideoPlayer src={mediaSrc} />
-                  ) : (
-                    <img
-                      src={mediaSrc}
-                      alt="Post attachment"
-                      loading="lazy"
-                      className={styles.mediaItem}
-                      onClick={openMedia}
-                      style={{ cursor: 'zoom-in' }}
-                    />
-                  )}
-                </div>
-              );
-            })()}
+            {livePost.media && (
+              <MediaGrid
+                media={livePost.media}
+                onMediaClick={(items, index) => {
+                  const meta = {
+                    authorName: author.displayName,
+                    authorAvatar: author.avatar,
+                    authorUsername: author.username,
+                    timestamp: livePost.createdAt ? new Date(livePost.createdAt).toLocaleString() : time,
+                    source: 'Post',
+                    isOwner: currentUser?.id === authorId,
+                    post: livePost,
+                    author,
+                  };
+                  openViewer(items, index, meta);
+                }}
+              />
+            )}
             {livePost.linkPreview && (
               <a
                 href={sanitizeUrl(livePost.linkPreview.url)}

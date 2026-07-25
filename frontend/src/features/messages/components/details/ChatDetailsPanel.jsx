@@ -17,7 +17,7 @@ import GroupEditPage from './GroupEditPage';
 import GroupSettingsPage from './GroupSettingsPage';
 import { useData } from '@shared/hooks/useData';
 import { toast } from 'sonner';
-import { useR2Upload } from '@shared/hooks/useR2Upload';
+import { useMediaUpload } from '@shared/hooks/useMediaUpload';
 
 
 export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, onClearChat, onSearch }) {
@@ -152,7 +152,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   const rawParticipants = conversation.members || conversation.participants || (activity ? activity.participants : []) || [];
   const memberIds = rawParticipants.map(p => p?.userId || p?.id || p);
   const isClosed = conversation.status === 'Closed';
-  const isMember = isGroup ? memberIds.map(String).includes(String(currentUser?.id)) : true;
+  const isMember = isGroup ? (isOwner || memberIds.map(String).includes(String(currentUser?.id))) : true;
 
   // Formatted date for group creation
   const formattedDate = conversation.createdAt 
@@ -166,7 +166,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
     }
   };
 
-  const { upload: uploadGroupIcon } = useR2Upload('group-icons');
+  const { upload: uploadGroupIcon } = useMediaUpload('group-icons');
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -402,6 +402,9 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         setEditGroupPermission={setEditGroupPermission}
         isAdmin={isAdmin}
         isOwner={isOwner}
+        isMember={isMember}
+        isClosed={isClosed}
+        canEditGroupInfo={canEditGroupInfo}
         isEventGroup={isEventGroup}
         isGroup={isGroup}
         activity={activity}
@@ -410,6 +413,8 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         targetUserId={targetUserId}
         showConfirm={showConfirm}
         confirmType={confirmType}
+        updateGroupSettings={updateGroupSettings}
+        updateGroupEditPermission={updateGroupEditPermission}
         onBack={() => setShowSettingsPage(false)}
         onShowChangeOwnerPage={() => setShowChangeOwnerPage(true)}
         onSetConfirmTarget={(uid, type) => {

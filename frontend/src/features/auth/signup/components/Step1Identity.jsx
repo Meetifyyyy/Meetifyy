@@ -195,7 +195,7 @@ export default function Step1Identity() {
               value={year} 
               onChange={setYear}
               placeholder="Year"
-              options={Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i).map(y => ({ 
+              options={Array.from({ length: (new Date().getFullYear() - 1990 + 1) }, (_, i) => new Date().getFullYear() - i).map(y => ({ 
                 value: y, 
                 label: y 
               }))} 

@@ -283,6 +283,46 @@ export function useData() {
   const requestToJoinActivity = (id) => activitiesApi.requestToJoinActivity(id).then(() => queryClient.invalidateQueries(['activities']));
   const requestToJoinGroup = (id) => communitiesApi.join(id).then(() => queryClient.invalidateQueries(['communities']));
   const endCrewActivity = (id) => activitiesApi.endCrewActivity(id).then(() => queryClient.invalidateQueries(['activities']));
+
+  const updateGroupSettings = async (convId, data) => {
+    await messagesApi.updateSettings(convId, data);
+    queryClient.invalidateQueries(['conversations']);
+  };
+
+  const updateGroupEditPermission = async (convId, permission) => {
+    await messagesApi.updatePermissions(convId, permission);
+    queryClient.invalidateQueries(['conversations']);
+  };
+
+  const changeGroupOwner = async (convId, targetUserId) => {
+    await messagesApi.changeOwner(convId, targetUserId);
+    queryClient.invalidateQueries(['conversations']);
+  };
+
+  const promoteToAdmin = async (convId, targetUserId) => {
+    await messagesApi.promoteAdmin(convId, targetUserId);
+    queryClient.invalidateQueries(['conversations']);
+  };
+
+  const demoteFromAdmin = async (convId, targetUserId) => {
+    await messagesApi.demoteAdmin(convId, targetUserId);
+    queryClient.invalidateQueries(['conversations']);
+  };
+
+  const endGroup = async (convId) => {
+    await messagesApi.endGroup(convId);
+    queryClient.invalidateQueries(['conversations']);
+  };
+
+  const acceptGroupJoinRequest = async (convId, targetUserId) => {
+    await messagesApi.acceptJoinRequest(convId, targetUserId);
+    queryClient.invalidateQueries(['conversations']);
+  };
+
+  const declineGroupJoinRequest = async (convId, targetUserId) => {
+    await messagesApi.declineJoinRequest(convId, targetUserId);
+    queryClient.invalidateQueries(['conversations']);
+  };
   const acceptJoinRequest = (id, userId) => activitiesApi.acceptJoinRequest(id, userId).then(() => queryClient.invalidateQueries(['activities']));
   const rejectJoinRequest = (id, userId) => activitiesApi.rejectJoinRequest(id, userId).then(() => queryClient.invalidateQueries(['activities']));
   const declineCrewInvitation = (id) => activitiesApi.declineCrewInvitation(id).then(() => queryClient.invalidateQueries(['activities']));
@@ -383,6 +423,14 @@ export function useData() {
     requestToJoinActivity,
     requestToJoinGroup,
     endCrewActivity,
+    updateGroupSettings,
+    updateGroupEditPermission,
+    changeGroupOwner,
+    promoteToAdmin,
+    demoteFromAdmin,
+    endGroup,
+    acceptGroupJoinRequest,
+    declineGroupJoinRequest,
     acceptJoinRequest,
     rejectJoinRequest,
     declineCrewInvitation,

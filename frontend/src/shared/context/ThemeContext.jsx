@@ -30,12 +30,9 @@ export function ThemeProvider({ children }) {
         : mq.removeListener(handle);
   }, []);
 
-  const toggleTheme = (coords) => {
+  const toggleTheme = () => {
     localStorage.setItem('theme_preference_set', 'true');
     const newTheme = theme === 'light' ? 'dark' : 'light';
-
-    const x = typeof coords?.clientX === 'number' ? coords.clientX : window.innerWidth / 2;
-    const y = typeof coords?.clientY === 'number' ? coords.clientY : window.innerHeight / 2;
 
     if (
       !document.startViewTransition ||
@@ -45,18 +42,6 @@ export function ThemeProvider({ children }) {
       setTheme(newTheme);
       return;
     }
-
-    const endRadius = Math.hypot(
-      Math.max(x, window.innerWidth - x),
-      Math.max(y, window.innerHeight - y)
-    );
-
-    // Set CSS custom properties on documentElement BEFORE starting the view transition
-    // so frame 0 of ::view-transition-new(root) is clipped at (x, y) immediately.
-    document.documentElement.style.setProperty('--vt-x', `${x}px`);
-    document.documentElement.style.setProperty('--vt-y', `${y}px`);
-    // Force layout & style recalculation so Chromium applies --vt-x/y before capturing snapshot
-    void document.documentElement.offsetWidth;
 
     document.documentElement.classList.add('theme-transitioning');
 
@@ -71,13 +56,13 @@ export function ThemeProvider({ children }) {
       document.documentElement.animate(
         {
           clipPath: [
-            `circle(0px at ${x}px ${y}px)`,
-            `circle(${endRadius}px at ${x}px ${y}px)`,
+            'inset(0 0 100% 0)',
+            'inset(0 0 0% 0)',
           ],
         },
         {
-          duration: 650,
-          easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+          duration: 900,
+          easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
           fill: 'forwards',
           pseudoElement: '::view-transition-new(root)',
         }

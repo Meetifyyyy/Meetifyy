@@ -222,17 +222,6 @@ export default function Header({ variant = 'dashboard' }) {
 
       {variant === 'dashboard' ? (
         <nav className={styles.nav}>
-          <button
-            className={`${styles.notifIcon} ${styles.themeToggleBtn} ${styles.desktopOnlyTheme}`}
-            aria-label="Toggle theme"
-            title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              toggleTheme({ clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
-            }}
-          >
-            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
-          </button>
           <div style={{ position: 'relative' }} ref={notifRef}>
             <NotificationBell />
           </div>
@@ -289,9 +278,20 @@ export default function Header({ variant = 'dashboard' }) {
                 </svg>
                 Settings
               </button>
-              
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDropdownOpen(false);
+                  toggleTheme();
+                }}
+              >
+                {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+                <span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</span>
+              </button>
+
               <div className={styles.divider} />
-              
+
               <button className={styles.logoutBtn} onClick={handleLogout}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

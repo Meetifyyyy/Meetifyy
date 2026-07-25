@@ -270,6 +270,7 @@ export class MessagesService {
         isPinned: true,
         clearedAt: true,
         lastReadAt: true,
+        groupUpdatesActive: true,
         conversation: {
           select: {
             id: true,
@@ -283,6 +284,13 @@ export class MessagesService {
             expiresAt: true,
             createdAt: true,
             updatedAt: true,
+            whoCanJoin: true,
+            visibility: true,
+            allowSharing: true,
+            editGroupPermission: true,
+            joinRequests: {
+              select: { userId: true }
+            },
             participants: {
               where: { userId: { not: userId }, deletedAt: null },
               take: 5,
@@ -420,6 +428,12 @@ export class MessagesService {
         expiresAt: conv.expiresAt || null,
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
+        whoCanJoin: conv.whoCanJoin,
+        visibility: conv.visibility,
+        allowSharing: conv.allowSharing,
+        editGroupPermission: conv.editGroupPermission,
+        groupUpdatesActive: p.groupUpdatesActive,
+        pendingRequests: (conv.joinRequests || []).map((r: any) => r.userId),
         pinned: p.isPinned || false,
         muted: p.isMuted || false,
         blocked: blockStatus.isBlockedByMe,
@@ -701,5 +715,148 @@ export class MessagesService {
       select: { userId: true },
     });
     return participants.map(p => p.userId);
+  }
+
+  async updateGroupSettings(conversationId: string, userId: string, data: any) {
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId } }
+    });
+    
+    // allow groupUpdatesActive for any member
+    if (data.groupUpdatesActive !== undefined && participant) {
+      await this.prisma.conversationParticipant.update({
+        where: { userId_conversationId: { userId, conversationId } },
+        data: { groupUpdatesActive: data.groupUpdatesActive }
+      });
+      delete data.groupUpdatesActive;
+    }
+    
+    if (Object.keys(data).length > 0) {
+      if (!participant || (participant.role !== 'OWNER' && participant.role !== 'ADMIN')) {
+        throw new ForbiddenException('Only group admins can update these settings');
+      }
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data
+      });
+    }
+    return { success: true };
+  }
+
+  async updateGroupEditPermission(conversationId: string, userId: string, permission: string) {
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId } }
+    });
+    if (!participant || (participant.role !== 'OWNER' && participant.role !== 'ADMIN')) {
+      throw new ForbiddenException('Only group admins can update settings');
+    }
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { editGroupPermission: permission }
+    });
+    return { success: true };
+  }
+
+  async changeGroupOwner(conversationId: string, userId: string, targetUserId: string) {
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId } }
+    });
+    if (!participant || participant.role !== 'OWNER') {
+      throw new ForbiddenException('Only the owner can transfer ownership');
+    }
+    
+    await this.prisma.$transaction([
+      this.prisma.conversationParticipant.update({
+        where: { userId_conversationId: { userId, conversationId } },
+        data: { role: 'ADMIN' }
+      }),
+      this.prisma.conversationParticipant.update({
+        where: { userId_conversationId: { userId: targetUserId, conversationId } },
+        data: { role: 'OWNER' }
+      }),
+      this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: { ownerId: targetUserId }
+      })
+    ]);
+    return { success: true };
+  }
+
+  async promoteToAdmin(conversationId: string, userId: string, targetUserId: string) {
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId } }
+    });
+    if (!participant || participant.role !== 'OWNER') {
+      throw new ForbiddenException('Only the owner can promote admins');
+    }
+    await this.prisma.conversationParticipant.update({
+      where: { userId_conversationId: { userId: targetUserId, conversationId } },
+      data: { role: 'ADMIN' }
+    });
+    return { success: true };
+  }
+
+  async demoteFromAdmin(conversationId: string, userId: string, targetUserId: string) {
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId } }
+    });
+    if (!participant || participant.role !== 'OWNER') {
+      throw new ForbiddenException('Only the owner can demote admins');
+    }
+    await this.prisma.conversationParticipant.update({
+      where: { userId_conversationId: { userId: targetUserId, conversationId } },
+      data: { role: 'MEMBER' }
+    });
+    return { success: true };
+  }
+
+  async endGroup(conversationId: string, userId: string) {
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId } }
+    });
+    if (!participant || participant.role !== 'OWNER') {
+      throw new ForbiddenException('Only the owner can end the group');
+    }
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { status: 'Closed' }
+    });
+    return { success: true };
+  }
+
+  async acceptGroupJoinRequest(conversationId: string, userId: string, targetUserId: string) {
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId } }
+    });
+    if (!participant || (participant.role !== 'OWNER' && participant.role !== 'ADMIN')) {
+      throw new ForbiddenException('Only group admins can accept requests');
+    }
+    
+    await this.prisma.$transaction([
+      this.prisma.conversationJoinRequest.delete({
+        where: { conversationId_userId: { conversationId, userId: targetUserId } }
+      }),
+      this.prisma.conversationParticipant.upsert({
+        where: { userId_conversationId: { userId: targetUserId, conversationId } },
+        update: { deletedAt: null },
+        create: { userId: targetUserId, conversationId, role: 'MEMBER' }
+      })
+    ]);
+    return { success: true };
+  }
+
+  async declineGroupJoinRequest(conversationId: string, userId: string, targetUserId: string) {
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId } }
+    });
+    if (!participant || (participant.role !== 'OWNER' && participant.role !== 'ADMIN')) {
+      throw new ForbiddenException('Only group admins can decline requests');
+    }
+    
+    await this.prisma.conversationJoinRequest.delete({
+      where: { conversationId_userId: { conversationId, userId: targetUserId } }
+    }).catch(() => {});
+    
+    return { success: true };
   }
 }

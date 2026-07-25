@@ -20,8 +20,9 @@ export function validateDOB(year, month, day) {
   }
 
   // Basic sanity bounds before using Date object
-  if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1900 || y > 2100) {
-    return { isValid: false, error: "Please enter a valid date.", dobString: null };
+  const currentYear = new Date().getFullYear();
+  if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1990 || y > currentYear) {
+    return { isValid: false, error: `Year of birth must be between 1990 and ${currentYear}.`, dobString: null };
   }
 
   // Validate real calendar date (handles leap years and month lengths accurately)

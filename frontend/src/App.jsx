@@ -8,7 +8,7 @@ import SocketManager from './shared/components/SocketManager';
 
 import HomeSkeleton from './features/feed/components/skeletons/HomeSkeleton';
 import ProfilePageSkeleton from './features/profile/components/skeletons/ProfilePageSkeleton';
-import MessagesSkeleton from './features/messages/components/skeletons/MessagesSkeleton';
+
 import CampusSkeleton from './features/campus/components/skeletons/CampusSkeleton';
 import CrewSkeleton from './features/crew/components/skeletons/CrewSkeleton';
 import CommunitiesSkeleton from './features/communities/components/skeletons/CommunitiesSkeleton';
@@ -240,7 +240,7 @@ export default function App() {
             { path: '/search',                     element: withBoundary(<SearchResultsRoute />, <SearchSkeleton />), handle: { wide: true } },
             { path: '/communities',                element: withBoundary(<CommunitiesRoute />, <CommunitiesSkeleton />), handle: { wide: true } },
             { path: '/communities/:id',            element: withBoundary(<CommunityDetailRoute />, null), handle: { wide: true } },
-            { path: '/messages/:conversationId?',  element: withBoundary(<MessagesRoute />, <MessagesSkeleton />), handle: { wide: true } },
+            { path: '/messages/:conversationId?',  element: withBoundary(<MessagesRoute />, null), handle: { wide: true } },
             { path: '/post/:id',                   element: withBoundary(<PostDetailRoute />, null) },
             { path: '/profile/:profileUsername?',  element: withBoundary(<ProfilePage />, <ProfilePageSkeleton />), handle: { wide: true } },
             { path: '/settings',                   element: withBoundary(<SettingsRoute />, <SettingsSkeleton />) },

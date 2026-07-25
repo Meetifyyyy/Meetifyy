@@ -196,4 +196,60 @@ export class MessagesController {
     }
     return result;
   }
+
+  @Patch(':id/settings')
+  @UseGuards(JwtGuard)
+  async updateSettings(@Req() req: any, @Param('id') conversationId: string, @Body() body: any) {
+    const userId = req.user?.id;
+    return this.messagesService.updateGroupSettings(conversationId, userId, body);
+  }
+
+  @Patch(':id/permissions')
+  @UseGuards(JwtGuard)
+  async updatePermissions(@Req() req: any, @Param('id') conversationId: string, @Body('permission') permission: string) {
+    const userId = req.user?.id;
+    return this.messagesService.updateGroupEditPermission(conversationId, userId, permission);
+  }
+
+  @Post(':id/owner')
+  @UseGuards(JwtGuard)
+  async changeOwner(@Req() req: any, @Param('id') conversationId: string, @Body('targetUserId') targetUserId: string) {
+    const userId = req.user?.id;
+    return this.messagesService.changeGroupOwner(conversationId, userId, targetUserId);
+  }
+
+  @Post(':id/admins')
+  @UseGuards(JwtGuard)
+  async promoteAdmin(@Req() req: any, @Param('id') conversationId: string, @Body('targetUserId') targetUserId: string) {
+    const userId = req.user?.id;
+    return this.messagesService.promoteToAdmin(conversationId, userId, targetUserId);
+  }
+
+  @Delete(':id/admins/:targetUserId')
+  @UseGuards(JwtGuard)
+  async demoteAdmin(@Req() req: any, @Param('id') conversationId: string, @Param('targetUserId') targetUserId: string) {
+    const userId = req.user?.id;
+    return this.messagesService.demoteFromAdmin(conversationId, userId, targetUserId);
+  }
+
+  @Post(':id/end')
+  @UseGuards(JwtGuard)
+  async endGroup(@Req() req: any, @Param('id') conversationId: string) {
+    const userId = req.user?.id;
+    return this.messagesService.endGroup(conversationId, userId);
+  }
+
+  @Post(':id/requests/:targetUserId/accept')
+  @UseGuards(JwtGuard)
+  async acceptJoinRequest(@Req() req: any, @Param('id') conversationId: string, @Param('targetUserId') targetUserId: string) {
+    const userId = req.user?.id;
+    return this.messagesService.acceptGroupJoinRequest(conversationId, userId, targetUserId);
+  }
+
+  @Post(':id/requests/:targetUserId/decline')
+  @UseGuards(JwtGuard)
+  async declineJoinRequest(@Req() req: any, @Param('id') conversationId: string, @Param('targetUserId') targetUserId: string) {
+    const userId = req.user?.id;
+    return this.messagesService.declineGroupJoinRequest(conversationId, userId, targetUserId);
+  }
 }

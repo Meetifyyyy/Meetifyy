@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { showToast } from '@shared/utils/toast';
 import styles from './CreateCommunityModal.module.css';
 import { useData } from '@shared/hooks/useData';
-import { useR2Upload } from '@shared/hooks/useR2Upload';
+import { useMediaUpload } from '@shared/hooks/useMediaUpload';
 
 const colors26 = [
   'linear-gradient(135deg, #FF6B6B, #FF8E53)',
@@ -72,7 +72,7 @@ const categories = [
 
 export default function CreateCommunityModal({ onClose, onCreated }) {
   const { addCommunity } = useData();
-  const { upload: uploadCommunityIcon } = useR2Upload('community-icons');
+  const { upload: uploadCommunityIcon } = useMediaUpload('community-icons');
 
   // Wizard Steps state
   const [step, setStep] = useState(1);

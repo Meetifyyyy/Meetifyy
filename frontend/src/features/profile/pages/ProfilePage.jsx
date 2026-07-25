@@ -4,7 +4,7 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { messagesApi, usersApi, postsApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useR2Upload } from '@shared/hooks/useR2Upload';
+import { useMediaUpload } from '@shared/hooks/useMediaUpload';
 import { showToast } from '@shared/utils/toast';
 import Post from '@features/feed/components/post/Post';
 import UserListModal from '@shared/components/modals/UserListModal';
@@ -60,7 +60,7 @@ export default function ProfilePage() {
   const coverFileRef = useRef(null);
   const menuRef = useRef(null);
 
-  const { upload: uploadCover, uploading: coverUploading } = useR2Upload('covers');
+  const { upload: uploadCover, uploading: coverUploading } = useMediaUpload('covers');
 
   // Gradient presets for the cover editor
   const GRADIENT_PRESETS = [

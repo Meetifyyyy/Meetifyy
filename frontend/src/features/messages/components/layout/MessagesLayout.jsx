@@ -115,12 +115,27 @@ export default function MessagesLayout() {
 
   const activeConv = useMemo(() => {
     if (!baseConv) return null;
+    let msgs = historyData?.messages || baseConv.messages || [];
+    
+    // Optimistically show the last message from the conversation list while loading
+    if (msgs.length === 0 && baseConv.lastMessage && isMessagesLoading) {
+      msgs = [{
+        id: 'temp_last_msg',
+        text: baseConv.lastMessage.text,
+        senderId: baseConv.lastMessage.senderId,
+        createdAt: baseConv.lastMessage.createdAt,
+        timestamp: baseConv.lastMessage.createdAt,
+        from: String(baseConv.lastMessage.senderId) === String(currentUser?.id) ? 'me' : 'them',
+        type: 'chat'
+      }];
+    }
+
     return {
       ...baseConv,
-      messages: historyData?.messages || baseConv.messages || [],
+      messages: msgs,
       participants: historyData?.participants || baseConv.participants || []
     };
-  }, [baseConv, historyData]);
+  }, [baseConv, historyData, isMessagesLoading, currentUser]);
 
   const handleSelectChat = (id) => {
     setActiveChatId(id);
@@ -241,6 +256,7 @@ export default function MessagesLayout() {
           onJoinGroup={handleJoinGroup}
           onBack={handleBack}
           showChatOnMobile={showChatOnMobile}
+          isLoading={isMessagesLoading}
         />
       </div>
     </div>

@@ -1,25 +1,42 @@
-import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
-import { UploadsService } from './uploads.service';
+import { Controller, Post, Body, UseGuards, Req, Get, Param, Res, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { StorageService } from './uploads.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 
-class PresignDto {
-  filename: string;
-  contentType: string;
-  folder?: string;
-}
-
-@Controller('api/uploads')
-@UseGuards(JwtGuard)
+@Controller('api/media')
 export class UploadsController {
-  constructor(private readonly uploadsService: UploadsService) {}
+  constructor(private readonly storageService: StorageService) {}
 
   /**
-   * POST /api/uploads/presign
-   * Returns a presigned PUT URL + public URL for direct browser → R2 uploads.
+   * POST /api/media/upload
+   * Pass-through upload endpoint that validates and stores the file.
    */
-  @Post('presign')
-  async presign(@Body() body: PresignDto) {
-    const { filename, contentType, folder = 'general' } = body;
-    return this.uploadsService.presign(filename, contentType, folder);
+  @UseGuards(JwtGuard)
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('file'))
+  async upload(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('folder') folder: string = 'general',
+    @Req() req: any
+  ) {
+    if (!file) throw new BadRequestException('No file provided');
+    const userId = req.user.id;
+    return this.storageService.uploadFile(userId, file, folder);
+  }
+
+  /**
+   * GET /api/media/:folder/:filename
+   * Redirects to the actual storage provider's public URL
+   */
+  @Get(':folder/:filename')
+  getMedia(
+    @Param('folder') folder: string,
+    @Param('filename') filename: string,
+    @Res() res: Response,
+  ) {
+    const key = `${folder}/${filename}`;
+    const url = this.storageService.getPublicUrl(key);
+    return res.redirect(url);
   }
 }

@@ -112,7 +112,9 @@ export default function ChatMessageList({
       )}
 
       {isLoading && (
-        <MessageRowSkeleton />
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '2rem', flex: 1 }}>
+          <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '3px', borderTopColor: 'var(--color-primary)' }}></div>
+        </div>
       )}
 
       {!isLoading && error && (
@@ -122,7 +124,7 @@ export default function ChatMessageList({
       {!isLoading && !error && loadedMessages && loadedMessages.length === 0 ? (
         <div className={styles.msgEmptyState}>No messages in this chat.</div>
       ) : (
-        !isLoading && !error && loadedMessages && loadedMessages.map((msg, i) => {
+        !error && loadedMessages && loadedMessages.map((msg, i) => {
           const dateGroup = getMessageDateGroup(msg);
           const showSeparator = dateGroup !== lastDateGroup;
           lastDateGroup = dateGroup;

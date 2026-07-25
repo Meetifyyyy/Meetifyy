@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { communitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
-import { useR2Upload } from '@shared/hooks/useR2Upload';
+import { useMediaUpload } from '@shared/hooks/useMediaUpload';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { ErrorState } from '@shared/components/ui/StateViews';
@@ -60,7 +60,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showDropdown]);
 
-  const { upload: uploadToR2, uploading: imageUploading } = useR2Upload('community-icons');
+  const { upload: uploadToR2, uploading: imageUploading } = useMediaUpload('community-icons');
 
   const handleImageUpload = async (e, field) => {
     const file = e.target.files[0];

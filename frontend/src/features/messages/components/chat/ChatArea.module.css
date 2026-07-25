@@ -78,7 +78,7 @@
 .msgNoChatSelected {
   align-items: center;
   justify-content: center;
-  background: var(--color-bg-main);
+  background: transparent;
 }
 
 .msgNoChatContent {

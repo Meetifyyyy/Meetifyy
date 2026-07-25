@@ -6,7 +6,7 @@ import { useVoiceRecorder } from '../../hooks/useVoiceRecorder';
 
 const Picker = lazy(() => import('@emoji-mart/react'));
 
-import { useR2Upload } from '@shared/hooks/useR2Upload';
+import { useMediaUpload } from '@shared/hooks/useMediaUpload';
 
 export default function ChatInputArea({
   conversation,
@@ -23,7 +23,7 @@ export default function ChatInputArea({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const fileInputRef = useRef(null);
-  const { upload: uploadChatMedia } = useR2Upload('chat-media');
+  const { upload: uploadChatMedia } = useMediaUpload('chat-media');
 
   const hasText = !!(typeof inputValue === 'string' ? inputValue : (inputValue?.text || '')).trim();
 

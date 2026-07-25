@@ -9,24 +9,28 @@ datasource db {
 }
 
 model College {
-  id         String          @id @default(uuid())
-  name       String
-  shortName  String?
-  slug       String?         @unique
-  logoKey    String?
-  bannerKey  String?
-  city       String?
-  state      String?
-  country    String?
-  isActive   Boolean         @default(true)
-  isVerified Boolean         @default(false)
-  isPrivate  Boolean         @default(false)
-  status     CollegeStatus   @default(APPROVED)
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
-  deletedAt  DateTime?
-  domains    CollegeDomain[]
-  users      User[]
+  id            String          @id @default(uuid())
+  name          String
+  shortName     String?
+  slug          String?         @unique
+  logoKey       String?
+  logoMediaId   String?
+  bannerKey     String?
+  bannerMediaId String?
+  city          String?
+  state         String?
+  country       String?
+  isActive      Boolean         @default(true)
+  isVerified    Boolean         @default(false)
+  isPrivate     Boolean         @default(false)
+  status        CollegeStatus   @default(APPROVED)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  deletedAt     DateTime?
+  domains       CollegeDomain[]
+  users         User[]
+  logoMedia     Media?          @relation("CollegeLogo", fields: [logoMediaId], references: [id])
+  bannerMedia   Media?          @relation("CollegeBanner", fields: [bannerMediaId], references: [id])
 }
 
 model CollegeDomain {
@@ -45,7 +49,6 @@ enum CollegeStatus {
   APPROVED
   DISABLED
 }
-
 
 model UserSettings {
   id                String  @id @default(uuid())
@@ -77,18 +80,39 @@ model NotificationPreferences {
 }
 
 model Media {
-  id         String   @id @default(uuid())
-  ownerId    String
-  postId     String?
-  type       String
-  storageKey String
+  id         String  @id @default(uuid())
+  provider   String  @default("supabase")
+  bucket     String  @default("meetifyy-dev")
+  objectKey  String  @unique
+  storageKey String?
+  type       String?
+  mimeType   String  @default("application/octet-stream")
+  fileSize   Int     @default(0)
+  checksum   String?
   width      Int?
   height     Int?
   duration   Int?
-  order      Int      @default(0)
-  createdAt  DateTime @default(now())
-  owner      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  post       Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  visibility String  @default("public")
+  order      Int     @default(0)
+
+  ownerId String
+  postId  String?
+
+  owner User  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  post  Post? @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  avatarUsers         User[]         @relation("UserAvatar")
+  coverUsers          User[]         @relation("UserCover")
+  avatarCommunities   Community[]    @relation("CommunityAvatar")
+  coverCommunities    Community[]    @relation("CommunityCover")
+  logoColleges        College[]      @relation("CollegeLogo")
+  bannerColleges      College[]      @relation("CollegeBanner")
+  avatarConversations Conversation[] @relation("ConversationAvatar")
+  coverActivities     CrewActivity[] @relation("ActivityCover")
+  messageAttachments  Message[]      @relation("MessageAttachment")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([postId])
 }
@@ -104,9 +128,11 @@ model User {
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
   avatar                   String?
+  avatarMediaId            String?
   collegeEmail             String?
   collegeId                String?
   cover                    String?
+  coverMediaId             String?
   deletedAt                DateTime?
   emailVerified            Boolean                   @default(false)
   graduationYear           Int?
@@ -148,11 +174,15 @@ model User {
   shares                   PostShare[]
   reportsMade              Report[]                  @relation("Reporter")
   supportTickets           SupportTicket[]
+  groupJoinRequests        ConversationJoinRequest[]
   college                  College?                  @relation(fields: [collegeId], references: [id])
   settings                 UserSettings?
   matchQueueEntry          MatchQueueEntry?
   matchesAsA               MatchSession[]            @relation("MatchUserA")
   matchesAsB               MatchSession[]            @relation("MatchUserB")
+
+  avatarMedia Media? @relation("UserAvatar", fields: [avatarMediaId], references: [id])
+  coverMedia  Media? @relation("UserCover", fields: [coverMediaId], references: [id])
 
   @@index([collegeId])
   @@index([deletedAt, createdAt])
@@ -233,22 +263,27 @@ model CommentLike {
 }
 
 model Community {
-  id          String            @id @default(uuid())
-  name        String
-  slug        String            @unique
-  description String?
-  avatarKey   String?
-  coverKey    String?
-  color       String?
-  isPrivate   Boolean           @default(false)
-  memberCount Int               @default(0)
-  createdAt   DateTime          @default(now())
-  deletedAt   DateTime?
-  ownerId     String?
-  updatedAt   DateTime          @updatedAt
-  owner       User?             @relation("CommunityOwner", fields: [ownerId], references: [id])
-  members     CommunityMember[]
-  posts       Post[]
+  id            String            @id @default(uuid())
+  name          String
+  slug          String            @unique
+  description   String?
+  avatarKey     String?
+  avatarMediaId String?
+  coverKey      String?
+  coverMediaId  String?
+  color         String?
+  isPrivate     Boolean           @default(false)
+  memberCount   Int               @default(0)
+  createdAt     DateTime          @default(now())
+  deletedAt     DateTime?
+  ownerId       String?
+  updatedAt     DateTime          @updatedAt
+  owner         User?             @relation("CommunityOwner", fields: [ownerId], references: [id])
+  members       CommunityMember[]
+  posts         Post[]
+
+  avatarMedia Media? @relation("CommunityAvatar", fields: [avatarMediaId], references: [id])
+  coverMedia  Media? @relation("CommunityCover", fields: [coverMediaId], references: [id])
 
   @@index([ownerId])
   @@index([deletedAt, memberCount(sort: Desc)])
@@ -282,42 +317,51 @@ model Follow {
 }
 
 model Conversation {
-  id              String                    @id @default(uuid())
-  name            String?
-  avatarKey       String?
-  isPrivate       Boolean                   @default(false)
-  ownerId         String?
-  createdAt       DateTime                  @default(now())
-  description     String?
-  inviteCode      String?
-  inviteLink      String?
-  memberCount     Int                       @default(0)
-  pinnedMessageId String?
-  isInstantMatch  Boolean                   @default(false)
-  expiresAt       DateTime?
-  status          String                    @default("ACTIVE")
-  updatedAt       DateTime                  @updatedAt
-  type            ConversationType
-  owner           User?                     @relation("ConversationOwner", fields: [ownerId], references: [id])
-  pinnedMessage   Message?                  @relation("PinnedMessage", fields: [pinnedMessageId], references: [id])
-  participants    ConversationParticipant[]
-  messages        Message[]                 @relation("ConversationMessages")
+  id                  String                    @id @default(uuid())
+  name                String?
+  avatarKey           String?
+  avatarMediaId       String?
+  isPrivate           Boolean                   @default(false)
+  ownerId             String?
+  createdAt           DateTime                  @default(now())
+  allowSharing        Boolean                   @default(true)
+  editGroupPermission String                    @default("ADMIN")
+  visibility          String                    @default("PUBLIC")
+  whoCanJoin          String                    @default("ANYONE")
+  description         String?
+  inviteCode          String?
+  inviteLink          String?
+  memberCount         Int                       @default(0)
+  pinnedMessageId     String?
+  isInstantMatch      Boolean                   @default(false)
+  expiresAt           DateTime?
+  status              String                    @default("ACTIVE")
+  updatedAt           DateTime                  @updatedAt
+  type                ConversationType
+  owner               User?                     @relation("ConversationOwner", fields: [ownerId], references: [id])
+  pinnedMessage       Message?                  @relation("PinnedMessage", fields: [pinnedMessageId], references: [id])
+  participants        ConversationParticipant[]
+  messages            Message[]                 @relation("ConversationMessages")
+  joinRequests        ConversationJoinRequest[]
+
+  avatarMedia Media? @relation("ConversationAvatar", fields: [avatarMediaId], references: [id])
 
   @@index([ownerId])
 }
 
 model ConversationParticipant {
-  userId         String
-  conversationId String
-  joinedAt       DateTime         @default(now())
-  role           ConversationRole @default(MEMBER)
-  lastReadAt     DateTime?
-  isMuted        Boolean          @default(false)
-  isPinned       Boolean          @default(false)
-  clearedAt      DateTime?
-  deletedAt      DateTime?
-  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId             String
+  conversationId     String
+  joinedAt           DateTime         @default(now())
+  role               ConversationRole @default(MEMBER)
+  lastReadAt         DateTime?
+  isMuted            Boolean          @default(false)
+  isPinned           Boolean          @default(false)
+  groupUpdatesActive Boolean          @default(true)
+  clearedAt          DateTime?
+  deletedAt          DateTime?
+  conversation       Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([userId, conversationId])
   @@index([userId])
@@ -325,24 +369,27 @@ model ConversationParticipant {
 }
 
 model Message {
-  id             String                   @id @default(uuid())
-  conversationId String
-  senderId       String
-  createdAt      DateTime                 @default(now())
-  deletedAt      DateTime?
-  editedAt       DateTime?
-  payload        Json?
-  replyToId      String?
-  senderDeviceId String?
-  type           MessageType              @default(CHAT)
-  pinnedIn       Conversation[]           @relation("PinnedMessage")
-  targets        EncryptedMessageTarget[]
-  conversation   Conversation             @relation("ConversationMessages", fields: [conversationId], references: [id], onDelete: Cascade)
-  replyTo        Message?                 @relation("MessageReplies", fields: [replyToId], references: [id])
-  replies        Message[]                @relation("MessageReplies")
-  sender         User                     @relation(fields: [senderId], references: [id], onDelete: Cascade)
-  reactions      MessageReaction[]
-  readReceipts   MessageReadReceipt[]
+  id                String                   @id @default(uuid())
+  conversationId    String
+  senderId          String
+  createdAt         DateTime                 @default(now())
+  deletedAt         DateTime?
+  editedAt          DateTime?
+  payload           Json?
+  replyToId         String?
+  senderDeviceId    String?
+  type              MessageType              @default(CHAT)
+  attachmentMediaId String?
+  pinnedIn          Conversation[]           @relation("PinnedMessage")
+  targets           EncryptedMessageTarget[]
+  conversation      Conversation             @relation("ConversationMessages", fields: [conversationId], references: [id], onDelete: Cascade)
+  replyTo           Message?                 @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies           Message[]                @relation("MessageReplies")
+  sender            User                     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  reactions         MessageReaction[]
+  readReceipts      MessageReadReceipt[]
+
+  attachmentMedia Media? @relation("MessageAttachment", fields: [attachmentMediaId], references: [id])
 
   @@index([conversationId, createdAt])
   @@index([conversationId, deletedAt, createdAt])
@@ -405,6 +452,7 @@ model CrewActivity {
   maxMembers          Int?
   createdAt           DateTime              @default(now())
   coverImage          String?
+  coverMediaId        String?
   createActivityGroup Boolean               @default(false)
   deletedAt           DateTime?
   endDate             DateTime?
@@ -418,6 +466,8 @@ model CrewActivity {
   shareToSchool       Boolean               @default(false)
   creator             User                  @relation("ActivityCreator", fields: [creatorId], references: [id], onDelete: Cascade)
   members             CrewActivityMember[]
+
+  coverMedia Media? @relation("ActivityCover", fields: [coverMediaId], references: [id])
 
   @@index([creatorId])
   @@index([createdAt])
@@ -597,27 +647,27 @@ model PollVote {
 }
 
 model Report {
-  id                  String           @id @default(uuid())
-  reporterId          String
-  targetType          ReportTargetType
-  targetId            String
-  reason              ReportReason
-  description         String?          @db.VarChar(500)
-  metadata            Json?
-  status              ReportStatus     @default(PENDING)
-  priority            ReportPriority   @default(MEDIUM)
+  id          String           @id @default(uuid())
+  reporterId  String
+  targetType  ReportTargetType
+  targetId    String
+  reason      ReportReason
+  description String?          @db.VarChar(500)
+  metadata    Json?
+  status      ReportStatus     @default(PENDING)
+  priority    ReportPriority   @default(MEDIUM)
 
   assignedModeratorId String?
-  internalNotes       String?          @db.VarChar(2000)
-  actionTaken         String?          @db.VarChar(500)
-  resolution          String?          @db.VarChar(500)
+  internalNotes       String?   @db.VarChar(2000)
+  actionTaken         String?   @db.VarChar(500)
+  resolution          String?   @db.VarChar(500)
   resolvedAt          DateTime?
   resolvedBy          String?
 
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  reporter            User             @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reporter User @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
 
   @@index([status, createdAt])
   @@index([reporterId])
@@ -797,20 +847,20 @@ enum MatchStatus {
 // ─── Super Admin Auth ─────────────────────────────────────────────────────────
 
 model SuperAdmin {
-  id              String              @id @default(uuid())
-  email           String              @unique
-  passwordHash    String
-  name            String
-  isActive        Boolean             @default(true)
-  totpSecret      String?
-  totpEnabled     Boolean             @default(false)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  sessions        SuperAdminSession[]
-  otps            AdminOtp[]
-  recoveryCodes   AdminRecoveryCode[]
-  auditLogs       AuditLog[]
-  loginAudits     LoginAudit[]
+  id            String              @id @default(uuid())
+  email         String              @unique
+  passwordHash  String
+  name          String
+  isActive      Boolean             @default(true)
+  totpSecret    String?
+  totpEnabled   Boolean             @default(false)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  sessions      SuperAdminSession[]
+  otps          AdminOtp[]
+  recoveryCodes AdminRecoveryCode[]
+  auditLogs     AuditLog[]
+  loginAudits   LoginAudit[]
 }
 
 model SuperAdminSession {
@@ -879,19 +929,19 @@ model LoginAudit {
 }
 
 model AuditLog {
-  id          String     @id @default(uuid())
-  adminId     String
-  action      String
-  targetType  String?
-  targetId    String?
-  oldValue    Json?
-  newValue    Json?
-  ip          String?
-  endpoint    String?
-  httpMethod  String?
-  requestId   String?
-  createdAt   DateTime   @default(now())
-  admin       SuperAdmin @relation(fields: [adminId], references: [id])
+  id         String     @id @default(uuid())
+  adminId    String
+  action     String
+  targetType String?
+  targetId   String?
+  oldValue   Json?
+  newValue   Json?
+  ip         String?
+  endpoint   String?
+  httpMethod String?
+  requestId  String?
+  createdAt  DateTime   @default(now())
+  admin      SuperAdmin @relation(fields: [adminId], references: [id])
 
   @@index([adminId])
   @@index([createdAt])
@@ -1023,3 +1073,17 @@ enum AnnouncementStatus {
   CANCELLED
 }
 
+model ConversationJoinRequest {
+  id             String       @id @default(uuid())
+  conversationId String
+  userId         String
+  status         String       @default("PENDING")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([conversationId])
+  @@index([userId])
+}
