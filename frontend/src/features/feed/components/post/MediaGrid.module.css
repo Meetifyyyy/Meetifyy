@@ -53,6 +53,10 @@
   background: var(--color-bg-subtle, #f1f5f9);
 }
 
+[data-theme="dark"] .loadingWrapper {
+  background: var(--color-bg-subtle, #151923) !important;
+}
+
 .singleMediaPortrait.loadingWrapper {
   width: 220px !important;
   min-height: 240px;
@@ -98,6 +102,17 @@
   animation: shimmerWave 1.4s infinite linear;
   z-index: 5;
   pointer-events: none;
+}
+
+[data-theme="dark"] .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(20, 24, 35, 0.9) 0%,
+    rgba(32, 38, 54, 0.9) 30%,
+    rgba(45, 53, 75, 1) 50%,
+    rgba(32, 38, 54, 0.9) 70%,
+    rgba(20, 24, 35, 0.9) 100%
+  );
 }
 
 @keyframes shimmerWave {
