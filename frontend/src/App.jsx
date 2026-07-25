@@ -140,7 +140,10 @@ function NotFound() {
  * Each route element is wrapped individually in <RouteErrorBoundary> so a crash
  * on one page never unmounts the surrounding shell (header, sidebar, bottom nav).
  */
+import { useVersionCheck } from './shared/hooks/useVersionCheck';
+
 export default function App() {
+  useVersionCheck();
   // NOTE: This router is created inside the App component using useMemo so that
   // nested route elements and hooks (like ProtectedRoute, SocketManager) can
   // safely consume context from AuthProvider, which wraps App in main.jsx.
