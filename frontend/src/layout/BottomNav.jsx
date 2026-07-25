@@ -5,12 +5,10 @@ import styles from './BottomNav.module.css';
 import {
   HomeIcon as HomeOutline,
   ChatBubbleOvalLeftEllipsisIcon as MessagesOutline,
-  BellIcon as BellOutline,
 } from '@heroicons/react/24/outline';
 import {
   HomeIcon as HomeSolid,
   ChatBubbleOvalLeftEllipsisIcon as MessagesSolid,
-  BellIcon as BellSolid,
 } from '@heroicons/react/24/solid';
 
 const CompassOutline = () => (
@@ -99,14 +97,6 @@ export default function BottomNav() {
       >
         {isCrewActive ? <CompassSolid /> : <CompassOutline />}
         <span>Crew</span>
-      </button>
-
-      <button 
-        className={`${styles.bottomNavItem}${isNotificationsActive ? ` ${styles.active}` : ''}`}
-        onClick={() => handleTabClick('/notifications')}
-      >
-        {isNotificationsActive ? <BellSolid /> : <BellOutline />}
-        <span>Alerts</span>
       </button>
 
       <button 
