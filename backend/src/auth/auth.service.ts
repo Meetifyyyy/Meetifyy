@@ -202,7 +202,7 @@ export class AuthService {
       return { available: false, reason: 'Please enter a valid email address.' };
     }
 
-    // 1. Search Prisma database (case-insensitive for both email & collegeEmail)
+    // Search Prisma database (case-insensitive for both email & collegeEmail)
     const existingPrismaUser = await this.prisma.user.findFirst({
       where: {
         OR: [
@@ -215,23 +215,6 @@ export class AuthService {
 
     if (existingPrismaUser) {
       return { available: false, reason: 'This email is already registered. Please sign in.' };
-    }
-
-    // 2. Check Supabase Auth user directory if Supabase is configured
-    if (this.supabaseService.isConfigured) {
-      try {
-        const { data, error } = await this.supabaseService.client.auth.admin.listUsers();
-        if (!error && data?.users) {
-          const existsInSupabase = data.users.some(
-            (u) => u.email?.trim().toLowerCase() === trimmed,
-          );
-          if (existsInSupabase) {
-            return { available: false, reason: 'This email is already registered. Please sign in.' };
-          }
-        }
-      } catch (err) {
-        // Fallback silently if admin API call fails
-      }
     }
 
     return { available: true };
