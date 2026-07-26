@@ -108,8 +108,13 @@ export function AuthProvider({ children }) {
                   lastSyncAtRef.current = Date.now();
                   if (isValidUser(syncedUser)) {
                     setCurrentUser(prev => {
+                      const sbEmail = supabaseSession?.user?.email;
+                      const cleanEmail = (syncedUser.email && !syncedUser.email.endsWith('@meetifyy.user'))
+                        ? syncedUser.email
+                        : (sbEmail || prev?.email || '');
                       const mergedUser = {
                         ...syncedUser,
+                        email: cleanEmail,
                         settings: syncedUser.settings || prev?.settings || prev?.preferences,
                         preferences: syncedUser.settings || prev?.preferences || prev?.settings,
                         isNewUser: syncedUser.profileCompleted !== true
