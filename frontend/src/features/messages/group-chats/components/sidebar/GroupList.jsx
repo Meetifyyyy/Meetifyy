@@ -53,7 +53,7 @@ export default function GroupList({
 
   return (
     <div className={styles.msgConvList}>
-      <div className={styles.desktopHeaderWrapper}>
+      <div className={styles.headerWrapper}>
         <div className={styles.msgConvHeader}>
           <div className={styles.titleGroup}>
             <h2 className={styles.msgConvTitle}>Group Chats</h2>

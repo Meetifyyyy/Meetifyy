@@ -45,7 +45,7 @@
 .msgConvTitle {
   font-family: "Changa One", cursive;
   font-weight: normal;
-  font-size: 1.75rem;
+  font-size: 28.8px;
   color: var(--color-text-main);
   margin: 0;
   line-height: 1.2;
@@ -446,31 +446,31 @@
   background: rgba(239, 68, 68, 0.08);
 }
 
-.mobileHeaderWrapper {
-  display: none;
-}
-
-.desktopHeaderWrapper {
-  display: block;
+.mobileHeaderWrapper,
+.desktopHeaderWrapper,
+.headerWrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  flex-shrink: 0;
 }
 
 @media (max-width: 768px) {
-  .mobileHeaderWrapper {
-    display: block;
+  .mobileHeaderWrapper,
+  .desktopHeaderWrapper,
+  .headerWrapper {
+    display: flex;
+    flex-direction: column;
     width: 100%;
-    margin-bottom: 0.5rem;
-  }
-
-  .desktopHeaderWrapper {
-    display: none;
+    margin-bottom: 0.25rem;
   }
 
   .msgNewBtn {
     border-radius: 50% !important;
-    width: 40px !important;
-    height: 40px !important;
+    width: 36px !important;
+    height: 36px !important;
     padding: 0 !important;
-    box-shadow: 0 4px 10px rgba(var(--color-primary-rgb, 37, 99, 235), 0.25) !important;
+    box-shadow: 0 2px 8px rgba(var(--color-primary-rgb, 37, 99, 235), 0.2) !important;
   }
 
   .msgConvList {
@@ -478,7 +478,7 @@
     flex: 1;
     min-height: 0;
     border-right: none;
-    padding: 0rem 0.75rem 0;
+    padding: 0.75rem 0.75rem 0;
     box-sizing: border-box;
   }
 
@@ -487,7 +487,7 @@
   }
 
   .msgConvTitle {
-    font-size: 1.4rem;
+    font-size: 28.8px;
   }
 
   .backBtn {
@@ -495,22 +495,23 @@
   }
 
   .msgConvScroll {
-    padding-bottom: 60px;
+    padding-bottom: 70px;
   }
 
   .msgConvHeader {
     height: auto;
-    padding: 0 0 1rem 0;
+    padding: 0.5rem 0.25rem;
     border-bottom: none;
   }
 
   .searchRow {
-    padding: 0.5rem 0;
+    padding: 0.4rem 0;
     border-bottom: none;
   }
 
   .filterRow {
-    padding: 0.5rem 0;
+    padding: 0.4rem 0;
+    border-bottom: none;
   }
 
   .convItem {

@@ -271,19 +271,9 @@ export default function MessagesLayout() {
         
         {/* SIDEBAR */}
         <div className={`${sidebarStyles.msgConvList}${showChatOnMobile ? ` ${sidebarStyles.hideOnMobile}` : ''}`}>
-          <div className={sidebarStyles.desktopHeaderWrapper}>
+          <div className={sidebarStyles.headerWrapper}>
             <div className={sidebarStyles.msgConvHeader}>
               <div className={sidebarStyles.titleGroup}>
-                <button 
-                  className={sidebarStyles.backBtn}
-                  onClick={() => goBack('/home')}
-                  aria-label="Go back"
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="19" y1="12" x2="5" y2="12"></line>
-                    <polyline points="12 19 5 12 12 5"></polyline>
-                  </svg>
-                </button>
                 <h2 className={sidebarStyles.msgConvTitle}>Messages</h2>
               </div>
               <button className={sidebarStyles.msgNewBtn} title="New Message" onClick={() => setIsModalOpen(true)}>
