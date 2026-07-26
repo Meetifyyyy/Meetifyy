@@ -407,7 +407,7 @@ export class UsersService {
     }));
   }
 
-  async updateProfile(userId: string, data: any) {
+  async updateProfile(userId: string, data: any, userEmail?: string) {
     // Only allow updating valid user profile fields
     const { displayName, username, bio, avatar, cover, major, graduationYear, location, profileCompleted, interests } = data;
     const updateData: any = {};
@@ -503,7 +503,13 @@ export class UsersService {
 
     const fallbackUsername = updateData.username || `user_${Date.now()}`;
     const fallbackDisplayName = updateData.displayName || fallbackUsername;
-    const fallbackEmail = `${userId}@meetifyy.user`;
+    const realEmail = userEmail && !userEmail.endsWith('@meetifyy.user') ? userEmail.trim().toLowerCase() : (data.email || `${userId}@meetifyy.user`);
+
+    // Auto-heal email if existing record has fallback
+    const existingUserRecord = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    if (existingUserRecord && (existingUserRecord.email.endsWith('@meetifyy.user') || !existingUserRecord.email) && realEmail && !realEmail.endsWith('@meetifyy.user')) {
+      updateData.email = realEmail;
+    }
 
     return this.prisma.user.upsert({
       where: { id: userId },
@@ -512,7 +518,7 @@ export class UsersService {
         id: userId,
         username: fallbackUsername,
         displayName: fallbackDisplayName,
-        email: fallbackEmail,
+        email: realEmail,
         ...updateData,
         notificationPrefs: {
           create: {},

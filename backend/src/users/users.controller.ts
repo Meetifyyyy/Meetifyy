@@ -32,7 +32,8 @@ export class UsersController {
   @UseGuards(JwtGuard)
   async updateProfile(@Req() req: any, @Body() data: any) {
     const currentUserId = req.user?.id;
-    return this.usersService.updateProfile(currentUserId, data);
+    const userEmail = req.user?.email || req.user?.user_metadata?.email;
+    return this.usersService.updateProfile(currentUserId, data, userEmail);
   }
 
   @Get('me/settings')
