@@ -58,6 +58,19 @@ export default function DMList({
           <div className={styles.titleGroup}>
             <h2 className={styles.msgConvTitle}>Direct Messages</h2>
           </div>
+        </div>
+
+        <div className={styles.searchRow}>
+          <div className={styles.msgConvSearch}>
+            <Search size={16} className={styles.searchIcon} />
+            <input 
+              type="text" 
+              className={styles.msgSearchInput} 
+              placeholder="Search conversations…" 
+              value={searchVal}
+              onChange={(e) => setSearchVal(e.target.value)}
+            />
+          </div>
           <button className={styles.msgNewBtn} title="New Direct Message" onClick={() => setIsModalOpen(true)}>
             <MessageSquarePlus size={20} />
           </button>
@@ -76,19 +89,6 @@ export default function DMList({
               </button>
             );
           })}
-        </div>
-
-        <div className={styles.searchRow}>
-          <div className={styles.msgConvSearch}>
-            <Search size={16} className={styles.searchIcon} />
-            <input 
-              type="text" 
-              className={styles.msgSearchInput} 
-              placeholder="Search conversations…" 
-              value={searchVal}
-              onChange={(e) => setSearchVal(e.target.value)}
-            />
-          </div>
         </div>
       </div>
 
