@@ -58,8 +58,21 @@ export default function GroupList({
           <div className={styles.titleGroup}>
             <h2 className={styles.msgConvTitle}>Group Chats</h2>
           </div>
+        </div>
+
+        <div className={styles.searchRow}>
+          <div className={styles.msgConvSearch}>
+            <Search size={16} className={styles.searchIcon} />
+            <input 
+              type="text" 
+              className={styles.msgSearchInput} 
+              placeholder="Search groups…" 
+              value={searchVal}
+              onChange={(e) => setSearchVal(e.target.value)}
+            />
+          </div>
           <button className={styles.msgNewBtn} title="New Group Chat" onClick={() => setIsModalOpen(true)}>
-            <PlusCircle size={20} />
+            <MessageSquarePlus size={20} />
           </button>
         </div>
 
@@ -76,19 +89,6 @@ export default function GroupList({
               </button>
             );
           })}
-        </div>
-
-        <div className={styles.searchRow}>
-          <div className={styles.msgConvSearch}>
-            <Search size={16} className={styles.searchIcon} />
-            <input 
-              type="text" 
-              className={styles.msgSearchInput} 
-              placeholder="Search group chats…" 
-              value={searchVal}
-              onChange={(e) => setSearchVal(e.target.value)}
-            />
-          </div>
         </div>
       </div>
 

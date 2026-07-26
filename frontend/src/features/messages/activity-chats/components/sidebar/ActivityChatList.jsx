@@ -56,6 +56,19 @@ export default function ActivityChatList({
           </div>
         </div>
 
+        <div className={styles.searchRow}>
+          <div className={styles.msgConvSearch}>
+            <Search size={16} className={styles.searchIcon} />
+            <input 
+              type="text" 
+              className={styles.msgSearchInput} 
+              placeholder="Search activities…" 
+              value={searchVal}
+              onChange={(e) => setSearchVal(e.target.value)}
+            />
+          </div>
+        </div>
+
         <div className={styles.filterRow}>
           {['All', 'Unread'].map(filter => {
             const showCount = filter === 'Unread' && totalUnread > 0;
@@ -69,19 +82,6 @@ export default function ActivityChatList({
               </button>
             );
           })}
-        </div>
-
-        <div className={styles.searchRow}>
-          <div className={styles.msgConvSearch}>
-            <Search size={16} className={styles.searchIcon} />
-            <input 
-              type="text" 
-              className={styles.msgSearchInput} 
-              placeholder="Search activity chats…" 
-              value={searchVal}
-              onChange={(e) => setSearchVal(e.target.value)}
-            />
-          </div>
         </div>
       </div>
 

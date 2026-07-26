@@ -276,7 +276,25 @@ export default function MessagesLayout() {
               <div className={sidebarStyles.titleGroup}>
                 <h2 className={sidebarStyles.msgConvTitle}>Messages</h2>
               </div>
-              <button className={sidebarStyles.msgNewBtn} title="New Message" onClick={() => setIsModalOpen(true)}>
+            </div>
+
+            <div className={sidebarStyles.searchRow}>
+              <div className={sidebarStyles.msgConvSearch}>
+                <Search size={16} className={sidebarStyles.searchIcon} />
+                <input 
+                  type="text" 
+                  className={sidebarStyles.msgSearchInput} 
+                  placeholder="Search conversations..." 
+                  value={searchVal}
+                  onChange={(e) => setSearchVal(e.target.value)}
+                />
+              </div>
+              <button 
+                className={sidebarStyles.msgNewBtn} 
+                title="New Message" 
+                onClick={() => setIsModalOpen(true)}
+                aria-label="New Message"
+              >
                 <MessageSquarePlus size={20} />
               </button>
             </div>
@@ -294,19 +312,6 @@ export default function MessagesLayout() {
                   </button>
                 );
               })}
-            </div>
-
-            <div className={sidebarStyles.searchRow}>
-              <div className={sidebarStyles.msgConvSearch}>
-                <Search size={16} className={sidebarStyles.searchIcon} />
-                <input 
-                  type="text" 
-                  className={sidebarStyles.msgSearchInput} 
-                  placeholder="Search conversations..." 
-                  value={searchVal}
-                  onChange={(e) => setSearchVal(e.target.value)}
-                />
-              </div>
             </div>
           </div>
 
