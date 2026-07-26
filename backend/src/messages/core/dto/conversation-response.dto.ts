@@ -1,0 +1,36 @@
+export interface ConversationResponseDto {
+  id: string;
+  publicId?: string;
+  internalId: string;
+  type: string;
+  isMember: boolean;
+  ownerId?: string | null;
+  name: string;
+  avatar?: string | null;
+  description?: string | null;
+  status: string;
+  isInstantMatch?: boolean;
+  isActivityChat?: boolean;
+  activityId?: string | null;
+  expiresAt?: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  whoCanJoin?: string;
+  visibility?: string;
+  allowSharing?: boolean;
+  editGroupPermission?: string;
+  groupUpdatesActive?: boolean;
+  pendingRequests?: any[];
+  admins?: string[];
+  members?: any[];
+  memberCount?: number;
+  pinned?: boolean;
+  muted?: boolean;
+  blocked?: boolean;
+  isBlockedByMe?: boolean;
+  isBlockedByThem?: boolean;
+  unreadCount?: number;
+  unread?: number;
+  lastMessage?: any;
+  targetUser?: any;
+}

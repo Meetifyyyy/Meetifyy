@@ -196,6 +196,22 @@ export default function DirectoryPage() {
     showToast('Directory link copied! 🔗');
   };
 
+  const showCurrentUserCard = useMemo(() => {
+    if (!currentUser) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matches =
+        currentUser.displayName?.toLowerCase().includes(q) ||
+        currentUser.username?.toLowerCase().includes(q) ||
+        currentUser.bio?.toLowerCase().includes(q) ||
+        currentUser.major?.toLowerCase().includes(q);
+      if (!matches) return false;
+    }
+    if (dirBranch !== 'All' && currentUser.major !== dirBranch) return false;
+    if (dirYear !== 'All' && String(currentUser.graduationYear || currentUser.year) !== dirYear) return false;
+    return true;
+  }, [currentUser, searchQuery, dirBranch, dirYear]);
+
   const currentYear = new Date().getFullYear();
   const maxYear = currentYear + 6;
   const classYears = [];
@@ -256,7 +272,7 @@ export default function DirectoryPage() {
 
 
         <div className={styles.directoryGrid}>
-          {currentUser && (
+          {showCurrentUserCard && (
             <div
               key={`current-user-${currentUser.id}`}
               className={styles.directoryCard}
@@ -272,6 +288,13 @@ export default function DirectoryPage() {
                 <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '500', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {currentUser.displayName} (You)
                 </h4>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                  {currentUser.graduationYear || currentUser.year
+                    ? `Class of ${currentUser.graduationYear || currentUser.year}`
+                    : currentUser.major
+                    ? currentUser.major
+                    : 'Campus Member'}
+                </p>
               </div>
             </div>
           )}
@@ -292,12 +315,16 @@ export default function DirectoryPage() {
                   {student.displayName}
                 </h4>
                 <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-                  Class of {student.year || 'XXXX'}
+                  {student.graduationYear || student.year
+                    ? `Class of ${student.graduationYear || student.year}`
+                    : student.major
+                    ? student.major
+                    : 'Campus Member'}
                 </p>
               </div>
             </div>
           ))}
-          {collegeStudents.length === 0 && (
+          {collegeStudents.length === 0 && !showCurrentUserCard && (
             <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '2rem 0', gridColumn: '1 / -1' }}>
               No students found.
             </p>

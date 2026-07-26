@@ -182,6 +182,7 @@ model User {
   matchQueueEntry          MatchQueueEntry?
   matchesAsA               MatchSession[]            @relation("MatchUserA")
   matchesAsB               MatchSession[]            @relation("MatchUserB")
+  deletedMessages          DeletedMessage[]
 
   avatarMedia Media? @relation("UserAvatar", fields: [avatarMediaId], references: [id])
   coverMedia  Media? @relation("UserCover", fields: [coverMediaId], references: [id])
@@ -342,11 +343,14 @@ model Conversation {
   pinnedMessageId     String?
   isInstantMatch      Boolean                   @default(false)
   expiresAt           DateTime?
+  isActivityChat      Boolean                   @default(false)
+  activityId          String?                   @unique
   status              String                    @default("ACTIVE")
   updatedAt           DateTime                  @updatedAt
   type                ConversationType
   owner               User?                     @relation("ConversationOwner", fields: [ownerId], references: [id])
   pinnedMessage       Message?                  @relation("PinnedMessage", fields: [pinnedMessageId], references: [id])
+  activity            CrewActivity?             @relation("ActivityConversation", fields: [activityId], references: [id])
   participants        ConversationParticipant[]
   messages            Message[]                 @relation("ConversationMessages")
   joinRequests        ConversationJoinRequest[]
@@ -354,6 +358,7 @@ model Conversation {
   avatarMedia Media? @relation("ConversationAvatar", fields: [avatarMediaId], references: [id])
 
   @@index([ownerId])
+  @@index([activityId])
 }
 
 model ConversationParticipant {
@@ -387,6 +392,7 @@ model Message {
   replyToId         String?
   senderDeviceId    String?
   type              MessageType              @default(CHAT)
+  state             MessageState             @default(NORMAL)
   attachmentMediaId String?
   pinnedIn          Conversation[]           @relation("PinnedMessage")
   targets           EncryptedMessageTarget[]
@@ -396,6 +402,7 @@ model Message {
   sender            User                     @relation(fields: [senderId], references: [id], onDelete: Cascade)
   reactions         MessageReaction[]
   readReceipts      MessageReadReceipt[]
+  deletedByUsers    DeletedMessage[]
 
   attachmentMedia Media? @relation("MessageAttachment", fields: [attachmentMediaId], references: [id])
 
@@ -476,6 +483,7 @@ model CrewActivity {
   creator             User                  @relation("ActivityCreator", fields: [creatorId], references: [id], onDelete: Cascade)
   college             College?              @relation("ActivityCollege", fields: [collegeId], references: [id])
   members             CrewActivityMember[]
+  conversation        Conversation?         @relation("ActivityConversation")
 
   coverMedia Media? @relation("ActivityCover", fields: [coverMediaId], references: [id])
 
@@ -706,6 +714,7 @@ enum NotificationType {
 enum ConversationType {
   DM
   GROUP
+  ACTIVITY
 }
 
 enum MessageType {
@@ -1096,4 +1105,24 @@ model ConversationJoinRequest {
   @@unique([conversationId, userId])
   @@index([conversationId])
   @@index([userId])
+}
+
+enum MessageState {
+  NORMAL
+  UNSENT
+  EDITED
+}
+
+model DeletedMessage {
+  id        String   @id @default(uuid())
+  userId    String
+  messageId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+  @@index([userId])
+  @@index([messageId])
 }

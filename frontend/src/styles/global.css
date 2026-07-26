@@ -13,8 +13,6 @@ img,
   user-select: none;
   -webkit-user-select: none;
   -webkit-user-drag: none;
-  user-drag: none;
-  draggable: false;
 }
 
 body {
@@ -60,8 +58,8 @@ textarea:focus-visible,
 
 /* Prevent browser default highlight on autofill/suggestions */
 input:-webkit-autofill,
-input:-webkit-autofill:hover, 
-input:-webkit-autofill:focus, 
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
 input:-webkit-autofill:active,
 textarea:-webkit-autofill,
 textarea:-webkit-autofill:hover,
@@ -224,7 +222,7 @@ nav a.active {
   header {
     padding: 0.6rem 1rem;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 0 rem;
   }
 
   .logo {
@@ -565,7 +563,8 @@ button:active {
   /* Fix for Safari border-radius overflow issues with images */
   isolation: isolate;
   transform: translateZ(0);
-  box-shadow: var(--shadow-sm); /* Default standard shadow */
+  box-shadow: var(--shadow-sm);
+  /* Default standard shadow */
   transition: filter var(--transition-fast) ease, opacity var(--transition-fast) ease;
 }
 
@@ -589,16 +588,20 @@ button:active {
 .ui-avatar-clickable {
   cursor: pointer;
 }
+
 .ui-avatar-clickable:hover {
   filter: brightness(0.9);
 }
+
 [data-theme="dark"] .ui-avatar-clickable:hover {
   filter: brightness(1.2);
 }
 
 /* ── Global spinner ──────────────────────────────────────────────────────── */
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .spinner {
@@ -621,9 +624,11 @@ button:active {
   transform: translateZ(0);
   backface-visibility: hidden;
 }
+
 ::view-transition-old(root) {
   z-index: 1 !important;
 }
+
 ::view-transition-new(root) {
   z-index: 9999 !important;
 }
@@ -645,5 +650,5 @@ button,
 input,
 textarea,
 select {
-  transition: background-color 0.4s ease, color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out, border-color 0.4s ease-in-out, box-shadow 0.4s ease-in-out;
 }

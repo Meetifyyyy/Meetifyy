@@ -66,6 +66,11 @@ export class AdminCollegesController {
     return this.collegesService.changeStatus(id, status);
   }
 
+  @Patch(':id/restore')
+  async restoreCollege(@Param('id') id: string) {
+    return this.collegesService.restoreCollege(id);
+  }
+
   @Post(':id/domains')
   async addDomain(
     @Param('id') id: string,

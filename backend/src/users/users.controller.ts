@@ -19,7 +19,7 @@ export class UsersController {
   async getCampusUsers(@Req() req: any, @Query('limit') limit?: string, @Query('offset') offset?: string) {
     const limitNum = limit ? parseInt(limit, 10) : 100;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
-    return this.usersService.getCampusUsers(req.user.collegeId, limitNum, offsetNum);
+    return this.usersService.getCampusUsers(req.user.id, limitNum, offsetNum);
   }
 
   @Get('id/:id')

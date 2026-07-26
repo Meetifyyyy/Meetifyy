@@ -1,266 +1,225 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useSmartBack } from '@shared/hooks/useSmartBack';
+import { useState, useMemo, useEffect } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/hooks/useData';
+import { useSmartBack } from '@shared/hooks/useSmartBack';
+import { generateConversationUrl, correctConversationUrl } from '@shared/utils/conversationUrl';
+import { MessageSquarePlus, Search } from 'lucide-react';
 import { messagesApi } from '@shared/api/apiClient';
-import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
-import { parseConversationRoute, generateConversationUrl, correctConversationUrl } from '@shared/utils/conversationUrl';
-import ConversationList from '../sidebar/ConversationList';
-import ChatArea from '../chat/ChatArea';
+
+import DMItem from '../../direct-messages/components/sidebar/DMItem';
+import GroupItem from '../../group-chats/components/sidebar/GroupItem';
+import ActivityChatItem from '../../activity-chats/components/sidebar/ActivityChatItem';
+
+import DMChatArea from '../../direct-messages/components/chat/DMChatArea';
+import GroupChatArea from '../../group-chats/components/chat/GroupChatArea';
+import ActivityChatArea from '../../activity-chats/components/chat/ActivityChatArea';
+
+import DMContextMenu from '../../direct-messages/components/sidebar/DMContextMenu';
+import GroupContextMenu from '../../group-chats/components/sidebar/GroupContextMenu';
+import ActivityChatContextMenu from '../../activity-chats/components/sidebar/ActivityChatContextMenu';
+
+import NewMessageModal from '../../shared/components/modals/NewMessageModal';
+import ConversationSkeleton from '../../shared/components/skeletons/ConversationSkeleton';
+
 import styles from './MessagesLayout.module.css';
+import sidebarStyles from '../../shared/components/sidebar/ConversationList.module.css';
 
 export default function MessagesLayout() {
   const { param1, param2 } = useParams();
   const navigate = useNavigate();
-
-  const routeInfo = useMemo(() => parseConversationRoute(param1, param2), [param1, param2]);
-  const conversationId = routeInfo.publicId;
-
+  const location = useLocation();
   const queryClient = useQueryClient();
-  const { socket } = useGlobalSocketStore();
-  const { 
-    conversations, 
+  const { currentUser } = useAuth();
+  const goBack = useSmartBack();
+
+  const {
+    conversations = [],
     isConversationsLoading,
     conversationsError,
-    sendDirectMessage, 
-    retryDirectMessage,
-    reactToMessage, 
-    clearChat, 
+    sendDirectMessage,
+    reactToMessage,
+    clearChat,
     toggleBlockUser,
-    addGroupMember,
-    toggleJoinCampusGroup,
-    initializeCampusGroupConversation,
-    currentUser
+    leaveGroup,
+    endCrewActivity,
+    startConversation,
+    createGroupConversation,
+    togglePinConversation,
+    toggleMuteConversation,
+    deleteConversation,
+    socket,
   } = useData();
 
-  const initialChatId = conversationId || null;
-  const [activeChatId, setActiveChatId] = useState(initialChatId);
-  const [showChatOnMobile, setShowChatOnMobile] = useState(!!conversationId);
+  const routeChatId = param2 || param1 || null;
+  const [activeChatId, setActiveChatId] = useState(routeChatId);
+  const [showChatOnMobile, setShowChatOnMobile] = useState(!!routeChatId);
 
-  const lastMarkedReadIdRef = useRef(null);
+  const [activeFilter, setActiveFilter] = useState('All');
+  const [searchVal, setSearchVal] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
 
   useEffect(() => {
-    if (conversationId) {
-      setActiveChatId(conversationId);
+    if (routeChatId) {
+      setActiveChatId(routeChatId);
       setShowChatOnMobile(true);
-      if (String(conversationId).startsWith('c_')) {
-        initializeCampusGroupConversation(conversationId);
-      }
-
-      if (lastMarkedReadIdRef.current !== conversationId) {
-        lastMarkedReadIdRef.current = conversationId;
-        messagesApi.markAsRead(conversationId).catch(() => {});
-        queryClient.setQueryData(['conversations'], (old) => {
-          if (!Array.isArray(old)) return old;
-          return old.map(c => (c.id === conversationId || c.publicId === conversationId) ? { ...c, unread: 0, unreadCount: 0 } : c);
-        });
-      }
     } else {
-      lastMarkedReadIdRef.current = null;
       setActiveChatId(null);
       setShowChatOnMobile(false);
     }
-  }, [conversationId, initializeCampusGroupConversation, queryClient]);
+  }, [routeChatId]);
 
-  // Fetch message history for active conversation (Initial load: 10 messages)
-  const { data: historyData, isLoading: isMessagesLoading, error: messagesError } = useQuery({
-    queryKey: ['messages', activeChatId],
-    queryFn: () => messagesApi.getHistory(activeChatId, null, null, 10),
-    enabled: !!activeChatId,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  // Listen for realtime incoming messages
+  // Realtime socket listeners
   useEffect(() => {
     if (!socket) return;
 
-    const isMatchingConv = (cId, activeId) => {
-      if (!cId || !activeId) return false;
-      const s1 = String(cId).replace(/^(act_)+/, '');
-      const s2 = String(activeId).replace(/^(act_)+/, '');
-      if (s1 === s2) return true;
-      if (baseConv) {
-        const cleanCid = String(baseConv.id).replace(/^(act_)+/, '');
-        const cleanPublicId = baseConv.publicId ? String(baseConv.publicId).replace(/^(act_)+/, '') : null;
-        const cleanInternalId = baseConv.internalId ? String(baseConv.internalId).replace(/^(act_)+/, '') : null;
-        
-        // We only want to know if the INCOMING cId (s1) matches the active baseConv
-        if (s1 === cleanCid || s1 === cleanPublicId || s1 === cleanInternalId) return true;
-      }
-      return false;
-    };
+    const handleNewMessage = (payload) => {
+      const message = payload?.message || payload;
+      const conversationId = payload?.conversationId || message?.conversationId;
+      if (!message || !conversationId) return;
 
-    const handleNewMessage = (newMsg) => {
-      const msgCid = newMsg.publicId || newMsg.conversationId || newMsg.internalId;
-      if (isMatchingConv(msgCid, activeChatId)) {
-        const isMe = String(newMsg.senderId) === String(currentUser?.id);
-        if (!isMe) {
-          messagesApi.markAsRead(activeChatId).catch(() => {});
+      queryClient.setQueryData(['messages', conversationId], (old) => {
+        if (!old || !old.pages || old.pages.length === 0) return old;
+        const newPages = [...old.pages];
+        const firstPage = newPages[0] || { messages: [] };
+        const existingMsgs = firstPage.messages || [];
+
+        const exists = existingMsgs.some(m => m.id === message.id || (m.tempId && m.tempId === message.tempId));
+        if (exists) {
+          const updatedMsgs = existingMsgs.map(m => (m.id === message.id || (m.tempId && m.tempId === message.tempId)) ? message : m);
+          newPages[0] = { ...firstPage, messages: updatedMsgs };
+        } else {
+          newPages[0] = { ...firstPage, messages: [...existingMsgs, message] };
         }
-
-        queryClient.setQueryData(['messages', activeChatId], (old) => {
-          if (!old) return { messages: [newMsg], participants: [] };
-          const msgs = old.messages || [];
-
-          if (msgs.some(m => m.id === newMsg.id)) return old;
-
-          const formatted = {
-            ...newMsg,
-            from: isMe ? 'me' : 'them'
-          };
-
-          if (isMe) {
-            const tempIdx = msgs.findIndex(m => String(m.id).startsWith('temp_') && (m.text === newMsg.text || m.mediaUrl === newMsg.mediaUrl));
-            if (tempIdx !== -1) {
-              const updated = [...msgs];
-              updated[tempIdx] = formatted;
-              return { ...old, messages: updated };
-            }
-          }
-
-          return {
-            ...old,
-            messages: [...msgs, formatted]
-          };
-        });
-      }
-    };
-
-    const handleConversationSeen = ({ conversationId: cId, readerId, lastReadAt, isAllRead, minOtherReadAt }) => {
-      if (String(readerId) === String(currentUser?.id)) return;
-      const targetId = activeChatId;
-      if (isMatchingConv(cId, targetId)) {
-        queryClient.setQueryData(['messages', targetId], (old) => {
-          if (!old || !old.messages) return old;
-          const readTimestamp = minOtherReadAt ? new Date(minOtherReadAt).getTime() : new Date(lastReadAt).getTime();
-          const updatedMessages = old.messages.map(m => {
-            if (m.from === 'me' || String(m.senderId) === String(currentUser?.id)) {
-              const mTime = new Date(m.createdAt || m.timestamp).getTime();
-              if (isAllRead !== undefined) {
-                if (isAllRead && mTime <= readTimestamp) {
-                  return { ...m, status: 'read' };
-                }
-                return { ...m, status: 'sent' };
-              }
-              if (mTime <= readTimestamp) {
-                return { ...m, status: 'read' };
-              }
-            }
-            return m;
-          });
-          return {
-            ...old,
-            messages: updatedMessages
-          };
-        });
-      }
-    };
-
-    const handleGroupMemberRemoved = ({ conversationId: cId, targetUserId, message }) => {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      queryClient.invalidateQueries({ queryKey: ['messages', cId] });
-
-      queryClient.setQueryData(['conversations'], (old) => {
-        if (!Array.isArray(old)) return old;
-        return old.map(c => {
-          if (String(c.id) === String(cId)) {
-            const isMeRemoved = String(targetUserId) === String(currentUser?.id);
-            const updatedMembers = (c.members || c.participants || []).filter(m => {
-              const id = typeof m === 'string' ? m : (m.id || m.userId);
-              return String(id) !== String(targetUserId);
-            });
-            return {
-              ...c,
-              members: updatedMembers,
-              participants: updatedMembers,
-              ...(isMeRemoved ? { isMember: false } : {}),
-              ...(isMeRemoved && c.memberCount ? { memberCount: Math.max(0, c.memberCount - 1) } : {})
-            };
-          }
-          return c;
-        });
+        return { ...old, pages: newPages };
       });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    };
 
-      if (message) {
-        queryClient.setQueryData(['messages', cId], (old) => {
-          if (!old || !old.messages) return old;
-          if (old.messages.some(m => m.id === message.id)) return old;
-          return {
-            ...old,
-            messages: [...old.messages, message]
-          };
-        });
-      }
+    const handleUpdateMessage = (updatedMsg) => {
+      if (!updatedMsg || !updatedMsg.id) return;
+      
+      const convId = updatedMsg.publicId || updatedMsg.conversationId || updatedMsg.internalId;
+      if (!convId) return;
+
+      queryClient.setQueryData(['messages', convId], (old) => {
+        if (!old || !old.pages) return old;
+        const newPages = old.pages.map(page => ({
+          ...page,
+          messages: (page.messages || []).map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m)
+        }));
+        return { ...old, pages: newPages };
+      });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
     };
 
     socket.on('message:new', handleNewMessage);
-    socket.on('conversation:seen', handleConversationSeen);
-    socket.on('group:member_removed', handleGroupMemberRemoved);
+    socket.on('message:updated', handleUpdateMessage);
+    
     return () => {
       socket.off('message:new', handleNewMessage);
-      socket.off('conversation:seen', handleConversationSeen);
-      socket.off('group:member_removed', handleGroupMemberRemoved);
+      socket.off('message:updated', handleUpdateMessage);
     };
-  }, [socket, activeChatId, currentUser?.id, queryClient]);
+  }, [socket, queryClient]);
 
-  const baseConv = conversations.find((c) => {
-    if (!c || activeChatId == null) return false;
+  // Fetch messages history whenever activeChatId changes using infinite query
+  const {
+    data: historyPages,
+    isLoading: isMessagesLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage
+  } = useInfiniteQuery({
+    queryKey: ['messages', activeChatId],
+    queryFn: ({ pageParam }) => activeChatId ? messagesApi.getHistory(activeChatId, undefined, pageParam) : null,
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
+    enabled: !!activeChatId,
+    staleTime: 1000 * 30,
+  });
+
+  // Flatten and deduplicate all loaded pages of messages (oldest to newest)
+  const allMessages = useMemo(() => {
+    if (!historyPages?.pages) return [];
+    // Reverse pages array so older pages come first, then flatMap messages
+    const reversedPages = [...historyPages.pages].reverse();
+    const flat = reversedPages.flatMap(page => page?.messages || []);
+    
+    const seen = new Set();
+    return flat.filter(m => {
+      if (!m) return false;
+      const key = m.id || m.tempId;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [historyPages?.pages]);
+
+  // Find active conversation and merge history messages
+  const baseConv = useMemo(() => {
+    if (!activeChatId) return null;
     const cleanAid = String(activeChatId).replace(/^(act_)+/, '');
-    const cleanCid = String(c.id).replace(/^(act_)+/, '');
-    const cleanActId = c.activityId ? String(c.activityId).replace(/^(act_)+/, '') : null;
-    return cleanCid === cleanAid || cleanActId === cleanAid;
-  }) || (activeChatId ? { id: activeChatId, type: 'DM' } : null);
-
-  const [isFetchingMore, setIsFetchingMore] = useState(false);
-
-  const handleLoadMore = async () => {
-    const currentNextCursor = historyData?.nextCursor;
-    if (!activeChatId || !currentNextCursor || isFetchingMore) return;
-
-    setIsFetchingMore(true);
-    try {
-      // Load 15 older messages on each page
-      const olderData = await messagesApi.getHistory(activeChatId, null, currentNextCursor, 15);
-      if (olderData && olderData.messages) {
-        queryClient.setQueryData(['messages', activeChatId], (old) => {
-          if (!old) return olderData;
-          return {
-            ...old,
-            messages: [...olderData.messages, ...(old.messages || [])],
-            nextCursor: olderData.nextCursor
-          };
-        });
-      }
-    } catch {
-      // ignore error
-    } finally {
-      setIsFetchingMore(false);
-    }
-  };
+    return conversations.find((c) => {
+      const cleanCid = String(c.id).replace(/^(act_)+/, '');
+      const cleanActId = c.activityId ? String(c.activityId).replace(/^(act_)+/, '') : null;
+      return String(c.id) === String(activeChatId) || String(c.publicId) === String(activeChatId) || cleanCid === cleanAid || cleanActId === cleanAid;
+    }) || { id: activeChatId };
+  }, [conversations, activeChatId]);
 
   const activeConv = useMemo(() => {
     if (!baseConv) return null;
-    const msgs = historyData?.messages || baseConv.messages || [];
-
+    const latestPage = historyPages?.pages?.[0];
     return {
       ...baseConv,
-      messages: msgs,
-      participants: historyData?.participants || baseConv.participants || [],
-      nextCursor: historyData?.nextCursor || null
+      messages: allMessages.length > 0 ? allMessages : (baseConv.messages || []),
+      participants: latestPage?.participants || baseConv.participants || baseConv.members || [],
+      nextCursor: latestPage?.nextCursor || null,
     };
-  }, [baseConv, historyData]);
+  }, [baseConv, allMessages, historyPages?.pages]);
 
-  // Synchronize canonical URL (/inbox/:slug/:publicId) without reloading page or refetching
+  // URL sync
   useEffect(() => {
     if (!activeChatId || !activeConv) return;
-
-    const targetPath = correctConversationUrl(activeConv, currentUser?.id, window.location.pathname);
-
-    if (window.location.pathname !== targetPath) {
+    const targetPath = correctConversationUrl(activeConv, currentUser?.id, location.pathname);
+    if (location.pathname !== targetPath && targetPath !== location.pathname) {
       navigate(targetPath, { replace: true });
     }
-  }, [activeChatId, activeConv, currentUser?.id, navigate]);
+  }, [activeChatId, activeConv, currentUser?.id, location.pathname, navigate]);
+
+  // Mark as read when opening a conversation
+  useEffect(() => {
+    if (activeConv && activeConv.unread > 0 && document.visibilityState === 'visible') {
+      messagesApi.markAsRead(activeConv.id).then(() => {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      }).catch(() => {});
+    }
+  }, [activeConv?.id, activeConv?.unread, queryClient]);
+
+  const totalUnread = useMemo(() => {
+    return (conversations || []).reduce((sum, c) => sum + (c.unread || 0), 0);
+  }, [conversations]);
+
+  const filteredConvs = useMemo(() => {
+    return (conversations || [])
+      .filter(c => {
+        if (activeFilter === 'Unread') return (c.unread || 0) > 0;
+        if (activeFilter === 'DMs') return !c.isGroup && !c.isActivityChat && !String(c.id).startsWith('act_') && !String(c.id).startsWith('c_');
+        if (activeFilter === 'Groups') return c.isGroup || c.isActivityChat || String(c.id).startsWith('act_') || String(c.id).startsWith('c_');
+        return true;
+      })
+      .filter(c => {
+        if (!searchVal.trim()) return true;
+        const term = searchVal.toLowerCase();
+        return (c.name || '').toLowerCase().includes(term) || (c.lastMsg || c.lastMessageText || '').toLowerCase().includes(term);
+      })
+      .sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return (b.timestamp || 0) - (a.timestamp || 0);
+      });
+  }, [conversations, activeFilter, searchVal]);
 
   const handleSelectChat = (id, selectedConv) => {
     const targetConv = selectedConv || conversations.find(c => String(c.id) === String(id) || String(c.publicId) === String(id));
@@ -268,131 +227,255 @@ export default function MessagesLayout() {
     setActiveChatId(targetId);
     setShowChatOnMobile(true);
 
-    const isInbox = window.location.pathname.startsWith('/inbox');
-    const basePath = isInbox ? '/inbox' : '/messages';
+    const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
     const targetPath = generateConversationUrl(targetConv || { id: targetId }, currentUser?.id, basePath);
     navigate(targetPath);
   };
 
-  const goBack = useSmartBack();
-
   const handleBack = () => {
-    goBack('/messages', { replace: true });
+    setShowChatOnMobile(false);
+    setActiveChatId(null);
+    const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
+    navigate(basePath, { replace: true });
   };
 
-  const handleSend = async (convId, text, replyTo = null, mentions = [], mediaUrl = null, mediaType = null, explicitLinkPreview = null, explicitInviteData = null) => {
-    if (!convId) return;
-
-    const tempId = 'temp_' + Date.now();
-    const tempMsg = {
-      id: tempId,
-      conversationId: convId,
-      senderId: currentUser?.id,
-      senderName: currentUser?.displayName || currentUser?.username || 'Me',
-      senderAvatar: currentUser?.avatar || '',
-      from: 'me',
-      createdAt: new Date().toISOString(),
-      timestamp: new Date().toISOString(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      type: mediaType === 'audio' ? 'voice' : mediaUrl ? 'media' : 'chat',
-      text,
-      mediaUrl,
-      mediaType,
-      mentions,
-      replyTo,
-      status: 'sending'
-    };
-
-    queryClient.setQueryData(['messages', convId], (old) => {
-      const msgs = old?.messages || [];
-      return {
-        ...old,
-        messages: [...msgs, tempMsg]
-      };
-    });
-
-    try {
-      const res = await sendDirectMessage(convId, text, replyTo, mentions, mediaUrl, mediaType, explicitLinkPreview, explicitInviteData);
-      queryClient.setQueryData(['messages', convId], (old) => {
-        const msgs = old?.messages || [];
-        const existingIdx = msgs.findIndex(m => m.id === tempId || m.id === res.id);
-        if (existingIdx !== -1) {
-          const updated = [...msgs];
-          updated[existingIdx] = { ...res, from: 'me' };
-          return { ...old, messages: updated };
-        }
-        return old;
-      });
-    } catch (err) {
-      toast.error(err?.message || 'Failed to send message.');
-      const isBlockError = err?.message?.toLowerCase().includes('block') || err?.message?.includes('Forbidden');
-      queryClient.setQueryData(['messages', convId], (old) => {
-        const msgs = old?.messages || [];
-        if (isBlockError) {
-          return {
-            ...old,
-            messages: msgs.filter(m => m.id !== tempId)
-          };
-        }
-        return {
-          ...old,
-          messages: msgs.map(m => m.id === tempId ? { ...m, status: 'failed' } : m)
-        };
-      });
-    }
+  const handleContextMenu = (e, convId) => {
+    e.preventDefault();
+    const conv = conversations.find(c => String(c.id) === String(convId));
+    if (!conv) return;
+    setContextMenu({ conv, x: e.clientX, y: e.clientY });
   };
 
-  const handleReact = (convId, messageIndex, reaction) => {
-    reactToMessage(convId, messageIndex, reaction);
+  const handleStartChat = async (targetUser) => {
+    const newConvId = await startConversation(targetUser);
+    setIsModalOpen(false);
+    if (newConvId) handleSelectChat(newConvId);
   };
 
-  const handleClearChat = (convId) => {
-    clearChat(convId);
+  const handleCreateGroup = async (groupName, userIds) => {
+    const newConvId = await createGroupConversation(groupName, userIds);
+    setIsModalOpen(false);
+    if (newConvId) handleSelectChat(newConvId);
   };
 
-  const handleBlockUser = (convId) => {
-    const targetId = activeConv?.targetUser?.id || activeConv?.userId;
-    if (targetId) {
-      toggleBlockUser(targetId, activeConv?.blocked);
-    }
-  };
-
-  const handleJoinGroup = (groupId) => {
-    if (String(groupId).startsWith('c_')) {
-      toggleJoinCampusGroup(groupId);
-    } else {
-      addGroupMember(groupId, currentUser?.id);
-    }
-    handleSelectChat(groupId);
+  // Helper to determine component type for a conversation
+  const getConvType = (c) => {
+    if (c.isActivityChat || String(c.id).startsWith('act_') || c.activityId) return 'activity';
+    if (c.isGroup || String(c.id).startsWith('c_') || c.isCampusGroup) return 'group';
+    return 'dm';
   };
 
   return (
     <div className={styles.page}>
-      <div className={`${styles.messagesLayout}${showChatOnMobile ? ' show-chat' : ''}`}>
-        <ConversationList
-          conversations={conversations}
-          activeChatId={activeChatId}
-          onSelect={handleSelectChat}
-          showChatOnMobile={showChatOnMobile}
-          isLoading={isConversationsLoading}
-          error={conversationsError}
-        />
-        <ChatArea
-          conversation={activeConv}
-          onSendMessage={handleSend}
-          onRetryMessage={(msgId) => retryDirectMessage(activeChatId, msgId)}
-          onReactMessage={(msgIndex, reaction) => handleReact(activeChatId, msgIndex, reaction)}
-          onClearChat={() => handleClearChat(activeChatId)}
-          onBlockUser={() => handleBlockUser(activeChatId)}
-          onJoinGroup={handleJoinGroup}
-          onBack={handleBack}
-          showChatOnMobile={showChatOnMobile}
-          isLoading={isMessagesLoading}
-          hasMore={!!activeConv?.nextCursor}
-          isLoadingMore={isFetchingMore}
-          onLoadMore={handleLoadMore}
-        />
+      <div className={`${styles.messagesLayout}${showChatOnMobile ? ` ${styles.showChat}` : ''}`}>
+        
+        {/* SIDEBAR */}
+        <div className={`${sidebarStyles.msgConvList}${showChatOnMobile ? ` ${sidebarStyles.hideOnMobile}` : ''}`}>
+          <div className={sidebarStyles.desktopHeaderWrapper}>
+            <div className={sidebarStyles.msgConvHeader}>
+              <div className={sidebarStyles.titleGroup}>
+                <button 
+                  className={sidebarStyles.backBtn}
+                  onClick={() => goBack('/home')}
+                  aria-label="Go back"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                  </svg>
+                </button>
+                <h2 className={sidebarStyles.msgConvTitle}>Messages</h2>
+              </div>
+              <button className={sidebarStyles.msgNewBtn} title="New Message" onClick={() => setIsModalOpen(true)}>
+                <MessageSquarePlus size={20} />
+              </button>
+            </div>
+
+            <div className={sidebarStyles.filterRow}>
+              {['All', 'Unread', 'DMs', 'Groups'].map(filter => {
+                const showCount = filter === 'Unread' && totalUnread > 0;
+                return (
+                  <button 
+                    key={filter} 
+                    className={`${sidebarStyles.filterChip} ${activeFilter === filter ? sidebarStyles.activeFilter : ''}`} 
+                    onClick={() => setActiveFilter(filter)}
+                  >
+                    {filter}{showCount ? ` (${totalUnread > 99 ? '99+' : totalUnread})` : ''}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className={sidebarStyles.searchRow}>
+              <div className={sidebarStyles.msgConvSearch}>
+                <Search size={16} className={sidebarStyles.searchIcon} />
+                <input 
+                  type="text" 
+                  className={sidebarStyles.msgSearchInput} 
+                  placeholder="Search conversations..." 
+                  value={searchVal}
+                  onChange={(e) => setSearchVal(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className={sidebarStyles.msgConvScroll}>
+            {isConversationsLoading ? (
+              <>
+                <ConversationSkeleton />
+                <ConversationSkeleton />
+                <ConversationSkeleton />
+              </>
+            ) : filteredConvs.length === 0 ? (
+              <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                <p style={{ fontSize: '0.9rem', margin: 0 }}>{searchVal ? 'No conversations match your search' : 'No conversations yet'}</p>
+              </div>
+            ) : (
+              filteredConvs.map((conv) => {
+                const type = getConvType(conv);
+                if (type === 'activity') {
+                  return (
+                    <ActivityChatItem
+                      key={conv.id}
+                      conv={conv}
+                      activeChatId={activeChatId}
+                      onSelect={handleSelectChat}
+                      onContextMenu={handleContextMenu}
+                    />
+                  );
+                }
+                if (type === 'group') {
+                  return (
+                    <GroupItem
+                      key={conv.id}
+                      conv={conv}
+                      activeChatId={activeChatId}
+                      onSelect={handleSelectChat}
+                      onContextMenu={handleContextMenu}
+                    />
+                  );
+                }
+                return (
+                  <DMItem
+                    key={conv.id}
+                    conv={conv}
+                    activeChatId={activeChatId}
+                    onSelect={handleSelectChat}
+                    onContextMenu={handleContextMenu}
+                  />
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* CHAT AREA */}
+        {(() => {
+          const type = activeConv ? getConvType(activeConv) : 'dm';
+          const paginationProps = {
+            hasMore: !!hasNextPage,
+            isLoadingMore: isFetchingNextPage,
+            onLoadMore: () => {
+              if (hasNextPage && !isFetchingNextPage) {
+                fetchNextPage();
+              }
+            }
+          };
+
+          if (type === 'activity') {
+            return (
+              <ActivityChatArea
+                conversation={activeConv}
+                onSendMessage={sendDirectMessage}
+                onReactMessage={reactToMessage}
+                onEndActivity={endCrewActivity}
+                onBack={handleBack}
+                showChatOnMobile={showChatOnMobile}
+                isLoading={isConversationsLoading || (isMessagesLoading && allMessages.length === 0)}
+                {...paginationProps}
+              />
+            );
+          }
+          if (type === 'group') {
+            return (
+              <GroupChatArea
+                conversation={activeConv}
+                onSendMessage={sendDirectMessage}
+                onReactMessage={reactToMessage}
+                onLeaveGroup={leaveGroup}
+                onBack={handleBack}
+                showChatOnMobile={showChatOnMobile}
+                isLoading={isConversationsLoading || (isMessagesLoading && allMessages.length === 0)}
+                {...paginationProps}
+              />
+            );
+          }
+          return (
+            <DMChatArea
+              conversation={activeConv}
+              onSendMessage={sendDirectMessage}
+              onReactMessage={reactToMessage}
+              onClearChat={clearChat}
+              onBlockUser={toggleBlockUser}
+              onBack={handleBack}
+              showChatOnMobile={showChatOnMobile}
+              isLoading={isConversationsLoading || (isMessagesLoading && allMessages.length === 0)}
+              {...paginationProps}
+            />
+          );
+        })()}
+
       </div>
+
+      {/* CONTEXT MENUS & MODALS */}
+      {contextMenu && (() => {
+        const type = getConvType(contextMenu.conv);
+        if (type === 'activity') {
+          return (
+            <ActivityChatContextMenu
+              conv={contextMenu.conv}
+              position={{ x: contextMenu.x, y: contextMenu.y }}
+              onClose={() => setContextMenu(null)}
+              onMarkRead={() => messagesApi.markAsRead(contextMenu.conv.id)}
+              onMute={() => toggleMuteConversation(contextMenu.conv.id)}
+              onPin={() => togglePinConversation(contextMenu.conv.id)}
+            />
+          );
+        }
+        if (type === 'group') {
+          return (
+            <GroupContextMenu
+              conv={contextMenu.conv}
+              position={{ x: contextMenu.x, y: contextMenu.y }}
+              onClose={() => setContextMenu(null)}
+              onMarkRead={() => messagesApi.markAsRead(contextMenu.conv.id)}
+              onMute={() => toggleMuteConversation(contextMenu.conv.id)}
+              onPin={() => togglePinConversation(contextMenu.conv.id)}
+              onLeave={() => leaveGroup(contextMenu.conv.id)}
+            />
+          );
+        }
+        return (
+          <DMContextMenu
+            conv={contextMenu.conv}
+            position={{ x: contextMenu.x, y: contextMenu.y }}
+            onClose={() => setContextMenu(null)}
+            onMarkRead={() => messagesApi.markAsRead(contextMenu.conv.id)}
+            onMute={() => toggleMuteConversation(contextMenu.conv.id)}
+            onPin={() => togglePinConversation(contextMenu.conv.id)}
+            onDelete={() => deleteConversation(contextMenu.conv.id)}
+          />
+        );
+      })()}
+
+      {isModalOpen && (
+        <NewMessageModal
+          onClose={() => setIsModalOpen(false)}
+          onStartChat={handleStartChat}
+          onCreateGroup={handleCreateGroup}
+        />
+      )}
     </div>
   );
 }

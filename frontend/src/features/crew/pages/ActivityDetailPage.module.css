@@ -224,6 +224,10 @@
   border-radius: 18px;
   padding: 1.25rem 1.5rem;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .imgSquare {
@@ -255,12 +259,16 @@
   flex-direction: column;
   padding-top: 1rem;
   padding-bottom: 6rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .calendarBox {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .calendarBox > :first-child {
@@ -283,6 +291,8 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .locIconWrap {
@@ -308,6 +318,9 @@
   font-weight: 500;
   color: white;
   line-height: 1.4;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .dateBadge {
@@ -353,6 +366,9 @@
   color: white;
   font-family: var(--font-family-display);
   letter-spacing: -0.01em;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 @keyframes forceCompositing {
@@ -427,6 +443,11 @@
   color: rgba(255, 255, 255, 0.9);
   margin-bottom: 1.5rem;
   white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   background: rgba(255, 255, 255, 0.01);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -442,10 +463,34 @@
   left: 0;
   right: 0;
   display: flex;
+  align-items: center;
   justify-content: center;
+  gap: 12px;
   pointer-events: none;
   z-index: 100;
   background: transparent;
+}
+
+.chatIconBtn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-primary) 0%, #2563eb 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 8px 25px rgba(37, 99, 235, 0.45);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+
+.chatIconBtn:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.6);
 }
 
 .stickyJoinWrap button {
@@ -464,6 +509,11 @@
   box-shadow: 0 8px 32px rgba(var(--color-primary-rgb), 0.4);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
+  min-width: 170px;
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .joinBtn:hover {
@@ -471,14 +521,68 @@
   box-shadow: 0 12px 40px rgba(var(--color-primary-rgb), 0.5);
 }
 
+.btnSpinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .joinBtn:disabled {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.5);
-  box-shadow: none;
+  background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 25px rgba(79, 70, 229, 0.45) !important;
   cursor: not-allowed;
   transform: none;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.endedBtn {
+  background: linear-gradient(135deg, #991b1b 0%, #dc2626 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 25px rgba(220, 38, 38, 0.45) !important;
+  cursor: not-allowed;
+  transform: none;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.startedBtn {
+  background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 25px rgba(79, 70, 229, 0.45) !important;
+  cursor: not-allowed;
+  transform: none;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.joinedBtn {
+  background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 25px rgba(20, 184, 166, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  font-weight: 700;
 }
 
 .leaveBtn {

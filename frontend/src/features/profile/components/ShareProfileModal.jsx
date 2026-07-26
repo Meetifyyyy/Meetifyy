@@ -20,18 +20,21 @@ export default function ShareProfileModal({ isOpen, onClose, profileUser }) {
     });
   };
 
-  const handleSend = (convId) => {
-    messagesApi.sendDirectMessage(convId, '', null, { 
-      type: 'profileShare', 
-      profile: { 
-        id: profileUser.id, 
-        username: profileUser.username, 
-        displayName: profileUser.displayName, 
-        avatar: profileUser.avatar,
-        bio: profileUser.bio,
-        followers: profileUser.stats?.followers ?? profileUser.followers ?? 0,
-        following: profileUser.stats?.following ?? profileUser.following ?? 0
-      } 
+  const handleSend = async (convId) => {
+    await messagesApi.sendDirectMessage(convId, {
+      text: '',
+      inviteData: { 
+        type: 'profileShare', 
+        profile: { 
+          id: profileUser.id, 
+          username: profileUser.username, 
+          displayName: profileUser.displayName, 
+          avatar: profileUser.avatar,
+          bio: profileUser.bio,
+          followers: profileUser.stats?.followers ?? profileUser.followers ?? 0,
+          following: profileUser.stats?.following ?? profileUser.following ?? 0
+        } 
+      }
     });
     setSentTo(prev => new Set(prev).add(convId));
   };

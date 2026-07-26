@@ -13,11 +13,11 @@ import MatchPopup from '@features/instant-match/components/match/MatchPopup';
 export default function DashboardLayoutWrapper() {
   const matches = useMatches();
   const navigate = useNavigate();
-  
+
   // Determine if wide layout is needed based on route handle
   const isWide = matches.some(match => match.handle?.wide);
-  const noPadding = matches.some(match => 
-    match.pathname.startsWith('/messages') || 
+  const noPadding = matches.some(match =>
+    match.pathname.startsWith('/messages') ||
     match.pathname.startsWith('/campus') ||
     match.pathname.startsWith('/profile') ||
     match.pathname.startsWith('/post') ||
@@ -25,11 +25,11 @@ export default function DashboardLayoutWrapper() {
     match.pathname.startsWith('/settings') ||
     /^\/communities\/.+/.test(match.pathname)
   );
-  const hideBottomNav = matches.some(match => 
-    match.pathname.startsWith('/saved') || 
+  const hideBottomNav = matches.some(match =>
+    match.pathname.startsWith('/saved') ||
     match.pathname.startsWith('/settings')
   );
-  
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {

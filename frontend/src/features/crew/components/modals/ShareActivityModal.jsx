@@ -21,23 +21,26 @@ export default function ShareActivityModal({ isOpen, onClose, activity }) {
     });
   };
 
-  const handleSend = (convId) => {
-    messagesApi.sendDirectMessage(convId, '', null, { 
-      type: 'activityShare', 
-      activity: { 
-        id: activity.id, 
-        title: activity.title, 
-        time: activity.time, 
-        date: activity.date,
-        dateLabel: activity.dateLabel,
-        hostName: activity.hostName,
-        category: activity.category,
-        location: activity.location,
-        description: activity.description,
-        slotsNeeded: activity.slotsNeeded,
-        slotsFilled: activity.slotsFilled,
-        hostAvatar: activity.hostAvatar
-      } 
+  const handleSend = async (convId) => {
+    await messagesApi.sendDirectMessage(convId, { 
+      text: '',
+      inviteData: { 
+        type: 'activityShare', 
+        activity: { 
+          id: activity.id, 
+          title: activity.title, 
+          time: activity.time, 
+          date: activity.date,
+          dateLabel: activity.dateLabel,
+          hostName: activity.hostName,
+          category: activity.category,
+          location: activity.location,
+          description: activity.description,
+          slotsNeeded: activity.slotsNeeded,
+          slotsFilled: activity.slotsFilled,
+          hostAvatar: activity.hostAvatar
+        } 
+      }
     });
     setSentTo(prev => new Set(prev).add(convId));
   };

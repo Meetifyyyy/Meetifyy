@@ -54,8 +54,9 @@ export const compressImage = async (file, options = {}) => {
  * Requests a presigned URL from the backend and uploads the file.
  * Completely provider-agnostic from the frontend's perspective.
  */
-export const uploadFileDirect = async (file, folder = 'general') => {
+export const uploadFileDirect = async (file, folder = 'general', onProgress = null) => {
   try {
+    if (onProgress) onProgress(10);
     // 1. Get presigned URL from backend
     const { uploadUrl, publicUrl, key, mediaId } = await apiClient.post('/api/media/presigned-url', {
       filename: file.name,
@@ -64,28 +65,44 @@ export const uploadFileDirect = async (file, folder = 'general') => {
       fileSize: file.size,
     });
 
-    // 2. Upload directly to the designated storage provider via the signed URL
-    const uploadRes = await fetch(uploadUrl, {
-      method: 'PUT',
-      body: file,
-      headers: {
-        'Content-Type': file.type,
-      },
-      // Some providers require we don't cache
-      cache: 'no-store',
-    });
+    if (onProgress) onProgress(20);
 
-    if (!uploadRes.ok) {
-      // Supabase returns JSON error body usually, let's try to parse it
-      let errMsg = `Upload failed with status ${uploadRes.status}`;
-      try {
-        const errJson = await uploadRes.json();
-        if (errJson.error) errMsg = errJson.error;
-      } catch (e) {
-        // ignore
+    // 2. Upload directly to storage provider with XHR for real-time progress tracking
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', uploadUrl);
+      xhr.setRequestHeader('Content-Type', file.type);
+
+      if (onProgress && xhr.upload) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && e.total > 0) {
+            const xhrPercent = Math.round((e.loaded / e.total) * 100);
+            const overallPercent = Math.min(99, 20 + Math.round((xhrPercent * 79) / 100));
+            onProgress(overallPercent);
+          }
+        };
       }
-      throw new Error(errMsg);
-    }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          if (onProgress) onProgress(100);
+          resolve(xhr.response);
+        } else {
+          let errMsg = `Upload failed with status ${xhr.status}`;
+          try {
+            const errJson = JSON.parse(xhr.responseText);
+            if (errJson.error) errMsg = errJson.error;
+          } catch (e) {
+            // ignore
+          }
+          reject(new Error(errMsg));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Network error during media upload'));
+      xhr.onabort = () => reject(new Error('Media upload aborted'));
+      xhr.send(file);
+    });
 
     // 3. Return the generic media details
     return { publicUrl, key, mediaId };
@@ -98,10 +115,17 @@ export const uploadFileDirect = async (file, folder = 'general') => {
 /**
  * Full Pipeline: Validate -> Compress -> Upload
  */
-export const processAndUploadImage = async (file, folder = 'general', compressOptions = {}) => {
+export const processAndUploadImage = async (file, folder = 'general', compressOptions = {}, onProgress = null) => {
   validateFile(file);
+  if (onProgress) onProgress(8);
   const compressedFile = await compressImage(file, compressOptions);
-  return await uploadFileDirect(compressedFile, folder);
+  if (onProgress) onProgress(22);
+  return await uploadFileDirect(compressedFile, folder, (percent) => {
+    if (onProgress) {
+      const overallPercent = Math.min(100, 22 + Math.round((percent * 78) / 100));
+      onProgress(overallPercent);
+    }
+  });
 };
 
 /**

@@ -12,8 +12,7 @@ import {
   Headers,
 } from '@nestjs/common';
 import { ModerationService } from './moderation.service';
-import { JwtGuard } from '../common/guards/jwt.guard';
-import { AdminGuard } from '../common/guards/admin.guard';
+import { JwtGuard, AdminGuard } from '../common/guards';
 import { SubmitReportDto } from './dto/submit-report.dto';
 import { UpdateReportDto } from './dto/update-report.dto';
 import { BulkActionReportDto } from './dto/bulk-action-report.dto';

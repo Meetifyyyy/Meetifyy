@@ -7,7 +7,7 @@ import styles from './Avatar.module.css';
 
 const isImageUrl = (str) => {
   if (!str || typeof str !== 'string') return false;
-  return str.startsWith('/') || str.startsWith('http://') || str.startsWith('https://') || str.startsWith('data:');
+  return str.startsWith('/') || str.startsWith('http://') || str.startsWith('https://') || str.startsWith('data:') || str.startsWith('blob:');
 };
 
 // Used only when showInitials=true (campus / directory pages)

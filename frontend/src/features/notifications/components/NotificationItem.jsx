@@ -59,8 +59,8 @@ export default function NotificationItem({
       className={`${styles.item} ${isRead ? '' : styles.unread}`}
       onClick={() => onClick(notif)}
     >
-      <div className={styles.avatar}>
-        <Avatar src={actor.avatar} name={actorName} size="34px" />
+      <div className={styles.avatarWrapper}>
+        <Avatar src={actor?.avatar} name={actorName} size="40px" />
       </div>
 
       <div className={styles.content}>
@@ -77,9 +77,7 @@ export default function NotificationItem({
           >
             {actorName}
           </span>
-          {' '}
           <span className={styles.text}>{displayText}</span>
-          {' '}
           <span className={styles.time}>• {timeStr}</span>
         </div>
         {notifType === 'activity_join_request' && (
@@ -106,13 +104,15 @@ export default function NotificationItem({
         )}
       </div>
 
-      <div className={styles.actionSlot}>
-        {isFollow && targetUsername ? (
-          <FollowButton targetUsername={targetUsername} size="sm" />
-        ) : postMedia ? (
-          <img src={postMedia} className={styles.previewImg} alt="" />
-        ) : null}
-      </div>
+      {((isFollow && targetUsername) || postMedia) && (
+        <div className={styles.actionSlot}>
+          {isFollow && targetUsername ? (
+            <FollowButton targetUsername={targetUsername} size="sm" />
+          ) : postMedia ? (
+            <img src={postMedia} className={styles.previewImg} alt="" />
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

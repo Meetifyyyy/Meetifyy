@@ -1,5 +1,6 @@
 import { EmptyState } from '@shared/components/ui/StateViews';
 import NotificationItem from './NotificationItem';
+import { useData } from '@shared/hooks/useData';
 
 export default function NotificationList({
   groupedNotifications,
@@ -7,10 +8,38 @@ export default function NotificationList({
   onNotifClick,
   onAcceptJoinRequest,
   onRejectJoinRequest,
-  getUserById,
   pageStyles
 }) {
+  const { users, getUserById } = useData();
+
   const resolveActor = (notif) => {
+    const actorId = notif.actor?.id || notif.actorId || notif.metadata?.actorId;
+    const actorUsername = notif.actor?.username || notif.metadata?.actorUsername || notif.metadata?.username || notif.metadata?.actorName;
+
+    let liveUser = null;
+    if (actorId && getUserById) {
+      liveUser = getUserById(actorId);
+    }
+    if (!liveUser && users) {
+      if (actorId && users[actorId]) {
+        liveUser = users[actorId];
+      } else if (actorUsername) {
+        liveUser = Object.values(users).find(u => 
+          u.username === actorUsername || 
+          u.displayName === actorUsername || 
+          u.name === actorUsername
+        );
+      }
+    }
+
+    if (liveUser) {
+      return {
+        name: liveUser.displayName || liveUser.username || 'Someone',
+        avatar: liveUser.avatar || '',
+        username: liveUser.username || ''
+      };
+    }
+
     if (notif.actor && (notif.actor.displayName || notif.actor.username)) {
       return {
         name: notif.actor.displayName || notif.actor.username,
@@ -18,6 +47,7 @@ export default function NotificationList({
         username: notif.actor.username || ''
       };
     }
+
     if (notif.metadata?.actorName || notif.metadata?.actorDisplayName || notif.metadata?.username || notif.metadata?.actorUsername) {
       return { 
         name: notif.metadata.actorName || notif.metadata.actorDisplayName || notif.metadata.username || notif.metadata.actorUsername, 
@@ -25,17 +55,7 @@ export default function NotificationList({
         username: notif.metadata.actorUsername || notif.metadata.username || '' 
       };
     }
-    const fallbackId = notif.actorId || notif.entityId;
-    if (fallbackId && getUserById) {
-      const u = getUserById(fallbackId);
-      if (u) {
-        return {
-          name: u.displayName || u.username,
-          avatar: u.avatar || '',
-          username: u.username || ''
-        };
-      }
-    }
+
     return { name: 'Someone', avatar: '', username: '' };
   };
 

@@ -5,6 +5,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import Avatar from './avatar/Avatar';
+import { parseConversationRoute } from '../utils/conversationUrl';
+import { messagesApi } from '../api/apiClient';
 
 export default function SocketManager() {
   const { session, isLoggedIn } = useAuth();
@@ -28,12 +30,55 @@ export default function SocketManager() {
       // Invalidate queries so useNotifications hook fetches the latest
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
 
-      // Smart toast logic: suppress if user is on the exact screen
+      // Smart toast logic: suppress if user is on the exact screen or if muted
       const currentEntityId = notification.entityId || notification.metadata?.conversationId;
-      const isViewingEntity =
-        (notification.type?.toUpperCase() === 'MESSAGE' && currentEntityId && window.location.pathname.includes(`/messages/${currentEntityId}`));
+      const pubId = notification.metadata?.publicId;
+      const intId = notification.metadata?.internalId;
+      const targetIds = [currentEntityId, pubId, intId].filter(Boolean);
 
-      if (!isViewingEntity) {
+      const convs = queryClient.getQueryData(['conversations']) || [];
+      const currentPath = window.location.pathname;
+      const isMessagesRoute = currentPath.startsWith('/messages') || currentPath.startsWith('/inbox');
+      
+      let isViewingEntity = false;
+      if (notification.type?.toUpperCase() === 'MESSAGE' && isMessagesRoute) {
+        const pathParts = currentPath.split('/').filter(Boolean);
+        const param1 = pathParts[1];
+        const param2 = pathParts[2];
+        const routeInfo = parseConversationRoute(param1, param2);
+        const viewedId = routeInfo.publicId;
+
+        if (viewedId) {
+          if (viewedId === currentEntityId || (pubId && viewedId === pubId) || (intId && viewedId === intId)) {
+            isViewingEntity = true;
+          }
+
+          if (!isViewingEntity) {
+            const activeConv = convs.find(c => 
+              c.id === viewedId || c.publicId === viewedId || c.internalId === viewedId
+            );
+            if (activeConv) {
+              const convIds = [activeConv.id, activeConv.publicId, activeConv.internalId].filter(Boolean);
+              if (targetIds.some(tId => convIds.includes(tId))) {
+                isViewingEntity = true;
+              }
+            }
+          }
+        }
+      }
+
+      const targetConv = convs.find(c => {
+        const cIds = [c.id, c.publicId, c.internalId].filter(Boolean);
+        return targetIds.some(tId => cIds.includes(tId));
+      });
+      const isMuted = Boolean(targetConv?.muted || targetConv?.isMuted);
+
+      if (isViewingEntity) {
+        const convIdToRead = pubId || currentEntityId;
+        if (convIdToRead) {
+          messagesApi.markAsRead(convIdToRead).catch(() => {});
+        }
+      } else if (!isMuted) {
         toast.custom((t) => {
           const isGroupMessage = Boolean(notification.metadata?.isGroup || notification.metadata?.conversationType === 'GROUP');
           const actorName = notification.actor?.displayName || notification.actor?.username || notification.metadata?.actorDisplayName || notification.metadata?.actorName || notification.metadata?.username || 'Someone';
@@ -152,17 +197,107 @@ export default function SocketManager() {
     };
 
     const handlePresenceUpdate = ({ userId, status, lastActive }) => {
-      queryClient.setQueriesData({ queryKey: ['conversations'] }, (old) => {
+      if (!userId) return;
+      const isOnline = status === 'online';
+
+      queryClient.setQueryData(['conversations'], (old) => {
         if (!Array.isArray(old)) return old;
         return old.map((c) => {
-          if (c.targetUser?.id === userId) {
+          const isTarget = String(c.targetUser?.id) === String(userId) || String(c.userId) === String(userId);
+          if (isTarget) {
             return {
               ...c,
-              targetUser: {
+              online: isOnline,
+              targetUser: c.targetUser ? {
                 ...c.targetUser,
-                isOnline: status === 'online',
+                isOnline,
                 lastActive: lastActive || c.targetUser.lastActive
-              }
+              } : null
+            };
+          }
+          return c;
+        });
+      });
+
+      queryClient.setQueryData(['users'], (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map((u) => {
+          if (String(u.id) === String(userId)) {
+            return {
+              ...u,
+              isOnline,
+              lastActive: lastActive || u.lastActive
+            };
+          }
+          return u;
+        });
+      });
+
+      queryClient.setQueryData(['campusUsers'], (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map((u) => {
+          if (String(u.id) === String(userId)) {
+            return {
+              ...u,
+              isOnline,
+              lastActive: lastActive || u.lastActive
+            };
+          }
+          return u;
+        });
+      });
+
+      queryClient.setQueryData(['user', userId], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          isOnline,
+          lastActive: lastActive || old.lastActive
+        };
+      });
+    };
+
+    const handleGroupMemberChange = () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    };
+
+    const handleConversationUpdated = (payload) => {
+      if (!payload) return;
+      const convId = payload.conversationId || payload.id || payload.publicId;
+
+      queryClient.setQueryData(['conversations'], (old) => {
+        if (!Array.isArray(old)) return old;
+
+        const exists = old.some(c => c.id === convId || c.publicId === convId || c.internalId === convId);
+        if (!exists) {
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          return old;
+        }
+
+        const currentPath = window.location.pathname;
+        const isMessagesRoute = currentPath.startsWith('/messages') || currentPath.startsWith('/inbox');
+        const pathParts = currentPath.split('/').filter(Boolean);
+        const param1 = pathParts[1];
+        const param2 = pathParts[2];
+        const routeInfo = isMessagesRoute ? parseConversationRoute(param1, param2) : { publicId: null };
+        const viewedId = routeInfo.publicId;
+
+        return old.map((c) => {
+          if (c.id === convId || c.publicId === convId || c.internalId === convId) {
+            const isViewing = isMessagesRoute && viewedId && (
+              viewedId === c.id || viewedId === c.publicId || viewedId === c.internalId
+            );
+
+            const lastMsg = payload.lastMessage;
+            return {
+              ...c,
+              ...(payload.name ? { name: payload.name } : {}),
+              ...(payload.avatar !== undefined ? { avatar: payload.avatar, avatarKey: payload.avatar } : {}),
+              ...(payload.description !== undefined ? { description: payload.description } : {}),
+              ...(lastMsg ? { lastMessage: lastMsg, updatedAt: lastMsg.createdAt } : {}),
+              ...(payload.ownerId ? { ownerId: payload.ownerId } : {}),
+              unreadCount: isViewing ? 0 : (lastMsg ? (c.unreadCount || 0) + 1 : (c.unreadCount || 0)),
+              unread: isViewing ? 0 : (lastMsg ? (c.unread || 0) + 1 : (c.unread || 0)),
             };
           }
           return c;
@@ -170,27 +305,23 @@ export default function SocketManager() {
       });
     };
 
-    const handleConversationUpdated = ({ conversationId, lastMessage }) => {
-      queryClient.setQueryData(['conversations'], (old) => {
-        if (!Array.isArray(old)) return old;
-        const currentPath = window.location.pathname;
-        const isViewing = currentPath.includes(`/messages/`) && (
-          currentPath.endsWith(`/${conversationId}`) || currentPath.includes(`/${conversationId}/`) ||
-          (publicId && (currentPath.endsWith(`/${publicId}`) || currentPath.includes(`/${publicId}/`))) ||
-          (internalId && (currentPath.endsWith(`/${internalId}`) || currentPath.includes(`/${internalId}/`)))
-        );
-
-        return old.map((c) => {
-          if (c.id === conversationId || c.publicId === conversationId || c.internalId === conversationId) {
+    const handleMessageUpdated = (payload) => {
+      if (!payload || !payload.id) return;
+      const keys = [payload.conversationId, payload.publicId, payload.internalId].filter(Boolean);
+      const uniqueKeys = [...new Set(keys)];
+      uniqueKeys.forEach(convKey => {
+        queryClient.setQueryData(['messages', convKey], (old) => {
+          if (!old || !old.messages) return old;
+          if (payload.state === 'UNSENT' || payload.deleted || payload.deletedAt) {
             return {
-              ...c,
-              lastMessage,
-              updatedAt: lastMessage.createdAt,
-              unreadCount: isViewing ? 0 : (c.unreadCount || 0) + 1,
-              unread: isViewing ? 0 : (c.unread || 0) + 1,
+              ...old,
+              messages: old.messages.filter(m => m.id !== payload.id)
             };
           }
-          return c;
+          return {
+            ...old,
+            messages: old.messages.map(m => m.id === payload.id ? { ...m, ...payload } : m)
+          };
         });
       });
     };
@@ -199,12 +330,18 @@ export default function SocketManager() {
     socket.on('notification:count', handleNotificationCount);
     socket.on('presence:update', handlePresenceUpdate);
     socket.on('conversation:updated', handleConversationUpdated);
+    socket.on('message:updated', handleMessageUpdated);
+    socket.on('group:member_added', handleGroupMemberChange);
+    socket.on('group:member_removed', handleGroupMemberChange);
 
     return () => {
       socket.off('notification:new', handleNewNotification);
       socket.off('notification:count', handleNotificationCount);
       socket.off('presence:update', handlePresenceUpdate);
       socket.off('conversation:updated', handleConversationUpdated);
+      socket.off('message:updated', handleMessageUpdated);
+      socket.off('group:member_added', handleGroupMemberChange);
+      socket.off('group:member_removed', handleGroupMemberChange);
     };
   }, [socket, queryClient, navigate]);
 

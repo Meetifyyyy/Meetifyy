@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSavedPostsStore } from '../stores/savedPostsStore';
 import { supabase } from '../context/AuthContext';
 import { toast } from 'sonner';
+import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline';
 
 /**
  * A centralized hook to bridge the old DataContext API with React Query.
@@ -24,7 +25,7 @@ export function useData() {
   const { data: rawCampusUsers = [] } = useQuery({ queryKey: ['campusUsers'], queryFn: () => usersApi.getCampusUsers(200, 0), staleTime: 60_000 });
 
   const conversations = useMemo(() => {
-    return (rawConversations || []).map(c => {
+    const list = (rawConversations || []).map(c => {
       const pList = c.participants || c.members || [];
       const calculatedIsMember = (!c.type || c.type === 'DIRECT') 
         ? true 
@@ -33,9 +34,11 @@ export function useData() {
             return String(id) === String(currentUser?.id);
           });
       const isMember = c.isMember !== undefined ? c.isMember : calculatedIsMember;
+      const isGroup = c.type === 'GROUP' || c.isGroup;
 
       return {
         ...c,
+        internalId: c.internalId || c.id,
         isMember,
         blocked: c.blocked || false,
         isBlockedByMe: c.isBlockedByMe || false,
@@ -54,32 +57,80 @@ export function useData() {
         lastSenderName: c.lastMessage?.senderName || null,
         timestamp: c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).getTime() : (c.updatedAt ? new Date(c.updatedAt).getTime() : 0),
         unread: c.unreadCount || c.unread || 0,
-        online: c.targetUser?.isOnline || false,
-        isGroup: c.type === 'GROUP',
-        name: c.name || c.targetUser?.displayName || c.targetUser?.username || 'Chat',
-        avatar: c.avatar || c.targetUser?.avatar || null,
-        username: c.targetUser?.username || null,
-        userId: c.targetUser?.id || null,
+        online: isGroup ? false : (c.targetUser?.isOnline || false),
+        isGroup,
+        name: isGroup ? (c.name || 'Group Chat') : (c.name || c.targetUser?.displayName || c.targetUser?.username || 'Chat'),
+        avatar: isGroup ? (c.avatarKey || c.avatar || null) : (c.avatar || c.targetUser?.avatar || null),
+        username: isGroup ? null : (c.targetUser?.username || null),
+        userId: isGroup ? null : (c.targetUser?.id || null),
+        targetUser: isGroup ? null : c.targetUser
       };
     });
-  }, [rawConversations, currentUser?.id]);
+
+    const actList = [...(rawActivities || []), ...(rawCampusActivities || [])];
+    const uniqueActMap = new Map();
+    actList.forEach(a => { if (a && a.id) uniqueActMap.set(a.id, a); });
+
+    uniqueActMap.forEach((act) => {
+      const hasGroup = act.createActivityGroup ?? act.createEventGroup ?? false;
+      if (hasGroup) {
+        const actConvId = `act_${act.id}`;
+        const existsInRaw = list.some(c => String(c.id) === String(act.id) || String(c.id) === actConvId || String(c.activityId) === String(act.id));
+        if (!existsInRaw) {
+          const isParticipant = act.creatorId === currentUser?.id || 
+            (act.members && act.members.some(m => m.userId === currentUser?.id && m.status === 'MEMBER'));
+          if (isParticipant) {
+            const hostObj = act.creator || act.members?.find(m => m.userId === act.creatorId)?.user;
+            const hasStarted = act.startDate ? (new Date(act.startDate) <= new Date()) : false;
+            list.push({
+              id: actConvId,
+              publicId: actConvId,
+              internalId: act.id,
+              activityId: act.id,
+              isActivityChat: true,
+              isGroup: true,
+              isMember: true,
+              name: act.title,
+              avatar: act.coverImage || hostObj?.avatar || '/default_avatar.webp',
+              unread: 0,
+              lastMsg: hasStarted ? 'Activity has started!' : 'Activity group chat created',
+              timestamp: act.createdAt ? new Date(act.createdAt).getTime() : Date.now(),
+              participants: act.members?.map(m => m.user || { id: m.userId }) || [],
+              creatorId: act.creatorId,
+              hostName: hostObj?.displayName || hostObj?.username || 'Host',
+            });
+          }
+        }
+      }
+    });
+
+    return list;
+  }, [rawConversations, rawActivities, rawCampusActivities, currentUser?.id]);
 
   const mapActivity = (a) => {
     const startDate = a.startDate ? new Date(a.startDate) : null;
+    const endDate = a.endDate ? new Date(a.endDate) : null;
+
     const dateFormatted = startDate ? startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
     const dateLabelFormatted = startDate ? startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
     const timeFormatted = startDate ? startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null;
 
+    const endDateFormatted = endDate ? endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+    const endTimeFormatted = endDate ? endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null;
+
     return {
       ...a,
       date: a.startDate || null,
+      endDate: a.endDate || null,
       dateFormatted,
       dateLabel: dateLabelFormatted,
       time: timeFormatted,
+      endTime: endTimeFormatted,
+      endDateFormatted,
       hostId: a.creatorId,
-      hostName: a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
-      hostUsername: a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
-      hostAvatar: a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
+      hostName: a.creator?.displayName || a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
+      hostUsername: a.creator?.username || a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
+      hostAvatar: a.creator?.avatar || a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
       participants: a.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
       pendingRequests: a.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
       slotsFilled: a.members?.filter(m => m.status === 'MEMBER').length || 1,
@@ -227,18 +278,82 @@ export function useData() {
   };
 
   // API Implementations
-  const sendDirectMessage = async (convId, text, replyTo = null, mentions = [], mediaUrl = null, mediaType = null, explicitLinkPreview = null, explicitInviteData = null) => {
-    const res = await messagesApi.sendDirectMessage(convId, {
-      text,
-      replyToId: replyTo?.id || null,
-      mentions,
-      mediaUrl,
-      mediaType,
-      inviteData: explicitInviteData
+  const sendDirectMessage = async (convId, text, replyTo = null, mentions = [], mediaUrl = null, mediaType = null, explicitLinkPreview = null, explicitInviteData = null, options = null) => {
+    let payload = {};
+    if (text && typeof text === 'object' && !Array.isArray(text)) {
+      payload = text;
+    } else {
+      payload = {
+        text: typeof text === 'string' ? text : '',
+        replyToId: replyTo?.id || null,
+        mentions: Array.isArray(mentions) ? mentions : [],
+        mediaUrl: typeof mediaUrl === 'string' ? mediaUrl : null,
+        mediaType: typeof mediaType === 'string' ? mediaType : null,
+        inviteData: explicitInviteData || (mentions && typeof mentions === 'object' && !Array.isArray(mentions) ? mentions : null)
+      };
+    }
+
+    const tempId = options?.tempId || `temp_${Date.now()}`;
+    const optimisticMessage = {
+      id: tempId,
+      conversationId: convId,
+      text: payload.text,
+      mediaUrl: payload.mediaUrl,
+      mediaType: payload.mediaType,
+      mentions: payload.mentions,
+      inviteData: payload.inviteData,
+      replyTo,
+      senderId: currentUser?.id,
+      senderName: currentUser?.displayName || currentUser?.username,
+      senderAvatar: currentUser?.avatar,
+      from: 'me',
+      status: 'sending',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: Date.now(),
+      createdAt: new Date().toISOString()
+    };
+
+    // Optimistically update cache
+    queryClient.setQueryData(['messages', convId], (old) => {
+      if (!old) return { messages: [optimisticMessage] };
+      return { ...old, messages: [...(old.messages || []), optimisticMessage] };
     });
-    queryClient.invalidateQueries({ queryKey: ['messages', convId] });
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    return res;
+
+    try {
+      if (options?.fileObj) {
+        const file = options.fileObj;
+        if (file.type.startsWith('image/')) {
+          const { publicUrl } = await processAndUploadImage(file, 'messages');
+          payload.mediaUrl = publicUrl;
+        } else {
+          const { publicUrl } = await uploadFileDirect(file, 'messages');
+          payload.mediaUrl = publicUrl;
+        }
+      }
+
+      const res = await messagesApi.sendDirectMessage(convId, payload);
+      // Replace optimistic message with confirmed server message
+      queryClient.setQueryData(['messages', convId], (old) => {
+        if (!old) return { messages: [res] };
+        return {
+          ...old,
+          messages: old.messages.map(m => m.id === tempId ? { ...res, from: 'me' } : m)
+        };
+      });
+      return res;
+    } catch (error) {
+      // Rollback optimistic message on failure
+      queryClient.setQueryData(['messages', convId], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          messages: old.messages.map(m => m.id === tempId ? { ...m, status: 'error' } : m)
+        };
+      });
+      throw error;
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    }
   };
   const normalizeUserIds = (input) => {
     if (!input) return [];
@@ -250,11 +365,15 @@ export function useData() {
     return [];
   };
   const reactToMessage = (messageId, reaction) => messagesApi.reactToMessage(messageId, reaction);
-  const startConversation = (userIds, name) => messagesApi.startConversation(normalizeUserIds(userIds), name).then(res => res.id);
+  const startConversation = async (userIds, name) => {
+    const res = await messagesApi.startConversation(normalizeUserIds(userIds), name);
+    queryClient.invalidateQueries(['conversations']);
+    return res?.id || res?.publicId;
+  };
   const createGroupConversation = async (groupName, userIds) => {
     const res = await messagesApi.startConversation(normalizeUserIds(userIds), groupName);
     queryClient.invalidateQueries(['conversations']);
-    return res.id;
+    return res?.id || res?.publicId;
   };
   const togglePinConversation = async (convId, currentPinned) => {
     await messagesApi.pinConversation(convId, !currentPinned);
@@ -417,17 +536,47 @@ export function useData() {
   const changeGroupOwner = async (convId, targetUserId) => {
     queryClient.setQueryData(['conversations'], (old) => {
       if (!Array.isArray(old)) return old;
-      return old.map(c => c.id === convId ? { ...c, ownerId: targetUserId } : c);
+      return old.map(c => {
+        const isMatch = c.id === convId || c.publicId === convId || c.internalId === convId || String(c.id) === String(convId);
+        if (isMatch) {
+          const currentAdmins = c.admins || [];
+          const updatedAdmins = Array.from(new Set([...currentAdmins, currentUser?.id].filter(Boolean)));
+          const updatedMembers = (c.members || c.participants || []).map(p => {
+            const pId = typeof p === 'string' ? p : (p.id || p.userId || p.user?.id);
+            if (String(pId) === String(targetUserId)) {
+              return typeof p === 'object' ? { ...p, role: 'OWNER' } : p;
+            }
+            if (String(pId) === String(currentUser?.id)) {
+              return typeof p === 'object' ? { ...p, role: 'ADMIN' } : p;
+            }
+            return p;
+          });
+
+          return {
+            ...c,
+            ownerId: targetUserId,
+            admins: updatedAdmins,
+            members: updatedMembers,
+            participants: updatedMembers
+          };
+        }
+        return c;
+      });
     });
-    await messagesApi.changeOwner(convId, targetUserId);
-    queryClient.invalidateQueries(['conversations']);
+
+    try {
+      await messagesApi.changeOwner(convId, targetUserId);
+    } finally {
+      queryClient.invalidateQueries(['conversations']);
+    }
   };
 
   const promoteToAdmin = async (convId, targetUserId) => {
     queryClient.setQueryData(['conversations'], (old) => {
       if (!Array.isArray(old)) return old;
       return old.map(c => {
-        if (c.id === convId) {
+        const isMatch = c.id === convId || c.publicId === convId || c.internalId === convId || String(c.id) === String(convId);
+        if (isMatch) {
           const currentAdmins = c.admins || [];
           if (!currentAdmins.includes(targetUserId)) {
             return { ...c, admins: [...currentAdmins, targetUserId] };
@@ -444,7 +593,8 @@ export function useData() {
     queryClient.setQueryData(['conversations'], (old) => {
       if (!Array.isArray(old)) return old;
       return old.map(c => {
-        if (c.id === convId) {
+        const isMatch = c.id === convId || c.publicId === convId || c.internalId === convId || String(c.id) === String(convId);
+        if (isMatch) {
           const currentAdmins = c.admins || [];
           return { ...c, admins: currentAdmins.filter(id => id !== targetUserId) };
         }

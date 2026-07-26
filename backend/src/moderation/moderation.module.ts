@@ -4,7 +4,7 @@ import { ModerationService } from './moderation.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ReportTargetResolver } from './report-target.resolver';
 import { ReportRateLimitService } from './report-ratelimit.service';
-import { AdminGuard } from '../common/guards/admin.guard';
+import { AdminGuard } from '../common/guards';
 import { BullModule } from '@nestjs/bullmq';
 
 @Module({

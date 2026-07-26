@@ -10,6 +10,26 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class AdminCollegesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async deleteSoftDeletedDomains(domains: string[], excludeCollegeId?: string) {
+    if (!domains || domains.length === 0) return;
+    const softDeletedColleges = await this.prisma.college.findMany({
+      where: {
+        deletedAt: { not: null },
+        ...(excludeCollegeId ? { id: { not: excludeCollegeId } } : {}),
+      },
+      select: { id: true },
+    });
+    const softDeletedIds = softDeletedColleges.map((c) => c.id);
+    if (softDeletedIds.length > 0) {
+      await this.prisma.collegeDomain.deleteMany({
+        where: {
+          domain: { in: domains },
+          collegeId: { in: softDeletedIds },
+        },
+      });
+    }
+  }
+
   async listColleges(query: {
     search?: string;
     status?: string;
@@ -20,12 +40,15 @@ export class AdminCollegesService {
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const where: any = {
-      deletedAt: null,
-    };
+    const where: any = {};
 
-    if (query.status) {
-      where.status = query.status;
+    if (query.status === 'DELETED') {
+      where.deletedAt = { not: null };
+    } else {
+      where.deletedAt = null;
+      if (query.status) {
+        where.status = query.status;
+      }
     }
 
     if (query.search) {
@@ -117,12 +140,18 @@ export class AdminCollegesService {
     }
 
     const existingDomain = await this.prisma.collegeDomain.findFirst({
-      where: { domain: { in: cleanedDomains } },
+      where: {
+        domain: { in: cleanedDomains },
+        college: { deletedAt: null },
+      },
     });
 
     if (existingDomain) {
-      throw new ConflictException(`Domain '${existingDomain.domain}' is already assigned to another college`);
+      throw new ConflictException(`Domain '${existingDomain.domain}' is already assigned to another active college`);
     }
+
+    // Clean up any stale domain mappings from soft-deleted colleges
+    await this.deleteSoftDeletedDomains(cleanedDomains);
 
     return this.prisma.college.create({
       data: {
@@ -153,6 +182,7 @@ export class AdminCollegesService {
     name?: string;
     shortName?: string;
     slug?: string;
+    domains?: string[];
     city?: string;
     state?: string;
     country?: string;
@@ -167,9 +197,61 @@ export class AdminCollegesService {
       throw new NotFoundException(`College ${id} not found`);
     }
 
-    const data: any = { ...dto };
+    const { domains, ...otherDto } = dto;
+    const data: any = { ...otherDto };
     if (dto.name) data.name = dto.name.trim();
     if (dto.shortName !== undefined) data.shortName = dto.shortName?.trim() || null;
+
+    if (domains && Array.isArray(domains)) {
+      const cleanedDomains = Array.from(
+        new Set(domains.map((d) => d.toLowerCase().trim()).filter(Boolean)),
+      );
+
+      if (cleanedDomains.length === 0) {
+        throw new BadRequestException('At least one college domain is required');
+      }
+
+      // Check conflict with other active colleges
+      const conflictDomain = await this.prisma.collegeDomain.findFirst({
+        where: {
+          domain: { in: cleanedDomains },
+          collegeId: { not: id },
+          college: { deletedAt: null },
+        },
+      });
+
+      if (conflictDomain) {
+        throw new ConflictException(`Domain '${conflictDomain.domain}' is already assigned to another active college`);
+      }
+
+      // Clean up stale mappings from soft-deleted colleges
+      await this.deleteSoftDeletedDomains(cleanedDomains, id);
+
+      // Remove domains no longer in cleanedDomains for this college
+      await this.prisma.collegeDomain.deleteMany({
+        where: {
+          collegeId: id,
+          domain: { notIn: cleanedDomains },
+        },
+      });
+
+      // Upsert all domains in cleanedDomains for this college
+      for (let i = 0; i < cleanedDomains.length; i++) {
+        const domain = cleanedDomains[i];
+        await this.prisma.collegeDomain.upsert({
+          where: { domain },
+          create: {
+            collegeId: id,
+            domain,
+            isPrimary: i === 0,
+          },
+          update: {
+            collegeId: id,
+            isPrimary: i === 0,
+          },
+        });
+      }
+    }
 
     return this.prisma.college.update({
       where: { id },
@@ -180,7 +262,7 @@ export class AdminCollegesService {
 
   async changeStatus(id: string, status: any) {
     const college = await this.prisma.college.findUnique({ where: { id } });
-    if (!college || college.deletedAt) {
+    if (!college) {
       throw new NotFoundException(`College ${id} not found`);
     }
 
@@ -190,13 +272,34 @@ export class AdminCollegesService {
     });
   }
 
+  async restoreCollege(id: string) {
+    const college = await this.prisma.college.findUnique({ where: { id } });
+    if (!college) {
+      throw new NotFoundException(`College ${id} not found`);
+    }
+
+    return this.prisma.college.update({
+      where: { id },
+      data: { deletedAt: null, isActive: true, status: 'APPROVED' },
+      include: { domains: true },
+    });
+  }
+
   async addDomain(collegeId: string, domainStr: string, isPrimary: boolean = false) {
     const domain = domainStr.toLowerCase().trim();
-    const existing = await this.prisma.collegeDomain.findUnique({ where: { domain } });
+    const existing = await this.prisma.collegeDomain.findFirst({
+      where: {
+        domain,
+        college: { deletedAt: null },
+      },
+    });
 
-    if (existing) {
-      throw new ConflictException(`Domain '${domain}' is already assigned`);
+    if (existing && existing.collegeId !== collegeId) {
+      throw new ConflictException(`Domain '${domain}' is already assigned to another active college`);
     }
+
+    // Clean up any stale domain mapping from soft-deleted colleges
+    await this.deleteSoftDeletedDomains([domain], collegeId);
 
     if (isPrimary) {
       await this.prisma.collegeDomain.updateMany({

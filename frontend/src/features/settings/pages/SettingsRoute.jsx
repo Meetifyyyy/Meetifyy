@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
 import { apiClient } from '@shared/api/apiClient';
@@ -71,7 +72,7 @@ function CustomSelect({ value, onChange, options, disabled, placeholder, searcha
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
       >
-        <span className={styles.selectValue}>
+        <span className={styles.selectValue} title={selectedOption ? selectedOption.label : (placeholder || 'Select...')}>
           {selectedOption ? selectedOption.label : (placeholder || 'Select...')}
         </span>
         <svg 
@@ -140,6 +141,7 @@ export default function SettingsRoute() {
   const navigate = useNavigate();
   const location = useLocation();
   const goBack = useSmartBack();
+  const queryClient = useQueryClient();
 
   const rawPanel = location.state?.panel;
   const initialPanel = rawPanel === 'account' ? 'profile' : (rawPanel || null);
@@ -160,6 +162,13 @@ export default function SettingsRoute() {
 
   // Interests state
   const [selectedInterests, setSelectedInterests] = useState(currentUser?.interests || []);
+  const [initialPanelInterests, setInitialPanelInterests] = useState(currentUser?.interests || []);
+
+  useEffect(() => {
+    if (activePanel === 'interests') {
+      setInitialPanelInterests(selectedInterests);
+    }
+  }, [activePanel]);
 
   // Security state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -231,21 +240,29 @@ export default function SettingsRoute() {
 
   const handleSave = async () => {
     if (activePanel === 'profile') {
-      await updateProfile({ 
-        displayName, 
-        bio, 
-        birthday 
-      });
+      setActivePanel(null);
       showToast('Profile details updated');
+      if (updateCurrentUser) {
+        updateCurrentUser({ ...currentUser, displayName, bio, birthday });
+      }
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      updateProfile({ displayName, bio, birthday }).catch(err => {
+        console.error('Failed to update profile:', err);
+      });
     } else if (activePanel === 'academic') {
-      await updateProfile({ 
+      setActivePanel(null);
+      showToast('Academic details updated');
+      const updatedUser = { ...currentUser, major: course, graduationYear: year ? parseInt(year, 10) : null };
+      if (updateCurrentUser) {
+        updateCurrentUser(updatedUser);
+      }
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      updateProfile({ 
         major: course, 
         graduationYear: year ? parseInt(year, 10) : null 
+      }).catch(err => {
+        console.error('Failed to update academic info:', err);
       });
-      // Immediately update local context to match what was saved
-      const updatedUser = { ...currentUser, major: course, graduationYear: year ? parseInt(year, 10) : null };
-      updateProfile(updatedUser);
-      showToast('Academic details updated');
     } else if (activePanel === 'security') {
       const errors = {};
       if (!currentPassword) {
@@ -272,30 +289,63 @@ export default function SettingsRoute() {
         setConfirmPassword('');
         setPasswordErrors({});
         showToast('Password changed successfully');
+        setActivePanel(null);
       } catch (err) {
-        if (err.message.includes('Incorrect')) {
+        if (err?.message?.includes('Incorrect')) {
           setPasswordErrors({ current: err.message });
         } else {
-          showToast(err.message || 'Failed to change password');
+          showToast(err?.message || 'Failed to change password');
         }
       }
     } else if (activePanel === 'privacy') {
-      await updateSettings({
+      setActivePanel(null);
+      showToast('Privacy settings saved');
+      if (updateCurrentUser) {
+        updateCurrentUser({
+          ...currentUser,
+          settings: {
+            ...(currentUser?.settings || {}),
+            privateProfile,
+            showOnlineStatus,
+            whoCanSeeOnline,
+            readReceipts,
+          }
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      updateSettings({
         privateProfile,
         showOnlineStatus,
         whoCanSeeOnline,
         readReceipts,
-      });
-      showToast('Privacy settings saved');
+      }).catch(err => console.error('Failed to update privacy settings:', err));
     } else if (activePanel === 'notifications') {
-      await updateSettings({
+      setActivePanel(null);
+      showToast('Notification preferences saved');
+      if (updateCurrentUser) {
+        updateCurrentUser({
+          ...currentUser,
+          settings: {
+            ...(currentUser?.settings || {}),
+            emailNotifs,
+            pushNotifs,
+          }
+        });
+      }
+      updateSettings({
         emailNotifs,
         pushNotifs,
-      });
-      showToast('Notification preferences saved');
+      }).catch(err => console.error('Failed to update notification settings:', err));
     } else if (activePanel === 'interests') {
-      updateProfile({ interests: selectedInterests });
+      setActivePanel(null);
       showToast('Interests saved');
+      if (updateCurrentUser) {
+        updateCurrentUser({ ...currentUser, interests: selectedInterests });
+      }
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      updateProfile({ interests: selectedInterests }).catch(err => {
+        console.error('Failed to update interests:', err);
+      });
     }
   };
 
@@ -820,19 +870,22 @@ export default function SettingsRoute() {
 
             <div className={styles.categoriesWrapper}>
               {INTERESTS_BY_CATEGORY.map((category, catIndex) => {
-                const row1 = category.tags.filter((_, i) => i % 2 === 0);
-                const row2 = category.tags.filter((_, i) => i % 2 !== 0);
+                const selectedInCat = category.tags.filter(tag => initialPanelInterests.includes(tag.label));
+                const unselectedInCat = category.tags.filter(tag => !initialPanelInterests.includes(tag.label));
+                const sortedTags = [...selectedInCat, ...unselectedInCat];
+                const row1 = sortedTags.filter((_, i) => i % 2 === 0);
+                const row2 = sortedTags.filter((_, i) => i % 2 !== 0);
                 return (
                   <div key={catIndex} className={styles.categorySection}>
                     <h3 className={styles.categoryTitle}>{category.title}</h3>
                     <div className={styles.tagsContainer}>
                       {[row1, row2].map((rowTags, rowIndex) => (
                         <div key={rowIndex} className={styles.tagsRow}>
-                          {rowTags.map((tag, tagIndex) => {
+                          {rowTags.map((tag) => {
                             const isSelected = selectedInterests.includes(tag.label);
                             return (
                               <button 
-                                key={tagIndex}
+                                key={tag.label}
                                 type="button"
                                 className={`${styles.optionPill} ${isSelected ? styles.selectedPill : ''}`}
                                 onClick={() => toggleInterest(tag.label)}

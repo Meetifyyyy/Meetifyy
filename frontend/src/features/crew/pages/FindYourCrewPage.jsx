@@ -24,9 +24,9 @@ export default function FindYourCrewPage() {
     return rawActivities.map(a => ({
       ...a,
       hostId: a.creatorId,
-      hostName: a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
-      hostUsername: a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
-      hostAvatar: a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
+      hostName: a.creator?.displayName || a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
+      hostUsername: a.creator?.username || a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
+      hostAvatar: a.creator?.avatar || a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
       participants: a.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
       pendingRequests: a.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
       slotsFilled: a.members?.filter(m => m.status === 'MEMBER').length || 1,
@@ -59,14 +59,21 @@ export default function FindYourCrewPage() {
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const now = new Date();
     
-    // Filter out past activities based on date (ignoring time so today's aren't filtered out)
-    let activities = crewActivities.filter(a => {
-      if (!a.date) return true;
-      const activityDate = new Date(a.date);
-      activityDate.setHours(0, 0, 0, 0);
-      return activityDate >= today;
-    }).filter(a => !a.shareToSchool || a.hostCollege === collegeName); 
+    // For non-My Activities tabs, filter out past activities
+    let activities = crewActivities.filter(a => !a.shareToSchool || a.hostCollege === collegeName);
+
+    if (selectedTab !== 'My Activities') {
+      activities = activities.filter(a => {
+        if (a.status === 'ENDED' || a.status === 'CANCELLED') return false;
+        if (a.endDate && new Date(a.endDate) < now) return false;
+        if (!a.date) return true;
+        const activityDate = new Date(a.date);
+        activityDate.setHours(0, 0, 0, 0);
+        return activityDate >= today;
+      });
+    }
 
     // Filter by tab
     if (selectedTab === 'For You') {
@@ -75,8 +82,8 @@ export default function FindYourCrewPage() {
       }
     } else if (selectedTab === 'My Activities') {
       activities = activities.filter(a => 
-        a.participants && a.participants.includes(currentUser?.id)
-      ).sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+        (a.participants && a.participants.includes(currentUser?.id)) || (a.creatorId === currentUser?.id)
+      ).sort((a, b) => new Date(a.startDate || a.date || 0) - new Date(b.startDate || b.date || 0));
     } else if (selectedTab === 'Saved') {
       activities = activities.filter(a => savedActivities?.includes(a.id));
     } else if (selectedTab === 'Popular') {
@@ -87,7 +94,62 @@ export default function FindYourCrewPage() {
     }
 
     return filterActivities(activities, { search: debouncedSearchQuery });
-  }, [crewActivities, debouncedSearchQuery, selectedTab, currentUser, savedActivities]);
+  }, [crewActivities, debouncedSearchQuery, selectedTab, currentUser, savedActivities, collegeName]);
+
+  const { ongoingActivities, upcomingActivities, pastActivities } = useMemo(() => {
+    if (selectedTab !== 'My Activities') {
+      return { ongoingActivities: [], upcomingActivities: [], pastActivities: [] };
+    }
+    const now = new Date();
+    const ongoing = [];
+    const upcoming = [];
+    const past = [];
+
+    filteredActivities.forEach(a => {
+      let hasEnded = a.status === 'ENDED' || a.status === 'CANCELLED';
+      let hasStarted = false;
+
+      const startRaw = a.startDate || a.date;
+      const endRaw = a.endDate;
+
+      if (startRaw) {
+        const start = new Date(startRaw);
+        if (!isNaN(start.getTime())) {
+          hasStarted = now >= start;
+        }
+      }
+
+      if (endRaw) {
+        const end = new Date(endRaw);
+        if (!isNaN(end.getTime()) && now >= end) {
+          hasEnded = true;
+        }
+      } else if (startRaw) {
+        const start = new Date(startRaw);
+        if (!isNaN(start.getTime())) {
+          let durationHours = 1;
+          if (a.duration) {
+            const match = String(a.duration).match(/(\d+)/);
+            if (match) durationHours = parseInt(match[1], 10);
+          }
+          const calculatedEnd = new Date(start.getTime() + durationHours * 60 * 60 * 1000);
+          if (now >= calculatedEnd) {
+            hasEnded = true;
+          }
+        }
+      }
+
+      if (hasEnded) {
+        past.push(a);
+      } else if (hasStarted) {
+        ongoing.push(a);
+      } else {
+        upcoming.push(a);
+      }
+    });
+
+    return { ongoingActivities: ongoing, upcomingActivities: upcoming, pastActivities: past };
+  }, [filteredActivities, selectedTab]);
 
   const handleActivityClick = useCallback((activity) => {
     navigate(`/crew/${activity.id}`, { state: { activity } });
@@ -137,31 +199,80 @@ export default function FindYourCrewPage() {
               ) : (
                 <>
                   <section className={styles.listSection}>
-                    {selectedTab !== 'For You' && (
+                    {selectedTab !== 'For You' && selectedTab !== 'My Activities' && (
                       <div className={styles.sectionHeader}>
                         <h2 className={styles.sectionTitle}>
-                          {selectedTab === 'My Activities' ? 'My Activities' : 
-                           selectedTab === 'Saved' ? 'Saved Activities' : 
+                          {selectedTab === 'Saved' ? 'Saved Activities' : 
                            selectedTab === 'Popular' ? 'Most Popular' : 'Activities'}
                         </h2>
                       </div>
                     )}
                     
-                    <div className={styles.list}>
-                      {filteredActivities.length > 0 ? (
-                        filteredActivities.slice(0, visibleCount).map(a => <CrewCard key={a.id} activity={a} onClick={() => handleActivityClick(a)} />)
-                      ) : (
-                        <div className={styles.empty}>
-                          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
-                            <circle cx="11" cy="11" r="8" />
-                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                          </svg>
-                          <p>No activities match your search.</p>
+                    {selectedTab === 'My Activities' ? (
+                      <div className={styles.myActivitiesWrapper}>
+                        {/* Ongoing Section */}
+                        <div className={styles.subSection}>
+                          <h3 className={styles.subSectionTitle}>
+                            <span className={styles.liveBadge} />
+                            Ongoing Activities
+                            <span className={styles.subSectionCount}>{ongoingActivities.length}</span>
+                          </h3>
+                          {ongoingActivities.length > 0 ? (
+                            <div className={styles.list}>
+                              {ongoingActivities.map(a => <CrewCard key={a.id} activity={a} onClick={() => handleActivityClick(a)} />)}
+                            </div>
+                          ) : (
+                            <div className={styles.subEmpty}>No ongoing activities right now.</div>
+                          )}
                         </div>
-                      )}
-                    </div>
+
+                        {/* Upcoming Section */}
+                        <div className={styles.subSection}>
+                          <h3 className={styles.subSectionTitle}>
+                            Upcoming Activities
+                            <span className={styles.subSectionCount}>{upcomingActivities.length}</span>
+                          </h3>
+                          {upcomingActivities.length > 0 ? (
+                            <div className={styles.list}>
+                              {upcomingActivities.map(a => <CrewCard key={a.id} activity={a} onClick={() => handleActivityClick(a)} />)}
+                            </div>
+                          ) : (
+                            <div className={styles.subEmpty}>No upcoming activities scheduled.</div>
+                          )}
+                        </div>
+
+                        {/* Past Section */}
+                        <div className={styles.subSection}>
+                          <h3 className={styles.subSectionTitle}>
+                            Past Activities
+                            <span className={styles.subSectionCount}>{pastActivities.length}</span>
+                          </h3>
+                          {pastActivities.length > 0 ? (
+                            <div className={styles.list}>
+                              {pastActivities.map(a => <CrewCard key={a.id} activity={a} onClick={() => handleActivityClick(a)} />)}
+                            </div>
+                          ) : (
+                            <div className={styles.subEmpty}>No past activities yet.</div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className={styles.list}>
+                        {filteredActivities.length > 0 ? (
+                          filteredActivities.slice(0, visibleCount).map(a => <CrewCard key={a.id} activity={a} onClick={() => handleActivityClick(a)} />)
+                        ) : (
+                          <div className={styles.empty}>
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
+                              <circle cx="11" cy="11" r="8" />
+                              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                            </svg>
+                            <p>No activities match your search.</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     
-                    {filteredActivities.length > visibleCount && (
+                    {selectedTab !== 'My Activities' && filteredActivities.length > visibleCount && (
                       <div ref={lastElementRef} style={{ height: '20px', width: '100%', margin: '1rem 0' }}></div>
                     )}
                   </section>

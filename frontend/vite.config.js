@@ -163,7 +163,7 @@ export default defineConfig({
     port: 3000,
     open: true,
     host: true,
-    allowedHosts: ['.trycloudflare.com'],
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: process.env.VITE_API_URL || 'http://localhost:4000',

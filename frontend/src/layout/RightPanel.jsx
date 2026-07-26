@@ -20,8 +20,7 @@ export default function RightPanel({ children, className = '' }) {
 
 export function NotificationsActivity() {
   const { notifications, isLoading } = useNotifications();
-  const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
-  const users = React.useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
+  const { users } = useData();
   const navigate = useNavigate();
 
   const displayNotifs = notifications.slice(0, 4);
@@ -53,9 +52,14 @@ export function NotificationsActivity() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           {displayNotifs.map((n) => {
-            const actorName = n.actor?.displayName || n.actor?.username || n.metadata?.actorDisplayName || n.metadata?.actorName || n.metadata?.username || 'Someone';
-            const actorAvatar = n.actor?.avatar || n.metadata?.actorAvatar || '';
-            const targetUsername = n.actor?.username || n.metadata?.username || '';
+            const actorId = n.actor?.id || n.actorId || n.metadata?.actorId;
+            const actorUsername = n.actor?.username || n.metadata?.actorUsername || n.metadata?.username || n.metadata?.actorName;
+            const liveUser = (users && actorId ? users[actorId] : null) || 
+                             (users && actorUsername ? Object.values(users).find(u => u.username === actorUsername || u.displayName === actorUsername || u.name === actorUsername) : null);
+
+            const actorName = liveUser?.displayName || liveUser?.username || n.actor?.displayName || n.actor?.username || n.metadata?.actorDisplayName || n.metadata?.actorName || n.metadata?.username || 'Someone';
+            const actorAvatar = liveUser?.avatar || n.actor?.avatar || n.metadata?.actorAvatar || '';
+            const targetUsername = liveUser?.username || n.actor?.username || n.metadata?.username || '';
 
             const notifType = (n.type || '').toLowerCase();
             const isFollow = notifType === 'follow';

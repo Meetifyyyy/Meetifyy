@@ -1,0 +1,120 @@
+.activityList {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px 6px;
+  flex-shrink: 0;
+}
+
+.searchInputWrapper {
+  position: relative;
+  flex: 1;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-muted, #71717a);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 8px 12px 8px 32px;
+  border: 1px solid var(--color-border, #e4e4e7);
+  border-radius: 10px;
+  background: var(--color-bg-soft, #f9fafb);
+  font-size: 0.85rem;
+  color: var(--color-text-main, #18181b);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.searchInput:focus {
+  border-color: var(--color-primary, #6366f1);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  background: var(--color-bg-white, #fff);
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-light, #a1a1aa);
+}
+
+.listBody {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding-bottom: 8px;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 140px;
+  color: var(--color-text-light, #a1a1aa);
+  gap: 8px;
+}
+
+.emptyIcon {
+  opacity: 0.4;
+}
+
+.emptyState p {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* Skeleton */
+.skeletonItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  margin: 1px 6px;
+}
+
+.skeletonAvatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--color-bg-soft, #f4f4f5);
+  flex-shrink: 0;
+  animation: shimmer 1.5s infinite;
+}
+
+.skeletonLines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skeletonLine {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--color-bg-soft, #f4f4f5);
+  animation: shimmer 1.5s infinite;
+}
+
+.skeletonLineShort {
+  height: 10px;
+  width: 60%;
+  border-radius: 6px;
+  background: var(--color-bg-soft, #f4f4f5);
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

@@ -30,10 +30,27 @@ export class UsersService {
     });
   }
 
-  async getCampusUsers(collegeId: string, limit: number, offset: number) {
-    if (!collegeId) return [];
+  async getCampusUsers(userIdOrCollegeId: string, limit: number, offset: number) {
+    if (!userIdOrCollegeId) return [];
+    let collegeId = userIdOrCollegeId;
+    let excludeUserId: string | undefined = undefined;
+
+    // Check if the argument is a userId by performing a database lookup
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: userIdOrCollegeId },
+      select: { collegeId: true }
+    });
+    if (targetUser) {
+      if (!targetUser.collegeId) return [];
+      collegeId = targetUser.collegeId;
+      excludeUserId = userIdOrCollegeId;
+    }
+
     return this.prisma.user.findMany({
-      where: { collegeId },
+      where: {
+        collegeId,
+        ...(excludeUserId ? { id: { not: excludeUserId } } : {})
+      },
       take: limit,
       skip: offset,
       select: {

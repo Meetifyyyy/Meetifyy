@@ -21,7 +21,10 @@ export function classifyMeetifyyURL(url) {
       '127.0.0.1'
     ];
 
-    const isInternal = MEETIFYY_DOMAINS.some(
+    const isIP = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(parsed.hostname);
+    const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+
+    const isInternal = isIP || parsed.hostname === currentHost || MEETIFYY_DOMAINS.some(
       domain => parsed.hostname === domain || parsed.hostname.endsWith(`.${domain}`)
     );
 
