@@ -39,6 +39,17 @@ export class AuthService {
     });
 
     if (existingUser) {
+      // Auto-heal real email from Supabase user if email is fallback @meetifyy.user
+      const sbEmail = user.email || user.user_metadata?.email;
+      if (sbEmail && (existingUser.email.endsWith('@meetifyy.user') || !existingUser.email)) {
+        const cleanRealEmail = sbEmail.trim().toLowerCase();
+        await this.prisma.user.update({
+          where: { id: existingUser.id },
+          data: { email: cleanRealEmail }
+        }).catch(() => {});
+        existingUser.email = cleanRealEmail;
+      }
+
       const followingList = existingUser.following.map(f => f.following.username);
       // Lazy-create settings for existing users who pre-date the settings feature
       let userSettings = existingUser.settings;
