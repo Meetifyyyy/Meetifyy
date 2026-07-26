@@ -48,10 +48,16 @@ export class AuthService {
 
       // Auto-heal missing college linkage for existing users
       if (!existingUser.collegeId && existingUser.email) {
-        const domain = existingUser.email.split('@')[1];
+        const cleanEmail = existingUser.email.trim().toLowerCase();
+        const domain = cleanEmail.split('@')[1];
         if (domain) {
-          const collegeDomain = await this.prisma.collegeDomain.findUnique({
-            where: { domain },
+          const collegeDomain = await this.prisma.collegeDomain.findFirst({
+            where: {
+              OR: [
+                { domain: domain },
+                { domain: { endsWith: domain } },
+              ]
+            },
             include: { college: true },
           });
           if (collegeDomain && collegeDomain.college && collegeDomain.college.isActive && collegeDomain.college.status !== 'DISABLED') {

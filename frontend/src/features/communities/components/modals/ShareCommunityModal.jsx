@@ -22,17 +22,20 @@ export default function ShareCommunityModal({ isOpen, onClose, community }) {
     });
   };
 
-  const handleSend = (convId) => {
-    sendDirectMessage(convId, '', null, { 
-      type: 'communityShare', 
-      community: { 
-        id: community.id, 
-        name: community.name, 
-        avatar: community.avatar,
-        color: community.color,
-        description: community.description || community.desc,
-        membersCount: community.members || 0
-      } 
+  const handleSend = async (convId) => {
+    await sendDirectMessage(convId, { 
+      text: '',
+      inviteData: { 
+        type: 'communityShare', 
+        community: { 
+          id: community.id, 
+          name: community.name, 
+          avatar: community.avatar,
+          color: community.color,
+          description: community.description || community.desc,
+          membersCount: community.members || 0
+        } 
+      }
     });
     setSentTo(prev => new Set(prev).add(convId));
   };

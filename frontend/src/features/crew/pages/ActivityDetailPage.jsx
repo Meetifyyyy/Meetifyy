@@ -17,56 +17,30 @@ import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 /* ── Helpers ───────────────────────────────────────────────── */
 function formatDateTime(activity) {
   if (!activity) return '';
-  const { date, time, endDate, endTime, duration } = activity;
-  if (!date) return '';
+  const startRaw = activity.startDate || activity.date;
+  if (!startRaw) return '';
   
-  const d = new Date(date);
-  const dateFormatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  if (!time) return dateFormatted;
+  const startD = new Date(startRaw);
+  if (isNaN(startD.getTime())) return '';
 
-  if (endDate && endTime) {
-    const endD = new Date(endDate);
+  const endRaw = activity.endDate;
+  const endD = endRaw ? new Date(endRaw) : null;
+
+  const startDateFormatted = startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const startTimeStr = activity.time || startD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+  if (endD && !isNaN(endD.getTime())) {
     const endDateFormatted = endD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    if (dateFormatted === endDateFormatted) {
-      return `${dateFormatted} • ${time} - ${endTime}`;
+    const endTimeStr = activity.endTime || endD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+    if (startDateFormatted === endDateFormatted) {
+      return `${startDateFormatted} • ${startTimeStr} – ${endTimeStr}`;
     } else {
-      return `${dateFormatted} • ${time} - ${endDateFormatted} • ${endTime}`;
+      return `${startDateFormatted} • ${startTimeStr} → ${endDateFormatted} • ${endTimeStr}`;
     }
   }
 
-  // Fallback for old activities without endDate/endTime
-  let endTimeStr = '';
-  if (duration) {
-    const match = time.match(/(\d+):(\d+)\s*(AM|PM)/i);
-    if (match) {
-      let h = parseInt(match[1], 10);
-      const m = parseInt(match[2], 10);
-      const ampm = match[3].toUpperCase();
-      if (ampm === 'PM' && h !== 12) h += 12;
-      if (ampm === 'AM' && h === 12) h = 0;
-
-      let addHours = 0;
-      if (duration.includes('1 hour')) addHours = 1;
-      else if (duration.includes('2 hours')) addHours = 2;
-      else if (duration.includes('Half day')) addHours = 4;
-      else if (duration.includes('All day')) addHours = 8;
-      else {
-         const hrsMatch = duration.match(/(\d+)/);
-         if (hrsMatch) addHours = parseInt(hrsMatch[1], 10);
-      }
-
-      if (addHours > 0) {
-        h += addHours;
-        const endAmPm = h >= 12 && h < 24 ? 'PM' : 'AM';
-        let endH = h % 12;
-        if (endH === 0) endH = 12;
-        const endMStr = m < 10 ? '0' + m : m;
-        endTimeStr = ` - ${endH}:${endMStr} ${endAmPm}`;
-      }
-    }
-  }
-
-  return `${dateFormatted} • ${time}${endTimeStr}`;
+  return `${startDateFormatted} • ${startTimeStr}`;
 }
 
 /* ── Details card ──────────────────────────────────────────── */
@@ -102,18 +76,28 @@ export default function ActivityDetailPage() {
   });
 
   const crewActivities = useMemo(() => {
-    return rawActivities.map(a => ({
-      ...a,
-      hostId: a.creatorId,
-      hostName: a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
-      hostUsername: a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
-      hostAvatar: a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
-      participants: a.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
-      pendingRequests: a.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
-      slotsFilled: a.members?.filter(m => m.status === 'MEMBER').length || 1,
-      slotsNeeded: a.maxMembers || 999,
-      _membersData: a.members?.map(m => m.user) || []
-    }));
+    return rawActivities.map(a => {
+      const startD = a.startDate ? new Date(a.startDate) : null;
+      const endD = a.endDate ? new Date(a.endDate) : null;
+      return {
+        ...a,
+        date: a.startDate || null,
+        endDate: a.endDate || null,
+        dateFormatted: startD ? startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null,
+        dateLabel: startD ? startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null,
+        time: startD ? startD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null,
+        endTime: endD ? endD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null,
+        hostId: a.creatorId,
+        hostName: a.creator?.displayName || a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
+        hostUsername: a.creator?.username || a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
+        hostAvatar: a.creator?.avatar || a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
+        participants: a.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
+        pendingRequests: a.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
+        slotsFilled: a.members?.filter(m => m.status === 'MEMBER').length || 1,
+        slotsNeeded: a.maxMembers || 999,
+        _membersData: a.members?.map(m => m.user) || []
+      };
+    });
   }, [rawActivities]);
 
   const joinMutation = useMutation({
@@ -240,40 +224,69 @@ export default function ActivityDetailPage() {
 
   const spotsLeft = slotsNeeded - slotsFilled;
   const isFull = spotsLeft <= 0;
-  const isHost = activity.hostId === currentUser?.id;
+  const isHost = !!(currentUser?.id && (activity.hostId === currentUser.id || activity.creatorId === currentUser.id));
   const isJoined = activity.participants?.includes(currentUser?.id) || hasJoined;
   const isRequested = activity.pendingRequests?.includes(currentUser?.id) || hasRequested;
+  let hasEnded = activity.status === 'ENDED' || activity.status === 'CANCELLED';
+  const hasGroupChat = !!(activity.createEventGroup || activity.createActivityGroup);
 
   let hasStarted = false;
-  if (activity.date && activity.time) {
-    const match = activity.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
-    if (match) {
-      let h = parseInt(match[1], 10);
-      const m = parseInt(match[2], 10);
-      const ampm = match[3].toUpperCase();
-      if (ampm === 'PM' && h < 12) h += 12;
-      if (ampm === 'AM' && h === 12) h = 0;
-      
-      const activityStart = new Date(activity.date);
-      activityStart.setHours(h, m, 0, 0);
+  const startRaw = activity.startDate || activity.date;
+  const endRaw = activity.endDate;
+
+  if (startRaw) {
+    const activityStart = new Date(startRaw);
+    if (!isNaN(activityStart.getTime())) {
       hasStarted = new Date() >= activityStart;
     }
   }
 
+  if (endRaw) {
+    const activityEnd = new Date(endRaw);
+    if (!isNaN(activityEnd.getTime()) && new Date() >= activityEnd) {
+      hasEnded = true;
+    }
+  } else if (startRaw) {
+    const activityStart = new Date(startRaw);
+    if (!isNaN(activityStart.getTime())) {
+      let durationHours = 1;
+      if (activity.duration) {
+        const match = String(activity.duration).match(/(\d+)/);
+        if (match) durationHours = parseInt(match[1], 10);
+      }
+      const calculatedEnd = new Date(activityStart.getTime() + durationHours * 60 * 60 * 1000);
+      if (new Date() >= calculatedEnd) {
+        hasEnded = true;
+      }
+    }
+  }
+
+  const [isActionLoading, setIsActionLoading] = useState(false);
+
   const handleJoin = async () => {
-    if (participationType === 'open') {
+    if (isActionLoading) return;
+    setIsActionLoading(true);
+    try {
       await joinCrewActivity(activity.id);
       setHasJoined(true);
-      setShowJoinedModal(true);
-    } else {
-      await requestToJoinActivity(activity.id);
-      setHasRequested(true);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const handleLeave = async () => {
-    await leaveCrewActivity(activity.id);
-    setHasJoined(false);
+    if (isActionLoading || isHost) return;
+    setIsActionLoading(true);
+    try {
+      await leaveCrewActivity(activity.id);
+      setHasJoined(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
   const handleEndActivity = () => {
@@ -337,17 +350,16 @@ export default function ActivityDetailPage() {
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
               </svg>
             </button>
-            {activity.createEventGroup && (
-              <button className={styles.actionBtn} onClick={() => navigate('/messages')} aria-label="Open Group Chat">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
-                </svg>
-              </button>
-            )}
             {isHost && !hasStarted && (
-              <button className={styles.actionBtn} onClick={handleEndActivity} title="End Activity">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="15"></line><line x1="15" y1="9" x2="9" y2="15"></line>
+              <button
+                className={styles.actionBtn}
+                onClick={handleEndActivity}
+                title="End Activity"
+                style={{ color: '#f87171', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)' }}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
               </button>
             )}
@@ -373,7 +385,7 @@ export default function ActivityDetailPage() {
               <div className={styles.leftInfoBlock} style={{ marginTop: 0, marginBottom: '2rem' }}>
                 <div className={styles.calendarBox}>
                   <CalendarIcon
-                    date={activity.date}
+                    date={activity.startDate || activity.date}
                     dateLabel={activity.dateLabel}
                     variant="glass"
                     style={{ width: '32px', height: '32px', borderRadius: '6px', boxShadow: 'none' }}
@@ -463,20 +475,48 @@ export default function ActivityDetailPage() {
           </div>
         </div>
 
-        {/* Sticky Join Button */}
+        {/* Sticky Action Bar */}
         <div className={styles.stickyJoinWrap}>
-          {isJoined ? (
-            <button 
-              className={`${styles.joinBtn} ${styles.leaveBtn}`} 
-              onClick={handleLeave}
-            >
+          {hasEnded ? (
+            <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled>
+              Ended
+            </button>
+          ) : hasStarted ? (
+            <button className={`${styles.joinBtn} ${styles.startedBtn}`} disabled>
+              Already started!
+            </button>
+          ) : isHost ? (
+            <button className={`${styles.joinBtn} ${styles.joinedBtn}`} disabled style={{ cursor: 'not-allowed' }}>
               Joined
             </button>
-          ) : isRequested ? (
-            <button className={styles.joinBtn} disabled>Request Sent</button>
+          ) : isJoined ? (
+            <button 
+              className={`${styles.joinBtn} ${styles.joinedBtn}`} 
+              onClick={handleLeave}
+              disabled={isActionLoading}
+            >
+              {isActionLoading ? <span className={styles.btnSpinner} /> : 'Joined'}
+            </button>
           ) : (
-            <button className={styles.joinBtn} onClick={handleJoin} disabled={isFull}>
-              {isFull ? 'Activity Full' : participationType === 'open' ? 'Join Activity' : 'Request to Join'}
+            <button 
+              className={styles.joinBtn} 
+              onClick={handleJoin} 
+              disabled={isFull || isActionLoading}
+            >
+              {isActionLoading ? <span className={styles.btnSpinner} /> : (isFull ? 'Activity Full' : 'Join Activity')}
+            </button>
+          )}
+
+          {hasGroupChat && (isHost || isJoined) && (
+            <button 
+              className={styles.chatIconBtn}
+              onClick={() => navigate(`/messages/group/act_${activity.id}`)}
+              title="Open Activity Group Chat"
+              aria-label="Open Activity Group Chat"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+              </svg>
             </button>
           )}
         </div>
@@ -484,7 +524,6 @@ export default function ActivityDetailPage() {
         {/* Modals */}
         <ShareActivityModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} activity={activity} />
         <ConfirmModal title="End Activity" desc="Are you sure you want to end this activity? This will also delete the group chat." visible={showEndConfirm} onCancel={() => setShowEndConfirm(false)} onConfirm={confirmEndActivity} confirmText="End Activity" />
-        <ActivityJoinedModal isOpen={showJoinedModal} onClose={() => setShowJoinedModal(false)} activity={activity} />
       </div>
     </div>
   );

@@ -13,6 +13,8 @@
 .isModal {
   width: 100%;
   max-width: 480px;
+  height: 580px;
+  max-height: 82vh;
   background: var(--color-bg-main);
   border-top-left-radius: 24px;
   border-top-right-radius: 24px;
@@ -23,14 +25,14 @@
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
-  max-height: 82vh;
-  animation: slideUpFromBottom 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: slideUpFromBottom 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
   overflow: hidden;
 }
 
 .isHeader {
   padding: 1.25rem 1.25rem 1rem;
   border-bottom: 1px solid var(--color-border-light);
+  flex-shrink: 0;
 }
 
 .isTitleRow {
@@ -84,7 +86,7 @@
   color: var(--color-text-light);
   cursor: pointer;
   text-align: center;
-  transition: all var(--transition-fast);
+  transition: all 0.2s ease;
 }
 
 .isTabActive {
@@ -130,54 +132,96 @@
 
 .isBody {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 1.25rem;
   background: var(--color-bg-soft);
+  position: relative;
 }
 
 .isLoading {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 260px;
   color: var(--color-text-light);
   font-family: var(--font-family-sans);
   font-size: 0.9rem;
-  padding: 2rem 0;
+}
+
+.compressingBanner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: var(--color-primary);
+  color: #ffffff;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+  z-index: 10;
 }
 
 .isGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.75rem;
+  transition: opacity 0.25s ease-in-out;
+}
+
+.isGridLoading {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .isResultBtn {
-  background: none;
+  background: var(--color-bg-white);
   border: none;
   padding: 0;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
   position: relative;
-  transition: transform var(--transition-fast);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  aspect-ratio: 1;
 }
 
 .isResultBtn:hover {
   transform: scale(0.97);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .isResultBtn img {
   width: 100%;
+  height: 100%;
   aspect-ratio: 1;
   object-fit: cover;
   display: block;
 }
 
-@keyframes slideUpFromBottom {
+.skeletonCard {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--color-bg-white) 25%, var(--color-bg-soft) 50%, var(--color-bg-white) 75%);
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s infinite;
+}
+
+@keyframes skeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes modalScaleIn {
   from {
-    transform: translateY(100%);
-    opacity: 0.5;
+    transform: scale(0.95);
+    opacity: 0;
   }
   to {
-    transform: translateY(0);
+    transform: scale(1);
     opacity: 1;
   }
 }

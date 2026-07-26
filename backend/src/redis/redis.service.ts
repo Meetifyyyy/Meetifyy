@@ -19,6 +19,12 @@ export class RedisService implements OnModuleDestroy {
           maxRetriesPerRequest: null,
           enableReadyCheck: false,
           tls: isTls ? { rejectUnauthorized: false } : undefined,
+          retryStrategy(times) {
+            if (times > 3) {
+              return null; // Stop spamming error logs when Redis host is unreachable
+            }
+            return Math.min(times * 500, 2000);
+          }
         });
         
         this.client.on('connect', () => {

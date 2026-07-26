@@ -184,27 +184,29 @@ export default function ProfilePage() {
     );
   }
 
+  const isOwnProfile = !profileUsername || profileUsername === currentUserUsername || profileUser?.id === authUser?.id || profileUser?.username === currentUserUsername;
+  const effectiveUser = isOwnProfile ? { ...profileUser, ...authUser } : profileUser;
+
   // Build dynamic user tags list
   const userTags = [];
-  const universityName = getCollegeName(profileUser);
-  const gradYear = profileUser.graduationYear || '';
+  const universityName = getCollegeName(effectiveUser);
+  const gradYear = effectiveUser.graduationYear || '';
   if (universityName || gradYear) {
     userTags.push({ icon: '🎓', label: `${universityName}${gradYear ? ` - ${gradYear}` : ''}` });
   }
 
-  if (profileUser.major) {
-    userTags.push({ icon: '🤖', label: profileUser.major });
+  if (effectiveUser.major) {
+    userTags.push({ icon: '🤖', label: effectiveUser.major });
   }
 
-  if (profileUser.interests && Array.isArray(profileUser.interests)) {
-    profileUser.interests.forEach(interest => {
+  if (effectiveUser.interests && Array.isArray(effectiveUser.interests)) {
+    effectiveUser.interests.forEach(interest => {
       const emoji = emojiMap[interest] || '✨';
       userTags.push({ icon: emoji, label: interest });
     });
   }
 
   const posts = postsData?.posts || [];
-  const isOwnProfile = profileUser.id === authUser?.id || profileUser.username === currentUserUsername;
 
   const handleMessageClick = async () => {
     if (isOwnProfile) return;
@@ -235,7 +237,7 @@ export default function ProfilePage() {
             <div className={s.coverWrap}>
               <div
                 className={s.coverPhoto}
-                style={{ backgroundImage: `url("${encodeURI(getSafeCoverUrl(profileUser.cover, defaultCover))}")` }}
+                style={{ backgroundImage: `url("${encodeURI(getSafeCoverUrl(effectiveUser.cover, defaultCover))}")` }}
               />
               {/* Own profile — edit cover button */}
               {isOwnProfile && (
@@ -298,8 +300,8 @@ export default function ProfilePage() {
             <div className={s.profileInfo}>
               <div className={s.avatarWrapper}>
                 <Avatar
-                  src={profileUser.avatar}
-                  name={profileUser.displayName || profileUser.name || profileUser.username}
+                  src={effectiveUser.avatar}
+                  name={effectiveUser.displayName || effectiveUser.name || effectiveUser.username}
                   size="96px"
                 />
                 {isOwnProfile && (
@@ -327,10 +329,10 @@ export default function ProfilePage() {
               </div>
 
               <h1 className={s.name}>
-                {profileUser.displayName || profileUser.name || profileUser.username}
+                {effectiveUser.displayName || effectiveUser.name || effectiveUser.username}
               </h1>
-              <p className={s.username}>@{profileUser.username}</p>
-              {profileUser.bio && <p className={s.bio}>{profileUser.bio}</p>}
+              <p className={s.username}>@{effectiveUser.username}</p>
+              {effectiveUser.bio && <p className={s.bio}>{effectiveUser.bio}</p>}
 
               {/* Interest tags */}
               <div className={s.tagsScrollWrapper}>

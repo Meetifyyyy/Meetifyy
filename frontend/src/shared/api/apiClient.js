@@ -280,8 +280,97 @@ export const usersApi = {
   unblockUser: (targetUserId) => apiClient.delete(`/api/users/block/${targetUserId}`),
 };
 
+export const dmApi = {
+  getConversations: (limit, offset) => apiClient.get(`/api/dm?limit=${limit || 20}&offset=${offset || 0}`),
+  startDM: (targetUserId) => apiClient.post('/api/dm', { targetUserId }),
+  startInstantMatch: (targetUserId, activity) => apiClient.post('/api/dm/instant-match', { targetUserId, activity }),
+  getHistory: (conversationId, deviceId, beforeCursor, limit) => {
+    const params = new URLSearchParams();
+    if (deviceId) params.set('deviceId', deviceId);
+    if (beforeCursor) params.set('before', beforeCursor);
+    if (limit) params.set('limit', String(limit));
+    const query = params.toString();
+    return apiClient.get(`/api/dm/${conversationId}${query ? `?${query}` : ''}`);
+  },
+  sendMessage: (conversationId, payload) => apiClient.post(`/api/dm/${conversationId}/messages`, payload),
+  markAsRead: (conversationId) => apiClient.post(`/api/dm/${conversationId}/read`),
+  muteConversation: (conversationId, muted) => apiClient.patch(`/api/dm/${conversationId}/mute`, { muted }),
+  pinConversation: (conversationId, pinned) => apiClient.patch(`/api/dm/${conversationId}/pin`, { pinned }),
+  clearChat: (conversationId) => apiClient.post(`/api/dm/${conversationId}/clear`),
+  deleteConversation: (conversationId) => apiClient.delete(`/api/dm/${conversationId}`),
+  unsendMessage: (messageId) => apiClient.delete(`/api/dm/msg/${messageId}`),
+  deleteMessageForMe: (messageId) => apiClient.delete(`/api/dm/msg/${messageId}/for-me`),
+  forwardMessage: (messageId, targetConversationIds) => apiClient.post(`/api/dm/msg/${messageId}/forward`, { targetConversationIds }),
+  reactToMessage: (messageId, reaction) => apiClient.post(`/api/dm/${messageId}/react`, { reaction }),
+};
+
+export const groupApi = {
+  getConversations: (limit, offset) => apiClient.get(`/api/group-chats?limit=${limit || 20}&offset=${offset || 0}`),
+  createGroup: (name, userIds) => apiClient.post('/api/group-chats', { name, userIds }),
+  getHistory: (conversationId, deviceId, beforeCursor, limit) => {
+    const params = new URLSearchParams();
+    if (deviceId) params.set('deviceId', deviceId);
+    if (beforeCursor) params.set('before', beforeCursor);
+    if (limit) params.set('limit', String(limit));
+    const query = params.toString();
+    return apiClient.get(`/api/group-chats/${conversationId}${query ? `?${query}` : ''}`);
+  },
+  sendMessage: (conversationId, payload) => apiClient.post(`/api/group-chats/${conversationId}/messages`, payload),
+  markAsRead: (conversationId) => apiClient.post(`/api/group-chats/${conversationId}/read`),
+  muteConversation: (conversationId, muted) => apiClient.patch(`/api/group-chats/${conversationId}/mute`, { muted }),
+  pinConversation: (conversationId, pinned) => apiClient.patch(`/api/group-chats/${conversationId}/pin`, { pinned }),
+  clearChat: (conversationId) => apiClient.post(`/api/group-chats/${conversationId}/clear`),
+  deleteConversation: (conversationId) => apiClient.delete(`/api/group-chats/${conversationId}`),
+  updateGroupInfo: (conversationId, data) => apiClient.patch(`/api/group-chats/${conversationId}/info`, data),
+  addMember: (conversationId, userId) => apiClient.post(`/api/group-chats/${conversationId}/members`, { userId }),
+  removeMember: (conversationId, targetUserId) => apiClient.delete(`/api/group-chats/${conversationId}/members/${targetUserId}`),
+  leaveGroup: (conversationId) => apiClient.post(`/api/group-chats/${conversationId}/leave`),
+  endGroup: (conversationId) => apiClient.post(`/api/group-chats/${conversationId}/end`),
+  updateSettings: (conversationId, data) => apiClient.patch(`/api/group-chats/${conversationId}/settings`, data),
+  updatePermissions: (conversationId, permission) => apiClient.patch(`/api/group-chats/${conversationId}/permissions`, { permission }),
+  changeOwner: (conversationId, targetUserId) => apiClient.post(`/api/group-chats/${conversationId}/owner`, { targetUserId }),
+  promoteAdmin: (conversationId, targetUserId) => apiClient.post(`/api/group-chats/${conversationId}/admins`, { targetUserId }),
+  demoteAdmin: (conversationId, targetUserId) => apiClient.delete(`/api/group-chats/${conversationId}/admins/${targetUserId}`),
+  acceptJoinRequest: (conversationId, targetUserId) => apiClient.post(`/api/group-chats/${conversationId}/requests/${targetUserId}/accept`),
+  declineJoinRequest: (conversationId, targetUserId) => apiClient.post(`/api/group-chats/${conversationId}/requests/${targetUserId}/decline`),
+  joinGroup: (conversationId) => apiClient.post(`/api/group-chats/${conversationId}/join`),
+  unsendMessage: (messageId) => apiClient.delete(`/api/group-chats/msg/${messageId}`),
+  deleteMessageForMe: (messageId) => apiClient.delete(`/api/group-chats/msg/${messageId}/for-me`),
+  forwardMessage: (messageId, targetConversationIds) => apiClient.post(`/api/group-chats/msg/${messageId}/forward`, { targetConversationIds }),
+  reactToMessage: (messageId, reaction) => apiClient.post(`/api/group-chats/${messageId}/react`, { reaction }),
+};
+
+export const activityChatApi = {
+  getConversations: (limit, offset) => apiClient.get(`/api/activity-chats?limit=${limit || 20}&offset=${offset || 0}`),
+  initActivityChat: (activityId) => apiClient.post(`/api/activity-chats/${activityId}/init`),
+  getHistory: (conversationId, deviceId, beforeCursor, limit) => {
+    const params = new URLSearchParams();
+    if (deviceId) params.set('deviceId', deviceId);
+    if (beforeCursor) params.set('before', beforeCursor);
+    if (limit) params.set('limit', String(limit));
+    const query = params.toString();
+    return apiClient.get(`/api/activity-chats/${conversationId}${query ? `?${query}` : ''}`);
+  },
+  sendMessage: (conversationId, payload) => apiClient.post(`/api/activity-chats/${conversationId}/messages`, payload),
+  markAsRead: (conversationId) => apiClient.post(`/api/activity-chats/${conversationId}/read`),
+  muteConversation: (conversationId, muted) => apiClient.patch(`/api/activity-chats/${conversationId}/mute`, { muted }),
+  unsendMessage: (messageId) => apiClient.delete(`/api/activity-chats/msg/${messageId}`),
+  deleteMessageForMe: (messageId) => apiClient.delete(`/api/activity-chats/msg/${messageId}/for-me`),
+  forwardMessage: (messageId, targetConversationIds) => apiClient.post(`/api/activity-chats/msg/${messageId}/forward`, { targetConversationIds }),
+  reactToMessage: (messageId, reaction) => apiClient.post(`/api/activity-chats/${messageId}/react`, { reaction }),
+};
+
 export const messagesApi = {
-  getConversations: () => apiClient.get('/api/messages'),
+  getConversations: (limit, offset) => {
+    const params = new URLSearchParams();
+    const resolvedLimit = typeof limit === 'object' ? 50 : limit;
+    const resolvedOffset = typeof offset === 'object' ? 0 : offset;
+    
+    if (resolvedLimit) params.set('limit', String(resolvedLimit));
+    if (resolvedOffset) params.set('offset', String(resolvedOffset));
+    const query = params.toString();
+    return apiClient.get(`/api/messages${query ? `?${query}` : ''}`);
+  },
   getHistory: (conversationId, deviceId, beforeCursor, limit) => {
     const params = new URLSearchParams();
     if (deviceId) params.set('deviceId', deviceId);
@@ -303,7 +392,9 @@ export const messagesApi = {
   addMember: (conversationId, userId) => apiClient.post(`/api/messages/${conversationId}/members`, { userId }),
   removeMember: (conversationId, targetUserId) => apiClient.delete(`/api/messages/${conversationId}/members/${targetUserId}`),
   leaveGroup: (conversationId) => apiClient.post(`/api/messages/${conversationId}/leave`),
-  unsendMessage: (messageId) => apiClient.delete(`/api/messages/${messageId}`),
+  unsendMessage: (messageId) => apiClient.delete(`/api/messages/msg/${messageId}`),
+  deleteMessageForMe: (messageId) => apiClient.delete(`/api/messages/msg/${messageId}/for-me`),
+  forwardMessage: (messageId, targetConversationIds) => apiClient.post(`/api/messages/msg/${messageId}/forward`, { targetConversationIds }),
   updateSettings: (conversationId, data) => apiClient.patch(`/api/messages/${conversationId}/settings`, data),
   updatePermissions: (conversationId, permission) => apiClient.patch(`/api/messages/${conversationId}/permissions`, { permission }),
   changeOwner: (conversationId, targetUserId) => apiClient.post(`/api/messages/${conversationId}/owner`, { targetUserId }),

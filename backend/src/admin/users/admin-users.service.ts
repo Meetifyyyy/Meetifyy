@@ -72,6 +72,8 @@ export class AdminUsersService {
             select: {
               posts: true,
               comments: true,
+              followers: true,
+              following: true,
               reportsMade: true,
             },
           },

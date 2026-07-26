@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import styles from './ImageSearchModal.module.css';
 import { X, Search, Upload } from 'lucide-react';
-import { processAndUploadImage, processAndUploadRemoteUrl } from '@shared/utils/mediaPipeline';
+import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import MediaCropper from '@shared/components/media/MediaCropper';
 
 export default function ImageSearchModal({ onClose, onSelect }) {
   const [query, setQuery] = useState('');
@@ -9,6 +10,7 @@ export default function ImageSearchModal({ onClose, onSelect }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isCompressingRemote, setIsCompressingRemote] = useState(false);
   const [activeTab, setActiveTab] = useState('images'); // 'images' or 'gifs'
+  const [cropTarget, setCropTarget] = useState(null);
   const fileInputRef = useRef(null);
 
 
@@ -129,7 +131,7 @@ export default function ImageSearchModal({ onClose, onSelect }) {
     fileInputRef.current?.click();
   };
 
-  const handleCustomUpload = async (e) => {
+  const handleCustomUpload = (e) => {
     const file = e.target.files?.[0];
     if (file) {
       const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -143,87 +145,135 @@ export default function ImageSearchModal({ onClose, onSelect }) {
         e.target.value = '';
         return;
       }
-      try {
-        const { publicUrl } = await processAndUploadImage(file, 'covers', { maxWidthOrHeight: 1920 });
-        onSelect(publicUrl);
-      } catch {
-        alert('Failed to upload image.');
+      if (file.type === 'image/gif') {
+        setIsCompressingRemote(true);
+        processAndUploadImage(file, 'covers').then(({ publicUrl }) => {
+          onSelect(publicUrl || URL.createObjectURL(file));
+          onClose();
+        }).catch(() => {
+          onSelect(URL.createObjectURL(file));
+          onClose();
+        }).finally(() => {
+          setIsCompressingRemote(false);
+        });
+      } else {
+        setCropTarget(file);
       }
     }
     e.target.value = '';
   };
 
-  const handleSelectItem = async (itemUrl) => {
-    setIsCompressingRemote(true);
-    try {
-      const finalUrl = await processAndUploadRemoteUrl(itemUrl, 'covers', { maxWidthOrHeight: 1280 });
-      onSelect(finalUrl);
-    } catch {
+  const isGifUrl = (url) => {
+    if (!url || typeof url !== 'string') return false;
+    return url.includes('.gif') || url.includes('giphy.com') || url.startsWith('data:image/gif');
+  };
+
+  const handleSelectItem = (itemUrl) => {
+    if (activeTab === 'gifs' || isGifUrl(itemUrl)) {
       onSelect(itemUrl);
-    } finally {
-      setIsCompressingRemote(false);
+      onClose();
+    } else {
+      setCropTarget(itemUrl);
+    }
+  };
+
+  const handleCropComplete = async (croppedFile) => {
+    // Instantly reflect cropped image on target UI with zero latency
+    const instantUrl = croppedFile.previewUrl || URL.createObjectURL(croppedFile);
+    onSelect(instantUrl);
+    setCropTarget(null);
+    onClose();
+
+    // Upload in background to obtain permanent server URL
+    try {
+      const { publicUrl } = await processAndUploadImage(croppedFile, 'covers', { maxWidthOrHeight: 1280 });
+      onSelect(publicUrl);
+    } catch {
+      // Keep optimistic preview if network upload fails
     }
   };
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.isModal} onClick={e => e.stopPropagation()}>
-        <div className={styles.isHeader}>
-          <div className={styles.isTitleRow}>
-            <span className={styles.dtTitle}>Pick a cover</span>
-            <button className={styles.dtClose} onClick={onClose}><X size={16} /></button>
-          </div>
-          
-          <div className={styles.isTabs}>
-            <button className={`${styles.isTab} ${activeTab === 'images' ? styles.isTabActive : ''}`} onClick={() => setActiveTab('images')}>Images</button>
-            <button className={`${styles.isTab} ${activeTab === 'gifs' ? styles.isTabActive : ''}`} onClick={() => setActiveTab('gifs')}>GIFs</button>
-          </div>
+    <>
+      <div className={styles.modalOverlay} onClick={onClose}>
+        <div className={styles.isModal} onClick={e => e.stopPropagation()}>
+          <div className={styles.isHeader}>
+            <div className={styles.isTitleRow}>
+              <span className={styles.dtTitle}>Pick a cover</span>
+              <button className={styles.dtClose} onClick={onClose}><X size={16} /></button>
+            </div>
+            
+            <div className={styles.isTabs}>
+              <button className={`${styles.isTab} ${activeTab === 'images' ? styles.isTabActive : ''}`} onClick={() => setActiveTab('images')}>Images</button>
+              <button className={`${styles.isTab} ${activeTab === 'gifs' ? styles.isTabActive : ''}`} onClick={() => setActiveTab('gifs')}>GIFs</button>
+            </div>
 
-          <div className={styles.isSearchBox}>
-            <Search size={16} className={styles.isSearchIcon} />
-            <input 
-              type="text" 
-              className={styles.isSearchInput} 
-              placeholder={`Search for ${activeTab}...`}
-              value={query}
-              onChange={e => setQuery(e.target.value)}
+            <div className={styles.isSearchBox}>
+              <Search size={16} className={styles.isSearchIcon} />
+              <input 
+                type="text" 
+                className={styles.isSearchInput} 
+                placeholder={`Search for ${activeTab}...`}
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+              />
+            </div>
+
+            <input
+              type="file"
+              accept="image/*"
+              ref={fileInputRef}
+              style={{ display: 'none' }}
+              onChange={handleCustomUpload}
             />
+
+            <button
+              type="button"
+              className={styles.uploadBtn}
+              onClick={handleUploadClick}
+            >
+              <Upload size={14} style={{ marginRight: '6px' }} />
+              Upload Image
+            </button>
           </div>
 
-          <input
-            type="file"
-            accept="image/*"
-            ref={fileInputRef}
-            style={{ display: 'none' }}
-            onChange={handleCustomUpload}
-          />
-
-          <button
-            type="button"
-            className={styles.uploadBtn}
-            onClick={handleUploadClick}
-          >
-            <Upload size={14} style={{ marginRight: '6px' }} />
-            Upload Image
-          </button>
-        </div>
-
-        <div className={styles.isBody}>
-          {isLoading || isCompressingRemote ? (
-            <div className={styles.isLoading}>
-              {isCompressingRemote ? 'Optimizing image...' : 'Loading...'}
-            </div>
-          ) : (
-            <div className={styles.isGrid}>
-              {results.map(item => (
-                <button key={item.id} className={styles.isResultBtn} onClick={() => handleSelectItem(item.url)}>
-                  <img src={item.url} alt={item.title} loading="lazy" />
-                </button>
-              ))}
-            </div>
-          )}
+          <div className={styles.isBody}>
+            {isCompressingRemote && (
+              <div className={styles.compressingBanner}>
+                Optimizing image...
+              </div>
+            )}
+            {results.length === 0 && isLoading ? (
+              <div className={styles.isGrid}>
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <div key={i} className={styles.skeletonCard} />
+                ))}
+              </div>
+            ) : results.length === 0 ? (
+              <div className={styles.isLoading}>
+                No items found.
+              </div>
+            ) : (
+              <div className={`${styles.isGrid} ${isLoading ? styles.isGridLoading : ''}`}>
+                {results.map(item => (
+                  <button key={item.id} className={styles.isResultBtn} onClick={() => handleSelectItem(item.url)}>
+                    <img src={item.url} alt={item.title} loading="lazy" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {cropTarget && (
+        <MediaCropper
+          imageFile={cropTarget}
+          aspect={1}
+          onCropComplete={handleCropComplete}
+          onCancel={() => setCropTarget(null)}
+        />
+      )}
+    </>
   );
 }

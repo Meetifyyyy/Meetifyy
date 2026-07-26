@@ -1,20 +1,25 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Cropper from 'react-easy-crop';
 import { getCroppedImg } from './cropImageUtils';
-import { X, Check } from 'lucide-react';
+import { X, Check, Loader2 } from 'lucide-react';
 
 export default function MediaCropper({ imageFile, aspect, onCropComplete, onCancel }) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
   const [imageSrc, setImageSrc] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   
-  // Create object URL for the image file
   React.useEffect(() => {
     if (imageFile) {
-      const url = URL.createObjectURL(imageFile);
-      setImageSrc(url);
-      return () => URL.revokeObjectURL(url);
+      if (typeof imageFile === 'string') {
+        setImageSrc(imageFile);
+      } else {
+        const url = URL.createObjectURL(imageFile);
+        setImageSrc(url);
+        return () => URL.revokeObjectURL(url);
+      }
     }
   }, [imageFile]);
 
@@ -22,83 +27,227 @@ export default function MediaCropper({ imageFile, aspect, onCropComplete, onCanc
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
 
+  const [isClosing, setIsClosing] = useState(false);
+
+  const handleSmoothClose = (callback) => {
+    setIsClosing(true);
+    setTimeout(() => {
+      callback();
+    }, 200);
+  };
+
   const handleConfirm = async () => {
+    if (isProcessing || isClosing) return;
+    setIsProcessing(true);
+    const startTime = Date.now();
     try {
       const croppedBlob = await getCroppedImg(imageSrc, croppedAreaPixels);
-      
-      // Convert blob back to File to maintain compatibility with mediaPipeline
-      const croppedFile = new File([croppedBlob], imageFile.name, {
-        type: 'image/jpeg', // getCroppedImg returns jpeg usually, or we can use the original type
+      const fileName = (typeof imageFile === 'object' && imageFile?.name) ? imageFile.name : 'cropped.jpg';
+      const croppedFile = new File([croppedBlob], fileName, {
+        type: 'image/jpeg',
         lastModified: Date.now(),
       });
-      
-      onCropComplete(croppedFile);
+      croppedFile.previewUrl = URL.createObjectURL(croppedBlob);
+
+      // Mandatory 500ms minimum spinner animation display
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 500) {
+        await new Promise((resolve) => setTimeout(resolve, 500 - elapsed));
+      }
+
+      handleSmoothClose(() => onCropComplete(croppedFile));
     } catch (e) {
-      console.error(e);
-      onCancel();
+      console.error('Cropping error:', e);
+      handleSmoothClose(onCancel);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   if (!imageSrc) return null;
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-bg-primary w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl border border-border-primary flex flex-col">
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 99999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(0, 0, 0, 0.75)',
+        backdropFilter: 'blur(6px)',
+        WebkitBackdropFilter: 'blur(6px)',
+        padding: '16px',
+        boxSizing: 'border-box',
+        transition: 'opacity 0.2s ease-in-out',
+        opacity: isClosing ? 0 : 1
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isProcessing && !isClosing) {
+          handleSmoothClose(onCancel);
+        }
+      }}
+    >
+      <div
+        style={{
+          background: 'var(--color-bg-white, #ffffff)',
+          color: 'var(--color-text-main, #0f172a)',
+          width: '100%',
+          maxWidth: '540px',
+          borderRadius: '24px',
+          overflow: 'hidden',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+          border: 'none',
+          display: 'flex',
+          flexDirection: 'column',
+          boxSizing: 'border-box',
+          position: 'relative',
+          transition: 'transform 0.2s ease-in-out, opacity 0.2s ease-in-out',
+          transform: isClosing ? 'scale(0.95)' : 'scale(1)',
+          opacity: isClosing ? 0 : 1
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border-primary">
-          <h3 className="text-text-primary font-semibold text-lg">Crop Image</h3>
-          <button onClick={onCancel} className="p-2 rounded-full hover:bg-bg-secondary text-text-secondary transition-colors">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '18px 20px 14px 20px'
+          }}
+        >
+          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text-main, #0f172a)' }}>
+            Crop Image
+          </h3>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isProcessing}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '6px',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--color-text-muted, #64748b)'
+            }}
+          >
             <X size={20} />
           </button>
         </div>
         
         {/* Cropper Area */}
-        <div className="relative w-full h-[60vh] bg-black">
-          <Cropper
-            image={imageSrc}
-            crop={crop}
-            zoom={zoom}
-            aspect={aspect}
-            onCropChange={setCrop}
-            onCropComplete={onCropCompleteHandler}
-            onZoomChange={setZoom}
-            objectFit="contain"
-          />
+        <div style={{ padding: '0 16px' }}>
+          <div style={{ position: 'relative', width: '100%', height: '340px', background: '#090d16', borderRadius: '16px', overflow: 'hidden' }}>
+            <Cropper
+              image={imageSrc}
+              crop={crop}
+              zoom={zoom}
+              aspect={aspect}
+              onCropChange={setCrop}
+              onCropComplete={onCropCompleteHandler}
+              onZoomChange={setZoom}
+              objectFit="contain"
+              cropShape={aspect === 1 ? 'round' : 'rect'}
+              showGrid={true}
+            />
+          </div>
         </div>
 
-        {/* Footer Controls */}
-        <div className="p-4 border-t border-border-primary flex flex-col gap-4">
-          <div className="flex items-center gap-4">
-            <span className="text-text-secondary text-sm font-medium">Zoom</span>
+        {/* Controls & Footer */}
+        <div
+          style={{
+            padding: '16px 20px 20px 20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}
+        >
+          {/* Zoom Slider */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-muted, #64748b)', minWidth: '40px' }}>
+              Zoom
+            </span>
             <input
               type="range"
               value={zoom}
               min={1}
               max={3}
-              step={0.1}
-              aria-labelledby="Zoom"
+              step={0.05}
               onChange={(e) => setZoom(Number(e.target.value))}
-              className="w-full accent-primary h-2 bg-bg-tertiary rounded-lg appearance-none cursor-pointer"
+              style={{
+                width: '100%',
+                accentColor: 'var(--color-primary, #2563eb)',
+                cursor: 'pointer'
+              }}
             />
           </div>
-          
-          <div className="flex justify-end gap-3">
+
+          {/* Action Buttons */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
             <button
+              type="button"
               onClick={onCancel}
-              className="px-5 py-2 rounded-xl text-text-secondary font-medium hover:bg-bg-secondary transition-colors"
+              disabled={isProcessing}
+              style={{
+                padding: '10px 18px',
+                borderRadius: '12px',
+                border: 'none',
+                background: 'var(--color-bg-soft, #f1f5f9)',
+                color: 'var(--color-text-main, #0f172a)',
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                cursor: 'pointer'
+              }}
             >
               Cancel
             </button>
             <button
+              type="button"
               onClick={handleConfirm}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-white font-medium hover:bg-primary-hover active:scale-95 transition-all shadow-md shadow-primary/20"
+              disabled={isProcessing}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 20px',
+                borderRadius: '12px',
+                border: 'none',
+                background: 'var(--color-primary, #2563eb)',
+                color: '#ffffff',
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                cursor: isProcessing ? 'not-allowed' : 'pointer',
+                opacity: isProcessing ? 0.75 : 1
+              }}
             >
-              <Check size={18} />
-              Apply Crop
+              {isProcessing ? (
+                <>
+                  <Loader2 size={18} style={{ animation: 'cropperSpin 0.9s linear infinite' }} />
+                  <span>Cropping...</span>
+                </>
+              ) : (
+                <>
+                  <Check size={18} />
+                  <span>Apply Crop</span>
+                </>
+              )}
             </button>
+            <style>{`
+              @keyframes cropperSpin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+              }
+            `}</style>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

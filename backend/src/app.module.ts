@@ -19,6 +19,10 @@ import { ActivitiesModule } from './activities/activities.module';
 import { UsersModule } from './users/users.module';
 import { KeysModule } from './keys/keys.module';
 import { MessagesModule } from './messages/messages.module';
+import { MessagingCoreModule } from './messages/core/messaging-core.module';
+import { DmModule } from './messages/dm/dm.module';
+import { GroupChatsModule } from './messages/group-chats/group-chats.module';
+import { ActivityChatsModule } from './messages/activity-chats/activity-chats.module';
 import { SearchModule } from './search/search.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PresenceModule } from './presence/presence.module';
@@ -92,6 +96,10 @@ import { RedisModule } from './redis/redis.module';
     UsersModule,
     KeysModule,
     MessagesModule,
+    MessagingCoreModule,
+    DmModule,
+    GroupChatsModule,
+    ActivityChatsModule,
     SearchModule,
     NotificationsModule,
     PresenceModule,

@@ -1,17 +1,20 @@
-import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { generatePublicId } from '../common/utils/public-id.util';
+import { MessagingCoreService } from './core/messaging-core.service';
 
 @Injectable()
-export class MessagesService implements OnModuleInit {
+export class MessagesService extends MessagingCoreService implements OnModuleInit {
   constructor(
-    private prisma: PrismaService,
-    private presenceService: PresenceService,
+    prisma: PrismaService,
+    presenceService: PresenceService,
     @Inject(forwardRef(() => RealtimeGateway))
-    private realtimeGateway: RealtimeGateway,
-  ) { }
+    realtimeGateway: RealtimeGateway,
+  ) {
+    super(prisma, presenceService, realtimeGateway);
+  }
 
   async onModuleInit() {
     try {
@@ -43,15 +46,40 @@ export class MessagesService implements OnModuleInit {
     }
   }
 
-  async resolveConversationId(identifier: string): Promise<string> {
+  async resolveConversationId(identifier: string, currentUserId?: string): Promise<string> {
     if (!identifier) return identifier;
+    const cleanId = String(identifier).replace(/^(act_)+/, '');
     try {
-      const found: any[] = await this.prisma.$queryRawUnsafe(
-        `SELECT id FROM "Conversation" WHERE "publicId" = $1 OR "id" = $1 LIMIT 1`,
-        identifier
-      );
-      if (found && found.length > 0) {
-        return found[0].id;
+      const conv = await this.prisma.conversation.findFirst({
+        where: {
+          OR: [
+            { id: identifier },
+            { publicId: identifier },
+            { id: cleanId },
+            { publicId: cleanId },
+            { activityId: cleanId },
+          ]
+        },
+        select: { id: true }
+      });
+      if (conv?.id) {
+        return conv.id;
+      }
+
+      if (currentUserId && identifier !== currentUserId) {
+        const dm = await this.prisma.conversation.findFirst({
+          where: {
+            type: 'DIRECT' as any,
+            AND: [
+              { participants: { some: { userId: currentUserId } } },
+              { participants: { some: { userId: identifier } } }
+            ]
+          },
+          select: { id: true }
+        });
+        if (dm?.id) {
+          return dm.id;
+        }
       }
     } catch (err) {
       // ignore
@@ -96,6 +124,8 @@ export class MessagesService implements OnModuleInit {
       mentions?: string[];
       replyToId?: string;
       inviteData?: any;
+      isForwarded?: boolean;
+      forwardedFromMessageId?: string;
     }
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
@@ -136,6 +166,8 @@ export class MessagesService implements OnModuleInit {
           mediaType: payload.mediaType || null,
           mentions: payload.mentions || [],
           inviteData: payload.inviteData || null,
+          isForwarded: payload.isForwarded || false,
+          forwardedFromMessageId: payload.forwardedFromMessageId || null,
         }
       },
       include: {
@@ -200,12 +232,18 @@ export class MessagesService implements OnModuleInit {
   }
 
   async getConversationHistory(conversationId: string, currentUserId?: string, deviceId?: string, beforeCursor?: string, limit: number = 50) {
-    const realConvId = await this.resolveConversationId(conversationId);
+    const realConvId = await this.resolveConversationId(conversationId, currentUserId);
     let clearedAt: Date | null = null;
     const whereCondition: any = {
       conversationId: realConvId,
       deletedAt: null
     };
+
+    if (currentUserId) {
+      whereCondition.deletedByUsers = {
+        none: { userId: currentUserId }
+      };
+    }
 
     const [participant, blocksMade, participants] = await Promise.all([
       currentUserId ? this.prisma.conversationParticipant.findUnique({
@@ -250,12 +288,39 @@ export class MessagesService implements OnModuleInit {
     
     // Pagination logic
     if (beforeCursor) {
-      const cursorMessage = await this.prisma.message.findUnique({ where: { id: beforeCursor }, select: { createdAt: true } });
-      if (cursorMessage) {
-        if (whereCondition.createdAt && whereCondition.createdAt.gt) {
-          whereCondition.createdAt = { ...whereCondition.createdAt, lt: cursorMessage.createdAt };
+      let cursorDate: Date | null = null;
+      let cursorId: string | null = null;
+
+      if (beforeCursor.startsWith('sys_created_')) {
+        const actId = beforeCursor.replace(/^sys_created_/, '');
+        const activity = await this.prisma.crewActivity.findUnique({ where: { id: actId }, select: { createdAt: true } });
+        if (activity?.createdAt) cursorDate = activity.createdAt;
+      } else if (beforeCursor.startsWith('sys_started_')) {
+        const actId = beforeCursor.replace(/^sys_started_/, '');
+        const activity = await this.prisma.crewActivity.findUnique({ where: { id: actId }, select: { startDate: true } });
+        if (activity?.startDate) cursorDate = activity.startDate;
+      } else {
+        const cursorMessage = await this.prisma.message.findUnique({
+          where: { id: beforeCursor },
+          select: { id: true, createdAt: true }
+        });
+        if (cursorMessage) {
+          cursorDate = cursorMessage.createdAt;
+          cursorId = cursorMessage.id;
+        }
+      }
+
+      if (cursorDate) {
+        if (cursorId) {
+          whereCondition.OR = [
+            { createdAt: { lt: cursorDate } },
+            { createdAt: cursorDate, id: { lt: cursorId } }
+          ];
         } else {
-          whereCondition.createdAt = { lt: cursorMessage.createdAt };
+          whereCondition.createdAt = {
+            ...(typeof whereCondition.createdAt === 'object' ? whereCondition.createdAt : {}),
+            lt: cursorDate
+          };
         }
       }
     }
@@ -276,7 +341,7 @@ export class MessagesService implements OnModuleInit {
           }
         }
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1
     });
 
@@ -285,7 +350,9 @@ export class MessagesService implements OnModuleInit {
       messages.pop(); // Remove the extra item
     }
     messages.reverse(); // Return in chronological order
-    const nextCursor = hasMore && messages.length > 0 ? messages[0].id : null;
+    const realDbMessages = messages.filter(m => !m.id.startsWith('sys_'));
+    const oldestRealMessage = realDbMessages[0];
+    const nextCursor = hasMore && oldestRealMessage ? oldestRealMessage.id : null;
     const otherParticipants = participants.filter(p => currentUserId && p.userId !== currentUserId);
     const otherReadTimestamps = otherParticipants
       .filter(p => p.user?.settings?.readReceipts !== false && p.lastReadAt != null)
@@ -310,6 +377,7 @@ export class MessagesService implements OnModuleInit {
       }
 
       const isRead = currentUserId && m.senderId === currentUserId && isAllRead && minOtherLastReadAt >= new Date(m.createdAt).getTime();
+      const isUnsent = m.state === 'UNSENT';
 
       return {
         id: m.id,
@@ -324,15 +392,80 @@ export class MessagesService implements OnModuleInit {
         type: target0 ? target0.type : (m.type ? m.type.toLowerCase() : 'chat'),
         ciphertext: target0 ? target0.ciphertext : null,
         payload,
-        text: payload.text || '',
-        mediaUrl: payload.mediaUrl || null,
-        mediaType: payload.mediaType || null,
-        mentions: payload.mentions || [],
-        inviteData: payload.inviteData || null,
+        text: isUnsent ? 'This message was unsent' : (payload.text || ''),
+        mediaUrl: isUnsent ? null : (payload.mediaUrl || null),
+        mediaType: isUnsent ? null : (payload.mediaType || null),
+        mentions: isUnsent ? [] : (payload.mentions || []),
+        inviteData: isUnsent ? null : (payload.inviteData || null),
         replyTo: replyToObj,
-        status: isRead ? 'read' : 'sent'
+        status: isRead ? 'read' : 'sent',
+        state: m.state || 'NORMAL'
       };
     });
+
+    if (conversationId.startsWith('act_') || realConvId.startsWith('act_')) {
+      const actId = (conversationId || realConvId).replace(/^act_/, '');
+      const activity = await this.prisma.crewActivity.findUnique({
+        where: { id: actId },
+        select: { id: true, title: true, startDate: true, createdAt: true, creatorId: true }
+      });
+
+      if (activity) {
+        const hasCreatedMsg = messagesMapped.some(m => String(m.text).includes('group chat created'));
+        if (!hasCreatedMsg) {
+          const createdSysMsg: any = {
+            id: `sys_created_${activity.id}`,
+            conversationId,
+            senderId: activity.creatorId,
+            senderName: 'System',
+            senderAvatar: '',
+            from: 'them',
+            createdAt: activity.createdAt || new Date(),
+            timestamp: activity.createdAt || new Date(),
+            time: activity.createdAt ? new Date(activity.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+            type: 'system',
+            ciphertext: null,
+            payload: { text: 'Activity group chat created' },
+            text: 'Activity group chat created',
+            mediaUrl: null,
+            mediaType: null,
+            mentions: [],
+            inviteData: null,
+            replyTo: null,
+            status: 'sent',
+            state: 'NORMAL'
+          };
+          messagesMapped.unshift(createdSysMsg);
+        }
+
+        const hasStarted = messagesMapped.some(m => String(m.text).includes('has started'));
+        if (!hasStarted && activity.startDate && new Date(activity.startDate) <= new Date()) {
+          const startedSysMsg: any = {
+            id: `sys_started_${activity.id}`,
+            conversationId,
+            senderId: 'system',
+            senderName: 'System',
+            senderAvatar: '',
+            from: 'them',
+            createdAt: activity.startDate,
+            timestamp: activity.startDate,
+            time: new Date(activity.startDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            type: 'system',
+            ciphertext: null,
+            payload: { text: 'Activity has started!' },
+            text: 'Activity has started!',
+            mediaUrl: null,
+            mediaType: null,
+            mentions: [],
+            inviteData: null,
+            replyTo: null,
+            status: 'sent',
+            state: 'NORMAL'
+          };
+          messagesMapped.push(startedSysMsg);
+        }
+      }
+    }
 
     return {
       messages: messagesMapped,
@@ -373,6 +506,8 @@ export class MessagesService implements OnModuleInit {
             avatarKey: true,
             description: true,
             type: true,
+            activityId: true,
+            activity: true,
             ownerId: true,
             status: true,
             isInstantMatch: true,
@@ -483,8 +618,7 @@ export class MessagesService implements OnModuleInit {
         const cId = part.conversation.id;
         const readAt = part.lastReadAt ? new Date(part.lastReadAt).getTime() : 0;
         const clearAt = part.clearedAt ? new Date(part.clearedAt).getTime() : 0;
-        const joinAt = (part as any).joinedAt ? new Date((part as any).joinedAt).getTime() : 0;
-        const maxTime = Math.max(readAt, clearAt, joinAt);
+        const maxTime = Math.max(readAt, clearAt);
         const filterDate = maxTime > 0 ? new Date(maxTime) : new Date(0);
 
         const count = await this.prisma.message.count({
@@ -495,7 +629,6 @@ export class MessagesService implements OnModuleInit {
             createdAt: { gt: filterDate }
           }
         });
-        console.log(`[UNREAD DEBUG] convId=${cId}, readAt=${new Date(readAt).toISOString()}, joinAt=${new Date(joinAt).toISOString()}, filterDate=${filterDate.toISOString()}, count=${count}`);
         unreadMap.set(cId, count);
       }));
     }
@@ -584,15 +717,22 @@ export class MessagesService implements OnModuleInit {
       }
 
       const pubId = (conv as any).publicId || conv.id;
-      return {
-        id: pubId,
-        publicId: pubId,
-        type: conv.type,
-        isMember: (p as any).leftAt == null,
-        ownerId: conv.ownerId || null,
-        name: conv.name || otherUser?.displayName || 'Group',
-        avatar: conv.avatarKey || otherUser?.avatar,
-        description: conv.description || null,
+        const isGroupConv = conv.type === 'GROUP' || (conv as any).isGroup;
+        const groupAvatar = conv.avatarKey || null;
+        return {
+          id: pubId,
+          publicId: pubId,
+          internalId: conv.id,
+          type: conv.type,
+          isMember: (p as any).leftAt == null,
+          ownerId: conv.ownerId || null,
+          activityId: conv.activityId || null,
+          activity: conv.activity || null,
+          isActivityChat: conv.type === 'ACTIVITY' || !!conv.activityId,
+          isGroup: isGroupConv,
+          name: isGroupConv ? (conv.name || 'Group') : (conv.name || otherUser?.displayName || 'Chat'),
+          avatar: isGroupConv ? groupAvatar : (conv.avatarKey || otherUser?.avatar || null),
+          description: conv.description || null,
         status: conv.status || 'ACTIVE',
         isInstantMatch: conv.isInstantMatch || false,
         expiresAt: conv.expiresAt || null,
@@ -730,14 +870,19 @@ export class MessagesService implements OnModuleInit {
   async markAsRead(conversationId: string, userId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
     const now = new Date();
-    await this.prisma.conversationParticipant.update({
+    await this.prisma.conversationParticipant.upsert({
       where: {
         userId_conversationId: {
           userId,
           conversationId: realConvId
         }
       },
-      data: {
+      update: {
+        lastReadAt: now
+      },
+      create: {
+        userId,
+        conversationId: realConvId,
         lastReadAt: now
       }
     }).catch(() => { });
@@ -777,6 +922,15 @@ export class MessagesService implements OnModuleInit {
     return { success: true };
   }
 
+  async isUserConversationMuted(conversationId: string, userId: string): Promise<boolean> {
+    const realConvId = await this.resolveConversationId(conversationId);
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId: realConvId } },
+      select: { isMuted: true }
+    });
+    return participant?.isMuted || false;
+  }
+
   async muteConversation(conversationId: string, userId: string, muted: boolean) {
     const realConvId = await this.resolveConversationId(conversationId);
     await this.prisma.conversationParticipant.update({
@@ -811,6 +965,108 @@ export class MessagesService implements OnModuleInit {
       data: { deletedAt: new Date() }
     });
     return { success: true };
+  }
+
+  async unsendMessage(messageId: string, userId: string) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, conversationId: true, senderId: true, createdAt: true, state: true }
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (message.senderId !== userId) {
+      throw new ForbiddenException('You can only unsend your own messages');
+    }
+
+    const diffMins = (Date.now() - new Date(message.createdAt).getTime()) / (1000 * 60);
+    if (diffMins > 10) {
+      throw new BadRequestException('Messages can only be unsent within 10 minutes of sending');
+    }
+
+    await this.prisma.message.update({
+      where: { id: messageId },
+      data: {
+        state: 'UNSENT',
+        deletedAt: new Date()
+      }
+    });
+
+    return {
+      success: true,
+      id: message.id,
+      messageId: message.id,
+      conversationId: message.conversationId,
+      state: 'UNSENT'
+    };
+  }
+
+  async deleteMessageForMe(messageId: string, userId: string) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, conversationId: true }
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    await this.prisma.deletedMessage.upsert({
+      where: { userId_messageId: { userId, messageId } },
+      create: { userId, messageId },
+      update: {}
+    });
+
+    return { success: true, messageId: message.id, conversationId: message.conversationId };
+  }
+
+  async forwardMessage(messageId: string, targetConversationIds: string[], userId: string) {
+    const originalMsg = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, payload: true, type: true }
+    });
+
+    if (!originalMsg) {
+      throw new NotFoundException('Message not found');
+    }
+
+    const payload = (originalMsg.payload as any) || {};
+    const text = payload.text || '';
+    const mediaUrl = payload.mediaUrl || null;
+    const mediaType = payload.mediaType || null;
+
+    const forwarded: any[] = [];
+    const chunkSize = 5;
+    for (let i = 0; i < targetConversationIds.length; i += chunkSize) {
+      const chunk = targetConversationIds.slice(i, i + chunkSize);
+      
+      const promises = chunk.map(async (targetId) => {
+        const realConvId = await this.resolveConversationId(targetId);
+        const isParticipant = await this.prisma.conversationParticipant.findFirst({
+          where: { userId, conversationId: realConvId, deletedAt: null }
+        });
+        if (!isParticipant) return null;
+
+        return this.sendMessage(userId, realConvId, {
+          text,
+          mediaUrl,
+          mediaType,
+          replyToId: undefined,
+          mentions: [],
+          isForwarded: true,
+          forwardedFromMessageId: messageId
+        });
+      });
+
+      const results = await Promise.all(promises);
+      results.forEach(msg => {
+        if (msg) forwarded.push(msg);
+      });
+    }
+
+    return { success: true, count: forwarded.length, messages: forwarded };
   }
 
   async updateGroupInfo(conversationId: string, userId: string, data: { name?: string; description?: string; avatarKey?: string; avatar?: string }) {
@@ -1014,28 +1270,6 @@ export class MessagesService implements OnModuleInit {
     });
 
     return { id: newPubId };
-  }
-
-  async unsendMessage(messageId: string, requestingUserId: string) {
-    const message = await this.prisma.message.findUnique({
-      where: { id: messageId },
-      select: { id: true, senderId: true, conversationId: true, deletedAt: true },
-    });
-
-    if (!message) throw new NotFoundException('Message not found');
-    if (message.senderId !== requestingUserId) {
-      throw new ForbiddenException('You can only unsend your own messages');
-    }
-    if (message.deletedAt) {
-      return { success: true, alreadyDeleted: true, conversationId: message.conversationId };
-    }
-
-    await this.prisma.message.update({
-      where: { id: messageId },
-      data: { deletedAt: new Date() },
-    });
-
-    return { success: true, messageId, conversationId: message.conversationId };
   }
 
   async getConversationParticipantIds(conversationId: string): Promise<string[]> {

@@ -264,7 +264,14 @@ export class NotificationsService {
     const take = limit + 1; // fetch 1 extra to check if there's a next page
     
     const notifications = await this.prisma.notification.findMany({
-      where: { recipientId: userId, deletedAt: null, type: { not: 'MESSAGE' } },
+      where: {
+        recipientId: userId,
+        deletedAt: null,
+        NOT: [
+          { type: 'JOIN_REQUEST' },
+          { body: { contains: 'requested to join' } }
+        ]
+      },
       orderBy: { createdAt: 'desc' },
       take,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),

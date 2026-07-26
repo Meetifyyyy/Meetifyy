@@ -1,21 +1,60 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 @Injectable()
-export class ActivitiesService {
+export class ActivitiesService implements OnModuleInit {
   private readonly logger = new Logger(ActivitiesService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly notificationFactory: NotificationFactory,
-    private readonly blocksService: BlocksService
+    private readonly blocksService: BlocksService,
+    @Inject(forwardRef(() => RealtimeGateway))
+    private readonly realtimeGateway: RealtimeGateway
   ) {}
 
+  onModuleInit() {
+    // Run auto-expiration every 60 seconds
+    setInterval(() => {
+      this.autoExpireActivities().catch(() => {});
+    }, 60000);
+  }
+
+  async autoExpireActivities() {
+    const now = new Date();
+    try {
+      const expiredList = await this.prisma.crewActivity.findMany({
+        where: {
+          status: 'OPEN',
+          deletedAt: null,
+          endDate: { lte: now }
+        },
+        select: { id: true }
+      });
+
+      if (expiredList && expiredList.length > 0) {
+        const expiredIds = expiredList.map(a => a.id);
+        await this.prisma.crewActivity.updateMany({
+          where: { id: { in: expiredIds } },
+          data: { status: 'ENDED' }
+        });
+
+        for (const actId of expiredIds) {
+          this.realtimeGateway.server?.emit('activity:updated', { id: actId, status: 'ENDED' });
+        }
+      }
+    } catch (err) {
+      this.logger.error('Failed to auto-expire activities', err);
+    }
+  }
+
   async getAllActivities(userId?: string) {
+    await this.autoExpireActivities();
     const excludedUserIds = userId ? await this.blocksService.getExcludedUserIds(userId) : [];
     const activities = await this.prisma.crewActivity.findMany({
       where: {
@@ -130,13 +169,40 @@ export class ActivitiesService {
   }
 
   async createActivity(data: any, creatorId: string) {
+    if (!data.title || typeof data.title !== 'string' || data.title.trim().length === 0) {
+      throw new BadRequestException('Title is required');
+    }
+    if (data.title.trim().length > 30) {
+      throw new BadRequestException('Title cannot exceed 30 characters');
+    }
+    if (data.description && data.description.length > 500) {
+      throw new BadRequestException('Description cannot exceed 500 characters');
+    }
+    if (data.location && data.location.length > 100) {
+      throw new BadRequestException('Location cannot exceed 100 characters');
+    }
+    if (data.startDate && data.endDate) {
+      const start = new Date(data.startDate);
+      const end = new Date(data.endDate);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        throw new BadRequestException('Invalid start or end date');
+      }
+      if (end <= start) {
+        throw new BadRequestException('End date must be after start date');
+      }
+      const maxDurationMs = 30 * 24 * 60 * 60 * 1000; // 30 days
+      if (end.getTime() - start.getTime() > maxDurationMs) {
+        throw new BadRequestException('Activity duration cannot exceed 30 days');
+      }
+    }
+
     const createData: any = {
       creatorId,
       title: data.title,
       description: data.description,
       coverImage: data.coverImage,
-      startDate: data.startDate,
-      endDate: data.endDate,
+      startDate: data.startDate ? new Date(data.startDate) : null,
+      endDate: data.endDate ? new Date(data.endDate) : null,
       location: data.location,
       createActivityGroup: data.createActivityGroup,
       maxMembers: data.maxMembers ? parseInt(data.maxMembers, 10) : null,
@@ -153,12 +219,39 @@ export class ActivitiesService {
       }
     }
 
-    return this.prisma.crewActivity.create({
+    const createdActivity = await this.prisma.crewActivity.create({
       data: createData,
       include: {
         members: { include: { user: true } },
       },
     });
+
+    if (createdActivity.createActivityGroup) {
+      const convId = `act_${createdActivity.id}`;
+      await this.prisma.conversation.upsert({
+        where: { id: convId },
+        update: { name: createdActivity.title, avatarKey: createdActivity.coverImage },
+        create: {
+          id: convId,
+          name: createdActivity.title,
+          avatarKey: createdActivity.coverImage,
+          type: 'GROUP',
+          ownerId: creatorId,
+          participants: {
+            create: [{ userId: creatorId, role: 'OWNER' }]
+          },
+          messages: {
+            create: [{
+              senderId: creatorId,
+              payload: { text: 'Activity group chat created' },
+              type: 'SYSTEM'
+            }]
+          }
+        }
+      }).catch(() => {});
+    }
+
+    return createdActivity;
   }
 
   async joinActivity(activityId: string, userId: string): Promise<any> {
@@ -170,6 +263,15 @@ export class ActivitiesService {
     if (!activity) throw new NotFoundException('Activity not found');
     if (activity.status === 'ENDED' || activity.status === 'CANCELLED') throw new BadRequestException('Activity is no longer open');
 
+    if (activity.creatorId === userId) {
+      throw new BadRequestException('You are already the host of this activity');
+    }
+
+    const startRaw = activity.startDate || (activity as any).date;
+    if (startRaw && new Date(startRaw) <= new Date()) {
+      throw new BadRequestException('Activity has already started and cannot be joined');
+    }
+
     const existingMember = activity.members.find((m) => m.userId === userId);
     if (existingMember) {
       if (existingMember.status === 'MEMBER') return { success: true }; // already joined
@@ -180,33 +282,124 @@ export class ActivitiesService {
       throw new BadRequestException('Activity is full');
     }
 
-    if (activity.participationType === 'APPROVAL') {
-      return this.requestToJoinActivity(activityId, userId);
-    }
-
     await this.prisma.crewActivityMember.upsert({
       where: { userId_activityId: { userId, activityId } },
       update: { status: 'MEMBER' },
       create: { userId, activityId, status: 'MEMBER' },
     });
 
-    if (activity.creatorId !== userId) {
-      this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, displayName: true, username: true, avatar: true } }).then(actor => {
-        if (actor) {
-          const dto = this.notificationFactory.createActivityJoin(actor, activity, activity.creatorId);
-          this.notificationsService.createNotification(dto).catch(err => {
-            this.logger.warn('Failed to send activity join notification', err);
+    const actor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, displayName: true, username: true, avatar: true }
+    });
+
+    try {
+      const convId = `act_${activityId}`;
+      const userHandle = actor?.username ? `@${actor.username}` : (actor?.displayName || 'Someone');
+
+      // Ensure conversation record exists
+      await this.prisma.conversation.upsert({
+        where: { id: convId },
+        update: { name: activity.title, avatarKey: activity.coverImage },
+        create: {
+          id: convId,
+          name: activity.title,
+          avatarKey: activity.coverImage,
+          type: 'GROUP',
+          ownerId: activity.creatorId,
+          participants: {
+            create: [{ userId: activity.creatorId, role: 'OWNER' }]
+          }
+        }
+      }).catch(() => {});
+
+      await this.prisma.conversationParticipant.upsert({
+        where: { userId_conversationId: { userId, conversationId: convId } },
+        update: { role: 'MEMBER' },
+        create: { conversationId: convId, userId, role: 'MEMBER' }
+      }).catch(() => {});
+
+      const sysMsg = await this.prisma.message.create({
+        data: {
+          conversationId: convId,
+          senderId: userId,
+          payload: { text: `${userHandle} joined the activity` },
+          type: 'SYSTEM'
+        }
+      }).catch(() => null);
+
+      if (sysMsg) {
+        const formattedMsg = {
+          id: sysMsg.id,
+          conversationId: convId,
+          publicId: convId,
+          internalId: convId,
+          senderId: userId,
+          senderName: 'System',
+          senderAvatar: '',
+          from: 'them',
+          createdAt: sysMsg.createdAt,
+          timestamp: sysMsg.createdAt,
+          time: new Date(sysMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          type: 'system',
+          text: `${userHandle} joined the activity`,
+          payload: { text: `${userHandle} joined the activity` },
+          status: 'sent'
+        };
+
+        const membersList = await this.prisma.crewActivityMember.findMany({
+          where: { activityId },
+          select: { userId: true }
+        }).catch(() => []);
+
+        const participantsList = await this.prisma.conversationParticipant.findMany({
+          where: { conversationId: convId },
+          select: { userId: true }
+        }).catch(() => []);
+
+        const recipientUserIds = Array.from(new Set([
+          userId,
+          activity.creatorId,
+          ...membersList.map(m => m.userId),
+          ...participantsList.map(p => p.userId)
+        ].filter(Boolean)));
+
+        for (const targetUserId of recipientUserIds) {
+          this.realtimeGateway.server?.to(targetUserId)?.emit('message:new', formattedMsg);
+          this.realtimeGateway.server?.to(targetUserId)?.emit('conversation:updated', {
+            conversationId: convId,
+            publicId: convId,
+            internalId: convId,
+            lastMessage: {
+              text: `${userHandle} joined the activity`,
+              createdAt: sysMsg.createdAt,
+              senderId: userId
+            }
           });
         }
-      }).catch(err => {
-        this.logger.warn('Failed to fetch actor for activity join notification', err);
-      });
+      }
+    } catch (err) {
+      this.logger.warn('Failed group chat update during joinActivity', err);
     }
 
     return { success: true };
   }
 
   async leaveActivity(activityId: string, userId: string) {
+    const activity = await this.prisma.crewActivity.findUnique({
+      where: { id: activityId },
+      select: { creatorId: true, createActivityGroup: true, title: true, coverImage: true },
+    });
+
+    if (activity && activity.creatorId === userId) {
+      throw new BadRequestException('Host cannot leave their own activity');
+    }
+
+    const actor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { displayName: true, username: true }
+    });
+
     const existingMember = await this.prisma.crewActivityMember.findUnique({
       where: { userId_activityId: { userId, activityId } }
     });
@@ -215,6 +408,79 @@ export class ActivitiesService {
       await this.prisma.crewActivityMember.delete({
         where: { userId_activityId: { userId, activityId } }
       });
+
+      try {
+        const convId = `act_${activityId}`;
+        const userHandle = actor?.username ? `@${actor.username}` : (actor?.displayName || 'Someone');
+
+        await this.prisma.conversationParticipant.deleteMany({
+          where: { conversationId: convId, userId }
+        }).catch(() => {});
+
+        const sysMsg = await this.prisma.message.create({
+          data: {
+            conversationId: convId,
+            senderId: userId,
+            payload: { text: `${userHandle} left the activity` },
+            type: 'SYSTEM'
+          }
+        }).catch(() => null);
+
+        if (sysMsg) {
+          const formattedMsg = {
+            id: sysMsg.id,
+            conversationId: convId,
+            publicId: convId,
+            internalId: convId,
+            senderId: userId,
+            senderName: 'System',
+            senderAvatar: '',
+            from: 'them',
+            createdAt: sysMsg.createdAt,
+            timestamp: sysMsg.createdAt,
+            time: new Date(sysMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            type: 'system',
+            text: `${userHandle} left the activity`,
+            payload: { text: `${userHandle} left the activity` },
+            status: 'sent'
+          };
+
+          const membersList = await this.prisma.crewActivityMember.findMany({
+            where: { activityId },
+            select: { userId: true }
+          }).catch(() => []);
+
+          const participantsList = await this.prisma.conversationParticipant.findMany({
+            where: { conversationId: convId },
+            select: { userId: true }
+          }).catch(() => []);
+
+          const recipientUserIds = Array.from(new Set([
+            userId,
+            activity?.creatorId,
+            ...membersList.map(m => m.userId),
+            ...participantsList.map(p => p.userId)
+          ].filter(Boolean)));
+
+          for (const targetUserId of recipientUserIds) {
+            if (targetUserId) {
+              this.realtimeGateway.server?.to(targetUserId)?.emit('message:new', formattedMsg);
+              this.realtimeGateway.server?.to(targetUserId)?.emit('conversation:updated', {
+                conversationId: convId,
+                publicId: convId,
+                internalId: convId,
+                lastMessage: {
+                  text: `${userHandle} left the activity`,
+                  createdAt: sysMsg.createdAt,
+                  senderId: userId
+                }
+              });
+            }
+          }
+        }
+      } catch (err) {
+        this.logger.warn('Failed group chat update during leaveActivity', err);
+      }
     }
 
     return { success: true };
@@ -228,6 +494,11 @@ export class ActivitiesService {
     if (!activity) throw new NotFoundException('Activity not found');
     if (activity.status !== 'OPEN') throw new BadRequestException('Activity not open');
 
+    const startRaw = activity.startDate || (activity as any).date;
+    if (startRaw && new Date(startRaw) <= new Date()) {
+      throw new BadRequestException('Activity has already started and cannot be joined');
+    }
+
     if (activity.participationType === 'OPEN') {
       return this.joinActivity(activityId, userId);
     }
@@ -239,18 +510,7 @@ export class ActivitiesService {
       create: { userId, activityId, status: 'PENDING' }
     });
 
-    if (activity.creatorId !== userId) {
-      this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, displayName: true, username: true, avatar: true } }).then(actor => {
-        if (actor) {
-          const dto = this.notificationFactory.createActivityJoinRequest(actor, activity, activity.creatorId);
-          this.notificationsService.createNotification(dto).catch(err => {
-            this.logger.warn('Failed to send activity join request notification', err);
-          });
-        }
-      }).catch(err => {
-        this.logger.warn('Failed to fetch actor for activity join request notification', err);
-      });
-    }
+
 
     return { success: true, pending: true };
   }
@@ -265,6 +525,31 @@ export class ActivitiesService {
       where: { userId_activityId: { userId: requesterId, activityId } },
       data: { status: 'MEMBER' }
     });
+
+    if (activity.createActivityGroup) {
+      const convId = `act_${activityId}`;
+      const actor = await this.prisma.user.findUnique({
+        where: { id: requesterId },
+        select: { displayName: true, username: true }
+      });
+      const userHandle = actor?.username ? `@${actor.username}` : (actor?.displayName || 'Someone');
+
+      await this.prisma.conversationParticipant.upsert({
+        where: { userId_conversationId: { userId: requesterId, conversationId: convId } },
+        update: { role: 'MEMBER' },
+        create: { conversationId: convId, userId: requesterId, role: 'MEMBER' }
+      }).catch(() => {});
+
+      await this.prisma.message.create({
+        data: {
+          conversationId: convId,
+          senderId: requesterId,
+          payload: { text: `${userHandle} joined the activity` },
+          type: 'SYSTEM'
+        }
+      }).catch(() => {});
+    }
+
     return { success: true };
   }
 

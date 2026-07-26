@@ -2,7 +2,7 @@ import { IsString, IsOptional, IsBoolean, MaxLength, IsDateString, IsNumber } fr
 
 export class CreateActivityDto {
   @IsString()
-  @MaxLength(100)
+  @MaxLength(30)
   title: string;
 
   @IsString()
@@ -24,11 +24,16 @@ export class CreateActivityDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(100)
   location?: string;
 
   @IsBoolean()
   @IsOptional()
   createActivityGroup?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  shareToCampus?: boolean;
 
   @IsNumber()
   @IsOptional()

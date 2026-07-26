@@ -127,17 +127,12 @@ function ActivityRow({ activity, onClick }) {
             requestToJoinActivity(activity.id);
           } else {
             await joinCrewActivity(activity.id);
-            setShowJoinedModal(true);
+            setHasJoined(true);
           }
         }}
       >
-        {isJoined ? 'Joined' : hasRequested ? 'Requested' : isApproval ? 'Request' : 'Join'}
+        {isJoined ? 'Joined' : 'Join'}
       </button>
-      <ActivityJoinedModal
-        isOpen={showJoinedModal}
-        onClose={() => setShowJoinedModal(false)}
-        activity={activity}
-      />
     </div>
   );
 }

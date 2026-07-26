@@ -14,56 +14,30 @@ import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 /* ── Helpers ───────────────────────────────────────────────── */
 function formatDateTime(activity) {
   if (!activity) return '';
-  const { date, time, endDate, endTime, duration } = activity;
-  if (!date) return '';
+  const startRaw = activity.startDate || activity.date;
+  if (!startRaw) return '';
   
-  const d = new Date(date);
-  const dateFormatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  if (!time) return dateFormatted;
+  const startD = new Date(startRaw);
+  if (isNaN(startD.getTime())) return '';
 
-  if (endDate && endTime) {
-    const endD = new Date(endDate);
+  const endRaw = activity.endDate;
+  const endD = endRaw ? new Date(endRaw) : null;
+
+  const startDateFormatted = startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const startTimeStr = activity.time || startD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+  if (endD && !isNaN(endD.getTime())) {
     const endDateFormatted = endD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    if (dateFormatted === endDateFormatted) {
-      return `${dateFormatted} • ${time} - ${endTime}`;
+    const endTimeStr = activity.endTime || endD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+    if (startDateFormatted === endDateFormatted) {
+      return `${startDateFormatted} • ${startTimeStr} – ${endTimeStr}`;
     } else {
-      return `${dateFormatted} • ${time} - ${endDateFormatted} • ${endTime}`;
+      return `${startDateFormatted} • ${startTimeStr} → ${endDateFormatted} • ${endTimeStr}`;
     }
   }
 
-  // Fallback for old activities
-  let endTimeStr = '';
-  if (duration) {
-    const match = time.match(/(\d+):(\d+)\s*(AM|PM)/i);
-    if (match) {
-      let h = parseInt(match[1], 10);
-      const m = parseInt(match[2], 10);
-      const ampm = match[3].toUpperCase();
-      if (ampm === 'PM' && h < 12) h += 12;
-      if (ampm === 'AM' && h === 12) h = 0;
-
-      let addHours = 0;
-      if (duration.includes('1 hour')) addHours = 1;
-      else if (duration.includes('2 hours')) addHours = 2;
-      else if (duration.includes('Half day')) addHours = 4;
-      else if (duration.includes('All day')) addHours = 8;
-      else {
-         const hrsMatch = duration.match(/(\d+)/);
-         if (hrsMatch) addHours = parseInt(hrsMatch[1], 10);
-      }
-
-      if (addHours > 0) {
-        h += addHours;
-        const endAmPm = h >= 12 && h < 24 ? 'PM' : 'AM';
-        let endH = h % 12;
-        if (endH === 0) endH = 12;
-        const endMStr = m < 10 ? '0' + m : m;
-        endTimeStr = ` - ${endH}:${endMStr} ${endAmPm}`;
-      }
-    }
-  }
-
-  return `${dateFormatted} • ${time}${endTimeStr}`;
+  return `${startDateFormatted} • ${startTimeStr}`;
 }
 
 export default function CrewCard({ activity, onClick }) {
@@ -124,9 +98,9 @@ export default function CrewCard({ activity, onClick }) {
           <div className={styles.coverPlaceholder} />
         )}
         
-        {(activity.date || activity.dateLabel) && (
+        {(activity.startDate || activity.date || activity.dateLabel) && (
           <div className={styles.calendarBadge}>
-            <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
+            <CalendarIcon date={activity.startDate || activity.date} dateLabel={activity.dateLabel} />
           </div>
         )}
       </div>
@@ -159,10 +133,7 @@ export default function CrewCard({ activity, onClick }) {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
                   {hasReported ? 'Already Reported' : 'Report Activity'}
                 </button>
-                <button className={styles.dropdownItem} onClick={(e) => { e.stopPropagation(); alert('Activities hidden.'); setShowMenu(false); }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
-                  Hide activities from this person
-                </button>
+
                 <button className={styles.dropdownItem} onClick={(e) => { e.stopPropagation(); setShowShareModal(true); setShowMenu(false); }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="18" cy="5" r="3"></circle>
@@ -231,11 +202,6 @@ export default function CrewCard({ activity, onClick }) {
       <ShareActivityModal
         isOpen={showShareModal}
         onClose={() => setShowShareModal(false)}
-        activity={activity}
-      />
-      <ActivityJoinedModal
-        isOpen={showJoinedModal}
-        onClose={() => setShowJoinedModal(false)}
         activity={activity}
       />
       <ReportModal

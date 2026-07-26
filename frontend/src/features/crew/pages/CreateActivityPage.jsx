@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import styles from './CreateActivityPage.module.css';
 
@@ -73,10 +73,10 @@ function DateTimeModal({ formData, set, onClose }) {
   const selectedM = hasTimeSelected ? parseInt(selectedMinute, 10) : null;
   const selectedSlotIdx = hasTimeSelected ? TIME_SLOTS.findIndex(s => s.h === selectedH && s.m === selectedM) : -1;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (timeListRef.current && selectedSlotIdx >= 0) {
       const el = timeListRef.current.children[selectedSlotIdx];
-      if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      if (el) el.scrollIntoView({ block: 'center', behavior: 'auto' });
     }
   }, [activeTab, selectedSlotIdx]);
 
@@ -114,8 +114,14 @@ function DateTimeModal({ formData, set, onClose }) {
 
   const updateEndDate = (newEnd) => {
     const currentStart = getParsedDate(formData.startDateYear, formData.startDateMonth, formData.startDateDay, formData.startTimeHour, formData.startTimeMinute, formData.startTimeAmPm);
-    if (currentStart && newEnd.getTime() < currentStart.getTime() + 60 * 60000) {
-      newEnd = new Date(currentStart.getTime() + 60 * 60000); // enforce min 1 hour duration
+    if (currentStart) {
+      if (newEnd.getTime() < currentStart.getTime() + 60 * 60000) {
+        newEnd = new Date(currentStart.getTime() + 60 * 60000); // enforce min 1 hour duration
+      }
+      const maxEnd = new Date(currentStart.getTime() + 30 * 24 * 60 * 60000);
+      if (newEnd.getTime() > maxEnd.getTime()) {
+        newEnd = maxEnd; // enforce max 30 days duration
+      }
     }
     const e = formatToState(newEnd);
     set({
@@ -149,10 +155,18 @@ function DateTimeModal({ formData, set, onClose }) {
     }
   };
 
-  const isPastDay = (day) => {
+  const isDayDisabled = (day) => {
     const d = new Date(viewYear, viewMonth, day); d.setHours(0,0,0,0);
     const t = new Date(); t.setHours(0,0,0,0);
-    return d < t;
+    if (isStart) {
+      return d < t;
+    } else {
+      const currentStart = getParsedDate(formData.startDateYear, formData.startDateMonth, formData.startDateDay, formData.startTimeHour, formData.startTimeMinute, formData.startTimeAmPm);
+      if (!currentStart) return d < t;
+      const startDay = new Date(currentStart); startDay.setHours(0,0,0,0);
+      const maxEndDay = new Date(currentStart.getTime() + 30 * 24 * 60 * 60000); maxEndDay.setHours(23,59,59,999);
+      return d < startDay || d > maxEndDay;
+    }
   };
 
   const isSelected = (day) => {
@@ -218,9 +232,9 @@ function DateTimeModal({ formData, set, onClose }) {
               {DAYS_OF_WEEK.map((d, i) => <span key={i} className={styles.calDow}>{d}</span>)}
               {cells.map((day, i) => (
                 <button key={i}
-                  className={`${styles.calDay} ${day && isSelected(day) ? styles.calDaySel : ''} ${day && isPastDay(day) ? styles.calDayOff : ''}`}
-                  onClick={() => day && !isPastDay(day) && pickDay(day)}
-                  disabled={!day || isPastDay(day)}
+                  className={`${styles.calDay} ${day && isSelected(day) ? styles.calDaySel : ''} ${day && isDayDisabled(day) ? styles.calDayOff : ''}`}
+                  onClick={() => day && !isDayDisabled(day) && pickDay(day)}
+                  disabled={!day || isDayDisabled(day)}
                 >{day || ''}</button>
               ))}
             </div>
@@ -350,7 +364,7 @@ export default function CreateActivityPage() {
   const [showReminder, setShowReminder] = useState(false);
   const [showCapacity, setShowCapacity] = useState(false);
   const [showWhoCanJoin, setShowWhoCanJoin] = useState(false);
-  const [hasInteractedWithDT, setHasInteractedWithDT] = useState(false);
+  const [hasInteractedWithDT, setHasInteractedWithDT] = useState(true);
   const reminderRef = useRef(null);
   const whoCanJoinRef = useRef(null);
   const containerRef = useRef(null);
@@ -467,14 +481,30 @@ export default function CreateActivityPage() {
       set(updates);
       return { startD: currentStart, endD: currentEnd, fd: { ...formData, ...updates } };
     }
+
+    if (currentStart && currentEnd && (currentEnd.getTime() - currentStart.getTime() > 30 * 24 * 60 * 60000)) {
+      currentEnd = new Date(currentStart.getTime() + 30 * 24 * 60 * 60000);
+      const e = formatToState(currentEnd);
+      const updates = {
+        endDateYear: e.y, endDateMonth: e.m, endDateDay: e.d,
+        endTimeHour: e.h, endTimeMinute: e.min, endTimeAmPm: e.ap,
+      };
+      set(updates);
+      return { startD: currentStart, endD: currentEnd, fd: { ...formData, ...updates } };
+    }
+
     return { startD: currentStart, endD: currentEnd, fd: formData };
   };
 
   const startD = getStartDateTime();
   const endD = getEndDateTime();
   const isEndBeforeStart = (startD && endD) ? endD <= startD : false;
+  const isDurationOver30Days = (startD && endD) ? (endD.getTime() - startD.getTime() > 30 * 24 * 60 * 60000) : false;
+  const isTitleValid = formData.title.trim().length > 0 && formData.title.trim().length <= 30;
+  const isDescriptionValid = formData.description.length <= 500;
+  const isLocationValid = formData.location.trim().length > 0 && formData.location.length <= 100;
   // Note: We don't block canPublish on isPast because we will auto-correct it on publish
-  const canPublish = !!(formData.title.trim() && formData.location.trim() && hasInteractedWithDT && startD && endD && !isEndBeforeStart);
+  const canPublish = !!(isTitleValid && isDescriptionValid && isLocationValid && hasInteractedWithDT && startD && endD && !isEndBeforeStart && !isDurationOver30Days);
 
   const createMutation = useMutation({
     mutationFn: (data) => activitiesApi.create(data),
@@ -501,8 +531,7 @@ export default function CreateActivityPage() {
       maxMembers: fd.slotsNeeded === 999 ? null : fd.slotsNeeded,
       coverImage: formData.coverImage,
       createActivityGroup: fd.createEventGroup,
-      shareToSchool: fd.whoCanJoin === 'College',
-      hostCollege: collegeName,
+      shareToCampus: fd.whoCanJoin === 'College',
       startDate: finalStart.toISOString(),
       endDate: finalEnd.toISOString(),
     });
@@ -647,6 +676,7 @@ export default function CreateActivityPage() {
                 value={formData.location}
                 onChange={e => set({ location: e.target.value })}
                 placeholder="Add location"
+                maxLength={100}
               />
             </div>
 

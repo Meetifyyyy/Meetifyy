@@ -184,13 +184,15 @@ export class NotificationFactory {
 
     const bodyText = textSnippet ? `${actorName}: ${textSnippet}` : `${actorName} sent you a message.`;
     const titleText = isGroup ? convName : actorName;
+    const pubId = conversation?.publicId || conversation?.id;
+    const intId = conversation?.id;
 
     return {
       recipientId: targetUserId,
       actorId: actor?.id,
       type: NotificationType.MESSAGE,
       entityType: NotificationEntityType.MESSAGE,
-      entityId: conversation.id,
+      entityId: pubId || intId,
       title: titleText,
       body: bodyText,
       metadata: {
@@ -198,7 +200,9 @@ export class NotificationFactory {
         actorName,
         actorUsername,
         actorAvatar: actor?.avatar || null,
-        conversationId: conversation.id,
+        conversationId: pubId,
+        publicId: pubId,
+        internalId: intId,
         conversationName: convName,
         conversationType: conversation?.type || 'DIRECT',
         conversationAvatar: convAvatar,

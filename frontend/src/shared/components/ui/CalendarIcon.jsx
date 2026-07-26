@@ -2,19 +2,25 @@ import React from 'react';
 import styles from './CalendarIcon.module.css';
 
 const getMonthLabel = (date, dateLabel) => {
-  if (date) return new Date(date).toLocaleDateString('en-US', { month: 'short' });
-  const label = dateLabel || '';
-  if (label.includes('Today')) return new Date().toLocaleDateString('en-US', { month: 'short' });
-  if (label.includes('Tomorrow')) return new Date(Date.now() + 86400000).toLocaleDateString('en-US', { month: 'short' });
-  return new Date().toLocaleDateString('en-US', { month: 'short' });
+  const target = date || dateLabel;
+  if (target) {
+    const d = new Date(target);
+    if (!isNaN(d.getTime())) return d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+    const match = String(target).match(/\b([A-Za-z]{3})\b/);
+    if (match) return match[1].toUpperCase();
+  }
+  return new Date().toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
 };
 
 const getDayLabel = (date, dateLabel) => {
-  if (date) return new Date(date).getDate();
-  const label = dateLabel || '';
-  if (label.includes('Today')) return new Date().getDate();
-  if (label.includes('Tomorrow')) return new Date(Date.now() + 86400000).getDate();
-  return '—';
+  const target = date || dateLabel;
+  if (target) {
+    const d = new Date(target);
+    if (!isNaN(d.getTime())) return d.getDate();
+    const match = String(target).match(/\b(\d{1,2})\b/);
+    if (match) return parseInt(match[1], 10);
+  }
+  return new Date().getDate();
 };
 
 export default function CalendarIcon({ date, dateLabel, size, style, variant, className }) {

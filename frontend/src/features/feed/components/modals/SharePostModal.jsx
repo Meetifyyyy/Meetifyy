@@ -6,7 +6,6 @@ import { isImageUrl } from '@shared/utils/avatar';
 import styles from '@features/crew/components/modals/ShareActivityModal.module.css';
 import { useData } from '@shared/hooks/useData';
 
-
 export default function SharePostModal({ isOpen, onClose, post, author }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
@@ -15,26 +14,29 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
   const { conversations, sendDirectMessage } = useData();
 
   const handleCopyLink = () => {
-    const link = `${window.location.origin}/post/${post.id}`;
+    const link = `${window.location.origin}/post/${post?.id}`;
     navigator.clipboard.writeText(link).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   };
 
-  const handleSend = (convId) => {
-    sendDirectMessage(convId, '', null, { 
-      type: 'postShare', 
-      post: { 
-        id: post.id, 
-        text: post.text, 
-        authorName: author?.displayName || 'Someone',
-        authorAvatar: author?.avatar,
-        time: post.time,
-        createdAt: post.createdAt,
-        pollQuestion: post.poll?.question,
-        image: post.media ? (typeof post.media === 'string' ? post.media : post.media.url) : null
-      } 
+  const handleSend = async (convId) => {
+    await sendDirectMessage(convId, { 
+      text: '',
+      inviteData: { 
+        type: 'postShare', 
+        post: { 
+          id: post?.id, 
+          text: post?.text, 
+          authorName: author?.displayName || 'Someone',
+          authorAvatar: author?.avatar,
+          time: post?.time,
+          createdAt: post?.createdAt,
+          pollQuestion: post?.poll?.question,
+          image: post?.media ? (typeof post.media === 'string' ? post.media : post.media.url) : null
+        } 
+      }
     });
     setSentTo(prev => new Set(prev).add(convId));
   };
@@ -90,7 +92,7 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
                 <div key={conv.id} className={styles.listItem}>
                   <div className={styles.contactInfo}>
                     {isImageUrl(conv.avatar) ? (
-                      <img src={conv.avatar} alt={conv.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                      <img src={conv.avatar} alt={conv.name} className={styles.avatar} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     ) : (
                       <DefaultAvatar size={40} className={styles.avatar} />
                     )}

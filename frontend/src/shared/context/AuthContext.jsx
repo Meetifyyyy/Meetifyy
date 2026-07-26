@@ -341,6 +341,14 @@ export function AuthProvider({ children }) {
   }, []);
 
   const updateProfile = useCallback(async (updatedData) => {
+    setCurrentUser(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, ...updatedData };
+      delete updated.password;
+      localStorage.setItem('currentUser', JSON.stringify(updated));
+      return updated;
+    });
+
     try {
       const response = await usersApi.updateProfile(updatedData);
       const syncedUser = response?.user || response;
@@ -360,6 +368,22 @@ export function AuthProvider({ children }) {
   }, []);
 
   const updateSettings = useCallback(async (settingsData) => {
+    setCurrentUser(prev => {
+      if (!prev) return prev;
+      const mergedSettings = {
+        ...(prev?.settings || {}),
+        ...(prev?.preferences || {}),
+        ...settingsData
+      };
+      const updated = {
+        ...prev,
+        settings: mergedSettings,
+        preferences: mergedSettings
+      };
+      localStorage.setItem('currentUser', JSON.stringify(updated));
+      return updated;
+    });
+
     try {
       const res = await usersApi.updateSettings(settingsData);
       const { id, userId, createdAt, updatedAt, ...cleanRes } = (res && typeof res === 'object') ? res : {};
