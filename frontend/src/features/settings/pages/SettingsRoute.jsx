@@ -137,7 +137,7 @@ function CustomSelect({ value, onChange, options, disabled, placeholder, searcha
 }
 
 export default function SettingsRoute() {
-  const { currentUser, updateProfile, updateSettings, updateCurrentUser, changePassword, logout, collegeName } = useAuth();
+  const { currentUser, session, updateProfile, updateSettings, updateCurrentUser, changePassword, logout, collegeName } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const goBack = useSmartBack();
@@ -614,7 +614,12 @@ export default function SettingsRoute() {
             <div className={styles.lockedFieldDivider} />
             <div className={styles.lockedField}>
               <span className={styles.lockedLabel}>College Email</span>
-              <span className={styles.lockedValue}>{currentUser?.collegeEmail || currentUser?.email || ''}</span>
+              <span className={styles.lockedValue}>
+                {currentUser?.collegeEmail || 
+                  (currentUser?.email && !currentUser.email.endsWith('@meetifyy.user') ? currentUser.email : null) || 
+                  session?.user?.email || 
+                  ''}
+              </span>
             </div>
             <div className={styles.lockedHint}>
               Linked to your verified student login and cannot be modified.
