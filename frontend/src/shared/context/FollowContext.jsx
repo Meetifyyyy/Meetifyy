@@ -93,6 +93,22 @@ export const FollowProvider = ({ children }) => {
       };
     });
 
+    // 2b. Optimistic update — react-query cache for followers/following lists
+    const targetProfile = queryClient.getQueryData(['profile', targetUsername]);
+    const targetMinimal = targetProfile ? { username: targetUsername, displayName: targetProfile.displayName, avatar: targetProfile.avatar } : { username: targetUsername };
+    
+    queryClient.setQueryData(['following', currentUser.username], (oldList) => {
+      if (!Array.isArray(oldList)) return oldList;
+      if (wasFollowing) return oldList.filter(u => u.username !== targetUsername);
+      return [targetMinimal, ...oldList];
+    });
+
+    queryClient.setQueryData(['followers', targetUsername], (oldList) => {
+      if (!Array.isArray(oldList)) return oldList;
+      if (wasFollowing) return oldList.filter(u => u.username !== currentUser.username);
+      return [{ username: currentUser.username, displayName: currentUser.displayName, avatar: currentUser.avatar }, ...oldList];
+    });
+
     try {
       // 3. Real API call
       if (wasFollowing) {
@@ -141,6 +157,10 @@ export const FollowProvider = ({ children }) => {
           }
         };
       });
+
+      // 6b. Rollback lists by invalidating them
+      queryClient.invalidateQueries({ queryKey: ['following', currentUser.username] });
+      queryClient.invalidateQueries({ queryKey: ['followers', targetUsername] });
 
       showToast('Something went wrong. Please try again.');
     }

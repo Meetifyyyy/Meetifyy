@@ -38,11 +38,9 @@ const FollowButton = ({ targetUsername, size = 'md', className, style }) => {
     setLoading(false);
   };
 
-  const label = loading
-    ? '...'
-    : following
-      ? hovered ? 'Unfollow' : 'Following'
-      : 'Follow';
+  const label = following
+    ? hovered ? 'Unfollow' : 'Following'
+    : 'Follow';
 
   const stateClass = following ? styles.following : styles.notFollowing;
   const hoverClass = following && hovered ? styles.unfollowHover : '';
@@ -59,7 +57,7 @@ const FollowButton = ({ targetUsername, size = 'md', className, style }) => {
         alignItems: 'center',
         gap: '6px',
         justifyContent: 'center',
-        opacity: loading ? 0.6 : 1,
+        opacity: loading ? 0.7 : 1,
         cursor: loading ? 'not-allowed' : 'pointer',
         ...style
       }}
