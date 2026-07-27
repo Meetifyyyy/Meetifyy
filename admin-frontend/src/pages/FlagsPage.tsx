@@ -22,47 +22,49 @@ export const FlagsPage: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: '2rem' }}>
-        <h2 style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.5px' }}>Feature Flags</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-          Instantly enable or disable platform capabilities (DMs, activities, registration) or adjust rollout percentages.
-        </p>
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">Feature Flags</h2>
+          <p className="page-subtitle">Toggle platform features and rollout percentages.</p>
+        </div>
       </div>
 
-      <div className="glass-panel" style={{ padding: '1.5rem' }}>
+      <div className="glass-panel" style={{ padding: '1.25rem' }}>
         {isLoading ? (
-          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading feature flags...</div>
+          <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
+            Loading feature flags...
+          </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             {flags?.map((flag: any) => (
               <div
                 key={flag.id || flag.key}
                 style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '1.25rem',
+                  background: 'var(--color-bg-alt)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '1rem 1.15rem',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                 }}
               >
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <Flag size={18} color="var(--color-primary)" />
-                    <span style={{ fontWeight: 700, fontSize: '1rem' }}>{flag.key}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <Flag size={16} color="var(--color-primary)" />
+                    <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--color-text-main)' }}>{flag.key}</span>
                   </div>
                   {flag.description && (
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--color-text-light)', marginTop: '0.2rem' }}>
                       {flag.description}
                     </p>
                   )}
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: '0.35rem' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-dim)', marginTop: '0.25rem' }}>
                     Rollout: {flag.rolloutPercentage}%
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div>
                   <button
                     onClick={() =>
                       toggleMutation.mutate({
@@ -74,20 +76,21 @@ export const FlagsPage: React.FC = () => {
                     }
                     className={flag.enabled ? 'btn-primary' : 'btn-secondary'}
                     style={{
-                      background: flag.enabled ? '#10b981' : 'rgba(239, 68, 68, 0.2)',
-                      borderColor: flag.enabled ? '#10b981' : 'rgba(239, 68, 68, 0.4)',
-                      color: '#fff',
+                      background: flag.enabled ? 'var(--color-success)' : 'var(--color-bg-soft)',
+                      color: flag.enabled ? '#FFFFFF' : 'var(--color-text-muted)',
+                      border: flag.enabled ? '1px solid var(--color-success)' : '1px solid var(--color-border)',
                     }}
                   >
-                    {flag.enabled ? <Check size={16} /> : <X size={16} />}
-                    {flag.enabled ? 'ENABLED' : 'DISABLED'}
+                    {flag.enabled ? <Check size={14} /> : <X size={14} />}
+                    <span>{flag.enabled ? 'ENABLED' : 'DISABLED'}</span>
                   </button>
                 </div>
               </div>
             ))}
+
             {flags?.length === 0 && (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No feature flags defined yet.
+              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
+                No feature flags defined.
               </div>
             )}
           </div>

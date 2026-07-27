@@ -6,7 +6,7 @@ export function useNotifications() {
 
   const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ['notifications'],
-    queryFn: ({ pageParam = undefined }) => notificationsApi.getAll(20, pageParam),
+    queryFn: ({ pageParam = undefined }) => notificationsApi.getAll(15, pageParam),
     getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
     staleTime: 1000 * 60, // 1 minute
   });

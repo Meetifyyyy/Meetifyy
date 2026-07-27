@@ -26,81 +26,85 @@ export const SessionsPage: React.FC = () => {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem' }}>
+      <div className="page-header">
         <div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.5px' }}>Active Admin Sessions</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-            Monitor logged-in devices and revoke sessions across all browsers.
-          </p>
+          <h2 className="page-title">Active Sessions</h2>
+          <p className="page-subtitle">Super admin sessions and connected devices.</p>
         </div>
         <button
           onClick={() => {
-            if (confirm('Revoke all active sessions and log out from all devices?')) {
+            if (confirm('Revoke all active sessions and log out?')) {
               logoutAllMutation.mutate();
             }
           }}
-          className="btn-secondary"
-          style={{ color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+          className="btn-danger"
         >
-          <LogOut size={16} /> Log Out From All Devices
+          <LogOut size={15} />
+          <span>Revoke All Sessions</span>
         </button>
       </div>
 
-      <div className="glass-panel" style={{ padding: '1.5rem' }}>
+      <div className="glass-panel" style={{ padding: '1.25rem' }}>
         {isLoading ? (
-          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading active sessions...</div>
+          <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
+            Loading sessions...
+          </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             {sessions?.map((session: any) => (
               <div
                 key={session.id}
                 style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '1.25rem',
+                  background: 'var(--color-bg-alt)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '1rem 1.15rem',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '0.75rem',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
                   <div
                     style={{
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: '10px',
-                      background: 'rgba(99, 102, 241, 0.15)',
-                      border: '1px solid rgba(99, 102, 241, 0.3)',
+                      width: '38px',
+                      height: '38px',
+                      borderRadius: '8px',
+                      background: 'var(--color-primary-tint)',
+                      border: '1px solid rgba(37, 99, 235, 0.2)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
+                      flexShrink: 0,
                     }}
                   >
-                    <Monitor size={20} color="#818cf8" />
+                    <Monitor size={18} color="var(--color-primary)" />
                   </div>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                      {session.browser || 'Browser'} on {session.os || 'OS'} ({session.deviceName || 'Desktop'})
+                    <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-main)' }}>
+                      {session.browser || 'Browser'} on {session.os || 'OS'} ({session.deviceName || 'Device'})
                     </div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                      IP: {session.ip} | Last Active: {new Date(session.lastActiveAt).toLocaleString()}
+                    <div style={{ fontSize: '0.78rem', color: 'var(--color-text-light)', marginTop: '0.15rem' }}>
+                      IP: {session.ip} • Last Active: {new Date(session.lastActiveAt).toLocaleString()}
                     </div>
                   </div>
                 </div>
 
                 <button
                   onClick={() => revokeMutation.mutate(session.id)}
-                  className="btn-secondary"
-                  style={{ color: '#f87171', padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}
+                  className="btn-danger"
+                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
                 >
-                  <Trash2 size={14} /> Revoke Session
+                  <Trash2 size={13} />
+                  <span>Revoke</span>
                 </button>
               </div>
             ))}
 
             {sessions?.length === 0 && (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
                 No active sessions found.
               </div>
             )}

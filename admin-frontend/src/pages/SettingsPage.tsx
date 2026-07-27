@@ -31,35 +31,35 @@ export const SettingsPage: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: '2rem' }}>
-        <h2 style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.5px' }}>Platform Settings</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-          Global platform configurations, maintenance modes, upload limits, and support contacts.
-        </p>
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">Platform Settings</h2>
+          <p className="page-subtitle">Global environment configurations and system variables.</p>
+        </div>
       </div>
 
-      {/* Add New Setting Bar */}
-      <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
-        <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.75rem' }}>Add / Update Setting</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 120px 2fr auto', gap: '0.75rem', alignItems: 'center' }}>
+      {/* Add / Update Setting Bar */}
+      <div className="glass-panel" style={{ padding: '1.15rem', marginBottom: '1.25rem' }}>
+        <h3 style={{ fontSize: '0.92rem', fontWeight: 700, marginBottom: '0.75rem' }}>Set Variable</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.65rem', alignItems: 'center' }}>
           <input
             type="text"
-            placeholder="Setting Key (e.g. maintenance_mode)"
+            placeholder="Setting Key"
             value={newKey}
             onChange={(e) => setNewKey(e.target.value)}
-            style={{ padding: '0.6rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-color)', borderRadius: '6px', color: '#fff', fontSize: '0.85rem' }}
+            className="input-control"
           />
           <input
             type="text"
-            placeholder="Value (e.g. false)"
+            placeholder="Value"
             value={newValue}
             onChange={(e) => setNewValue(e.target.value)}
-            style={{ padding: '0.6rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-color)', borderRadius: '6px', color: '#fff', fontSize: '0.85rem' }}
+            className="input-control"
           />
           <select
             value={newType}
             onChange={(e) => setNewType(e.target.value)}
-            style={{ padding: '0.6rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-color)', borderRadius: '6px', color: '#fff', fontSize: '0.85rem' }}
+            className="input-control"
           >
             <option value="string">string</option>
             <option value="boolean">boolean</option>
@@ -71,14 +71,16 @@ export const SettingsPage: React.FC = () => {
             placeholder="Description..."
             value={newDesc}
             onChange={(e) => setNewDesc(e.target.value)}
-            style={{ padding: '0.6rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-color)', borderRadius: '6px', color: '#fff', fontSize: '0.85rem' }}
+            className="input-control"
           />
           <button
             onClick={() => saveMutation.mutate({ key: newKey, value: newValue, type: newType, description: newDesc })}
             disabled={!newKey || !newValue}
             className="btn-primary"
+            style={{ justifyContent: 'center' }}
           >
-            <Save size={16} /> Save
+            <Save size={14} />
+            <span>Save</span>
           </button>
         </div>
       </div>
@@ -86,37 +88,41 @@ export const SettingsPage: React.FC = () => {
       {/* Settings Table */}
       <div className="glass-panel" style={{ overflow: 'hidden' }}>
         {isLoading ? (
-          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading settings...</div>
+          <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
+            Loading settings...
+          </div>
         ) : (
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Key</th>
-                <th>Value</th>
-                <th>Type</th>
-                <th>Description</th>
-                <th>Last Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {settings?.map((s: any) => (
-                <tr key={s.key}>
-                  <td style={{ fontWeight: 700, color: '#818cf8' }}>{s.key}</td>
-                  <td style={{ fontFamily: 'monospace', color: '#fff' }}>{s.value}</td>
-                  <td><span className="badge badge-info">{s.type}</span></td>
-                  <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{s.description || 'N/A'}</td>
-                  <td style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>{new Date(s.updatedAt).toLocaleString()}</td>
-                </tr>
-              ))}
-              {settings?.length === 0 && (
+          <div className="table-responsive">
+            <table className="admin-table">
+              <thead>
                 <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
-                    No system settings configured.
-                  </td>
+                  <th>Key</th>
+                  <th>Value</th>
+                  <th>Type</th>
+                  <th>Description</th>
+                  <th style={{ textAlign: 'right' }}>Updated</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {settings?.map((s: any) => (
+                  <tr key={s.key}>
+                    <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{s.key}</td>
+                    <td style={{ fontFamily: 'monospace', color: 'var(--color-text-main)', fontSize: '0.82rem' }}>{s.value}</td>
+                    <td><span className="badge badge-info">{s.type}</span></td>
+                    <td style={{ color: 'var(--color-text-light)', fontSize: '0.82rem' }}>{s.description || '—'}</td>
+                    <td style={{ fontSize: '0.78rem', color: 'var(--color-text-dim)', textAlign: 'right' }}>{new Date(s.updatedAt).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+                {settings?.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', color: 'var(--color-text-dim)', padding: '2.5rem 1rem' }}>
+                      No custom settings stored.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

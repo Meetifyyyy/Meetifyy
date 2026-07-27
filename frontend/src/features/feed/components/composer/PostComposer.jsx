@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, memo } from 'react';
+import { useState, useRef, useEffect, memo, Suspense, lazy } from 'react';
+import data from '@emoji-mart/data';
 import { useAuth } from '@shared/context/AuthContext';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
@@ -7,13 +8,7 @@ import MentionInput from '@shared/components/mentions/MentionInput';
 import MediaGrid from '../post/MediaGrid';
 import styles from './PostComposer.module.css';
 
-const EMOJI_GROUPS = [
-  { label: 'Smileys', emojis: ['😀','😂','🥹','😍','🤩','😎','🥳','😤','🤔','🫡','😴','🤯','🥺','😈','💀','🤖'] },
-  { label: 'Hands', emojis: ['👋','👍','👎','👏','🙌','🤝','✌️','🤞','💪','🫶','🖐️','👊'] },
-  { label: 'Hearts', emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','💖','💗','💝','❣️'] },
-  { label: 'Objects', emojis: ['🔥','⭐','✨','🎉','🎯','💡','🚀','💎','🏆','🎵','📸','💻'] },
-  { label: 'Nature', emojis: ['🌸','🌿','🌊','☀️','🌙','⚡','🦋','🐾','🌈','🍀','🌺','🍂'] },
-];
+const Picker = lazy(() => import('@emoji-mart/react'));
 
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 
@@ -169,16 +164,13 @@ function PostComposer({ onSubmit }) {
       {/* Popups rendered above the composer */}
       {showEmoji && (
         <div className={styles.emojiPicker} ref={emojiPanelRef}>
-          {EMOJI_GROUPS.map((group) => (
-            <div key={group.label} className={styles.emojiGroup}>
-              <div className={styles.emojiGroupLabel}>{group.label}</div>
-              <div className={styles.emojiGrid}>
-                {group.emojis.map((em) => (
-                  <button key={em} className={styles.emojiBtn} onClick={() => insertEmoji(em)}>{em}</button>
-                ))}
-              </div>
-            </div>
-          ))}
+          <Suspense fallback={<div style={{ padding: '1rem', background: 'var(--color-bg-white)', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '0.85rem' }}>Loading Emojis...</div>}>
+            <Picker
+              data={data}
+              onEmojiSelect={(emoji) => insertEmoji(emoji.native)}
+              theme="light"
+            />
+          </Suspense>
         </div>
       )}
 

@@ -32,4 +32,10 @@ export class EmailService {
     this.logger.log(`Queuing verification OTP email for ${email}`);
     await this.emailQueue.add('send-verification-otp', { email, name, otp });
   }
+
+  async sendAdminVerificationOtpEmail(email: string, name: string, otp: string) {
+    this.logger.log(`Queuing Super Admin verification OTP email for ${email}`);
+    await this.emailQueue.add('send-admin-verification-otp', { email, name, otp });
+  }
 }
+

@@ -155,9 +155,9 @@ export class AdminAuthService implements OnModuleInit {
       },
     });
 
-    // Send OTP via Email
+    // Send OTP via Email using Super Admin template
     try {
-      await this.emailService.sendVerificationOtpEmail(admin.email, admin.name, rawOtp);
+      await this.emailService.sendAdminVerificationOtpEmail(admin.email, admin.name, rawOtp);
     } catch (emailErr) {
       this.logger.error(`Failed to send admin OTP email to ${admin.email}`, emailErr);
     }
