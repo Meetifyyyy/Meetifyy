@@ -54,7 +54,11 @@ export class AuthService {
       // Lazy-create settings for existing users who pre-date the settings feature
       let userSettings = existingUser.settings;
       if (!userSettings) {
-        userSettings = await this.prisma.userSettings.create({ data: { userId: existingUser.id } }).catch(() => null);
+        userSettings = await this.prisma.userSettings.upsert({
+          where: { userId: existingUser.id },
+          create: { userId: existingUser.id },
+          update: {},
+        }).catch(() => null);
       }
 
       // Auto-heal missing college linkage for existing users
@@ -165,40 +169,59 @@ export class AuthService {
       finalUsername = `${username}_${Math.floor(100 + Math.random() * 900)}`;
     }
 
-    const userRecord = await this.prisma.user.upsert({
-      where: { id: user.id },
-      update: {
-        email: email,
-      },
-      create: {
-        id: user.id,
-        username: finalUsername,
-        displayName,
-        email: email,
-        avatar: sbUser.user_metadata?.avatar || null,
-        collegeId: collegeId,
-        collegeEmail: email,
-        major: sbUser.user_metadata?.major || null,
-        settings: {
-          create: {}
+    let userRecord: any;
+    try {
+      userRecord = await this.prisma.user.upsert({
+        where: { id: user.id },
+        update: {
+          email: email,
         },
-        notificationPrefs: {
-          create: {}
+        create: {
+          id: user.id,
+          username: finalUsername,
+          displayName,
+          email: email,
+          avatar: sbUser.user_metadata?.avatar || null,
+          collegeId: collegeId,
+          collegeEmail: email,
+          major: sbUser.user_metadata?.major || null,
+          settings: {
+            create: {}
+          },
+          notificationPrefs: {
+            create: {}
+          },
         },
-      },
-      include: {
-        settings: true,
-        college: { select: { id: true, name: true } },
-        following: {
-          select: {
-            following: { select: { username: true } }
+        include: {
+          settings: true,
+          college: { select: { id: true, name: true } },
+          following: {
+            select: {
+              following: { select: { username: true } }
+            }
           }
         }
+      });
+    } catch (err: any) {
+      userRecord = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        include: {
+          settings: true,
+          college: { select: { id: true, name: true } },
+          following: {
+            select: {
+              following: { select: { username: true } }
+            }
+          }
+        }
+      });
+      if (!userRecord) {
+        throw err;
       }
-    });
+    }
     
     this.logger.log(`User login ${userRecord.username}`);
-    const followingList = userRecord.following?.map(f => f.following.username) || [];
+    const followingList = userRecord.following?.map((f: any) => f.following.username) || [];
     const result = { ...userRecord, followingList };
     this.syncCache.set(user.id, { data: result, timestamp: Date.now() });
     return result;
