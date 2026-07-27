@@ -39,11 +39,10 @@ const FollowButton = ({ targetUsername, size = 'md', className, style }) => {
   };
 
   const label = following
-    ? hovered ? 'Unfollow' : 'Following'
+    ? 'Following'
     : 'Follow';
 
   const stateClass = following ? styles.following : styles.notFollowing;
-  const hoverClass = following && hovered ? styles.unfollowHover : '';
 
   return (
     <button
@@ -51,7 +50,7 @@ const FollowButton = ({ targetUsername, size = 'md', className, style }) => {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       disabled={loading}
-      className={className || `${styles.followBtn} ${sizeClass} ${stateClass} ${hoverClass}`.trim()}
+      className={className || `${styles.followBtn} ${sizeClass} ${stateClass}`.trim()}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
