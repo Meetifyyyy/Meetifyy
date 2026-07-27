@@ -22,7 +22,9 @@ export const useGlobalSocketStore = create((set, get) => ({
     const socketUrl = getBackendUrl();
     const newSocket = io(socketUrl, {
       auth: { token, deviceId },
-      transports: ['polling', 'websocket'],
+      // WebSocket-first: skip the polling→upgrade round-trips (saves ~300ms).
+      // Falls back to long-polling automatically if WebSocket is blocked.
+      transports: ['websocket', 'polling'],
       withCredentials: true,
       autoConnect: true,
       reconnection: true,

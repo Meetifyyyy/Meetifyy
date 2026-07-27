@@ -74,7 +74,7 @@
   align-items: center;
   gap: 0.75rem;
   cursor: pointer;
-  padding: 0.35rem 0;
+  padding: 0.5rem 0.75rem;
   border-radius: var(--radius-md);
   transition: background 0.15s;
 }

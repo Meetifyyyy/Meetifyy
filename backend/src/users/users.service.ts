@@ -2,6 +2,57 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
+import { DomainEventService } from '../events/domain-event.service';
+import { RedisService } from '../redis/redis.service';
+import { BlocksService } from './blocks.service';
+
+function validateBirthday(birthdayStr: string) {
+  if (!birthdayStr) {
+    throw new BadRequestException('Date of birth is required.');
+  }
+
+  const parts = birthdayStr.split('-');
+  if (parts.length !== 3) {
+    throw new BadRequestException('Please enter a valid date of birth.');
+  }
+
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+
+  if (isNaN(y) || isNaN(m) || isNaN(d)) {
+    throw new BadRequestException('Please enter a valid date of birth.');
+  }
+
+  const currentYear = new Date().getFullYear();
+  if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1990 || y > currentYear) {
+    throw new BadRequestException(`Year of birth must be between 1990 and ${currentYear}.`);
+  }
+
+  const dateObj = new Date(y, m - 1, d);
+  if (dateObj.getFullYear() !== y || dateObj.getMonth() !== m - 1 || dateObj.getDate() !== d) {
+    throw new BadRequestException('Please enter a valid date of birth.');
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dateObj.setHours(0, 0, 0, 0);
+
+  if (dateObj > today) {
+    throw new BadRequestException('Date of birth cannot be in the future.');
+  }
+
+  const age18Date = new Date(y + 18, m - 1, d);
+  age18Date.setHours(0, 0, 0, 0);
+  if (age18Date > today) {
+    throw new BadRequestException('You must be at least 18 years old.');
+  }
+
+  const age120Date = new Date(y + 120, m - 1, d);
+  if (age120Date < today) {
+    throw new BadRequestException('Please enter a valid date of birth.');
+  }
+}
 
 @Injectable()
 export class UsersService {
@@ -9,7 +60,10 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
-    private readonly notificationFactory: NotificationFactory
+    private readonly notificationFactory: NotificationFactory,
+    private readonly domainEventService: DomainEventService,
+    private readonly redisService: RedisService,
+    private readonly blocksService: BlocksService,
   ) {}
 
   async getAllUsers(limit: number, offset: number) {
@@ -86,8 +140,9 @@ export class UsersService {
   }
 
   async getProfileByUsername(username: string, currentUserId?: string) {
+    const cleanUsername = username.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({
-      where: { username },
+      where: { username: cleanUsername },
       select: {
         id: true,
         username: true,
@@ -95,6 +150,7 @@ export class UsersService {
         avatar: true,
         cover: true,
         bio: true,
+        birthday: true,
         major: true,
         graduationYear: true,
         location: true,
@@ -154,6 +210,7 @@ export class UsersService {
       avatar: user.avatar,
       cover: user.cover,
       bio: user.bio,
+      birthday: user.birthday,
       college: user.college?.name || null,
       major: user.major,
       graduationYear: user.graduationYear,
@@ -173,12 +230,15 @@ export class UsersService {
   }
 
   async followUser(followerId: string, followingUsername: string) {
-    const result = await this.prisma.$transaction(async (tx) => {
-      const targetUser = await tx.user.findUnique({ where: { username: followingUsername } });
-      if (!targetUser) throw new NotFoundException('Target user not found');
-      if (targetUser.id === followerId) throw new BadRequestException('Cannot follow yourself');
+    const cleanUsername = followingUsername.trim().toLowerCase();
+    const targetUser = await this.prisma.user.findUnique({ where: { username: cleanUsername } });
+    if (!targetUser) throw new NotFoundException('Target user not found');
+    if (targetUser.id === followerId) throw new BadRequestException('Cannot follow yourself');
 
-      const isBlocked = await tx.block.findFirst({
+    const lockKey = `toggle:follow:${followerId}:${targetUser.id}`;
+
+    return this.redisService.withLock(lockKey, 2000, async () => {
+      const isBlocked = await this.prisma.block.findFirst({
         where: {
           OR: [
             { blockerId: followerId, blockedId: targetUser.id },
@@ -188,139 +248,95 @@ export class UsersService {
       });
       if (isBlocked) throw new BadRequestException('Action not allowed due to user block');
 
-      const existing = await tx.follow.findUnique({
-        where: {
-          followerId_followingId: {
-            followerId,
-            followingId: targetUser.id,
-          },
-        },
-      });
-
-      let newlyFollowed = false;
-      if (!existing) {
-        await tx.follow.create({
-          data: {
-            followerId,
-            followingId: targetUser.id,
-          },
-        });
-        newlyFollowed = true;
-      }
+      // Fully atomic: INSERT ... ON CONFLICT DO NOTHING
+      // Never throws P2002 regardless of concurrent requests.
+      const result = await this.prisma.$executeRaw`
+        INSERT INTO "Follow" ("followerId", "followingId", "createdAt")
+        VALUES (${followerId}, ${targetUser.id}, NOW())
+        ON CONFLICT ("followerId", "followingId") DO NOTHING
+      `;
+      const newlyFollowed = result === 1;
 
       const [targetFollowers, targetFollowing, currentFollowing] = await Promise.all([
-        tx.follow.count({ where: { followingId: targetUser.id } }),
-        tx.follow.count({ where: { followerId: targetUser.id } }),
-        tx.follow.count({ where: { followerId } }),
+        this.prisma.follow.count({ where: { followingId: targetUser.id } }),
+        this.prisma.follow.count({ where: { followerId: targetUser.id } }),
+        this.prisma.follow.count({ where: { followerId } }),
       ]);
 
+      if (newlyFollowed) {
+        this.domainEventService.emit('follow.created', {
+          followerId,
+          followingId: targetUser.id,
+          followingUsername: targetUser.username,
+          followerStats: { followingCount: currentFollowing },
+          targetStats: { followersCount: targetFollowers },
+        }).catch(err => this.logger.warn('Failed to emit follow.created event', err));
+      }
+
       return {
-        newlyFollowed,
-        targetUser,
-        targetFollowers,
-        targetFollowing,
-        currentFollowing,
+        success: true,
+        isFollowing: true,
+        targetUser: {
+          id: targetUser.id,
+          username: targetUser.username,
+          followersCount: targetFollowers,
+          followingCount: targetFollowing,
+        },
+        currentUserStats: { followingCount: currentFollowing },
       };
     });
-
-    if (result.newlyFollowed) {
-      const actor = await this.prisma.user.findUnique({
-        where: { id: followerId },
-        select: { username: true, displayName: true, avatar: true }
-      });
-
-      const followNotifDto = {
-        recipientId: result.targetUser.id,
-        actorId: followerId,
-        type: 'FOLLOW' as any,
-        entityType: null,
-        entityId: followerId,
-        title: 'New Follower',
-        body: `${actor?.displayName || actor?.username || 'Someone'} started following you.`,
-        metadata: {
-          version: 1,
-          actorId: followerId,
-          username: actor?.username,
-          actorDisplayName: actor?.displayName,
-          actorAvatar: actor?.avatar,
-        },
-      };
-      await this.notificationsService.createNotification(followNotifDto as any).catch(err => {
-        this.logger?.warn?.('Failed to send follow notification', err);
-      });
-    }
-
-    return {
-      success: true,
-      isFollowing: true,
-      targetUser: {
-        id: result.targetUser.id,
-        username: result.targetUser.username,
-        followersCount: result.targetFollowers,
-        followingCount: result.targetFollowing,
-      },
-      currentUserStats: {
-        followingCount: result.currentFollowing,
-      },
-    };
   }
 
   async unfollowUser(followerId: string, followingUsername: string) {
-    const result = await this.prisma.$transaction(async (tx) => {
-      const targetUser = await tx.user.findUnique({ where: { username: followingUsername } });
-      if (!targetUser) throw new NotFoundException('Target user not found');
+    const cleanUsername = followingUsername.trim().toLowerCase();
+    const targetUser = await this.prisma.user.findUnique({ where: { username: cleanUsername } });
+    if (!targetUser) throw new NotFoundException('Target user not found');
 
-      const existing = await tx.follow.findUnique({
+    const lockKey = `toggle:follow:${followerId}:${targetUser.id}`;
+
+    return this.redisService.withLock(lockKey, 2000, async () => {
+      const deleteRes = await this.prisma.follow.deleteMany({
         where: {
-          followerId_followingId: {
-            followerId,
-            followingId: targetUser.id,
-          },
+          followerId,
+          followingId: targetUser.id,
         },
       });
 
-      if (existing) {
-        await tx.follow.delete({
-          where: {
-            followerId_followingId: {
-              followerId,
-              followingId: targetUser.id,
-            },
-          },
-        });
-      }
-
       const [targetFollowers, targetFollowing, currentFollowing] = await Promise.all([
-        tx.follow.count({ where: { followingId: targetUser.id } }),
-        tx.follow.count({ where: { followerId: targetUser.id } }),
-        tx.follow.count({ where: { followerId } }),
+        this.prisma.follow.count({ where: { followingId: targetUser.id } }),
+        this.prisma.follow.count({ where: { followerId: targetUser.id } }),
+        this.prisma.follow.count({ where: { followerId } }),
       ]);
 
+      if (deleteRes.count > 0) {
+        this.domainEventService.emit('follow.deleted', {
+          followerId,
+          followingId: targetUser.id,
+          followingUsername: targetUser.username,
+          followerStats: { followingCount: currentFollowing },
+          targetStats: { followersCount: targetFollowers }
+        }).catch(err => this.logger.warn('Failed to emit follow.deleted event', err));
+      }
+
       return {
-        targetUser,
-        targetFollowers,
-        targetFollowing,
-        currentFollowing,
+        success: true,
+        isFollowing: false,
+        targetUser: {
+          id: targetUser.id,
+          username: targetUser.username,
+          followersCount: targetFollowers,
+          followingCount: targetFollowing,
+        },
+        currentUserStats: {
+          followingCount: currentFollowing,
+        },
       };
     });
-
-    return {
-      success: true,
-      isFollowing: false,
-      targetUser: {
-        id: result.targetUser.id,
-        username: result.targetUser.username,
-        followersCount: result.targetFollowers,
-        followingCount: result.targetFollowing,
-      },
-      currentUserStats: {
-        followingCount: result.currentFollowing,
-      },
-    };
   }
 
   async getFollowers(username: string, currentUserId?: string, limit = 20, offset = 0) {
-    const targetUser = await this.prisma.user.findUnique({ where: { username } });
+    const cleanUsername = username.trim().toLowerCase();
+    const targetUser = await this.prisma.user.findUnique({ where: { username: cleanUsername } });
     if (!targetUser) throw new NotFoundException('User not found');
 
     const follows = await this.prisma.follow.findMany({
@@ -364,7 +380,8 @@ export class UsersService {
   }
 
   async getFollowing(username: string, currentUserId?: string, limit = 20, offset = 0) {
-    const targetUser = await this.prisma.user.findUnique({ where: { username } });
+    const cleanUsername = username.trim().toLowerCase();
+    const targetUser = await this.prisma.user.findUnique({ where: { username: cleanUsername } });
     if (!targetUser) throw new NotFoundException('User not found');
 
     const follows = await this.prisma.follow.findMany({
@@ -409,7 +426,7 @@ export class UsersService {
 
   async updateProfile(userId: string, data: any, userEmail?: string) {
     // Only allow updating valid user profile fields
-    const { displayName, username, bio, avatar, cover, major, graduationYear, location, profileCompleted, interests } = data;
+    const { displayName, username, bio, avatar, cover, major, graduationYear, location, profileCompleted, interests, birthday } = data;
     const updateData: any = {};
     if (displayName !== undefined) updateData.displayName = displayName;
     
@@ -431,6 +448,13 @@ export class UsersService {
     }
     
     if (bio !== undefined) updateData.bio = bio;
+
+    if (birthday !== undefined) {
+      if (birthday !== null && birthday !== '') {
+        validateBirthday(birthday);
+      }
+      updateData.birthday = birthday;
+    }
     
     if (avatar !== undefined) {
       updateData.avatar = avatar;
@@ -531,6 +555,7 @@ export class UsersService {
         avatar: true,
         cover: true,
         bio: true,
+        birthday: true,
         major: true,
         graduationYear: true,
         location: true,
@@ -577,6 +602,8 @@ export class UsersService {
       create: { blockerId, blockedId },
       update: {},
     });
+    // Invalidate cached block lists for both users
+    await this.blocksService.invalidateBlockCache(blockerId, blockedId);
     return { success: true, blocked: true };
   }
 
@@ -584,6 +611,8 @@ export class UsersService {
     await this.prisma.block.deleteMany({
       where: { blockerId, blockedId },
     });
+    // Invalidate cached block lists for both users
+    await this.blocksService.invalidateBlockCache(blockerId, blockedId);
     return { success: true, blocked: false };
   }
 }

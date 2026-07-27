@@ -107,6 +107,7 @@ const Avatar = forwardRef(({
             src={processedSrc}
             alt={name || (isGroup ? 'Group Avatar' : 'User Avatar')}
             loading="lazy"
+            decoding="async"
             className={styles.avatarImg}
             onLoad={() => setHasLoaded(true)}
             onError={() => setHasError(true)}

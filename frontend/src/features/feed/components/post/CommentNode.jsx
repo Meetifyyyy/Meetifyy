@@ -23,6 +23,8 @@ import RichText from '@shared/components/mentions/RichText';
 import { timeAgo } from '@shared/utils/time';
 import styles from './CommentNode.module.css';
 import { useData } from '@shared/hooks/useData';
+import { useLikeComment } from '../../hooks/useLikeComment';
+import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 
 // ─── Shared tree context ─────────────────────────────────────────────────────
@@ -250,6 +252,7 @@ export default function CommentNode({
   const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
   const [showMenu, setShowMenu]         = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting]     = useState(false);
 
   // DOM refs for SVG measurement
   const nodeContainerRef  = useRef(null);
@@ -260,7 +263,8 @@ export default function CommentNode({
   const filterId = useRef(`cf-${comment.id}`.replace(/[^a-zA-Z0-9-]/g, '_')).current;
 
   const navigate = useNavigate();
-  const { getUserById, likeComment, unlikeComment, deleteComment, communities, currentUser } = useData();
+  const { getUserById, deleteComment, communities, currentUser } = useData();
+  const { mutate: toggleLike, isLoading: isLiking } = useLikeComment();
   const { tier, expandedMap, toggleExpanded } = useContext(TreeDensityContext);
 
   const [showReportModal, setShowReportModal] = useState(false);
@@ -278,13 +282,8 @@ export default function CommentNode({
   const initialLiked = comment.hasLiked !== undefined ? comment.hasLiked : (comment.likedBy ? comment.likedBy.includes(currentUser?.id) : false);
   const initialLikes = comment.likeCount !== undefined ? comment.likeCount : (comment.likes || 0);
 
-  const [localLiked, setLocalLiked] = useState(initialLiked);
-  const [localLikesCount, setLocalLikesCount] = useState(initialLikes);
-
-  useEffect(() => {
-    setLocalLiked(initialLiked);
-    setLocalLikesCount(initialLikes);
-  }, [initialLiked, initialLikes]);
+  const localLiked = toggleRegistry.getLatestIntent(`likeComment:${comment.id}`, initialLiked);
+  const localLikesCount = initialLikes + (localLiked !== initialLiked ? (localLiked ? 1 : -1) : 0);
 
   // ── Constant node sizes and layout parameters ──────────────────────────────
   const avatarSize = 40;
@@ -305,29 +304,22 @@ export default function CommentNode({
   const handleReplyClick   = () => { setIsReplying(r => !r); setReplyContent({ text: '', mentions: [] }); };
   const handleCancelReply  = () => { setIsReplying(false); setReplyContent({ text: '', mentions: [] }); };
 
+  const handleDelete = async (e) => {
+    e.stopPropagation();
+    setShowMenu(false);
+    if (isDeleting) return;
+    setIsDeleting(true);
+    try {
+      if (deleteComment) await deleteComment(postId, comment.id);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleLike = (e) => {
     if (e) e.stopPropagation();
-    const nextLiked = !localLiked;
-    const nextLikes = nextLiked ? localLikesCount + 1 : Math.max(0, localLikesCount - 1);
-
-    setLocalLiked(nextLiked);
-    setLocalLikesCount(nextLikes);
-
-    if (nextLiked) {
-      if (likeComment) {
-        likeComment(postId, comment.id).catch(() => {
-          setLocalLiked(!nextLiked);
-          setLocalLikesCount(localLikesCount);
-        });
-      }
-    } else {
-      if (unlikeComment) {
-        unlikeComment(postId, comment.id).catch(() => {
-          setLocalLiked(!nextLiked);
-          setLocalLikesCount(localLikesCount);
-        });
-      }
-    }
+    // if (isLiking) return; allowed for rapid toggle
+    toggleLike({ commentId: comment.id, isLiked: !localLiked, postId });
   };
 
   const handleSubmit = async () => {
@@ -352,6 +344,99 @@ export default function CommentNode({
     }
   };
 
+  // ─── Deleted-comment placeholder ──────────────────────────────────────────
+  if (comment.isDeleted) {
+    return (
+      <div
+        ref={nodeContainerRef}
+        className={[
+          styles.nodeContainer,
+          level === 0 ? styles.level0 : styles.levelN,
+        ].join(' ')}
+        style={{
+          '--avatar-size':   `${avatarSize}px`,
+          '--indent-size':   indentSize,
+          '--gap-size':      gapSize,
+        }}
+      >
+        {/* SVG connector still needed to anchor child replies visually */}
+        {hasChildren && isExpanded && (
+          <ConnectorSVG
+            nodeContainerRef={nodeContainerRef}
+            avatarRef={avatarRef}
+            repliesContainerRef={repliesContainerRef}
+            isHighlighted={false}
+            isExpanded={isExpanded}
+            filterId={filterId}
+          />
+        )}
+
+        <div
+          id={`comment-${comment.id}`}
+          className={[
+            styles.replyCard,
+            styles.replyCardDeleted,
+            hasChildren && !isExpanded ? styles.isCollapsed : '',
+          ].join(' ')}
+          data-comment-card
+          role={hasChildren ? 'button' : undefined}
+          tabIndex={hasChildren ? 0 : undefined}
+          aria-expanded={hasChildren ? isExpanded : undefined}
+          onClick={hasChildren ? handleCardClick : undefined}
+          onKeyDown={hasChildren ? handleCardKeyDown : undefined}
+        >
+          <div className={styles.replyWrapper} data-reply-wrapper>
+            {/* Ghost avatar — keeps the SVG connector anchor in exactly the right spot */}
+            <div
+              ref={avatarRef}
+              className={`${styles.replyAvatar} ${styles.replyAvatarDeleted}`}
+              data-child-avatar
+            >
+              <svg
+                width="20" height="20" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" strokeWidth="1.5"
+                strokeLinecap="round" strokeLinejoin="round"
+                style={{ opacity: 0.3 }}
+              >
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+              </svg>
+            </div>
+
+            <div className={styles.replyContent}>
+              <div className={styles.deletedLabel}>Deleted</div>
+              <div className={styles.deletedSubtext}>This comment has been deleted.</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Children still render — hierarchy preserved */}
+        {hasChildren && (
+          <div className={`${styles.repliesGrid} ${!isExpanded ? styles.repliesGridCollapsed : ''}`}>
+            <div
+              ref={repliesContainerRef}
+              className={styles.repliesContainer}
+              data-replies-container
+              style={{ '--indent-size': indentSize }}
+            >
+              {comment.replies.map((child, idx) => (
+                <CommentNode
+                  key={child.id}
+                  postId={postId}
+                  comment={child}
+                  onReplySubmit={onReplySubmit}
+                  level={level + 1}
+                  isLastSibling={idx === comment.replies.length - 1}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── Normal comment ────────────────────────────────────────────────────────
   return (
     <div
       ref={nodeContainerRef}
@@ -443,19 +528,27 @@ export default function CommentNode({
                 </button>
                 {showMenu && (
                   <div className="dropdown open" style={{ right: 0, top: '100%', width: '120px' }}>
-                    {currentUser && comment.authorId === currentUser.id && (
-                      <button
-                        onClick={async (e) => { e.stopPropagation(); setShowMenu(false); if (deleteComment) await deleteComment(postId, comment.id); }}
-                        style={{ color: 'var(--color-danger)' }}
-                        className={styles.reportBtn}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                        </svg>
-                        Delete Comment
-                      </button>
-                    )}
+              {currentUser && comment.authorId === currentUser.id && (
+                        <button
+                          onClick={handleDelete}
+                          disabled={isDeleting}
+                          style={{ color: isDeleting ? 'var(--color-text-muted)' : 'var(--color-danger)', opacity: isDeleting ? 0.6 : 1 }}
+                          className={styles.reportBtn}
+                        >
+                          {isDeleting ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 0.8s linear infinite' }}>
+                              <circle cx="12" cy="12" r="10" strokeOpacity="0.3" />
+                              <path d="M12 2a10 10 0 0 1 10 10" />
+                            </svg>
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          )}
+                          {isDeleting ? 'Deleting…' : 'Delete'}
+                        </button>
+                      )}
                     {(!currentUser || comment.authorId !== currentUser.id) && (
                       <button
                         onClick={(e) => {

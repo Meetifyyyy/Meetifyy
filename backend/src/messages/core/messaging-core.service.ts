@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PresenceService } from '../../presence/presence.service';
-import { RealtimeGateway } from '../../realtime/realtime.gateway';
+import { DomainEventService } from '../../events/domain-event.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import { MessageResponseDto } from './dto/message-response.dto';
 
@@ -10,8 +10,7 @@ export class MessagingCoreService {
   constructor(
     protected prisma: PrismaService,
     protected presenceService: PresenceService,
-    @Inject(forwardRef(() => RealtimeGateway))
-    protected realtimeGateway: RealtimeGateway,
+    protected domainEventService: DomainEventService,
   ) {}
 
   async resolveConversationId(identifier: string, currentUserId?: string): Promise<string> {
@@ -311,7 +310,7 @@ export class MessagingCoreService {
         };
       }
 
-      const isRead = currentUserId && m.senderId === currentUserId && isAllRead && minOtherLastReadAt >= new Date(m.createdAt).getTime();
+      const isRead = currentUserId && m.senderId === currentUserId && isAllRead && (minOtherLastReadAt + 5000 >= new Date(m.createdAt).getTime());
       const isUnsent = m.state === 'UNSENT';
 
       return {
@@ -437,7 +436,7 @@ export class MessagingCoreService {
       select: { readReceipts: true }
     });
 
-    if (userSettings?.readReceipts !== false && this.realtimeGateway?.server) {
+    if (userSettings?.readReceipts !== false) {
       const participants = await this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, deletedAt: null },
         select: { userId: true, lastReadAt: true, user: { select: { settings: { select: { readReceipts: true } } } } }
@@ -453,13 +452,14 @@ export class MessagingCoreService {
           const isAllRead = otherReadTimestamps.length > 0 && otherReadTimestamps.length === otherParticipants.length;
           const minOtherReadAt = isAllRead ? Math.min(...otherReadTimestamps) : 0;
 
-          this.realtimeGateway.server.to(p.userId).emit('conversation:seen', {
+          this.domainEventService.emit('conversation:seen', {
             conversationId,
+            realConvId,
             readerId: userId,
             lastReadAt: now.toISOString(),
             isAllRead,
             minOtherReadAt: minOtherReadAt ? new Date(minOtherReadAt).toISOString() : null
-          });
+          }, [p.userId]);
         }
       }
     }

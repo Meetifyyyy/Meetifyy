@@ -122,6 +122,7 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
                   className={styles.groupInput}
                   placeholder="E.g., Weekend Hike"
                   value={groupName}
+                  maxLength={120}
                   onChange={(e) => setGroupName(e.target.value)}
                   autoFocus
                 />

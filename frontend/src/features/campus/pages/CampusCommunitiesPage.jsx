@@ -12,8 +12,9 @@ import pageStyles from './CampusCommunitiesPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import { Plus, Search, ArrowLeft, Users } from 'lucide-react';
 import CreateCommunityModal from '@features/communities/components/modals/CreateCommunityModal';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useData } from '@shared/hooks/useData';
+import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
 
 export default function CampusCommunitiesPage() {
   const navigate = useNavigate();
@@ -21,29 +22,11 @@ export default function CampusCommunitiesPage() {
   const { currentUser } = useAuth();
   const queryClient = useQueryClient();
   const { theme } = useTheme();
-
-  const joinMutation = useMutation({
-    mutationFn: (id) => communitiesApi.join(id),
-    onSuccess: () => queryClient.invalidateQueries(['communities']),
-  });
-
-  const leaveMutation = useMutation({
-    mutationFn: (id) => communitiesApi.leave(id),
-    onSuccess: () => queryClient.invalidateQueries(['communities']),
-  });
-
-  const createMutation = useMutation({
-    mutationFn: (data) => communitiesApi.create(data),
-    onSuccess: () => queryClient.invalidateQueries(['communities']),
-  });
+  const { mutate: toggleJoin } = useJoinCommunity();
 
   const toggleJoinCampusGroup = (id) => {
     const isJoined = currentUser?.campusGroups?.map(String).includes(String(id));
-    if (isJoined) {
-      leaveMutation.mutate(id);
-    } else {
-      joinMutation.mutate(id);
-    }
+    toggleJoin({ communityId: id, isJoined: !isJoined, currentUser });
   };
 
   const { createCampusGroup, requestToJoinGroup, campusCommunities } = useData();

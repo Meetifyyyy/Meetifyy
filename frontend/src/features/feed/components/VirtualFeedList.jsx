@@ -12,7 +12,15 @@ export default function VirtualFeedList({ posts, communities, onPostClick }) {
 
   const virtualizer = useWindowVirtualizer({
     count: posts.length,
-    estimateSize: () => 300,
+    estimateSize: (index) => {
+      const p = posts[index];
+      if (!p) return 250;
+      let height = 180; // base header + actions + padding
+      if (p.mediaUrls?.length > 0 || p.mediaKey || p.mediaUrl) height += 320;
+      if (p.pollOptions?.length > 0) height += 160;
+      if (p.text && p.text.length > 200) height += 60;
+      return height;
+    },
     overscan: 5,
   });
 

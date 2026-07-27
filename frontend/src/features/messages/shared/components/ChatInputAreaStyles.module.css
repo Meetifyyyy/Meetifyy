@@ -3,28 +3,35 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 1rem;
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   border-top: 1px solid var(--color-border);
   flex-shrink: 0;
-  min-height: 72px;
+  min-height: 60px;
   box-sizing: border-box;
 }
 
 .msgReplyPreview {
   position: absolute;
   bottom: 100%;
-  left: 1.25rem;
-  right: 1.25rem;
-  background: var(--color-bg-white);
-  border: 1px solid var(--color-border-light);
+  left: 1rem;
+  right: 1rem;
+  background: var(--color-bg-card, #ffffff);
+  border: 1px solid var(--color-border, #e4e4e7);
   border-bottom: none;
-  border-radius: var(--radius-md) 12px 0 0;
-  padding: 0.6rem 0.8rem;
+  border-radius: 14px 14px 0 0;
+  padding: 0.6rem 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.04);
+  border-left: 4px solid var(--color-primary, #6366f1);
+}
+
+[data-theme='dark'] .msgReplyPreview {
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.08);
+  border-left: 4px solid var(--color-primary, #6366f1);
 }
 
 .msgReplyPreviewDetails {
@@ -69,8 +76,8 @@
 }
 
 .msgEmojiBtn {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 42px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -89,7 +96,8 @@
 
 .msgAttachBtn {
   width: 34px;
-  height: 34px;
+  height: 42px;
+  max-width: 34px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -98,12 +106,33 @@
   border: none;
   color: var(--color-text-muted);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  opacity: 1;
+  transform: scale(1);
+  transition: max-width 0.32s cubic-bezier(0.16, 1, 0.3, 1), 
+              width 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              margin 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+              padding 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+              color 0.15s ease;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .msgAttachBtn:hover {
   color: var(--color-primary);
+}
+
+.attachBtnHidden {
+  max-width: 0 !important;
+  width: 0 !important;
+  opacity: 0 !important;
+  transform: scale(0.8) !important;
+  margin-right: -8px !important;
+  margin-left: 0 !important;
+  padding: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
 }
 
 .msgEmptyState {
@@ -142,38 +171,71 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
+.inputBar {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  background: var(--color-bg-subtle, #f4f4f5);
+  border: 1px solid var(--color-border-light, #e4e4e7);
+  border-radius: 24px;
+  min-height: 42px;
+  padding: 0 14px;
+  gap: 2px;
+  box-sizing: border-box;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+[data-theme='dark'] .inputBar {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.inputBar:focus-within {
+  border-color: var(--color-border, #d4d4d8);
+  box-shadow: none;
+  background: var(--color-bg-main, #ffffff);
+}
+
+[data-theme='dark'] .inputBar:focus-within {
+  background: #18181b;
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: none;
+}
+
 .msgInput {
   flex: 1;
-  padding: 0.55rem 0.85rem;
+  padding: 0.5rem 0.4rem;
   font-family: var(--font-family-sans);
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   color: var(--color-text-main);
-  background: var(--color-bg-main);
-  border: 1px solid var(--color-border-light);
-  border-radius: 10px;
-  outline: none;
-  transition: border-color var(--transition-fast);
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 .msgInput:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.15);
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .msgInput::placeholder {
   color: var(--color-text-muted);
-  opacity: 0.5;
+  opacity: 0.6;
 }
 
 .inputWrapper {
   flex: 1;
   min-width: 0;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .rightActionContainer {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -194,13 +256,13 @@
   background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
   color: #FFFFFF;
   animation: buttonFadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  transition: transform 0.2s ease;
+  transition: opacity 0.2s ease, box-shadow 0.2s ease;
 }
 
 .msgSendBtn:hover,
 .msgMicBtn:hover {
-  transform: scale(1.05);
   box-shadow: 0 2px 10px rgba(var(--color-primary-rgb), 0.15);
+  opacity: 0.95;
 }
 
 @keyframes buttonFadeIn {
@@ -1026,25 +1088,7 @@
 
   
 
-  .msgAttachBtn {
-    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
-                opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-                margin 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-                padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    overflow: hidden;
-  }
 
-  .attachBtnHidden {
-    width: 0 !important;
-    opacity: 0 !important;
-    margin-right: -0.5rem !important;
-    padding: 0 !important;
-    pointer-events: none !important;
-  }
-
-  .inputWrapper {
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  }
 }
 
 .msgRecordingContainer {

@@ -9,7 +9,7 @@ import Skeleton from '../skeletons/Skeleton';
 
 export default function UserListModal({ type, profileUsername, onClose }) {
   const navigate = useNavigate();
-  const { username: currentUser } = useAuth();
+  const { currentUser } = useAuth();
 
   const isFollowers = type === 'followers';
   const queryKey = isFollowers ? ['followers', profileUsername] : ['following', profileUsername];
@@ -81,9 +81,10 @@ export default function UserListModal({ type, profileUsername, onClose }) {
                     <div className={styles.userUsername}>@{user.username}</div>
                   </div>
                   <div className={styles.followBtnWrap} onClick={(e) => e.stopPropagation()}>
-                    {user.username !== currentUser && (
+                    {user.username !== currentUser?.username && (
                       <FollowButton 
                         targetUsername={user.username} 
+                        initialFollowing={user.isFollowing}
                         size="sm"
                       />
                     )}

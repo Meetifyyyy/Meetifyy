@@ -2,7 +2,7 @@ import { Injectable, ForbiddenException, NotFoundException, Inject, forwardRef }
 import { MessagingCoreService } from '../core/messaging-core.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PresenceService } from '../../presence/presence.service';
-import { RealtimeGateway } from '../../realtime/realtime.gateway';
+import { DomainEventService } from '../../events/domain-event.service';
 import { generatePublicId } from '../../common/utils/public-id.util';
 
 @Injectable()
@@ -10,10 +10,9 @@ export class GroupChatsService extends MessagingCoreService {
   constructor(
     prisma: PrismaService,
     presenceService: PresenceService,
-    @Inject(forwardRef(() => RealtimeGateway))
-    realtimeGateway: RealtimeGateway,
+    domainEventService: DomainEventService,
   ) {
-    super(prisma, presenceService, realtimeGateway);
+    super(prisma, presenceService, domainEventService);
   }
 
   async getUserGroupConversations(userId: string, limit: number = 20, offset: number = 0) {

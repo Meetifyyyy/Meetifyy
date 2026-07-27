@@ -18,6 +18,8 @@ import CommunityMembersModal from '../modals/CommunityMembersModal';
 import CommunityAdminModal from '../modals/CommunityAdminModal';
 import styles from './CommunityView.module.css';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
+import { useJoinCommunity } from '../../hooks/useJoinCommunity';
+import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import ShareCommunityModal from '../modals/ShareCommunityModal';
 import defaultCommunityCover from '@assets/images/default_community_cover.webp';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
@@ -563,7 +565,8 @@ function useSimulatedFetch(data, delay = 350, deps = []) {
 export default function CommunityView({ communityId, onBack, onPostClick }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { posts, communities: allCommunities, users, currentUser, toggleJoinCommunity, requestToJoinGroup, addPost, updateCommunity } = useData();
+  const { posts, communities: allCommunities, users, currentUser, requestToJoinGroup, addPost, updateCommunity } = useData();
+  const { mutate: toggleJoin, isLoading: isJoining } = useJoinCommunity();
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
@@ -642,7 +645,9 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
     return users[currentUser.username]?.communities || currentUser.communities || [];
   }, [users, currentUser, comm]);
 
-  const joined = comm ? userCommunities.includes(comm.name) : false;
+  const rawJoined = comm ? userCommunities.includes(comm.name) : false;
+  const entityKey = `joinCommunity:${communityId}`;
+  const joined = toggleRegistry.getLatestIntent(entityKey, rawJoined);
   const communityPosts = useMemo(() => {
     if (!comm) return [];
     return posts.filter(p => p.communityId === comm.id);
@@ -707,18 +712,17 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
 
   const handleToggleJoin = (e) => {
     if (e) e.stopPropagation();
-    if (joining) return;
-    setJoining(true);
+    const entityKey = `joinCommunity:${communityId}`;
+    const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, rawJoined);
+
     // Private communities require admin approval — send a join request instead of directly joining
     if (!joined && comm.privacy === 'private') {
       requestToJoinGroup(communityId);
       showToast('Join request sent — waiting for admin approval.');
-      setJoining(false);
       return;
     }
-    toggleJoinCommunity(communityId);
-    setJoining(false);
-    if (!joined) {
+    toggleJoin({ communityId, isJoined: nextJoined, currentUser });
+    if (nextJoined) {
       showToast(`Welcome to ${comm.name}! 🎉`);
       setTimeout(() => {
         const inputEl = document.querySelector(`.${styles.composerWrap} div[contenteditable="true"]`) || 
@@ -734,7 +738,7 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
 
   const handleCreatePostClick = () => {
     if (!joined) {
-      toggleJoinCommunity(communityId);
+      toggleJoin({ communityId, isJoined: joined, currentUser });
     }
     setTimeout(() => {
       const inputEl = document.querySelector(`.${styles.composerWrap} div[contenteditable="true"]`) || 

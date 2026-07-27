@@ -38,6 +38,13 @@
   position: relative;
 }
 
+@media (max-width: 768px) {
+  .instant-match-sheet {
+    height: 65vh;
+    max-height: 65vh;
+  }
+}
+
 .instant-match-overlay.active .instant-match-sheet {
   transform: translateY(0);
 }

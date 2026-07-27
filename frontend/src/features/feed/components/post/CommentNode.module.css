@@ -301,7 +301,7 @@
   font-weight: 600;
   font-family: var(--font-family-sans);
   transition: all var(--transition-fast);
-  color: var(--color-text-inverse);
+  color: #FFFFFF;
 }
 .submitBtnActive          { background: var(--color-primary); cursor: pointer; }
 .submitBtnActive:hover    { background: var(--color-primary-hover); }
@@ -343,4 +343,48 @@
   .username,
   .replyText { font-size: 0.88rem; }
   .actionBtn { font-size: 0.78rem; }
+}
+
+/* ─── Deleted comment ───────────────────────────────────────────────────── */
+.replyCardDeleted {
+  /* Use the same padding/margin as .replyCard so layout doesn't jump */
+  cursor: default !important;
+  pointer-events: none;
+}
+
+/* Only re-enable pointer events on the card when it's collapsible */
+.replyCardDeleted[role="button"] {
+  pointer-events: auto;
+  cursor: pointer !important;
+}
+
+.replyAvatarDeleted {
+  background: var(--color-bg-soft);
+  border: 1.5px dashed var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+  cursor: default;
+}
+
+.deletedLabel {
+  font-family: var(--font-family-display);
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--color-text-light);
+  font-style: italic;
+}
+
+.deletedSubtext {
+  font-size: 0.8rem;
+  color: var(--color-text-light);
+  opacity: 0.7;
+  margin-top: 0.1rem;
+}
+
+/* ─── Spinner for "Deleting…" state ────────────────────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }

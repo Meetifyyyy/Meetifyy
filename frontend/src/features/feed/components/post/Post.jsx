@@ -19,6 +19,9 @@ import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import MediaGrid from './MediaGrid';
+import { useLikePost } from '../../hooks/useLikePost';
+import { useSavePost } from '../../hooks/useSavePost';
+import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 function PollCard({ poll, postId }) {
   const { voteInPoll, currentUser } = useData();
@@ -100,8 +103,28 @@ const normalizePostText = (str) => {
     .replace(/\n{3,}/g, '\n\n');
 };
 
+const formatTimestamp = (isoString) => {
+  if (!isoString) return '';
+  const date = new Date(isoString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now - date) / 1000);
+
+  if (diffInSeconds < 60) return `${diffInSeconds}s`;
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h`;
+  if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+};
+
+const processMentions = (text) => {
+  if (!text) return '';
+  return text
+    .replace(/@([a-zA-Z0-9_]+)/g, '<a href="/profile/$1" class="mention">@$1</a>')
+    .replace(/\n{3,}/g, '\n\n');
+};
+
 function Post({ postData, communityTag, onClick, isDetailed = false, hideCommunityTag = false }) {
-  const { getUserById, getPostById, communities, currentUser, savedPosts = [], toggleSavePost } = useData();
+  const { getUserById, getPostById, communities, currentUser } = useData();
   const queryClient = useQueryClient();
   const { openViewer } = useMediaViewer();
   const [showMenu, setShowMenu] = useState(false);
@@ -114,23 +137,20 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
   const livePost = postData ? (getPostById(postData.id) || postData) : null;
   if (!livePost) return null;
 
-  const { id, authorId, time, text, mentions, poll, likeCount, commentCount, hasLiked, isLiked, isLikedByMe: rawIsLiked } = livePost;
+  const { mutate: toggleLike, isLoading: isLiking } = useLikePost();
+  const { mutate: toggleSave, isLoading: isSaving } = useSavePost();
+
+  const { id, authorId, time, text, mentions, poll, likeCount, commentCount, hasLiked, isLiked, isLikedByMe: rawIsLiked, isBookmarked: rawIsBookmarked, hasBookmarked } = livePost;
   
-  const initialLiked = hasLiked !== undefined ? !!hasLiked : (isLiked !== undefined ? !!isLiked : (rawIsLiked !== undefined ? !!rawIsLiked : (livePost.likedBy ? livePost.likedBy.includes(currentUser?.id) : false)));
-  const initialLikes = likeCount !== undefined ? likeCount : (livePost.likesCount !== undefined ? livePost.likesCount : (livePost.likes || 0));
-
-  const [localLiked, setLocalLiked] = useState(initialLiked);
-  const [localLikesCount, setLocalLikesCount] = useState(initialLikes);
-
-  useEffect(() => {
-    setLocalLiked(initialLiked);
-    setLocalLikesCount(initialLikes);
-  }, [initialLiked, initialLikes]);
-
-  const isLikedByMe = localLiked;
-  const likes = localLikesCount;
+  const rawIsLikedByMe = hasLiked !== undefined ? !!hasLiked : (isLiked !== undefined ? !!isLiked : (rawIsLiked !== undefined ? !!rawIsLiked : (livePost.likedBy ? livePost.likedBy.includes(currentUser?.id) : false)));
+  const isLikedByMe = toggleRegistry.getLatestIntent(`likePost:${id}`, rawIsLikedByMe);
+  
+  const likes = likeCount !== undefined ? likeCount : (livePost.likesCount !== undefined ? livePost.likesCount : (livePost.likes || 0));
   const comments = commentCount !== undefined ? commentCount : (livePost.commentsCount !== undefined ? livePost.commentsCount : (livePost.comments || 0));
-  const isSaved = savedPosts.includes(id);
+  
+  const rawIsSaved = hasBookmarked !== undefined ? !!hasBookmarked : !!rawIsBookmarked;
+  const isSaved = toggleRegistry.getLatestIntent(`savePost:${id}`, rawIsSaved);
+
   const author = livePost.author || getUserById(authorId) || { displayName: 'User', username: 'user', avatar: null };
   const authorCollege = author.collegeId ? communities[author.collegeId] : null;
 
@@ -166,79 +186,11 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
     if (onClick) onClick(e);
   };
 
-  const syncCacheForPost = (targetPostId, newLiked, newLikesCount) => {
-    const updatePostObject = (p) => {
-      if (!p || p.id !== targetPostId) return p;
-      return {
-        ...p,
-        hasLiked: newLiked,
-        isLiked: newLiked,
-        isLikedByMe: newLiked,
-        likeCount: newLikesCount,
-        likesCount: newLikesCount,
-      };
-    };
-
-    queryClient.setQueriesData({}, (oldData) => {
-      if (!oldData) return oldData;
-      if (oldData.id === targetPostId) {
-        return updatePostObject(oldData);
-      }
-      if (Array.isArray(oldData.pages)) {
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) => {
-            if (!page) return page;
-            const key = Array.isArray(page.posts) ? 'posts' : (Array.isArray(page.items) ? 'items' : null);
-            if (!key) return page;
-            return { ...page, [key]: page[key].map(updatePostObject) };
-          }),
-        };
-      }
-      if (Array.isArray(oldData)) {
-        return oldData.map(updatePostObject);
-      }
-      return oldData;
-    });
-  };
-
-  const toggleLike = (e) => {
+  const toggleLikeHandler = (e) => {
     e.stopPropagation();
-    const prevLiked = isLikedByMe;
-    const prevLikes = likes;
-    const nextLiked = !prevLiked;
-    const nextLikes = nextLiked ? prevLikes + 1 : Math.max(0, prevLikes - 1);
-
-    // 1. Optimistic local state update
-    setLocalLiked(nextLiked);
-    setLocalLikesCount(nextLikes);
-
-    // 2. Optimistic React Query cache update across all active feeds
-    syncCacheForPost(id, nextLiked, nextLikes);
-
-    // 3. Perform backend mutation
-    const apiCall = nextLiked ? postsApi.likePost(id) : postsApi.unlikePost(id);
-    apiCall
-      .then((res) => {
-        const finalLiked = res?.isLiked !== undefined ? res.isLiked : nextLiked;
-        const finalLikes = res?.likeCount !== undefined ? res.likeCount : nextLikes;
-        setLocalLiked(finalLiked);
-        setLocalLikesCount(finalLikes);
-        syncCacheForPost(id, finalLiked, finalLikes);
-
-        queryClient.invalidateQueries({ queryKey: ['feed'] });
-        queryClient.invalidateQueries({ queryKey: ['posts'] });
-        queryClient.invalidateQueries({ queryKey: ['user-posts'] });
-        queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
-        queryClient.invalidateQueries({ queryKey: ['post', id] });
-      })
-      .catch((err) => {
-        console.error('Failed to toggle like:', err);
-        setLocalLiked(prevLiked);
-        setLocalLikesCount(prevLikes);
-        syncCacheForPost(id, prevLiked, prevLikes);
-        showToast('Failed to update like');
-      });
+    const entityKey = `likePost:${id}`;
+    const nextLiked = toggleRegistry.getNextToggleIntent(entityKey, isLikedByMe);
+    toggleLike({ postId: id, isLiked: nextLiked });
   };
 
   const handleShare = (e) => {
@@ -482,7 +434,7 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
       )}
 
       <div className={styles.postActions} style={{ marginTop: '0.5rem', paddingTop: '0' }}>
-        <button className={`${styles.postActionBtn} ${isLikedByMe ? styles.liked : ''}`} onClick={toggleLike}>
+        <button className={`${styles.postActionBtn} ${isLikedByMe ? styles.liked : ''}`} onClick={toggleLikeHandler}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill={isLikedByMe ? 'var(--color-primary)' : 'none'} stroke={isLikedByMe ? 'var(--color-primary)' : 'currentColor'} strokeWidth="2">
             <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
           </svg>
@@ -504,7 +456,12 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
           </svg>
           <span className={styles.shareText} style={{ fontSize: '0.85rem', fontWeight: 600 }}>Share</span>
         </button>
-        <button className={`${styles.postActionBtn} ${isSaved ? styles.saved : ''}`} onClick={(e) => { e.stopPropagation(); toggleSavePost(id); }}>
+        <button className={`${styles.postActionBtn} ${isSaved ? styles.saved : ''}`} onClick={(e) => { 
+          e.stopPropagation(); 
+          const entityKey = `savePost:${id}`;
+          const nextSaved = toggleRegistry.getNextToggleIntent(entityKey, isSaved);
+          toggleSave({ postId: id, isSaved: nextSaved, postData: livePost }); 
+        }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill={isSaved ? 'var(--color-primary)' : 'none'} stroke={isSaved ? 'var(--color-primary)' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>

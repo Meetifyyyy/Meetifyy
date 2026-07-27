@@ -7,8 +7,10 @@ import { useNavigate } from 'react-router-dom';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import s from './ProfileRightSidebar.module.css';
 import { useQuery } from '@tanstack/react-query';
-import { usersApi, activitiesApi, communitiesApi } from '@shared/api/apiClient';
+import { usersApi, activitiesApi } from '@shared/api/apiClient';
 import { useData } from '@shared/hooks/useData';
+import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
+import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 const isImageUrl = (str) => {
   if (!str || typeof str !== 'string') return false;
@@ -67,16 +69,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
   
   const { users, crewActivities, communities } = useData();
   
-  const toggleJoinCommunity = async (id) => {
-    try {
-      const isJoined = currentUser?.communities?.includes(id);
-      if (isJoined) await communitiesApi.leave(id);
-      else await communitiesApi.join(id);
-      // Not invalidating query for instantaneous fake update in this simple UI
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const { mutate: toggleJoin } = useJoinCommunity();
   
   const navigate = useNavigate();
 
@@ -160,7 +153,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
                 <div className={s.personName}>{u.displayName || u.username}</div>
                 <div className={s.personSub}>@{u.username}</div>
               </div>
-              <FollowButton targetUsername={u.username} size="sm" />
+              <FollowButton targetUsername={u.username} initialFollowing={false} size="sm" />
             </div>
           ))}
         </div>
@@ -171,7 +164,9 @@ export default function ProfileRightSidebar({ embedded = false }) {
         <div className={s.panelCard}>
           <h3 className={s.panelTitle}>Discover Communities</h3>
           {popularCommunities.map(c => {
-            const isJoined = isCommunityJoined(c);
+            const rawJoined = isCommunityJoined(c);
+            const entityKey = `joinCommunity:${c.id}`;
+            const isJoined = toggleRegistry.getLatestIntent(entityKey, rawJoined);
             return (
               <div 
                 key={c.id} 
@@ -202,7 +197,8 @@ export default function ProfileRightSidebar({ embedded = false }) {
                   onClick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
-                    toggleJoinCommunity(c.id);
+                    const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, rawJoined);
+                    toggleJoin({ communityId: c.id, isJoined: nextJoined, currentUser });
                   }}
                 >
                   {isJoined ? 'Joined' : 'Join'}

@@ -21,16 +21,16 @@
 }
 
 .sizeSm {
-  padding: 0.28rem 0.8rem;
-  font-size: 0.73rem;
+  padding: 0.45rem 1.1rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  min-width: 78px;
+  min-width: 88px;
 }
 
 .sizeMd {
-  padding: 0.72rem 1.45rem;
-  font-size: 0.9rem;
-  min-width: 110px;
+  padding: 0.8rem 1.6rem;
+  font-size: 0.95rem;
+  min-width: 120px;
 }
 
 .following {
@@ -60,33 +60,33 @@
 /* ── Mobile (≤768px) ── */
 @media (max-width: 768px) {
   .sizeMd {
-    padding: 0.65rem 1rem;
-    font-size: 0.85rem;
-    min-width: 100px;
+    padding: 0.72rem 1.25rem;
+    font-size: 0.9rem;
+    min-width: 110px;
   }
 }
 
 /* ── Small mobile (≤480px) ── */
 @media (max-width: 480px) {
   .sizeMd {
-    padding: 0.6rem 0.85rem;
-    font-size: 0.8rem;
-    min-width: 94px;
+    padding: 0.68rem 1.1rem;
+    font-size: 0.85rem;
+    min-width: 100px;
   }
 
   .sizeSm {
-    padding: 0.25rem 0.65rem;
-    font-size: 0.68rem;
-    min-width: 72px;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.76rem;
+    min-width: 80px;
   }
 }
 
 /* ── Very small mobile (≤360px) ── */
 @media (max-width: 360px) {
   .sizeMd {
-    padding: 0.45rem 0.8rem;
-    font-size: 0.75rem;
-    min-width: 88px;
+    padding: 0.55rem 0.95rem;
+    font-size: 0.8rem;
+    min-width: 92px;
   }
 }
 

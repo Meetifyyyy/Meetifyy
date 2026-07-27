@@ -1,5 +1,7 @@
 .wrapper {
   word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
   display: inline;
 }

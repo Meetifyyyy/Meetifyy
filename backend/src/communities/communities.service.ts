@@ -1,11 +1,18 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { DomainEventService } from '../events/domain-event.service';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class CommunitiesService {
+  private readonly logger = new Logger('CommunitiesService');
   private communitiesCache = new Map<string, { data: any[]; timestamp: number }>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly domainEventService: DomainEventService,
+    private readonly redisService: RedisService,
+  ) {}
 
   async getAllCommunities(userId?: string, limit = 30, offset = 0) {
     const cacheKey = `all:${limit}:${offset}`;
@@ -134,46 +141,49 @@ export class CommunitiesService {
     const community = await this.prisma.community.findUnique({ where: { id: communityId } });
     if (!community) throw new NotFoundException('Community not found');
 
-    const existingMember = await this.prisma.communityMember.findUnique({
-      where: { userId_communityId: { userId, communityId } },
-    });
+    const lockKey = `toggle:join:${userId}:${communityId}`;
 
-    if (!existingMember) {
-      await this.prisma.$transaction([
-        this.prisma.communityMember.create({
-          data: { userId, communityId, role: 'MEMBER' },
-        }),
-        this.prisma.community.update({
+    return this.redisService.withLock(lockKey, 2000, async () => {
+      // Fully atomic: INSERT ... ON CONFLICT DO NOTHING — never throws P2002
+      const inserted = await this.prisma.$executeRaw`
+        INSERT INTO "CommunityMember" ("userId", "communityId", "role", "createdAt")
+        VALUES (${userId}, ${communityId}, 'MEMBER', NOW())
+        ON CONFLICT ("userId", "communityId") DO NOTHING
+      `;
+
+      if (inserted === 1) {
+        await this.prisma.community.update({
           where: { id: communityId },
           data: { memberCount: { increment: 1 } },
-        }),
-      ]);
-    }
+        });
+        this.domainEventService.emit('community.memberJoined', { communityId, userId, memberCount: community.memberCount + 1 });
+      }
 
-    return { success: true };
+      return { success: true };
+    });
   }
 
   async leaveCommunity(communityId: string, userId: string) {
     const community = await this.prisma.community.findUnique({ where: { id: communityId } });
     if (!community) throw new NotFoundException('Community not found');
 
-    const existingMember = await this.prisma.communityMember.findUnique({
-      where: { userId_communityId: { userId, communityId } },
-    });
+    const lockKey = `toggle:join:${userId}:${communityId}`;
 
-    if (existingMember) {
-      await this.prisma.$transaction([
-        this.prisma.communityMember.delete({
-          where: { userId_communityId: { userId, communityId } },
-        }),
-        this.prisma.community.update({
+    return this.redisService.withLock(lockKey, 2000, async () => {
+      const deleted = await this.prisma.communityMember.deleteMany({
+        where: { userId, communityId },
+      });
+
+      if (deleted.count > 0) {
+        await this.prisma.community.update({
           where: { id: communityId },
           data: { memberCount: { decrement: 1 } },
-        }),
-      ]);
-    }
+        });
+        this.domainEventService.emit('community.memberLeft', { communityId, userId, memberCount: Math.max(0, community.memberCount - 1) });
+      }
 
-    return { success: true };
+      return { success: true };
+    });
   }
 
   async createCommunity(data: any, creatorId: string) {

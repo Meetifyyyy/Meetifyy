@@ -107,7 +107,9 @@ export default function NotificationItem({
       {((isFollow && targetUsername) || postMedia) && (
         <div className={styles.actionSlot}>
           {isFollow && targetUsername ? (
-            <FollowButton targetUsername={targetUsername} size="sm" />
+            <div onClick={(e) => e.stopPropagation()}>
+              <FollowButton targetUsername={targetUsername} size="sm" />
+            </div>
           ) : postMedia ? (
             <img src={postMedia} className={styles.previewImg} alt="" />
           ) : null}

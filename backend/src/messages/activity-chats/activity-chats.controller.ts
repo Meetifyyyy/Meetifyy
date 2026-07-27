@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, UseGuards, BadRequestException } from '@nestjs/common';
 import { ActivityChatsService } from './activity-chats.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
-import { RealtimeGateway } from '../../realtime/realtime.gateway';
+import { DomainEventService } from '../../events/domain-event.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { NotificationFactory } from '../../notifications/notification.factory';
 import { SendMessageDto } from '../core/dto/send-message.dto';
@@ -10,7 +10,7 @@ import { SendMessageDto } from '../core/dto/send-message.dto';
 export class ActivityChatsController {
   constructor(
     private readonly activityChatsService: ActivityChatsService,
-    private readonly realtimeGateway: RealtimeGateway,
+    private readonly domainEventService: DomainEventService,
     private readonly notificationsService: NotificationsService,
     private readonly notificationFactory: NotificationFactory,
   ) {}
@@ -59,38 +59,40 @@ export class ActivityChatsController {
     const conv = await this.activityChatsService.getConversationById(realConvId);
 
     const participantIds = await this.activityChatsService.getConversationParticipantIds(realConvId);
-    for (const pId of participantIds) {
-      if (pId !== userId) {
-        const hasBlockedSender = await this.activityChatsService.isUserBlockedBy(userId, pId);
-        if (hasBlockedSender) continue;
+    const otherParticipantIds = participantIds.filter(pId => pId !== userId);
+    const unblockedParticipantIds = [];
+    for (const pId of otherParticipantIds) {
+      const hasBlockedSender = await this.activityChatsService.isUserBlockedBy(userId, pId);
+      if (!hasBlockedSender) unblockedParticipantIds.push(pId);
+    }
 
-        this.realtimeGateway.server.to(pId).emit('message:new', message);
-        this.realtimeGateway.server.to(pId).emit('conversation:updated', {
-          conversationId: message.conversationId,
-          publicId: message.publicId,
-          internalId: message.internalId,
-          lastMessage: {
-            text: message.text,
-            createdAt: message.createdAt,
-            senderId: userId
-          }
-        });
+    this.domainEventService.emit('message:new', message, unblockedParticipantIds);
+    this.domainEventService.emit('conversation:updated', {
+      conversationId: message.conversationId,
+      publicId: message.publicId,
+      internalId: message.internalId,
+      lastMessage: {
+        text: message.text,
+        createdAt: message.createdAt,
+        senderId: userId
+      }
+    }, unblockedParticipantIds);
 
-        const isMuted = await this.activityChatsService.isUserConversationMuted(realConvId, pId);
-        if (!isMuted) {
-          this.notificationsService.createNotification(
-            this.notificationFactory.createMessage(
-              { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
-              conv || { id: realConvId, name: message.senderName },
-              pId,
-              message.text
-            )
-          ).catch(() => {});
-        }
-      } else {
-        this.realtimeGateway.server.to(userId).emit('message:new', message);
+    for (const pId of unblockedParticipantIds) {
+      const isMuted = await this.activityChatsService.isUserConversationMuted(realConvId, pId);
+      if (!isMuted) {
+        this.notificationsService.createNotification(
+          this.notificationFactory.createMessage(
+            { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
+            conv || { id: realConvId, name: message.senderName },
+            pId,
+            message.text
+          )
+        ).catch(() => {});
       }
     }
+
+    this.domainEventService.emit('message:new', message, [userId]);
 
     return message;
   }
@@ -127,20 +129,18 @@ export class ActivityChatsController {
       const conv = await this.activityChatsService.getConversationById(result.conversationId);
       const pubId = (conv as any)?.publicId || result.conversationId;
       const participantIds = await this.activityChatsService.getConversationParticipantIds(result.conversationId);
-      for (const pId of participantIds) {
-        this.realtimeGateway.server.to(pId).emit('message:updated', {
-          id: messageId,
-          conversationId: pubId,
-          publicId: pubId,
-          internalId: result.conversationId,
-          state: 'UNSENT',
-          text: 'This message was unsent',
-          mediaUrl: null,
-          mediaType: null,
-          inviteData: null,
-          replyTo: null
-        });
-      }
+      this.domainEventService.emit('message:updated', {
+        id: messageId,
+        conversationId: pubId,
+        publicId: pubId,
+        internalId: result.conversationId,
+        state: 'UNSENT',
+        text: 'This message was unsent',
+        mediaUrl: null,
+        mediaType: null,
+        inviteData: null,
+        replyTo: null
+      }, participantIds);
     }
     return result;
   }
@@ -160,38 +160,39 @@ export class ActivityChatsController {
         const participantIds = await this.activityChatsService.getConversationParticipantIds(conversationId);
         const conv = await this.activityChatsService.getConversationById(conversationId);
 
-        for (const pId of participantIds) {
-          if (pId !== userId) {
-            const hasBlockedSender = await this.activityChatsService.isUserBlockedBy(userId, pId);
-            if (hasBlockedSender) continue;
+        const otherParticipantIds = participantIds.filter(pId => pId !== userId);
+        const unblockedParticipantIds = [];
+        for (const pId of otherParticipantIds) {
+          const hasBlockedSender = await this.activityChatsService.isUserBlockedBy(userId, pId);
+          if (!hasBlockedSender) unblockedParticipantIds.push(pId);
+        }
 
-            this.realtimeGateway.server.to(pId).emit('message:new', message);
-            this.realtimeGateway.server.to(pId).emit('conversation:updated', {
-              conversationId: message.conversationId,
-              publicId: message.publicId,
-              internalId: message.internalId,
-              lastMessage: {
-                text: message.text || (message.mediaUrl ? (message.mediaType === 'image' ? 'Photo' : message.mediaType === 'video' ? 'Video' : 'Audio') : ''),
-                createdAt: message.createdAt,
-                senderId: userId
-              }
-            });
+        this.domainEventService.emit('message:new', message, unblockedParticipantIds);
+        this.domainEventService.emit('conversation:updated', {
+          conversationId: message.conversationId,
+          publicId: message.publicId,
+          internalId: message.internalId,
+          lastMessage: {
+            text: message.text || (message.mediaUrl ? (message.mediaType === 'image' ? 'Photo' : message.mediaType === 'video' ? 'Video' : 'Audio') : ''),
+            createdAt: message.createdAt,
+            senderId: userId
+          }
+        }, unblockedParticipantIds);
 
-            const isMuted = await this.activityChatsService.isUserConversationMuted(conversationId, pId);
-            if (!isMuted) {
-              this.notificationsService.createNotification(
-                this.notificationFactory.createMessage(
-                  { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
-                  conv || { id: conversationId, name: message.senderName },
-                  pId,
-                  message.text || 'Forwarded a message'
-                )
-              ).catch(() => {});
-            }
-          } else {
-            this.realtimeGateway.server.to(userId).emit('message:new', message);
+        for (const pId of unblockedParticipantIds) {
+          const isMuted = await this.activityChatsService.isUserConversationMuted(conversationId, pId);
+          if (!isMuted) {
+            this.notificationsService.createNotification(
+              this.notificationFactory.createMessage(
+                { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
+                conv || { id: conversationId, name: message.senderName },
+                pId,
+                message.text || 'Forwarded a message'
+              )
+            ).catch(() => {});
           }
         }
+        this.domainEventService.emit('message:new', message, [userId]);
       }
     }
 

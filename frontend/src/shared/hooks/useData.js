@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { communitiesApi, activitiesApi, usersApi, messagesApi, postsApi } from '../api/apiClient';
+import { communitiesApi, activitiesApi, usersApi, messagesApi, postsApi, groupApi, dmApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { useSavedPostsStore } from '../stores/savedPostsStore';
 import { supabase } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline';
+import { useDeleteComment } from '../../features/feed/hooks/useDeleteComment';
 
 /**
  * A centralized hook to bridge the old DataContext API with React Query.
@@ -14,6 +15,9 @@ import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline'
 export function useData() {
   const queryClient = useQueryClient();
   const { currentUser } = useAuth();
+  const { mutate: deleteCommentMutate } = useDeleteComment();
+
+  const deleteComment = (postId, commentId) => deleteCommentMutate({ commentId, postId });
 
   // Queries
   const { data: communities = [] } = useQuery({ queryKey: ['communities'], queryFn: communitiesApi.getAll, staleTime: 30_000 });
@@ -199,13 +203,7 @@ export function useData() {
     onSuccess: () => queryClient.invalidateQueries(['activities']),
   });
 
-  const toggleJoinCommunity = (id, isJoined) => {
-    if (isJoined) leaveCommMutation.mutate(id);
-    else joinCommMutation.mutate(id);
-  };
-  
-  const toggleJoinCampusGroup = toggleJoinCommunity;
-  
+
   const createCampusGroup = async (name, desc, avatar) => {
     const res = await createCommMutation.mutateAsync({ name, description: desc, avatarKey: avatar });
     return res.id;
@@ -251,32 +249,19 @@ export function useData() {
     }
     return null;
   };
-  const { savedPosts, toggleSavePost } = useSavedPostsStore();
-  const likePost = async (postId) => {
-    await postsApi.likePost(postId);
-    queryClient.invalidateQueries(['feed']);
-    queryClient.invalidateQueries(['posts']);
-    queryClient.invalidateQueries(['user-posts']);
-    queryClient.invalidateQueries(['post', postId]);
+  
+  const updateMessagesCache = (convId, updater) => {
+    queryClient.setQueryData(['messages', convId], (old) => {
+      if (!old) return old;
+      if (old.pages) {
+        return {
+          ...old,
+          pages: old.pages.map((p, idx) => idx === 0 ? { ...p, messages: updater(p.messages || []) } : p)
+        };
+      }
+      return { ...old, messages: updater(old.messages || []) };
+    });
   };
-  const unlikePost = async (postId) => {
-    await postsApi.unlikePost(postId);
-    queryClient.invalidateQueries(['feed']);
-    queryClient.invalidateQueries(['posts']);
-    queryClient.invalidateQueries(['user-posts']);
-    queryClient.invalidateQueries(['post', postId]);
-  };
-  const likeComment = async (postId, commentId) => {
-    await postsApi.likeComment(commentId);
-    if (postId) queryClient.invalidateQueries(['post', postId]);
-    queryClient.invalidateQueries(['feed']);
-  };
-  const unlikeComment = async (postId, commentId) => {
-    await postsApi.unlikeComment(commentId);
-    if (postId) queryClient.invalidateQueries(['post', postId]);
-    queryClient.invalidateQueries(['feed']);
-  };
-
   // API Implementations
   const sendDirectMessage = async (convId, text, replyTo = null, mentions = [], mediaUrl = null, mediaType = null, explicitLinkPreview = null, explicitInviteData = null, options = null) => {
     let payload = {};
@@ -310,14 +295,12 @@ export function useData() {
       status: 'sending',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       timestamp: Date.now(),
+      timestamp: Date.now(),
       createdAt: new Date().toISOString()
     };
 
     // Optimistically update cache
-    queryClient.setQueryData(['messages', convId], (old) => {
-      if (!old) return { messages: [optimisticMessage] };
-      return { ...old, messages: [...(old.messages || []), optimisticMessage] };
-    });
+    updateMessagesCache(convId, (msgs) => [...msgs, optimisticMessage]);
 
     try {
       if (options?.fileObj) {
@@ -331,32 +314,60 @@ export function useData() {
         }
       }
 
-      const res = await messagesApi.sendDirectMessage(convId, payload);
+      // E2EE Encryption for DMs
+      const isGroup = String(convId).startsWith('c_') || String(convId).startsWith('act_');
+      let e2eeUsed = false;
+      if (!isGroup && payload.text) {
+        try {
+          const convs = queryClient.getQueryData(['conversations']) || [];
+          const conv = convs.find(c => c.id === convId || c.publicId === convId || c.internalId === convId);
+          if (conv && (conv.participants || conv.members)) {
+            const list = conv.participants || conv.members || [];
+            const remoteUser = list.find(p => (p.id || p.userId) !== currentUser?.id);
+            if (remoteUser) {
+              const remoteId = remoteUser.id || remoteUser.userId;
+              const { E2EEManager } = await import('../lib/signal/E2EEManager');
+              const ciphertext = await E2EEManager.getInstance().encryptMessage(remoteId, '1', payload.text);
+              payload.text = typeof ciphertext === 'string' ? ciphertext : JSON.stringify(ciphertext);
+              payload.type = 'e2ee';
+              payload.isE2EE = true;
+              e2eeUsed = true;
+            }
+          }
+        } catch (e) {
+          console.error("E2EE encryption failed, falling back to plaintext", e);
+        }
+      }
+
+      let res;
+      if (String(convId).startsWith('c_')) {
+        res = await groupApi.sendMessage(String(convId).replace('c_', ''), payload);
+      } else if (String(convId).startsWith('act_')) {
+        res = await activityChatApi.sendMessage(String(convId).replace('act_', ''), payload);
+      } else {
+        res = await dmApi.sendMessage(convId, payload);
+      }
+      
+      const confirmedMsg = {
+        ...res,
+        from: 'me',
+        text: e2eeUsed ? optimisticMessage.text : (res.text || res.payload?.text || payload.text),
+        decryptedText: e2eeUsed ? optimisticMessage.text : (res.decryptedText || null)
+      };
+
       // Replace optimistic message with confirmed server message
-      queryClient.setQueryData(['messages', convId], (old) => {
-        if (!old) return { messages: [res] };
-        return {
-          ...old,
-          messages: old.messages.map(m => m.id === tempId ? { ...res, from: 'me' } : m)
-        };
-      });
-      return res;
+      updateMessagesCache(convId, (msgs) => msgs.map(m => m.id === tempId ? confirmedMsg : m));
+      return confirmedMsg;
     } catch (error) {
       // Rollback optimistic message on failure
-      queryClient.setQueryData(['messages', convId], (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          messages: old.messages.map(m => m.id === tempId ? { ...m, status: 'error' } : m)
-        };
-      });
+      updateMessagesCache(convId, (msgs) => msgs.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
       throw error;
     } finally {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     }
   };
+
   const normalizeUserIds = (input) => {
-    if (!input) return [];
     if (Array.isArray(input)) {
       return input.map(item => typeof item === 'string' ? item : (item?.id || item?.userId)).filter(Boolean);
     }
@@ -365,32 +376,150 @@ export function useData() {
     return [];
   };
   const reactToMessage = (messageId, reaction) => messagesApi.reactToMessage(messageId, reaction);
-  const startConversation = async (userIds, name) => {
-    const res = await messagesApi.startConversation(normalizeUserIds(userIds), name);
-    queryClient.invalidateQueries(['conversations']);
-    return res?.id || res?.publicId;
+
+  const startConversation = (targetUserOrIds, name) => {
+    const tempId = `temp_dm_${Date.now()}`;
+    let targetUserObj = typeof targetUserOrIds === 'object' && !Array.isArray(targetUserOrIds) ? targetUserOrIds : null;
+    const cleanIds = normalizeUserIds(targetUserOrIds);
+
+    const tempConv = {
+      id: tempId,
+      publicId: tempId,
+      name: name || targetUserObj?.displayName || targetUserObj?.username || 'New Message',
+      type: 'DM',
+      isGroup: false,
+      status: 'creating',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      participants: targetUserObj ? [{ userId: currentUser?.id, user: currentUser }, { userId: targetUserObj.id, user: targetUserObj }] : [],
+      lastMessage: null,
+      unreadCount: 0
+    };
+
+    queryClient.setQueryData(['conversations'], (old) => {
+      const list = Array.isArray(old) ? old : [];
+      return [tempConv, ...list];
+    });
+
+    messagesApi.startConversation(cleanIds, name).then((res) => {
+      const realId = res?.id || res?.publicId;
+      if (realId) {
+        queryClient.setQueryData(['conversations'], (old) => {
+          if (!Array.isArray(old)) return old;
+          return old.map(c => c.id === tempId ? { ...c, ...res, id: realId, publicId: realId, status: 'active' } : c);
+        });
+      }
+    }).catch(err => {
+      console.error('Failed to start conversation:', err);
+      queryClient.setQueryData(['conversations'], (old) => 
+        Array.isArray(old) ? old.filter(c => c.id !== tempId) : old
+      );
+      showToast('Failed to start conversation. Please try again.');
+    });
+
+    return tempId;
   };
-  const createGroupConversation = async (groupName, userIds) => {
-    const res = await messagesApi.startConversation(normalizeUserIds(userIds), groupName);
-    queryClient.invalidateQueries(['conversations']);
-    return res?.id || res?.publicId;
+
+  const createGroupConversation = (groupName, userIds) => {
+    const tempId = `c_temp_${Date.now()}`;
+    const cleanIds = normalizeUserIds(userIds);
+
+    const tempGroup = {
+      id: tempId,
+      publicId: tempId,
+      name: groupName,
+      type: 'GROUP',
+      isGroup: true,
+      status: 'creating',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      participants: [{ userId: currentUser?.id, role: 'OWNER' }],
+      lastMessage: null,
+      unreadCount: 0
+    };
+
+    queryClient.setQueryData(['conversations'], (old) => {
+      const list = Array.isArray(old) ? old : [];
+      return [tempGroup, ...list];
+    });
+
+    (async () => {
+      try {
+        let res;
+        try {
+          res = await groupApi.createGroup(groupName, cleanIds);
+        } catch (e) {
+          res = await messagesApi.startConversation(cleanIds, groupName);
+        }
+        const realId = res?.id || res?.publicId || res?.internalId;
+        if (realId) {
+          const finalId = String(realId).startsWith('c_') ? realId : `c_${realId}`;
+          queryClient.setQueryData(['conversations'], (old) => {
+            if (!Array.isArray(old)) return old;
+            return old.map(c => c.id === tempId ? { ...c, ...res, id: finalId, publicId: finalId, status: 'active' } : c);
+          });
+        }
+      } catch (err) {
+        console.error('Failed to create group:', err);
+        queryClient.setQueryData(['conversations'], (old) => 
+          Array.isArray(old) ? old.filter(c => c.id !== tempId) : old
+        );
+        showToast('Failed to create group. Please try again.');
+      }
+    })();
+
+    return tempId;
   };
+
   const togglePinConversation = async (convId, currentPinned) => {
-    await messagesApi.pinConversation(convId, !currentPinned);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.setQueryData(['conversations'], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(c => c.id === convId || c.publicId === convId ? { ...c, isPinned: !currentPinned } : c);
+    });
+    try {
+      await messagesApi.pinConversation(convId, !currentPinned);
+    } catch (e) {
+      queryClient.setQueryData(['conversations'], (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map(c => c.id === convId || c.publicId === convId ? { ...c, isPinned: currentPinned } : c);
+      });
+    }
   };
+
   const toggleMuteConversation = async (convId, currentMuted) => {
-    await messagesApi.muteConversation(convId, !currentMuted);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.setQueryData(['conversations'], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(c => c.id === convId || c.publicId === convId ? { ...c, isMuted: !currentMuted } : c);
+    });
+    try {
+      await messagesApi.muteConversation(convId, !currentMuted);
+    } catch (e) {
+      queryClient.setQueryData(['conversations'], (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map(c => c.id === convId || c.publicId === convId ? { ...c, isMuted: currentMuted } : c);
+      });
+    }
   };
+
   const deleteConversation = async (convId) => {
-    await messagesApi.deleteConversation(convId);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.setQueryData(['conversations'], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.filter(c => c.id !== convId && c.publicId !== convId);
+    });
+    try {
+      await messagesApi.deleteConversation(convId);
+    } catch (e) {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    }
   };
+
   const clearChat = async (convId) => {
-    await messagesApi.clearChat(convId);
-    queryClient.invalidateQueries(['messages', convId]);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.setQueryData(['messages', convId], () => ({ pages: [], pageParams: [] }));
+    try {
+      await messagesApi.clearChat(convId);
+    } catch (e) {
+      console.error(e);
+    }
   };
   const toggleBlockUser = async (targetUserId, currentlyBlocked) => {
     queryClient.setQueryData(['conversations'], (old) => {
@@ -438,7 +567,7 @@ export function useData() {
         queryClient.invalidateQueries(['conversations']);
       });
     }
-    await messagesApi.updateGroup(convId, { name, description, avatarKey });
+    await groupApi.updateGroupInfo(convId, { name, description, avatarKey });
     queryClient.invalidateQueries(['conversations']);
   };
 
@@ -466,12 +595,12 @@ export function useData() {
         queryClient.invalidateQueries(['conversations']);
       });
     }
-    await messagesApi.removeMember(convId, memberId);
+    await groupApi.removeMember(convId, memberId);
     queryClient.invalidateQueries(['conversations']);
   };
 
   const addGroupMember = async (convId, targetUserId) => {
-    await messagesApi.addMember(convId, targetUserId);
+    await groupApi.addMember(convId, targetUserId);
     queryClient.invalidateQueries(['conversations']);
   };
 
@@ -484,7 +613,7 @@ export function useData() {
       const actualId = convId.replace('act_', '');
       return activitiesApi.leave(actualId).then(() => queryClient.invalidateQueries(['activities']));
     }
-    await messagesApi.leaveGroup(convId);
+    await groupApi.leaveGroup(convId);
     queryClient.invalidateQueries(['conversations']);
   };
 
@@ -492,7 +621,7 @@ export function useData() {
   const leaveCrewActivity = (id) => leaveActivityMutation.mutateAsync(id);
   const requestToJoinActivity = (id) => activitiesApi.requestToJoinActivity(id).then(() => queryClient.invalidateQueries(['activities']));
   const requestToJoinGroup = (id) => {
-    return messagesApi.requestToJoinGroup(id)
+    return groupApi.joinGroup(id)
       .catch(() => communitiesApi.join(id))
       .then(() => {
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
@@ -513,7 +642,7 @@ export function useData() {
         queryClient.invalidateQueries(['conversations']);
       });
     }
-    await messagesApi.updateSettings(convId, data);
+    await groupApi.updateSettings(convId, data);
     queryClient.invalidateQueries(['conversations']);
   };
 
@@ -529,7 +658,7 @@ export function useData() {
         queryClient.invalidateQueries(['conversations']);
       });
     }
-    await messagesApi.updatePermissions(convId, permission);
+    await groupApi.updatePermissions(convId, permission);
     queryClient.invalidateQueries(['conversations']);
   };
 
@@ -674,12 +803,7 @@ export function useData() {
   };
   const initializeCampusGroupConversation = () => {};
 
-  const addComment = async (postId, text, parentId = null, mentions = []) => {
-    await postsApi.addComment(postId, { text, parentId, mentions });
-    queryClient.invalidateQueries(['posts']);
-    queryClient.invalidateQueries(['feed']);
-    queryClient.invalidateQueries(['post', postId]);
-  };
+
 
   const voteInPoll = async (postId, indices) => {
     await postsApi.voteInPoll(postId, indices);
@@ -706,9 +830,8 @@ export function useData() {
     campusCommunities,
     campusCrewActivities,
     campusUsers,
+    currentUser,
     joinCommunity: joinCommMutation.mutate,
-    toggleJoinCommunity,
-    toggleJoinCampusGroup,
     createCampusGroup,
     addCommunity,
     sendDirectMessage,
@@ -740,20 +863,14 @@ export function useData() {
     getPostById,
     updateGroupInfo,
     removeGroupMember,
-    savedPosts,
-    toggleSavePost,
-    likePost,
-    unlikePost,
-    likeComment,
-    unlikeComment,
     retryDirectMessage,
     clearChat,
     toggleBlockUser,
     addGroupMember,
     initializeCampusGroupConversation,
     leaveGroup,
-    addComment,
     voteInPoll,
     start24HrInstantChat,
+    deleteComment,
   };
 }

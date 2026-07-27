@@ -1,24 +1,26 @@
-import { useState, useRef, useEffect, Suspense, lazy } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import MentionInput from '@shared/components/mentions/MentionInput';
-import data from '@emoji-mart/data';
+import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
 import styles from './ChatInputAreaStyles.module.css';
 import { useVoiceRecorder } from '../../hooks/useVoiceRecorder';
-
-const Picker = lazy(() => import('@emoji-mart/react'));
 
 import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
 
 export default function ChatInputArea({
   conversation,
   currentUser,
-  onSendMessage,
+  onSendMessage: propOnSendMessage,
+  onSend,
   replyingTo,
   onCancelReply,
   setIsTyping,
   onJoinGroup,
   onBlockUser,
-  showToast
+  showToast,
+  onTyping,
+  stopTypingNow
 }) {
+  const sendMessageFn = propOnSendMessage || onSend;
   const [inputValue, setInputValue] = useState({ text: '', mentions: [] });
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
@@ -51,7 +53,7 @@ export default function ChatInputArea({
   const hasText = !!(typeof inputValue === 'string' ? inputValue : (inputValue?.text || '')).trim();
 
   const { isRecording, recordingTime, startRecording, deleteRecording, sendRecording, formatDuration } = useVoiceRecorder({
-    onSend: (audioUrl) => onSendMessage(conversation.id, '', replyingTo, [], audioUrl, 'audio'),
+    onSend: (audioUrl) => sendMessageFn && sendMessageFn(conversation.id, '', replyingTo, [], audioUrl, 'audio'),
     showToast
   });
 
@@ -84,17 +86,19 @@ export default function ChatInputArea({
     const localUrl = URL.createObjectURL(file);
     const tempId = 'temp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
 
-    onSendMessage(
-      conversation.id,
-      '',
-      replyingTo,
-      [],
-      localUrl,
-      mediaType,
-      null,
-      null,
-      { tempId, fileObj: file }
-    );
+    if (sendMessageFn) {
+      sendMessageFn(
+        conversation.id,
+        '',
+        replyingTo,
+        [],
+        localUrl,
+        mediaType,
+        null,
+        null,
+        { tempId, fileObj: file }
+      );
+    }
 
     if (onCancelReply) onCancelReply();
     e.target.value = '';
@@ -105,7 +109,11 @@ export default function ChatInputArea({
     const mentions = inputValue?.mentions || [];
     if (!text || conversation?.blocked || conversation?.isBlockedByMe || conversation?.isBlockedByThem) return;
 
-    onSendMessage(conversation.id, text, replyingTo, mentions, null, null, null, null);
+    if (stopTypingNow) stopTypingNow();
+
+    if (sendMessageFn) {
+      sendMessageFn(conversation.id, text, replyingTo, mentions, null, null, null, null);
+    }
     setInputValue({ text: '', mentions: [] });
     setShowEmojiPicker(false);
     if (onCancelReply) onCancelReply();
@@ -153,21 +161,7 @@ export default function ChatInputArea({
         </div>
       )}
 
-      {showEmojiPicker && (
-        <div style={{ position: 'absolute', bottom: '100%', left: '1.25rem', marginBottom: '0.5rem', zIndex: 100 }}>
-          <Suspense fallback={<div style={{ padding: '1rem', background: 'var(--color-bg-white)', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '0.85rem' }}>Loading Emojis...</div>}>
-            <Picker 
-              data={data} 
-              onEmojiSelect={(emoji) => setInputValue((prev) => {
-                const currentText = typeof prev === 'string' ? prev : (prev?.text || '');
-                const currentMentions = prev?.mentions || [];
-                return { text: currentText + emoji.native, mentions: currentMentions };
-              })} 
-              theme="light"
-            />
-          </Suspense>
-        </div>
-      )}
+
       
       {(() => {
         const isNotMember = conversation?.isGroup && conversation?.isMember === false;
@@ -252,34 +246,56 @@ export default function ChatInputArea({
               onChange={handleFileChange}
             />
 
-            <button className={styles.msgEmojiBtn} title="Emoji" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+            {showEmojiPicker && (
+              <div style={{ position: 'absolute', bottom: '100%', left: '1.25rem', marginBottom: '0.5rem', zIndex: 100 }}>
+                <LazyEmojiPicker
+                  theme="auto"
+                  onEmojiSelect={(emoji) => {
+                    setInputValue(prev => {
+                      const curText = typeof prev === 'string' ? prev : (prev?.text || '');
+                      return typeof prev === 'string' ? curText + emoji.native : { ...prev, text: curText + emoji.native };
+                    });
+                    setShowEmojiPicker(false);
+                  }}
+                />
+              </div>
+            )}
+
+            <button type="button" className={styles.msgEmojiBtn} title="Emoji" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" y1="9" x2="9" y2="9" /><line x1="15" y1="9" x2="15" y2="9" />
               </svg>
             </button>
 
             <button 
+              type="button"
               className={`${styles.msgAttachBtn} ${hasText ? styles.attachBtnHidden : ''}`} 
               title="Attach image or video" 
               onClick={handleAttachClick}
             >
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="5" ry="5" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="M21 15l-5-5L5 21" />
               </svg>
             </button>
 
-            <div className={styles.inputWrapper}>
-
-              <MentionInput
-                inputRef={inputRef}
-                className={styles.msgInput}
-                placeholder="Type a message..."
-                value={inputValue}
-                onChange={setInputValue}
-                onSubmit={handleSend}
-                singleLine={true}
-                communityId={(conversation?.type === 'GROUP' || conversation?.isGroup || conversation?.isActivityChat) ? conversation?.id : null}
-              />
+            <div className={styles.inputBar}>
+              <div className={styles.inputWrapper}>
+                <MentionInput
+                  inputRef={inputRef}
+                  className={styles.msgInput}
+                  placeholder="Type a message..."
+                  value={inputValue}
+                  onChange={(val) => {
+                    setInputValue(val);
+                    if (onTyping) onTyping();
+                  }}
+                  onSubmit={handleSend}
+                  singleLine={true}
+                  communityId={(conversation?.type === 'GROUP' || conversation?.isGroup || conversation?.isActivityChat) ? conversation?.id : null}
+                />
+              </div>
             </div>
 
             <div className={styles.rightActionContainer}>

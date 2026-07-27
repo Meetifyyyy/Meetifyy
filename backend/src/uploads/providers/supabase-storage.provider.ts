@@ -32,8 +32,9 @@ export class SupabaseStorageProvider implements StorageProvider {
     const key = `${folder}/${randomUUID()}.${ext}`;
 
     if (!this.supabaseService.isConfigured) {
-      const mockPublicUrl = `/mock-upload/${key}`;
-      return { uploadUrl: mockPublicUrl, publicUrl: mockPublicUrl, key };
+      const uploadUrl = `/api/media/direct-upload?key=${encodeURIComponent(key)}`;
+      const publicUrl = `/api/media/${key}`;
+      return { uploadUrl, publicUrl, key };
     }
 
     const client = this.supabaseService.client;
@@ -51,7 +52,7 @@ export class SupabaseStorageProvider implements StorageProvider {
   }
 
   async createSignedDownloadUrl(key: string, expiresIn = 3600): Promise<string> {
-    if (!this.supabaseService.isConfigured) return `/mock-download/${key}`;
+    if (!this.supabaseService.isConfigured) return `/api/media/${key}`;
     const { data, error } = await this.supabaseService.client.storage
       .from(this.bucketName)
       .createSignedUrl(key, expiresIn);
@@ -60,7 +61,7 @@ export class SupabaseStorageProvider implements StorageProvider {
   }
 
   getPublicUrl(key: string): string {
-    if (!this.supabaseService.isConfigured) return `/mock-public/${key}`;
+    if (!this.supabaseService.isConfigured) return `/api/media/${key}`;
     const { data } = this.supabaseService.client.storage.from(this.bucketName).getPublicUrl(key);
     return data.publicUrl;
   }

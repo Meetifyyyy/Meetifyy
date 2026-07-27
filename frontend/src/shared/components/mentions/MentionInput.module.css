@@ -15,11 +15,14 @@
   border: none;
   outline: none;
   word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
   min-height: 24px;
-  max-height: 400px;
+  max-height: 150px;
   overflow-y: auto;
   position: relative;
+  transition: max-height 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
 .editor[data-empty="true"]::before {

@@ -3,12 +3,15 @@ import { useQuery } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useData } from '@shared/hooks/useData';
-import { useFollow } from '@shared/context/FollowContext';
+import FollowButton from '@shared/components/ui/FollowButton';
+import { usersApi } from '@shared/api/apiClient';
 import { EmptyState } from '@shared/components/ui/StateViews';
 import PostView from '../components/post/PostView';
 import RightPanel from '@layout/RightPanel';
 import rightPanelStyles from '@layout/RightPanel.module.css';
 import Avatar from '@shared/components/avatar/Avatar';
+import Skeleton from '@shared/components/skeletons/Skeleton';
+import postViewStyles from '../components/post/PostView.module.css';
 
 export default function PostDetailRoute() {
   const navigate = useNavigate();
@@ -16,7 +19,7 @@ export default function PostDetailRoute() {
   const location = useLocation();
   const { id } = useParams();
   const { getUserById, communities, currentUser } = useData();
-  const { isFollowing, toggleFollow } = useFollow();
+
 
   const handleBack = () => {
     goBack('/home');
@@ -33,13 +36,125 @@ export default function PostDetailRoute() {
 
   const post = fetchedPost || initialPost;
 
+  const author = post?.author || (post?.authorId ? getUserById(post.authorId) : null) || {
+    displayName: 'Unknown User',
+    username: 'unknown',
+    followers: 0,
+    following: 0,
+    communities: []
+  };
+
+  const { data: profile } = useQuery({
+    queryKey: ['profile', author?.username],
+    queryFn: () => usersApi.getProfile(author.username),
+    enabled: !!author?.username && author.username !== 'unknown',
+    staleTime: 1000 * 60,
+  });
+
+  const renderRightPanelSkeleton = () => {
+    return (
+      <RightPanel>
+        <div className={rightPanelStyles.panelCard} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <Skeleton type="circle" width="80px" height="80px" style={{ margin: 0 }} />
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <Skeleton type="text" width="140px" height="18px" style={{ margin: 0 }} />
+              <Skeleton type="text" width="90px" height="12px" style={{ margin: 0 }} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <Skeleton type="text" width="100%" height="12px" style={{ margin: 0 }} />
+              <Skeleton type="text" width="90%" height="12px" style={{ margin: 0 }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: '2.5rem', paddingBottom: '1.25rem', borderBottom: '1px solid var(--color-border-light)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <Skeleton type="text" width="40px" height="16px" style={{ margin: 0 }} />
+                <Skeleton type="text" width="60px" height="10px" style={{ margin: 0 }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <Skeleton type="text" width="40px" height="16px" style={{ margin: 0 }} />
+                <Skeleton type="text" width="60px" height="10px" style={{ margin: 0 }} />
+              </div>
+            </div>
+
+            <div>
+              <Skeleton type="text" width="80px" height="10px" style={{ textTransform: 'uppercase', marginBottom: '0.75rem' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <Skeleton type="circle" width="28px" height="28px" />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <Skeleton type="text" width="80px" height="12px" style={{ margin: 0 }} />
+                        <Skeleton type="text" width="50px" height="10px" style={{ margin: 0 }} />
+                      </div>
+                    </div>
+                    <Skeleton type="rect" width="50px" height="22px" style={{ borderRadius: 'var(--radius-full)' }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </RightPanel>
+    );
+  };
+
   if (isLoading && !post) {
     return (
-      <main className="centre">
-        <div style={{ padding: '3rem 2rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-          Loading post...
-        </div>
-      </main>
+      <>
+        <main className="centre centre--post">
+          <div className={postViewStyles.postViewContainer}>
+            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--color-border-light)' }}>
+                <Skeleton type="circle" width="32px" height="32px" />
+                <Skeleton type="text" width="80px" height="18px" style={{ margin: 0 }} />
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <Skeleton type="circle" width="44px" height="44px" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+                  <Skeleton type="text" width="120px" height="14px" style={{ margin: 0 }} />
+                  <Skeleton type="text" width="80px" height="10px" style={{ margin: 0 }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <Skeleton type="rect" width="100%" height="14px" style={{ borderRadius: '4px' }} />
+                <Skeleton type="rect" width="95%" height="14px" style={{ borderRadius: '4px' }} />
+                <Skeleton type="rect" width="70%" height="14px" style={{ borderRadius: '4px' }} />
+              </div>
+
+              <div style={{ display: 'flex', gap: '1.5rem', padding: '0.75rem 0', borderTop: '1px solid var(--color-border-light)', borderBottom: '1px solid var(--color-border-light)' }}>
+                <Skeleton type="circle" width="20px" height="20px" />
+                <Skeleton type="circle" width="20px" height="20px" />
+                <Skeleton type="circle" width="20px" height="20px" />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                <Skeleton type="circle" width="32px" height="32px" />
+                <Skeleton type="rect" width="100%" height="38px" style={{ borderRadius: 'var(--radius-full)' }} />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '0.5rem' }}>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '0.75rem' }}>
+                    <Skeleton type="circle" width="32px" height="32px" style={{ flexShrink: 0 }} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+                      <Skeleton type="text" width="100px" height="12px" style={{ margin: 0 }} />
+                      <Skeleton type="text" width="85%" height="10px" style={{ margin: 0 }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </main>
+        {renderRightPanelSkeleton()}
+      </>
     );
   }
 
@@ -119,15 +234,11 @@ export default function PostDetailRoute() {
         </RightPanel>
       );
     } else {
-      const author = post.author || getUserById(post.authorId) || {
-        displayName: 'Unknown User',
-        followers: 0,
-        following: 0,
-        communities: []
-      };
-
       const isSelf = currentUser && author.id === currentUser.id;
-      const isFollowingUser = isFollowing(author.username);
+
+      const isFollowingUser = profile?.isFollowing || false;
+      const displayFollowers = profile?.stats?.followers ?? author.followers ?? 0;
+      const displayFollowing = profile?.stats?.following ?? author.following ?? 0;
 
       return (
         <RightPanel>
@@ -157,49 +268,19 @@ export default function PostDetailRoute() {
 
               {/* Action Buttons */}
               {!isSelf && (
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
-                  <button 
-                    onClick={() => toggleFollow(author.username)}
-                    style={{ 
-                      flex: 1, 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center', 
-                      gap: '0.5rem', 
-                      padding: '0.65rem', 
-                      borderRadius: 'var(--radius-full)', 
-                      border: 'none', 
-                      background: isFollowingUser ? 'rgba(var(--color-primary-rgb), 0.15)' : 'var(--color-primary)', 
-                      color: isFollowingUser ? 'var(--color-primary)' : '#FFFFFF', 
-                      fontWeight: 600, 
-                      cursor: 'pointer', 
-                      fontFamily: 'var(--font-family-sans)', 
-                      transition: 'all 0.2s' 
-                    }}
-                  >
-                    {isFollowingUser ? (
-                      <>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                        Following
-                      </>
-                    ) : (
-                      <>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                        Follow
-                      </>
-                    )}
-                  </button>
+                <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+                  <FollowButton targetUsername={author.username} initialFollowing={isFollowingUser} style={{ flex: 1 }} />
                 </div>
               )}
 
               {/* Stats */}
               <div style={{ display: 'flex', gap: '2.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid var(--color-border-light)' }}>
                 <div>
-                  <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '1.15rem' }}>{author.followers?.toLocaleString?.() ?? 0}</div>
+                  <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '1.15rem' }}>{displayFollowers.toLocaleString()}</div>
                   <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', fontWeight: 500 }}>Followers</div>
                 </div>
                 <div>
-                  <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '1.15rem' }}>{author.following?.toLocaleString?.() ?? 0}</div>
+                  <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '1.15rem' }}>{displayFollowing.toLocaleString()}</div>
                   <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', fontWeight: 500 }}>Following</div>
                 </div>
               </div>
@@ -208,38 +289,43 @@ export default function PostDetailRoute() {
               <div>
                 <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>Member of</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {author.communities && author.communities.length > 0 ? author.communities.map((commName, i) => {
-                    const commEntry = Object.entries(communities).find(([_, c]) => c.name === commName);
-                    const commId = commEntry ? commEntry[0] : null;
-                    return (
-                    <div 
-                      key={i} 
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: commId ? 'pointer' : 'default' }}
-                      onClick={() => commId && navigate(`/communities/${commId}`)}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                        {commEntry?.[1]?.avatar ? (
-                          <img 
-                            src={commEntry[1].avatar} 
-                            alt={commName} 
-                            style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} 
-                           onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-                        ) : (
-                          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'linear-gradient(135deg, #22C55E, #10B981)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#FFFFFF', fontSize: '0.8rem', fontWeight: 700 }}>
-                            {commName.charAt(0)}
+                  {(() => {
+                    const displayedCommunities = isSelf
+                      ? communities.filter(c => c.isMember).map(c => c.name)
+                      : (author.communities || []);
+                    return displayedCommunities && displayedCommunities.length > 0 ? displayedCommunities.map((commName, i) => {
+                      const commEntry = Object.entries(communities).find(([_, c]) => c.name === commName);
+                      const commId = commEntry ? commEntry[0] : null;
+                      return (
+                      <div 
+                        key={i} 
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: commId ? 'pointer' : 'default' }}
+                        onClick={() => commId && navigate(`/communities/${commId}`)}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                          {commEntry?.[1]?.avatar ? (
+                            <img 
+                              src={commEntry[1].avatar} 
+                              alt={commName} 
+                              style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} 
+                             onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                          ) : (
+                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'linear-gradient(135deg, #22C55E, #10B981)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#FFFFFF', fontSize: '0.8rem', fontWeight: 700 }}>
+                              {commName.charAt(0)}
+                            </div>
+                          )}
+                          <div>
+                            <div style={{ fontWeight: 700, color: 'var(--color-text-main)', fontSize: '0.85rem' }}>{commName}</div>
+                            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Member</div>
                           </div>
-                        )}
-                        <div>
-                          <div style={{ fontWeight: 700, color: 'var(--color-text-main)', fontSize: '0.85rem' }}>{commName}</div>
-                          <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Member</div>
                         </div>
+                        <button style={{ background: 'var(--color-border-light)', color: 'var(--color-text-muted)', border: 'none', borderRadius: 'var(--radius-full)', padding: '0.25rem 0.6rem', fontSize: '0.75rem', fontWeight: 600, cursor: 'default' }}>Joined</button>
                       </div>
-                      <button style={{ background: 'var(--color-border-light)', color: 'var(--color-text-muted)', border: 'none', borderRadius: 'var(--radius-full)', padding: '0.25rem 0.6rem', fontSize: '0.75rem', fontWeight: 600, cursor: 'default' }}>Joined</button>
-                    </div>
+                      );
+                    }) : (
+                      <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>No communities yet.</div>
                     );
-                  }) : (
-                    <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>No communities yet.</div>
-                  )}
+                  })()}
                 </div>
               </div>
             </div>

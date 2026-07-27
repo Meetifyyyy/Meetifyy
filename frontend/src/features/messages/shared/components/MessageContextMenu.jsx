@@ -86,9 +86,12 @@ export default function MessageContextMenu({
 
   const visibleActions = actions.filter(a => a.visible(msg));
 
-  // Compute position coordinates staying inside viewport bounds
-  const x = Math.min(Math.max(12, position.x), window.innerWidth - 180);
-  const y = Math.min(Math.max(12, position.y), window.innerHeight - 240);
+  // Smooth clamping: add offset, but don't let it go offscreen.
+  const menuWidth = 180;
+  const menuHeight = 260;
+  
+  const x = Math.min(Math.max(12, position.x + 12), window.innerWidth - menuWidth - 12);
+  const y = Math.min(Math.max(12, position.y + 12), window.innerHeight - menuHeight - 12);
 
   return (
     <div 

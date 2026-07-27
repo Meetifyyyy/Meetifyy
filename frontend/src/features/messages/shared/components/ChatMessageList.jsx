@@ -83,7 +83,9 @@ export default function ChatMessageList({
   isLoadingMore,
   onLoadMore,
   onContextMenu,
-  onOpenContextMenu
+  onOpenContextMenu,
+  typingUsers,
+  onMarkSeen
 }) {
   const bodyRef = useRef(null);
   const virtualInnerRef = useRef(null);
@@ -91,6 +93,14 @@ export default function ChatMessageList({
   const prevConvIdRef = useRef(conversation?.id);
   const prevMessagesCountRef = useRef(messages?.length || 0);
   const prevFirstMsgIdRef = useRef(messages?.[0]?.id);
+
+  // Post-render evaluation: mark seen only after message elements have rendered in DOM
+  useEffect(() => {
+    if (!isLoading && !error && messages && messages.length > 0 && onMarkSeen) {
+      const isNearBottom = bodyRef.current ? bodyRef.current.scrollTop < 150 : true;
+      onMarkSeen(isNearBottom);
+    }
+  }, [messages, isLoading, error, onMarkSeen]);
 
   const itemsToRender = useMemo(() => {
     const items = [];
@@ -148,6 +158,17 @@ export default function ChatMessageList({
       });
     });
 
+    if (typingUsers && typingUsers.size > 0) {
+      Array.from(typingUsers.entries()).forEach(([userId, userName]) => {
+        items.push({
+          type: 'typing_indicator',
+          id: `typing_${userId}`,
+          userId,
+          userName
+        });
+      });
+    }
+
     // REVERSE the array for Inverted Architecture
     return items.reverse();
   }, [messages, conversation?.groupUpdatesActive, conversation?.isInstantMatch, hasMore]);
@@ -161,6 +182,7 @@ export default function ChatMessageList({
       if (item?.type === 'load_more') return 52;
       if (item?.type === 'instant_match_banner') return 44;
       if (item?.type === 'date_separator') return 36;
+      if (item?.type === 'typing_indicator') return 54;
       if (item?.msg?.mediaUrl) return 240;
       if (item?.msg?.type === 'system' || item?.msg?.type === 'SYSTEM') return 40;
       return 68;
@@ -227,6 +249,12 @@ export default function ChatMessageList({
 
   const handleScroll = () => {
     if (!bodyRef.current) return;
+
+    const isNearBottom = bodyRef.current.scrollTop < 150;
+    if (onMarkSeen) {
+      onMarkSeen(isNearBottom);
+    }
+    
     if (!hasMore || isLoadingMore || isLoading) return;
     
     // In inverted layout, scrolling "up" towards older messages means scrollTop approaches max scroll
@@ -250,17 +278,6 @@ export default function ChatMessageList({
   return (
     <div className={styles.msgChatBody} ref={bodyRef} onScroll={handleScroll}>
       {/* VISUALLY BOTTOM */}
-      {isTyping && !isLoading && (
-        <div className={`${styles.msgBubbleContainer} ${styles.msgBubbleContainerThem} ${styles.msgInvertedItem}`}>
-          <div className={styles.msgBubbleWrapper}>
-            <div className={`${styles.msgBubble} ${styles.msgBubbleThem}`}>
-              <div className={styles.typingIndicator}>
-                <span></span><span></span><span></span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {!isLoading && !error && itemsToRender.length > 0 && (
         <div
@@ -322,6 +339,26 @@ export default function ChatMessageList({
                     <span className={styles.msgDateSeparatorLine}></span>
                     <span className={styles.msgDateSeparatorText}>{item.dateGroup}</span>
                     <span className={styles.msgDateSeparatorLine}></span>
+                  </div>
+                )}
+
+                {item.type === 'typing_indicator' && (
+                  <div className={`${styles.msgBubbleContainer} ${styles.msgBubbleContainerThem}`}>
+                    <div className={styles.msgBubbleWrapper}>
+                      <div className={styles.msgAvatar}>
+                        <Avatar src={users?.[item.userId]?.avatar} name={item.userName} size="28px" />
+                      </div>
+                      <div className={styles.msgBubbleContent}>
+                        <span className={styles.msgSenderName}>{item.userName}</span>
+                        <div className={`${styles.msgBubble} ${styles.msgBubbleThem}`} style={{ padding: '10px 14px', width: 'fit-content' }}>
+                          <div className={styles.typingIndicatorDots}>
+                            <span className={styles.typingIndicatorDot}></span>
+                            <span className={styles.typingIndicatorDot}></span>
+                            <span className={styles.typingIndicatorDot}></span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 

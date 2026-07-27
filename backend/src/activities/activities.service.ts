@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { DomainEventService } from '../events/domain-event.service';
 
 @Injectable()
 export class ActivitiesService implements OnModuleInit {
@@ -14,8 +14,7 @@ export class ActivitiesService implements OnModuleInit {
     private readonly notificationsService: NotificationsService,
     private readonly notificationFactory: NotificationFactory,
     private readonly blocksService: BlocksService,
-    @Inject(forwardRef(() => RealtimeGateway))
-    private readonly realtimeGateway: RealtimeGateway
+    private readonly domainEventService: DomainEventService
   ) {}
 
   onModuleInit() {
@@ -45,7 +44,7 @@ export class ActivitiesService implements OnModuleInit {
         });
 
         for (const actId of expiredIds) {
-          this.realtimeGateway.server?.emit('activity:updated', { id: actId, status: 'ENDED' });
+          this.domainEventService.emit('activity.updated', { id: actId, status: 'ENDED' });
         }
       }
     } catch (err) {
@@ -54,7 +53,7 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   async getAllActivities(userId?: string) {
-    await this.autoExpireActivities();
+
     const excludedUserIds = userId ? await this.blocksService.getExcludedUserIds(userId) : [];
     const activities = await this.prisma.crewActivity.findMany({
       where: {
@@ -364,19 +363,17 @@ export class ActivitiesService implements OnModuleInit {
           ...participantsList.map(p => p.userId)
         ].filter(Boolean)));
 
-        for (const targetUserId of recipientUserIds) {
-          this.realtimeGateway.server?.to(targetUserId)?.emit('message:new', formattedMsg);
-          this.realtimeGateway.server?.to(targetUserId)?.emit('conversation:updated', {
-            conversationId: convId,
-            publicId: convId,
-            internalId: convId,
-            lastMessage: {
-              text: `${userHandle} joined the activity`,
-              createdAt: sysMsg.createdAt,
-              senderId: userId
-            }
-          });
-        }
+        this.domainEventService.emit('message:new', formattedMsg, recipientUserIds);
+        this.domainEventService.emit('conversation:updated', {
+          conversationId: convId,
+          publicId: convId,
+          internalId: convId,
+          lastMessage: {
+            text: `${userHandle} joined the activity`,
+            createdAt: sysMsg.createdAt,
+            senderId: userId
+          }
+        }, recipientUserIds);
       }
     } catch (err) {
       this.logger.warn('Failed group chat update during joinActivity', err);
@@ -460,23 +457,19 @@ export class ActivitiesService implements OnModuleInit {
             activity?.creatorId,
             ...membersList.map(m => m.userId),
             ...participantsList.map(p => p.userId)
-          ].filter(Boolean)));
+          ].filter(Boolean))) as string[];
 
-          for (const targetUserId of recipientUserIds) {
-            if (targetUserId) {
-              this.realtimeGateway.server?.to(targetUserId)?.emit('message:new', formattedMsg);
-              this.realtimeGateway.server?.to(targetUserId)?.emit('conversation:updated', {
-                conversationId: convId,
-                publicId: convId,
-                internalId: convId,
-                lastMessage: {
-                  text: `${userHandle} left the activity`,
-                  createdAt: sysMsg.createdAt,
-                  senderId: userId
-                }
-              });
+          this.domainEventService.emit('message:new', formattedMsg, recipientUserIds);
+          this.domainEventService.emit('conversation:updated', {
+            conversationId: convId,
+            publicId: convId,
+            internalId: convId,
+            lastMessage: {
+              text: `${userHandle} left the activity`,
+              createdAt: sysMsg.createdAt,
+              senderId: userId
             }
-          }
+          }, recipientUserIds);
         }
       } catch (err) {
         this.logger.warn('Failed group chat update during leaveActivity', err);

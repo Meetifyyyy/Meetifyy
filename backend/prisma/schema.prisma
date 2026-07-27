@@ -138,6 +138,7 @@ model User {
   deletedAt                DateTime?
   emailVerified            Boolean                   @default(false)
   graduationYear           Int?
+  birthday                 String?
   interests                String[]
   lastSeenAt               DateTime?
   phoneVerified            Boolean                   @default(false)
@@ -164,7 +165,6 @@ model User {
   mentions                 Mention[]                 @relation("MentionedUser")
   sentMessages             Message[]
   messageReactions         MessageReaction[]
-  messageReadReceipts      MessageReadReceipt[]
   mutesMade                Mute[]                    @relation("Muter")
   actorNotifications       Notification[]            @relation("NotificationActor")
   notifications            Notification[]            @relation("NotificationRecipient")
@@ -218,7 +218,8 @@ model Post {
   @@index([createdAt])
   @@index([deletedAt, createdAt])
   @@index([authorId, deletedAt, createdAt(sort: Desc)])
-  @@index([communityId])
+  @@index([deletedAt, createdAt(sort: Desc), authorId])
+  @@index([communityId, deletedAt, createdAt(sort: Desc)])
 }
 
 model PostLike {
@@ -234,22 +235,27 @@ model PostLike {
 }
 
 model Comment {
-  id        String        @id @default(uuid())
-  postId    String
-  authorId  String
-  text      String        @db.VarChar(500)
-  parentId  String?
-  likeCount Int           @default(0)
-  createdAt DateTime      @default(now())
-  deletedAt DateTime?
-  author    User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  parent    Comment?      @relation("replies", fields: [parentId], references: [id])
-  replies   Comment[]     @relation("replies")
-  post      Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
-  likes     CommentLike[]
+  id                String        @id @default(uuid())
+  postId            String
+  authorId          String
+  text              String        @db.VarChar(500)
+  parentId          String?
+  likeCount         Int           @default(0)
+  createdAt         DateTime      @default(now())
+  deletedAt         DateTime?
+  isDeleted         Boolean       @default(false)
+  deletedByUser     Boolean       @default(false)
+  removalReason     String?       @db.VarChar(200)
+  removedByOwner    Boolean       @default(false)
+  author            User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent            Comment?      @relation("replies", fields: [parentId], references: [id])
+  replies           Comment[]     @relation("replies")
+  post              Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  likes             CommentLike[]
 
   @@index([postId])
   @@index([authorId])
+  @@index([isDeleted, postId])
   @@index([deletedAt, createdAt])
 }
 
@@ -401,7 +407,6 @@ model Message {
   replies           Message[]                @relation("MessageReplies")
   sender            User                     @relation(fields: [senderId], references: [id], onDelete: Cascade)
   reactions         MessageReaction[]
-  readReceipts      MessageReadReceipt[]
   deletedByUsers    DeletedMessage[]
 
   attachmentMedia Media? @relation("MessageAttachment", fields: [attachmentMediaId], references: [id])
@@ -627,16 +632,7 @@ model MessageReaction {
   @@index([userId])
 }
 
-model MessageReadReceipt {
-  messageId String
-  userId    String
-  readAt    DateTime @default(now())
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@id([messageId, userId])
-  @@index([messageId])
-}
 
 model PollOption {
   id        String     @id @default(uuid())

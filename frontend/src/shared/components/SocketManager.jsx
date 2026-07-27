@@ -7,12 +7,15 @@ import { useNavigate } from 'react-router-dom';
 import Avatar from './avatar/Avatar';
 import { parseConversationRoute } from '../utils/conversationUrl';
 import { messagesApi } from '../api/apiClient';
+import { useGlobalSocketSync } from '../hooks/useGlobalSocketSync';
 
 export default function SocketManager() {
   const { session, isLoggedIn } = useAuth();
   const { connect, disconnect, socket } = useGlobalSocketStore();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+
+  useGlobalSocketSync();
 
   useEffect(() => {
     if (isLoggedIn && session?.access_token) {
@@ -76,7 +79,11 @@ export default function SocketManager() {
       if (isViewingEntity) {
         const convIdToRead = pubId || currentEntityId;
         if (convIdToRead) {
-          messagesApi.markAsRead(convIdToRead).catch(() => {});
+          if (socket?.connected) {
+            socket.emit('conversation:mark_seen', { conversationId: convIdToRead });
+          } else {
+            messagesApi.markAsRead(convIdToRead).catch(() => {});
+          }
         }
       } else if (!isMuted) {
         toast.custom((t) => {
@@ -326,11 +333,111 @@ export default function SocketManager() {
       });
     };
 
+    const handleGlobalConversationSeen = (payload) => {
+      if (!payload) return;
+      const convId = payload.conversationId || payload.realConvId;
+      if (!convId || !payload.lastReadAt) return;
+
+      const currentUserId = session?.user?.id;
+      const isRecipientReader = !payload.readerId || String(payload.readerId) !== String(currentUserId);
+      if (!isRecipientReader) return;
+
+      const lastReadTime = new Date(payload.lastReadAt).getTime();
+      const keys = [payload.conversationId, payload.realConvId, payload.publicId].filter(Boolean);
+      const uniqueKeys = [...new Set(keys)];
+
+      uniqueKeys.forEach((convKey) => {
+        queryClient.setQueryData(['messages', convKey], (oldData) => {
+          if (!oldData) return oldData;
+
+          const updateMessageList = (messages) => {
+            if (!Array.isArray(messages)) return messages;
+            return messages.map((msg) => {
+              const isMyMsg = msg.from === 'me' || (currentUserId && String(msg.senderId) === String(currentUserId)) || msg.senderId === 'me';
+              if (isMyMsg && msg.status !== 'read') {
+                const msgTime = new Date(msg.createdAt).getTime();
+                if (isNaN(msgTime) || msgTime <= lastReadTime + 2000) {
+                  return { ...msg, status: 'read' };
+                }
+              }
+              return msg;
+            });
+          };
+
+          if (oldData.pages) {
+            return {
+              ...oldData,
+              pages: oldData.pages.map((page) => ({
+                ...page,
+                messages: updateMessageList(page.messages),
+              })),
+            };
+          }
+
+          if (oldData.messages) {
+            return {
+              ...oldData,
+              messages: updateMessageList(oldData.messages),
+            };
+          }
+
+          return oldData;
+        });
+      });
+    };
+
+    const handleGlobalMessageDelivered = (payload) => {
+      if (!payload) return;
+      const convId = payload.conversationId || payload.realConvId;
+      if (!convId || !payload.messageId) return;
+
+      const keys = [payload.conversationId, payload.realConvId, payload.publicId].filter(Boolean);
+      const uniqueKeys = [...new Set(keys)];
+
+      uniqueKeys.forEach((convKey) => {
+        queryClient.setQueryData(['messages', convKey], (oldData) => {
+          if (!oldData) return oldData;
+
+          const updateMessageList = (messages) => {
+            if (!Array.isArray(messages)) return messages;
+            return messages.map((msg) => {
+              if (msg.id === payload.messageId && msg.status !== 'read' && msg.status !== 'seen') {
+                return { ...msg, status: 'delivered' };
+              }
+              return msg;
+            });
+          };
+
+          if (oldData.pages) {
+            return {
+              ...oldData,
+              pages: oldData.pages.map((page) => ({
+                ...page,
+                messages: updateMessageList(page.messages),
+              })),
+            };
+          }
+
+          if (oldData.messages) {
+            return {
+              ...oldData,
+              messages: updateMessageList(oldData.messages),
+            };
+          }
+
+          return oldData;
+        });
+      });
+    };
+
     socket.on('notification:new', handleNewNotification);
     socket.on('notification:count', handleNotificationCount);
     socket.on('presence:update', handlePresenceUpdate);
     socket.on('conversation:updated', handleConversationUpdated);
     socket.on('message:updated', handleMessageUpdated);
+    socket.on('message:delivered', handleGlobalMessageDelivered);
+    socket.on('messages:seen', handleGlobalConversationSeen);
+    socket.on('conversation:seen', handleGlobalConversationSeen);
     socket.on('group:member_added', handleGroupMemberChange);
     socket.on('group:member_removed', handleGroupMemberChange);
 
@@ -340,10 +447,13 @@ export default function SocketManager() {
       socket.off('presence:update', handlePresenceUpdate);
       socket.off('conversation:updated', handleConversationUpdated);
       socket.off('message:updated', handleMessageUpdated);
+      socket.off('message:delivered', handleGlobalMessageDelivered);
+      socket.off('messages:seen', handleGlobalConversationSeen);
+      socket.off('conversation:seen', handleGlobalConversationSeen);
       socket.off('group:member_added', handleGroupMemberChange);
       socket.off('group:member_removed', handleGroupMemberChange);
     };
-  }, [socket, queryClient, navigate]);
+  }, [socket, queryClient, navigate, session?.user?.id]);
 
   return null;
 }

@@ -157,6 +157,14 @@ export class PostsController {
     return this.postsService.unlikeComment(commentId, user.id);
   }
 
+  @Delete('comments/:commentId')
+  async deleteComment(
+    @CurrentUser() user: { id: string },
+    @Param('commentId') commentId: string,
+  ) {
+    return this.postsService.deleteComment(commentId, user.id);
+  }
+
   @Post(':id/bookmark')
   async bookmark(
     @CurrentUser() user: { id: string },
