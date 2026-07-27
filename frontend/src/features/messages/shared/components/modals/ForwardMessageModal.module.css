@@ -30,6 +30,13 @@
   padding-bottom: env(safe-area-inset-bottom, 12px);
 }
 
+@media (max-width: 768px) {
+  .modalContent {
+    height: 65vh;
+    max-height: 65vh;
+  }
+}
+
 .dragHandleBar {
   width: 36px;
   height: 4px;

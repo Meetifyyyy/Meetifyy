@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/hooks/useData';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
+import { useChatManager } from '../../shared/hooks/useChatManager';
 import { generateConversationUrl, correctConversationUrl } from '@shared/utils/conversationUrl';
 import { MessageSquarePlus, Search } from 'lucide-react';
 import { messagesApi } from '@shared/api/apiClient';
+import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
 
 import DMItem from '../../direct-messages/components/sidebar/DMItem';
 import GroupItem from '../../group-chats/components/sidebar/GroupItem';
@@ -71,91 +73,16 @@ export default function MessagesLayout() {
     }
   }, [routeChatId]);
 
-  // Realtime socket listeners
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleNewMessage = (payload) => {
-      const message = payload?.message || payload;
-      const conversationId = payload?.conversationId || message?.conversationId;
-      if (!message || !conversationId) return;
-
-      queryClient.setQueryData(['messages', conversationId], (old) => {
-        if (!old || !old.pages || old.pages.length === 0) return old;
-        const newPages = [...old.pages];
-        const firstPage = newPages[0] || { messages: [] };
-        const existingMsgs = firstPage.messages || [];
-
-        const exists = existingMsgs.some(m => m.id === message.id || (m.tempId && m.tempId === message.tempId));
-        if (exists) {
-          const updatedMsgs = existingMsgs.map(m => (m.id === message.id || (m.tempId && m.tempId === message.tempId)) ? message : m);
-          newPages[0] = { ...firstPage, messages: updatedMsgs };
-        } else {
-          newPages[0] = { ...firstPage, messages: [...existingMsgs, message] };
-        }
-        return { ...old, pages: newPages };
-      });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    };
-
-    const handleUpdateMessage = (updatedMsg) => {
-      if (!updatedMsg || !updatedMsg.id) return;
-      
-      const convId = updatedMsg.publicId || updatedMsg.conversationId || updatedMsg.internalId;
-      if (!convId) return;
-
-      queryClient.setQueryData(['messages', convId], (old) => {
-        if (!old || !old.pages) return old;
-        const newPages = old.pages.map(page => ({
-          ...page,
-          messages: (page.messages || []).map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m)
-        }));
-        return { ...old, pages: newPages };
-      });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    };
-
-    socket.on('message:new', handleNewMessage);
-    socket.on('message:updated', handleUpdateMessage);
-    
-    return () => {
-      socket.off('message:new', handleNewMessage);
-      socket.off('message:updated', handleUpdateMessage);
-    };
-  }, [socket, queryClient]);
-
-  // Fetch messages history whenever activeChatId changes using infinite query
-  const {
-    data: historyPages,
-    isLoading: isMessagesLoading,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage
-  } = useInfiniteQuery({
-    queryKey: ['messages', activeChatId],
-    queryFn: ({ pageParam }) => activeChatId ? messagesApi.getHistory(activeChatId, undefined, pageParam) : null,
-    initialPageParam: undefined,
-    getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
-    enabled: !!activeChatId,
-    staleTime: 1000 * 30,
-  });
-
-  // Flatten and deduplicate all loaded pages of messages (oldest to newest)
-  const allMessages = useMemo(() => {
-    if (!historyPages?.pages) return [];
-    // Reverse pages array so older pages come first, then flatMap messages
-    const reversedPages = [...historyPages.pages].reverse();
-    const flat = reversedPages.flatMap(page => page?.messages || []);
-    
-    const seen = new Set();
-    return flat.filter(m => {
-      if (!m) return false;
-      const key = m.id || m.tempId;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [historyPages?.pages]);
+  const { 
+    messages: allMessages,
+    rawPages,
+    isLoading: isMessagesLoading, 
+    hasMore: hasNextPage, 
+    isLoadingMore: isFetchingNextPage, 
+    onLoadMore: fetchNextPage,
+    sendMessageOptimistically,
+    markSeenIfEligible
+  } = useChatManager(activeChatId, 'messages', currentUser);
 
   // Find active conversation and merge history messages
   const baseConv = useMemo(() => {
@@ -170,14 +97,14 @@ export default function MessagesLayout() {
 
   const activeConv = useMemo(() => {
     if (!baseConv) return null;
-    const latestPage = historyPages?.pages?.[0];
+    const latestPage = rawPages?.[0];
     return {
       ...baseConv,
       messages: allMessages.length > 0 ? allMessages : (baseConv.messages || []),
       participants: latestPage?.participants || baseConv.participants || baseConv.members || [],
       nextCursor: latestPage?.nextCursor || null,
     };
-  }, [baseConv, allMessages, historyPages?.pages]);
+  }, [baseConv, allMessages, rawPages]);
 
   // URL sync
   useEffect(() => {
@@ -191,11 +118,19 @@ export default function MessagesLayout() {
   // Mark as read when opening a conversation
   useEffect(() => {
     if (activeConv && activeConv.unread > 0 && document.visibilityState === 'visible') {
-      messagesApi.markAsRead(activeConv.id).then(() => {
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      }).catch(() => {});
+      if (socket && socket.connected) {
+        socket.emit('conversation:mark_seen', { conversationId: activeConv.id });
+      } else {
+        messagesApi.markAsRead(activeConv.id).catch(() => {});
+      }
+      
+      // Optimistically clear unread badge in cache
+      queryClient.setQueryData(['conversations'], (old) => {
+        if (!old) return old;
+        return old.map(c => c.id === activeConv.id ? { ...c, unread: 0 } : c);
+      });
     }
-  }, [activeConv?.id, activeConv?.unread, queryClient]);
+  }, [activeConv?.id, activeConv?.unread, queryClient, socket]);
 
   const totalUnread = useMemo(() => {
     return (conversations || []).reduce((sum, c) => sum + (c.unread || 0), 0);
@@ -246,14 +181,22 @@ export default function MessagesLayout() {
     setContextMenu({ conv, x: e.clientX, y: e.clientY });
   };
 
-  const handleStartChat = async (targetUser) => {
-    const newConvId = await startConversation(targetUser);
+  const handlePrefetchContacts = () => {
+    queryClient.prefetchQuery({
+      queryKey: ['users'],
+      queryFn: () => usersApi.getUsers(),
+      staleTime: 1000 * 60 * 5,
+    });
+  };
+
+  const handleStartChat = (targetUser) => {
+    const newConvId = startConversation(targetUser);
     setIsModalOpen(false);
     if (newConvId) handleSelectChat(newConvId);
   };
 
-  const handleCreateGroup = async (groupName, userIds) => {
-    const newConvId = await createGroupConversation(groupName, userIds);
+  const handleCreateGroup = (groupName, userIds) => {
+    const newConvId = createGroupConversation(groupName, userIds);
     setIsModalOpen(false);
     if (newConvId) handleSelectChat(newConvId);
   };
@@ -293,6 +236,8 @@ export default function MessagesLayout() {
                 className={sidebarStyles.msgNewBtn} 
                 title="New Message" 
                 onClick={() => setIsModalOpen(true)}
+                onMouseEnter={handlePrefetchContacts}
+                onFocus={handlePrefetchContacts}
                 aria-label="New Message"
               >
                 <MessageSquarePlus size={20} />
@@ -375,14 +320,15 @@ export default function MessagesLayout() {
               if (hasNextPage && !isFetchingNextPage) {
                 fetchNextPage();
               }
-            }
+            },
+            onMarkSeen: markSeenIfEligible,
           };
 
           if (type === 'activity') {
             return (
               <ActivityChatArea
                 conversation={activeConv}
-                onSendMessage={sendDirectMessage}
+                onSendMessage={sendMessageOptimistically}
                 onReactMessage={reactToMessage}
                 onEndActivity={endCrewActivity}
                 onBack={handleBack}
@@ -396,7 +342,7 @@ export default function MessagesLayout() {
             return (
               <GroupChatArea
                 conversation={activeConv}
-                onSendMessage={sendDirectMessage}
+                onSendMessage={sendMessageOptimistically}
                 onReactMessage={reactToMessage}
                 onLeaveGroup={leaveGroup}
                 onBack={handleBack}
@@ -409,7 +355,7 @@ export default function MessagesLayout() {
           return (
             <DMChatArea
               conversation={activeConv}
-              onSendMessage={sendDirectMessage}
+              onSendMessage={sendMessageOptimistically}
               onReactMessage={reactToMessage}
               onClearChat={clearChat}
               onBlockUser={toggleBlockUser}
@@ -432,7 +378,10 @@ export default function MessagesLayout() {
               conv={contextMenu.conv}
               position={{ x: contextMenu.x, y: contextMenu.y }}
               onClose={() => setContextMenu(null)}
-              onMarkRead={() => messagesApi.markAsRead(contextMenu.conv.id)}
+              onMarkRead={() => {
+                if (socket?.connected) socket.emit('conversation:mark_seen', { conversationId: contextMenu.conv.id });
+                else messagesApi.markAsRead(contextMenu.conv.id);
+              }}
               onMute={() => toggleMuteConversation(contextMenu.conv.id)}
               onPin={() => togglePinConversation(contextMenu.conv.id)}
             />
@@ -444,7 +393,10 @@ export default function MessagesLayout() {
               conv={contextMenu.conv}
               position={{ x: contextMenu.x, y: contextMenu.y }}
               onClose={() => setContextMenu(null)}
-              onMarkRead={() => messagesApi.markAsRead(contextMenu.conv.id)}
+              onMarkRead={() => {
+                if (socket?.connected) socket.emit('conversation:mark_seen', { conversationId: contextMenu.conv.id });
+                else messagesApi.markAsRead(contextMenu.conv.id);
+              }}
               onMute={() => toggleMuteConversation(contextMenu.conv.id)}
               onPin={() => togglePinConversation(contextMenu.conv.id)}
               onLeave={() => leaveGroup(contextMenu.conv.id)}
@@ -456,7 +408,10 @@ export default function MessagesLayout() {
             conv={contextMenu.conv}
             position={{ x: contextMenu.x, y: contextMenu.y }}
             onClose={() => setContextMenu(null)}
-            onMarkRead={() => messagesApi.markAsRead(contextMenu.conv.id)}
+            onMarkRead={() => {
+              if (socket?.connected) socket.emit('conversation:mark_seen', { conversationId: contextMenu.conv.id });
+              else messagesApi.markAsRead(contextMenu.conv.id);
+            }}
             onMute={() => toggleMuteConversation(contextMenu.conv.id)}
             onPin={() => togglePinConversation(contextMenu.conv.id)}
             onDelete={() => deleteConversation(contextMenu.conv.id)}

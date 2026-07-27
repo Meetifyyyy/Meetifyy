@@ -1,26 +1,23 @@
 import { useState, useEffect, memo } from 'react';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { communitiesApi } from '@shared/api/apiClient';
+import { useQueryClient } from '@tanstack/react-query';
 import { isImageUrl } from '@shared/utils/avatar';
-import styles from './CommunityCard.module.css';
 import { useData } from '@shared/hooks/useData';
+import { useJoinCommunity } from '../../hooks/useJoinCommunity';
+import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 
 function CommunityCard({ comm, onClick }) {
-  const { currentUser } = useData(); // we'll keep currentUser until Phase 1
+  const { currentUser } = useData(); 
   const queryClient = useQueryClient();
   const [imgError, setImgError] = useState(false);
   
   // Real check: is currentUser in comm.members?
-  const isJoined = comm.members?.some(m => m.userId === currentUser?.id) || currentUser?.communities?.includes(comm.name);
+  const isJoined = comm.isMember !== undefined ? comm.isMember : (comm.members?.some(m => m.userId === currentUser?.id) || currentUser?.communities?.includes(comm.name));
+  const entityKey = `joinCommunity:${comm.id}`;
+  const displayJoined = toggleRegistry.getLatestIntent(entityKey, isJoined);
 
-  const joinMutation = useMutation({
-    mutationFn: (id) => isJoined ? communitiesApi.leave(id) : communitiesApi.join(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['communities'] });
-    },
-  });
+  const { mutate: toggleJoin } = useJoinCommunity();
 
   useEffect(() => {
     setImgError(false);
@@ -41,14 +38,15 @@ function CommunityCard({ comm, onClick }) {
           )}
         </div>
         <button
-          className={`${styles.joinBtn} ${isJoined ? styles.joined : ''}`}
+          className={`${styles.joinBtn} ${displayJoined ? styles.joined : ''}`}
           onClick={(e) => {
             e.stopPropagation();
-            joinMutation.mutate(comm.id);
+            const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, isJoined);
+            toggleJoin({ communityId: comm.id, isJoined: nextJoined, currentUser });
           }}
-          disabled={joinMutation.isPending}
+          disabled={false} // allowed for rapid toggle
         >
-          {isJoined ? 'Joined' : 'Join'}
+          {displayJoined ? 'Joined' : 'Join'}
         </button>
       </div>
       <h3 className={styles.cardTitle}>{comm.name}</h3>

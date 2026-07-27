@@ -1,6 +1,7 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { DomainEventService, DomainEventPayload } from '../events/domain-event.service';
 import { CreateNotificationDto } from './notification.factory';
 import { NotificationType, Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
@@ -8,20 +9,90 @@ import { RedisService } from '../redis/redis.service';
 import Redis from 'ioredis';
 
 @Injectable()
-export class NotificationsService {
+export class NotificationsService implements OnModuleInit {
   private readonly logger = new Logger('NOTIF');
   private redis: Redis | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly realtimeGateway: RealtimeGateway,
+    private readonly domainEventService: DomainEventService,
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
+    private readonly eventEmitter: EventEmitter2,
   ) {
     this.redis = this.redisService.getClient();
     if (this.redis) {
       this.logger.log('Redis connected for Notifications Service');
     }
+  }
+
+  onModuleInit() {
+    // 1. Follow / Unfollow Reconciliation
+    this.eventEmitter.on('follow.created', async (payload: DomainEventPayload) => {
+      const { followerId, followingId } = payload.data || {};
+      if (!followerId || !followingId) return;
+      const actor = await this.prisma.user.findUnique({
+        where: { id: followerId },
+        select: { username: true, displayName: true, avatar: true }
+      });
+      await this.createNotification({
+        recipientId: followingId,
+        actorId: followerId,
+        type: 'FOLLOW' as any,
+        entityType: undefined,
+        entityId: followerId,
+        title: 'New Follower',
+        body: `${actor?.displayName || actor?.username || 'Someone'} started following you.`,
+        metadata: {
+          version: 1,
+          actorId: followerId,
+          username: actor?.username,
+          actorDisplayName: actor?.displayName,
+          actorAvatar: actor?.avatar,
+        },
+      }).catch(err => this.logger.warn('Failed to reconcile follow.created event', err));
+    });
+
+    this.eventEmitter.on('follow.deleted', async (payload: DomainEventPayload) => {
+      const { followerId, followingId } = payload.data || {};
+      if (!followerId || !followingId) return;
+      await this.cancelNotificationByCriteria({
+        recipientId: followingId,
+        actorId: followerId,
+        entityId: followerId,
+        type: 'FOLLOW' as any,
+      }).catch(err => this.logger.warn('Failed to reconcile follow.deleted event', err));
+    });
+
+    // 2. Post Like / Unlike Reconciliation
+    this.eventEmitter.on('post.unliked', async (payload: DomainEventPayload) => {
+      const { postId, userId } = payload.data || {};
+      if (!postId || !userId) return;
+      const post = await this.prisma.post.findUnique({ where: { id: postId }, select: { authorId: true } });
+      if (post && post.authorId !== userId) {
+        await this.cancelNotificationByCriteria({
+          recipientId: post.authorId,
+          actorId: userId,
+          entityId: postId,
+          type: 'LIKE' as any,
+        }).catch(err => this.logger.warn('Failed to reconcile post.unliked event', err));
+      }
+    });
+
+    // 3. Comment Like / Unlike Reconciliation
+    this.eventEmitter.on('comment.unliked', async (payload: DomainEventPayload) => {
+      const { commentId, userId } = payload.data || {};
+      if (!commentId || !userId) return;
+      const comment = await this.prisma.comment.findUnique({ where: { id: commentId }, select: { authorId: true } });
+      if (comment && comment.authorId !== userId) {
+        await this.cancelNotificationByCriteria({
+          recipientId: comment.authorId,
+          actorId: userId,
+          entityId: commentId,
+          type: 'COMMENT_LIKE' as any,
+        }).catch(err => this.logger.warn('Failed to reconcile comment.unliked event', err));
+      }
+    });
   }
 
   private async incrementUnreadCount(userId: string) {
@@ -145,7 +216,7 @@ export class NotificationsService {
                 updatedAt: new Date(),
               },
             });
-            this.realtimeGateway.emitNotification(dto.recipientId, updated);
+            this.domainEventService.emit('notification:new', updated, [dto.recipientId]);
             await this.incrementUnreadCount(dto.recipientId);
             await this.emitUnreadCount(dto.recipientId);
             return updated;
@@ -241,7 +312,7 @@ export class NotificationsService {
         populatedNotif = { ...notification, actor };
       }
 
-      this.realtimeGateway.emitNotification(dto.recipientId, populatedNotif);
+      this.domainEventService.emit('notification:new', populatedNotif, [dto.recipientId]);
       if (dto.type !== NotificationType.MESSAGE) {
         await this.incrementUnreadCount(dto.recipientId);
         await this.emitUnreadCount(dto.recipientId);
@@ -329,7 +400,7 @@ export class NotificationsService {
 
   async emitUnreadCount(userId: string) {
     const { count } = await this.getUnreadCount(userId);
-    this.realtimeGateway.emitUnreadCount(userId, count);
+    this.domainEventService.emit('notifications:unread_count', { count }, [userId]);
   }
 
   async markAsRead(id: string, userId: string) {
@@ -374,5 +445,44 @@ export class NotificationsService {
     }
     await this.emitUnreadCount(userId);
     return { success: true };
+  }
+
+  async cancelNotificationByCriteria(params: {
+    recipientId: string;
+    actorId?: string;
+    entityId?: string;
+    type: NotificationType;
+  }) {
+    const { recipientId, actorId, entityId, type } = params;
+
+    const existing = await this.prisma.notification.findFirst({
+      where: {
+        recipientId,
+        actorId: actorId ?? null,
+        entityId: entityId ?? null,
+        type,
+        deletedAt: null,
+      },
+    });
+
+    if (!existing) return null;
+
+    const updated = await this.prisma.notification.update({
+      where: { id: existing.id },
+      data: { deletedAt: new Date() },
+    });
+
+    if (!existing.readAt) {
+      await this.decrementUnreadCount(recipientId);
+      await this.emitUnreadCount(recipientId);
+    }
+
+    this.domainEventService.emit('notification:cancelled', {
+      notificationId: existing.id,
+      recipientId,
+    }, [recipientId]);
+
+    this.logger.log(`Notification cancelled type=${type} recipient=${recipientId}`);
+    return updated;
   }
 }

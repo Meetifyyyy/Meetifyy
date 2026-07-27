@@ -35,6 +35,7 @@ import { UploadsModule } from './uploads/uploads.module';
 import { ModerationModule } from './moderation/moderation.module';
 import { AdminModule } from './admin/admin.module';
 import { RedisModule } from './redis/redis.module';
+import { EventsModule } from './events/events.module';
 
 @Module({
   imports: [
@@ -147,6 +148,7 @@ import { RedisModule } from './redis/redis.module';
     UploadsModule,
     ModerationModule,
     AdminModule,
+    EventsModule,
   ],
   controllers: [AppController],
   providers: [

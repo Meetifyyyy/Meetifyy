@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { E2EEManager } from '@shared/lib/signal/E2EEManager';
 import { usersApi, apiClient, postsApi, getBackendUrl } from '@shared/api/apiClient';
 import { useSavedPostsStore } from '../stores/savedPostsStore';
@@ -8,14 +7,8 @@ import usePostStore from '../stores/postStore';
 import { showToast } from '@shared/utils/toast';
 import { getCollegeName } from '@shared/utils/user';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
-const isSupabaseConfigured = supabaseUrl && !supabaseUrl.includes('placeholder') && supabaseUrl.trim().length > 0;
-
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+import { supabase, isSupabaseConfigured } from '@shared/lib/supabase';
+export { supabase, isSupabaseConfigured };
 
 const AuthContext = createContext(null);
 
@@ -49,6 +42,9 @@ export function AuthProvider({ children }) {
   // within milliseconds of each other on page load. Only allow one sync per 5 seconds.
   const lastSyncAtRef = useRef(0);
   const syncDebounceRef = useRef(null);
+  // Hydration guard: bookmarks should only be fetched on the first sign-in event,
+  // never on TOKEN_REFRESHED (which fires every ~60 min and wastes a network call).
+  const bookmarksHydratedRef = useRef(false);
 
   // Derive isLoggedIn from the session object instead of tracking separately in localStorage
   const isLoggedIn = !!session;
@@ -123,13 +119,17 @@ export function AuthProvider({ children }) {
                       return mergedUser;
                     });
 
-                    // Hydrate saved posts (bookmarks) from backend
-                    try {
-                      const response = await postsApi.getBookmarks(50);
-                      const bookmarkedPostIds = (response?.posts || response?.data || []).map(p => p.id);
-                      useSavedPostsStore.getState().hydrateFromServer(bookmarkedPostIds);
-                    } catch (bookmarkErr) {
-                      console.error('Failed to hydrate bookmarks on auth change', bookmarkErr);
+                    // Hydrate bookmarks only ONCE per session — not on token refresh events.
+                    // TOKEN_REFRESHED fires every ~60 min; we never want a wasteful API call then.
+                    if (!bookmarksHydratedRef.current && event !== 'TOKEN_REFRESHED') {
+                      bookmarksHydratedRef.current = true;
+                      try {
+                        const response = await postsApi.getBookmarks(50);
+                        const bookmarkedPostIds = (response?.posts || response?.data || []).map(p => p.id);
+                        useSavedPostsStore.getState().hydrateFromServer(bookmarkedPostIds);
+                      } catch (bookmarkErr) {
+                        console.error('Failed to hydrate bookmarks on auth change', bookmarkErr);
+                      }
                     }
                   }
                 } catch (err) {
@@ -223,6 +223,7 @@ export function AuthProvider({ children }) {
         data: {
           displayName: userData.firstName ? `${userData.firstName} ${userData.lastName || ''}`.trim() : userData.username,
           username: userData.username,
+          birthday: userData.birthday,
         }
       }
     });

@@ -10,6 +10,7 @@ import Post from './Post';
 import { CommentTreeRoot } from './CommentNode';
 import styles from './PostView.module.css';
 import { useData } from '@shared/hooks/useData';
+import { useAddComment } from '../../hooks/useAddComment';
 
 function buildCommentTree(comments) {
   if (!comments || !Array.isArray(comments)) return [];
@@ -33,7 +34,8 @@ function buildCommentTree(comments) {
 
 export default function PostView({ post, onBack }) {
   const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
-  const { addComment, currentUser } = useData();
+  const { currentUser } = useData();
+  const { mutate: addComment } = useAddComment();
 
   const { data: fetchedPost, isLoading: isFetchingPost } = useQuery({
     queryKey: ['post', post?.id],
@@ -53,13 +55,13 @@ export default function PostView({ post, onBack }) {
   const handleMainReplySubmit = (e) => {
     if (e?.preventDefault) e.preventDefault();
     if (!replyContent.text.trim()) return;
-    addComment(livePost.id, replyContent.text, null, replyContent.mentions);
+    addComment({ postId: livePost.id, text: replyContent.text, parentId: null, mentions: replyContent.mentions, currentUser });
     setReplyContent({ text: '', mentions: [] });
   };
 
   // Handles adding a reply to a specific comment recursively
   const handleCommentReplySubmit = (parentId, text, mentions) => {
-    addComment(livePost.id, text, parentId, mentions);
+    addComment({ postId: livePost.id, text, parentId, mentions, currentUser });
   };
 
   useEffect(() => {

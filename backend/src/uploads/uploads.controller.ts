@@ -1,8 +1,10 @@
-import { Controller, Post, Body, UseGuards, Req, Get, Param, Res, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Put, Body, UseGuards, Req, Get, Param, Query, Res, UseInterceptors, UploadedFile, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { StorageService } from './uploads.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Response } from 'express';
+import type { Response, Request } from 'express';
+import * as path from 'path';
+import * as fs from 'fs';
 
 @Controller('api/media')
 export class UploadsController {
@@ -46,8 +48,40 @@ export class UploadsController {
   }
 
   /**
+   * PUT /api/media/direct-upload
+   * Direct upload endpoint for local development environment fallback.
+   */
+  @Put('direct-upload')
+  async directUpload(
+    @Query('key') key: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    if (!key) throw new BadRequestException('Key parameter is required');
+
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+    const filePath = path.join(uploadsDir, key);
+    const folderPath = path.dirname(filePath);
+
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdirSync(folderPath, { recursive: true });
+    }
+
+    const writeStream = fs.createWriteStream(filePath);
+    req.pipe(writeStream);
+
+    writeStream.on('finish', () => {
+      return res.status(200).json({ status: 'ok', key, publicUrl: `/api/media/${key}` });
+    });
+
+    writeStream.on('error', (err) => {
+      return res.status(500).json({ error: err.message });
+    });
+  }
+
+  /**
    * GET /api/media/:folder/:filename
-   * Redirects to the actual storage provider's public URL
+   * Serves file directly if stored locally, or redirects to cloud storage provider URL
    */
   @Get(':folder/:filename')
   getMedia(
@@ -56,7 +90,21 @@ export class UploadsController {
     @Res() res: Response,
   ) {
     const key = `${folder}/${filename}`;
-    const url = this.storageService.getPublicUrl(key);
-    return res.redirect(url);
+    const localFilePath = path.join(process.cwd(), 'uploads', key);
+
+    if (fs.existsSync(localFilePath)) {
+      return res.sendFile(localFilePath);
+    }
+
+    try {
+      const url = this.storageService.getPublicUrl(key);
+      if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+        return res.redirect(url);
+      }
+    } catch (e) {
+      // Fallback below
+    }
+
+    return res.status(404).json({ error: 'Media file not found' });
   }
 }

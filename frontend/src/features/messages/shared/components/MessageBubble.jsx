@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -13,6 +13,7 @@ import { SharedCommunityPreview } from '../previews/SharedCommunityPreview';
 import { SharedActivityPreview } from '../previews/SharedActivityPreview';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import styles from './ChatMessageList.module.css';
+import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
 
 function MessageHoverActions({ msg, isMe, onReplyTo, onContextMenu }) {
   const handleReply = (e) => {
@@ -55,8 +56,48 @@ function MessageHoverActions({ msg, isMe, onReplyTo, onContextMenu }) {
   );
 }
 
-function GroupInviteCard({ msg, currentUser, conversations, navigate, toggleJoinCampusGroup, requestToJoinGroup }) {
+function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false }) {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    setLoaded(false);
+    setError(false);
+  }, [src]);
+
+  if (error) {
+    return (
+      <div className={`${styles.msgMediaErrorCard} ${isStandalone ? styles.msgMediaErrorStandalone : ''}`}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <polyline points="21 15 16 10 5 21" />
+        </svg>
+        <span style={{ fontSize: '0.72rem', opacity: 0.6, marginTop: '4px' }}>Unavailable</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.msgMediaWrapper}>
+      {!loaded && (
+        <div className={`${styles.msgMediaSkeleton} ${isStandalone ? styles.msgMediaSkeletonStandalone : ''}`} />
+      )}
+      <img
+        src={src}
+        alt={alt || ''}
+        className={`${className} ${!loaded ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
+        onClick={onClick}
+        onLoad={() => setLoaded(true)}
+        onError={() => setError(true)}
+      />
+    </div>
+  );
+}
+
+function GroupInviteCard({ msg, currentUser, conversations, navigate, requestToJoinGroup }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { mutate: toggleJoin } = useJoinCommunity();
 
   const targetGroupId = msg.inviteData?.groupId || msg.inviteData?.conversationId;
   const isCampusGroup = String(targetGroupId).startsWith('c_');
@@ -111,7 +152,7 @@ function GroupInviteCard({ msg, currentUser, conversations, navigate, toggleJoin
         }
       } else {
         if (isCampusGroup) {
-          await toggleJoinCampusGroup(targetGroupId);
+          toggleJoin({ communityId: targetGroupId, isJoined: true, currentUser });
         } else {
           await requestToJoinGroup(targetGroupId);
         }
@@ -164,7 +205,7 @@ const getDisplayClockTime = (msg) => {
   return formatToClockTime(new Date());
 };
 
-export default function MessageBubble({ 
+const MessageBubble = memo(function MessageBubble({ 
   msg, 
   conversation, 
   currentUser,
@@ -175,7 +216,6 @@ export default function MessageBubble({
   onReply,
   onRetry,
   conversations,
-  toggleJoinCampusGroup,
   requestToJoinGroup
 }) {
   const navigate = useNavigate();
@@ -183,13 +223,52 @@ export default function MessageBubble({
   const touchHandled = useRef(false);
   const replyHandler = onReplyTo || onReply;
 
+  const fireContextMenu = (e, msgObj) => {
+    if (!onContextMenu) return;
+    let clientX = e.clientX;
+    let clientY = e.clientY;
+    
+    if (clientX === undefined) {
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else if (e.changedTouches && e.changedTouches.length > 0) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+      }
+    }
+    
+    // Fallbacks if all else fails
+    clientX = clientX ?? window.innerWidth / 2;
+    clientY = clientY ?? window.innerHeight / 2;
+
+    const mockEvent = {
+      clientX,
+      clientY,
+      preventDefault: () => e.preventDefault && e.preventDefault(),
+      stopPropagation: () => e.stopPropagation && e.stopPropagation(),
+    };
+    onContextMenu(mockEvent, msgObj);
+  };
+
   const handleTouchStart = (e) => {
+    // Persist event in React 16 if needed (React 17+ doesn't need this, but safe)
+    if (e.persist) e.persist();
+    
+    // Extract touch coordinates immediately as they might be gone in the timeout
+    let clientX = e.clientX;
+    let clientY = e.clientY;
+    if (clientX === undefined && e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    }
+    
+    const syntheticEvent = { clientX, clientY };
+
     touchHandled.current = false;
     longPressTimer.current = setTimeout(() => {
       touchHandled.current = true;
-      if (onContextMenu) {
-        onContextMenu(e, msg);
-      }
+      fireContextMenu(syntheticEvent, msg);
     }, 500);
   };
 
@@ -201,9 +280,7 @@ export default function MessageBubble({
 
   const handleContextMenuEvent = (e) => {
     e.preventDefault();
-    if (onContextMenu) {
-      onContextMenu(e, msg);
-    }
+    fireContextMenu(e, msg);
   };
 
   if (msg.type === 'system' || msg.type === 'SYSTEM') {
@@ -224,156 +301,131 @@ export default function MessageBubble({
   const profileData = msg.payload?.profile;
   const communityData = msg.payload?.community;
   
-  const messageText = msg.text || msg.payload?.text || msg.content || '';
+  let rawText = msg.decryptedText || msg.text || msg.payload?.text || msg.content || '';
+  if (rawText && typeof rawText === 'object') {
+    rawText = rawText.body || rawText.text || '';
+  }
+  if (typeof rawText === 'string' && rawText.startsWith('{"type":') && rawText.includes('"body":')) {
+    try {
+      const parsed = JSON.parse(rawText);
+      rawText = parsed.body || rawText;
+    } catch (e) {}
+  }
+  const messageText = typeof rawText === 'string' ? rawText : String(rawText);
   const mediaUrl = msg.mediaUrl || msg.payload?.mediaUrl;
   const isAudio = msg.mediaType === 'audio' || msg.type === 'voice' || msg.payload?.mediaType === 'audio';
   const hasText = !!(messageText && String(messageText).trim().length > 0);
   const timeText = getDisplayClockTime(msg);
 
+  let innerContent = null;
+
   // 1. Group Invite Card Message
   if (inviteData && inviteData.type !== 'activityShare') {
-    return (
-      <div 
-        className={`${styles.msgBubbleContainer} ${isMe ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onContextMenu={handleContextMenuEvent}
-      >
-        <div className={styles.msgBubbleWrapper}>
-          {showSenderAvatar && (
-            <div className={styles.msgAvatar}>
-              <Avatar src={msg.senderAvatar} name={msg.senderName} size="28px" />
-            </div>
-          )}
-          <div className={styles.msgBubbleContent}>
-            {showSenderAvatar && (
-              <span className={styles.msgSenderName}>{msg.senderName}</span>
-            )}
-            <div className={styles.msgImageCardContainer}>
-              <GroupInviteCard 
-                msg={{ ...msg, inviteData }}
-                currentUser={currentUser}
-                conversations={conversations}
-                navigate={navigate}
-                toggleJoinCampusGroup={toggleJoinCampusGroup}
-                requestToJoinGroup={requestToJoinGroup}
-              />
-              <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
-                {timeText}
-              </div>
-            </div>
-          </div>
+    innerContent = (
+      <div className={styles.msgImageCardContainer}>
+        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+          <GroupInviteCard 
+            msg={{ ...msg, inviteData }}
+            currentUser={currentUser}
+            conversations={conversations}
+            navigate={navigate}
+            requestToJoinGroup={requestToJoinGroup}
+          />
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+        </div>
+        <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
+          {timeText}
         </div>
       </div>
     );
-  }
-
-  // 2. Activity Share Card Message
-  if (activityData || (inviteData && inviteData.type === 'activityShare')) {
+  } else if (activityData || (inviteData && inviteData.type === 'activityShare')) {
+    // 2. Activity Share Card Message
     const act = activityData || inviteData?.activity;
-    return (
-      <div 
-        className={`${styles.msgBubbleContainer} ${isMe ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onContextMenu={handleContextMenuEvent}
-      >
-        <div className={styles.msgBubbleWrapper}>
-          {showSenderAvatar && (
-            <div className={styles.msgAvatar}>
-              <Avatar src={msg.senderAvatar} name={msg.senderName} size="28px" />
-            </div>
-          )}
-          <div className={styles.msgBubbleContent}>
-            {showSenderAvatar && (
-              <span className={styles.msgSenderName}>{msg.senderName}</span>
-            )}
-            <div className={styles.msgImageCardContainer}>
-              <SharedActivityPreview activity={act} />
-              <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
-                {timeText}
-              </div>
-            </div>
+    innerContent = (
+      <div className={styles.msgImageCardContainer}>
+        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+          <SharedActivityPreview activity={act} />
+          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+        </div>
+        <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
+          {timeText}
+        </div>
+      </div>
+    );
+  } else if (isAudio) {
+    // 3. Voice / Audio Message
+    innerContent = (
+      <div className={styles.msgAudioCardContainer}>
+        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+          <VoiceMessagePlayer src={mediaUrl} audioUrl={mediaUrl} fromMe={isMe} isMe={isMe} />
+          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+        </div>
+        <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
+          {timeText}
+        </div>
+      </div>
+    );
+  } else if (mediaUrl && !hasText && !msg.replyTo && !postData && !profileData && !communityData) {
+    // 4. Standalone Image Message (Image with no text caption)
+    innerContent = (
+      <div className={styles.msgImageCardContainer}>
+        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+          <div className={styles.msgImageCard}>
+            <ImageWithSkeleton
+              src={mediaUrl}
+              alt=""
+              className={styles.msgMediaImgStandalone}
+              onClick={() => onOpenMediaModal && onOpenMediaModal(mediaUrl)}
+              isStandalone={true}
+            />
           </div>
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
         </div>
+        <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
+          {timeText}
+        </div>
+      </div>
+    );
+  } else {
+    // 5. Standard Text Bubble (or Image + Text Caption)
+    innerContent = (
+      <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+        <div className={`${styles.msgBubble} ${isMe ? styles.msgBubbleMe : styles.msgBubbleThem}`}>
+          {msg.replyTo && (
+            <div className={styles.msgBubbleReplyRef}>
+              <div className={styles.msgBubbleReplyRefHeader}>{msg.replyTo.senderName || 'Replying to'}</div>
+              <div>{msg.replyTo.text || msg.replyTo.payload?.text}</div>
+            </div>
+          )}
+
+          {mediaUrl && (
+            <ImageWithSkeleton
+              src={mediaUrl}
+              alt=""
+              className={styles.msgMediaImg}
+              onClick={() => onOpenMediaModal && onOpenMediaModal(mediaUrl)}
+              isStandalone={false}
+            />
+          )}
+
+          {postData ? (
+            <SharedPostPreview post={postData} />
+          ) : profileData ? (
+            <SharedProfilePreview profile={profileData} />
+          ) : communityData ? (
+            <SharedCommunityPreview community={communityData} />
+          ) : (
+            <div className={styles.msgTextTimeWrap}>
+              {hasText && <RichText content={messageText} className={styles.msgText} />}
+              <div className={styles.msgTimeLabel}>{timeText}</div>
+            </div>
+          )}
+        </div>
+        <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
       </div>
     );
   }
 
-  // 3. Voice / Audio Message
-  if (isAudio) {
-    return (
-      <div 
-        className={`${styles.msgBubbleContainer} ${isMe ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onContextMenu={handleContextMenuEvent}
-      >
-        <div className={styles.msgBubbleWrapper}>
-          {showSenderAvatar && (
-            <div className={styles.msgAvatar}>
-              <Avatar src={msg.senderAvatar} name={msg.senderName} size="28px" />
-            </div>
-          )}
-          <div className={styles.msgBubbleContent}>
-            {showSenderAvatar && (
-              <span className={styles.msgSenderName}>{msg.senderName}</span>
-            )}
-            <div className={styles.msgAudioCardContainer}>
-              <VoiceMessagePlayer src={mediaUrl} audioUrl={mediaUrl} fromMe={isMe} isMe={isMe} />
-              <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
-                {timeText}
-              </div>
-            </div>
-          </div>
-          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
-        </div>
-      </div>
-    );
-  }
-
-  // 4. Standalone Image Message (Image with no text caption)
-  if (mediaUrl && !hasText && !msg.replyTo && !postData && !profileData && !communityData) {
-    return (
-      <div 
-        className={`${styles.msgBubbleContainer} ${isMe ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onContextMenu={handleContextMenuEvent}
-      >
-        <div className={styles.msgBubbleWrapper}>
-          {showSenderAvatar && (
-            <div className={styles.msgAvatar}>
-              <Avatar src={msg.senderAvatar} name={msg.senderName} size="28px" />
-            </div>
-          )}
-          <div className={styles.msgBubbleContent}>
-            {showSenderAvatar && (
-              <span className={styles.msgSenderName}>{msg.senderName}</span>
-            )}
-            <div className={styles.msgImageCardContainer}>
-              <div className={styles.msgImageCard}>
-                <img 
-                  src={mediaUrl} 
-                  alt="Attachment" 
-                  className={styles.msgMediaImgStandalone}
-                  onClick={() => onOpenMediaModal && onOpenMediaModal(mediaUrl)}
-                />
-              </div>
-              <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
-                {timeText}
-              </div>
-            </div>
-          </div>
-          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
-        </div>
-      </div>
-    );
-  }
-
-  // 5. Standard Text Bubble (or Image + Text Caption)
   return (
     <div 
       className={`${styles.msgBubbleContainer} ${isMe ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}
@@ -391,40 +443,37 @@ export default function MessageBubble({
           {showSenderAvatar && (
             <span className={styles.msgSenderName}>{msg.senderName}</span>
           )}
-          <div className={`${styles.msgBubble} ${isMe ? styles.msgBubbleMe : styles.msgBubbleThem}`}>
-            {msg.replyTo && (
-              <div className={styles.msgBubbleReplyRef}>
-                <div className={styles.msgBubbleReplyRefHeader}>{msg.replyTo.senderName || 'Replying to'}</div>
-                <div>{msg.replyTo.text || msg.replyTo.payload?.text}</div>
-              </div>
-            )}
+          
+          {innerContent}
 
-            {mediaUrl && (
-              <img 
-                src={mediaUrl} 
-                alt="Attachment" 
-                className={styles.msgMediaImg}
-                onClick={() => onOpenMediaModal && onOpenMediaModal(mediaUrl)}
-              />
-            )}
-
-            {postData ? (
-              <SharedPostPreview post={postData} />
-            ) : profileData ? (
-              <SharedProfilePreview profile={profileData} />
-            ) : communityData ? (
-              <SharedCommunityPreview community={communityData} />
-            ) : (
-              hasText && <RichText text={messageText} className={styles.msgText} />
-            )}
-
-            <div className={styles.msgTimeLabel}>
-              {timeText}
+          {isMe && isLatestMessage && (
+            <div className={`${styles.msgStatusLabel} ${msg.status === 'failed' ? styles.msgStatusLabelFailed : ''}`}>
+              {msg.status === 'sending' && <span>Sending</span>}
+              {(msg.status === 'sent' || msg.status === 'delivered' || (!msg.status && msg.status !== 'sending' && msg.status !== 'read' && msg.status !== 'seen' && msg.status !== 'failed')) && <span>Sent</span>}
+              {(msg.status === 'read' || msg.status === 'seen') && <span>Seen</span>}
+              {msg.status === 'failed' && (
+                <span>
+                  Failed to send
+                  {onRetry && (
+                    <button 
+                      type="button" 
+                      className={styles.msgRetryButton} 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRetry(msg);
+                      }}
+                    >
+                      Retry
+                    </button>
+                  )}
+                </span>
+              )}
             </div>
-          </div>
+          )}
         </div>
-        <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
       </div>
     </div>
   );
-}
+});
+
+export default MessageBubble;

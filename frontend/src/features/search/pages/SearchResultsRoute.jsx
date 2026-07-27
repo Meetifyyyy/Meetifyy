@@ -1,8 +1,11 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, Users, Activity, UsersRound, MapPin, Clock, UsersIcon, ThumbsUp, MessageCircle, UserPlus, UserCheck } from 'lucide-react';
-import { useFollow } from '@shared/context/FollowContext';
+import { useQuery } from '@tanstack/react-query';
+import { usersApi } from '@shared/api/apiClient';
+import FollowButton from '@shared/components/ui/FollowButton';
 import { useGlobalSearch } from '@features/search/hooks/useGlobalSearch';
+import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { PostResult, CommunityResult, CollegeResult, CrewResult } from '../components/SearchResultCards';
@@ -16,6 +19,7 @@ import PageHeader from '@layout/PageHeader';
 import ActivityJoinedModal from '@features/crew/components/modals/ActivityJoinedModal';
 import styles from './SearchResultsRoute.module.css';
 import { useData } from '@shared/hooks/useData';
+import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
 
 // Compact horizontal activity row
 function ActivityRow({ activity, onClick }) {
@@ -137,10 +141,12 @@ function ActivityRow({ activity, onClick }) {
   );
 }
 
-// Compact horizontal community row
 function CommunityRow({ comm, onClick }) {
-  const { toggleJoinCommunity, currentUser } = useData();
-  const isJoined = currentUser?.communities?.includes(comm.name);
+  const { currentUser } = useData();
+  const { mutate: toggleJoin } = useJoinCommunity();
+  const rawJoined = currentUser?.communities?.includes(comm.name);
+  const entityKey = `joinCommunity:${comm.id}`;
+  const isJoined = toggleRegistry.getLatestIntent(entityKey, rawJoined);
 
   return (
     <div className={styles.communityRow} onClick={onClick}>
@@ -162,7 +168,11 @@ function CommunityRow({ comm, onClick }) {
       </div>
       <button
         className={`${styles.rowActionBtn} ${isJoined ? styles.rowActionBtnActive : styles.rowActionBtnOutline}`}
-        onClick={(e) => { e.stopPropagation(); toggleJoinCommunity(comm.id); }}
+        onClick={(e) => { 
+          e.stopPropagation(); 
+          const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, rawJoined);
+          toggleJoin({ communityId: comm.id, isJoined: nextJoined, currentUser }); 
+        }}
       >
         {isJoined ? 'Joined' : 'Join'}
       </button>
@@ -170,22 +180,9 @@ function CommunityRow({ comm, onClick }) {
   );
 }
 
-// Person row in search results
+// PersonRow in search results
 function PersonRow({ user }) {
-  const { toggleFollow, isFollowing: checkIsFollowing, initialized } = useFollow();
   const navigate = useNavigate();
-  const isFollowing = checkIsFollowing(user.username);
-  const [loading, setLoading] = useState(false);
-
-  const pending = loading || !initialized;
-
-  const handleToggle = async (e) => {
-    e.stopPropagation();
-    if (pending) return;
-    setLoading(true);
-    await toggleFollow(user.username);
-    setLoading(false);
-  };
 
   return (
     <div className={styles.personRow} onClick={() => navigate(`/profile/${user.username}`)}>
@@ -200,15 +197,9 @@ function PersonRow({ user }) {
           {user.bio || 'Student • Explorer'}
         </span>
       </div>
-      <button
-        className={`${styles.followBtn} ${isFollowing ? styles.followBtnActive : ''}`}
-        title={isFollowing ? 'Unfollow' : 'Follow'}
-        disabled={pending}
-        onClick={handleToggle}
-        style={{ opacity: pending ? 0.6 : 1, cursor: pending ? 'not-allowed' : 'pointer' }}
-      >
-        {isFollowing ? <UserCheck size={15} /> : <UserPlus size={15} />}
-      </button>
+      <div style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+        <FollowButton targetUsername={user.username} initialFollowing={user.isFollowing} size="sm" />
+      </div>
     </div>
   );
 }

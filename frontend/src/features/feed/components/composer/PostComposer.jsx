@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, memo, Suspense, lazy } from 'react';
-import data from '@emoji-mart/data';
+import { useState, useRef, useEffect, memo, Suspense } from 'react';
+import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
 import { useAuth } from '@shared/context/AuthContext';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
@@ -7,9 +7,6 @@ import Avatar from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import MediaGrid from '../post/MediaGrid';
 import styles from './PostComposer.module.css';
-
-const Picker = lazy(() => import('@emoji-mart/react'));
-
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 
 function PostComposer({ onSubmit }) {

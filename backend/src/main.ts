@@ -4,17 +4,22 @@ import { ValidationPipe, Logger as NestLogger } from '@nestjs/common';
 import helmet from 'helmet';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 import { Logger } from 'nestjs-pino';
 import * as Sentry from '@sentry/nestjs';
 import { nodeProfilingIntegration } from '@sentry/profiling-node';
+
+const isProd = process.env.NODE_ENV === 'production';
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN || '',
   integrations: [
     nodeProfilingIntegration(),
   ],
-  tracesSampleRate: 1.0,
-  profilesSampleRate: 1.0,
+  // Sample 10% of traces and 5% of profiles in production — 1.0 in production
+  // adds measurable per-request overhead and inflates Sentry costs dramatically.
+  tracesSampleRate: isProd ? 0.1 : 1.0,
+  profilesSampleRate: isProd ? 0.05 : 1.0,
 });
 
 async function bootstrap() {
@@ -27,6 +32,10 @@ async function bootstrap() {
     }
     next();
   });
+
+  // Response compression — reduces JSON payload size by 60-80%
+  // Threshold: only compress responses > 1KB (avoids overhead on tiny responses)
+  app.use(compression({ level: 6, threshold: 1024 }));
 
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
@@ -66,7 +75,13 @@ async function bootstrap() {
         origin.includes('localhost') ||
         origin.includes('127.0.0.1');
 
-      callback(null, isAllowed ? origin : true);
+      // Fix: passing `true` as the second arg still allows the origin.
+      // Reject unknown origins in production by passing an Error instead.
+      if (isAllowed) {
+        callback(null, origin);
+      } else {
+        callback(new Error(`CORS: origin '${origin}' not allowed`));
+      }
     },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],

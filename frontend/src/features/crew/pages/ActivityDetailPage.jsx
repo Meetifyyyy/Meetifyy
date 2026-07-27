@@ -13,6 +13,8 @@ import ActivityJoinedModal from '../components/modals/ActivityJoinedModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ActivityDetailPage.module.css';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
+import { useJoinActivity } from '../hooks/useJoinActivity';
+import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 function formatDateTime(activity) {
@@ -100,15 +102,7 @@ export default function ActivityDetailPage() {
     });
   }, [rawActivities]);
 
-  const joinMutation = useMutation({
-    mutationFn: (actId) => activitiesApi.join(actId),
-    onSuccess: () => queryClient.invalidateQueries(['activities']),
-  });
-
-  const leaveMutation = useMutation({
-    mutationFn: (actId) => activitiesApi.leave(actId),
-    onSuccess: () => queryClient.invalidateQueries(['activities']),
-  });
+  const { mutate: toggleJoin } = useJoinActivity();
 
   const requestMutation = useMutation({
     mutationFn: (actId) => activitiesApi.requestToJoinActivity(actId),
@@ -120,8 +114,6 @@ export default function ActivityDetailPage() {
     onSuccess: () => queryClient.invalidateQueries(['activities']),
   });
 
-  const joinCrewActivity = (actId) => joinMutation.mutateAsync(actId);
-  const leaveCrewActivity = (actId) => leaveMutation.mutateAsync(actId);
   const requestToJoinActivity = (actId) => requestMutation.mutateAsync(actId);
   const endCrewActivity = (actId) => endMutation.mutateAsync(actId);
 
@@ -222,10 +214,13 @@ export default function ActivityDetailPage() {
     hostName, hostAvatar,
   } = activity;
 
-  const spotsLeft = slotsNeeded - slotsFilled;
+  const entityKey = `joinActivity:${activity.id}`;
+  const isJoined = toggleRegistry.getLatestIntent(entityKey, activity.participants?.includes(currentUser?.id));
+  const wasOriginallyJoined = activity.participants?.includes(currentUser?.id);
+  const slotsFilledAdjusted = slotsFilled + (isJoined && !wasOriginallyJoined ? 1 : (!isJoined && wasOriginallyJoined ? -1 : 0));
+  const spotsLeft = slotsNeeded - slotsFilledAdjusted;
   const isFull = spotsLeft <= 0;
   const isHost = !!(currentUser?.id && (activity.hostId === currentUser.id || activity.creatorId === currentUser.id));
-  const isJoined = activity.participants?.includes(currentUser?.id) || hasJoined;
   const isRequested = activity.pendingRequests?.includes(currentUser?.id) || hasRequested;
   let hasEnded = activity.status === 'ENDED' || activity.status === 'CANCELLED';
   const hasGroupChat = !!(activity.createEventGroup || activity.createActivityGroup);
@@ -263,30 +258,13 @@ export default function ActivityDetailPage() {
 
   const [isActionLoading, setIsActionLoading] = useState(false);
 
-  const handleJoin = async () => {
-    if (isActionLoading) return;
-    setIsActionLoading(true);
-    try {
-      await joinCrewActivity(activity.id);
-      setHasJoined(true);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsActionLoading(false);
-    }
+  const handleJoin = () => {
+    toggleJoin({ activityId: activity.id, isJoined: true, currentUser });
   };
 
-  const handleLeave = async () => {
-    if (isActionLoading || isHost) return;
-    setIsActionLoading(true);
-    try {
-      await leaveCrewActivity(activity.id);
-      setHasJoined(false);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsActionLoading(false);
-    }
+  const handleLeave = () => {
+    if (isHost) return;
+    toggleJoin({ activityId: activity.id, isJoined: false, currentUser });
   };
 
   const handleEndActivity = () => {

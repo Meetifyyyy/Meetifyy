@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { DomainEventService } from '../events/domain-event.service';
 import { generatePublicId } from '../common/utils/public-id.util';
 import { MessagingCoreService } from './core/messaging-core.service';
 
@@ -10,40 +10,16 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
   constructor(
     prisma: PrismaService,
     presenceService: PresenceService,
-    @Inject(forwardRef(() => RealtimeGateway))
-    realtimeGateway: RealtimeGateway,
+    domainEventService: DomainEventService,
   ) {
-    super(prisma, presenceService, realtimeGateway);
+    super(prisma, presenceService, domainEventService);
   }
 
   async onModuleInit() {
-    try {
-      const pendingConvs: any[] = await this.prisma.$queryRawUnsafe(
-        `SELECT id FROM "Conversation" WHERE "publicId" IS NULL OR "publicId" = ''`
-      );
-
-      if (pendingConvs && pendingConvs.length > 0) {
-        for (const conv of pendingConvs) {
-          let pubId = generatePublicId();
-          let exists = true;
-          while (exists) {
-            const check: any[] = await this.prisma.$queryRawUnsafe(
-              `SELECT id FROM "Conversation" WHERE "publicId" = $1 LIMIT 1`,
-              pubId
-            );
-            if (!check || check.length === 0) exists = false;
-            else pubId = generatePublicId();
-          }
-          await this.prisma.$executeRawUnsafe(
-            `UPDATE "Conversation" SET "publicId" = $1 WHERE id = $2`,
-            pubId,
-            conv.id
-          );
-        }
-      }
-    } catch (err) {
-      // ignore
-    }
+    // publicId backfill for existing conversations was a one-time migration.
+    // Handled via: UPDATE "Conversation" SET "publicId" = gen_random_uuid()::text
+    //              WHERE "publicId" IS NULL OR "publicId" = '';
+    // No per-startup loop needed.
   }
 
   async resolveConversationId(identifier: string, currentUserId?: string): Promise<string> {
@@ -126,6 +102,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       inviteData?: any;
       isForwarded?: boolean;
       forwardedFromMessageId?: string;
+      tempId?: string;
     }
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
@@ -154,42 +131,58 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
     const type = payload.mediaUrl || payload.mediaType ? 'MEDIA' as const : 'CHAT' as const;
 
-    const message: any = await this.prisma.message.create({
-      data: {
-        conversationId: realConvId,
-        senderId,
-        type,
-        replyToId: payload.replyToId || null,
-        payload: {
-          text: payload.text || '',
-          mediaUrl: payload.mediaUrl || null,
-          mediaType: payload.mediaType || null,
-          mentions: payload.mentions || [],
-          inviteData: payload.inviteData || null,
-          isForwarded: payload.isForwarded || false,
-          forwardedFromMessageId: payload.forwardedFromMessageId || null,
-        }
-      },
-      include: {
-        sender: {
-          select: { id: true, username: true, displayName: true, avatar: true }
+    // 1. Idempotency Check
+    if (payload.tempId) {
+      const existing = await this.prisma.message.findFirst({
+        where: {
+          senderId,
+          conversationId: realConvId,
+          payload: { path: ['tempId'], equals: payload.tempId }
         },
-        replyTo: {
-          select: {
-            id: true,
-            senderId: true,
-            payload: true,
-            sender: { select: { displayName: true, username: true } }
-          }
+        include: {
+          sender: { select: { id: true, username: true, displayName: true, avatar: true } },
+          replyTo: { select: { id: true, senderId: true, payload: true, sender: { select: { displayName: true, username: true } } } }
         }
+      });
+      if (existing) {
+        return this.formatMessageResponse(existing, realConvId, conversationId, senderId);
       }
-    });
+    }
 
-    await this.prisma.conversation.update({
-      where: { id: realConvId },
-      data: { updatedAt: new Date() }
-    });
+    // 2. Transactional Write
+    const [message] = await this.prisma.$transaction([
+      this.prisma.message.create({
+        data: {
+          conversationId: realConvId,
+          senderId,
+          type,
+          replyToId: payload.replyToId || null,
+          payload: {
+            text: payload.text || '',
+            mediaUrl: payload.mediaUrl || null,
+            mediaType: payload.mediaType || null,
+            mentions: payload.mentions || [],
+            inviteData: payload.inviteData || null,
+            isForwarded: payload.isForwarded || false,
+            forwardedFromMessageId: payload.forwardedFromMessageId || null,
+            tempId: payload.tempId || null,
+          }
+        },
+        include: {
+          sender: { select: { id: true, username: true, displayName: true, avatar: true } },
+          replyTo: { select: { id: true, senderId: true, payload: true, sender: { select: { displayName: true, username: true } } } }
+        }
+      }),
+      this.prisma.conversation.update({
+        where: { id: realConvId },
+        data: { updatedAt: new Date() }
+      })
+    ]);
 
+    return this.formatMessageResponse(message, realConvId, conversationId, senderId);
+  }
+
+  private async formatMessageResponse(message: any, realConvId: string, publicIdOrId: string, senderId: string) {
     const msgPayload = (message.payload as any) || {};
     let replyToObj: any = null;
     if (message.replyTo) {
@@ -206,7 +199,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       where: { id: realConvId },
       select: { publicId: true }
     });
-    const pubId = convRecord?.publicId || conversationId;
+    const pubId = convRecord?.publicId || publicIdOrId;
 
     return {
       id: message.id,
@@ -376,7 +369,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         };
       }
 
-      const isRead = currentUserId && m.senderId === currentUserId && isAllRead && minOtherLastReadAt >= new Date(m.createdAt).getTime();
+      const isRead = currentUserId && m.senderId === currentUserId && isAllRead && (minOtherLastReadAt + 5000 >= new Date(m.createdAt).getTime());
       const isUnsent = m.state === 'UNSENT';
 
       return {
@@ -892,7 +885,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       select: { readReceipts: true }
     });
 
-    if (userSettings?.readReceipts !== false && this.realtimeGateway?.server) {
+    if (userSettings?.readReceipts !== false) {
       const participants = await this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, deletedAt: null },
         select: { userId: true, lastReadAt: true, user: { select: { settings: { select: { readReceipts: true } } } } }
@@ -908,13 +901,14 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
           const isAllRead = otherReadTimestamps.length > 0 && otherReadTimestamps.length === otherParticipants.length;
           const minOtherReadAt = isAllRead ? Math.min(...otherReadTimestamps) : 0;
 
-          this.realtimeGateway.server.to(p.userId).emit('conversation:seen', {
+          this.domainEventService.emit('conversation:seen', {
             conversationId,
+            realConvId,
             readerId: userId,
             lastReadAt: now.toISOString(),
             isAllRead,
             minOtherReadAt: minOtherReadAt ? new Date(minOtherReadAt).toISOString() : null
-          });
+          }, [p.userId]);
         }
       }
     }

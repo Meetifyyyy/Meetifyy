@@ -25,6 +25,13 @@
   position: relative;
 }
 
+@media (max-width: 768px) {
+  .modal {
+    height: 65vh;
+    max-height: 65vh;
+  }
+}
+
 .dragHandle {
   width: 40px;
   height: 5px;

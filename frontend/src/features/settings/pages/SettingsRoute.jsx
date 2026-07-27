@@ -5,6 +5,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
 import { apiClient } from '@shared/api/apiClient';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
+import { validateDOB } from '@shared/utils/dateValidation';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
 import { MAJORS_LIST } from '@features/campus/data/majors';
 import { Pencil, Lock, Eye, EyeOff, AlertCircle, Trash2 } from 'lucide-react';
@@ -240,6 +241,16 @@ export default function SettingsRoute() {
 
   const handleSave = async () => {
     if (activePanel === 'profile') {
+      if (birthday) {
+        const parts = birthday.split('-');
+        if (parts.length === 3) {
+          const dobRes = validateDOB(parts[0], parts[1], parts[2]);
+          if (!dobRes.isValid) {
+            showToast(dobRes.error || 'Invalid date of birth');
+            return;
+          }
+        }
+      }
       setActivePanel(null);
       showToast('Profile details updated');
       if (updateCurrentUser) {

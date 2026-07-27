@@ -1,25 +1,47 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { BlocksService } from '../users/blocks.service';
+import { RedisService } from '../redis/redis.service';
+
+/** How long (seconds) search results are cached per (query, userId) pair. */
+const SEARCH_CACHE_TTL = 15;
 
 @Injectable()
 export class SearchService {
   private readonly logger = new Logger('SEARCH');
+  private readonly redis: ReturnType<RedisService['getClient']>;
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly blocksService: BlocksService
-  ) {}
+    private readonly blocksService: BlocksService,
+    @Optional() private readonly redisService?: RedisService,
+  ) {
+    this.redis = this.redisService?.getClient() ?? null;
+  }
 
   async globalSearch(query: string, currentUserId?: string, limit = 10) {
     if (!query || query.trim().length < 2) {
       return { users: [], communities: [], posts: [], activities: [] };
     }
 
+    const searchQuery = query.trim();
+    const cacheKey = `search:${searchQuery.toLowerCase()}:${currentUserId ?? 'anon'}:${limit}`;
+
+    // 1. Cache read — return instantly if a recent identical query is cached
+    if (this.redis) {
+      try {
+        const cached = await this.redis.get(cacheKey);
+        if (cached) {
+          this.logger.debug(`Cache hit: "${searchQuery}"`);
+          return JSON.parse(cached);
+        }
+      } catch {
+        // Redis unavailable — fall through to DB
+      }
+    }
+
     const excludedUserIds = currentUserId ? await this.blocksService.getExcludedUserIds(currentUserId) : [];
     const searchExcludedUserIds = currentUserId ? [...excludedUserIds, currentUserId] : excludedUserIds;
-
-    const searchQuery = query.trim();
     const startTime = performance.now();
 
     const [users, communities, rawPosts, activities] = await Promise.all([
@@ -123,6 +145,17 @@ export class SearchService {
     const duration = (performance.now() - startTime).toFixed(0);
     this.logger.log(`"${searchQuery}" ${totalResults} results (${duration}ms)`);
 
-    return { users, communities, posts, activities };
+    const result = { users, communities, posts, activities };
+
+    // 2. Cache write — store for 15s so rapid/repeated identical queries skip the DB
+    if (this.redis) {
+      try {
+        await this.redis.setex(cacheKey, SEARCH_CACHE_TTL, JSON.stringify(result));
+      } catch {
+        // Non-fatal
+      }
+    }
+
+    return result;
   }
 }

@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
+import { DomainEventService } from '../events/domain-event.service';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class PostsService {
@@ -12,7 +14,9 @@ export class PostsService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly notificationFactory: NotificationFactory,
-    private readonly blocksService: BlocksService
+    private readonly blocksService: BlocksService,
+    private readonly domainEventService: DomainEventService,
+    private readonly redisService: RedisService,
   ) {}
 
   private formatPost(post: any, likedSet: Set<string>, bookmarkedSet: Set<string>) {
@@ -36,7 +40,7 @@ export class PostsService {
   }
 
   async createPost(authorId: string, text: string, mediaKey?: string, communityId?: string) {
-    return this.prisma.post.create({
+    const post = await this.prisma.post.create({
       data: {
         authorId,
         text,
@@ -57,6 +61,9 @@ export class PostsService {
         media: true,
       },
     });
+    
+    this.domainEventService.emit('post.created', { postId: post.id, authorId });
+    return post;
   }
 
   async deletePost(postId: string, userId: string) {
@@ -69,6 +76,8 @@ export class PostsService {
       this.prisma.comment.updateMany({ where: { postId }, data: { deletedAt: new Date() } }),
       this.prisma.postBookmark.deleteMany({ where: { postId } }),
     ]);
+
+    this.domainEventService.emit('post.deleted', { postId });
 
     return { success: true };
   }
@@ -213,51 +222,60 @@ export class PostsService {
 
 
   async likePost(postId: string, userId: string) {
-    const [post, existingLike] = await Promise.all([
+    const [post, excludedUserIds] = await Promise.all([
       this.prisma.post.findUnique({ where: { id: postId } }),
-      this.prisma.postLike.findUnique({ where: { userId_postId: { userId, postId } } })
+      this.blocksService.getExcludedUserIds(userId),
     ]);
-    const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
     if (!post || post.deletedAt || excludedUserIds.includes(post.authorId)) throw new NotFoundException('Post not found');
 
-    let updatedCount = post.likeCount;
-    if (!existingLike) {
-      const [, updated] = await this.prisma.$transaction([
-        this.prisma.postLike.create({ data: { userId, postId } }),
-        this.prisma.post.update({
+    const lockKey = `toggle:like:${userId}:${postId}`;
+
+    return this.redisService.withLock(lockKey, 2000, async () => {
+      // Fully atomic: INSERT ... ON CONFLICT DO NOTHING — never throws P2002
+      const inserted = await this.prisma.$executeRaw`
+        INSERT INTO "PostLike" ("userId", "postId", "createdAt")
+        VALUES (${userId}, ${postId}, NOW())
+        ON CONFLICT ("userId", "postId") DO NOTHING
+      `;
+
+      let updatedCount = post.likeCount;
+      if (inserted === 1) {
+        const updated = await this.prisma.post.update({
           where: { id: postId },
           data: { likeCount: { increment: 1 } },
           select: { likeCount: true },
-        }),
-      ]);
-      updatedCount = updated.likeCount;
-
-      if (post.authorId !== userId) {
-        this.prisma.user.findUnique({
-          where: { id: userId },
-          select: { id: true, displayName: true, username: true, avatar: true },
-        }).then(actor => {
-          if (actor) {
-            const dto = this.notificationFactory.createLike(actor, post, post.authorId);
-            this.notificationsService.createNotification(dto).catch(err => {
-              this.logger.warn('Failed to send like notification', err);
-            });
-          }
-        }).catch(err => {
-          this.logger.warn('Failed to fetch actor for like notification', err);
         });
-      }
-    }
+        updatedCount = updated.likeCount;
 
-    return {
-      success: true,
-      postId,
-      hasLiked: true,
-      isLiked: true,
-      isLikedByMe: true,
-      likeCount: updatedCount,
-      likesCount: updatedCount,
-    };
+        if (post.authorId !== userId) {
+          this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, displayName: true, username: true, avatar: true },
+          }).then(actor => {
+            if (actor) {
+              const dto = this.notificationFactory.createLike(actor, post, post.authorId);
+              this.notificationsService.createNotification(dto).catch(err => {
+                this.logger.warn('Failed to send like notification', err);
+              });
+            }
+          }).catch(err => {
+            this.logger.warn('Failed to fetch actor for like notification', err);
+          });
+        }
+
+        this.domainEventService.emit('post.liked', { postId, userId, likeCount: updatedCount });
+      }
+
+      return {
+        success: true,
+        postId,
+        hasLiked: true,
+        isLiked: true,
+        isLikedByMe: true,
+        likeCount: updatedCount,
+        likesCount: updatedCount,
+      };
+    });
   }
 
   async unlikePost(postId: string, userId: string) {
@@ -270,8 +288,8 @@ export class PostsService {
     let updatedCount = post.likeCount;
     if (existingLike) {
       const [, updated] = await this.prisma.$transaction([
-        this.prisma.postLike.delete({
-          where: { userId_postId: { userId, postId } },
+        this.prisma.postLike.deleteMany({
+          where: { userId, postId },
         }),
         this.prisma.post.update({
           where: { id: postId },
@@ -280,6 +298,8 @@ export class PostsService {
         }),
       ]);
       updatedCount = updated.likeCount;
+      
+      this.domainEventService.emit('post.unliked', { postId, userId, likeCount: updatedCount });
     }
 
     return {
@@ -293,9 +313,50 @@ export class PostsService {
     };
   }
 
+  async deleteComment(commentId: string, userId: string) {
+    const comment = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+      include: { _count: { select: { replies: { where: { isDeleted: false } } } } },
+    });
+
+    if (!comment) throw new NotFoundException('Comment not found');
+    if (comment.isDeleted) throw new NotFoundException('Comment already deleted');
+    if (comment.authorId !== userId) throw new ForbiddenException('Not your comment');
+
+    const hasActiveReplies = (comment as any)._count.replies > 0;
+
+    await this.prisma.comment.update({
+      where: { id: commentId },
+      data: {
+        isDeleted: true,
+        deletedByUser: true,
+        deletedAt: new Date(),
+        // Scrub content and attribution — preserve only structural fields
+        text: '',
+        authorId: comment.authorId, // keep FK to avoid cascade issues
+        likeCount: 0,
+      },
+    });
+
+    // Only decrement post comment counter when the comment isn't a structural placeholder
+    if (!hasActiveReplies) {
+      await this.prisma.post.update({
+        where: { id: comment.postId },
+        data: { commentCount: { decrement: 1 } },
+      }).catch(() => {}); // best-effort — don't fail the whole operation
+    }
+
+    // Remove all likes on this comment
+    await this.prisma.commentLike.deleteMany({ where: { commentId } }).catch(() => {});
+
+    this.domainEventService.emit('comment.deleted', { commentId, postId: comment.postId, userId });
+
+    return { success: true, isDeleted: true, hasActiveReplies };
+  }
+
   async likeComment(commentId: string, userId: string) {
     const comment = await this.prisma.comment.findUnique({ where: { id: commentId } });
-    if (!comment || comment.deletedAt) throw new NotFoundException('Comment has been deleted');
+    if (!comment || comment.isDeleted) throw new NotFoundException('Comment has been deleted');
 
     const post = await this.prisma.post.findUnique({ where: { id: comment.postId } });
     if (!post || post.deletedAt) throw new NotFoundException('Post has been deleted');
@@ -328,6 +389,8 @@ export class PostsService {
           this.logger.warn('Failed to fetch actor for comment like notification', err);
         });
       }
+
+      this.domainEventService.emit('comment.liked', { commentId, postId: comment.postId, userId });
     }
 
     return { success: true };
@@ -335,7 +398,7 @@ export class PostsService {
 
   async unlikeComment(commentId: string, userId: string) {
     const comment = await this.prisma.comment.findUnique({ where: { id: commentId } });
-    if (!comment || comment.deletedAt) throw new NotFoundException('Comment has been deleted');
+    if (!comment || comment.isDeleted) throw new NotFoundException('Comment has been deleted');
 
     const existingLike = await this.prisma.commentLike.findUnique({
       where: { userId_commentId: { userId, commentId } },
@@ -351,6 +414,8 @@ export class PostsService {
           data: { likeCount: { decrement: 1 } },
         }),
       ]);
+      
+      this.domainEventService.emit('comment.unliked', { commentId, postId: comment.postId, userId });
     }
 
     return { success: true };
@@ -407,6 +472,13 @@ export class PostsService {
     }).catch(err => {
       this.logger.warn('Failed to fetch actor for comment notification', err);
     });
+    
+    this.domainEventService.emit('comment.created', { 
+      commentId: comment.id, 
+      postId, 
+      authorId,
+      parentId 
+    });
 
     return comment;
   }
@@ -421,7 +493,7 @@ export class PostsService {
   async getPostById(postId: string, userId: string) {
     const excludedUserIds = userId ? await this.blocksService.getExcludedUserIds(userId) : [];
     // Round-trip 1: parallelized fetch of core post, its media, comments, and current user likes/bookmarks
-    const [post, media, comments, postLike, postBookmark] = await Promise.all([
+    const [post, media, rawComments, postLike, postBookmark] = await Promise.all([
       this.prisma.post.findUnique({
         where: { id: postId, deletedAt: null },
         include: {
@@ -431,8 +503,17 @@ export class PostsService {
       this.prisma.media.findMany({
         where: { postId },
       }),
+      // Include soft-deleted comments so thread hierarchy is preserved as placeholders.
+      // We filter out comments from blocked users ONLY when they're not soft-deleted
+      // (a deleted placeholder must stay regardless of block state to anchor replies).
       this.prisma.comment.findMany({
-        where: { postId, deletedAt: null, authorId: { notIn: excludedUserIds } },
+        where: {
+          postId,
+          OR: [
+            { isDeleted: true },  // always include placeholders
+            { isDeleted: false, authorId: { notIn: excludedUserIds } },
+          ],
+        },
         take: 50,
         include: {
           author: { select: { id: true, username: true, displayName: true, avatar: true } },
@@ -445,7 +526,9 @@ export class PostsService {
 
     if (!post || (excludedUserIds.length > 0 && excludedUserIds.includes(post.authorId))) throw new NotFoundException('Post not found');
 
-    const commentIds = comments.map(c => c.id);
+    // Only fetch likes for non-deleted comments
+    const liveComments = rawComments.filter(c => !c.isDeleted);
+    const commentIds = liveComments.map(c => c.id);
 
     // Round-trip 2: fetch comment likes in parallel
     const commentLikes = userId && commentIds.length > 0
@@ -459,15 +542,40 @@ export class PostsService {
     const isLiked = !!postLike;
     const isBookmarked = !!postBookmark;
 
-    return {
-      ...post,
-      media,
-      comments: comments.map(c => ({
+    // Shape each comment — scrub private data from soft-deleted placeholders
+    const shapedComments = rawComments.map(c => {
+      if (c.isDeleted) {
+        return {
+          id: c.id,
+          postId: c.postId,
+          parentId: c.parentId,
+          createdAt: c.createdAt,
+          isDeleted: true,
+          deletedByUser: c.deletedByUser,
+          removedByOwner: c.removedByOwner,
+          // All sensitive fields scrubbed
+          text: null,
+          author: null,
+          authorId: null,
+          likeCount: 0,
+          hasLiked: false,
+          isLiked: false,
+          isLikedByMe: false,
+        };
+      }
+      return {
         ...c,
+        isDeleted: false,
         hasLiked: likedComments.has(c.id),
         isLiked: likedComments.has(c.id),
         isLikedByMe: likedComments.has(c.id),
-      })),
+      };
+    });
+
+    return {
+      ...post,
+      media,
+      comments: shapedComments,
       likeCount: post.likeCount,
       likesCount: post.likeCount,
       commentCount: post.commentCount,
@@ -489,6 +597,8 @@ export class PostsService {
       update: {},
       create: { userId, postId }
     });
+    
+    this.domainEventService.emit('post.saved', { postId, userId });
     return { success: true };
   }
 
@@ -500,6 +610,7 @@ export class PostsService {
       await this.prisma.postBookmark.delete({
         where: { userId_postId: { userId, postId } }
       });
+      this.domainEventService.emit('post.unsaved', { postId, userId });
     }
     return { success: true };
   }

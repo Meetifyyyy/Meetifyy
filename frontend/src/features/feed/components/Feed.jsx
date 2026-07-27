@@ -54,6 +54,30 @@ function Feed({ onPostClick }) {
     return () => observer.disconnect();
   }, [hasNextPage, isLoading, isFetchingNextPage, fetchNextPage]);
 
+  // Restore scroll position when navigating back to feed
+  useEffect(() => {
+    const savedY = sessionStorage.getItem('meetifyy_feed_scrollY');
+    if (savedY && !isLoading && allPosts.length > 0) {
+      window.scrollTo(0, parseInt(savedY, 10));
+    }
+  }, [isLoading, allPosts.length > 0]);
+
+  // Save scroll position on scroll
+  useEffect(() => {
+    let timer;
+    const handleScroll = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        sessionStorage.setItem('meetifyy_feed_scrollY', String(window.scrollY));
+      }, 100);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
   const handleNewPost = useCallback(async (text, pollData, mediaData, mentions) => {
     if (pollData || text || mediaData) {
       try {

@@ -3,8 +3,29 @@
  *
  * Central HTTP client for all backend API calls.
  * Automatically attaches the auth token from localStorage.
+ *
+ * Token caching: we keep a module-level reference updated via onAuthStateChange
+ * so every API call is a synchronous read — no async getSession() per request.
  */
-import { supabase } from '@shared/context/AuthContext';
+import { supabase } from '@shared/lib/supabase';
+
+// ── Token cache ──────────────────────────────────────────────────────────────
+// Seeded on module load; refreshed instantly on every auth state change.
+let _cachedToken = '';
+let _hasSession = false;
+
+if (supabase) {
+  // Seed immediately from the stored session (non-blocking)
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    _cachedToken = session?.access_token ?? '';
+    _hasSession = !!session;
+  });
+  // Keep in sync with all future auth events (login, logout, token refresh)
+  supabase.auth.onAuthStateChange((_event, session) => {
+    _cachedToken = session?.access_token ?? '';
+    _hasSession = !!session;
+  });
+}
 
 export const getBackendUrl = () => {
   const envUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
@@ -49,14 +70,13 @@ export const getMediaUrl = (pathOrUrl) => {
   return `${backendUrl.replace(/\/+$/, '')}${cleanPath}`;
 };
 
-async function getToken() {
-  if (!supabase) return '';
-  const { data: { session } } = await supabase.auth.getSession();
-  return session?.access_token || '';
+// Synchronous token read — O(1), no async overhead
+function getToken() {
+  return _cachedToken;
 }
 
-async function request(method, path, body) {
-  const token = await getToken();
+async function request(method, path, body, signal) {
+  const token = getToken(); // synchronous — no await needed
   const deviceId = localStorage.getItem('meetifyy_deviceId');
 
   const headers = {
@@ -71,6 +91,7 @@ async function request(method, path, body) {
   }
 
   const options = { method, headers, cache: 'no-store' };
+  if (signal) options.signal = signal;
   if (body !== undefined) {
     if (body instanceof FormData) {
       delete headers['Content-Type'];
@@ -86,25 +107,24 @@ async function request(method, path, body) {
 
   if (res.status === 401) {
     // Only treat as a real session expiry if there's actually a live session.
-    // 401s that happen during the login race-condition (session not yet persisted)
-    // should not blow up the auth state.
-    if (supabase) {
-      const { data: { session: currentSession } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
-      if (currentSession) {
-        await supabase.auth.signOut().catch(console.error);
-        localStorage.removeItem('loggedIn');
-        localStorage.removeItem('currentUser');
-        localStorage.removeItem('meetifyy_deviceId');
-        localStorage.removeItem('meetifyy_recent_searches');
-        localStorage.removeItem('meetify_muted_communities');
-        localStorage.removeItem('read_invitations');
-        window.dispatchEvent(new Event('auth:unauthorized'));
-        const onAuthPage = ['/auth', '/login', '/signup', '/forgot-password', '/reset-password'].some(p => window.location.pathname.startsWith(p));
-        if (!onAuthPage && !window.__api_redirecting) {
-          window.__api_redirecting = true;
-          setTimeout(() => { window.__api_redirecting = false; }, 3000);
-          window.location.href = '/login';
-        }
+    // Use the cached session flag — no extra getSession() round-trip needed.
+    // 401s during login race-condition (session not yet persisted) are ignored.
+    if (supabase && _hasSession) {
+      await supabase.auth.signOut().catch(console.error);
+      _cachedToken = '';
+      _hasSession = false;
+      localStorage.removeItem('loggedIn');
+      localStorage.removeItem('currentUser');
+      localStorage.removeItem('meetifyy_deviceId');
+      localStorage.removeItem('meetifyy_recent_searches');
+      localStorage.removeItem('meetify_muted_communities');
+      localStorage.removeItem('read_invitations');
+      window.dispatchEvent(new Event('auth:unauthorized'));
+      const onAuthPage = ['/auth', '/login', '/signup', '/forgot-password', '/reset-password'].some(p => window.location.pathname.startsWith(p));
+      if (!onAuthPage && !window.__api_redirecting) {
+        window.__api_redirecting = true;
+        setTimeout(() => { window.__api_redirecting = false; }, 3000);
+        window.location.href = '/login';
       }
     }
   }
@@ -133,11 +153,11 @@ async function request(method, path, body) {
 window.__api_redirecting = false;
 
 export const apiClient = {
-  get: (path) => request('GET', path),
-  post: (path, body) => request('POST', path, body),
-  patch: (path, body) => request('PATCH', path, body),
-  put: (path, body) => request('PUT', path, body),
-  delete: (path) => request('DELETE', path),
+  get: (path, { signal } = {}) => request('GET', path, undefined, signal),
+  post: (path, body, { signal } = {}) => request('POST', path, body, signal),
+  patch: (path, body, { signal } = {}) => request('PATCH', path, body, signal),
+  put: (path, body, { signal } = {}) => request('PUT', path, body, signal),
+  delete: (path, { signal } = {}) => request('DELETE', path, undefined, signal),
 };
 
 // ──────────────────────────────────────────────
@@ -180,10 +200,10 @@ export const postsApi = {
   createPost: (data) => apiClient.post('/api/posts', data),
 
   /** Like a post by ID */
-  likePost: (postId) => apiClient.post(`/api/posts/${postId}/like`),
+  likePost: (postId, { signal } = {}) => apiClient.post(`/api/posts/${postId}/like`, undefined, { signal }),
 
   /** Unlike a post by ID */
-  unlikePost: (postId) => apiClient.post(`/api/posts/${postId}/unlike`),
+  unlikePost: (postId, { signal } = {}) => apiClient.post(`/api/posts/${postId}/unlike`, undefined, { signal }),
 
   /**
    * Add a comment to a post.
@@ -191,14 +211,15 @@ export const postsApi = {
    * @param {{ text: string, parentId?: string }} data
    */
   addComment: (postId, data) => apiClient.post(`/api/posts/${postId}/comments`, data),
-  likeComment: (commentId) => apiClient.post(`/api/posts/comments/${commentId}/like`),
-  unlikeComment: (commentId) => apiClient.post(`/api/posts/comments/${commentId}/unlike`),
+  likeComment: (commentId, { signal } = {}) => apiClient.post(`/api/posts/comments/${commentId}/like`, undefined, { signal }),
+  unlikeComment: (commentId, { signal } = {}) => apiClient.post(`/api/posts/comments/${commentId}/unlike`, undefined, { signal }),
+  deleteComment: (commentId) => apiClient.delete(`/api/posts/comments/${commentId}`),
   getPostById: (postId) => apiClient.get(`/api/posts/${postId}`),
   deletePost: (postId) => apiClient.delete(`/api/posts/${postId}`),
 
   voteInPoll: (postId, indices) => apiClient.post(`/api/posts/${postId}/vote`, { indices }),
-  bookmarkPost: (postId) => apiClient.post(`/api/posts/${postId}/bookmark`),
-  unbookmarkPost: (postId) => apiClient.delete(`/api/posts/${postId}/bookmark`),
+  bookmarkPost: (postId, { signal } = {}) => apiClient.post(`/api/posts/${postId}/bookmark`, undefined, { signal }),
+  unbookmarkPost: (postId, { signal } = {}) => apiClient.delete(`/api/posts/${postId}/bookmark`, { signal }),
   getBookmarks: (limit = 10, cursor) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (cursor) params.set('cursor', cursor);
@@ -222,8 +243,8 @@ export const communitiesApi = {
   getCampusCommunities: () => apiClient.get('/api/communities/campus'),
   getById: (id) => apiClient.get(`/api/communities/${id}`),
   create: (data) => apiClient.post('/api/communities', data),
-  join: (id) => apiClient.post(`/api/communities/${id}/join`),
-  leave: (id) => apiClient.post(`/api/communities/${id}/leave`),
+  join: (id, { signal } = {}) => apiClient.post(`/api/communities/${id}/join`, undefined, { signal }),
+  leave: (id, { signal } = {}) => apiClient.post(`/api/communities/${id}/leave`, undefined, { signal }),
   delete: (id) => apiClient.delete(`/api/communities/${id}`),
   updateGroupInfo: (id, data) => apiClient.patch(`/api/communities/${id}`, data),
   removeGroupMember: (id, memberId) => apiClient.delete(`/api/communities/${id}/members/${memberId}`),
@@ -234,8 +255,8 @@ export const activitiesApi = {
   getCampusActivities: () => apiClient.get('/api/activities/campus'),
   getById: (id) => apiClient.get(`/api/activities/${id}`),
   create: (data) => apiClient.post('/api/activities', data),
-  join: (id) => apiClient.post(`/api/activities/${id}/join`),
-  leave: (id) => apiClient.post(`/api/activities/${id}/leave`),
+  join: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/join`, undefined, { signal }),
+  leave: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/leave`, undefined, { signal }),
   requestToJoinActivity: (id) => apiClient.post(`/api/activities/${id}/request`),
   acceptJoinRequest: (id, userId) => apiClient.post(`/api/activities/${id}/requests/${userId}/accept`),
   rejectJoinRequest: (id, userId) => apiClient.post(`/api/activities/${id}/requests/${userId}/reject`),
@@ -270,8 +291,8 @@ export const usersApi = {
       return [];
     }
   },
-  follow: (username) => apiClient.post(`/api/users/${username}/follow`),
-  unfollow: (username) => apiClient.post(`/api/users/${username}/unfollow`),
+  follow: (username, { signal } = {}) => apiClient.post(`/api/users/${username}/follow`, undefined, { signal }),
+  unfollow: (username, { signal } = {}) => apiClient.post(`/api/users/${username}/unfollow`, undefined, { signal }),
   getById: (id) => apiClient.get(`/api/users/id/${id}`),
   updateProfile: (data) => apiClient.patch('/api/users/me', data),
   getSettings: () => apiClient.get('/api/users/me/settings'),

@@ -22,7 +22,7 @@ import { useData } from '@shared/hooks/useData';
 export default function SavedPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
-  const { savedPosts = [], toggleSavePost, getUserById } = useData();
+  const { getUserById } = useData();
   const {
     data,
     fetchNextPage,
@@ -73,15 +73,7 @@ export default function SavedPage() {
     localStorage.setItem('saved_view_mode', viewMode);
   }, [viewMode]);
 
-  const handleToggleSaved = async (e, postId) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const isCurrentlySaved = savedPosts.includes(postId);
-    if (toggleSavePost) {
-      await toggleSavePost(postId);
-    }
-    showToast(isCurrentlySaved ? 'Post removed from saved' : 'Post saved');
-  };
+
 
 
 
@@ -130,7 +122,6 @@ export default function SavedPage() {
         ) : viewMode === 'expanded' ? (
           <div className={styles.expandedContainer}>
             {fullPosts.map(post => {
-              const isSaved = savedPosts.includes(post.id);
               return (
                 <div key={post.id} className={styles.postWrapper}>
                   <Post 
@@ -149,7 +140,7 @@ export default function SavedPage() {
               const displayName = author?.displayName || author?.username || 'Unknown';
               const avatar = author?.avatar;
               const previewText = post.text?.length > 80 ? post.text.substring(0, 80) + '...' : post.text;
-              const isSaved = savedPosts.includes(post.id);
+
 
               return (
                 <div key={post.id} className={styles.compactRow} onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved' } })}>

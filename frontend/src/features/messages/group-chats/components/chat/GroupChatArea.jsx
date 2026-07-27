@@ -6,6 +6,7 @@ import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import { toast } from 'sonner';
 import { useData } from '@shared/hooks/useData';
 import { messagesApi } from '@shared/api/apiClient';
+import { useTypingIndicator } from '../../../shared/hooks/useTypingIndicator';
 
 import GroupChatHeader from './GroupChatHeader';
 import ChatMessageList from '../../../shared/components/ChatMessageList';
@@ -30,6 +31,7 @@ export default function GroupChatArea({
   hasMore,
   isLoadingMore,
   onLoadMore,
+  onMarkSeen,
 }) {
   const queryClient = useQueryClient();
   const { openViewer } = useMediaViewer();
@@ -42,6 +44,8 @@ export default function GroupChatArea({
   const [forwardingMsg, setForwardingMsg] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+
+  const { typingUsers, handleKeystroke, stopTypingNow } = useTypingIndicator(conversation?.id, currentUser?.id);
 
   useEffect(() => {
     setContextMenuState(null);
@@ -142,6 +146,8 @@ export default function GroupChatArea({
             onRetry={onRetryMessage}
             onOpenMediaModal={(url) => openViewer([{ url }], 0)}
             conversations={conversations}
+            typingUsers={typingUsers}
+            onMarkSeen={onMarkSeen}
           />
         )}
       </div>
@@ -149,6 +155,8 @@ export default function GroupChatArea({
       <ChatInputArea
         conversation={conversation}
         onSend={onSendMessage}
+        onTyping={handleKeystroke}
+        stopTypingNow={stopTypingNow}
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
         disabled={isBanned || isKicked || isPending}

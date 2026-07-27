@@ -48,17 +48,31 @@
 
 .msgBubbleWrapper {
   position: relative;
-  max-width: 85%;
+  max-width: 82%;
   display: flex;
   align-items: flex-end;
   gap: 0.5rem;
   min-width: 0;
+  backface-visibility: hidden;
+}
+
+@media (min-width: 768px) {
+  .msgBubbleWrapper {
+    max-width: 70%;
+  }
+}
+
+@media (min-width: 1024px) {
+  .msgBubbleWrapper {
+    max-width: 60%;
+  }
 }
 
 .msgBubbleContent {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  backface-visibility: hidden;
 }
 
 .msgAvatar {
@@ -92,18 +106,26 @@
 
 .msgBubbleThem {
   align-self: flex-start;
-  background: var(--color-border-light, #f4f4f5);
-  border: none;
+  background: var(--color-bg-subtle, #f4f4f5);
+  border: 1px solid rgba(0, 0, 0, 0.04);
   border-bottom-left-radius: 4px;
   color: var(--color-text-main, #18181b);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+[data-theme='dark'] .msgBubbleThem {
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
 .msgBubbleMe {
   align-self: flex-end;
-  background: var(--color-primary, #6366f1);
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%);
   color: white;
   border-bottom-right-radius: 4px;
   --link-color: white;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.18);
 }
 
 .msgBubbleTransparent {
@@ -116,9 +138,23 @@
   font-size: 0.88rem;
   font-weight: 400;
   line-height: 1.45;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
-.msgImageCardContainer, .msgAudioCardContainer {
+.msgTextTimeWrap {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.msgImageCardContainer,
+.msgAudioCardContainer {
   display: flex;
   flex-direction: column;
   margin: 4px 0 6px 0;
@@ -184,11 +220,30 @@
 }
 
 .msgStatusLabel {
-  font-size: 0.7rem;
-  color: var(--color-text-muted, #a1a1aa);
-  margin-top: 2px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-text-muted, #71717a);
+  margin-top: 3px;
   text-align: right;
-  padding-right: 4px;
+  padding-right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  letter-spacing: 0.01em;
+  opacity: 0.85;
+  animation: fadeInStatus 0.2s ease-in-out;
+}
+
+@keyframes fadeInStatus {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 0.85;
+    transform: translateY(0);
+  }
 }
 
 .msgStatusLabelFailed {
@@ -243,30 +298,120 @@
   text-align: center;
 }
 
-.typingIndicator {
+.typingIndicatorDots {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   padding: 4px 6px;
 }
 
 .typingIndicatorDot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--color-text-muted, #a1a1aa);
-  animation: typingBounce 1.4s infinite ease-in-out both;
+  animation: typingBounce 1.2s infinite ease-in-out;
 }
 
-.typingIndicatorDot:nth-child(1) { animation-delay: -0.32s; }
-.typingIndicatorDot:nth-child(2) { animation-delay: -0.16s; }
+.typingIndicatorDot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typingIndicatorDot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typingIndicatorDot:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 @keyframes typingBounce {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+
+  50% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
 }
 
-/* Image Attachment Styling */
+/* Image Attachment & Loading Skeleton Styling */
+.msgMediaWrapper {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.msgMediaSkeleton {
+  width: 220px;
+  height: 160px;
+  max-width: min(260px, 60vw);
+  max-height: 260px;
+  border-radius: 12px;
+  background: rgba(140, 140, 140, 0.15);
+  animation: mediaPulse 1.4s ease-in-out infinite alternate;
+}
+
+.msgMediaSkeletonStandalone {
+  width: 200px;
+  height: 180px;
+  max-width: min(210px, 55vw);
+  max-height: 230px;
+  border-radius: 16px;
+  background: rgba(140, 140, 140, 0.15);
+  animation: mediaPulse 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes mediaPulse {
+  0% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 0.8;
+  }
+}
+
+.msgMediaImgHidden {
+  opacity: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.msgMediaImgVisible {
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.msgMediaErrorCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 200px;
+  height: 140px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.08);
+  border: 1px dashed var(--color-border, #e4e4e7);
+  color: var(--color-text-muted, #71717a);
+  box-sizing: border-box;
+}
+
+[data-theme='dark'] .msgMediaErrorCard {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #a1a1aa;
+}
+
+.msgMediaErrorStandalone {
+  border-radius: 16px;
+}
+
 .msgMediaImg,
 .msgMediaImgStandalone {
   display: block;
@@ -288,14 +433,24 @@
   opacity: 0.92;
 }
 
-/* Time Label Styling */
 .msgTimeLabel {
   font-size: 0.65rem;
-  margin-top: 4px;
-  text-align: right;
-  opacity: 0.8;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  opacity: 0.75;
   user-select: none;
   font-weight: 400;
+  line-height: 1.2;
+  margin-left: auto;
+  align-self: flex-end;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.msgStatusText {
+  font-weight: 500;
+  margin-left: 2px;
 }
 
 .msgBubbleMe .msgTimeLabel {
@@ -444,6 +599,22 @@
   transform: none;
 }
 
+/* Main Bubble Row Layout for Exact Vertical Centering */
+.msgMainRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.msgMainRowMe {
+  flex-direction: row-reverse;
+}
+
+.msgMainRowThem {
+  flex-direction: row;
+}
+
 /* Message Hover Actions Bar */
 .msgHoverActions {
   display: flex;
@@ -451,25 +622,25 @@
   gap: 4px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.18s ease, transform 0.18s ease;
-  transform: scale(0.92);
+  transition: opacity 0.15s ease;
   align-self: center;
   flex-shrink: 0;
+  will-change: opacity;
 }
 
 .msgBubbleContainer:hover .msgHoverActions,
-.msgBubbleWrapper:hover .msgHoverActions {
+.msgBubbleWrapper:hover .msgHoverActions,
+.msgMainRow:hover .msgHoverActions {
   opacity: 1;
   pointer-events: auto;
-  transform: scale(1);
 }
 
 .msgHoverActionsMe {
-  margin-right: 6px;
+  margin-right: 2px;
 }
 
 .msgHoverActionsThem {
-  margin-left: 6px;
+  margin-left: 2px;
 }
 
 .msgHoverBtn {
@@ -484,7 +655,7 @@
   color: var(--color-text-muted, #71717a);
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 [data-theme='dark'] .msgHoverBtn {
@@ -498,5 +669,50 @@
   background: var(--color-primary, #6366f1);
   color: white;
   border-color: var(--color-primary, #6366f1);
-  transform: scale(1.08);
+}
+
+.msgStatusIndicator {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 5px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.statusSent {
+  color: var(--color-text-muted, #a1a1aa);
+}
+
+.statusDelivered {
+  color: var(--color-text-muted, #a1a1aa);
+  letter-spacing: -3px;
+  margin-right: 2px;
+}
+
+.statusRead {
+  color: #3b82f6;
+  letter-spacing: -3px;
+  margin-right: 2px;
+}
+
+.statusFailed {
+  color: #ef4444;
+  font-weight: 900;
+}
+
+.statusSendingSpinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: statusSpin 0.6s linear infinite;
+}
+
+@keyframes statusSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
