@@ -283,8 +283,35 @@ export function UpcomingEvents() {
 
   const myActivities = useMemo(() => {
     if (!currentUser) return [];
+    const now = new Date();
     return crewActivities
-      .filter(a => a.participants?.includes(currentUser.id))
+      .filter(a => {
+        if (!a.participants?.includes(currentUser.id)) return false;
+        
+        let hasEnded = a.status === 'ENDED' || a.status === 'CANCELLED';
+        const startRaw = a.startDate || a.date;
+        const endRaw = a.endDate;
+        
+        if (!hasEnded) {
+          if (endRaw) {
+            const end = new Date(endRaw);
+            if (!isNaN(end.getTime()) && now >= end) hasEnded = true;
+          } else if (startRaw) {
+            const start = new Date(startRaw);
+            if (!isNaN(start.getTime())) {
+              let durationHours = 1;
+              if (a.duration) {
+                const match = String(a.duration).match(/(\d+)/);
+                if (match) durationHours = parseInt(match[1], 10);
+              }
+              const calculatedEnd = new Date(start.getTime() + durationHours * 60 * 60 * 1000);
+              if (now >= calculatedEnd) hasEnded = true;
+            }
+          }
+        }
+        
+        return !hasEnded;
+      })
       .sort((a, b) => new Date(a.startDate || a.createdAt) - new Date(b.startDate || b.createdAt));
   }, [crewActivities, currentUser]);
 
@@ -306,9 +333,6 @@ export function UpcomingEvents() {
           ))
         )}
       </div>
-      {myActivities.length > 2 && (
-        <button className={styles.viewAllBtn} onClick={() => navigate('/crew', { state: { selectedTab: 'My Activities' } })} style={{ marginTop: '1rem' }}>View All Activities</button>
-      )}
     </div>
   );
 }

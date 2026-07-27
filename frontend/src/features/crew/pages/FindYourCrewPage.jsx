@@ -56,45 +56,67 @@ export default function FindYourCrewPage() {
 
   const filteredActivities = useMemo(() => {
     if (!crewActivities) return [];
-    
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const now = new Date();
-    
-    // For non-My Activities tabs, filter out past activities
-    let activities = crewActivities.filter(a => !a.shareToSchool || a.hostCollege === collegeName);
 
-    if (selectedTab !== 'My Activities') {
-      activities = activities.filter(a => {
-        if (a.status === 'ENDED' || a.status === 'CANCELLED') return false;
-        if (a.endDate && new Date(a.endDate) < now) return false;
-        if (!a.date) return true;
+    // Helper: is this activity "ended" by date/status?
+    const isActivityEnded = (a) => {
+      if (a.status === 'ENDED' || a.status === 'CANCELLED') return true;
+      if (a.endDate && new Date(a.endDate) < now) return true;
+      if (a.date) {
         const activityDate = new Date(a.date);
         activityDate.setHours(0, 0, 0, 0);
-        return activityDate >= today;
+        if (activityDate < today) return true;
+      }
+      return false;
+    };
+
+    // Helper: is this activity marked to be visible on college/campus?
+    const isCollegeActivity = (a) => {
+      if (!a) return false;
+      if (a.shareToCampus === true || a.shareToSchool === true || a.isCollegeOnly === true || a.schoolOnly === true) {
+        return true;
+      }
+      const vis = String(a.visibility || '').toUpperCase();
+      if (vis === 'COLLEGE' || vis === 'COLLEGE_ONLY' || vis === 'SCHOOL' || vis === 'CAMPUS') {
+        return true;
+      }
+      const join = String(a.whoCanJoin || '').toLowerCase();
+      if (join === 'college' || join === 'school' || join === 'campus') {
+        return true;
+      }
+      return false;
+    };
+
+    // "My Activities" — show ALL activities the user is part of (created or joined), regardless of college visibility.
+    if (selectedTab === 'My Activities') {
+      const mine = crewActivities.filter(a =>
+        a.participants?.includes(currentUser?.id) || a.creatorId === currentUser?.id || a.hostId === currentUser?.id
+      ).sort((a, b) => new Date(a.startDate || a.date || 0) - new Date(b.startDate || b.date || 0));
+      return filterActivities(mine, { search: debouncedSearchQuery });
+    }
+
+    // All other tabs: exclude college-only activities (they live on Campus page)
+    let activities = crewActivities.filter(a => !isCollegeActivity(a));
+
+    // Exclude ended/past activities from public-facing tabs
+    activities = activities.filter(a => !isActivityEnded(a));
+
+    if (selectedTab === 'For You') {
+      if (!searchQuery) activities = activities.slice(0, 10);
+    } else if (selectedTab === 'Saved') {
+      activities = activities.filter(a => savedActivities?.includes(a.id));
+    } else if (selectedTab === '1 on 1' || selectedTab === 'Popular') {
+      activities = activities.filter(a => {
+        const limit = Number(a.maxMembers || a.slotsNeeded || a.maxParticipants || 0);
+        return limit === 2;
       });
     }
 
-    // Filter by tab
-    if (selectedTab === 'For You') {
-      if (!searchQuery) {
-        activities = activities.slice(0, 10);
-      }
-    } else if (selectedTab === 'My Activities') {
-      activities = activities.filter(a => 
-        (a.participants && a.participants.includes(currentUser?.id)) || (a.creatorId === currentUser?.id)
-      ).sort((a, b) => new Date(a.startDate || a.date || 0) - new Date(b.startDate || b.date || 0));
-    } else if (selectedTab === 'Saved') {
-      activities = activities.filter(a => savedActivities?.includes(a.id));
-    } else if (selectedTab === 'Popular') {
-      activities = [...activities].sort((a, b) => b.slotsFilled - a.slotsFilled);
-      if (!debouncedSearchQuery) {
-        activities = activities.slice(0, 10);
-      }
-    }
-
     return filterActivities(activities, { search: debouncedSearchQuery });
-  }, [crewActivities, debouncedSearchQuery, selectedTab, currentUser, savedActivities, collegeName]);
+  }, [crewActivities, debouncedSearchQuery, selectedTab, currentUser, savedActivities, collegeName, searchQuery]);
 
   const { ongoingActivities, upcomingActivities, pastActivities } = useMemo(() => {
     if (selectedTab !== 'My Activities') {
@@ -114,38 +136,30 @@ export default function FindYourCrewPage() {
 
       if (startRaw) {
         const start = new Date(startRaw);
-        if (!isNaN(start.getTime())) {
-          hasStarted = now >= start;
-        }
+        if (!isNaN(start.getTime())) hasStarted = now >= start;
       }
 
-      if (endRaw) {
-        const end = new Date(endRaw);
-        if (!isNaN(end.getTime()) && now >= end) {
-          hasEnded = true;
-        }
-      } else if (startRaw) {
-        const start = new Date(startRaw);
-        if (!isNaN(start.getTime())) {
-          let durationHours = 1;
-          if (a.duration) {
-            const match = String(a.duration).match(/(\d+)/);
-            if (match) durationHours = parseInt(match[1], 10);
-          }
-          const calculatedEnd = new Date(start.getTime() + durationHours * 60 * 60 * 1000);
-          if (now >= calculatedEnd) {
-            hasEnded = true;
+      if (!hasEnded) {
+        if (endRaw) {
+          const end = new Date(endRaw);
+          if (!isNaN(end.getTime()) && now >= end) hasEnded = true;
+        } else if (startRaw) {
+          const start = new Date(startRaw);
+          if (!isNaN(start.getTime())) {
+            let durationHours = 1;
+            if (a.duration) {
+              const match = String(a.duration).match(/(\d+)/);
+              if (match) durationHours = parseInt(match[1], 10);
+            }
+            const calculatedEnd = new Date(start.getTime() + durationHours * 60 * 60 * 1000);
+            if (now >= calculatedEnd) hasEnded = true;
           }
         }
       }
 
-      if (hasEnded) {
-        past.push(a);
-      } else if (hasStarted) {
-        ongoing.push(a);
-      } else {
-        upcoming.push(a);
-      }
+      if (hasEnded) past.push(a);
+      else if (hasStarted) ongoing.push(a);
+      else upcoming.push(a);
     });
 
     return { ongoingActivities: ongoing, upcomingActivities: upcoming, pastActivities: past };
@@ -182,8 +196,8 @@ export default function FindYourCrewPage() {
                 </svg>
               </button>
             }
-            tabs={['For You', 'Popular', 'My Activities', 'Saved']}
-            activeTab={selectedTab}
+            tabs={['For You', '1 on 1', 'My Activities', 'Saved']}
+            activeTab={selectedTab === 'Popular' ? '1 on 1' : selectedTab}
             onTabChange={setSelectedTab}
             tabVariant="underline"
           />
@@ -203,7 +217,7 @@ export default function FindYourCrewPage() {
                       <div className={styles.sectionHeader}>
                         <h2 className={styles.sectionTitle}>
                           {selectedTab === 'Saved' ? 'Saved Activities' : 
-                           selectedTab === 'Popular' ? 'Most Popular' : 'Activities'}
+                           (selectedTab === '1 on 1' || selectedTab === 'Popular') ? '1 on 1 Activities' : 'Activities'}
                         </h2>
                       </div>
                     )}

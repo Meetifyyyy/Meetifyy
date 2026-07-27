@@ -35,6 +35,11 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   // We still keep the deviceId map for E2EE device-specific routing
   private connectedDevices = new Map<string, Socket>();
 
+  // In-memory alias cache: conversationId (any form) → { id, publicId }
+  // Avoids a Prisma round-trip on every emitToConversation call (e.g. typing events)
+  private convAliasCache = new Map<string, { id: string; publicId: string | null; cachedAt: number }>();
+  private readonly ALIAS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly messagesService: MessagesService,
@@ -47,6 +52,10 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   afterInit() {
     // Register this gateway as the emit target for InstantMatchService
     setRealtimeGatewayRef(this);
+    this.presenceService.registerSocketValidator((socketId: string) => {
+      const s = this.server?.sockets?.sockets?.get(socketId);
+      return Boolean(s && s.connected);
+    });
     this.setupDomainEventSubscriber();
   }
 
@@ -182,11 +191,24 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     }
 
     await this.presenceService.setOnline(userId, client.id);
-    this.server.emit('presence:update', {
-      userId,
-      status: 'online',
-      lastActive: new Date().toISOString()
+
+    // Scoped presence broadcast: only emit to users who share a conversation room
+    // with the connecting user. Avoids O(n) fan-out to all connected clients.
+    const rooms = Array.from(client.rooms || []);
+    const presencePayload = { userId, status: 'online', lastActive: new Date().toISOString() };
+    let broadcastToAny = false;
+    rooms.forEach(room => {
+      if (room.startsWith('conv_')) {
+        this.server.to(room).emit('presence:update', presencePayload);
+        broadcastToAny = true;
+      }
     });
+    // Fallback: if the user hasn't joined any conversation rooms yet (first connect),
+    // emit to their personal room so their own tabs see the change
+    if (!broadcastToAny) {
+      this.server.to(userId).emit('presence:update', presencePayload);
+    }
+
     this.logger.log(`Connected user=${userId} socket=${client.id}`);
   }
 
@@ -195,14 +217,30 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     const deviceId = (client as any).deviceId;
     
     if (userId) {
+      // Broadcast typing:stop to all conversation rooms this socket was in
+      const rooms = Array.from(client.rooms || []);
+      rooms.forEach(room => {
+        if (room.startsWith('conv_')) {
+          const conversationId = room.replace(/^conv_/, '');
+          this.server.to(room).emit('typing:stop', { conversationId, userId });
+        }
+      });
+
       await this.presenceService.setOffline(userId, client.id);
       const presence = await this.presenceService.getPresence(userId);
       if (!presence || presence.status === 'offline') {
-        this.server.emit('presence:update', {
-          userId,
-          status: 'offline',
-          lastActive: presence?.lastSeen || new Date().toISOString()
+        // Scoped broadcast: only rooms this user was in
+        const offlinePayload = { userId, status: 'offline', lastActive: presence?.lastSeen || new Date().toISOString() };
+        let broadcastToAny = false;
+        rooms.forEach(room => {
+          if (room.startsWith('conv_')) {
+            this.server.to(room).emit('presence:update', offlinePayload);
+            broadcastToAny = true;
+          }
         });
+        if (!broadcastToAny) {
+          this.server.to(userId).emit('presence:update', offlinePayload);
+        }
       }
     }
     if (deviceId) {
@@ -346,10 +384,25 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   }
 
   @SubscribeMessage('message:received')
+  async handleMessageReceived(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { conversationId: string; messageId: string }
+  ) {
+    // message:received is an alias for message:delivered — same handler logic
+    return this.handleMessageDeliveredInternal(client, data);
+  }
+
   @SubscribeMessage('message:delivered')
   async handleMessageDelivered(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { conversationId: string; messageId: string }
+  ) {
+    return this.handleMessageDeliveredInternal(client, data);
+  }
+
+  private async handleMessageDeliveredInternal(
+    client: Socket,
+    data: { conversationId: string; messageId: string }
   ) {
     const userId = (client as any).userId;
     if (!userId || !data?.conversationId || !data?.messageId) return;
@@ -377,17 +430,32 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   }
 
   @SubscribeMessage('messages:seen')
-  @SubscribeMessage('conversation:mark_seen')
-  async handleConversationSeen(
+  async handleMessagesSeen(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { conversationId: string; lastMessageId?: string }
   ) {
+    return this.handleSeenInternal(client, data);
+  }
+
+  @SubscribeMessage('conversation:mark_seen')
+  async handleMarkSeen(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { conversationId: string; lastMessageId?: string }
+  ) {
+    return this.handleSeenInternal(client, data);
+  }
+
+  private async handleSeenInternal(
+    client: Socket,
+    data: { conversationId: string; lastMessageId?: string }
+  ) {
     const readerId = (client as any).userId;
     if (!readerId || !data?.conversationId) return;
-    
+
+    // Single DB write regardless of which event name the client used
     await this.messagesService.markAsRead(data.conversationId, readerId);
     const lastReadAt = new Date().toISOString();
-    
+
     const payload = {
       conversationId: data.conversationId,
       lastMessageId: data.lastMessageId,
@@ -428,17 +496,36 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   /**
    * Emit an event to all participants of a conversation using O(1) Socket.io rooms.
-   * Resolves both DB ID and Public ID aliases so all participants receive real-time events.
+   * Resolves both DB ID and Public ID aliases — uses in-memory cache to avoid a
+   * DB query on every typing keystroke or high-frequency event.
    */
   async emitToConversation(conversationId: string, event: string, payload: any) {
     if (!conversationId) return;
     this.server.to(`conv_${conversationId}`).emit(event, payload);
 
     try {
-      const conv = await this.prisma.conversation.findFirst({
-        where: { OR: [{ id: conversationId }, { publicId: conversationId }] },
-        select: { id: true, publicId: true }
-      });
+      // Check in-memory alias cache first
+      const now = Date.now();
+      const cached = this.convAliasCache.get(conversationId);
+      let conv: { id: string; publicId: string | null } | null = null;
+
+      if (cached && (now - cached.cachedAt) < this.ALIAS_CACHE_TTL_MS) {
+        conv = { id: cached.id, publicId: cached.publicId };
+      } else {
+        const dbConv = await this.prisma.conversation.findFirst({
+          where: { OR: [{ id: conversationId }, { publicId: conversationId }] },
+          select: { id: true, publicId: true }
+        });
+        if (dbConv) {
+          conv = dbConv;
+          // Cache both directions so either alias hits the cache
+          this.convAliasCache.set(dbConv.id, { id: dbConv.id, publicId: dbConv.publicId, cachedAt: now });
+          if (dbConv.publicId) {
+            this.convAliasCache.set(dbConv.publicId, { id: dbConv.id, publicId: dbConv.publicId, cachedAt: now });
+          }
+        }
+      }
+
       if (conv) {
         if (conv.id && conv.id !== conversationId) {
           this.server.to(`conv_${conv.id}`).emit(event, payload);
@@ -448,7 +535,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
         }
       }
     } catch {
-      // Ignore lookup error
+      // Ignore lookup error — primary emit already fired above
     }
   }
 

@@ -4,44 +4,36 @@ import cardStyles from './CrewCard.module.css';
 export default function CrewCardSkeleton() {
   return (
     <div className={cardStyles.card} style={{ pointerEvents: 'none' }}>
-      {/* Avatar column */}
-      <div className={cardStyles.avatarCol}>
-        <Skeleton type="circle" width="48px" height="48px" />
+      {/* Left Column: Cover Image & Calendar Badge */}
+      <div className={cardStyles.coverCol}>
+        <Skeleton type="rect" width="100%" height="100%" style={{ borderRadius: '18px' }} />
+        <div className={cardStyles.calendarBadge}>
+          <Skeleton type="rect" width="38px" height="42px" style={{ borderRadius: '8px' }} />
+        </div>
       </div>
 
-      {/* Body */}
-      <div className={cardStyles.body} style={{ flex: 1, minWidth: 0 }}>
-        {/* Category tag + title */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
-          <Skeleton type="rect" width="60px" height="18px" style={{ borderRadius: '100px' }} />
-          <Skeleton type="text" width="70%" height="16px" style={{ marginBottom: 0 }} />
+      {/* Right Column: Details */}
+      <div className={cardStyles.body}>
+        {/* Top Row: Time label + More options button */}
+        <div className={cardStyles.topRow}>
+          <Skeleton type="text" width="140px" height="13px" style={{ marginBottom: 0 }} />
+          <Skeleton type="circle" width="20px" height="20px" />
         </div>
 
-        {/* Description */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
-          <Skeleton type="text" width="100%" height="11px" style={{ marginBottom: 0 }} />
-          <Skeleton type="text" width="60%" height="11px" style={{ marginBottom: 0 }} />
-        </div>
+        {/* Title */}
+        <Skeleton type="text" width="65%" height="22px" style={{ marginTop: '6px', marginBottom: '12px', borderRadius: '6px' }} />
 
-        {/* Meta rows */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px' }}>
-          <div style={{ display: 'flex', gap: '1rem' }}>
-            <Skeleton type="text" width="80px" height="11px" style={{ marginBottom: 0 }} />
-            <Skeleton type="text" width="60px" height="11px" style={{ marginBottom: 0 }} />
+        {/* Bottom Row: Overlapping avatars + Count + Bookmark */}
+        <div className={cardStyles.bottomRow}>
+          <div className={cardStyles.goingLine} style={{ gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <Skeleton type="circle" width="26px" height="26px" style={{ marginRight: '-6px' }} />
+              <Skeleton type="circle" width="26px" height="26px" style={{ marginRight: '-6px' }} />
+              <Skeleton type="circle" width="26px" height="26px" />
+            </div>
+            <Skeleton type="text" width="70px" height="12px" style={{ marginBottom: 0 }} />
           </div>
-          <div style={{ display: 'flex', gap: '1rem' }}>
-            <Skeleton type="text" width="90px" height="11px" style={{ marginBottom: 0 }} />
-            <Skeleton type="text" width="40px" height="11px" style={{ marginBottom: 0 }} />
-          </div>
-        </div>
-
-        {/* Bottom row: host + join button */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Skeleton type="circle" width="20px" height="20px" />
-            <Skeleton type="text" width="80px" height="11px" style={{ marginBottom: 0 }} />
-          </div>
-          <Skeleton type="rect" width="70px" height="32px" style={{ borderRadius: '100px' }} />
+          <Skeleton type="rect" width="20px" height="20px" style={{ borderRadius: '4px' }} />
         </div>
       </div>
     </div>

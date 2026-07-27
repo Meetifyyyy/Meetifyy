@@ -2,23 +2,22 @@ import { useState, useRef, useEffect } from 'react';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
 import styles from './ChatInputAreaStyles.module.css';
-import { useVoiceRecorder } from '../../hooks/useVoiceRecorder';
-
+import { useVoiceRecorder } from '@features/messages/hooks/useVoiceRecorder';
 import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
+import { toast } from 'sonner';
 
 export default function ChatInputArea({
   conversation,
-  currentUser,
   onSendMessage: propOnSendMessage,
   onSend,
   replyingTo,
   onCancelReply,
-  setIsTyping,
   onJoinGroup,
   onBlockUser,
-  showToast,
   onTyping,
-  stopTypingNow
+  stopTypingNow,
+  disabled,
+  disabledReason,
 }) {
   const sendMessageFn = propOnSendMessage || onSend;
   const [inputValue, setInputValue] = useState({ text: '', mentions: [] });
@@ -54,7 +53,7 @@ export default function ChatInputArea({
 
   const { isRecording, recordingTime, startRecording, deleteRecording, sendRecording, formatDuration } = useVoiceRecorder({
     onSend: (audioUrl) => sendMessageFn && sendMessageFn(conversation.id, '', replyingTo, [], audioUrl, 'audio'),
-    showToast
+    showToast: (msg) => toast.error(msg),
   });
 
   const handleAttachClick = () => {
@@ -127,16 +126,20 @@ export default function ChatInputArea({
   const isClosed = conversation?.status === 'Closed';
   const isExpiredInstantMatch = conversation?.isInstantMatch && conversation?.expiresAt && new Date(conversation.expiresAt).getTime() < Date.now();
   const isNotMember = (conversation?.type === 'GROUP' || conversation?.isGroup || conversation?.activityId) && conversation?.isMember === false;
+  // Also respect the parent-level disabled flag (e.g. blocked DM, ended activity)
+  const isDisabledByParent = !!disabled;
 
-  if (isClosed || isExpiredInstantMatch || isNotMember) {
+  if (isClosed || isExpiredInstantMatch || isNotMember || isDisabledByParent) {
     return (
       <div className={styles.msgChatInputWrap} style={{ justifyContent: 'center', padding: '1rem' }}>
         <div className={styles.msgBlockedNotice} style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-          {isClosed 
-            ? 'This activity/conversation has ended.' 
-            : isExpiredInstantMatch 
-              ? 'This 24-hour instant match has expired.' 
-              : "You can't send messages because you're no longer in this group."}
+          {disabledReason
+            ? disabledReason
+            : isClosed
+            ? 'This activity/conversation has ended.'
+            : isExpiredInstantMatch
+            ? 'This 24-hour instant match has expired.'
+            : "You can't send messages because you're no longer in this group."}
         </div>
       </div>
     );
@@ -261,24 +264,26 @@ export default function ChatInputArea({
               </div>
             )}
 
-            <button type="button" className={styles.msgEmojiBtn} title="Emoji" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" y1="9" x2="9" y2="9" /><line x1="15" y1="9" x2="15" y2="9" />
-              </svg>
-            </button>
+            <div className={styles.leftActions}>
+              <button type="button" className={styles.msgEmojiBtn} title="Emoji" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" y1="9" x2="9" y2="9" /><line x1="15" y1="9" x2="15" y2="9" />
+                </svg>
+              </button>
 
-            <button 
-              type="button"
-              className={`${styles.msgAttachBtn} ${hasText ? styles.attachBtnHidden : ''}`} 
-              title="Attach image or video" 
-              onClick={handleAttachClick}
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="5" ry="5" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <path d="M21 15l-5-5L5 21" />
-              </svg>
-            </button>
+              <button 
+                type="button"
+                className={`${styles.msgAttachBtn} ${hasText ? styles.attachBtnHidden : ''}`} 
+                title="Attach image or video" 
+                onClick={handleAttachClick}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="5" ry="5" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="M21 15l-5-5L5 21" />
+                </svg>
+              </button>
+            </div>
 
             <div className={styles.inputBar}>
               <div className={styles.inputWrapper}>

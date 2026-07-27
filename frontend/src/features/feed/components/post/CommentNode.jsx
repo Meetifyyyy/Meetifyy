@@ -352,14 +352,17 @@ export default function CommentNode({
         className={[
           styles.nodeContainer,
           level === 0 ? styles.level0 : styles.levelN,
+          styles.nodeContainerDeleted,
         ].join(' ')}
         style={{
           '--avatar-size':   `${avatarSize}px`,
+          '--font-scale':    fontScale,
           '--indent-size':   indentSize,
           '--gap-size':      gapSize,
+          '--padding-scale': dvPadding,
         }}
       >
-        {/* SVG connector still needed to anchor child replies visually */}
+        {/* SVG connector overlay — only when children are visible */}
         {hasChildren && isExpanded && (
           <ConnectorSVG
             nodeContainerRef={nodeContainerRef}
@@ -377,6 +380,7 @@ export default function CommentNode({
             styles.replyCard,
             styles.replyCardDeleted,
             hasChildren && !isExpanded ? styles.isCollapsed : '',
+            hasChildren ? styles.commentCardClickable : '',
           ].join(' ')}
           data-comment-card
           role={hasChildren ? 'button' : undefined}
@@ -406,6 +410,24 @@ export default function CommentNode({
             <div className={styles.replyContent}>
               <div className={styles.deletedLabel}>Deleted</div>
               <div className={styles.deletedSubtext}>This comment has been deleted.</div>
+
+              {!isExpanded && hasChildren && (() => {
+                const countAllReplies = (node) => {
+                  if (!node.replies) return 0;
+                  return node.replies.reduce((acc, reply) => acc + 1 + countAllReplies(reply), 0);
+                };
+                const totalReplies = countAllReplies(comment);
+                return (
+                  <button
+                    className={styles.viewRepliesBtn}
+                    data-no-collapse
+                    onClick={(e) => { e.stopPropagation(); toggleExpanded(comment.id, isExpanded); }}
+                    style={{ marginTop: '6px' }}
+                  >
+                    View {totalReplies} {totalReplies === 1 ? 'reply' : 'replies'}
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>

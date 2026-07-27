@@ -5,6 +5,7 @@ import { getBackendUrl } from '@shared/api/apiClient';
 export const useGlobalSocketStore = create((set, get) => ({
   socket: null,
   isConnected: false,
+  reconnectCount: 0,
   _lastToken: null,
 
   connect: (token, deviceId) => {
@@ -28,12 +29,16 @@ export const useGlobalSocketStore = create((set, get) => ({
       withCredentials: true,
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: 15,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000,
     });
 
     newSocket.on('connect', () => {
-      set({ isConnected: true });
+      set((state) => ({
+        isConnected: true,
+        reconnectCount: state.reconnectCount + 1,
+      }));
     });
 
     newSocket.on('disconnect', () => {
@@ -47,8 +52,7 @@ export const useGlobalSocketStore = create((set, get) => ({
     const { socket } = get();
     if (socket) {
       socket.disconnect();
-      set({ socket: null, isConnected: false, _lastToken: null });
+      set({ socket: null, isConnected: false, _lastToken: null, reconnectCount: 0 });
     }
   },
 }));
-

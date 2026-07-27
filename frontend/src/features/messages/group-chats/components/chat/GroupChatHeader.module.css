@@ -2,10 +2,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  height: 72px;
   padding: 12px 16px;
   background: var(--color-bg-white, #ffffff);
   border-bottom: 1px solid var(--color-border, #e4e4e7);
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .backBtn {

@@ -23,15 +23,27 @@ export default function ActivitiesPage() {
     // Only show activities visible to this college
     let list = campusCrewActivities;
 
-    // Filter out past activities
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    list = list.filter(act => {
-      if (!act.date) return true;
-      const d = new Date(act.date);
-      d.setHours(0, 0, 0, 0);
-      return d >= today;
-    });
+    const isActivityEnded = (act) => {
+      if (!act) return true;
+      const status = (act.status || '').toUpperCase();
+      if (status === 'ENDED' || status === 'CANCELLED' || status === 'CLOSED' || status === 'COMPLETED') return true;
+      const startDateStr = act.startDate || act.date;
+      if (startDateStr) {
+        const start = new Date(startDateStr);
+        if (!isNaN(start.getTime())) {
+          let durationHours = 2;
+          if (act.duration) {
+            const match = String(act.duration).match(/(\d+)/);
+            if (match) durationHours = parseInt(match[1], 10);
+          }
+          const calculatedEnd = new Date(start.getTime() + durationHours * 60 * 60 * 1000);
+          if (new Date() >= calculatedEnd) return true;
+        }
+      }
+      return false;
+    };
+
+    list = list.filter(act => !isActivityEnded(act));
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();

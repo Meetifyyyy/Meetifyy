@@ -1,0 +1,117 @@
+/* Shared layout for all ChatArea variants (DM, Group, Activity) */
+
+.chatArea {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  min-width: 0;
+  background: var(--color-bg-white, #ffffff);
+  position: relative;
+}
+
+.chatAreaVisible {
+  display: flex;
+}
+
+@media (min-width: 769px) {
+  .chatArea {
+    display: flex;
+  }
+}
+
+.chatBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--color-text-muted, #71717a);
+  font-size: 0.875rem;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 12px;
+  color: var(--color-text-muted, #71717a);
+}
+
+.emptyStateIcon {
+  font-size: 2.5rem;
+  opacity: 0.5;
+}
+
+.emptyState p {
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* ── Typing bubble (sits between message list and input) ─── */
+
+.typingRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition:
+    max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s ease,
+    padding 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.typingRowVisible {
+  max-height: 56px;
+  opacity: 1;
+  padding: 6px 16px 4px;
+  pointer-events: auto;
+}
+
+.typingBubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--color-bg-subtle, #f4f4f5);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 18px;
+  border-bottom-left-radius: 4px;
+  padding: 10px 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme='dark'] .typingBubble {
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.typingDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-text-muted, #71717a);
+  animation: typingBounce 1.3s ease-in-out infinite;
+}
+
+.typingDot:nth-child(1) { animation-delay: 0s; }
+.typingDot:nth-child(2) { animation-delay: 0.18s; }
+.typingDot:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30%            { transform: translateY(-4px); opacity: 1; }
+}

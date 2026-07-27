@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ErrorState } from '@shared/components/ui/StateViews';
+import Avatar from '@shared/components/avatar/Avatar';
 import MessageBubble from './MessageBubble';
 import { timeAgo } from '@shared/utils/time';
 import styles from './ChatMessageList.module.css';
+
 
 const getRelativeDateString = (date) => {
   const today = new Date();
@@ -30,8 +32,12 @@ const getRelativeDateString = (date) => {
 };
 
 const getMessageDateGroup = (msg) => {
-  if (msg.timestamp) {
-    return getRelativeDateString(new Date(msg.timestamp));
+  const rawDate = msg.createdAt || msg.timestamp;
+  if (rawDate) {
+    const d = new Date(rawDate);
+    if (!isNaN(d.getTime())) {
+      return getRelativeDateString(d);
+    }
   }
   
   const time = msg.time || '';
@@ -102,9 +108,34 @@ export default function ChatMessageList({
     }
   }, [messages, isLoading, error, onMarkSeen]);
 
+  // Resolve typing user avatar & display name from users, conversation participants, or otherUser
+  const firstTypingEntry = typingUsers?.size > 0 ? typingUsers.entries().next().value : null;
+  const firstTypingUserId = firstTypingEntry?.[0];
+  const firstTypingUserName = firstTypingEntry?.[1];
+
+  const typingUserObj = firstTypingUserId ? (users?.[firstTypingUserId] || users?.[String(firstTypingUserId)]) : null;
+  const typingParticipant = firstTypingUserId
+    ? (conversation?.participants?.find(p => String(p.id || p.userId || p._id) === String(firstTypingUserId)) ||
+       conversation?.members?.find(p => String(p.id || p.userId || p._id) === String(firstTypingUserId)))
+    : null;
+
+  const typingAvatar = typingUserObj?.avatar || typingUserObj?.profileImage || typingUserObj?.avatarUrl ||
+                       typingParticipant?.avatar || typingParticipant?.profileImage || typingParticipant?.avatarUrl ||
+                       conversation?.otherUser?.avatar || conversation?.otherUser?.profileImage || conversation?.avatar || null;
+
+  const typingName = typingUserObj?.displayName || typingUserObj?.name || typingUserObj?.username ||
+                     firstTypingUserName || typingParticipant?.displayName || typingParticipant?.name ||
+                     conversation?.otherUser?.displayName || conversation?.otherUser?.name || conversation?.name || '';
+
   const itemsToRender = useMemo(() => {
     const items = [];
     if (!messages || messages.length === 0) {
+      if (isTyping) {
+        items.push({
+          type: 'typing_indicator',
+          id: 'item_typing_indicator'
+        });
+      }
       return items;
     }
 
@@ -124,11 +155,22 @@ export default function ChatMessageList({
 
     const isGroupUpdatesActive = conversation?.groupUpdatesActive !== false;
 
-    // Deduplicate loadedMessages by message ID / tempId to prevent key collision warnings
+    // Deduplicate loadedMessages by message ID / tempId to prevent key collision warnings and consecutive duplicate system messages
     const seenMsgIds = new Set();
+    let lastSystemText = null;
     const filteredMessages = (messages || []).filter((msg, idx) => {
-      if (!isGroupUpdatesActive && (msg.type === 'system' || msg.type === 'SYSTEM' || msg.isSystem)) {
+      const isSystem = msg.type === 'system' || msg.type === 'SYSTEM' || msg.isSystem;
+      if (!isGroupUpdatesActive && isSystem) {
         return false;
+      }
+      const text = (msg.text || msg.payload?.text || '').trim();
+      if (isSystem) {
+        if (text && text === lastSystemText) {
+          return false;
+        }
+        lastSystemText = text;
+      } else {
+        lastSystemText = null;
       }
       const keyId = msg.id || msg.tempId || `temp_idx_${idx}`;
       if (seenMsgIds.has(keyId)) {
@@ -138,8 +180,19 @@ export default function ChatMessageList({
       return true;
     });
 
+    const getMsgTime = (m) => {
+      const d = m.createdAt || m.timestamp;
+      if (d) {
+        const t = new Date(d).getTime();
+        if (!isNaN(t)) return t;
+      }
+      return 0;
+    };
+
+    const sortedMessages = [...filteredMessages].sort((a, b) => getMsgTime(a) - getMsgTime(b));
+
     let lastDateGroup = null;
-    filteredMessages.forEach((msg, i) => {
+    sortedMessages.forEach((msg, i) => {
       const dateGroup = getMessageDateGroup(msg);
       if (dateGroup !== lastDateGroup) {
         items.push({
@@ -154,24 +207,20 @@ export default function ChatMessageList({
         id: msg.id ? `msg_${msg.id}` : `msg_idx_${i}`,
         msg,
         index: i,
-        isLatestMessage: i === filteredMessages.length - 1
+        isLatestMessage: i === sortedMessages.length - 1
       });
     });
 
-    if (typingUsers && typingUsers.size > 0) {
-      Array.from(typingUsers.entries()).forEach(([userId, userName]) => {
-        items.push({
-          type: 'typing_indicator',
-          id: `typing_${userId}`,
-          userId,
-          userName
-        });
+    if (isTyping) {
+      items.push({
+        type: 'typing_indicator',
+        id: 'item_typing_indicator'
       });
     }
 
     // REVERSE the array for Inverted Architecture
     return items.reverse();
-  }, [messages, conversation?.groupUpdatesActive, conversation?.isInstantMatch, hasMore]);
+  }, [messages, conversation?.groupUpdatesActive, conversation?.isInstantMatch, hasMore, isTyping]);
 
   const rowVirtualizer = useVirtualizer({
     count: itemsToRender.length,
@@ -179,10 +228,10 @@ export default function ChatMessageList({
     getItemKey: (index) => itemsToRender[index].id,
     estimateSize: (index) => {
       const item = itemsToRender[index];
+      if (item?.type === 'typing_indicator') return 52;
       if (item?.type === 'load_more') return 52;
       if (item?.type === 'instant_match_banner') return 44;
       if (item?.type === 'date_separator') return 36;
-      if (item?.type === 'typing_indicator') return 54;
       if (item?.msg?.mediaUrl) return 240;
       if (item?.msg?.type === 'system' || item?.msg?.type === 'SYSTEM') return 40;
       return 68;
@@ -342,26 +391,6 @@ export default function ChatMessageList({
                   </div>
                 )}
 
-                {item.type === 'typing_indicator' && (
-                  <div className={`${styles.msgBubbleContainer} ${styles.msgBubbleContainerThem}`}>
-                    <div className={styles.msgBubbleWrapper}>
-                      <div className={styles.msgAvatar}>
-                        <Avatar src={users?.[item.userId]?.avatar} name={item.userName} size="28px" />
-                      </div>
-                      <div className={styles.msgBubbleContent}>
-                        <span className={styles.msgSenderName}>{item.userName}</span>
-                        <div className={`${styles.msgBubble} ${styles.msgBubbleThem}`} style={{ padding: '10px 14px', width: 'fit-content' }}>
-                          <div className={styles.typingIndicatorDots}>
-                            <span className={styles.typingIndicatorDot}></span>
-                            <span className={styles.typingIndicatorDot}></span>
-                            <span className={styles.typingIndicatorDot}></span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 {item.type === 'message' && (
                   <MessageBubble
                     index={item.index}
@@ -379,6 +408,30 @@ export default function ChatMessageList({
                     onContextMenu={onContextMenu || onOpenContextMenu}
                     onOpenContextMenu={onOpenContextMenu}
                   />
+                )}
+
+                {item.type === 'typing_indicator' && (
+                  <div className={`${styles.msgBubbleContainer} ${styles.msgBubbleContainerThem}`}>
+                    <div className={styles.msgBubbleWrapper}>
+                      <div className={styles.msgAvatar}>
+                        <Avatar src={typingAvatar} name={typingName} size="28px" />
+                      </div>
+                      <div className={styles.msgBubbleContent}>
+                        {(conversation?.isGroup || conversation?.type === 'GROUP' || conversation?.type === 'ACTIVITY') && typingName && (
+                          <span className={styles.msgSenderName}>{typingName}</span>
+                        )}
+                        <div className={`${styles.msgMainRow} ${styles.msgMainRowThem}`}>
+                          <div className={`${styles.msgBubble} ${styles.msgBubbleThem}`} style={{ display: 'inline-flex', alignItems: 'center', padding: '0.65rem 0.95rem' }}>
+                            <div className={styles.typingBubbleInline}>
+                              <span className={styles.typingDot} />
+                              <span className={styles.typingDot} />
+                              <span className={styles.typingDot} />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             );

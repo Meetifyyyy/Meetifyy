@@ -113,7 +113,9 @@ function ActivityRow({ activity, onClick }) {
                 );
               })}
             </span>
-            <span className={styles.goingText}>{goingCount} going</span>
+            <span className={styles.goingText}>
+              {goingCount} {activity.status === 'ENDED' || activity.status === 'CANCELLED' ? 'participated' : 'going'}
+            </span>
           </span>
         </div>
       </div>

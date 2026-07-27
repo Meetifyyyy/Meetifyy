@@ -12,6 +12,7 @@ export interface UserPresence {
 export class PresenceService {
   private redis: Redis | null = null;
   private readonly logger = new Logger('PRESENCE');
+  private socketValidator: ((socketId: string) => boolean) | null = null;
 
   constructor(private readonly redisService: RedisService) {
     this.redis = this.redisService.getClient();
@@ -20,6 +21,21 @@ export class PresenceService {
     } else {
       this.logger.warn('Redis not configured. Presence features will be mocked in-memory.');
     }
+  }
+
+  registerSocketValidator(validator: (socketId: string) => boolean) {
+    this.socketValidator = validator;
+  }
+
+  private cleanPresence(presence: UserPresence | null): UserPresence | null {
+    if (!presence) return null;
+    if (this.socketValidator && Array.isArray(presence.socketIds)) {
+      presence.socketIds = presence.socketIds.filter(id => this.socketValidator!(id));
+      if (presence.socketIds.length === 0) {
+        presence.status = 'offline';
+      }
+    }
+    return presence;
   }
 
   // In-memory fallback if Redis is not configured
@@ -36,6 +52,8 @@ export class PresenceService {
         const data = await this.redis.get(key);
         let presence: UserPresence | null = data ? JSON.parse(data) : null;
         
+        presence = this.cleanPresence(presence);
+
         if (!presence) {
           presence = { lastSeen: new Date().toISOString(), status: 'online', socketIds: [] };
         }
@@ -53,7 +71,12 @@ export class PresenceService {
         
         await this.redis.set(key, JSON.stringify(presence));
       } else {
-        const presence = this.memoryPresence.get(userId) || { lastSeen: new Date().toISOString(), status: 'online', socketIds: [] };
+        let presence = this.memoryPresence.get(userId) || null;
+        presence = this.cleanPresence(presence);
+        if (!presence) {
+          presence = { lastSeen: new Date().toISOString(), status: 'online', socketIds: [] };
+        }
+
         if (!presence.socketIds.includes(socketId)) {
           presence.socketIds.push(socketId);
         }
@@ -71,26 +94,32 @@ export class PresenceService {
       if (this.redis) {
         const key = this.getPresenceKey(userId);
         const data = await this.redis.get(key);
-        const presence: UserPresence | null = data ? JSON.parse(data) : null;
+        let presence: UserPresence | null = data ? JSON.parse(data) : null;
         
         if (presence) {
           presence.socketIds = presence.socketIds.filter(id => id !== socketId);
-          presence.lastSeen = new Date().toISOString();
-          if (presence.socketIds.length === 0) {
-            presence.status = 'offline';
-            this.logger.log(`Offline user=${userId}`);
+          presence = this.cleanPresence(presence);
+          if (presence) {
+            presence.lastSeen = new Date().toISOString();
+            if (presence.socketIds.length === 0) {
+              presence.status = 'offline';
+              this.logger.log(`Offline user=${userId}`);
+            }
+            await this.redis.set(key, JSON.stringify(presence));
           }
-          await this.redis.set(key, JSON.stringify(presence));
         }
       } else {
-        const presence = this.memoryPresence.get(userId);
+        let presence = this.memoryPresence.get(userId) || null;
         if (presence) {
           presence.socketIds = presence.socketIds.filter(id => id !== socketId);
-          presence.lastSeen = new Date().toISOString();
-          if (presence.socketIds.length === 0) {
-            presence.status = 'offline';
+          presence = this.cleanPresence(presence);
+          if (presence) {
+            presence.lastSeen = new Date().toISOString();
+            if (presence.socketIds.length === 0) {
+              presence.status = 'offline';
+            }
+            this.memoryPresence.set(userId, presence);
           }
-          this.memoryPresence.set(userId, presence);
         }
       }
     } catch (err) {
@@ -103,9 +132,19 @@ export class PresenceService {
       if (this.redis) {
         const key = this.getPresenceKey(userId);
         const data = await this.redis.get(key);
-        return data ? JSON.parse(data) : null;
+        let presence: UserPresence | null = data ? JSON.parse(data) : null;
+        presence = this.cleanPresence(presence);
+        if (presence && presence.socketIds.length === 0) {
+          presence.status = 'offline';
+        }
+        return presence;
       } else {
-        return this.memoryPresence.get(userId) || null;
+        let presence = this.memoryPresence.get(userId) || null;
+        presence = this.cleanPresence(presence);
+        if (presence && presence.socketIds.length === 0) {
+          presence.status = 'offline';
+        }
+        return presence;
       }
     } catch (err) {
       this.logger.error(`Failed to get presence for ${userId}`, err);
@@ -124,13 +163,16 @@ export class PresenceService {
           const val = values[idx];
           if (val) {
             try {
-              result.set(uId, JSON.parse(val));
+              let pres: UserPresence | null = JSON.parse(val);
+              pres = this.cleanPresence(pres);
+              if (pres) result.set(uId, pres);
             } catch {}
           }
         });
       } else {
         userIds.forEach(uId => {
-          const pres = this.memoryPresence.get(uId);
+          let pres = this.memoryPresence.get(uId) || null;
+          pres = this.cleanPresence(pres);
           if (pres) result.set(uId, pres);
         });
       }

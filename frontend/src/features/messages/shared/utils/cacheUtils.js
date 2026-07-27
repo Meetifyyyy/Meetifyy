@@ -14,15 +14,18 @@ export function appendMessageToCache(queryClient, activeChatId, message) {
       };
     }
 
+    // In TanStack Query infinite scroll, pages are ordered oldest→newest.
+    // New messages always go on the LAST page (most recent).
     const newPages = [...old.pages];
-    const targetPageIndex = 0; // Page 0 is the most recent page in infinite query
+    const targetPageIndex = newPages.length - 1;
     const targetPage = newPages[targetPageIndex] || { messages: [] };
     const existingMsgs = targetPage.messages || [];
 
     // Deduplicate by id or tempId
-    const existsIndex = existingMsgs.findIndex((m) => 
-      (message.id && m.id === message.id) || 
-      (message.tempId && (m.tempId === message.tempId || m.id === message.tempId))
+    const existsIndex = existingMsgs.findIndex((m) =>
+      (message.id && m.id === message.id) ||
+      (message.tempId && (m.tempId === message.tempId || m.id === message.tempId)) ||
+      (message.id && m.tempId === message.id)
     );
 
     let updatedMsgs;
@@ -48,7 +51,9 @@ export function updateMessageInCache(queryClient, activeChatId, targetId, patch)
       ...page,
       messages: (page.messages || []).map((m) => {
         if (m.id === targetId || m.tempId === targetId) {
-          return { ...m, ...patch };
+          // patch can be an object or a function(existingMsg) => object
+          const updates = typeof patch === 'function' ? patch(m) : patch;
+          return { ...m, ...updates };
         }
         return m;
       }),
@@ -68,15 +73,20 @@ export function updateConversationPreview(queryClient, conversationId, previewTe
 
     if (!list) return old;
 
-    const idx = list.findIndex((c) => c.id === conversationId || c.publicId === conversationId);
+    const idx = list.findIndex((c) =>
+      c.id === conversationId ||
+      c.publicId === conversationId ||
+      c.internalId === conversationId
+    );
     if (idx !== -1) {
       const targetConv = {
         ...list[idx],
         lastMessageText: previewText || list[idx].lastMessageText,
         updatedAt: timestamp,
         unreadCount: Math.max(0, (list[idx].unreadCount || 0) + unreadIncrement),
+        unread: Math.max(0, (list[idx].unread || 0) + unreadIncrement),
       };
-      // Move conversation to top of list (#7)
+      // Move conversation to top of list
       list.splice(idx, 1);
       list.unshift(targetConv);
     }
@@ -87,4 +97,19 @@ export function updateConversationPreview(queryClient, conversationId, previewTe
 
 export function updateMessageStatusInCache(queryClient, activeChatId, messageId, status) {
   updateMessageInCache(queryClient, activeChatId, messageId, { status });
+}
+
+export function removeMessageFromCache(queryClient, activeChatId, messageId) {
+  if (!queryClient || !activeChatId || !messageId) return;
+
+  queryClient.setQueryData(['messages', activeChatId], (old) => {
+    if (!old || !old.pages) return old;
+
+    const newPages = old.pages.map((page) => ({
+      ...page,
+      messages: (page.messages || []).filter((m) => m.id !== messageId),
+    }));
+
+    return { ...old, pages: newPages };
+  });
 }

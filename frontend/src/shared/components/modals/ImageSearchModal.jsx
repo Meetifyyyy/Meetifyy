@@ -178,18 +178,19 @@ export default function ImageSearchModal({ onClose, onSelect }) {
   };
 
   const handleCropComplete = async (croppedFile) => {
-    // Instantly reflect cropped image on target UI with zero latency
-    const instantUrl = croppedFile.previewUrl || URL.createObjectURL(croppedFile);
-    onSelect(instantUrl);
-    setCropTarget(null);
-    onClose();
-
-    // Upload in background to obtain permanent server URL
+    setIsCompressingRemote(true);
     try {
       const { publicUrl } = await processAndUploadImage(croppedFile, 'covers', { maxWidthOrHeight: 1280 });
-      onSelect(publicUrl);
-    } catch {
-      // Keep optimistic preview if network upload fails
+      if (publicUrl) {
+        onSelect(publicUrl);
+      }
+    } catch (e) {
+      console.error('Failed to upload image:', e);
+      alert('Failed to upload image. Please try again.');
+    } finally {
+      setIsCompressingRemote(false);
+      setCropTarget(null);
+      onClose();
     }
   };
 

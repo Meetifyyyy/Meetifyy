@@ -59,7 +59,8 @@ export class UploadsController {
   ) {
     if (!key) throw new BadRequestException('Key parameter is required');
 
-    const uploadsDir = path.join(process.cwd(), 'uploads');
+    const cwd = process.cwd();
+    const uploadsDir = cwd.endsWith('backend') ? path.join(cwd, 'uploads') : path.join(cwd, 'backend', 'uploads');
     const filePath = path.join(uploadsDir, key);
     const folderPath = path.dirname(filePath);
 
@@ -90,15 +91,23 @@ export class UploadsController {
     @Res() res: Response,
   ) {
     const key = `${folder}/${filename}`;
-    const localFilePath = path.join(process.cwd(), 'uploads', key);
+    const cwd = process.cwd();
+    
+    // Check multiple potential uploads locations on local disk
+    const pathsToCheck = [
+      path.join(cwd, 'uploads', key),
+      path.join(cwd, 'backend', 'uploads', key),
+    ];
 
-    if (fs.existsSync(localFilePath)) {
-      return res.sendFile(localFilePath);
+    for (const localFilePath of pathsToCheck) {
+      if (fs.existsSync(localFilePath)) {
+        return res.sendFile(localFilePath);
+      }
     }
 
     try {
       const url = this.storageService.getPublicUrl(key);
-      if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+      if (url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('/api/media/')) {
         return res.redirect(url);
       }
     } catch (e) {

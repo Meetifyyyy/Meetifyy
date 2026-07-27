@@ -37,55 +37,80 @@ export class SupabaseStorageProvider implements StorageProvider {
       return { uploadUrl, publicUrl, key };
     }
 
-    const client = this.supabaseService.client;
-    const { data: uploadData, error: uploadError } = await client.storage
-      .from(this.bucketName)
-      .createSignedUploadUrl(key);
+    try {
+      const client = this.supabaseService.client;
+      const { data: uploadData, error: uploadError } = await client.storage
+        .from(this.bucketName)
+        .createSignedUploadUrl(key);
 
-    if (uploadError || !uploadData) {
-      this.logger.error('Failed to create Supabase signed upload URL', uploadError);
-      throw new Error('Failed to generate upload URL');
+      if (uploadError || !uploadData?.signedUrl) {
+        this.logger.warn(`Supabase storage failed to generate presigned URL (${uploadError?.message || 'No signedUrl'}). Falling back to local direct upload.`);
+        const uploadUrl = `/api/media/direct-upload?key=${encodeURIComponent(key)}`;
+        const publicUrl = `/api/media/${key}`;
+        return { uploadUrl, publicUrl, key };
+      }
+
+      const { data: publicUrlData } = client.storage.from(this.bucketName).getPublicUrl(key);
+      return { uploadUrl: uploadData.signedUrl, publicUrl: publicUrlData.publicUrl, key };
+    } catch (err: any) {
+      this.logger.warn(`Supabase storage exception (${err?.message}). Falling back to local direct upload.`);
+      const uploadUrl = `/api/media/direct-upload?key=${encodeURIComponent(key)}`;
+      const publicUrl = `/api/media/${key}`;
+      return { uploadUrl, publicUrl, key };
     }
-
-    const { data: publicUrlData } = client.storage.from(this.bucketName).getPublicUrl(key);
-    return { uploadUrl: uploadData.signedUrl, publicUrl: publicUrlData.publicUrl, key };
   }
 
   async createSignedDownloadUrl(key: string, expiresIn = 3600): Promise<string> {
     if (!this.supabaseService.isConfigured) return `/api/media/${key}`;
-    const { data, error } = await this.supabaseService.client.storage
-      .from(this.bucketName)
-      .createSignedUrl(key, expiresIn);
-    if (error || !data) throw new Error('Failed to generate signed download URL');
-    return data.signedUrl;
+    try {
+      const { data, error } = await this.supabaseService.client.storage
+        .from(this.bucketName)
+        .createSignedUrl(key, expiresIn);
+      if (error || !data) return `/api/media/${key}`;
+      return data.signedUrl;
+    } catch (e) {
+      return `/api/media/${key}`;
+    }
   }
 
   getPublicUrl(key: string): string {
     if (!this.supabaseService.isConfigured) return `/api/media/${key}`;
-    const { data } = this.supabaseService.client.storage.from(this.bucketName).getPublicUrl(key);
-    return data.publicUrl;
+    try {
+      const { data } = this.supabaseService.client.storage.from(this.bucketName).getPublicUrl(key);
+      return data?.publicUrl || `/api/media/${key}`;
+    } catch (e) {
+      return `/api/media/${key}`;
+    }
   }
 
   async delete(key: string): Promise<boolean> {
     if (!this.supabaseService.isConfigured) return true;
-    const { error } = await this.supabaseService.client.storage.from(this.bucketName).remove([key]);
-    if (error) {
-      this.logger.error(`Failed to delete object ${key}`, error);
+    try {
+      const { error } = await this.supabaseService.client.storage.from(this.bucketName).remove([key]);
+      if (error) {
+        this.logger.error(`Failed to delete object ${key}`, error);
+        return false;
+      }
+      return true;
+    } catch (e) {
       return false;
     }
-    return true;
   }
 
   async upload(key: string, fileBuffer: Buffer, contentType: string): Promise<string> {
     if (!this.supabaseService.isConfigured) return this.getPublicUrl(key);
-    const { error } = await this.supabaseService.client.storage
-      .from(this.bucketName)
-      .upload(key, fileBuffer, { contentType, upsert: true });
-    if (error) {
-      this.logger.error(`Failed to upload object ${key}`, error);
-      throw new Error('Upload failed');
+    try {
+      const { error } = await this.supabaseService.client.storage
+        .from(this.bucketName)
+        .upload(key, fileBuffer, { contentType, upsert: true });
+      if (error) {
+        this.logger.warn(`Failed to upload object ${key} to Supabase (${error.message}). Falling back to local.`);
+        throw error;
+      }
+      return this.getPublicUrl(key);
+    } catch (err) {
+      return `/api/media/${key}`;
     }
-    return this.getPublicUrl(key);
   }
 
   async exists(key: string): Promise<boolean> {

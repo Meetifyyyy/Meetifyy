@@ -75,8 +75,15 @@
   background: var(--color-border-light);
 }
 
+.leftActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
 .msgEmojiBtn {
-  width: 36px;
+  width: 34px;
   height: 42px;
   border-radius: 50%;
   display: flex;
@@ -123,16 +130,18 @@
   color: var(--color-primary);
 }
 
-.attachBtnHidden {
-  max-width: 0 !important;
-  width: 0 !important;
-  opacity: 0 !important;
-  transform: scale(0.8) !important;
-  margin-right: -8px !important;
-  margin-left: 0 !important;
-  padding: 0 !important;
-  pointer-events: none !important;
-  overflow: hidden !important;
+@media (max-width: 768px) {
+  .attachBtnHidden {
+    max-width: 0 !important;
+    width: 0 !important;
+    opacity: 0 !important;
+    transform: scale(0.8) !important;
+    margin-right: -8px !important;
+    margin-left: 0 !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+  }
 }
 
 .msgEmptyState {

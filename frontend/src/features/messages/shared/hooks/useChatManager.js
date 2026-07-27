@@ -8,6 +8,7 @@ import { useData } from '@shared/hooks/useData';
 import { appendMessageToCache, updateMessageInCache, updateConversationPreview } from '../utils/cacheUtils';
 import { queuePendingMessage, removePendingMessage } from '../utils/offlineSync';
 
+
 export function useChatManager(activeChatId, type = 'messages', currentUserParam) {
   const queryClient = useQueryClient();
   const { socket } = useGlobalSocketStore();
@@ -252,13 +253,26 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       socket.emit('message:send', payload, (response) => {
         if (response?.status === 'ok') {
           if (response.message) {
-            updateMessageInCache(queryClient, targetConvId, tempId, {
-              ...response.message,
-              id: response.message.id || tempId,
-              status: 'sent',
+            // Merge server data but NEVER downgrade status.
+            // If the seen event already arrived and flipped to 'read', keep it.
+            updateMessageInCache(queryClient, targetConvId, tempId, (existing) => {
+              const currentStatus = existing?.status;
+              const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
+              const incomingRank = STATUS_RANK['sent'] ?? 1;
+              const existingRank = STATUS_RANK[currentStatus] ?? -1;
+              return {
+                ...response.message,
+                id: response.message.id || tempId,
+                status: existingRank > incomingRank ? currentStatus : 'sent',
+              };
             });
           } else {
-            updateMessageInCache(queryClient, targetConvId, tempId, { status: 'sent' });
+            updateMessageInCache(queryClient, targetConvId, tempId, (existing) => {
+              const currentStatus = existing?.status;
+              const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
+              const existingRank = STATUS_RANK[currentStatus] ?? -1;
+              return { status: existingRank > 1 ? currentStatus : 'sent' };
+            });
           }
           removePendingMessage(tempId);
         } else {
@@ -269,10 +283,15 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     } else {
       try {
         const res = await getApi().sendMessage(targetConvId, payload);
-        updateMessageInCache(queryClient, targetConvId, tempId, {
-          ...res,
-          id: res?.id || tempId,
-          status: 'sent',
+        updateMessageInCache(queryClient, targetConvId, tempId, (existing) => {
+          const currentStatus = existing?.status;
+          const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
+          const existingRank = STATUS_RANK[currentStatus] ?? -1;
+          return {
+            ...res,
+            id: res?.id || tempId,
+            status: existingRank > 1 ? currentStatus : 'sent',
+          };
         });
         removePendingMessage(tempId);
       } catch (err) {
@@ -287,34 +306,58 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     if (!socket || !activeChatId) return;
 
     const matchedConv = conversations?.find(
-      c => String(c.id) === String(activeChatId) || String(c.publicId) === String(activeChatId) || String(c.internalId) === String(activeChatId)
+      c =>
+        String(c.id) === String(activeChatId) ||
+        String(c.publicId) === String(activeChatId) ||
+        String(c.internalId) === String(activeChatId)
     );
 
-    const allCandidateIds = Array.from(new Set([
-      activeChatId,
-      matchedConv?.id,
-      matchedConv?.publicId,
-      matchedConv?.internalId
-    ].filter(Boolean)));
+    // Send BOTH id and publicId so we catch events emitted to either alias
+    const allCandidateIds = Array.from(
+      new Set(
+        [
+          activeChatId,
+          matchedConv?.id,
+          matchedConv?.publicId,
+          matchedConv?.internalId,
+        ].filter(Boolean)
+      )
+    );
 
     socket.emit('conversation:join_rooms', { conversationIds: allCandidateIds });
-    
     markSeenIfEligible(isNearBottomRef.current);
 
     const isMatch = (receivedId) => {
       if (!receivedId) return false;
-      return allCandidateIds.some(id => String(id) === String(receivedId));
+      return allCandidateIds.some((id) => String(id) === String(receivedId));
     };
 
-    // Step 3: Recipient sends Delivery ACK (message:received) when receiving a new message
+    // Single authoritative message:new handler for this conversation.
+    // useGlobalSocketSync no longer registers its own handler — this is the source of truth.
     const handleIncomingNewMessage = (payload) => {
       const msg = payload?.message || payload;
       const convId = payload?.conversationId || msg?.conversationId;
-      const isMyMsg = msg?.from === 'me' || String(msg?.senderId) === String(currentUser?.id) || msg?.senderId === 'me';
-      
-      if (isMatch(convId) && msg && !isMyMsg) {
+      if (!isMatch(convId) || !msg) return;
+
+      const isMyMsg =
+        msg.from === 'me' ||
+        String(msg.senderId) === String(currentUser?.id) ||
+        msg.senderId === 'me';
+
+      // Append to local cache (handles the publicId/internalId alias the event arrived with)
+      appendMessageToCache(queryClient, activeChatId, msg);
+      updateConversationPreview(
+        queryClient,
+        convId,
+        msg.text || msg.payload?.text,
+        msg.createdAt,
+        isMyMsg ? 0 : 0  // unread already managed by SocketManager handleConversationUpdated
+      );
+
+      if (!isMyMsg) {
+        // Single delivery ACK — message:delivered only (message:received is an alias handled on backend)
         if (msg.id && socket?.connected) {
-          socket.emit('message:received', {
+          socket.emit('message:delivered', {
             conversationId: activeChatId,
             messageId: msg.id,
           });
@@ -323,7 +366,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       }
     };
 
-    // Step 3: Sender receives Delivery ACK (message:delivered)
+    // Delivery ACK: update our sent message to 'delivered'
     const handleMessageDelivered = (payload) => {
       if (!payload || !isMatch(payload.conversationId)) return;
       const targetId = payload.messageId;
@@ -331,10 +374,14 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       queryClient.setQueryData(['messages', activeChatId], (oldData) => {
         if (!oldData?.pages) return oldData;
         let hasChanges = false;
-        const newPages = oldData.pages.map(page => {
+        const newPages = oldData.pages.map((page) => {
           if (!page.messages) return page;
-          const newMessages = page.messages.map(msg => {
-            if ((msg.id === targetId || !targetId) && msg.status !== 'read' && msg.status !== 'seen') {
+          const newMessages = page.messages.map((msg) => {
+            if (
+              (msg.id === targetId || msg.tempId === targetId) &&
+              msg.status !== 'read' &&
+              msg.status !== 'seen'
+            ) {
               hasChanges = true;
               return { ...msg, status: 'delivered' };
             }
@@ -346,44 +393,50 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       });
     };
 
-    // Step 4: Sender receives Seen ACK (messages:seen or conversation:seen)
+    // Seen ACK: mark all my confirmed sent messages as read.
+    // NEVER runs on 'sending' — those haven't been confirmed by the server yet.
+    // NEVER uses a time buffer — only messages strictly before lastReadAt are marked.
     const handleConversationSeen = (data) => {
       const isTargetMatch = isMatch(data?.conversationId) || isMatch(data?.realConvId);
-      const isRecipientReader = !data?.readerId || String(data.readerId) !== String(currentUser?.id);
+      const isRecipientReader =
+        !data?.readerId || String(data.readerId) !== String(currentUser?.id);
 
-      if (isTargetMatch && isRecipientReader && data?.lastReadAt) {
-        const lastReadTime = new Date(data.lastReadAt).getTime();
-        
-        queryClient.setQueryData(['messages', activeChatId], (oldData) => {
-          if (!oldData?.pages) return oldData;
-          
-          let hasChanges = false;
-          const newPages = oldData.pages.map(page => {
-            if (!page.messages) return page;
-            const newMessages = page.messages.map(msg => {
-              const isMyMsg = msg.from === 'me' || String(msg.senderId) === String(currentUser?.id) || msg.senderId === 'me';
-              if (isMyMsg && msg.status !== 'read') {
-                const msgTime = new Date(msg.createdAt).getTime();
-                if (isNaN(msgTime) || msgTime <= lastReadTime + 2000) {
-                  hasChanges = true;
-                  return { ...msg, status: 'read' };
-                }
+      if (!isTargetMatch || !isRecipientReader || !data?.lastReadAt) return;
+
+      const lastReadTime = new Date(data.lastReadAt).getTime();
+
+      queryClient.setQueryData(['messages', activeChatId], (oldData) => {
+        if (!oldData?.pages) return oldData;
+        let hasChanges = false;
+        const newPages = oldData.pages.map((page) => {
+          if (!page.messages) return page;
+          const newMessages = page.messages.map((msg) => {
+            const isMyMsg =
+              msg.from === 'me' ||
+              String(msg.senderId) === String(currentUser?.id) ||
+              msg.senderId === 'me';
+            // Skip optimistic (not yet ACK'd) messages — they have no real server timestamp
+            if (isMyMsg && msg.status !== 'read' && msg.status !== 'sending') {
+              const msgTime = new Date(msg.createdAt).getTime();
+              // Strictly before lastReadAt — no buffer to prevent race conditions
+              if (!isNaN(msgTime) && msgTime <= lastReadTime) {
+                hasChanges = true;
+                return { ...msg, status: 'read' };
               }
-              return msg;
-            });
-            return { ...page, messages: newMessages };
+            }
+            return msg;
           });
-          
-          return hasChanges ? { ...oldData, pages: newPages } : oldData;
+          return { ...page, messages: newMessages };
         });
-      }
+        return hasChanges ? { ...oldData, pages: newPages } : oldData;
+      });
     };
 
     socket.on('message:new', handleIncomingNewMessage);
     socket.on('message:delivered', handleMessageDelivered);
     socket.on('messages:seen', handleConversationSeen);
     socket.on('conversation:seen', handleConversationSeen);
-    
+
     return () => {
       socket.off('message:new', handleIncomingNewMessage);
       socket.off('message:delivered', handleMessageDelivered);

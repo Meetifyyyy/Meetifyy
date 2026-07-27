@@ -207,32 +207,98 @@ export default function SocketManager() {
       if (!userId) return;
       const isOnline = status === 'online';
 
+      const isSameId = (id1, id2) => {
+        if (!id1 || !id2) return false;
+        return String(id1).toLowerCase().trim() === String(id2).toLowerCase().trim();
+      };
+
+      const matchesUser = (userObj) => {
+        if (!userObj) return false;
+        return (
+          isSameId(userObj.id, userId) ||
+          isSameId(userObj.publicId, userId) ||
+          isSameId(userObj.internalId, userId) ||
+          isSameId(userObj.userId, userId)
+        );
+      };
+
+      const isConvTargetingUser = (c) => {
+        if (!c) return false;
+        if (matchesUser(c.targetUser)) return true;
+        if (matchesUser(c.otherUser)) return true;
+        if (matchesUser(c.user)) return true;
+        if (isSameId(c.userId, userId)) return true;
+        if (isSameId(c.targetUserId, userId)) return true;
+        if (isSameId(c.otherUserId, userId)) return true;
+        if (Array.isArray(c.participants) && c.participants.some(p => isSameId(p.userId, userId) || matchesUser(p.user))) return true;
+        if (Array.isArray(c.members) && c.members.some(m => isSameId(m.userId, userId) || matchesUser(m.user))) return true;
+        return false;
+      };
+
       queryClient.setQueryData(['conversations'], (old) => {
         if (!Array.isArray(old)) return old;
         return old.map((c) => {
-          const isTarget = String(c.targetUser?.id) === String(userId) || String(c.userId) === String(userId);
-          if (isTarget) {
-            return {
-              ...c,
-              online: isOnline,
-              targetUser: c.targetUser ? {
-                ...c.targetUser,
-                isOnline,
-                lastActive: lastActive || c.targetUser.lastActive
-              } : null
-            };
-          }
-          return c;
+          if (!isConvTargetingUser(c)) return c;
+
+          const updatedTargetUser = c.targetUser
+            ? { ...c.targetUser, isOnline, lastActive: lastActive || c.targetUser.lastActive }
+            : { id: userId, isOnline, lastActive };
+
+          const updatedOtherUser = c.otherUser
+            ? { ...c.otherUser, isOnline, lastActive: lastActive || c.otherUser.lastActive }
+            : null;
+
+          const updatedUser = c.user
+            ? { ...c.user, isOnline, lastActive: lastActive || c.user.lastActive }
+            : null;
+
+          const updatedParticipants = Array.isArray(c.participants)
+            ? c.participants.map(p => {
+                if (isSameId(p.userId, userId) || matchesUser(p.user)) {
+                  return {
+                    ...p,
+                    isOnline,
+                    user: p.user ? { ...p.user, isOnline, lastActive: lastActive || p.user?.lastActive } : p.user
+                  };
+                }
+                return p;
+              })
+            : c.participants;
+
+          const updatedMembers = Array.isArray(c.members)
+            ? c.members.map(m => {
+                if (isSameId(m.userId, userId) || matchesUser(m.user)) {
+                  return {
+                    ...m,
+                    isOnline,
+                    user: m.user ? { ...m.user, isOnline, lastActive: lastActive || m.user?.lastActive } : m.user
+                  };
+                }
+                return m;
+              })
+            : c.members;
+
+          return {
+            ...c,
+            online: isOnline,
+            isOnline: isOnline,
+            targetUser: updatedTargetUser,
+            ...(updatedOtherUser ? { otherUser: updatedOtherUser } : {}),
+            ...(updatedUser ? { user: updatedUser } : {}),
+            ...(updatedParticipants ? { participants: updatedParticipants } : {}),
+            ...(updatedMembers ? { members: updatedMembers } : {}),
+          };
         });
       });
 
       queryClient.setQueryData(['users'], (old) => {
         if (!Array.isArray(old)) return old;
         return old.map((u) => {
-          if (String(u.id) === String(userId)) {
+          if (matchesUser(u)) {
             return {
               ...u,
               isOnline,
+              online: isOnline,
               lastActive: lastActive || u.lastActive
             };
           }
@@ -243,10 +309,11 @@ export default function SocketManager() {
       queryClient.setQueryData(['campusUsers'], (old) => {
         if (!Array.isArray(old)) return old;
         return old.map((u) => {
-          if (String(u.id) === String(userId)) {
+          if (matchesUser(u)) {
             return {
               ...u,
               isOnline,
+              online: isOnline,
               lastActive: lastActive || u.lastActive
             };
           }
@@ -259,8 +326,51 @@ export default function SocketManager() {
         return {
           ...old,
           isOnline,
+          online: isOnline,
           lastActive: lastActive || old.lastActive
         };
+      });
+
+      queryClient.setQueriesData({ queryKey: ['profile'] }, (old) => {
+        if (!old) return old;
+        if (matchesUser(old) || matchesUser(old.user)) {
+          return {
+            ...old,
+            isOnline,
+            online: isOnline,
+            lastActive: lastActive || old.lastActive
+          };
+        }
+        return old;
+      });
+
+      queryClient.setQueriesData({ queryKey: ['messages'] }, (oldData) => {
+        if (!oldData) return oldData;
+        if (oldData.pages) {
+          return {
+            ...oldData,
+            pages: oldData.pages.map(page => {
+              if (!page) return page;
+              const updatedParts = Array.isArray(page.participants)
+                ? page.participants.map(p => {
+                    if (isSameId(p.userId, userId) || matchesUser(p.user)) {
+                      return {
+                        ...p,
+                        isOnline,
+                        user: p.user ? { ...p.user, isOnline } : p.user
+                      };
+                    }
+                    return p;
+                  })
+                : page.participants;
+              return {
+                ...page,
+                participants: updatedParts
+              };
+            })
+          };
+        }
+        return oldData;
       });
     };
 
@@ -303,8 +413,7 @@ export default function SocketManager() {
               ...(payload.description !== undefined ? { description: payload.description } : {}),
               ...(lastMsg ? { lastMessage: lastMsg, updatedAt: lastMsg.createdAt } : {}),
               ...(payload.ownerId ? { ownerId: payload.ownerId } : {}),
-              unreadCount: isViewing ? 0 : (lastMsg ? (c.unreadCount || 0) + 1 : (c.unreadCount || 0)),
-              unread: isViewing ? 0 : (lastMsg ? (c.unread || 0) + 1 : (c.unread || 0)),
+              // Do NOT touch unreadCount here — it's managed by the message:new flow in useChatManager
             };
           }
           return c;
@@ -435,9 +544,6 @@ export default function SocketManager() {
     socket.on('presence:update', handlePresenceUpdate);
     socket.on('conversation:updated', handleConversationUpdated);
     socket.on('message:updated', handleMessageUpdated);
-    socket.on('message:delivered', handleGlobalMessageDelivered);
-    socket.on('messages:seen', handleGlobalConversationSeen);
-    socket.on('conversation:seen', handleGlobalConversationSeen);
     socket.on('group:member_added', handleGroupMemberChange);
     socket.on('group:member_removed', handleGroupMemberChange);
 
@@ -447,9 +553,6 @@ export default function SocketManager() {
       socket.off('presence:update', handlePresenceUpdate);
       socket.off('conversation:updated', handleConversationUpdated);
       socket.off('message:updated', handleMessageUpdated);
-      socket.off('message:delivered', handleGlobalMessageDelivered);
-      socket.off('messages:seen', handleGlobalConversationSeen);
-      socket.off('conversation:seen', handleGlobalConversationSeen);
       socket.off('group:member_added', handleGroupMemberChange);
       socket.off('group:member_removed', handleGroupMemberChange);
     };

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, MoreVertical, Search, BellOff, BellRing, Trash2, ShieldOff, Info } from 'lucide-react';
+import { ArrowLeft, MoreVertical, Search, BellOff, BellRing, Trash2, ShieldOff, Info, Pin } from 'lucide-react';
 import Avatar from '@shared/components/avatar/Avatar';
 import styles from '../../../shared/components/chat/ChatHeader.module.css';
 
@@ -8,26 +8,29 @@ export default function DMChatHeader({
   onBack, 
   onBlock, 
   onClearChat, 
+  onTogglePin,
   onToggleSearch, 
-  onOpenDetails 
+  onOpenDetails,
 }) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [isMuted, setIsMuted] = useState(conversation?.muted || false);
 
   if (!conversation) return null;
 
-  const isOnline = conversation.isOnline || conversation.online;
+  const isOnline = Boolean(
+    conversation.targetUser ? conversation.targetUser.isOnline : (conversation.isOnline ?? conversation.online ?? false)
+  );
   const isBlocked = conversation.isBlocked || conversation.blocked;
 
   return (
-    <div className={styles.msgChatHeader}>
-      <button className={styles.msgBackBtn} onClick={onBack} aria-label="Back">
+    <div className={styles.msgChatHeader} onClick={onOpenDetails}>
+      <button className={styles.msgBackBtn} onClick={(e) => { e.stopPropagation(); onBack(); }} aria-label="Back">
         <ArrowLeft size={20} />
       </button>
 
-      <div className={`${styles.msgChatUser} ${styles.msgChatUserClickable}`} onClick={onOpenDetails}>
+      <div className={`${styles.msgChatUser} ${styles.msgChatUserClickable}`}>
         <Avatar src={conversation.avatar} name={conversation.name} size="38px" isOnline={isOnline} />
-        <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
           <div className={styles.msgChatName}>
             <span className={styles.msgChatNameText}>{conversation.name}</span>
             {isBlocked && <span className={styles.msgBlockedBadge}>Blocked</span>}
@@ -59,6 +62,17 @@ export default function DMChatHeader({
                   Contact Info
                 </button>
               )}
+
+              {onTogglePin && (
+                <button 
+                  className={styles.msgDropdownItem} 
+                  onClick={() => { onTogglePin(conversation.id, conversation.pinned || conversation.isPinned); setShowMoreMenu(false); }}
+                >
+                  <Pin size={14} />
+                  {conversation.pinned || conversation.isPinned ? 'Unpin Chat' : 'Pin Chat'}
+                </button>
+              )}
+
               {onToggleSearch && (
                 <button 
                   className={styles.msgDropdownItem} 
@@ -78,7 +92,7 @@ export default function DMChatHeader({
               {onClearChat && (
                 <button 
                   className={styles.msgDropdownItem} 
-                  onClick={() => { onClearChat(); setShowMoreMenu(false); }}
+                  onClick={() => { onClearChat(conversation.id); setShowMoreMenu(false); }}
                 >
                   <Trash2 size={14} />
                   Clear Chat

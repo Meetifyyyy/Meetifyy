@@ -196,7 +196,9 @@ export function CrewResult({ result, isSelected, onClick }) {
             </span>
           )}
           {item.location && <span className={styles.dot} />}
-          <span>{goingCount} going</span>
+          <span>
+            {goingCount} {item.status === 'ENDED' || item.status === 'CANCELLED' ? 'participated' : 'going'}
+          </span>
         </div>
       </div>
     </button>

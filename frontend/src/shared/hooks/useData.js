@@ -29,6 +29,10 @@ export function useData() {
   const { data: rawCampusUsers = [] } = useQuery({ queryKey: ['campusUsers'], queryFn: () => usersApi.getCampusUsers(200, 0), staleTime: 60_000 });
 
   const conversations = useMemo(() => {
+    const actList = [...(rawActivities || []), ...(rawCampusActivities || [])];
+    const uniqueActMap = new Map();
+    actList.forEach(a => { if (a && a.id) uniqueActMap.set(a.id, a); });
+
     const list = (rawConversations || []).map(c => {
       const pList = c.participants || c.members || [];
       const calculatedIsMember = (!c.type || c.type === 'DIRECT') 
@@ -40,10 +44,24 @@ export function useData() {
       const isMember = c.isMember !== undefined ? c.isMember : calculatedIsMember;
       const isGroup = c.type === 'GROUP' || c.isGroup;
 
+      const cleanActId = c.activityId || (String(c.id).startsWith('act_') ? String(c.id).replace('act_', '') : null);
+      const matchedAct = cleanActId ? uniqueActMap.get(cleanActId) : null;
+      const activity = c.activity || matchedAct || null;
+
+      const actStartDate = activity?.startDate || activity?.date || c.date;
+      const actStatus = (activity?.status || c.status || '').toUpperCase();
+      const calcHasStarted = actStatus === 'IN_PROGRESS' || actStatus === 'STARTED' || actStatus === 'COMPLETED' || actStatus === 'ENDED' || (actStartDate ? (new Date(actStartDate) <= new Date()) : false);
+      const hasStarted = c.hasStarted || c.activityHasStarted || calcHasStarted;
+
       return {
         ...c,
         internalId: c.internalId || c.id,
         isMember,
+        activity,
+        activityId: c.activityId || (matchedAct ? matchedAct.id : null),
+        isActivityChat: Boolean(c.isActivityChat || activity || String(c.id).startsWith('act_')),
+        hasStarted,
+        activityHasStarted: hasStarted,
         blocked: c.blocked || false,
         isBlockedByMe: c.isBlockedByMe || false,
         isBlockedByThem: c.isBlockedByThem || false,
@@ -61,19 +79,16 @@ export function useData() {
         lastSenderName: c.lastMessage?.senderName || null,
         timestamp: c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).getTime() : (c.updatedAt ? new Date(c.updatedAt).getTime() : 0),
         unread: c.unreadCount || c.unread || 0,
-        online: isGroup ? false : (c.targetUser?.isOnline || false),
+        online: isGroup ? false : Boolean(c.targetUser ? c.targetUser.isOnline : (c.isOnline ?? c.online ?? false)),
+        isOnline: isGroup ? false : Boolean(c.targetUser ? c.targetUser.isOnline : (c.isOnline ?? c.online ?? false)),
         isGroup,
         name: isGroup ? (c.name || 'Group Chat') : (c.name || c.targetUser?.displayName || c.targetUser?.username || 'Chat'),
-        avatar: isGroup ? (c.avatarKey || c.avatar || null) : (c.avatar || c.targetUser?.avatar || null),
+        avatar: isGroup ? (c.avatarKey || c.avatar || activity?.coverImage || null) : (c.avatar || c.targetUser?.avatar || null),
         username: isGroup ? null : (c.targetUser?.username || null),
         userId: isGroup ? null : (c.targetUser?.id || null),
         targetUser: isGroup ? null : c.targetUser
       };
     });
-
-    const actList = [...(rawActivities || []), ...(rawCampusActivities || [])];
-    const uniqueActMap = new Map();
-    actList.forEach(a => { if (a && a.id) uniqueActMap.set(a.id, a); });
 
     uniqueActMap.forEach((act) => {
       const hasGroup = act.createActivityGroup ?? act.createEventGroup ?? false;
@@ -91,7 +106,10 @@ export function useData() {
               publicId: actConvId,
               internalId: act.id,
               activityId: act.id,
+              activity: act,
               isActivityChat: true,
+              hasStarted,
+              activityHasStarted: hasStarted,
               isGroup: true,
               isMember: true,
               name: act.title,
@@ -472,16 +490,25 @@ export function useData() {
   };
 
   const togglePinConversation = async (convId, currentPinned) => {
+    let isPinnedNow = currentPinned;
+    if (typeof isPinnedNow !== 'boolean') {
+      const cached = queryClient.getQueryData(['conversations']);
+      if (Array.isArray(cached)) {
+        const found = cached.find(c => c.id === convId || c.publicId === convId);
+        if (found) isPinnedNow = !!(found.isPinned || found.pinned);
+      }
+    }
+    const nextPinned = !isPinnedNow;
     queryClient.setQueryData(['conversations'], (old) => {
       if (!Array.isArray(old)) return old;
-      return old.map(c => c.id === convId || c.publicId === convId ? { ...c, isPinned: !currentPinned } : c);
+      return old.map(c => (c.id === convId || c.publicId === convId) ? { ...c, isPinned: nextPinned, pinned: nextPinned } : c);
     });
     try {
-      await messagesApi.pinConversation(convId, !currentPinned);
+      await messagesApi.pinConversation(convId, nextPinned);
     } catch (e) {
       queryClient.setQueryData(['conversations'], (old) => {
         if (!Array.isArray(old)) return old;
-        return old.map(c => c.id === convId || c.publicId === convId ? { ...c, isPinned: currentPinned } : c);
+        return old.map(c => (c.id === convId || c.publicId === convId) ? { ...c, isPinned: isPinnedNow, pinned: isPinnedNow } : c);
       });
     }
   };
@@ -549,7 +576,7 @@ export function useData() {
     queryClient.setQueryData(['conversations'], (old) => {
       if (!Array.isArray(old)) return old;
       return old.map(c => {
-        if (c.id === convId) {
+        if (String(c.id) === String(convId) || String(c.publicId) === String(convId) || String(c.internalId) === String(convId)) {
           return {
             ...c,
             ...(name !== undefined ? { name } : {}),
@@ -565,10 +592,13 @@ export function useData() {
       return communitiesApi.updateGroupInfo(actualId, { name, description, avatarKey }).then(() => {
         queryClient.invalidateQueries(['communities']);
         queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['group-chats']);
       });
     }
     await groupApi.updateGroupInfo(convId, { name, description, avatarKey });
     queryClient.invalidateQueries(['conversations']);
+    queryClient.invalidateQueries(['group-chats']);
+    queryClient.invalidateQueries(['crew-activities']);
   };
 
   const removeGroupMember = async (convId, memberId) => {
@@ -611,7 +641,11 @@ export function useData() {
     }
     if (String(convId).startsWith('act_')) {
       const actualId = convId.replace('act_', '');
-      return activitiesApi.leave(actualId).then(() => queryClient.invalidateQueries(['activities']));
+      // UI is already updated by MessagesLayout before this is called — just fire API and invalidate
+      return activitiesApi.leave(actualId).then(() => {
+        queryClient.invalidateQueries(['activities']);
+        queryClient.invalidateQueries(['conversations']);
+      });
     }
     await groupApi.leaveGroup(convId);
     queryClient.invalidateQueries(['conversations']);

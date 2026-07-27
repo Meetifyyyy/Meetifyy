@@ -96,9 +96,36 @@ export default function ProfileRightSidebar({ embedded = false }) {
 
   const myUpcoming = useMemo(() => {
     if (!currentUser) return [];
+    const now = new Date();
     return (crewActivities || [])
-      .filter(a => a.participants?.includes(currentUser.id))
-      .sort((a, b) => new Date(a.dateLabel + ' 2024') - new Date(b.dateLabel + ' 2024'));
+      .filter(a => {
+        if (!a.participants?.includes(currentUser.id)) return false;
+        
+        let hasEnded = a.status === 'ENDED' || a.status === 'CANCELLED';
+        const startRaw = a.startDate || a.date;
+        const endRaw = a.endDate;
+        
+        if (!hasEnded) {
+          if (endRaw) {
+            const end = new Date(endRaw);
+            if (!isNaN(end.getTime()) && now >= end) hasEnded = true;
+          } else if (startRaw) {
+            const start = new Date(startRaw);
+            if (!isNaN(start.getTime())) {
+              let durationHours = 1;
+              if (a.duration) {
+                const match = String(a.duration).match(/(\d+)/);
+                if (match) durationHours = parseInt(match[1], 10);
+              }
+              const calculatedEnd = new Date(start.getTime() + durationHours * 60 * 60 * 1000);
+              if (now >= calculatedEnd) hasEnded = true;
+            }
+          }
+        }
+        
+        return !hasEnded;
+      })
+      .sort((a, b) => new Date(a.startDate || a.createdAt) - new Date(b.startDate || b.createdAt));
   }, [crewActivities, currentUser]);
 
   const popularActivities = useMemo(() => {
