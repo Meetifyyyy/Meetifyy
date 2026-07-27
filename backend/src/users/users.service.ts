@@ -543,15 +543,11 @@ export class UsersService {
   }
 
   async getSettings(userId: string) {
-    let settings = await this.prisma.userSettings.findUnique({
-      where: { userId }
+    return this.prisma.userSettings.upsert({
+      where: { userId },
+      create: { userId },
+      update: {},
     });
-    if (!settings) {
-      settings = await this.prisma.userSettings.create({
-        data: { userId }
-      });
-    }
-    return settings;
   }
 
   async updateSettings(userId: string, data: any) {
