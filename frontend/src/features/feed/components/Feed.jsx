@@ -3,9 +3,9 @@ import useUIStore from '@stores/uiStore';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { EmptyState, ErrorState } from '@shared/components/ui/StateViews';
+import VirtualFeedList from './VirtualFeedList';
 import PostComposer from './composer/PostComposer';
 import PostSkeleton from './skeletons/PostSkeleton';
-import Post from './post/Post';
 import styles from './Feed.module.css';
 import { useData } from '@shared/hooks/useData';
 
@@ -103,12 +103,9 @@ function Feed({ onPostClick }) {
         />
       )}
 
-      {!isLoading && !isError && allPosts.length > 0 && allPosts.map((p) => {
-        const cTag = getCommunityTag(p.communityId);
-        return (
-          <Post key={p.id} postData={p} communityTag={cTag} onClick={() => onPostClick && onPostClick(p, 'feed')} />
-        );
-      })}
+      {!isLoading && !isError && allPosts.length > 0 && (
+        <VirtualFeedList posts={allPosts} communities={communities} onPostClick={onPostClick} />
+      )}
 
       {!isLoading && !isError && hasNextPage && (
         <div ref={loadMoreRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>

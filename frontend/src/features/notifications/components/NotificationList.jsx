@@ -1,3 +1,5 @@
+import { useMemo } from 'react';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { EmptyState } from '@shared/components/ui/StateViews';
 import NotificationItem from './NotificationItem';
 import { useData } from '@shared/hooks/useData';
@@ -76,6 +78,23 @@ export default function NotificationList({
       .replace(' week', 'w');
   };
 
+  const flatItems = useMemo(() => {
+    const list = [];
+    groupedNotifications.forEach(group => {
+      list.push({ type: 'header', key: `header-${group.key}`, title: group.title });
+      group.items.forEach(notif => {
+        list.push({ type: 'item', key: notif.id, notif });
+      });
+    });
+    return list;
+  }, [groupedNotifications]);
+
+  const virtualizer = useWindowVirtualizer({
+    count: flatItems.length,
+    estimateSize: (index) => (flatItems[index]?.type === 'header' ? 34 : 68),
+    overscan: 6,
+  });
+
   if (groupedNotifications.length === 0) {
     return (
       <EmptyState
@@ -92,25 +111,47 @@ export default function NotificationList({
   }
 
   return (
-    <>
-      {groupedNotifications.map(group => (
-        <div key={group.key} className={pageStyles.group}>
-          <h2 className={pageStyles.groupTitle}>{group.title}</h2>
-          <div className={pageStyles.groupItems}>
-            {group.items.map(notif => (
+    <div
+      className={pageStyles.groupItems}
+      style={{
+        height: `${virtualizer.getTotalSize()}px`,
+        position: 'relative',
+        width: '100%',
+      }}
+    >
+      {virtualizer.getVirtualItems().map((virtualItem) => {
+        const item = flatItems[virtualItem.index];
+
+        return (
+          <div
+            key={virtualItem.key}
+            data-index={virtualItem.index}
+            ref={virtualizer.measureElement}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${virtualItem.start}px)`,
+            }}
+          >
+            {item.type === 'header' ? (
+              <h2 className={pageStyles.groupTitle} style={{ margin: '0.5rem 0 0.25rem 0.5rem' }}>
+                {item.title}
+              </h2>
+            ) : (
               <NotificationItem
-                key={notif.id}
-                notif={notif}
-                actor={resolveActor(notif)}
-                timeStr={formatTimeStr(notif.createdAt)}
+                notif={item.notif}
+                actor={resolveActor(item.notif)}
+                timeStr={formatTimeStr(item.notif.createdAt)}
                 onClick={onNotifClick}
                 onAcceptJoinRequest={onAcceptJoinRequest}
                 onRejectJoinRequest={onRejectJoinRequest}
               />
-            ))}
+            )}
           </div>
-        </div>
-      ))}
-    </>
+        );
+      })}
+    </div>
   );
 }

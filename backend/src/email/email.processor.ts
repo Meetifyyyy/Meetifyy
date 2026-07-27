@@ -11,6 +11,7 @@ import { NewLoginEmail } from './templates/new-login';
 import { ResetPasswordEmail } from './templates/reset-password';
 import { VerificationOtpEmail } from './templates/verification-otp';
 import { PasswordChangedEmail } from './templates/password-changed';
+import { AdminOtpEmail } from './templates/admin-otp';
 
 @Processor('email')
 export class EmailProcessor extends WorkerHost {
@@ -20,9 +21,9 @@ export class EmailProcessor extends WorkerHost {
 
   constructor(private configService: ConfigService) {
     super();
-    const apiKey = this.configService.get<string>('RESEND_API_KEY');
+    const apiKey = this.configService.get<string>('resend.apiKey') || this.configService.get<string>('RESEND_API_KEY');
     this.resend = new Resend(apiKey);
-    this.fromEmail = this.configService.get<string>('EMAIL_FROM') || 'onboarding@resend.dev';
+    this.fromEmail = this.configService.get<string>('resend.fromEmail') || this.configService.get<string>('EMAIL_FROM') || 'noreply@meetifyy.app';
   }
 
   async process(job: Job<any, any, string>): Promise<any> {
@@ -63,6 +64,14 @@ export class EmailProcessor extends WorkerHost {
         }));
         break;
 
+      case 'send-admin-verification-otp':
+        subject = 'Super Admin Access Code';
+        html = await render(createElement(AdminOtpEmail, {
+          name: job.data.name,
+          otp: job.data.otp
+        }));
+        break;
+
       case 'send-password-changed-email':
         subject = 'Your Meetifyy Password Was Changed';
         html = await render(createElement(PasswordChangedEmail, {
@@ -76,12 +85,13 @@ export class EmailProcessor extends WorkerHost {
     }
 
     try {
+      const replyTo = this.configService.get<string>('EMAIL_REPLY_TO');
       const { data, error } = await this.resend.emails.send({
         from: this.fromEmail,
         to: job.data.email,
         subject: subject,
         html: html,
-        replyTo: this.configService.get<string>('EMAIL_REPLY_TO'),
+        ...(replyTo ? { replyTo } : {}),
       });
 
       if (error) {

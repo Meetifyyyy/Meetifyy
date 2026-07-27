@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useNotifications } from '@shared/hooks/useNotifications';
 import { useAuth } from '@shared/context/AuthContext';
@@ -13,23 +13,7 @@ import InvitationList from '../components/InvitationList';
 import styles from './NotificationsRoute.module.css';
 import { useData } from '@shared/hooks/useData';
 
-
-function NotificationRowSkeleton() {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem 1.25rem', borderBottom: '1px solid var(--color-border-light)', pointerEvents: 'none', background: 'var(--color-bg-white)' }}>
-      <div style={{ width: '34px', height: '34px', borderRadius: '50%', overflow: 'hidden', flexShrink: 0 }}>
-        <Skeleton type="circle" width="34px" height="34px" />
-      </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-        <Skeleton type="text" width="60%" height="1.1rem" style={{ marginBottom: '0.4rem' }} />
-        <Skeleton type="text" width="40%" height="0.8rem" />
-      </div>
-      <div style={{ flexShrink: 0, minWidth: '80px', display: 'flex', justifyContent: 'flex-end' }}>
-        <Skeleton type="rect" width="70px" height="32px" style={{ borderRadius: '100px' }} />
-      </div>
-    </div>
-  );
-}
+import { NotifRowSkeleton } from '../components/skeletons/NotificationsSkeleton';
 
 export default function NotificationsRoute() {
   const [activeTab, setActiveTab] = useState('all');
@@ -47,11 +31,30 @@ export default function NotificationsRoute() {
   const { getUserById, crewActivities, joinCrewActivity, declineCrewInvitation, acceptJoinRequest, rejectJoinRequest } = useData();
   const navigate = useNavigate();
   const goBack = useSmartBack();
+  const loadMoreRef = useRef(null);
 
   // Automatically mark all notifications as read when opening notifications page
   useEffect(() => {
     markAllRead();
   }, []);
+
+  // Infinite scroll trigger for loading chunks
+  useEffect(() => {
+    if (!loadMoreRef.current || !hasNextPage || isFetchingNextPage || activeTab === 'invitations') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, activeTab]);
+
 
   const invitations = useMemo(() => {
     return crewActivities ? crewActivities.filter(a => 
@@ -230,23 +233,13 @@ export default function NotificationsRoute() {
 
         <div className={styles.list}>
           {isLoading ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3.5rem 1rem' }}>
-              <div 
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  border: '3px solid rgba(var(--color-primary-rgb), 0.15)',
-                  borderTopColor: 'var(--color-primary)',
-                  borderRadius: '50%',
-                  animation: 'spin 0.8s linear infinite'
-                }}
-              />
-              <style>{`
-                @keyframes spin {
-                  0% { transform: rotate(0deg); }
-                  100% { transform: rotate(360deg); }
-                }
-              `}</style>
+            <div className={styles.groupItems}>
+              <NotifRowSkeleton />
+              <NotifRowSkeleton />
+              <NotifRowSkeleton />
+              <NotifRowSkeleton />
+              <NotifRowSkeleton />
+              <NotifRowSkeleton />
             </div>
           ) : error ? (
             <ErrorState onRetry={retry} />
@@ -277,26 +270,36 @@ export default function NotificationsRoute() {
               pageStyles={styles}
             />
           )}
+          {activeTab !== 'invitations' && isFetchingNextPage && !isLoading && (
+            <div className={styles.groupItems} style={{ marginTop: '0.75rem' }}>
+              <NotifRowSkeleton />
+              <NotifRowSkeleton />
+              <NotifRowSkeleton />
+            </div>
+          )}
           {activeTab !== 'invitations' && hasNextPage && (
-            <button
-              onClick={() => fetchNextPage()}
-              disabled={isFetchingNextPage}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                margin: '1.5rem 0',
-                background: 'var(--color-bg-white)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                color: 'var(--color-text)',
-                fontWeight: 600,
-                cursor: 'pointer',
-                textAlign: 'center',
-                transition: 'all 0.2s',
-              }}
-            >
-              {isFetchingNextPage ? 'Loading more...' : 'Load More'}
-            </button>
+            <div ref={loadMoreRef} style={{ padding: '0.5rem 0' }}>
+              {!isFetchingNextPage && (
+                <button
+                  onClick={() => fetchNextPage()}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    margin: '1rem 0',
+                    background: 'var(--color-bg-white)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '8px',
+                    color: 'var(--color-text)',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  Load More
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>

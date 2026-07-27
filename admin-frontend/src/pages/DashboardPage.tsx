@@ -34,35 +34,34 @@ export const DashboardPage: React.FC = () => {
   });
 
   const statCards = [
-    { label: 'Total Users', value: stats?.totalUsers || 0, icon: Users, color: '#6366f1' },
-    { label: 'Active Today', value: stats?.activeToday || 0, icon: TrendingUp, color: '#10b981' },
-    { label: 'New Today', value: stats?.newToday || 0, icon: Zap, color: '#f59e0b' },
-    { label: 'Verified Students', value: stats?.verifiedStudents || 0, icon: UserCheck, color: '#3b82f6' },
-    { label: 'Total Colleges', value: stats?.totalColleges || 0, icon: Building2, color: '#8b5cf6' },
-    { label: 'Total Posts', value: stats?.totalPosts || 0, icon: FileText, color: '#ec4899' },
-    { label: 'Pending Reports', value: stats?.pendingReports || 0, icon: ShieldAlert, color: '#ef4444' },
-    { label: 'Open Support Tickets', value: stats?.openSupportTickets || 0, icon: HelpCircle, color: '#06b6d4' },
+    { label: 'Total Users', value: stats?.totalUsers || 0, icon: Users, color: '#2563EB' },
+    { label: 'Active Today', value: stats?.activeToday || 0, icon: TrendingUp, color: '#10B981' },
+    { label: 'New Registrations', value: stats?.newToday || 0, icon: Zap, color: '#F59E0B' },
+    { label: 'Verified Students', value: stats?.verifiedStudents || 0, icon: UserCheck, color: '#3B82F6' },
+    { label: 'Colleges', value: stats?.totalColleges || 0, icon: Building2, color: '#7C3AED' },
+    { label: 'Total Posts', value: stats?.totalPosts || 0, icon: FileText, color: '#EC4899' },
+    { label: 'Pending Reports', value: stats?.pendingReports || 0, icon: ShieldAlert, color: '#EF4444' },
+    { label: 'Support Tickets', value: stats?.openSupportTickets || 0, icon: HelpCircle, color: '#06B6D4' },
   ];
 
   return (
     <div>
-      <div style={{ marginBottom: '2rem' }}>
-        <h2 style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.5px' }}>Platform Dashboard</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-          Real-time metrics, system health, and growth analytics across Meetifyy.
-        </p>
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">Dashboard</h2>
+          <p className="page-subtitle">Overview & metrics across Meetifyy.</p>
+        </div>
       </div>
 
-      {/* Infrastructure Health Status Widget */}
       <StatusWidget />
 
-      {/* Health Stats Grid */}
+      {/* Metrics Grid */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap: '1.25rem',
-          marginBottom: '2rem',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '1rem',
+          marginBottom: '1.5rem',
         }}
       >
         {statCards.map((card, idx) => {
@@ -72,67 +71,71 @@ export const DashboardPage: React.FC = () => {
               key={idx}
               className="glass-panel"
               style={{
-                padding: '1.25rem',
+                padding: '1rem 1.15rem',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                transition: 'transform 0.2s ease',
               }}
             >
               <div>
-                <p style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-light)', marginBottom: '0.2rem' }}>
                   {card.label}
                 </p>
-                <p style={{ fontSize: '1.5rem', fontWeight: 800 }}>
+                <p style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--color-text-main)' }}>
                   {statsLoading ? '...' : card.value.toLocaleString()}
                 </p>
               </div>
               <div
                 style={{
-                  width: '42px',
-                  height: '42px',
-                  borderRadius: '12px',
-                  background: `${card.color}20`,
-                  border: `1px solid ${card.color}40`,
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: `${card.color}14`,
+                  border: `1px solid ${card.color}30`,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  flexShrink: 0,
                 }}
               >
-                <Icon size={20} color={card.color} />
+                <Icon size={18} color={card.color} />
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Growth Chart */}
-      <div className="glass-panel" style={{ padding: '1.5rem' }}>
-        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1.25rem' }}>30-Day User Registrations</h3>
+      {/* Analytics Chart */}
+      <div className="glass-panel" style={{ padding: '1.25rem' }}>
+        <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--color-text-main)' }}>
+          User Registrations (30 Days)
+        </h3>
         {chartsLoading ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading analytics...</div>
+          <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>Loading analytics...</div>
         ) : (
-          <div style={{ width: '100%', height: 320 }}>
+          <div style={{ width: '100%', height: 300 }}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={charts?.registrations || []}>
                 <defs>
                   <linearGradient id="regGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#2563EB" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
-                <XAxis dataKey="date" stroke="#64748b" fontSize={12} tickLine={false} />
-                <YAxis stroke="#64748b" fontSize={12} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                <XAxis dataKey="date" stroke="#64748B" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis stroke="#64748B" fontSize={11} tickLine={false} axisLine={false} />
                 <Tooltip
                   contentStyle={{
-                    background: '#0f172a',
-                    border: '1px solid var(--border-color)',
+                    background: '#FFFFFF',
+                    border: '1px solid #E2E8F0',
                     borderRadius: '8px',
-                    color: '#fff',
+                    color: '#0F172A',
+                    boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)',
+                    fontSize: '12px',
                   }}
                 />
-                <Area type="monotone" dataKey="registrations" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#regGradient)" />
+                <Area type="monotone" dataKey="registrations" stroke="#2563EB" strokeWidth={2.5} fillOpacity={1} fill="url(#regGradient)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>

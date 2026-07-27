@@ -11,6 +11,7 @@
     "target": "ES2023",
     "sourceMap": true,
     "outDir": "./dist",
+    "rootDir": "./src",
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
@@ -20,5 +21,6 @@
     "strictBindCallApply": true,
     "noFallthroughCasesInSwitch": true,
     "jsx": "react"
-  }
+  },
+  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "render-templates.ts", "prisma", "scripts"]
 }
