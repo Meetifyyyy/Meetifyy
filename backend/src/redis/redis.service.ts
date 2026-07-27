@@ -32,7 +32,7 @@ export class RedisService implements OnModuleDestroy {
         });
         
         this.client.on('error', (err) => {
-          this.logger.error('Shared Redis connection error', err);
+          this.logger.warn(`Shared Redis connection issue: ${err.message || err}`);
         });
       } catch (e) {
         this.logger.error('Failed to parse REDIS_URL', e);

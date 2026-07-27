@@ -118,6 +118,8 @@ import { RedisModule } from './redis/redis.module';
             username: url.username || undefined,
             password: url.password || undefined,
             tls: url.protocol === 'rediss:' ? { rejectUnauthorized: false } : undefined,
+            maxRetriesPerRequest: null,
+            enableReadyCheck: false,
           };
         } else {
           connection = {
@@ -125,6 +127,8 @@ import { RedisModule } from './redis/redis.module';
             port: configService.get<number>('REDIS_PORT') || 6379,
             password: configService.get<string>('REDIS_PASSWORD'),
             tls: configService.get<string>('REDIS_TLS') === 'true' ? { rejectUnauthorized: false } : undefined,
+            maxRetriesPerRequest: null,
+            enableReadyCheck: false,
           };
         }
 

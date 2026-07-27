@@ -30,13 +30,19 @@ export default function NotificationsRoute() {
   } = useNotifications();
   const { getUserById, crewActivities, joinCrewActivity, declineCrewInvitation, acceptJoinRequest, rejectJoinRequest } = useData();
   const navigate = useNavigate();
-  const goBack = useSmartBack();
   const loadMoreRef = useRef(null);
+  const hasMarkedReadRef = useRef(false);
 
-  // Automatically mark all notifications as read when opening notifications page
+  // Automatically mark all notifications as read once when opening notifications page
   useEffect(() => {
-    markAllRead();
-  }, []);
+    if (!hasMarkedReadRef.current && notifications && notifications.length > 0) {
+      const hasUnread = notifications.some(n => !n.read && !n.readAt);
+      if (hasUnread) {
+        hasMarkedReadRef.current = true;
+        markAllRead();
+      }
+    }
+  }, [notifications, markAllRead]);
 
   // Infinite scroll trigger for loading chunks
   useEffect(() => {
