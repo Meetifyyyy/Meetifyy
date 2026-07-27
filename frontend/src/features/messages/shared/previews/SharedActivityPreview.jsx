@@ -1,7 +1,9 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
+import { CalendarDays } from 'lucide-react';
 import styles from './SharedActivityPreview.module.css';
+import sidebarStyles from '../components/sidebar/ConversationList.module.css';
 import { useData } from '@shared/hooks/useData';
 
 export function SharedActivityPreview({ activity: passedActivity }) {
@@ -14,6 +16,8 @@ export function SharedActivityPreview({ activity: passedActivity }) {
   if (!activity || (!activity.id && !activity.title)) return null;
 
   const activityDate = new Date(activity.date || Date.now());
+  const status = (activity?.status || '').toUpperCase();
+  const hasStarted = status === 'IN_PROGRESS' || status === 'STARTED' || status === 'COMPLETED' || status === 'ENDED' || (activity.startDate || activity.date ? (new Date(activity.startDate || activity.date) <= new Date()) : false);
 
   const handleClick = (e) => {
     e.preventDefault();
@@ -29,7 +33,13 @@ export function SharedActivityPreview({ activity: passedActivity }) {
         <img src={activity.image || activity.coverImage} loading="lazy" className={styles.activityShareCover} alt="Cover" />
       )}
       <div className={styles.activityShareContentNew}>
-        <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
+        {hasStarted ? (
+          <div className={sidebarStyles.startedCalendarBadge}>
+            <CalendarDays size={28} />
+          </div>
+        ) : (
+          <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
+        )}
         <div className={styles.activityShareInfoNew}>
           <div className={styles.activityShareTitleNew}>
             <span>{activity.title}</span>

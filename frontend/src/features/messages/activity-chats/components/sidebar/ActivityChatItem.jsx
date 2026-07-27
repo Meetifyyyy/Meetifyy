@@ -10,23 +10,52 @@ export default function ActivityChatItem({ conv, activeChatId, onSelect, onConte
   const isActive = String(conv.id) === String(activeChatId) || String(conv.publicId) === String(activeChatId) || String(conv.activityId) === String(activeChatId);
   const isUnread = conv.unread > 0;
 
-  const activityDate = conv.activity?.date || conv.activity?.startDate || conv.date || conv.createdAt;
+  const activityDate = conv.activity?.startDate || conv.activity?.date || conv.date;
   const isHost = String(conv.hostId || conv.activity?.hostId) === String(currentUser?.id);
 
   const hasStarted = (() => {
-    if (!activityDate) return false;
-    return new Date(activityDate) <= new Date();
+    const status = (conv.activity?.status || conv.status || '').toUpperCase();
+    if (status === 'IN_PROGRESS' || status === 'STARTED' || status === 'COMPLETED' || status === 'ENDED') {
+      return true;
+    }
+    if (conv.messages?.some(m => String(m.text || m.payload?.text).includes('Activity has started!'))) {
+      return true;
+    }
+    if (conv.activityHasStarted) return true;
+    if (conv.hasStarted) return true;
+    if (conv.activity?.hasStarted) return true;
+    if (activityDate) {
+      const d = new Date(activityDate);
+      if (!isNaN(d.getTime())) {
+        return d <= new Date();
+      }
+    }
+    return false;
   })();
 
   const previewText = (() => {
     const lastMsgObj = (Array.isArray(conv.messages) && conv.messages.length > 0)
       ? conv.messages[conv.messages.length - 1]
       : conv.lastMessage;
-    if (!lastMsgObj) return conv.lastMessageText || conv.preview || conv.lastMsg || '';
+    if (!lastMsgObj) {
+      const rawFallback = conv.lastMessageText || conv.preview || conv.lastMsg || '';
+      return rawFallback.replace(/^You:\s*@/, '@');
+    }
     let text = lastMsgObj.text || lastMsgObj.payload?.text || '';
     if (!text && lastMsgObj.mediaUrl) {
       return lastMsgObj.mediaType === 'audio' ? '🎤 Voice message' : lastMsgObj.mediaType === 'video' ? '📹 Video' : '📷 Photo';
     }
+    const isSystemMsg =
+      lastMsgObj.type === 'system' ||
+      lastMsgObj.type === 'SYSTEM' ||
+      lastMsgObj.isSystem ||
+      lastMsgObj.system === true ||
+      (typeof text === 'string' && text.startsWith('@'));
+
+    if (isSystemMsg) {
+      return text.replace(/^You:\s*@/, '@');
+    }
+
     const isMe = String(lastMsgObj.senderId || lastMsgObj.from) === String(currentUser?.id);
     const senderName = isMe ? 'You' : lastMsgObj.senderName || 'Member';
     if (senderName && text) return `${senderName}: ${text}`;
@@ -45,7 +74,7 @@ export default function ActivityChatItem({ conv, activeChatId, onSelect, onConte
           <div className={styles.calendarBadge}>
             {hasStarted ? (
               <div className={styles.startedCalendarBadge}>
-                <CalendarDays size={20} />
+                <CalendarDays size={28} />
               </div>
             ) : (
               <CalendarIcon date={activityDate} />

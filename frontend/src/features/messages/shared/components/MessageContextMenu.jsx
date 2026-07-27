@@ -1,3 +1,4 @@
+import { useRef, useLayoutEffect, useState } from 'react';
 import { Reply, Copy, Forward, Trash2, Undo2 } from 'lucide-react';
 import styles from './MessageContextMenu.module.css';
 
@@ -11,16 +12,20 @@ export default function MessageContextMenu({
   onDeleteForMe,
   onUnsendRequest
 }) {
+  const menuRef = useRef(null);
+  const [coords, setCoords] = useState({ x: -9999, y: -9999, ready: false });
+
   if (!msg || !position) return null;
 
   const isTemp = (m) => m && m.id && (String(m.id).startsWith('temp-') || String(m.id).startsWith('temp_'));
+  const isUnavailableMedia = (m) => Boolean(m && (m.isMediaUnavailable || m.mediaError));
 
   const actions = [
     {
       id: 'reply',
       label: 'Reply',
       icon: Reply,
-      visible: (m) => !isTemp(m),
+      visible: (m) => !isTemp(m) && !isUnavailableMedia(m),
       onClick: () => {
         onReply(msg);
         onClose();
@@ -40,7 +45,7 @@ export default function MessageContextMenu({
       id: 'forward',
       label: 'Forward',
       icon: Forward,
-      visible: (m) => m.state !== 'UNSENT' && !isTemp(m),
+      visible: (m) => m.state !== 'UNSENT' && !isTemp(m) && !isUnavailableMedia(m),
       onClick: () => {
         onForward(msg);
         onClose();
@@ -84,14 +89,37 @@ export default function MessageContextMenu({
     }
   ];
 
-  const visibleActions = actions.filter(a => a.visible(msg));
+  const rawVisible = actions.filter(a => a.visible(msg));
+  const visibleActions = rawVisible.filter((item, idx) => {
+    if (!item.isSeparator) return true;
+    if (idx === 0 || idx === rawVisible.length - 1) return false;
+    if (rawVisible[idx - 1]?.isSeparator) return false;
+    return true;
+  });
 
-  // Smooth clamping: add offset, but don't let it go offscreen.
-  const menuWidth = 180;
-  const menuHeight = 260;
-  
-  const x = Math.min(Math.max(12, position.x + 12), window.innerWidth - menuWidth - 12);
-  const y = Math.min(Math.max(12, position.y + 12), window.innerHeight - menuHeight - 12);
+  useLayoutEffect(() => {
+    if (!menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    const width = rect.width || 180;
+    const height = rect.height || 220;
+
+    const gap = 12;
+    const edgeMargin = 12;
+
+    let x = position.x + gap;
+    if (x + width > window.innerWidth - edgeMargin) {
+      x = position.x - gap - width;
+    }
+    x = Math.max(edgeMargin, Math.min(x, window.innerWidth - width - edgeMargin));
+
+    let y = position.y + gap;
+    if (y + height > window.innerHeight - edgeMargin) {
+      y = position.y - gap - height;
+    }
+    y = Math.max(edgeMargin, Math.min(y, window.innerHeight - height - edgeMargin));
+
+    setCoords({ x, y, ready: true });
+  }, [position.x, position.y, visibleActions.length]);
 
   return (
     <div 
@@ -105,8 +133,14 @@ export default function MessageContextMenu({
       onWheel={onClose}
     >
       <div 
+        ref={menuRef}
         className={styles.contextMenu} 
-        style={{ top: `${y}px`, left: `${x}px` }}
+        style={{ 
+          top: `${coords.y}px`, 
+          left: `${coords.x}px`,
+          opacity: coords.ready ? 1 : 0,
+          visibility: coords.ready ? 'visible' : 'hidden',
+        }}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       >

@@ -6,7 +6,8 @@ import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ChatDetailsPanel.module.css';
-import { Pin, Trash2, LogOut, ChevronRight, User, Search, Ban, UserPlus, UserCheck, Check, X, Image as ImageIcon } from 'lucide-react';
+import sidebarStyles from '../sidebar/ConversationList.module.css';
+import { Pin, Trash2, LogOut, ChevronRight, User, Search, Ban, UserPlus, UserCheck, Check, X, Image as ImageIcon, CalendarDays, Calendar, CalendarX } from 'lucide-react';
 import InviteModal from '../modals/InviteModal';
 import SafetyNumberModal from '../modals/SafetyNumberModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
@@ -23,10 +24,10 @@ import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import { sortGroupMembers } from '@shared/utils/memberSort';
 
 
-export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, onClearChat, onSearch }) {
+export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, onClearChat, onSearch, onLeaveActivity }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const { users, crewActivities, endCrewActivity, leaveGroup, updateGroupInfo, updateGroupEditPermission, updateGroupSettings, removeGroupMember, changeGroupOwner, promoteToAdmin, demoteFromAdmin, endGroup, acceptGroupJoinRequest, declineGroupJoinRequest } = useData();
+  const { users, crewActivities, endCrewActivity, leaveGroup, updateGroupInfo, updateGroupEditPermission, updateGroupSettings, removeGroupMember, changeGroupOwner, promoteToAdmin, demoteFromAdmin, endGroup, acceptGroupJoinRequest, declineGroupJoinRequest, togglePinConversation } = useData();
 
   // General States
   const [showConfirm, setShowConfirm] = useState(false);
@@ -180,16 +181,23 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   if (!conversation) return null;
 
   // Determine chat type
-  const isEventGroup = !!conversation.isActivityChat;
-  const isGroup = !!conversation.isGroup && !isEventGroup;
-  const isOneOnOne = !isGroup && !isEventGroup;
+  const isEventGroup = !!conversation.isActivityChat || !!conversation.activityId || String(conversation.id).startsWith('act_');
+  const isGroup = !!conversation.isGroup || isEventGroup;
+  const isOneOnOne = !isGroup;
 
   // Fetch related activity if event group
-  const activity = isEventGroup && conversation.activityId
-    ? crewActivities.find(a => a.id === conversation.activityId)
+  const activity = isEventGroup && (conversation.activityId || String(conversation.id).replace(/^act_/, ''))
+    ? crewActivities.find(a => a.id === (conversation.activityId || String(conversation.id).replace(/^act_/, '')))
     : null;
 
-  const isHost = activity ? activity.hostId === currentUser?.id : false;
+  const isHost = activity ? activity.creatorId === currentUser?.id || activity.hostId === currentUser?.id : false;
+  const activityHasStarted = activity
+    ? (() => {
+        const startRaw = activity.startDate || activity.date;
+        if (!startRaw) return false;
+        return new Date(startRaw) <= new Date();
+      })()
+    : false;
   const isOwner = conversation.ownerId === currentUser?.id || conversation.hostId === currentUser?.id || isHost;
   const isAdmin = isOwner || (conversation.admins || []).includes(currentUser?.id);
   const canEditGroupInfo = isAdmin || (editGroupPermission || '').toUpperCase() === 'EVERYONE';
@@ -259,7 +267,11 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
     setShowConfirm(false);
     if (confirmType === 'leaveGroup') {
       await leaveGroup(conversation.id);
-      onBack();
+      // For activity chats: if activity already started, stay in read-only view.
+      // If not started yet, leaving removes the person from the group entirely → go back.
+      if (!isEventGroup || !activityHasStarted) {
+        onBack();
+      }
     } else if (confirmType === 'endGroup') {
       await endGroup(conversation.id);
     } else if (confirmType === 'endActivity' && activity) {
@@ -273,62 +285,6 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       setTargetUserId(null);
       setShowChangeOwnerPage(false);
       showToast('Owner changed successfully');
-    }
-  };
-
-  const formatEventDateTime = () => {
-    if (!activity) return '';
-    try {
-      const d = new Date(activity.date);
-      if (isNaN(d.getTime())) return `${activity.date} • ${activity.time}`;
-      const dateFormatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      if (!activity.time) return dateFormatted;
-
-      if (activity.endDate && activity.endTime) {
-        const endD = new Date(activity.endDate);
-        const endDateFormatted = endD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        if (dateFormatted === endDateFormatted) {
-          return `${dateFormatted} • ${activity.time} - ${activity.endTime}`;
-        } else {
-          return `${dateFormatted} • ${activity.time} - ${endDateFormatted} • ${activity.endTime}`;
-        }
-      }
-
-      // Fallback for old activities using duration
-      let endTimeStr = '';
-      if (activity.duration) {
-        const match = activity.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
-        if (match) {
-          let h = parseInt(match[1], 10);
-          const m = parseInt(match[2], 10);
-          const ampm = match[3].toUpperCase();
-          if (ampm === 'PM' && h < 12) h += 12;
-          if (ampm === 'AM' && h === 12) h = 0;
-
-          let addHours = 0;
-          if (activity.duration.includes('1 hour')) addHours = 1;
-          else if (activity.duration.includes('2 hours')) addHours = 2;
-          else if (activity.duration.includes('Half day')) addHours = 4;
-          else if (activity.duration.includes('All day')) addHours = 8;
-          else {
-             const hrsMatch = activity.duration.match(/(\d+)/);
-             if (hrsMatch) addHours = parseInt(hrsMatch[1], 10);
-          }
-
-          if (addHours > 0) {
-            h += addHours;
-            const endAmPm = h >= 12 && h < 24 ? 'PM' : 'AM';
-            let endH = h % 12;
-            if (endH === 0) endH = 12;
-            const endMStr = m < 10 ? '0' + m : m;
-            endTimeStr = ` - ${endH}:${endMStr} ${endAmPm}`;
-          }
-        }
-      }
-
-      return `${dateFormatted} • ${activity.time}${endTimeStr}`;
-    } catch {
-      return `${activity.date} • ${activity.time}`;
     }
   };
 
@@ -475,6 +431,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         isEventGroup={isEventGroup}
         isGroup={isGroup}
         activity={activity}
+        activityHasStarted={activityHasStarted}
         users={users}
         memberIds={memberIds}
         targetUserId={targetUserId}
@@ -492,7 +449,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         }}
         onCancelConfirm={() => setShowConfirm(false)}
         onConfirmAction={handleConfirmAction}
-        handleLeaveGroup={handleLeaveGroup}
+        handleLeaveGroup={isEventGroup && onLeaveActivity ? onLeaveActivity : handleLeaveGroup}
         handleEndActivity={handleEndActivity}
         handleEndGroup={handleEndGroup}
       />
@@ -513,7 +470,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
           {isOneOnOne ? 'Chat Details' : isEventGroup ? 'Activity Details' : 'Group Info'}
         </h2>
         <div className={styles.headerRight}>
-          {isEventGroup && (
+          {!isOneOnOne && (
             <div className={styles.menuContainer} ref={menuRef}>
               <button 
                 type="button"
@@ -529,48 +486,28 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
               </button>
               {showMenu && (
                 <div className={styles.dropdownMenu}>
-                  <button type="button" className={styles.dropdownItem} onClick={() => { alert('Group pinned.'); setShowMenu(false); }}>
+                  <button type="button" className={styles.dropdownItem} onClick={() => { if (togglePinConversation) togglePinConversation(conversation.id); setShowMenu(false); }}>
                     <Pin size={15} />
-                    <span>Pin Group</span>
+                    <span>{conversation?.pinned || conversation?.isPinned ? 'Unpin Group' : 'Pin Group'}</span>
                   </button>
                   <button type="button" className={styles.dropdownItem} onClick={() => { if (onClearChat) onClearChat(); setShowMenu(false); onBack(); }}>
                     <Trash2 size={15} />
                     <span>Clear Chat History</span>
                   </button>
-                  {!isClosed && (
-                    isHost ? (
-                      <button type="button" className={`${styles.dropdownItem} ${styles.dangerItem}`} onClick={() => { handleEndActivity(); setShowMenu(false); }}>
-                        <LogOut size={15} />
-                        <span>End Group</span>
-                      </button>
-                    ) : (
-                      <button type="button" className={`${styles.dropdownItem} ${styles.dangerItem}`} onClick={() => { handleLeaveGroup(); setShowMenu(false); }}>
-                        <LogOut size={15} />
-                        <span>Leave Group</span>
-                      </button>
-                    )
-                  )}
                 </div>
               )}
             </div>
           )}
-          {!isEventGroup && <div style={{ width: '40px' }} />}
+          {isOneOnOne && <div style={{ width: '40px' }} />}
         </div>
       </div>
 
       <div className={styles.scrollBody} key="details-scroll">
         {/* Large Avatar Block */}
         <div className={styles.avatarSection}>
-          {isEventGroup ? (
+          <div style={{ position: 'relative', display: 'inline-block' }}>
             <Avatar
-              src={conversation.avatar}
-              name={conversation.name}
-              size="120px"
-              isGroup={true}
-            />
-          ) : (
-            <Avatar
-              src={conversation.avatar || targetUser?.avatar}
+              src={conversation.avatar || conversation.avatarKey || (isEventGroup ? activity?.coverImage : targetUser?.avatar)}
               name={conversation.name || targetUser?.displayName}
               size="120px"
               isGroup={isGroup}
@@ -582,7 +519,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                 <div className={styles.avatarOverlay}>Change Photo</div>
               )}
             </Avatar>
-          )}
+          </div>
           
           <h1 className={styles.primaryName}>
             {isOneOnOne && targetUser ? (targetUser.displayName || targetUser.name || conversation.name) : conversation.name}
@@ -703,13 +640,20 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             );
           })()}
 
-          {isEventGroup && activity && (
-            <div className={styles.eventInfoRow}>
-              {(activity.date || activity.dateLabel) && (
-                <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
-              )}
-              <div className={styles.eventDateTime}>{formatEventDateTime()}</div>
-            </div>
+          {isEventGroup && (
+            <button
+              type="button"
+              className={styles.viewActivityBtn}
+              onClick={() => {
+                const actId = activity?.id || conversation.activityId || (conversation.id ? String(conversation.id).replace(/^act_/, '') : null);
+                if (actId) {
+                  navigate(`/crew/${actId}`, { state: { activity: activity || conversation.activity } });
+                }
+              }}
+            >
+              <Calendar size={18} />
+              <span>View Activity Details</span>
+            </button>
           )}
         </div>
 
@@ -804,13 +748,13 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
           </div>
         )}
 
-        {/* 2. GROUP CHAT DETAILS */}
+        {/* 2. GROUP & EVENT CHAT DETAILS */}
         {isGroup && (
           <div className={styles.detailsList}>
-            {conversation.description && (
+            {(conversation.description || activity?.description) && (
               <div className={styles.section}>
                 <h3 className={styles.sectionTitle}>Description</h3>
-                <p className={styles.sectionValue}>{conversation.description}</p>
+                <p className={styles.sectionValue}>{conversation.description || activity?.description}</p>
               </div>
             )}
 
@@ -852,15 +796,13 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                 onClick={() => setShowSettingsPage(true)}
                 style={{ marginBottom: '1.25rem' }}
               >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px' }}>
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-              <span>Group Settings</span>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px' }}>
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+                <span>Group Settings</span>
               </button>
             )}
-
-
 
             <div className={styles.section}>
               <h3 className={styles.sectionTitle}>Members ({memberIds.length})</h3>
@@ -870,7 +812,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                   if (!userObj) return null;
                   
                   const isMe = uid === currentUser?.id;
-                  const isUserOwner = uid === conversation.ownerId || (activity && uid === activity.hostId);
+                  const isUserOwner = uid === conversation.ownerId || (activity && (uid === activity.hostId || uid === activity.creatorId));
                   const isUserAdmin = (conversation.admins || []).includes(uid);
                   
                   const canPromote = isOwner && !isMe && !isUserOwner && !isUserAdmin;
@@ -991,104 +933,31 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             {!isClosed && isMember && (
               <div className={styles.actionSection}>
                 {isOwner ? (
-                  <button 
-                    className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
-                    onClick={handleEndGroup}
-                  >
-                    End Group
-                  </button>
+                  isEventGroup && !activityHasStarted ? (
+                    <button 
+                      className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
+                      onClick={handleEndActivity}
+                    >
+                      End Activity
+                    </button>
+                  ) : (
+                    <button 
+                      className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
+                      onClick={handleEndGroup}
+                    >
+                      End Group
+                    </button>
+                  )
                 ) : (
                   <button 
                     className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
-                    onClick={handleLeaveGroup}
+                    onClick={isEventGroup && onLeaveActivity ? onLeaveActivity : handleLeaveGroup}
                   >
-                    Leave Group
+                    {isEventGroup ? (activityHasStarted ? 'Leave Group' : 'Leave Activity') : 'Leave Group'}
                   </button>
                 )}
               </div>
             )}
-          </div>
-        )}
-
-        {/* 3. EVENT GROUP DETAILS */}
-        {isEventGroup && activity && (
-          <div className={styles.detailsList}>
-            {(conversation.description || activity.description) && (
-              <div className={styles.section}>
-                <h3 className={styles.sectionTitle}>Description</h3>
-                <p className={styles.sectionValue}>{conversation.description || activity.description}</p>
-              </div>
-            )}
-
-            {/* Gallery Section */}
-            <div className={styles.galleryCard}>
-              <div className={styles.galleryHeader} onClick={() => setShowGalleryPage(true)}>
-                <span className={styles.galleryTitle}>Gallery</span>
-                <ChevronRight className={styles.galleryChevron} size={20} />
-              </div>
-              <div className={styles.galleryRow}>
-                {mediaList.map((item, idx) => (
-                  <div key={idx} className={styles.galleryThumbnail} onClick={() => setShowGalleryPage(true)}>
-                    {item.type === 'video' ? (
-                      <div className={styles.videoGridWrapper} style={{ width: '100%', height: '100%' }}>
-                        <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        <div className={styles.playBadge}>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                        </div>
-                      </div>
-                    ) : (
-                      <img src={item.url} alt="" className={styles.galleryThumbImg} />
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {isHost && (
-              <button
-                type="button"
-                className={styles.settingsBtn}
-                onClick={() => setShowSettingsPage(true)}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px' }}>
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                </svg>
-                <span>Edit Group Settings</span>
-              </button>
-            )}
-
-            <div className={styles.section}>
-              <h3 className={styles.sectionTitle}>Members ({memberIds.length})</h3>
-              <div className={styles.memberList}>
-                {memberIds.map(uid => {
-                  const userObj = Object.values(users).find(u => u.id === uid);
-                  if (!userObj) return null;
-                  
-                  const isActivityHost = uid === activity.hostId;
-                  
-                  return (
-                    <div key={uid} className={styles.memberItem}>
-                      <Link to={`/profile/${userObj.username}`} className={styles.memberLink}>
-                        <Avatar 
-                          src={userObj.avatar} 
-                          name={userObj.name} 
-                          size="38px" 
-                        />
-                        <div className={styles.memberMeta}>
-                          <span className={styles.memberName}>{userObj.displayName || userObj.name}</span>
-                          <span className={styles.memberUsername}>@{userObj.username}</span>
-                        </div>
-                      </Link>
-
-                      <div className={styles.memberRight}>
-                        {isActivityHost && <span className={styles.roleTag}>Owner</span>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           </div>
         )}
 
@@ -1100,15 +969,21 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       <ConfirmModal
         title={
           confirmType === 'endGroup' ? 'End Group?' :
-          confirmType === 'leaveGroup' ? 'Leave Group' : 
-          confirmType === 'endActivity' ? 'End Activity' : 
+          confirmType === 'leaveGroup'
+            ? (isEventGroup ? (activityHasStarted ? 'Leave Group' : 'Leave Activity') : 'Leave Group')
+            : confirmType === 'endActivity' ? 'End Activity' :
           confirmType === 'changeOwner' ? 'Change Group Owner?' :
           'Remove Member'
         }
         desc={
           confirmType === 'endGroup' ? 'This group will be closed permanently. Previous chats and media will remain accessible.' :
-          confirmType === 'leaveGroup' ? 'Are you sure you want to leave this group?' : 
-          confirmType === 'endActivity' ? 'Are you sure you want to end this activity? This will remove all members.' : 
+          confirmType === 'leaveGroup'
+            ? (isEventGroup
+                ? (activityHasStarted
+                    ? 'You can still view the chat history, but you won\'t be able to send or receive new messages.'
+                    : 'You will be removed from this activity and the group chat will be removed from your inbox.')
+                : 'Are you sure you want to leave this group?')
+            : confirmType === 'endActivity' ? 'Are you sure you want to end this activity? This will remove all members and delete the group.' :
           confirmType === 'changeOwner' ? `Ownership of this group will be transferred to ${(Object.values(users).find(u => u.id === targetUserId)?.displayName || Object.values(users).find(u => u.id === targetUserId)?.name || 'This member')}.` :
           'Are you sure you want to remove this member from the group?'
         }
@@ -1117,8 +992,8 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         onConfirm={handleConfirmAction}
         confirmText={
           confirmType === 'endGroup' ? 'End Group' :
-          confirmType === 'leaveGroup' ? 'Leave' : 
-          confirmType === 'endActivity' ? 'End' : 
+          confirmType === 'leaveGroup' ? (isEventGroup && !activityHasStarted ? 'Leave Activity' : 'Leave') :
+          confirmType === 'endActivity' ? 'End Activity' :
           confirmType === 'changeOwner' ? 'Change Owner' :
           'Remove'
         }

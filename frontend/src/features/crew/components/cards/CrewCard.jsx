@@ -155,31 +155,47 @@ export default function CrewCard({ activity, onClick }) {
           <div className={styles.goingLine} style={{ cursor: 'default' }}>
             <div className={styles.goingAvatarsGroup}>
               {(() => {
-                const participantsCount = activity.participants?.length || 1;
-                const maxAvatars = Math.min(participantsCount, 5);
+                const seenIds = new Set();
+                const displayUsers = [];
                 
-                let displayUsers = (activity.participants || [])
-                  .map(id => Object.values(users || {}).find(u => u.id === id))
-                  .filter(Boolean);
-                  
-                if (displayUsers.length === 0 && activity.hostAvatar) {
-                  displayUsers = [{ id: activity.hostId || 'host', avatar: activity.hostAvatar, displayName: activity.hostName }];
+                // Add host if present
+                if (activity.hostAvatar || activity.hostName) {
+                  const hId = activity.hostId || 'host';
+                  displayUsers.push({
+                    id: hId,
+                    avatar: activity.hostAvatar,
+                    displayName: activity.hostName
+                  });
+                  seenIds.add(hId);
                 }
                 
-                while (displayUsers.length < maxAvatars) {
-                  displayUsers.push({ id: `dummy-${displayUsers.length}` });
-                }
+                // Add participants from store users or _membersData
+                const participantIds = activity.participants || [];
+                const memberObjs = activity._membersData || [];
                 
-                displayUsers = displayUsers.slice(0, 5);
-                
-                return displayUsers.map((u, i) => (
+                participantIds.forEach(id => {
+                  if (seenIds.has(id)) return;
+                  const uObj = Object.values(users || {}).find(u => u.id === id) || memberObjs.find(m => m?.id === id);
+                  if (uObj) {
+                    displayUsers.push({
+                      id: uObj.id || id,
+                      avatar: uObj.avatar || uObj.profileImage,
+                      displayName: uObj.displayName || uObj.name
+                    });
+                    seenIds.add(id);
+                  }
+                });
+
+                const finalAvatars = displayUsers.slice(0, 5);
+
+                return finalAvatars.map((u, i) => (
                   <div 
                     key={u.id || i} 
                     className={styles.goingAvatarWrap} 
                     style={{ zIndex: 5 - i }}
                   >
                     {u.avatar && isImageUrl(u.avatar) ? (
-                      <img src={getProcessedAvatarUrl(u.avatar)} alt={u.displayName || "Participant"} className={styles.goingAvatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                      <img src={getProcessedAvatarUrl(u.avatar)} alt={u.displayName || "Participant"} className={styles.goingAvatarImg} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     ) : (
                       <DefaultAvatar />
                     )}
@@ -187,7 +203,9 @@ export default function CrewCard({ activity, onClick }) {
                 ));
               })()}
             </div>
-            <span className={styles.goingText}>{activity.participants?.length || 1} going</span>
+            <span className={styles.goingText}>
+              {activity.participants?.length || 1} {activity.status === 'ENDED' || activity.status === 'CANCELLED' ? 'participated' : 'going'}
+            </span>
           </div>
           
           <div className={styles.actionsGroup}>

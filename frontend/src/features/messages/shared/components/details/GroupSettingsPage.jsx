@@ -21,6 +21,7 @@ export default function GroupSettingsPage({
   setGroupUpdatesActive,
   updateGroupSettings,
   updateGroupEditPermission,
+  activityHasStarted,
   onBack,
   onGoToEdit,
   onGoToChangeOwner,
@@ -268,7 +269,11 @@ export default function GroupSettingsPage({
                   className={styles.settingRow}
                   onClick={handleLeaveGroup}
                 >
-                  <span className={styles.settingLabel} style={{ color: '#ef4444', fontWeight: '600' }}>Leave Group</span>
+                  <span className={styles.settingLabel} style={{ color: '#ef4444', fontWeight: '600' }}>
+                    {isEventGroup
+                      ? (activityHasStarted ? 'Leave Group' : 'Leave Activity')
+                      : 'Leave Group'}
+                  </span>
                 </button>
               )}
 

@@ -219,6 +219,7 @@
   opacity: 0.75;
 }
 
+
 .msgStatusLabel {
   font-size: 0.72rem;
   font-weight: 500;
@@ -715,4 +716,87 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+.typingBubbleInline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.typingDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-text-muted, #71717a);
+  animation: typingBounce 1.3s ease-in-out infinite;
+}
+
+.typingDot:nth-child(1) { animation-delay: 0s; }
+.typingDot:nth-child(2) { animation-delay: 0.18s; }
+.typingDot:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30%            { transform: translateY(-4px); opacity: 1; }
+}
+
+.systemMessageContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0.6rem 0;
+  width: 100%;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.systemMessageText {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--color-text-muted, #a1a1aa);
+  padding: 0.38rem 0.95rem;
+  border-radius: 9999px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+[data-theme='light'] .systemMessageText {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #71717a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.systemNonSelectableText {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.systemMentionLink {
+  color: #818cf8;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: color 0.15s ease, text-decoration 0.15s ease;
+}
+
+[data-theme='light'] .systemMentionLink {
+  color: var(--color-primary, #6366f1);
+}
+
+.systemMentionLink:hover {
+  text-decoration: underline;
+  color: #a5b4fc;
 }

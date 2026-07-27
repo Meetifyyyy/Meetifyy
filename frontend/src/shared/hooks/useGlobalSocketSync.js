@@ -3,46 +3,56 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useGlobalSocketStore } from '../store/useGlobalSocketStore';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../hooks/useData';
-import { appendMessageToCache, updateConversationPreview } from '../../features/messages/shared/utils/cacheUtils';
 
 export function useGlobalSocketSync() {
   const queryClient = useQueryClient();
   const { socket, isConnected } = useGlobalSocketStore();
   const { currentUser } = useAuth();
   const { conversations } = useData() || {};
-  const joinedRoomsRef = useRef(false);
+  const conversationsRef = useRef(conversations);
 
-  // 1. Join Conversation Rooms for O(1) Routing
+  // Keep ref in sync so the reconnect handler always sees the latest conversations
   useEffect(() => {
-    if (socket && isConnected && conversations && conversations.length > 0) {
-      // Re-join if connection dropped, or if we haven't joined yet
-      const conversationIds = conversations.map(c => c.id || c.publicId).filter(Boolean);
-      socket.emit('conversation:join_rooms', { conversationIds });
-      joinedRoomsRef.current = true;
-    }
-  }, [socket, isConnected, conversations]);
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
-  // 2. Global Event Listeners
+  // 1. Join Conversation Rooms for O(1) routing — run on initial connect AND reconnects
   useEffect(() => {
-    if (!socket || !currentUser) return;
+    if (!socket || !isConnected) return;
 
-    const handleNewMessage = (payload) => {
-      const message = payload?.message || payload;
-      const conversationId = payload?.conversationId || message?.conversationId;
-      if (!message || !conversationId) return;
+    const joinAllRooms = () => {
+      const convs = conversationsRef.current;
+      if (!convs || convs.length === 0) return;
 
-      appendMessageToCache(queryClient, conversationId, message);
-      
-      // Update unread count if we are not the sender
-      const isFromMe = message.senderId === currentUser.id;
-      const unreadIncrement = isFromMe ? 0 : 1;
-      updateConversationPreview(queryClient, conversationId, message.text || message.payload?.text, message.createdAt, unreadIncrement);
+      // Send BOTH id and publicId so the backend room matches regardless of which alias it used
+      const conversationIds = [];
+      convs.forEach((c) => {
+        if (c.id) conversationIds.push(c.id);
+        if (c.publicId && c.publicId !== c.id) conversationIds.push(c.publicId);
+        if (c.internalId && c.internalId !== c.id && c.internalId !== c.publicId) {
+          conversationIds.push(c.internalId);
+        }
+      });
 
-      // Emit delivered ACK globally if we received it
-      if (!isFromMe) {
-        socket.emit('message:delivered', { conversationId, messageId: message.id });
+      const unique = [...new Set(conversationIds.filter(Boolean))];
+      if (unique.length > 0) {
+        socket.emit('conversation:join_rooms', { conversationIds: unique });
       }
     };
+
+    // Join now (handles initial connect + when conversations load after connect)
+    joinAllRooms();
+
+    // Re-join on every reconnect — socket.on('connect') fires on reconnect too
+    socket.on('connect', joinAllRooms);
+    return () => {
+      socket.off('connect', joinAllRooms);
+    };
+  }, [socket, isConnected]);
+
+  // 2. Global domain event listener (follow/unfollow, etc.)
+  useEffect(() => {
+    if (!socket || !currentUser) return;
 
     const handleDomainEvent = (event) => {
       if (!event || !event.type) return;
@@ -51,11 +61,9 @@ export function useGlobalSocketSync() {
         case 'follow.created':
         case 'follow.deleted': {
           const { followerId, followingUsername, followerStats, targetStats } = event.data;
-          
           const isFollowing = event.type === 'follow.created';
           const isCurrentUserFollower = followerId === currentUser.id;
 
-          // 1. Update Target User Profile Stats
           queryClient.setQueryData(['profile', followingUsername], (old) => {
             if (!old) return old;
             return {
@@ -64,12 +72,10 @@ export function useGlobalSocketSync() {
                 ...old.stats,
                 followers: targetStats?.followersCount ?? old.stats.followers,
               },
-              // If the current user is the one who followed/unfollowed, update the boolean
-              ...(isCurrentUserFollower ? { isFollowing } : {})
+              ...(isCurrentUserFollower ? { isFollowing } : {}),
             };
           });
 
-          // 2. Update Current User Profile Stats (if they were the actor)
           if (isCurrentUserFollower) {
             queryClient.setQueryData(['profile', currentUser.username], (old) => {
               if (!old) return old;
@@ -78,30 +84,23 @@ export function useGlobalSocketSync() {
                 stats: {
                   ...old.stats,
                   following: followerStats?.followingCount ?? old.stats.following,
-                }
+                },
               };
             });
-
-            // 3. Update following/followers lists (optimistic removal/addition could be done here, 
-            // but invalidation ensures we get the rich user object from the backend)
             queryClient.invalidateQueries({ queryKey: ['following', currentUser.username] });
             queryClient.invalidateQueries({ queryKey: ['followers', followingUsername] });
           }
           break;
         }
-        
-        // Add more domain events here in the future (e.g. post.liked, comment.created)
+
         default:
           break;
       }
     };
 
     socket.on('domainEvent', handleDomainEvent);
-    socket.on('message:new', handleNewMessage);
-    
     return () => {
       socket.off('domainEvent', handleDomainEvent);
-      socket.off('message:new', handleNewMessage);
     };
   }, [socket, queryClient, currentUser]);
 }

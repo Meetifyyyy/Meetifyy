@@ -192,10 +192,11 @@
   background: var(--color-bg-alt, #f1f5f9);
   border: 2px solid var(--color-bg-white);
   box-sizing: border-box;
+  flex-shrink: 0;
 }
 
-.goingAvatarWrap:first-child {
-  margin-left: 0;
+.goingAvatarWrap:not(:first-child) {
+  margin-left: -8.4px;
 }
 
 .goingAvatarImg {
@@ -258,9 +259,9 @@
 .saveBtn {
   width: 28px;
   height: 28px;
-  background: #888888;
+  background: transparent;
   border: none;
-  color: #ffffff;
+  color: var(--color-text-muted, #64748b);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -268,31 +269,35 @@
   cursor: pointer;
   transition: all 0.2s;
   flex-shrink: 0;
+  padding: 0;
 }
 
 :global([data-theme="dark"]) .saveBtn,
 [data-theme="dark"] .saveBtn {
-  background: #888888;
+  background: transparent;
+  color: var(--color-text-muted, #94a3b8);
 }
 
 .saveBtn:hover {
-  background: #666666;
+  background: var(--color-bg-soft, rgba(0, 0, 0, 0.05));
+  color: var(--color-primary, #2563eb);
 }
 
 :global([data-theme="dark"]) .saveBtn:hover {
-  background: #a3a3a3;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-primary, #3b82f6);
 }
 
 .saved {
-  color: #ffffff !important;
-  background: #ef4444 !important;
-  border-color: #ef4444 !important;
+  color: var(--color-primary, #2563eb) !important;
+  background: transparent !important;
+  border: none !important;
 }
 
 :global([data-theme="dark"]) .saved {
-  color: #ffffff !important;
-  background: #ef4444 !important;
-  border-color: #ef4444 !important;
+  color: var(--color-primary, #3b82f6) !important;
+  background: transparent !important;
+  border: none !important;
 }
 
 @media (max-width: 768px) {
@@ -488,6 +493,10 @@
   .goingAvatarWrap {
     width: 22px;
     height: 22px;
+  }
+
+  .goingAvatarWrap:not(:first-child) {
+    margin-left: -6.6px;
   }
 
   .goingText {

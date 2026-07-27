@@ -47,6 +47,101 @@
   display: none;
 }
 
+/* Background Decorative Vector Shapes */
+.shapeContainer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.bgShape {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.9;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.08));
+}
+
+/* 1. Large Flower - Top Right area */
+.shape1 {
+  top: 15px;
+  right: 20px;
+  width: 124px;
+  height: 124px;
+  transform: rotate(-12deg);
+}
+
+/* 2. Small Starburst - Top Left area */
+.shape2 {
+  top: 25px;
+  left: 20px;
+  width: 64px;
+  height: 64px;
+  transform: rotate(15deg);
+}
+
+/* 3. Quad Circle Cluster - Bottom Left area */
+.shape3 {
+  bottom: 25px;
+  left: 20px;
+  width: 96px;
+  height: 96px;
+  transform: rotate(-8deg);
+}
+
+/* 4. Large Organic Blob - Bottom Right area */
+.shape4 {
+  bottom: 15px;
+  right: 15px;
+  width: 138px;
+  height: 138px;
+  transform: rotate(20deg);
+}
+
+/* 5. Medium Dome Arch - Mid Right edge */
+.shape5 {
+  top: 44%;
+  right: 10px;
+  width: 72px;
+  height: 72px;
+  transform: rotate(-15deg);
+}
+
+/* 6. Very Small Wavy Pill - Lower Left edge */
+.shape6 {
+  bottom: 150px;
+  left: 10px;
+  width: 48px;
+  height: 48px;
+  transform: rotate(30deg);
+}
+
+@keyframes floatShapeA {
+  0% {
+    transform: translateY(0px) rotate(-10deg) scale(1);
+  }
+  50% {
+    transform: translateY(-12px) rotate(-2deg) scale(1.04);
+  }
+  100% {
+    transform: translateY(4px) rotate(-14deg) scale(0.98);
+  }
+}
+
+@keyframes floatShapeB {
+  0% {
+    transform: translateY(0px) rotate(15deg) scale(1);
+  }
+  50% {
+    transform: translateY(-8px) rotate(22deg) scale(1.05);
+  }
+  100% {
+    transform: translateY(6px) rotate(10deg) scale(0.96);
+  }
+}
+
 .loginBox {
   position: relative;
   z-index: 2;
@@ -169,6 +264,8 @@
 }
 
 .formWrapper {
+  position: relative;
+  z-index: 15;
   width: 100%;
   max-width: 400px;
   display: flex;

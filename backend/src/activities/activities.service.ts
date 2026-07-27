@@ -55,12 +55,24 @@ export class ActivitiesService implements OnModuleInit {
   async getAllActivities(userId?: string) {
 
     const excludedUserIds = userId ? await this.blocksService.getExcludedUserIds(userId) : [];
+
+    const whereClause: any = {
+      deletedAt: null,
+      creatorId: { notIn: excludedUserIds }
+    };
+
+    if (userId) {
+      whereClause.OR = [
+        { status: 'OPEN' },
+        { creatorId: userId },
+        { members: { some: { userId } } }
+      ];
+    } else {
+      whereClause.status = 'OPEN';
+    }
+
     const activities = await this.prisma.crewActivity.findMany({
-      where: {
-        status: 'OPEN',
-        deletedAt: null,
-        creatorId: { notIn: excludedUserIds }
-      },
+      where: whereClause,
       take: 50,
       include: {
         _count: { select: { members: true } },
@@ -102,14 +114,25 @@ export class ActivitiesService implements OnModuleInit {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { collegeId: true } });
     if (!user?.collegeId) return [];
 
+    const whereClause: any = {
+      deletedAt: null,
+      creatorId: { notIn: excludedUserIds },
+      shareToCampus: true,
+      collegeId: user.collegeId,
+    };
+
+    if (userId) {
+      whereClause.OR = [
+        { status: 'OPEN' },
+        { creatorId: userId },
+        { members: { some: { userId } } }
+      ];
+    } else {
+      whereClause.status = 'OPEN';
+    }
+
     const activities = await this.prisma.crewActivity.findMany({
-      where: {
-        status: 'OPEN',
-        deletedAt: null,
-        creatorId: { notIn: excludedUserIds },
-        shareToCampus: true,
-        collegeId: user.collegeId,
-      },
+      where: whereClause,
       take: 50,
       include: {
         _count: { select: { members: true } },
@@ -235,6 +258,8 @@ export class ActivitiesService implements OnModuleInit {
           name: createdActivity.title,
           avatarKey: createdActivity.coverImage,
           type: 'GROUP',
+          isActivityChat: true,
+          activityId: createdActivity.id,
           ownerId: creatorId,
           participants: {
             create: [{ userId: creatorId, role: 'OWNER' }]
@@ -259,11 +284,12 @@ export class ActivitiesService implements OnModuleInit {
       include: { members: true },
     });
 
-    if (!activity) throw new NotFoundException('Activity not found');
-    if (activity.status === 'ENDED' || activity.status === 'CANCELLED') throw new BadRequestException('Activity is no longer open');
+    if (!activity) {
+      throw new NotFoundException('Activity not found');
+    }
 
-    if (activity.creatorId === userId) {
-      throw new BadRequestException('You are already the host of this activity');
+    if (activity.status !== 'OPEN') {
+      throw new BadRequestException('Activity is not open for joining');
     }
 
     const startRaw = activity.startDate || (activity as any).date;
@@ -271,9 +297,9 @@ export class ActivitiesService implements OnModuleInit {
       throw new BadRequestException('Activity has already started and cannot be joined');
     }
 
-    const existingMember = activity.members.find((m) => m.userId === userId);
+    const existingMember = activity.members.find(m => m.userId === userId);
     if (existingMember) {
-      if (existingMember.status === 'MEMBER') return { success: true }; // already joined
+      if (existingMember.status === 'MEMBER') throw new BadRequestException('Already a member of this activity');
       if (existingMember.status === 'PENDING') throw new BadRequestException('Join request already pending');
     }
 
@@ -292,91 +318,95 @@ export class ActivitiesService implements OnModuleInit {
       select: { id: true, displayName: true, username: true, avatar: true }
     });
 
-    try {
-      const convId = `act_${activityId}`;
-      const userHandle = actor?.username ? `@${actor.username}` : (actor?.displayName || 'Someone');
+    if (activity.createActivityGroup) {
+      try {
+        const convId = `act_${activityId}`;
+        const userHandle = actor?.username ? `@${actor.username}` : (actor?.displayName || 'Someone');
 
-      // Ensure conversation record exists
-      await this.prisma.conversation.upsert({
-        where: { id: convId },
-        update: { name: activity.title, avatarKey: activity.coverImage },
-        create: {
-          id: convId,
-          name: activity.title,
-          avatarKey: activity.coverImage,
-          type: 'GROUP',
-          ownerId: activity.creatorId,
-          participants: {
-            create: [{ userId: activity.creatorId, role: 'OWNER' }]
+        // Ensure conversation record exists
+        await this.prisma.conversation.upsert({
+          where: { id: convId },
+          update: { name: activity.title, avatarKey: activity.coverImage },
+          create: {
+            id: convId,
+            name: activity.title,
+            avatarKey: activity.coverImage,
+            type: 'GROUP',
+            isActivityChat: true,
+            activityId: activity.id,
+            ownerId: activity.creatorId,
+            participants: {
+              create: [{ userId: activity.creatorId, role: 'OWNER' }]
+            }
           }
-        }
-      }).catch(() => {});
+        }).catch(() => {});
 
-      await this.prisma.conversationParticipant.upsert({
-        where: { userId_conversationId: { userId, conversationId: convId } },
-        update: { role: 'MEMBER' },
-        create: { conversationId: convId, userId, role: 'MEMBER' }
-      }).catch(() => {});
+        await this.prisma.conversationParticipant.upsert({
+          where: { userId_conversationId: { userId, conversationId: convId } },
+          update: { role: 'MEMBER', leftAt: null, deletedAt: null } as any,
+          create: { conversationId: convId, userId, role: 'MEMBER' }
+        }).catch(() => {});
 
-      const sysMsg = await this.prisma.message.create({
-        data: {
-          conversationId: convId,
-          senderId: userId,
-          payload: { text: `${userHandle} joined the activity` },
-          type: 'SYSTEM'
-        }
-      }).catch(() => null);
+        const sysMsg = await this.prisma.message.create({
+          data: {
+            conversationId: convId,
+            senderId: userId,
+            payload: { text: `${userHandle} joined the activity` },
+            type: 'SYSTEM'
+          }
+        }).catch(() => null);
 
-      if (sysMsg) {
-        const formattedMsg = {
-          id: sysMsg.id,
-          conversationId: convId,
-          publicId: convId,
-          internalId: convId,
-          senderId: userId,
-          senderName: 'System',
-          senderAvatar: '',
-          from: 'them',
-          createdAt: sysMsg.createdAt,
-          timestamp: sysMsg.createdAt,
-          time: new Date(sysMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          type: 'system',
-          text: `${userHandle} joined the activity`,
-          payload: { text: `${userHandle} joined the activity` },
-          status: 'sent'
-        };
-
-        const membersList = await this.prisma.crewActivityMember.findMany({
-          where: { activityId },
-          select: { userId: true }
-        }).catch(() => []);
-
-        const participantsList = await this.prisma.conversationParticipant.findMany({
-          where: { conversationId: convId },
-          select: { userId: true }
-        }).catch(() => []);
-
-        const recipientUserIds = Array.from(new Set([
-          userId,
-          activity.creatorId,
-          ...membersList.map(m => m.userId),
-          ...participantsList.map(p => p.userId)
-        ].filter(Boolean)));
-
-        this.domainEventService.emit('message:new', formattedMsg, recipientUserIds);
-        this.domainEventService.emit('conversation:updated', {
-          conversationId: convId,
-          publicId: convId,
-          internalId: convId,
-          lastMessage: {
-            text: `${userHandle} joined the activity`,
+        if (sysMsg) {
+          const formattedMsg = {
+            id: sysMsg.id,
+            conversationId: convId,
+            publicId: convId,
+            internalId: convId,
+            senderId: userId,
+            senderName: 'System',
+            senderAvatar: '',
+            from: 'them',
             createdAt: sysMsg.createdAt,
-            senderId: userId
-          }
-        }, recipientUserIds);
+            timestamp: sysMsg.createdAt,
+            time: new Date(sysMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            type: 'system',
+            text: `${userHandle} joined the activity`,
+            payload: { text: `${userHandle} joined the activity` },
+            status: 'sent'
+          };
+
+          const membersList = await this.prisma.crewActivityMember.findMany({
+            where: { activityId },
+            select: { userId: true }
+          }).catch(() => []);
+
+          const participantsList = await this.prisma.conversationParticipant.findMany({
+            where: { conversationId: convId, leftAt: null, deletedAt: null } as any,
+            select: { userId: true }
+          }).catch(() => []);
+
+          const recipientUserIds = Array.from(new Set([
+            userId,
+            activity.creatorId,
+            ...membersList.map(m => m.userId),
+            ...participantsList.map(p => p.userId)
+          ].filter(Boolean)));
+
+          this.domainEventService.emit('message:new', formattedMsg, recipientUserIds);
+          this.domainEventService.emit('conversation:updated', {
+            conversationId: convId,
+            publicId: convId,
+            internalId: convId,
+            lastMessage: {
+              text: `${userHandle} joined the activity`,
+              createdAt: sysMsg.createdAt,
+              senderId: userId
+            }
+          }, recipientUserIds);
+        }
+      } catch (err) {
+        this.logger.warn('Failed group chat update during joinActivity', err);
       }
-    } catch (err) {
-      this.logger.warn('Failed group chat update during joinActivity', err);
     }
 
     return { success: true };
@@ -385,7 +415,7 @@ export class ActivitiesService implements OnModuleInit {
   async leaveActivity(activityId: string, userId: string) {
     const activity = await this.prisma.crewActivity.findUnique({
       where: { id: activityId },
-      select: { creatorId: true, createActivityGroup: true, title: true, coverImage: true },
+      select: { creatorId: true, createActivityGroup: true, title: true, coverImage: true, startDate: true, status: true },
     });
 
     if (activity && activity.creatorId === userId) {
@@ -406,73 +436,88 @@ export class ActivitiesService implements OnModuleInit {
         where: { userId_activityId: { userId, activityId } }
       });
 
-      try {
-        const convId = `act_${activityId}`;
-        const userHandle = actor?.username ? `@${actor.username}` : (actor?.displayName || 'Someone');
+      if (activity?.createActivityGroup) {
+        try {
+          const convId = `act_${activityId}`;
+          const userHandle = actor?.username ? `@${actor.username}` : (actor?.displayName || 'Someone');
 
-        await this.prisma.conversationParticipant.deleteMany({
-          where: { conversationId: convId, userId }
-        }).catch(() => {});
+          const startRaw = (activity as any)?.startDate;
+          const activityStatus = (activity as any)?.status;
+          const hasStarted = (activityStatus === 'STARTED' || activityStatus === 'IN_PROGRESS' || activityStatus === 'ENDED') || (startRaw && new Date(startRaw) <= new Date());
 
-        const sysMsg = await this.prisma.message.create({
-          data: {
-            conversationId: convId,
-            senderId: userId,
-            payload: { text: `${userHandle} left the activity` },
-            type: 'SYSTEM'
+          if (!hasStarted) {
+            // Pre-activity: completely remove participant record so chat disappears from message section
+            await this.prisma.conversationParticipant.deleteMany({
+              where: { conversationId: convId, userId }
+            }).catch(() => {});
+          } else {
+            // Post-activity: set leftAt timestamp so chat remains read-only in message section
+            await this.prisma.conversationParticipant.updateMany({
+              where: { conversationId: convId, userId },
+              data: { leftAt: new Date() } as any
+            }).catch(() => {});
           }
-        }).catch(() => null);
 
-        if (sysMsg) {
-          const formattedMsg = {
-            id: sysMsg.id,
-            conversationId: convId,
-            publicId: convId,
-            internalId: convId,
-            senderId: userId,
-            senderName: 'System',
-            senderAvatar: '',
-            from: 'them',
-            createdAt: sysMsg.createdAt,
-            timestamp: sysMsg.createdAt,
-            time: new Date(sysMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            type: 'system',
-            text: `${userHandle} left the activity`,
-            payload: { text: `${userHandle} left the activity` },
-            status: 'sent'
-          };
-
-          const membersList = await this.prisma.crewActivityMember.findMany({
-            where: { activityId },
-            select: { userId: true }
-          }).catch(() => []);
-
-          const participantsList = await this.prisma.conversationParticipant.findMany({
-            where: { conversationId: convId },
-            select: { userId: true }
-          }).catch(() => []);
-
-          const recipientUserIds = Array.from(new Set([
-            userId,
-            activity?.creatorId,
-            ...membersList.map(m => m.userId),
-            ...participantsList.map(p => p.userId)
-          ].filter(Boolean))) as string[];
-
-          this.domainEventService.emit('message:new', formattedMsg, recipientUserIds);
-          this.domainEventService.emit('conversation:updated', {
-            conversationId: convId,
-            publicId: convId,
-            internalId: convId,
-            lastMessage: {
-              text: `${userHandle} left the activity`,
-              createdAt: sysMsg.createdAt,
-              senderId: userId
+          const sysMsg = await this.prisma.message.create({
+            data: {
+              conversationId: convId,
+              senderId: userId,
+              payload: { text: `${userHandle} left the activity` },
+              type: 'SYSTEM'
             }
-          }, recipientUserIds);
+          }).catch(() => null);
+
+          if (sysMsg) {
+            const formattedMsg = {
+              id: sysMsg.id,
+              conversationId: convId,
+              publicId: convId,
+              internalId: convId,
+              senderId: userId,
+              senderName: 'System',
+              senderAvatar: '',
+              from: 'them',
+              createdAt: sysMsg.createdAt,
+              timestamp: sysMsg.createdAt,
+              time: new Date(sysMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              type: 'system',
+              text: `${userHandle} left the activity`,
+              payload: { text: `${userHandle} left the activity` },
+              status: 'sent'
+            };
+
+            const membersList = await this.prisma.crewActivityMember.findMany({
+              where: { activityId },
+              select: { userId: true }
+            }).catch(() => []);
+
+            const participantsList = await this.prisma.conversationParticipant.findMany({
+              where: { conversationId: convId, leftAt: null, deletedAt: null } as any,
+              select: { userId: true }
+            }).catch(() => []);
+
+            const recipientUserIds = Array.from(new Set([
+              userId,
+              activity?.creatorId,
+              ...membersList.map(m => m.userId),
+              ...participantsList.map(p => p.userId)
+            ].filter(Boolean))) as string[];
+
+            this.domainEventService.emit('message:new', formattedMsg, recipientUserIds);
+            this.domainEventService.emit('conversation:updated', {
+              conversationId: convId,
+              publicId: convId,
+              internalId: convId,
+              lastMessage: {
+                text: `${userHandle} left the activity`,
+                createdAt: sysMsg.createdAt,
+                senderId: userId
+              }
+            }, recipientUserIds);
+          }
+        } catch (err) {
+          this.logger.warn('Failed group chat update during leaveActivity', err);
         }
-      } catch (err) {
-        this.logger.warn('Failed group chat update during leaveActivity', err);
       }
     }
 
@@ -573,10 +618,30 @@ export class ActivitiesService implements OnModuleInit {
     });
     if (!activity) throw new NotFoundException('Activity not found or you are not creator');
 
-    await this.prisma.crewActivity.update({
-      where: { id: activityId },
-      data: { status: 'ENDED' }
-    });
+    const startRaw = activity.startDate || (activity as any).date;
+    const hasStarted = startRaw ? new Date(startRaw) <= new Date() : false;
+
+    if (!hasStarted) {
+      const convId = `act_${activityId}`;
+      await this.prisma.conversation.delete({
+        where: { id: convId }
+      }).catch(() => {});
+
+      await this.prisma.crewActivity.delete({
+        where: { id: activityId }
+      }).catch(async () => {
+        await this.prisma.crewActivity.update({
+          where: { id: activityId },
+          data: { status: 'CANCELLED' }
+        });
+      });
+    } else {
+      await this.prisma.crewActivity.update({
+        where: { id: activityId },
+        data: { status: 'ENDED' }
+      });
+    }
+
     return { success: true };
   }
 }

@@ -40,6 +40,9 @@ export class GroupChatsService extends MessagingCoreService {
             type: true,
             ownerId: true,
             status: true,
+            activityId: true,
+            isActivityChat: true,
+            activity: true,
             createdAt: true,
             updatedAt: true,
             whoCanJoin: true,
@@ -188,16 +191,25 @@ export class GroupChatsService extends MessagingCoreService {
       const lastMsgInfo = lastMsgMap.get(conv.id);
       const unreadCount = unreadMap.get(conv.id) || 0;
       const pubId = (conv as any).publicId || conv.id;
+      const groupAvatar = conv.avatarKey || (conv as any).activity?.coverImage || null;
+      const actStartDate = (conv as any).activity?.startDate;
+      const actStatus = ((conv as any).activity?.status || conv.status || '').toUpperCase();
+      const hasStarted = actStatus === 'IN_PROGRESS' || actStatus === 'STARTED' || actStatus === 'COMPLETED' || actStatus === 'ENDED' || (!!actStartDate && new Date(actStartDate) <= new Date());
 
       return {
         id: pubId,
         publicId: pubId,
         internalId: conv.id,
         type: 'GROUP' as const,
+        activityId: conv.activityId || null,
+        activity: conv.activity || null,
+        hasStarted,
+        activityHasStarted: hasStarted,
+        isActivityChat: conv.type === 'ACTIVITY' || !!conv.activityId,
         isMember: (p as any).leftAt == null,
         ownerId: conv.ownerId || null,
         name: conv.name || 'Group',
-        avatar: conv.avatarKey || null,
+        avatar: groupAvatar,
         description: conv.description || null,
         status: conv.status || 'ACTIVE',
         createdAt: conv.createdAt,
@@ -281,7 +293,10 @@ export class GroupChatsService extends MessagingCoreService {
       throw new ForbiddenException('Only group admins can edit group details');
     }
 
-    const avatarVal = data.avatarKey !== undefined ? data.avatarKey : data.avatar;
+    let avatarVal = data.avatarKey !== undefined ? data.avatarKey : data.avatar;
+    if (avatarVal && typeof avatarVal === 'string' && avatarVal.startsWith('blob:')) {
+      avatarVal = undefined;
+    }
 
     const updated = await this.prisma.conversation.update({
       where: { id: realConvId },
@@ -291,6 +306,13 @@ export class GroupChatsService extends MessagingCoreService {
         ...(avatarVal !== undefined ? { avatarKey: avatarVal } : {}),
       }
     });
+
+    if (updated.activityId && avatarVal !== undefined) {
+      await this.prisma.crewActivity.update({
+        where: { id: updated.activityId },
+        data: { coverImage: avatarVal }
+      }).catch(() => {});
+    }
 
     return updated;
   }
@@ -361,10 +383,41 @@ export class GroupChatsService extends MessagingCoreService {
       return { success: true };
     }
 
-    await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
-      data: { leftAt: new Date() } as any
+    const convRecord = await this.prisma.conversation.findUnique({
+      where: { id: realConvId },
+      select: { activityId: true, isActivityChat: true }
     });
+
+    let isPreStartActivity = false;
+    if (convRecord?.activityId) {
+      const activity = await this.prisma.crewActivity.findUnique({
+        where: { id: convRecord.activityId },
+        select: { startDate: true, status: true }
+      });
+      if (activity) {
+        const startRaw = activity.startDate;
+        const status = activity.status as string;
+        const hasStarted = (status === 'STARTED' || status === 'IN_PROGRESS' || status === 'ENDED') || (startRaw && new Date(startRaw) <= new Date());
+        if (!hasStarted) {
+          isPreStartActivity = true;
+        }
+
+        await this.prisma.crewActivityMember.deleteMany({
+          where: { activityId: convRecord.activityId, userId }
+        }).catch(() => {});
+      }
+    }
+
+    if (isPreStartActivity) {
+      await this.prisma.conversationParticipant.deleteMany({
+        where: { conversationId: realConvId, userId }
+      });
+    } else {
+      await this.prisma.conversationParticipant.update({
+        where: { userId_conversationId: { userId, conversationId: realConvId } },
+        data: { leftAt: new Date() } as any
+      });
+    }
 
     if (participant.role === 'OWNER') {
       const oldestAdmin = await this.prisma.conversationParticipant.findFirst({

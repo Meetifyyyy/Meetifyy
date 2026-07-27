@@ -183,6 +183,10 @@ export class ActivityChatsService extends MessagingCoreService {
       const unreadCount = unreadMap.get(conv.id) || 0;
       const pubId = (conv as any).publicId || `act_${conv.activityId || conv.id}`;
 
+      const actStartDate = conv.activity?.startDate;
+      const actStatus = (conv.activity?.status || conv.status || '').toUpperCase();
+      const hasStarted = actStatus === 'IN_PROGRESS' || actStatus === 'STARTED' || actStatus === 'COMPLETED' || actStatus === 'ENDED' || (!!actStartDate && new Date(actStartDate) <= new Date());
+
       return {
         id: pubId,
         publicId: pubId,
@@ -191,6 +195,8 @@ export class ActivityChatsService extends MessagingCoreService {
         isActivityChat: true,
         activityId: conv.activityId || (conv.activity ? conv.activity.id : null),
         activity: conv.activity || null,
+        hasStarted,
+        activityHasStarted: hasStarted,
         isMember: (p as any).leftAt == null,
         ownerId: conv.ownerId || (conv.activity ? conv.activity.creatorId : null),
         name: conv.name || conv.activity?.title || 'Activity Chat',

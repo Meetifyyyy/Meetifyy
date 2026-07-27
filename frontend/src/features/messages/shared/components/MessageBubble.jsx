@@ -56,14 +56,71 @@ function MessageHoverActions({ msg, isMe, onReplyTo, onContextMenu }) {
   );
 }
 
-function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false }) {
+function SystemMessageContent({ text, navigate }) {
+  if (!text) return 'System Event';
+  const strText = String(text);
+
+  const regex = /(@\[([^\]]+)\]\(([^)]+)\)|@([a-zA-Z0-9_.-]+))/g;
+  const elements = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(strText)) !== null) {
+    if (match.index > lastIndex) {
+      elements.push(
+        <span key={`text_${lastIndex}`} className={styles.systemNonSelectableText}>
+          {strText.slice(lastIndex, match.index)}
+        </span>
+      );
+    }
+
+    const fullMention = match[0];
+    const mentionUsername = match[2] || match[4] || fullMention.replace(/^@/, '');
+
+    elements.push(
+      <span
+        key={`mention_${match.index}`}
+        className={styles.systemMentionLink}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (navigate && mentionUsername) {
+            navigate(`/profile/${mentionUsername}`);
+          }
+        }}
+        title={`View @${mentionUsername}'s profile`}
+      >
+        @{mentionUsername}
+      </span>
+    );
+
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < strText.length) {
+    elements.push(
+      <span key={`text_${lastIndex}`} className={styles.systemNonSelectableText}>
+        {strText.slice(lastIndex)}
+      </span>
+    );
+  }
+
+  return <>{elements}</>;
+}
+
+function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false, onErrorChange }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     setLoaded(false);
     setError(false);
+    if (onErrorChange) onErrorChange(false);
   }, [src]);
+
+  const handleError = () => {
+    setError(true);
+    if (onErrorChange) onErrorChange(true);
+  };
 
   if (error) {
     return (
@@ -89,7 +146,7 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false 
         className={`${className} ${!loaded ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
         onClick={onClick}
         onLoad={() => setLoaded(true)}
-        onError={() => setError(true)}
+        onError={handleError}
       />
     </div>
   );
@@ -222,6 +279,7 @@ const MessageBubble = memo(function MessageBubble({
   const longPressTimer = useRef(null);
   const touchHandled = useRef(false);
   const replyHandler = onReplyTo || onReply;
+  const [mediaError, setMediaError] = useState(false);
 
   const fireContextMenu = (e, msgObj) => {
     if (!onContextMenu) return;
@@ -248,7 +306,8 @@ const MessageBubble = memo(function MessageBubble({
       preventDefault: () => e.preventDefault && e.preventDefault(),
       stopPropagation: () => e.stopPropagation && e.stopPropagation(),
     };
-    onContextMenu(mockEvent, msgObj);
+    const finalMsg = mediaError ? { ...msgObj, isMediaUnavailable: true, mediaError: true } : msgObj;
+    onContextMenu(mockEvent, finalMsg);
   };
 
   const handleTouchStart = (e) => {
@@ -283,10 +342,13 @@ const MessageBubble = memo(function MessageBubble({
     fireContextMenu(e, msg);
   };
 
-  if (msg.type === 'system' || msg.type === 'SYSTEM') {
+  if (msg.type === 'system' || msg.type === 'SYSTEM' || msg.isSystem) {
+    const text = msg.text || msg.payload?.text || '';
     return (
       <div className={styles.systemMessageContainer}>
-        <span className={styles.systemMessageText}>{msg.text || msg.payload?.text || 'System Event'}</span>
+        <div className={styles.systemMessageText}>
+          <SystemMessageContent text={text} navigate={navigate} />
+        </div>
       </div>
     );
   }
@@ -312,7 +374,12 @@ const MessageBubble = memo(function MessageBubble({
     } catch (e) {}
   }
   const messageText = typeof rawText === 'string' ? rawText : String(rawText);
-  const mediaUrl = msg.mediaUrl || msg.payload?.mediaUrl;
+  const rawMediaUrl = msg.mediaUrl || msg.payload?.mediaUrl;
+  const mediaUrl = typeof rawMediaUrl === 'string' && rawMediaUrl.trim()
+    ? (rawMediaUrl.startsWith('http://') || rawMediaUrl.startsWith('https://') || rawMediaUrl.startsWith('blob:') || rawMediaUrl.startsWith('data:')
+        ? rawMediaUrl
+        : (rawMediaUrl.startsWith('/') ? rawMediaUrl : `/${rawMediaUrl}`))
+    : rawMediaUrl;
   const isAudio = msg.mediaType === 'audio' || msg.type === 'voice' || msg.payload?.mediaType === 'audio';
   const hasText = !!(messageText && String(messageText).trim().length > 0);
   const timeText = getDisplayClockTime(msg);
@@ -375,11 +442,14 @@ const MessageBubble = memo(function MessageBubble({
               src={mediaUrl}
               alt=""
               className={styles.msgMediaImgStandalone}
-              onClick={() => onOpenMediaModal && onOpenMediaModal(mediaUrl)}
+              onClick={() => !mediaError && onOpenMediaModal && onOpenMediaModal(mediaUrl)}
               isStandalone={true}
+              onErrorChange={setMediaError}
             />
           </div>
-          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+          {!mediaError && (
+            <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+          )}
         </div>
         <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
           {timeText}
@@ -403,8 +473,9 @@ const MessageBubble = memo(function MessageBubble({
               src={mediaUrl}
               alt=""
               className={styles.msgMediaImg}
-              onClick={() => onOpenMediaModal && onOpenMediaModal(mediaUrl)}
+              onClick={() => !mediaError && onOpenMediaModal && onOpenMediaModal(mediaUrl)}
               isStandalone={false}
+              onErrorChange={setMediaError}
             />
           )}
 
@@ -421,7 +492,9 @@ const MessageBubble = memo(function MessageBubble({
             </div>
           )}
         </div>
-        <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+        {!mediaError && (
+          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+        )}
       </div>
     );
   }
@@ -449,19 +522,17 @@ const MessageBubble = memo(function MessageBubble({
           {isMe && isLatestMessage && (
             <div className={`${styles.msgStatusLabel} ${msg.status === 'failed' ? styles.msgStatusLabelFailed : ''}`}>
               {msg.status === 'sending' && <span>Sending</span>}
-              {(msg.status === 'sent' || msg.status === 'delivered' || (!msg.status && msg.status !== 'sending' && msg.status !== 'read' && msg.status !== 'seen' && msg.status !== 'failed')) && <span>Sent</span>}
+              {(msg.status === 'sent' || msg.status === 'delivered') && <span>Sent</span>}
+              {(!msg.status && msg.status !== 'sending' && msg.status !== 'read' && msg.status !== 'seen' && msg.status !== 'failed') && <span>Sent</span>}
               {(msg.status === 'read' || msg.status === 'seen') && <span>Seen</span>}
               {msg.status === 'failed' && (
                 <span>
                   Failed to send
                   {onRetry && (
-                    <button 
-                      type="button" 
-                      className={styles.msgRetryButton} 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRetry(msg);
-                      }}
+                    <button
+                      type="button"
+                      className={styles.msgRetryButton}
+                      onClick={(e) => { e.stopPropagation(); onRetry(msg); }}
                     >
                       Retry
                     </button>

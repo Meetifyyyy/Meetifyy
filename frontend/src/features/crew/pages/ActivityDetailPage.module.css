@@ -489,7 +489,6 @@
 }
 
 .chatIconBtn:hover {
-  transform: translateY(-2px) scale(1.05);
   box-shadow: 0 12px 30px rgba(37, 99, 235, 0.6);
 }
 

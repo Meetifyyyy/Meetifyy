@@ -8,6 +8,7 @@ export function useTypingIndicator(conversationId, currentUserId) {
   const [typingUsers, setTypingUsers] = useState(new Map());
   const isTypingRef = useRef(false);
   const stopTimerRef = useRef(null);
+  const autoClearTimersRef = useRef(new Map());
 
   // Send typing events
   const handleKeystroke = useCallback(() => {
@@ -44,57 +45,114 @@ export function useTypingIndicator(conversationId, currentUserId) {
   useEffect(() => {
     return () => {
       stopTypingNow();
+      autoClearTimersRef.current.forEach((timer) => clearTimeout(timer));
+      autoClearTimersRef.current.clear();
+      setTypingUsers(new Map());
     };
   }, [conversationId, stopTypingNow]);
 
-  // Listen for typing events
+  // Listen for typing, message, and presence events
   useEffect(() => {
     if (!socket || !conversationId) return;
 
     const matchedConv = conversations?.find(
-      c => String(c.id) === String(conversationId) || String(c.publicId) === String(conversationId) || String(c.internalId) === String(conversationId)
+      c =>
+        String(c.id) === String(conversationId) ||
+        String(c.publicId) === String(conversationId) ||
+        String(c.internalId) === String(conversationId) ||
+        (c.activityId && `act_${c.activityId}` === String(conversationId))
     );
 
-    const allCandidateIds = Array.from(new Set([
-      conversationId,
-      matchedConv?.id,
-      matchedConv?.publicId,
-      matchedConv?.internalId
-    ].filter(Boolean)));
+    const cleanId = String(conversationId).replace(/^(act_)+/, '');
 
-    // Join rooms explicitly for all ID aliases to ensure zero dropped events
+    const allCandidateIds = Array.from(
+      new Set(
+        [
+          conversationId,
+          cleanId,
+          matchedConv?.id,
+          matchedConv?.publicId,
+          matchedConv?.internalId,
+          matchedConv?.activityId ? `act_${matchedConv.activityId}` : null
+        ].filter(Boolean)
+      )
+    );
+
     socket.emit('conversation:join_rooms', { conversationIds: allCandidateIds });
 
     const isMatch = (receivedId) => {
       if (!receivedId) return false;
-      return allCandidateIds.some(id => String(id) === String(receivedId));
+      const cleanRecId = String(receivedId).replace(/^(act_)+/, '');
+      return allCandidateIds.some(id => String(id) === String(receivedId) || String(id) === cleanRecId);
+    };
+
+    const clearUserTyping = (uId) => {
+      if (!uId) return;
+      if (autoClearTimersRef.current.has(uId)) {
+        clearTimeout(autoClearTimersRef.current.get(uId));
+        autoClearTimersRef.current.delete(uId);
+      }
+      setTypingUsers((prev) => {
+        if (!prev.has(uId)) return prev;
+        const next = new Map(prev);
+        next.delete(uId);
+        return next;
+      });
     };
 
     const onTypingStart = (data) => {
       if (!isMatch(data?.conversationId) || data?.userId === currentUserId) return;
+
+      const uId = data.userId;
+      if (!uId) return;
+
+      // Clear any previous timer if it existed (shouldn't after this change, but be safe)
+      if (autoClearTimersRef.current.has(uId)) {
+        clearTimeout(autoClearTimersRef.current.get(uId));
+        autoClearTimersRef.current.delete(uId);
+      }
+
+      // No auto-expire — the bubble stays until typing:stop, message:new, or presence offline
       setTypingUsers((prev) => {
         const next = new Map(prev);
-        const name = data.userName || users[data.userId]?.displayName || users[data.userId]?.username || 'Someone';
-        next.set(data.userId, name);
+        const name = data.userName || users[uId]?.displayName || users[uId]?.username || 'Someone';
+        next.set(uId, name);
         return next;
       });
     };
 
     const onTypingStop = (data) => {
       if (!isMatch(data?.conversationId)) return;
-      setTypingUsers((prev) => {
-        const next = new Map(prev);
-        next.delete(data.userId);
-        return next;
-      });
+      clearUserTyping(data?.userId);
+    };
+
+    const onNewMessage = (payload) => {
+      const msg = payload?.message || payload;
+      const convId = payload?.conversationId || msg?.conversationId;
+      if (isMatch(convId)) {
+        const senderId = msg?.senderId || msg?.from;
+        if (senderId) {
+          clearUserTyping(senderId);
+        }
+      }
+    };
+
+    const onPresenceUpdate = (data) => {
+      if (data?.status === 'offline' && data?.userId) {
+        clearUserTyping(data.userId);
+      }
     };
 
     socket.on('typing:start', onTypingStart);
     socket.on('typing:stop', onTypingStop);
+    socket.on('message:new', onNewMessage);
+    socket.on('presence:update', onPresenceUpdate);
 
     return () => {
       socket.off('typing:start', onTypingStart);
       socket.off('typing:stop', onTypingStop);
+      socket.off('message:new', onNewMessage);
+      socket.off('presence:update', onPresenceUpdate);
     };
   }, [socket, conversationId, currentUserId, users, conversations]);
 
@@ -105,10 +163,11 @@ export function useTypingIndicator(conversationId, currentUserId) {
     stopTypingNow,
     typingUsers,
     isTyping: typingNames.length > 0,
-    typingText: typingNames.length === 1 
-      ? `${typingNames[0]} is typing...` 
-      : typingNames.length > 1 
-        ? `${typingNames.join(', ')} are typing...` 
+    typingText:
+      typingNames.length === 1
+        ? `${typingNames[0]} is typing...`
+        : typingNames.length > 1
+        ? `${typingNames.join(', ')} are typing...`
         : ''
   };
 }

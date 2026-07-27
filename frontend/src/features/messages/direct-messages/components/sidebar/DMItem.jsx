@@ -42,7 +42,7 @@ export default function DMItem({ conv, activeChatId, onSelect, onContextMenu }) 
           src={conv.avatar} 
           name={conv.name} 
           size="48px" 
-          isOnline={conv.online || conv.isOnline} 
+          isOnline={Boolean(conv.targetUser ? conv.targetUser.isOnline : (conv.online ?? conv.isOnline ?? false))} 
         />
       </div>
 

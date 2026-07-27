@@ -5,7 +5,9 @@ import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import { isImageUrl } from '@shared/utils/avatar';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
+import { CalendarDays } from 'lucide-react';
 import styles from './ActivityChatDetailsModal.module.css';
+import sidebarStyles from '../../../shared/components/sidebar/ConversationList.module.css';
 import { useData } from '@shared/hooks/useData';
 import { sortGroupMembers } from '@shared/utils/memberSort';
 
@@ -74,12 +76,22 @@ export default function ActivityChatDetailsModal({ conversation, onClose, onEndA
             <div className={styles.section}>
               <h3 className={styles.sectionTitle}>Activity Details</h3>
               <div className={styles.detailCard}>
-                {activity.date && (
-                  <div className={styles.detailItem} style={{ gap: '0.75rem', alignItems: 'center' }}>
-                    <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
-                    <div className={styles.detailText} style={{ fontWeight: '600' }}>{activity.dateLabel || new Date(activity.date).toLocaleDateString()}</div>
-                  </div>
-                )}
+                {(() => {
+                  const status = (activity?.status || conversation?.status || '').toUpperCase();
+                  const hasStarted = status === 'IN_PROGRESS' || status === 'STARTED' || status === 'COMPLETED' || status === 'ENDED' || conversation?.hasStarted || conversation?.activityHasStarted || (activity.date ? (new Date(activity.date) <= new Date()) : false);
+                  return (
+                    <div className={styles.detailItem} style={{ gap: '0.75rem', alignItems: 'center' }}>
+                      {hasStarted ? (
+                        <div className={sidebarStyles.startedCalendarBadge}>
+                          <CalendarDays size={28} />
+                        </div>
+                      ) : (
+                        <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
+                      )}
+                      <div className={styles.detailText} style={{ fontWeight: '600' }}>{activity.dateLabel || (activity.date ? new Date(activity.date).toLocaleDateString() : '')}</div>
+                    </div>
+                  );
+                })()}
                 {activity.time && (
                   <div className={styles.detailItem}>
                     <svg className={styles.detailIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -146,9 +158,15 @@ export default function ActivityChatDetailsModal({ conversation, onClose, onEndA
 
             {isHost && (
               <div className={styles.actions}>
-                <button className={styles.endBtn} onClick={handleEndActivity}>
-                  End Activity
-                </button>
+                {(() => {
+                  const status = (activity?.status || conversation?.status || '').toUpperCase();
+                  const hasStarted = status === 'IN_PROGRESS' || status === 'STARTED' || status === 'COMPLETED' || status === 'ENDED' || conversation?.hasStarted || conversation?.activityHasStarted || (activity.date ? (new Date(activity.date) <= new Date()) : false);
+                  return (
+                    <button className={styles.endBtn} onClick={handleEndActivity}>
+                      {hasStarted ? 'End Group' : 'End Activity'}
+                    </button>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -157,11 +175,23 @@ export default function ActivityChatDetailsModal({ conversation, onClose, onEndA
 
       <ConfirmModal
         visible={showEndConfirm}
-        title="End Activity"
-        desc="Are you sure you want to end this activity? This action cannot be undone."
+        title={(() => {
+          const status = (activity?.status || conversation?.status || '').toUpperCase();
+          const hasStarted = status === 'IN_PROGRESS' || status === 'STARTED' || status === 'COMPLETED' || status === 'ENDED' || conversation?.hasStarted || conversation?.activityHasStarted || (activity.date ? (new Date(activity.date) <= new Date()) : false);
+          return hasStarted ? "End Group" : "End Activity";
+        })()}
+        desc={(() => {
+          const status = (activity?.status || conversation?.status || '').toUpperCase();
+          const hasStarted = status === 'IN_PROGRESS' || status === 'STARTED' || status === 'COMPLETED' || status === 'ENDED' || conversation?.hasStarted || conversation?.activityHasStarted || (activity.date ? (new Date(activity.date) <= new Date()) : false);
+          return hasStarted ? "This group will be closed permanently. Previous chats and media will remain accessible." : "Are you sure you want to end this activity? This will remove all members and delete the group.";
+        })()}
         onConfirm={confirmEndActivity}
         onCancel={() => setShowEndConfirm(false)}
-        confirmText="End Activity"
+        confirmText={(() => {
+          const status = (activity?.status || conversation?.status || '').toUpperCase();
+          const hasStarted = status === 'IN_PROGRESS' || status === 'STARTED' || status === 'COMPLETED' || status === 'ENDED' || conversation?.hasStarted || conversation?.activityHasStarted || (activity.date ? (new Date(activity.date) <= new Date()) : false);
+          return hasStarted ? "End Group" : "End Activity";
+        })()}
       />
     </>
   );

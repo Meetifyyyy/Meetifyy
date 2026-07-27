@@ -7,8 +7,7 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useChatManager } from '../../shared/hooks/useChatManager';
 import { generateConversationUrl, correctConversationUrl } from '@shared/utils/conversationUrl';
 import { MessageSquarePlus, Search } from 'lucide-react';
-import { messagesApi } from '@shared/api/apiClient';
-import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 
 import DMItem from '../../direct-messages/components/sidebar/DMItem';
 import GroupItem from '../../group-chats/components/sidebar/GroupItem';
@@ -45,13 +44,13 @@ export default function MessagesLayout() {
     clearChat,
     toggleBlockUser,
     leaveGroup,
+    endGroup,
     endCrewActivity,
     startConversation,
     createGroupConversation,
     togglePinConversation,
     toggleMuteConversation,
     deleteConversation,
-    socket,
   } = useData();
 
   const routeChatId = param2 || param1 || null;
@@ -62,6 +61,10 @@ export default function MessagesLayout() {
   const [searchVal, setSearchVal] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
+  // Tracks whether the current user has left the active activity chat post-start
+  const [hasLeftGroup, setHasLeftGroup] = useState(false);
+  // Controls the leave confirm modal for activity chats
+  const [leaveConfirm, setLeaveConfirm] = useState(false);
 
   useEffect(() => {
     if (routeChatId) {
@@ -71,6 +74,9 @@ export default function MessagesLayout() {
       setActiveChatId(null);
       setShowChatOnMobile(false);
     }
+    // Reset leave state whenever the active chat changes
+    setHasLeftGroup(false);
+    setLeaveConfirm(false);
   }, [routeChatId]);
 
   const { 
@@ -97,7 +103,8 @@ export default function MessagesLayout() {
 
   const activeConv = useMemo(() => {
     if (!baseConv) return null;
-    const latestPage = rawPages?.[0];
+    // Last page (pages[length-1]) holds the most recent messages and participants
+    const latestPage = rawPages?.[rawPages.length - 1];
     return {
       ...baseConv,
       messages: allMessages.length > 0 ? allMessages : (baseConv.messages || []),
@@ -115,22 +122,16 @@ export default function MessagesLayout() {
     }
   }, [activeChatId, activeConv, currentUser?.id, location.pathname, navigate]);
 
-  // Mark as read when opening a conversation
-  useEffect(() => {
-    if (activeConv && activeConv.unread > 0 && document.visibilityState === 'visible') {
-      if (socket && socket.connected) {
-        socket.emit('conversation:mark_seen', { conversationId: activeConv.id });
-      } else {
-        messagesApi.markAsRead(activeConv.id).catch(() => {});
-      }
-      
-      // Optimistically clear unread badge in cache
-      queryClient.setQueryData(['conversations'], (old) => {
-        if (!old) return old;
-        return old.map(c => c.id === activeConv.id ? { ...c, unread: 0 } : c);
-      });
-    }
-  }, [activeConv?.id, activeConv?.unread, queryClient, socket]);
+  // Compute whether the active activity has started
+  const activityHasStarted = useMemo(() => {
+    if (!activeConv?.isActivityChat) return false;
+    const startRaw = activeConv?.activity?.startDate || activeConv?.activity?.date || activeConv?.date;
+    if (!startRaw) return false;
+    return new Date(startRaw) <= new Date();
+  }, [activeConv]);
+
+  // markSeenIfEligible (from useChatManager) already handles seen events via socket.
+  // No duplicate emit needed here.
 
   const totalUnread = useMemo(() => {
     return (conversations || []).reduce((sum, c) => sum + (c.unread || 0), 0);
@@ -152,7 +153,10 @@ export default function MessagesLayout() {
       .sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
-        return (b.timestamp || 0) - (a.timestamp || 0);
+        // Use updatedAt (ISO string) — conversations don't have a numeric .timestamp field
+        const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return timeB - timeA;
       });
   }, [conversations, activeFilter, searchVal]);
 
@@ -170,8 +174,36 @@ export default function MessagesLayout() {
   const handleBack = () => {
     setShowChatOnMobile(false);
     setActiveChatId(null);
+    setHasLeftGroup(false);
+    setLeaveConfirm(false);
     const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
     navigate(basePath, { replace: true });
+  };
+
+  // Called by ActivityChatHeader — just opens the confirm modal, no async work yet
+  const handleLeaveActivity = () => {
+    setLeaveConfirm(true);
+  };
+
+  // Called when user confirms leave — UI updates synchronously, API fires in background
+  const handleConfirmLeave = () => {
+    setLeaveConfirm(false);
+    const convIdToLeave = activeChatId;
+    const wasStarted = activityHasStarted;
+
+    if (wasStarted) {
+      // Post-start: stay in read-only view immediately
+      setHasLeftGroup(true);
+    } else {
+      // Pre-start: navigate away immediately (feels instant)
+      handleBack();
+    }
+
+    // Fire API in the background — UI is already updated
+    leaveGroup(convIdToLeave).catch(() => {
+      // If API fails, rollback UI state
+      if (wasStarted) setHasLeftGroup(false);
+    });
   };
 
   const handleContextMenu = (e, convId) => {
@@ -182,11 +214,7 @@ export default function MessagesLayout() {
   };
 
   const handlePrefetchContacts = () => {
-    queryClient.prefetchQuery({
-      queryKey: ['users'],
-      queryFn: () => usersApi.getUsers(),
-      staleTime: 1000 * 60 * 5,
-    });
+    // Prefetch is a nice-to-have — skip it rather than import the full users API just for hover
   };
 
   const handleStartChat = (targetUser) => {
@@ -331,9 +359,14 @@ export default function MessagesLayout() {
                 onSendMessage={sendMessageOptimistically}
                 onReactMessage={reactToMessage}
                 onEndActivity={endCrewActivity}
+                onLeaveActivity={handleLeaveActivity}
+                onClearChat={clearChat}
+                onTogglePin={togglePinConversation}
                 onBack={handleBack}
                 showChatOnMobile={showChatOnMobile}
                 isLoading={isConversationsLoading || (isMessagesLoading && allMessages.length === 0)}
+                hasLeftGroup={hasLeftGroup}
+                activityHasStarted={activityHasStarted}
                 {...paginationProps}
               />
             );
@@ -345,6 +378,9 @@ export default function MessagesLayout() {
                 onSendMessage={sendMessageOptimistically}
                 onReactMessage={reactToMessage}
                 onLeaveGroup={leaveGroup}
+                onEndGroup={endGroup}
+                onClearChat={clearChat}
+                onTogglePin={togglePinConversation}
                 onBack={handleBack}
                 showChatOnMobile={showChatOnMobile}
                 isLoading={isConversationsLoading || (isMessagesLoading && allMessages.length === 0)}
@@ -358,6 +394,7 @@ export default function MessagesLayout() {
               onSendMessage={sendMessageOptimistically}
               onReactMessage={reactToMessage}
               onClearChat={clearChat}
+              onTogglePin={togglePinConversation}
               onBlockUser={toggleBlockUser}
               onBack={handleBack}
               showChatOnMobile={showChatOnMobile}
@@ -426,6 +463,20 @@ export default function MessagesLayout() {
           onCreateGroup={handleCreateGroup}
         />
       )}
+
+      {/* Leave activity confirm modal — owned here so UI updates are instant */}
+      <ConfirmModal
+        visible={leaveConfirm}
+        title={activityHasStarted ? 'Leave Group?' : 'Leave Activity?'}
+        desc={
+          activityHasStarted
+            ? "You can still view the chat history, but you won't be able to send or receive new messages."
+            : 'You will be removed from this activity and the chat will be removed from your inbox.'
+        }
+        confirmText={activityHasStarted ? 'Leave' : 'Leave Activity'}
+        onCancel={() => setLeaveConfirm(false)}
+        onConfirm={handleConfirmLeave}
+      />
     </div>
   );
 }

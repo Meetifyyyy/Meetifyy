@@ -711,7 +711,11 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
       const pubId = (conv as any).publicId || conv.id;
         const isGroupConv = conv.type === 'GROUP' || (conv as any).isGroup;
-        const groupAvatar = conv.avatarKey || null;
+        const groupAvatar = conv.avatarKey || (conv as any).activity?.coverImage || null;
+        const actStartDate = (conv as any).activity?.startDate;
+        const actStatus = ((conv as any).activity?.status || conv.status || '').toUpperCase();
+        const hasStarted = actStatus === 'IN_PROGRESS' || actStatus === 'STARTED' || actStatus === 'COMPLETED' || actStatus === 'ENDED' || (!!actStartDate && new Date(actStartDate) <= new Date());
+
         return {
           id: pubId,
           publicId: pubId,
@@ -721,6 +725,8 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
           ownerId: conv.ownerId || null,
           activityId: conv.activityId || null,
           activity: conv.activity || null,
+          hasStarted,
+          activityHasStarted: hasStarted,
           isActivityChat: conv.type === 'ACTIVITY' || !!conv.activityId,
           isGroup: isGroupConv,
           name: isGroupConv ? (conv.name || 'Group') : (conv.name || otherUser?.displayName || 'Chat'),
@@ -1083,7 +1089,10 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       throw new ForbiddenException('Only group admins can edit group details');
     }
 
-    const avatarVal = data.avatarKey !== undefined ? data.avatarKey : data.avatar;
+    let avatarVal = data.avatarKey !== undefined ? data.avatarKey : data.avatar;
+    if (avatarVal && typeof avatarVal === 'string' && avatarVal.startsWith('blob:')) {
+      avatarVal = undefined;
+    }
 
     const updated = await this.prisma.conversation.update({
       where: { id: realConvId },
@@ -1093,6 +1102,13 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         ...(avatarVal !== undefined ? { avatarKey: avatarVal } : {}),
       }
     });
+
+    if (updated.activityId && avatarVal !== undefined) {
+      await this.prisma.crewActivity.update({
+        where: { id: updated.activityId },
+        data: { coverImage: avatarVal }
+      }).catch(() => {});
+    }
 
     return updated;
   }

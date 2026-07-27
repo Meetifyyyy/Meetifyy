@@ -121,6 +121,7 @@ import { EventsModule } from './events/events.module';
             tls: url.protocol === 'rediss:' ? { rejectUnauthorized: false } : undefined,
             maxRetriesPerRequest: null,
             enableReadyCheck: false,
+            skipVersionCheck: true,
           };
         } else {
           connection = {
@@ -130,6 +131,7 @@ import { EventsModule } from './events/events.module';
             tls: configService.get<string>('REDIS_TLS') === 'true' ? { rejectUnauthorized: false } : undefined,
             maxRetriesPerRequest: null,
             enableReadyCheck: false,
+            skipVersionCheck: true,
           };
         }
 

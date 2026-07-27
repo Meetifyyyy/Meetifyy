@@ -402,7 +402,9 @@ export default function ActivityDetailPage() {
                 </div>
               </div>
 
-              <p className={styles.description}>{description}</p>
+              {description && description.trim() && (
+                <p className={styles.description}>{description}</p>
+              )}
 
               {/* Attendees Section */}
               <div className={styles.attendeesSection}>

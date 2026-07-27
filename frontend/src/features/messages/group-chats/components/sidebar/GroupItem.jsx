@@ -17,11 +17,25 @@ export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu 
     const lastMsgObj = (Array.isArray(conv.messages) && conv.messages.length > 0)
       ? conv.messages[conv.messages.length - 1]
       : conv.lastMessage;
-    if (!lastMsgObj) return conv.lastMessageText || conv.preview || conv.lastMsg || '';
+    if (!lastMsgObj) {
+      const rawFallback = conv.lastMessageText || conv.preview || conv.lastMsg || '';
+      return rawFallback.replace(/^You:\s*@/, '@');
+    }
     let text = lastMsgObj.text || lastMsgObj.payload?.text || '';
     if (!text && lastMsgObj.mediaUrl) {
       return lastMsgObj.mediaType === 'audio' ? '🎤 Voice message' : lastMsgObj.mediaType === 'video' ? '📹 Video' : '📷 Photo';
     }
+    const isSystemMsg =
+      lastMsgObj.type === 'system' ||
+      lastMsgObj.type === 'SYSTEM' ||
+      lastMsgObj.isSystem ||
+      lastMsgObj.system === true ||
+      (typeof text === 'string' && text.startsWith('@'));
+
+    if (isSystemMsg) {
+      return text.replace(/^You:\s*@/, '@');
+    }
+
     const isMe = String(lastMsgObj.senderId || lastMsgObj.from) === String(currentUser?.id);
     const senderName = isMe ? 'You' : lastMsgObj.senderName || 'Member';
     if (senderName && text) return `${senderName}: ${text}`;
