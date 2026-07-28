@@ -91,7 +91,7 @@ export default function SocketManager() {
       } else if (!isMuted) {
         toast.custom((t) => {
           const isGroupMessage = Boolean(notification.metadata?.isGroup || notification.metadata?.conversationType === 'GROUP');
-          const actorName = notification.actor?.displayName || notification.actor?.username || notification.metadata?.actorDisplayName || notification.metadata?.actorName || notification.metadata?.username || 'Someone';
+          const actorName = notification.actor?.displayName || notification.actor?.username || notification.metadata?.actorDisplayName || notification.metadata?.actorName || notification.metadata?.actorUsername || 'Someone';
           const actorAvatar = notification.actor?.avatar || notification.metadata?.actorAvatar || '';
           const groupName = notification.metadata?.conversationName || notification.title || 'Group';
           const groupAvatar = notification.metadata?.conversationAvatar || '';

@@ -55,8 +55,12 @@ export default function MessagesLayout() {
   const handleBack = () => {
     setShowChatOnMobile(false);
     setActiveChatId(null);
-    const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
-    navigate(basePath, { replace: true });
+    const fallbackPath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
+    if (location.state?.from) {
+      navigate(location.state.from, { replace: true });
+    } else {
+      goBack(fallbackPath);
+    }
   };
 
   const handleSelectChat = (id, selectedConv) => {
@@ -134,7 +138,7 @@ export default function MessagesLayout() {
     if (!activeChatId || !activeConv) return;
     const targetPath = correctConversationUrl(activeConv, currentUser?.id, location.pathname);
     if (location.pathname !== targetPath && targetPath !== location.pathname) {
-      navigate(targetPath, { replace: true });
+      navigate(targetPath, { replace: true, state: location.state });
     }
   }, [activeChatId, activeConv, currentUser?.id, location.pathname, navigate]);
 

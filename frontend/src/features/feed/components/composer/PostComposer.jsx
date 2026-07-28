@@ -56,7 +56,13 @@ function PostComposer({ onSubmit }) {
       .replace(/\n{3,}/g, '\n\n');
   };
 
-  const handlePost = async () => {
+  const handlePost = async (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (isPosting) return;
+
     const rawText = typeof value === 'string' ? value : (value?.text || '');
     const text = normalizePostText(rawText);
     const mentions = value?.mentions || [];
@@ -74,8 +80,7 @@ function PostComposer({ onSubmit }) {
     try {
       if (media?.file) {
         if (media.type === 'video') {
-           // Skip video processing for now
-           finalMedia = { type: media.type, url: URL.createObjectURL(media.file) }; // Temporary for UI
+           finalMedia = { type: media.type, url: URL.createObjectURL(media.file) };
         } else {
            const { publicUrl } = await processAndUploadImage(media.file, 'post-media', { maxWidthOrHeight: 1920 });
            finalMedia = { type: media.type, url: publicUrl };
@@ -84,12 +89,12 @@ function PostComposer({ onSubmit }) {
 
       if (showPoll) {
         const opts = pollOptions.map((o) => o.trim()).filter(Boolean);
-        onSubmit(text, { question: text || 'Poll', options: opts, multiSelect: pollMulti }, finalMedia, mentions);
+        await onSubmit(text, { question: text || 'Poll', options: opts, multiSelect: pollMulti }, finalMedia, mentions);
         setPollOptions(['', '']);
         setPollMulti(false);
         setShowPoll(false);
       } else {
-        onSubmit(text, null, finalMedia, mentions);
+        await onSubmit(text, null, finalMedia, mentions);
       }
 
       setValue({ text: '', mentions: [] });
@@ -334,11 +339,26 @@ function PostComposer({ onSubmit }) {
                 <span>Poll</span>
               </button>
             </div>
-            <button className={styles.composerSendBtn} onClick={handlePost} title="Post">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
+            <button 
+              type="button"
+              className={styles.composerSendBtn} 
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handlePost(e);
+              }} 
+              disabled={isPosting || !hasContent}
+              title="Post"
+              style={{ opacity: isPosting || !hasContent ? 0.5 : 1, cursor: isPosting || !hasContent ? 'not-allowed' : 'pointer' }}
+            >
+              {isPosting ? (
+                <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              )}
             </button>
           </div>
         </div>

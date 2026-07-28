@@ -33,7 +33,7 @@ export function useProfile(username) {
       idbSet('profiles', username?.toLowerCase(), data);
       return data;
     },
-    enabled: !!username,
+    enabled: !!username && username !== 'unknown',
     staleTime: 2 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
     placeholderData: (prev) => prev,
@@ -41,7 +41,7 @@ export function useProfile(username) {
 
   // Hydrate from IndexedDB before first network response
   useEffect(() => {
-    if (!username || query.data) return;
+    if (!username || username === 'unknown' || query.data) return;
     idbGet('profiles', username.toLowerCase()).then((cached) => {
       if (cached?.value) queryClient.setQueryData(qk, cached.value);
     });
@@ -95,7 +95,7 @@ export function useCampusUsers(limit = 50) {
 export function usePrefetchProfile() {
   const queryClient = useQueryClient();
   return useCallback((username) => {
-    if (!username) return;
+    if (!username || username === 'unknown') return;
     queryClient.prefetchQuery({
       queryKey: PROFILE_KEYS.byUsername(username),
       queryFn: () => usersApi.getByUsername(username),

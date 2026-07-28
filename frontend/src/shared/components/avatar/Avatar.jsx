@@ -14,17 +14,17 @@ const INITIALS_BG = '#7a8a9e';
 
 export function getProcessedAvatarUrl(src) {
   if (!src || typeof src !== 'string' || src.length <= 2 || src.includes('default_avatar')) {
-    return null;
+    return defaultAvatarImg;
   }
   if (src.includes('api.dicebear.com/7.x/initials')) {
-    return null;
+    return defaultAvatarImg;
   }
   
   if (src.startsWith('https://api.dicebear.com/')) {
     return src.split('&backgroundColor=')[0].split('?backgroundColor=')[0];
   }
   
-  return src; // Let MediaCacheManager handle the resolution
+  return src;
 }
 
 const Avatar = forwardRef(({
@@ -40,21 +40,29 @@ const Avatar = forwardRef(({
   disableHover = false,
   children
 }, ref) => {
-  const [imgSrc, setImgSrc] = useState(null);
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const initialProcessedSrc = getProcessedAvatarUrl(src);
+  const syncResolved = mediaCache.getSyncUrl(initialProcessedSrc) || (initialProcessedSrc && (initialProcessedSrc.startsWith('/') || initialProcessedSrc.startsWith('http') || initialProcessedSrc.startsWith('data:') || initialProcessedSrc.startsWith('blob:')) ? initialProcessedSrc : null);
+
+  const [imgSrc, setImgSrc] = useState(syncResolved);
+  const [hasLoaded, setHasLoaded] = useState(Boolean(syncResolved));
   const [hasError, setHasError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-
-  const initialProcessedSrc = getProcessedAvatarUrl(src);
 
   useEffect(() => {
     let isMounted = true;
     
-    setHasLoaded(false);
-    setHasError(false);
-
     if (!initialProcessedSrc) {
-      setImgSrc(null);
+      setImgSrc(defaultAvatarImg);
+      setHasLoaded(true);
+      setHasError(false);
+      return;
+    }
+
+    const currentSync = mediaCache.getSyncUrl(initialProcessedSrc);
+    if (currentSync) {
+      setImgSrc(currentSync);
+      setHasLoaded(true);
+      setHasError(false);
       return;
     }
 
@@ -64,12 +72,20 @@ const Avatar = forwardRef(({
         if (isMounted) {
           if (resolvedUrl) {
             setImgSrc(resolvedUrl);
+            setHasLoaded(true);
+            setHasError(false);
           } else {
-            setHasError(true);
+            setImgSrc(defaultAvatarImg);
+            setHasLoaded(true);
+            setHasError(false);
           }
         }
       } catch (err) {
-        if (isMounted) setHasError(true);
+        if (isMounted) {
+          setImgSrc(defaultAvatarImg);
+          setHasLoaded(true);
+          setHasError(false);
+        }
       }
     };
     

@@ -53,13 +53,13 @@ export function NotificationsActivity() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           {displayNotifs.map((n) => {
             const actorId = n.actor?.id || n.actorId || n.metadata?.actorId;
-            const actorUsername = n.actor?.username || n.metadata?.actorUsername || n.metadata?.username || n.metadata?.actorName;
+            const actorUsername = n.actor?.username || n.metadata?.actorUsername;
             const liveUser = (users && actorId ? users[actorId] : null) || 
-                             (users && actorUsername ? Object.values(users).find(u => u.username === actorUsername || u.displayName === actorUsername || u.name === actorUsername) : null);
+                             (users && actorUsername ? Object.values(users).find(u => u.username === actorUsername) : null);
 
-            const actorName = liveUser?.displayName || liveUser?.username || n.actor?.displayName || n.actor?.username || n.metadata?.actorDisplayName || n.metadata?.actorName || n.metadata?.username || 'Someone';
+            const actorName = liveUser?.displayName || liveUser?.username || n.actor?.displayName || n.actor?.username || n.metadata?.actorDisplayName || n.metadata?.actorName || n.metadata?.actorUsername || 'Someone';
             const actorAvatar = liveUser?.avatar || n.actor?.avatar || n.metadata?.actorAvatar || '';
-            const targetUsername = liveUser?.username || n.actor?.username || n.metadata?.username || '';
+            const targetUsername = liveUser?.username || n.actor?.username || n.metadata?.actorUsername || '';
 
             const notifType = (n.type || '').toLowerCase();
             const isFollow = notifType === 'follow';

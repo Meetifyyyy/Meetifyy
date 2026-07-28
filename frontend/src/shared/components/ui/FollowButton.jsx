@@ -17,7 +17,7 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
   const { data: targetProfile, isLoading: isProfileLoading } = useQuery({
     queryKey: ['profile', targetUsername],
     queryFn: () => usersApi.getByUsername(targetUsername),
-    enabled: !!targetUsername && targetUsername !== currentUser?.username,
+    enabled: !!targetUsername && targetUsername !== currentUser?.username && targetUsername !== 'unknown',
     staleTime: 1000 * 60,
     initialData: () => {
       const cached = queryClient.getQueryData(['profile', targetUsername]);

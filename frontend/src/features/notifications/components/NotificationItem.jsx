@@ -14,9 +14,9 @@ export default function NotificationItem({
   const navigate = useNavigate();
   const notifType = (notif.type || '').toLowerCase();
   const isFollow = notifType === 'follow';
-  const targetUsername = actor?.username || notif.actor?.username || notif.metadata?.actorUsername || notif.metadata?.username || '';
+  const targetUsername = actor?.username || notif.actor?.username || notif.metadata?.actorUsername || '';
 
-  const actorName = actor?.name || actor?.username || notif.actor?.displayName || notif.actor?.username || notif.metadata?.actorName || notif.metadata?.actorDisplayName || notif.metadata?.username || 'Someone';
+  const actorName = actor?.name || actor?.displayName || actor?.username || notif.actor?.displayName || notif.actor?.username || notif.metadata?.actorDisplayName || notif.metadata?.actorName || notif.metadata?.actorUsername || 'Someone';
   const postMedia = notif.metadata?.postMedia || notif.metadata?.mediaUrl || notif.metadata?.postImage || notif.metadata?.thumbnailUrl || null;
 
   let displayText = notif.body || notif.text || '';

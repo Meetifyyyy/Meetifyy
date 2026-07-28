@@ -184,6 +184,8 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
       <img
         src={imgSrc || src}
         alt={alt || ''}
+        loading="lazy"
+        decoding="async"
         className={`${className} ${!loaded ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
         onClick={() => onClick && onClick(imgSrc || src)}
         onLoad={() => setLoaded(true)}
@@ -351,11 +353,14 @@ const MessageBubble = memo(function MessageBubble({
     onContextMenu(mockEvent, finalMsg);
   };
 
+  const touchStartPos = useRef({ x: 0, y: 0 });
+  const isSwipingRef = useRef(false);
+  const vibratedRef = useRef(false);
+  const [swipeX, setSwipeX] = useState(0);
+
   const handleTouchStart = (e) => {
-    // Persist event in React 16 if needed (React 17+ doesn't need this, but safe)
     if (e.persist) e.persist();
     
-    // Extract touch coordinates immediately as they might be gone in the timeout
     let clientX = e.clientX;
     let clientY = e.clientY;
     if (clientX === undefined && e.touches && e.touches.length > 0) {
@@ -363,19 +368,60 @@ const MessageBubble = memo(function MessageBubble({
       clientY = e.touches[0].clientY;
     }
     
+    touchStartPos.current = { x: clientX || 0, y: clientY || 0 };
+    isSwipingRef.current = false;
+    vibratedRef.current = false;
+    touchHandled.current = false;
+
     const syntheticEvent = { clientX, clientY };
 
-    touchHandled.current = false;
     longPressTimer.current = setTimeout(() => {
-      touchHandled.current = true;
-      fireContextMenu(syntheticEvent, msg);
+      if (!isSwipingRef.current) {
+        touchHandled.current = true;
+        fireContextMenu(syntheticEvent, msg);
+      }
     }, 500);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!e.touches || e.touches.length === 0) return;
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const deltaX = currentX - touchStartPos.current.x;
+    const deltaY = currentY - touchStartPos.current.y;
+
+    if (!isSwipingRef.current && Math.abs(deltaY) > Math.abs(deltaX)) {
+      return;
+    }
+
+    if (deltaX > 8 && replyHandler) {
+      isSwipingRef.current = true;
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+      }
+      
+      const distance = Math.min(Math.max(0, deltaX * 0.55), 75);
+      setSwipeX(distance);
+
+      if (distance >= 40 && !vibratedRef.current) {
+        vibratedRef.current = true;
+        try {
+          if (navigator.vibrate) navigator.vibrate(15);
+        } catch (_) {}
+      }
+    }
   };
 
   const handleTouchEnd = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
     }
+    if (swipeX >= 40 && replyHandler) {
+      replyHandler(msg);
+    }
+    setSwipeX(0);
+    isSwipingRef.current = false;
+    vibratedRef.current = false;
   };
 
   const handleContextMenuEvent = (e) => {
@@ -570,10 +616,41 @@ const MessageBubble = memo(function MessageBubble({
     <div 
       className={`${styles.msgBubbleContainer} ${isMe ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onContextMenu={handleContextMenuEvent}
+      style={{ position: 'relative', overflow: 'hidden' }}
     >
-      <div className={styles.msgBubbleWrapper}>
+      {/* Swipe Reply Arrow Indicator */}
+      {swipeX > 0 && (
+        <div 
+          style={{
+            position: 'absolute',
+            left: `${Math.min(swipeX - 30, 20)}px`,
+            top: '50%',
+            transform: `translateY(-50%) scale(${Math.min(swipeX / 40, 1)})`,
+            opacity: Math.min(swipeX / 30, 1),
+            color: 'var(--color-primary, #6366f1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+            zIndex: 5,
+            transition: swipeX === 0 ? 'all 0.2s ease-out' : 'none',
+          }}
+        >
+          <Reply size={20} />
+        </div>
+      )}
+
+      <div 
+        className={styles.msgBubbleWrapper}
+        style={{
+          transform: `translateX(${swipeX}px)`,
+          transition: swipeX === 0 ? 'transform 0.2s ease-out' : 'none',
+          willChange: 'transform',
+        }}
+      >
         {showSenderAvatar && (
           <div className={styles.msgAvatar} onClick={handleSenderProfileClick} style={{ cursor: 'pointer' }} title={`View ${msg.senderName || 'profile'}`}>
             <Avatar src={msg.senderAvatar} name={msg.senderName} size="28px" />

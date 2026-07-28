@@ -239,7 +239,7 @@ export default function Header({ variant = 'dashboard' }) {
               <Avatar
                 src={currentUser?.avatar}
                 name={currentUser?.displayName}
-                size="100%"
+                size="42px"
               />
             </div>
             <div className={`${styles.dropdown} ${dropdownOpen ? styles.dropdownOpen : ''}`} ref={dropdownRef}>
@@ -251,7 +251,7 @@ export default function Header({ variant = 'dashboard' }) {
                   <Avatar
                     src={currentUser?.avatar}
                     name={currentUser?.displayName}
-                    size="100%"
+                    size="32px"
                   />
                 </div>
                 <div className={styles.dropdownProfileDetails}>
