@@ -89,10 +89,23 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   }
 
   private handleDomainEvent(payload: any) {
-    const isLegacyEvent = payload.type.includes(':');
-    
-    if (payload.targetUserIds && Array.isArray(payload.targetUserIds) && payload.targetUserIds.length > 0) {
-      for (const targetId of payload.targetUserIds) {
+    const isLegacyEvent = payload.type?.includes(':');
+    let targets: string[] = [];
+
+    if (Array.isArray(payload.targetUserIds) && payload.targetUserIds.length > 0) {
+      targets = payload.targetUserIds;
+    } else if (payload.targetUserId) {
+      targets = [payload.targetUserId];
+    } else if (payload.data?.targetUserId) {
+      targets = [payload.data.targetUserId];
+    } else if (payload.conversationId || payload.data?.conversationId) {
+      const convId = payload.conversationId || payload.data?.conversationId;
+      this.server.to(`conv_${convId}`).emit(isLegacyEvent ? payload.type : 'domainEvent', payload.data || payload);
+      return;
+    }
+
+    if (targets.length > 0) {
+      for (const targetId of targets) {
         if (isLegacyEvent) {
           this.server.to(targetId).emit(payload.type, payload.data);
         } else {
@@ -100,9 +113,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
         }
       }
     } else {
-      // Never broadcast to all connected clients \u2014 this scales linearly with concurrent users.
-      // If targetUserIds is empty/missing, the event has no intended recipient; drop it safely.
-      this.logger.warn(`Domain event '${payload.type}' has no targetUserIds \u2014 dropped (not broadcast)`);
+      this.logger.warn(`Domain event '${payload.type}' has no valid targetUserIds/room \u2014 dropped safely`);
     }
   }
 
@@ -338,20 +349,53 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     }
   }
 
+  @SubscribeMessage('presence:heartbeat')
+  async handlePresenceHeartbeat(@ConnectedSocket() client: Socket) {
+    const userId = (client as any).userId;
+    if (!userId) return { status: 'error', error: 'Unauthenticated' };
+    await this.presenceService.setOnline(userId, client.id);
+    return { status: 'ok', timestamp: Date.now() };
+  }
+
   @SubscribeMessage('message:send')
   async handleSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { tempId?: string; conversationId: string; text?: string; mediaUrl?: string; mediaType?: string; mentions?: string[]; replyToId?: string; inviteData?: any }
+    @MessageBody() data: { tempId?: string; clientId?: string; conversationId: string; text?: string; mediaUrl?: string; mediaType?: string; mentions?: string[]; replyToId?: string; inviteData?: any }
   ) {
     const senderId = (client as any).userId;
     if (!senderId) return { status: 'error', error: 'Unauthenticated' };
     try {
       const message = await this.messagesService.sendMessage(senderId, data.conversationId, data);
-      const payload = { ...message, tempId: data.tempId, status: 'sent' };
-      await this.emitToConversation(data.conversationId, 'message:new', payload);
-      return { status: 'ok', tempId: data.tempId, message: payload };
+      const clientKey = data.clientId || data.tempId;
+      const payload = { ...message, tempId: clientKey, clientId: clientKey, status: 'sent' };
+
+      // Broadcast to room excluding the sending socket to avoid duplicate websocket echo
+      const room = `conv_${data.conversationId}`;
+      client.to(room).emit('message:new', payload);
+      // Multi-device sync: emit to sender's other connected sockets/tabs
+      client.to(senderId).emit('message:new', payload);
+
+      // Return server ACK directly to sending client callback
+      return { status: 'ok', tempId: clientKey, clientId: clientKey, message: payload };
     } catch (err: any) {
-      return { status: 'error', tempId: data.tempId, error: err.message || 'Failed to send message' };
+      const clientKey = data.clientId || data.tempId;
+      return { status: 'error', tempId: clientKey, clientId: clientKey, error: err.message || 'Failed to send message' };
+    }
+  }
+
+  @SubscribeMessage('message:catchup')
+  async handleMessageCatchup(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { since: string }
+  ) {
+    const userId = (client as any).userId;
+    if (!userId || !data?.since) return { status: 'error', error: 'Invalid parameters' };
+
+    try {
+      const messages = await this.messagesService.getCatchupMessages(userId, data.since);
+      return { status: 'ok', messages };
+    } catch (err: any) {
+      return { status: 'error', error: err.message || 'Failed to fetch catchup messages' };
     }
   }
 
@@ -544,12 +588,45 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   }
 
   @SubscribeMessage('conversation:join_rooms')
-  handleJoinRooms(
+  async handleJoinRooms(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { conversationIds: string[] }
   ) {
-    if (data?.conversationIds && Array.isArray(data.conversationIds)) {
-      data.conversationIds.forEach(id => client.join(`conv_${id}`));
+    const userId = (client as any).userId;
+    if (!userId || !data?.conversationIds || !Array.isArray(data.conversationIds)) return;
+
+    try {
+      const validParticipants = await this.prisma.conversationParticipant.findMany({
+        where: {
+          userId,
+          deletedAt: null,
+          leftAt: null,
+          conversation: {
+            OR: [
+              { id: { in: data.conversationIds } },
+              { publicId: { in: data.conversationIds } },
+            ]
+          }
+        },
+        select: {
+          conversationId: true,
+          conversation: { select: { publicId: true } }
+        }
+      });
+
+      const allowedIds = new Set<string>();
+      validParticipants.forEach(p => {
+        if (p.conversationId) allowedIds.add(p.conversationId);
+        if (p.conversation?.publicId) allowedIds.add(p.conversation.publicId);
+      });
+
+      data.conversationIds.forEach(id => {
+        if (allowedIds.has(id)) {
+          client.join(`conv_${id}`);
+        }
+      });
+    } catch (err) {
+      this.logger.error('Failed to verify room join authorization', err);
     }
   }
 

@@ -41,17 +41,16 @@ const Avatar = forwardRef(({
   children
 }, ref) => {
   const initialProcessedSrc = getProcessedAvatarUrl(src);
-  const syncResolved = mediaCache.getSyncUrl(initialProcessedSrc) || (initialProcessedSrc && (initialProcessedSrc.startsWith('/') || initialProcessedSrc.startsWith('http') || initialProcessedSrc.startsWith('data:') || initialProcessedSrc.startsWith('blob:')) ? initialProcessedSrc : null);
+  const syncResolved = mediaCache.getSyncUrl(initialProcessedSrc) || (initialProcessedSrc && isImageUrl(initialProcessedSrc) ? initialProcessedSrc : null);
 
-  const [imgSrc, setImgSrc] = useState(syncResolved);
+  const [imgSrc, setImgSrc] = useState(syncResolved || defaultAvatarImg);
   const [hasLoaded, setHasLoaded] = useState(Boolean(syncResolved));
   const [hasError, setHasError] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
     
-    if (!initialProcessedSrc) {
+    if (!initialProcessedSrc || initialProcessedSrc === defaultAvatarImg) {
       setImgSrc(defaultAvatarImg);
       setHasLoaded(true);
       setHasError(false);
@@ -94,7 +93,7 @@ const Avatar = forwardRef(({
     return () => {
       isMounted = false;
     };
-  }, [initialProcessedSrc, retryCount]);
+  }, [initialProcessedSrc]);
 
   const sizeValue = typeof size === 'number' ? `${size}px` : size;
   const hasValidImageSrc = isImageUrl(imgSrc);
@@ -127,12 +126,16 @@ const Avatar = forwardRef(({
   };
   
   const handleError = () => {
-    if (retryCount === 0 && initialProcessedSrc) {
+    if (initialProcessedSrc && initialProcessedSrc !== defaultAvatarImg) {
       mediaCache.invalidate(initialProcessedSrc);
-      setRetryCount(1);
-      return;
     }
-    setHasError(true);
+    if (imgSrc !== defaultAvatarImg) {
+      setImgSrc(defaultAvatarImg);
+      setHasLoaded(true);
+      setHasError(false);
+    } else {
+      setHasError(true);
+    }
   };
 
   return (
@@ -149,7 +152,7 @@ const Avatar = forwardRef(({
         {showImage ? (
           <img
             src={imgSrc}
-            alt={name || (isGroup ? 'Group Avatar' : 'User Avatar')}
+            alt=""
             loading="lazy"
             decoding="async"
             className={styles.avatarImg}

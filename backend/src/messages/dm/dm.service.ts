@@ -82,52 +82,46 @@ export class DmService extends MessagingCoreService {
 
     const convIds = participants.map(p => p.conversation.id);
 
-    const lastMessages = await Promise.all(
-      participants.map(async (part) => {
-        const cId = part.conversation.id;
-        const clearedAt = part.clearedAt;
-        const whereClause: any = {
-          conversationId: cId,
-          deletedAt: null
-        };
-        if (clearedAt) {
-          whereClause.createdAt = { gt: clearedAt };
-        }
-        const lastMsg = await this.prisma.message.findFirst({
-          where: whereClause,
-          orderBy: { createdAt: 'desc' },
-          select: { id: true, conversationId: true, createdAt: true, senderId: true, type: true, payload: true, sender: { select: { id: true, displayName: true, username: true } } }
-        });
-        return { cId, lastMsg };
-      })
-    );
+    // Batched single query for all last messages instead of N+1 Promise.all findFirst
+    const recentMessages = convIds.length > 0 ? await this.prisma.message.findMany({
+      where: {
+        conversationId: { in: convIds },
+        deletedAt: null
+      },
+      orderBy: { createdAt: 'desc' },
+      distinct: ['conversationId'],
+      select: {
+        id: true,
+        conversationId: true,
+        createdAt: true,
+        senderId: true,
+        type: true,
+        payload: true,
+        sender: { select: { id: true, displayName: true, username: true } }
+      }
+    }) : [];
 
-    const lastMsgMap = new Map(
-      lastMessages.map(({ cId, lastMsg }) => {
-        if (!lastMsg) return [cId, null];
-        const payload = (lastMsg.payload as any) || {};
-        let text = payload.text || '';
-        if (!text) {
-          const mType = (payload.mediaType || lastMsg.type || '').toLowerCase();
-          if (mType.includes('image') || mType.includes('photo')) text = 'Photo';
-          else if (mType.includes('video')) text = 'Video';
-          else if (mType.includes('audio') || mType.includes('voice')) text = 'Audio';
-          else if (payload.mediaUrl) text = 'Attachment';
-        }
-        return [
-          cId,
-          {
-            createdAt: lastMsg.createdAt,
-            senderId: lastMsg.senderId,
-            senderName: lastMsg.sender?.displayName || lastMsg.sender?.username || 'Member',
-            type: lastMsg.type ? lastMsg.type.toLowerCase() : 'chat',
-            text,
-            mediaUrl: payload.mediaUrl || null,
-            mediaType: payload.mediaType || null
-          }
-        ];
-      })
-    );
+    const lastMsgMap = new Map<string, any>();
+    recentMessages.forEach(msg => {
+      const payload = (msg.payload as any) || {};
+      let text = payload.text || '';
+      if (!text) {
+        const mType = (payload.mediaType || msg.type || '').toLowerCase();
+        if (mType.includes('image') || mType.includes('photo')) text = 'Photo';
+        else if (mType.includes('video')) text = 'Video';
+        else if (mType.includes('audio') || mType.includes('voice')) text = 'Audio';
+        else if (payload.mediaUrl) text = 'Attachment';
+      }
+      lastMsgMap.set(msg.conversationId, {
+        createdAt: msg.createdAt,
+        senderId: msg.senderId,
+        senderName: msg.sender?.displayName || msg.sender?.username || 'Member',
+        type: msg.type ? msg.type.toLowerCase() : 'chat',
+        text,
+        mediaUrl: payload.mediaUrl || null,
+        mediaType: payload.mediaType || null
+      });
+    });
 
     const unreadMap = new Map<string, number>();
     if (convIds.length > 0) {
@@ -181,13 +175,22 @@ export class DmService extends MessagingCoreService {
     const blockedByMeSet = new Set(userBlocks.filter(b => b.blockerId === userId).map(b => b.blockedId));
     const blockedByThemSet = new Set(userBlocks.filter(b => b.blockedId === userId).map(b => b.blockerId));
 
-    return Promise.all(participants.map(async (p) => {
+    const results = await Promise.all(participants.map(async (p) => {
       const conv = p.conversation;
       const allParticipants = conv.participants || [];
       const otherParticipantObj = allParticipants.find(part => part.userId !== userId);
       const otherUser = otherParticipantObj?.user;
 
       const lastMsgInfo = lastMsgMap.get(conv.id);
+
+      // DM Visibility Lifecycle (PENDING vs ACTIVE):
+      // If conversation has 0 messages and current user is NOT the creator/owner (User B recipient),
+      // do NOT show this conversation in User B's list until the first message is sent!
+      const isCreator = conv.ownerId === userId;
+      if (!lastMsgInfo && !isCreator && !conv.isInstantMatch) {
+        return null;
+      }
+
       const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
       const unreadCount = unreadMap.get(conv.id) || 0;
 
@@ -250,6 +253,8 @@ export class DmService extends MessagingCoreService {
         } : null
       };
     }));
+
+    return results.filter(Boolean);
   }
 
   async startDM(currentUserId: string, targetUserId: string) {
@@ -289,6 +294,7 @@ export class DmService extends MessagingCoreService {
       data: {
         publicId: newPubId,
         type: 'DM',
+        ownerId: currentUserId,
         participants: {
           create: [
             { userId: currentUserId, role: 'OWNER' },

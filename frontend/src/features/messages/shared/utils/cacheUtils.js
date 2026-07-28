@@ -21,17 +21,26 @@ export function appendMessageToCache(queryClient, activeChatId, message) {
     const targetPage = newPages[targetPageIndex] || { messages: [] };
     const existingMsgs = targetPage.messages || [];
 
-    // Deduplicate by id or tempId
+    // Deduplicate by id, clientId, or tempId
     const existsIndex = existingMsgs.findIndex((m) =>
       (message.id && m.id === message.id) ||
-      (message.tempId && (m.tempId === message.tempId || m.id === message.tempId)) ||
-      (message.id && m.tempId === message.id)
+      (message.clientId && (m.clientId === message.clientId || m.tempId === message.clientId || m.id === message.clientId)) ||
+      (message.tempId && (m.tempId === message.tempId || m.clientId === message.tempId || m.id === message.tempId)) ||
+      (message.id && (m.tempId === message.id || m.clientId === message.id))
     );
 
     let updatedMsgs;
     if (existsIndex !== -1) {
       updatedMsgs = [...existingMsgs];
-      updatedMsgs[existsIndex] = { ...existingMsgs[existsIndex], ...message };
+      const existing = existingMsgs[existsIndex];
+      const stableClientId = existing.clientId || message.clientId || existing.tempId || message.tempId;
+      const stableTempId = existing.tempId || message.tempId || existing.clientId || message.clientId;
+      updatedMsgs[existsIndex] = {
+        ...existing,
+        ...message,
+        clientId: stableClientId,
+        tempId: stableTempId,
+      };
     } else {
       updatedMsgs = [...existingMsgs, message];
     }
@@ -50,10 +59,17 @@ export function updateMessageInCache(queryClient, activeChatId, targetId, patch)
     const newPages = old.pages.map((page) => ({
       ...page,
       messages: (page.messages || []).map((m) => {
-        if (m.id === targetId || m.tempId === targetId) {
+        if (m.id === targetId || m.tempId === targetId || m.clientId === targetId) {
           // patch can be an object or a function(existingMsg) => object
           const updates = typeof patch === 'function' ? patch(m) : patch;
-          return { ...m, ...updates };
+          const stableClientId = m.clientId || updates.clientId || m.tempId || updates.tempId;
+          const stableTempId = m.tempId || updates.tempId || m.clientId || updates.clientId;
+          return {
+            ...m,
+            ...updates,
+            clientId: stableClientId,
+            tempId: stableTempId,
+          };
         }
         return m;
       }),

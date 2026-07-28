@@ -173,7 +173,7 @@ export default function ChatMessageList({
       } else {
         lastSystemText = null;
       }
-      const keyId = msg.id || msg.tempId || `temp_idx_${idx}`;
+      const keyId = msg.clientId || msg.tempId || msg.id || `temp_idx_${idx}`;
       if (seenMsgIds.has(keyId)) {
         return false;
       }
@@ -195,17 +195,18 @@ export default function ChatMessageList({
     let lastDateGroup = null;
     sortedMessages.forEach((msg, i) => {
       const dateGroup = getMessageDateGroup(msg);
+      const stableKey = msg.clientId || msg.tempId || msg.id || `idx_${i}`;
       if (dateGroup !== lastDateGroup) {
         items.push({
           type: 'date_separator',
-          id: `date_sep_${dateGroup}_${msg.id || i}`,
+          id: `date_sep_${dateGroup}_${stableKey}`,
           dateGroup
         });
         lastDateGroup = dateGroup;
       }
       items.push({
         type: 'message',
-        id: msg.id ? `msg_${msg.id}` : `msg_idx_${i}`,
+        id: `msg_${stableKey}`,
         msg,
         index: i,
         isLatestMessage: i === sortedMessages.length - 1

@@ -51,16 +51,20 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     placeholderData: undefined, // Override global (prev) => prev to prevent stale chat UI leak
   });
 
-  // Pre-seed from IDB for instant rendering
+  // Pre-seed from IDB for instant rendering (with cancellation check for rapid chat switches)
   useEffect(() => {
     if (!activeChatId) return;
-    const currentData = queryClient.getQueryData(['messages', activeChatId]);
+    let cancelled = false;
+    const targetChatId = activeChatId;
+
+    const currentData = queryClient.getQueryData(['messages', targetChatId]);
     if (!currentData || !currentData.pages || currentData.pages.length === 0) {
-      idbGetMessages(activeChatId).then(messages => {
+      idbGetMessages(targetChatId).then(messages => {
+        if (cancelled) return;
         if (messages && messages.length > 0) {
-          const latestData = queryClient.getQueryData(['messages', activeChatId]);
+          const latestData = queryClient.getQueryData(['messages', targetChatId]);
           if (!latestData || !latestData.pages || latestData.pages.length === 0) {
-            queryClient.setQueryData(['messages', activeChatId], {
+            queryClient.setQueryData(['messages', targetChatId], {
               pages: [{ messages, nextCursor: null }],
               pageParams: [undefined]
             });
@@ -68,6 +72,10 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         }
       });
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeChatId, queryClient]);
 
   // Decrypt E2EE messages on the fly (optimistic/background)
@@ -280,16 +288,18 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       payloadText = text.text || '';
     }
 
-    const tempId = options?.tempId || `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const clientId = options?.clientId || options?.tempId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+    const tempId = clientId;
     const tempMessage = {
       id: tempId,
       tempId,
+      clientId,
       conversationId: targetConvId,
       senderId: currentUser?.id || 'me',
       sender: currentUser || { id: 'me' },
       from: 'me',
       text: payloadText,
-      payload: { text: payloadText, mediaUrl, mediaType, mentions, inviteData: explicitInviteData },
+      payload: { text: payloadText, mediaUrl, mediaType, mentions, inviteData: explicitInviteData, clientId, tempId },
       replyTo,
       status: 'sending',
       createdAt: new Date().toISOString(),
@@ -312,20 +322,21 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         }
         if (uploadRes?.publicUrl) {
           finalMediaUrl = uploadRes.publicUrl;
-          updateMessageInCache(queryClient, targetConvId, tempId, {
+          updateMessageInCache(queryClient, targetConvId, clientId, {
             mediaUrl: finalMediaUrl,
             payload: { ...tempMessage.payload, mediaUrl: finalMediaUrl }
           });
         }
       } catch (err) {
-        updateMessageInCache(queryClient, targetConvId, tempId, { status: 'failed' });
-        idbPatchMessage(targetConvId, tempId, { status: 'failed' });
+        updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed' });
+        idbPatchMessage(targetConvId, clientId, { status: 'failed' });
         return;
       }
     }
 
     const payload = {
-      tempId,
+      tempId: clientId,
+      clientId,
       conversationId: targetConvId,
       text: payloadText,
       mediaUrl: finalMediaUrl,
@@ -341,56 +352,60 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
           if (response.message) {
             // Merge server data but NEVER downgrade status.
             // If the seen event already arrived and flipped to 'read', keep it.
-            updateMessageInCache(queryClient, targetConvId, tempId, (existing) => {
+            updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
               const currentStatus = existing?.status;
               const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
               const incomingRank = STATUS_RANK['sent'] ?? 1;
               const existingRank = STATUS_RANK[currentStatus] ?? -1;
               const finalStatus = existingRank > incomingRank ? currentStatus : 'sent';
-              idbPatchMessage(targetConvId, response.message.id || tempId, { ...response.message, status: finalStatus });
+              idbPatchMessage(targetConvId, response.message.id || clientId, { ...response.message, clientId, tempId: clientId, status: finalStatus });
               return {
                 ...response.message,
-                id: response.message.id || tempId,
+                id: response.message.id || clientId,
+                clientId,
+                tempId: clientId,
                 status: finalStatus,
               };
             });
           } else {
-            updateMessageInCache(queryClient, targetConvId, tempId, (existing) => {
+            updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
               const currentStatus = existing?.status;
               const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
               const existingRank = STATUS_RANK[currentStatus] ?? -1;
               const finalStatus = existingRank > 1 ? currentStatus : 'sent';
-              idbPatchMessage(targetConvId, tempId, { status: finalStatus });
+              idbPatchMessage(targetConvId, clientId, { status: finalStatus });
               return { status: finalStatus };
             });
           }
-          removePendingMessage(tempId);
+          removePendingMessage(clientId);
         } else {
-          updateMessageInCache(queryClient, targetConvId, tempId, { status: 'failed' });
-          idbPatchMessage(targetConvId, tempId, { status: 'failed' });
-          queuePendingMessage({ ...payload, tempId });
+          updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed' });
+          idbPatchMessage(targetConvId, clientId, { status: 'failed' });
+          queuePendingMessage({ ...payload, tempId: clientId, clientId });
         }
       });
     } else {
       try {
         const res = await getApi().sendMessage(targetConvId, payload);
-        updateMessageInCache(queryClient, targetConvId, tempId, (existing) => {
+        updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
           const currentStatus = existing?.status;
           const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
           const existingRank = STATUS_RANK[currentStatus] ?? -1;
           const finalStatus = existingRank > 1 ? currentStatus : 'sent';
-          idbPatchMessage(targetConvId, res?.id || tempId, { ...res, status: finalStatus });
+          idbPatchMessage(targetConvId, res?.id || clientId, { ...res, clientId, tempId: clientId, status: finalStatus });
           return {
             ...res,
-            id: res?.id || tempId,
+            id: res?.id || clientId,
+            clientId,
+            tempId: clientId,
             status: finalStatus,
           };
         });
-        removePendingMessage(tempId);
+        removePendingMessage(clientId);
       } catch (err) {
-        updateMessageInCache(queryClient, targetConvId, tempId, { status: 'failed' });
-        idbPatchMessage(targetConvId, tempId, { status: 'failed' });
-        queuePendingMessage({ ...payload, tempId });
+        updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed' });
+        idbPatchMessage(targetConvId, clientId, { status: 'failed' });
+        queuePendingMessage({ ...payload, tempId: clientId, clientId });
       }
     }
   }, [activeChatId, currentUser, queryClient, socket]);

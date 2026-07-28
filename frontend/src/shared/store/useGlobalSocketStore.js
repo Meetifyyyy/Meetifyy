@@ -11,13 +11,16 @@ export const useGlobalSocketStore = create((set, get) => ({
   connect: (token, deviceId) => {
     const { socket, _lastToken } = get();
 
-    // Skip reconnect if already connected with the same token
-    if (socket?.connected && token === _lastToken) {
+    // Singleton Guard: Skip if socket already exists and is active/connecting with the same token
+    if (socket && token === _lastToken && !socket.disconnected) {
       return;
     }
 
     if (socket) {
-      socket.disconnect();
+      try {
+        socket.removeAllListeners();
+        socket.disconnect();
+      } catch {}
     }
 
     const socketUrl = getBackendUrl();

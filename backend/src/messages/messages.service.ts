@@ -134,12 +134,16 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     const type = payload.mediaUrl || payload.mediaType ? 'MEDIA' as const : 'CHAT' as const;
 
     // 1. Idempotency Check
-    if (payload.tempId) {
+    const clientMsgId = (payload as any).clientId || payload.tempId;
+    if (clientMsgId) {
       const existing = await this.prisma.message.findFirst({
         where: {
           senderId,
           conversationId: realConvId,
-          payload: { path: ['tempId'], equals: payload.tempId }
+          OR: [
+            { payload: { path: ['tempId'], equals: clientMsgId } },
+            { payload: { path: ['clientId'], equals: clientMsgId } }
+          ]
         },
         include: {
           sender: { select: { id: true, username: true, displayName: true, avatar: true } },
@@ -147,7 +151,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         }
       });
       if (existing) {
-        return this.formatMessageResponse(existing, realConvId, conversationId, senderId);
+        return this.formatMessageResponse(existing, realConvId, conversationId, senderId, clientMsgId);
       }
     }
 
@@ -155,6 +159,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     const [message] = await this.prisma.$transaction([
       this.prisma.message.create({
         data: {
+          clientMessageId: clientMsgId || null,
           conversationId: realConvId,
           senderId,
           type,
@@ -167,7 +172,8 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
             inviteData: payload.inviteData || null,
             isForwarded: payload.isForwarded || false,
             forwardedFromMessageId: payload.forwardedFromMessageId || null,
-            tempId: payload.tempId || null,
+            tempId: clientMsgId || null,
+            clientId: clientMsgId || null,
           }
         },
         include: {
@@ -181,10 +187,10 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       })
     ]);
 
-    return this.formatMessageResponse(message, realConvId, conversationId, senderId);
+    return this.formatMessageResponse(message, realConvId, conversationId, senderId, clientMsgId);
   }
 
-  private async formatMessageResponse(message: any, realConvId: string, publicIdOrId: string, senderId: string) {
+  private async formatMessageResponse(message: any, realConvId: string, publicIdOrId: string, senderId: string, clientMsgIdHint?: string) {
     const msgPayload = (message.payload as any) || {};
     let replyToObj: any = null;
     if (message.replyTo) {
@@ -202,6 +208,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       select: { publicId: true }
     });
     const pubId = convRecord?.publicId || publicIdOrId;
+    const clientKey = msgPayload.clientId || msgPayload.tempId || clientMsgIdHint || null;
 
     return {
       id: message.id,
@@ -222,8 +229,44 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       mentions: msgPayload.mentions || [],
       inviteData: msgPayload.inviteData || null,
       replyTo: replyToObj,
-      status: 'sent'
+      status: 'sent',
+      tempId: clientKey,
+      clientId: clientKey,
     };
+  }
+
+  async getCatchupMessages(userId: string, sinceTimestamp: string) {
+    if (!userId || !sinceTimestamp) return [];
+    const sinceDate = new Date(sinceTimestamp);
+    if (isNaN(sinceDate.getTime())) return [];
+
+    const activeConvs = await this.prisma.conversationParticipant.findMany({
+      where: { userId, deletedAt: null, leftAt: null },
+      select: { conversationId: true }
+    });
+    if (activeConvs.length === 0) return [];
+
+    const convIds = activeConvs.map(c => c.conversationId);
+    const messages = await this.prisma.message.findMany({
+      where: {
+        conversationId: { in: convIds },
+        createdAt: { gt: sinceDate },
+        deletedAt: null,
+        deletedByUsers: { none: { userId } }
+      },
+      include: {
+        sender: { select: { id: true, username: true, displayName: true, avatar: true } },
+        replyTo: { select: { id: true, senderId: true, payload: true, sender: { select: { displayName: true, username: true } } } }
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 100
+    });
+
+    const formatted = await Promise.all(
+      messages.map(m => this.formatMessageResponse(m, m.conversationId, m.conversationId, userId))
+    );
+
+    return formatted;
   }
 
   async getConversationHistory(conversationId: string, currentUserId?: string, deviceId?: string, beforeCursor?: string, limit: number = 50) {

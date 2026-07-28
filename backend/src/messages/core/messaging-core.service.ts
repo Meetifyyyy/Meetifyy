@@ -414,6 +414,8 @@ export class MessagingCoreService {
   async markAsRead(conversationId: string, userId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
     const now = new Date();
+
+    // Fast Single DB Write (< 20ms)
     await this.prisma.conversationParticipant.upsert({
       where: {
         userId_conversationId: {
@@ -429,40 +431,17 @@ export class MessagingCoreService {
         conversationId: realConvId,
         lastReadAt: now
       }
-    }).catch(() => { });
+    }).catch(() => {});
 
-    const userSettings = await this.prisma.userSettings.findUnique({
-      where: { userId },
-      select: { readReceipts: true }
+    // Asynchronous domain event emit (non-blocking)
+    setImmediate(() => {
+      this.domainEventService.emit('conversation:seen', {
+        conversationId,
+        realConvId,
+        readerId: userId,
+        lastReadAt: now.toISOString(),
+      }, [userId]);
     });
-
-    if (userSettings?.readReceipts !== false) {
-      const participants = await this.prisma.conversationParticipant.findMany({
-        where: { conversationId: realConvId, deletedAt: null },
-        select: { userId: true, lastReadAt: true, user: { select: { settings: { select: { readReceipts: true } } } } }
-      });
-
-      for (const p of participants) {
-        if (p.userId !== userId) {
-          const otherParticipants = participants.filter(item => item.userId !== p.userId);
-          const otherReadTimestamps = otherParticipants
-            .filter(item => item.user?.settings?.readReceipts !== false && item.lastReadAt != null)
-            .map(item => new Date(item.lastReadAt!).getTime());
-
-          const isAllRead = otherReadTimestamps.length > 0 && otherReadTimestamps.length === otherParticipants.length;
-          const minOtherReadAt = isAllRead ? Math.min(...otherReadTimestamps) : 0;
-
-          this.domainEventService.emit('conversation:seen', {
-            conversationId,
-            realConvId,
-            readerId: userId,
-            lastReadAt: now.toISOString(),
-            isAllRead,
-            minOtherReadAt: minOtherReadAt ? new Date(minOtherReadAt).toISOString() : null
-          }, [p.userId]);
-        }
-      }
-    }
 
     return { success: true };
   }
