@@ -4,7 +4,7 @@ import Cropper from 'react-easy-crop';
 import { getCroppedImg } from './cropImageUtils';
 import { X, Check, Loader2 } from 'lucide-react';
 
-export default function MediaCropper({ imageFile, aspect, onCropComplete, onCancel }) {
+export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', onCropComplete, onCancel }) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
@@ -143,6 +143,14 @@ export default function MediaCropper({ imageFile, aspect, onCropComplete, onCanc
         
         {/* Cropper Area */}
         <div style={{ padding: '0 16px' }}>
+          <style>{`
+            .customSquircleCropArea {
+              border-radius: 24px !important;
+            }
+            .react-easy-crop_crop-area {
+              border-radius: ${cropShape === 'round' ? '50%' : '24px'} !important;
+            }
+          `}</style>
           <div style={{ position: 'relative', width: '100%', height: '340px', background: '#090d16', borderRadius: '16px', overflow: 'hidden' }}>
             <Cropper
               image={imageSrc}
@@ -153,7 +161,10 @@ export default function MediaCropper({ imageFile, aspect, onCropComplete, onCanc
               onCropComplete={onCropCompleteHandler}
               onZoomChange={setZoom}
               objectFit="contain"
-              cropShape={aspect === 1 ? 'round' : 'rect'}
+              cropShape={cropShape}
+              classes={{
+                cropAreaClassName: cropShape === 'round' ? '' : 'customSquircleCropArea'
+              }}
               showGrid={true}
             />
           </div>

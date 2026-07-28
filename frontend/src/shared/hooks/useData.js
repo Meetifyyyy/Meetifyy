@@ -1,102 +1,83 @@
 import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { communitiesApi, activitiesApi, usersApi, messagesApi, postsApi, groupApi, dmApi } from '../api/apiClient';
+import { communitiesApi, activitiesApi, usersApi, messagesApi, postsApi, groupApi, dmApi, activityChatApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
-import { useSavedPostsStore } from '../stores/savedPostsStore';
-import { supabase } from '../context/AuthContext';
-import { toast } from 'sonner';
+import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
 import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline';
 import { useDeleteComment } from '../../features/feed/hooks/useDeleteComment';
+import { showToast } from '../utils/toast';
+import { E2EEManager } from '../lib/signal/E2EEManager';
+
+// Feature-scoped hooks — useData delegates to these instead of declaring its own queries.
+// This makes useData a thin compatibility adapter while the real caching logic lives in
+// the feature hooks with proper staleTime, IndexedDB hydration, and invalidation policies.
+import { useCommunities, useCampusCommunities } from './useCommunities';
+import { useActivitiesList, useCampusActivities } from './useCrew';
+import { useConversations } from './useMessages';
+import { useCampusUsers } from './useProfile';
 
 /**
- * A centralized hook to bridge the old DataContext API with React Query.
- * This restores functionality to components that were broken when DataContext was removed.
+ * Compatibility adapter — preserves the existing API surface while delegating
+ * all data fetching to feature-scoped hooks. Migrate call sites to the specific
+ * hooks when touching a component.
  */
 export function useData() {
   const queryClient = useQueryClient();
   const { currentUser } = useAuth();
   const { mutate: deleteCommentMutate } = useDeleteComment();
+  const savedActivities = useSavedActivitiesStore((state) => state.savedActivities);
+  const toggleSaveActivity = useSavedActivitiesStore((state) => state.toggleSaveActivity);
 
   const deleteComment = (postId, commentId) => deleteCommentMutate({ commentId, postId });
 
-  // Queries
-  const { data: communities = [] } = useQuery({ queryKey: ['communities'], queryFn: communitiesApi.getAll, staleTime: 30_000 });
-  const { data: campusCommunities = [] } = useQuery({ queryKey: ['campusCommunities'], queryFn: communitiesApi.getCampusCommunities, staleTime: 30_000 });
-  const { data: rawActivities = [] } = useQuery({ queryKey: ['activities'], queryFn: activitiesApi.getAll, staleTime: 30_000 });
-  const { data: rawCampusActivities = [] } = useQuery({ queryKey: ['campusActivities'], queryFn: activitiesApi.getCampusActivities, staleTime: 30_000 });
-  const { data: rawConversations = [], isLoading: isConversationsLoading, error: conversationsError } = useQuery({ queryKey: ['conversations'], queryFn: messagesApi.getConversations, staleTime: 10_000 });
-  const { data: rawUsers = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll(50, 0), staleTime: 60_000 });
-  const { data: rawCampusUsers = [] } = useQuery({ queryKey: ['campusUsers'], queryFn: () => usersApi.getCampusUsers(200, 0), staleTime: 60_000 });
+  // ── Delegated queries (no longer declared here) ──────────────────────────
+  const { communities: rawCommunities, isLoading: isCommunitiesLoading } = useCommunities();
+  const { campusCommunities } = useCampusCommunities();
+  // Activities: flat list from infinite query cache
+  const rawActivities = useActivitiesList();
+  const { campusActivities: rawCampusActivities } = useCampusActivities();
+  const { conversations: processedConversations, rawConversations, isLoading: isConversationsLoading, error: conversationsError } = useConversations();
+  // Users: small general list (20) for mention lookups; campus limited to 50 not 200
+  const { data: rawUsers = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll(20, 0), staleTime: 5 * 60_000 });
+  const { campusUsers: rawCampusUsers } = useCampusUsers(50);
 
   const conversations = useMemo(() => {
     const actList = [...(rawActivities || []), ...(rawCampusActivities || [])];
     const uniqueActMap = new Map();
     actList.forEach(a => { if (a && a.id) uniqueActMap.set(a.id, a); });
 
-    const list = (rawConversations || []).map(c => {
-      const pList = c.participants || c.members || [];
-      const calculatedIsMember = (!c.type || c.type === 'DIRECT') 
-        ? true 
-        : pList.some(p => {
-            const id = typeof p === 'string' ? p : (p.id || p.userId);
-            return String(id) === String(currentUser?.id);
-          });
-      const isMember = c.isMember !== undefined ? c.isMember : calculatedIsMember;
-      const isGroup = c.type === 'GROUP' || c.isGroup;
+    // Start from processedConversations (already transformed by useConversations hook)
+    const list = [...(processedConversations || [])];
 
+    // Augment with activity chat enrichment for activity-type conversations
+    list.forEach((c, idx) => {
+      if (!c.isActivityChat && !c.activityId) return;
       const cleanActId = c.activityId || (String(c.id).startsWith('act_') ? String(c.id).replace('act_', '') : null);
       const matchedAct = cleanActId ? uniqueActMap.get(cleanActId) : null;
-      const activity = c.activity || matchedAct || null;
-
+      if (!matchedAct) return;
+      const activity = c.activity || matchedAct;
       const actStartDate = activity?.startDate || activity?.date || c.date;
       const actStatus = (activity?.status || c.status || '').toUpperCase();
       const calcHasStarted = actStatus === 'IN_PROGRESS' || actStatus === 'STARTED' || actStatus === 'COMPLETED' || actStatus === 'ENDED' || (actStartDate ? (new Date(actStartDate) <= new Date()) : false);
-      const hasStarted = c.hasStarted || c.activityHasStarted || calcHasStarted;
-
-      return {
+      list[idx] = {
         ...c,
-        internalId: c.internalId || c.id,
-        isMember,
         activity,
         activityId: c.activityId || (matchedAct ? matchedAct.id : null),
-        isActivityChat: Boolean(c.isActivityChat || activity || String(c.id).startsWith('act_')),
-        hasStarted,
-        activityHasStarted: hasStarted,
-        blocked: c.blocked || false,
-        isBlockedByMe: c.isBlockedByMe || false,
-        isBlockedByThem: c.isBlockedByThem || false,
-        lastMsg: (() => {
-          if (!c.lastMessage) return '';
-          if (c.lastMessage.text) return c.lastMessage.text;
-          if (c.lastMessage.mediaUrl) {
-            if (c.lastMessage.mediaType === 'image') return 'Photo';
-            if (c.lastMessage.mediaType === 'video') return 'Video';
-            return 'Audio';
-          }
-          return '';
-        })(),
-        lastSenderId: c.lastMessage?.senderId || null,
-        lastSenderName: c.lastMessage?.senderName || null,
-        timestamp: c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).getTime() : (c.updatedAt ? new Date(c.updatedAt).getTime() : 0),
-        unread: c.unreadCount || c.unread || 0,
-        online: isGroup ? false : Boolean(c.targetUser ? c.targetUser.isOnline : (c.isOnline ?? c.online ?? false)),
-        isOnline: isGroup ? false : Boolean(c.targetUser ? c.targetUser.isOnline : (c.isOnline ?? c.online ?? false)),
-        isGroup,
-        name: isGroup ? (c.name || 'Group Chat') : (c.name || c.targetUser?.displayName || c.targetUser?.username || 'Chat'),
-        avatar: isGroup ? (c.avatarKey || c.avatar || activity?.coverImage || null) : (c.avatar || c.targetUser?.avatar || null),
-        username: isGroup ? null : (c.targetUser?.username || null),
-        userId: isGroup ? null : (c.targetUser?.id || null),
-        targetUser: isGroup ? null : c.targetUser
+        isActivityChat: true,
+        hasStarted: c.hasStarted || calcHasStarted,
+        activityHasStarted: c.hasStarted || calcHasStarted,
+        avatar: c.avatar || activity?.coverImage || null,
       };
     });
 
+    // Inject virtual activity group chats that have no conversation record yet
     uniqueActMap.forEach((act) => {
       const hasGroup = act.createActivityGroup ?? act.createEventGroup ?? false;
       if (hasGroup) {
         const actConvId = `act_${act.id}`;
         const existsInRaw = list.some(c => String(c.id) === String(act.id) || String(c.id) === actConvId || String(c.activityId) === String(act.id));
         if (!existsInRaw) {
-          const isParticipant = act.creatorId === currentUser?.id || 
+          const isParticipant = act.creatorId === currentUser?.id ||
             (act.members && act.members.some(m => m.userId === currentUser?.id && m.status === 'MEMBER'));
           if (isParticipant) {
             const hostObj = act.creator || act.members?.find(m => m.userId === act.creatorId)?.user;
@@ -127,7 +108,7 @@ export function useData() {
     });
 
     return list;
-  }, [rawConversations, rawActivities, rawCampusActivities, currentUser?.id]);
+  }, [processedConversations, rawActivities, rawCampusActivities, currentUser?.id]);
 
   const mapActivity = (a) => {
     const startDate = a.startDate ? new Date(a.startDate) : null;
@@ -164,63 +145,43 @@ export function useData() {
   const crewActivities = rawActivities.map(mapActivity);
   const campusCrewActivities = rawCampusActivities.map(mapActivity);
 
-  // Aliases for old properties
-  const communitiesWithLookup = useMemo(() => {
-    const arr = [...communities];
-    communities.forEach(c => {
-      if (c && c.id) {
-        arr[c.id] = c;
-      }
-    });
-    return arr;
-  }, [communities]);
-
-  const campusGroups = communitiesWithLookup;
+  // Aliases for old properties — rawCommunities from useCommunities already has lookup keys
+  const communitiesWithLookup = rawCommunities;
+  const campusGroups = rawCommunities;
 
   // Users mapping (legacy support for { [id]: user })
   const users = useMemo(() => {
     const map = {};
-    rawUsers.forEach(u => {
-      map[u.id] = u;
-    });
+    (rawUsers || []).forEach(u => { if (u?.id) map[u.id] = u; });
     return map;
   }, [rawUsers]);
 
   const campusUsers = useMemo(() => {
     const map = {};
-    rawCampusUsers.forEach(u => {
-      map[u.id] = u;
-    });
+    (rawCampusUsers || []).forEach(u => { if (u?.id) map[u.id] = u; });
     return map;
   }, [rawCampusUsers]);
-  const posts = [];
 
   // Mutations
   const joinCommMutation = useMutation({
     mutationFn: (id) => communitiesApi.join(id),
-    onSuccess: () => queryClient.invalidateQueries(['communities']),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['communities'] }),
   });
 
-  const leaveCommMutation = useMutation({
-    mutationFn: (id) => communitiesApi.leave(id),
-    onSuccess: () => queryClient.invalidateQueries(['communities']),
-  });
-  
   const createCommMutation = useMutation({
     mutationFn: (data) => communitiesApi.create(data),
-    onSuccess: () => queryClient.invalidateQueries(['communities']),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['communities'] }),
   });
 
   const createActivityMutation = useMutation({
     mutationFn: (data) => activitiesApi.create(data),
-    onSuccess: () => queryClient.invalidateQueries(['activities']),
-  });
-  
-  const leaveActivityMutation = useMutation({
-    mutationFn: (id) => activitiesApi.leave(id),
-    onSuccess: () => queryClient.invalidateQueries(['activities']),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['activities'] }),
   });
 
+  const leaveActivityMutation = useMutation({
+    mutationFn: (id) => activitiesApi.leave(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['activities'] }),
+  });
 
   const createCampusGroup = async (name, desc, avatar) => {
     const res = await createCommMutation.mutateAsync({ name, description: desc, avatarKey: avatar });
@@ -313,7 +274,6 @@ export function useData() {
       status: 'sending',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       timestamp: Date.now(),
-      timestamp: Date.now(),
       createdAt: new Date().toISOString()
     };
 
@@ -344,7 +304,6 @@ export function useData() {
             const remoteUser = list.find(p => (p.id || p.userId) !== currentUser?.id);
             if (remoteUser) {
               const remoteId = remoteUser.id || remoteUser.userId;
-              const { E2EEManager } = await import('../lib/signal/E2EEManager');
               const ciphertext = await E2EEManager.getInstance().encryptMessage(remoteId, '1', payload.text);
               payload.text = typeof ciphertext === 'string' ? ciphertext : JSON.stringify(ciphertext);
               payload.type = 'e2ee';
@@ -396,10 +355,24 @@ export function useData() {
   const reactToMessage = (messageId, reaction) => messagesApi.reactToMessage(messageId, reaction);
 
   const startConversation = (targetUserOrIds, name) => {
-    const tempId = `temp_dm_${Date.now()}`;
     let targetUserObj = typeof targetUserOrIds === 'object' && !Array.isArray(targetUserOrIds) ? targetUserOrIds : null;
     const cleanIds = normalizeUserIds(targetUserOrIds);
+    const targetUserId = targetUserObj?.id || (Array.isArray(cleanIds) ? cleanIds[0] : cleanIds);
 
+    const existingConv = (conversations || []).find(c => {
+      if (c.isGroup || c.isActivityChat || String(c.id).startsWith('act_') || String(c.id).startsWith('c_')) return false;
+      const otherId = c.otherUser?.id || c.targetUser?.id || c.userId || c.participants?.find(p => {
+        const pId = typeof p === 'string' ? p : (p.id || p.userId || p.user?.id);
+        return String(pId) !== String(currentUser?.id);
+      })?.userId;
+      return String(otherId) === String(targetUserId);
+    });
+
+    if (existingConv) {
+      return existingConv.publicId || existingConv.id;
+    }
+
+    const tempId = `temp_dm_${Date.now()}`;
     const tempConv = {
       id: tempId,
       publicId: tempId,
@@ -569,8 +542,8 @@ export function useData() {
     } else {
       await usersApi.blockUser(targetUserId).catch(() => {});
     }
-    queryClient.invalidateQueries(['conversations']);
-    queryClient.invalidateQueries(['users']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    queryClient.invalidateQueries({ queryKey: ['users'] });
   };
   const updateGroupInfo = async (convId, name, avatarKey, description) => {
     queryClient.setQueryData(['conversations'], (old) => {
@@ -590,15 +563,15 @@ export function useData() {
     if (String(convId).startsWith('c_')) {
       const actualId = convId.replace('c_', '');
       return communitiesApi.updateGroupInfo(actualId, { name, description, avatarKey }).then(() => {
-        queryClient.invalidateQueries(['communities']);
-        queryClient.invalidateQueries(['conversations']);
-        queryClient.invalidateQueries(['group-chats']);
+        queryClient.invalidateQueries({ queryKey: ['communities'] });
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        queryClient.invalidateQueries({ queryKey: ['group-chats'] });
       });
     }
     await groupApi.updateGroupInfo(convId, { name, description, avatarKey });
-    queryClient.invalidateQueries(['conversations']);
-    queryClient.invalidateQueries(['group-chats']);
-    queryClient.invalidateQueries(['crew-activities']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    queryClient.invalidateQueries({ queryKey: ['group-chats'] });
+    queryClient.invalidateQueries({ queryKey: ['crew-activities'] });
   };
 
   const removeGroupMember = async (convId, memberId) => {
@@ -621,39 +594,38 @@ export function useData() {
     if (String(convId).startsWith('c_')) {
       const actualId = convId.replace('c_', '');
       return communitiesApi.removeGroupMember(actualId, memberId).then(() => {
-        queryClient.invalidateQueries(['communities']);
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries({ queryKey: ['communities'] });
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
       });
     }
     await groupApi.removeMember(convId, memberId);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
 
   const addGroupMember = async (convId, targetUserId) => {
     await groupApi.addMember(convId, targetUserId);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
 
   const leaveGroup = async (convId) => {
     if (String(convId).startsWith('c_')) {
       const actualId = convId.replace('c_', '');
-      return communitiesApi.leave(actualId).then(() => queryClient.invalidateQueries(['communities']));
+      return communitiesApi.leave(actualId).then(() => queryClient.invalidateQueries({ queryKey: ['communities'] }));
     }
     if (String(convId).startsWith('act_')) {
       const actualId = convId.replace('act_', '');
-      // UI is already updated by MessagesLayout before this is called — just fire API and invalidate
       return activitiesApi.leave(actualId).then(() => {
-        queryClient.invalidateQueries(['activities']);
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries({ queryKey: ['activities'] });
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
       });
     }
     await groupApi.leaveGroup(convId);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
 
-  const joinCrewActivity = (id) => activitiesApi.join(id).then(() => queryClient.invalidateQueries(['activities']));
+  const joinCrewActivity = (id) => activitiesApi.join(id).then(() => queryClient.invalidateQueries({ queryKey: ['activities'] }));
   const leaveCrewActivity = (id) => leaveActivityMutation.mutateAsync(id);
-  const requestToJoinActivity = (id) => activitiesApi.requestToJoinActivity(id).then(() => queryClient.invalidateQueries(['activities']));
+  const requestToJoinActivity = (id) => activitiesApi.requestToJoinActivity(id).then(() => queryClient.invalidateQueries({ queryKey: ['activities'] }));
   const requestToJoinGroup = (id) => {
     return groupApi.joinGroup(id)
       .catch(() => communitiesApi.join(id))
@@ -662,7 +634,7 @@ export function useData() {
         queryClient.invalidateQueries({ queryKey: ['communities'] });
       });
   };
-  const endCrewActivity = (id) => activitiesApi.endCrewActivity(id).then(() => queryClient.invalidateQueries(['activities']));
+  const endCrewActivity = (id) => activitiesApi.endCrewActivity(id).then(() => queryClient.invalidateQueries({ queryKey: ['activities'] }));
 
   const updateGroupSettings = async (convId, data) => {
     queryClient.setQueryData(['conversations'], (old) => {
@@ -672,12 +644,12 @@ export function useData() {
     if (String(convId).startsWith('c_')) {
       const actualId = String(convId).replace('c_', '');
       return communitiesApi.updateGroupInfo(actualId, data).then(() => {
-        queryClient.invalidateQueries(['communities']);
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries({ queryKey: ['communities'] });
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
       });
     }
     await groupApi.updateSettings(convId, data);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
 
   const updateGroupEditPermission = async (convId, permission) => {
@@ -688,12 +660,12 @@ export function useData() {
     if (String(convId).startsWith('c_')) {
       const actualId = String(convId).replace('c_', '');
       return communitiesApi.updateGroupInfo(actualId, { editGroupPermission: permission }).then(() => {
-        queryClient.invalidateQueries(['communities']);
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries({ queryKey: ['communities'] });
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
       });
     }
     await groupApi.updatePermissions(convId, permission);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
 
   const changeGroupOwner = async (convId, targetUserId) => {
@@ -730,7 +702,7 @@ export function useData() {
     try {
       await messagesApi.changeOwner(convId, targetUserId);
     } finally {
-      queryClient.invalidateQueries(['conversations']);
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
     }
   };
 
@@ -749,7 +721,7 @@ export function useData() {
       });
     });
     await messagesApi.promoteAdmin(convId, targetUserId);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
 
   const demoteFromAdmin = async (convId, targetUserId) => {
@@ -765,26 +737,26 @@ export function useData() {
       });
     });
     await messagesApi.demoteAdmin(convId, targetUserId);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
 
   const endGroup = async (convId) => {
     await messagesApi.endGroup(convId);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
 
   const acceptGroupJoinRequest = async (convId, targetUserId) => {
     await messagesApi.acceptJoinRequest(convId, targetUserId);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
 
   const declineGroupJoinRequest = async (convId, targetUserId) => {
     await messagesApi.declineJoinRequest(convId, targetUserId);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
-  const acceptJoinRequest = (id, userId) => activitiesApi.acceptJoinRequest(id, userId).then(() => queryClient.invalidateQueries(['activities']));
-  const rejectJoinRequest = (id, userId) => activitiesApi.rejectJoinRequest(id, userId).then(() => queryClient.invalidateQueries(['activities']));
-  const declineCrewInvitation = (id) => activitiesApi.declineCrewInvitation(id).then(() => queryClient.invalidateQueries(['activities']));
+  const acceptJoinRequest = (id, userId) => activitiesApi.acceptJoinRequest(id, userId).then(() => queryClient.invalidateQueries({ queryKey: ['activities'] }));
+  const rejectJoinRequest = (id, userId) => activitiesApi.rejectJoinRequest(id, userId).then(() => queryClient.invalidateQueries({ queryKey: ['activities'] }));
+  const declineCrewInvitation = (id) => activitiesApi.declineCrewInvitation(id).then(() => queryClient.invalidateQueries({ queryKey: ['activities'] }));
 
   const retryDirectMessage = async (convId, msgId) => {
     const cachedData = queryClient.getQueryData(['messages', convId]);
@@ -816,38 +788,29 @@ export function useData() {
           messages: (old.messages || []).map(m => m.id === msgId ? { ...res, from: 'me' } : m)
         };
       });
-      queryClient.invalidateQueries(['conversations']);
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
     } catch (err) {
-      toast.error(err?.message || 'Retry failed.');
+      showToast(err?.message || 'Retry failed.');
       const isBlockError = err?.message?.toLowerCase().includes('block') || err?.message?.includes('Forbidden');
       queryClient.setQueryData(['messages', convId], (old) => {
         if (!old) return old;
         if (isBlockError) {
-          return {
-            ...old,
-            messages: (old.messages || []).filter(m => m.id !== msgId)
-          };
+          return { ...old, messages: (old.messages || []).filter(m => m.id !== msgId) };
         }
-        return {
-          ...old,
-          messages: (old.messages || []).map(m => m.id === msgId ? { ...m, status: 'failed' } : m)
-        };
+        return { ...old, messages: (old.messages || []).map(m => m.id === msgId ? { ...m, status: 'failed' } : m) };
       });
     }
   };
-  const initializeCampusGroupConversation = () => {};
-
-
 
   const voteInPoll = async (postId, indices) => {
     await postsApi.voteInPoll(postId, indices);
-    queryClient.invalidateQueries(['posts']);
-    queryClient.invalidateQueries(['feed']);
+    queryClient.invalidateQueries({ queryKey: ['posts'] });
+    queryClient.invalidateQueries({ queryKey: ['feed'] });
   };
 
   const start24HrInstantChat = async (candidate, activity) => {
     const res = await messagesApi.startInstantMatchChat(candidate?.id, activity).catch(() => null);
-    queryClient.invalidateQueries(['conversations']);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
     return res?.id || null;
   };
 
@@ -857,14 +820,13 @@ export function useData() {
     campusGroups,
     users,
     crewActivities,
-    posts,
+    posts: [],
     conversations,
     isConversationsLoading,
     conversationsError,
     campusCommunities,
     campusCrewActivities,
     campusUsers,
-    currentUser,
     joinCommunity: joinCommMutation.mutate,
     createCampusGroup,
     addCommunity,
@@ -901,10 +863,11 @@ export function useData() {
     clearChat,
     toggleBlockUser,
     addGroupMember,
-    initializeCampusGroupConversation,
     leaveGroup,
     voteInPoll,
     start24HrInstantChat,
     deleteComment,
+    savedActivities,
+    toggleSaveActivity,
   };
 }

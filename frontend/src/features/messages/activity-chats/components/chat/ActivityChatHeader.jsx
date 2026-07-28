@@ -44,10 +44,13 @@ export default function ActivityChatHeader({
 
   const hasStarted = (() => {
     const status = (conversation.activity?.status || conversation.status || '').toUpperCase();
-    if (status === 'IN_PROGRESS' || status === 'STARTED' || status === 'COMPLETED' || status === 'ENDED') {
+    if (['IN_PROGRESS', 'STARTED', 'COMPLETED', 'ENDED', 'CLOSED', 'CANCELLED'].includes(status)) {
       return true;
     }
-    if (conversation.messages?.some(m => String(m.text || m.payload?.text).includes('Activity has started!'))) {
+    if (conversation.messages?.some(m => {
+      const txt = String(m.text || m.payload?.text || '');
+      return txt.includes('Activity has started!') || txt.includes('closed the group') || txt.includes('ended');
+    })) {
       return true;
     }
     if (activityHasStarted) return true;
@@ -71,7 +74,7 @@ export default function ActivityChatHeader({
 
       <div className={`${styles.msgChatUser} ${styles.msgChatUserClickable}`}>
         <div style={{ position: 'relative', width: '38px', height: '38px', flexShrink: 0 }}>
-          <Avatar src={conversation.avatar || conversation.activity?.coverImage} name={conversation.name} size="38px" isGroup />
+          <Avatar src={conversation.avatar || conversation.activity?.coverImage || conversation.coverImage || conversation.icon} name={conversation.name} size="38px" isGroup />
           <div 
             style={{ 
               position: 'absolute', 

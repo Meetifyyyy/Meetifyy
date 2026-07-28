@@ -20,6 +20,11 @@ export interface StorageProvider {
   createSignedDownloadUrl(key: string, expiresIn?: number): Promise<string>;
 
   /**
+   * Generate presigned URLs in bulk for downloading private files.
+   */
+  createSignedUrls(keys: string[], expiresIn?: number): Promise<{ [key: string]: string }>;
+
+  /**
    * Get the public URL for a file.
    */
   getPublicUrl(key: string): string;

@@ -73,6 +73,42 @@ export class SupabaseStorageProvider implements StorageProvider {
     }
   }
 
+  async createSignedUrls(keys: string[], expiresIn = 3600): Promise<{ [key: string]: string }> {
+    const result: { [key: string]: string } = {};
+    if (!keys || keys.length === 0) return result;
+
+    if (!this.supabaseService.isConfigured) {
+      keys.forEach(k => { result[k] = `/api/media/${k}`; });
+      return result;
+    }
+
+    try {
+      const { data, error } = await this.supabaseService.client.storage
+        .from(this.bucketName)
+        .createSignedUrls(keys, expiresIn);
+
+      if (error || !data) {
+        keys.forEach(k => { result[k] = `/api/media/${k}`; });
+        return result;
+      }
+
+      data.forEach((item, idx) => {
+        const itemKey = item.path || keys[idx];
+        if (itemKey) {
+          if (item.error || !item.signedUrl) {
+            result[itemKey] = `/api/media/${itemKey}`;
+          } else {
+            result[itemKey] = item.signedUrl;
+          }
+        }
+      });
+    } catch (e) {
+      keys.forEach(k => { result[k] = `/api/media/${k}`; });
+    }
+
+    return result;
+  }
+
   getPublicUrl(key: string): string {
     if (!this.supabaseService.isConfigured) return `/api/media/${key}`;
     try {

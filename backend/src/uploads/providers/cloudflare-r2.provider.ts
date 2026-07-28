@@ -61,6 +61,28 @@ export class CloudflareR2Provider implements StorageProvider {
     return getSignedUrl(this.s3, command, { expiresIn });
   }
 
+  async createSignedUrls(keys: string[], expiresIn = 3600): Promise<{ [key: string]: string }> {
+    const result: { [key: string]: string } = {};
+    if (!keys || keys.length === 0) return result;
+
+    if (!this.isConfigured || !this.s3) {
+      keys.forEach(k => { result[k] = `/mock-download/${k}`; });
+      return result;
+    }
+
+    await Promise.all(keys.map(async (key) => {
+      try {
+        const command = new GetObjectCommand({ Bucket: this.bucketName, Key: key });
+        const url = await getSignedUrl(this.s3!, command, { expiresIn });
+        result[key] = url;
+      } catch (e) {
+        result[key] = `/mock-download/${key}`;
+      }
+    }));
+
+    return result;
+  }
+
   getPublicUrl(key: string): string {
     if (!this.isConfigured) return `/mock-public/${key}`;
     return this.publicUrl

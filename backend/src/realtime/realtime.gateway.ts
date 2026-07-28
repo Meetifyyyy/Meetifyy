@@ -449,22 +449,26 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     client: Socket,
     data: { conversationId: string; lastMessageId?: string }
   ) {
-    const readerId = (client as any).userId;
-    if (!readerId || !data?.conversationId) return;
+    try {
+      const readerId = (client as any).userId;
+      if (!readerId || !data?.conversationId) return;
 
-    // Single DB write regardless of which event name the client used
-    await this.messagesService.markAsRead(data.conversationId, readerId);
-    const lastReadAt = new Date().toISOString();
+      // Single DB write regardless of which event name the client used
+      await this.messagesService.markAsRead(data.conversationId, readerId);
+      const lastReadAt = new Date().toISOString();
 
-    const payload = {
-      conversationId: data.conversationId,
-      lastMessageId: data.lastMessageId,
-      readerId,
-      lastReadAt,
-    };
+      const payload = {
+        conversationId: data.conversationId,
+        lastMessageId: data.lastMessageId,
+        readerId,
+        lastReadAt,
+      };
 
-    this.emitToConversation(data.conversationId, 'messages:seen', payload);
-    this.emitToConversation(data.conversationId, 'conversation:seen', payload);
+      this.emitToConversation(data.conversationId, 'messages:seen', payload);
+      this.emitToConversation(data.conversationId, 'conversation:seen', payload);
+    } catch (e) {
+      // Ignore transient pool timeouts or seen processing failures
+    }
   }
 
   @SubscribeMessage('ping')

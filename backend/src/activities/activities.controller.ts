@@ -1,8 +1,9 @@
-import { Controller, Get, Param, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, Delete, Query, Body, UseGuards } from '@nestjs/common';
 import { ActivitiesService } from './activities.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateActivityDto } from './dto/activity.dto';
+import { CacheControl } from '../common/decorators/cache-control.decorator';
 
 @Controller('api/activities')
 @UseGuards(JwtGuard)
@@ -10,16 +11,55 @@ export class ActivitiesController {
   constructor(private readonly activitiesService: ActivitiesService) {}
 
   @Get()
-  async getAllActivities(@CurrentUser() user: any) {
-    return this.activitiesService.getAllActivities(user?.id);
+  @CacheControl('private, max-age=30, stale-while-revalidate=120')
+  async getAllActivities(
+    @CurrentUser() user: any,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string
+  ) {
+    const parsedLimit = limit ? parseInt(limit, 10) : 20;
+    return this.activitiesService.getAllActivities(user?.id, parsedLimit, cursor);
   }
 
   @Get('campus')
-  async getCampusActivities(@CurrentUser() user: any) {
-    return this.activitiesService.getCampusActivities(user?.id);
+  @CacheControl('private, max-age=60, stale-while-revalidate=300')
+  async getCampusActivities(
+    @CurrentUser() user: any,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string
+  ) {
+    const parsedLimit = limit ? parseInt(limit, 10) : 20;
+    return this.activitiesService.getCampusActivities(user?.id, parsedLimit, cursor);
+  }
+
+  @Get('bookmarks')
+  @CacheControl('private, max-age=30, stale-while-revalidate=120')
+  async getSavedActivities(
+    @CurrentUser() user: any,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string
+  ) {
+    const parsedLimit = limit ? parseInt(limit, 10) : 20;
+    return this.activitiesService.getSavedActivities(user.id, parsedLimit, cursor);
+  }
+
+  @Get('bookmarks/ids')
+  async getSavedActivityIds(@CurrentUser() user: any) {
+    return this.activitiesService.getSavedActivityIds(user.id);
+  }
+
+  @Post(':id/bookmark')
+  async bookmarkActivity(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.activitiesService.bookmarkActivity(id, user.id);
+  }
+
+  @Delete(':id/bookmark')
+  async unbookmarkActivity(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.activitiesService.unbookmarkActivity(id, user.id);
   }
 
   @Get(':id')
+  @CacheControl('private, max-age=30, stale-while-revalidate=120')
   async getActivityById(@Param('id') id: string, @CurrentUser() user: any) {
     return this.activitiesService.getActivityById(id, user?.id);
   }

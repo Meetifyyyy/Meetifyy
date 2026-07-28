@@ -1,5 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { flushSync } from 'react-dom';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
 
 const ThemeContext = createContext();
 
@@ -10,6 +9,8 @@ export function ThemeProvider({ children }) {
     if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark';
     return 'light';
   });
+
+  const isTransitioningRef = useRef(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -31,6 +32,8 @@ export function ThemeProvider({ children }) {
   }, []);
 
   const toggleTheme = () => {
+    if (isTransitioningRef.current) return;
+
     localStorage.setItem('theme_preference_set', 'true');
     const newTheme = theme === 'light' ? 'dark' : 'light';
 
@@ -43,36 +46,45 @@ export function ThemeProvider({ children }) {
       return;
     }
 
+    isTransitioningRef.current = true;
     document.documentElement.classList.add('theme-transitioning');
 
-    const transition = document.startViewTransition(() => {
-      flushSync(() => {
+    try {
+      const transition = document.startViewTransition(() => {
         document.documentElement.setAttribute('data-theme', newTheme);
         setTheme(newTheme);
       });
-    });
 
-    transition.ready.then(() => {
-      const clipPathFrames = newTheme === 'dark'
-        ? ['inset(0 0 100% 0)', 'inset(0 0 0% 0)']
-        : ['inset(100% 0 0 0)', 'inset(0% 0 0 0)'];
+      transition.ready
+        .then(() => {
+          const clipPathFrames = newTheme === 'dark'
+            ? ['inset(0 0 100% 0)', 'inset(0 0 0% 0)']
+            : ['inset(100% 0 0 0)', 'inset(0% 0 0 0)'];
 
-      document.documentElement.animate(
-        {
-          clipPath: clipPathFrames,
-        },
-        {
-          duration: 1200,
-          easing: 'cubic-bezier(0.25, 1, 0.35, 1)',
-          fill: 'forwards',
-          pseudoElement: '::view-transition-new(root)',
-        }
-      );
-    });
+          document.documentElement.animate(
+            {
+              clipPath: clipPathFrames,
+            },
+            {
+              duration: 600,
+              easing: 'cubic-bezier(0.25, 1, 0.35, 1)',
+              fill: 'forwards',
+              pseudoElement: '::view-transition-new(root)',
+            }
+          );
+        })
+        .catch(() => {});
 
-    transition.finished.finally(() => {
+      transition.finished
+        .catch(() => {})
+        .finally(() => {
+          document.documentElement.classList.remove('theme-transitioning');
+          isTransitioningRef.current = false;
+        });
+    } catch (err) {
       document.documentElement.classList.remove('theme-transitioning');
-    });
+      isTransitioningRef.current = false;
+    }
   };
 
   return (
@@ -85,3 +97,4 @@ export function ThemeProvider({ children }) {
 export function useTheme() {
   return useContext(ThemeContext);
 }
+

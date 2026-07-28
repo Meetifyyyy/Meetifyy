@@ -134,7 +134,32 @@ export class AuthService {
         }
       }
 
-      const result = { ...existingUser, settings: userSettings, followingList };
+      const [postBookmarks, activityBookmarks, unreadNotifCount] = await Promise.all([
+        this.prisma.postBookmark.findMany({
+          where: { userId: existingUser.id },
+          select: { postId: true },
+          orderBy: { createdAt: 'desc' },
+          take: 100,
+        }).catch(() => []),
+        this.prisma.activityBookmark.findMany({
+          where: { userId: existingUser.id },
+          select: { activityId: true },
+        }).catch(() => []),
+        this.prisma.notification.count({
+          where: { recipientId: existingUser.id, readAt: null, deletedAt: null, type: { not: 'MESSAGE' as any } },
+        }).catch(() => 0),
+      ]);
+
+      const result = {
+        ...existingUser,
+        settings: userSettings,
+        followingList,
+        meta: {
+          postBookmarkIds: postBookmarks.map(b => b.postId),
+          activityBookmarkIds: activityBookmarks.map(b => b.activityId),
+          unreadNotifCount,
+        },
+      };
       this.syncCache.set(user.id, { data: result, timestamp: Date.now() });
       return result;
     }
@@ -345,4 +370,35 @@ export class AuthService {
 
     return { available: true };
   }
+
+  /** Returns only the IDs of posts the user has bookmarked — fast select, bundled into auth sync. */
+  async getPostBookmarkIds(userId: string): Promise<string[]> {
+    try {
+      const rows = await this.prisma.postBookmark.findMany({
+        where: { userId },
+        select: { postId: true },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      });
+      return rows.map(r => r.postId);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Returns only the IDs of activities the user has bookmarked — fast select, bundled into auth sync. */
+  async getActivityBookmarkIds(userId: string): Promise<string[]> {
+    try {
+      const rows = await this.prisma.activityBookmark.findMany({
+        where: { userId },
+        select: { activityId: true },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      });
+      return rows.map(r => r.activityId);
+    } catch {
+      return [];
+    }
+  }
 }
+

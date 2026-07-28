@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import styles from './ImageSearchModal.module.css';
-import { X, Search, Upload } from 'lucide-react';
+import { X, Search, Upload, Loader2 } from 'lucide-react';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import MediaCropper from '@shared/components/media/MediaCropper';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 export default function ImageSearchModal({ onClose, onSelect }) {
   const [query, setQuery] = useState('');
@@ -12,6 +13,16 @@ export default function ImageSearchModal({ onClose, onSelect }) {
   const [activeTab, setActiveTab] = useState('images'); // 'images' or 'gifs'
   const [cropTarget, setCropTarget] = useState(null);
   const fileInputRef = useRef(null);
+
+  useOverlayBack(true, onClose, { pushHistoryState: false });
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
 
   useEffect(() => {
@@ -232,18 +243,23 @@ export default function ImageSearchModal({ onClose, onSelect }) {
               type="button"
               className={styles.uploadBtn}
               onClick={handleUploadClick}
+              disabled={isCompressingRemote}
             >
-              <Upload size={14} style={{ marginRight: '6px' }} />
-              Upload Image
+              {isCompressingRemote ? (
+                <>
+                  <Loader2 size={14} style={{ marginRight: '6px', animation: 'spin 1s linear infinite' }} />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload size={14} style={{ marginRight: '6px' }} />
+                  Upload Image
+                </>
+              )}
             </button>
           </div>
 
           <div className={styles.isBody}>
-            {isCompressingRemote && (
-              <div className={styles.compressingBanner}>
-                Optimizing image...
-              </div>
-            )}
             {results.length === 0 && isLoading ? (
               <div className={styles.isGrid}>
                 {Array.from({ length: 9 }).map((_, i) => (

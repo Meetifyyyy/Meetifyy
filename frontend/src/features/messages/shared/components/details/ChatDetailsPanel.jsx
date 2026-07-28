@@ -7,7 +7,7 @@ import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ChatDetailsPanel.module.css';
 import sidebarStyles from '../sidebar/ConversationList.module.css';
-import { Pin, Trash2, LogOut, ChevronRight, User, Search, Ban, UserPlus, UserCheck, Check, X, Image as ImageIcon, CalendarDays, Calendar, CalendarX } from 'lucide-react';
+import { Pin, Trash2, LogOut, ChevronRight, User, Search, Ban, UserPlus, UserCheck, Check, X, Image as ImageIcon, CalendarDays, Calendar, CalendarX, ArrowLeft, MoreVertical } from 'lucide-react';
 import InviteModal from '../modals/InviteModal';
 import SafetyNumberModal from '../modals/SafetyNumberModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
@@ -461,10 +461,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       {/* Header */}
       <div className={styles.header}>
         <button className={styles.backBtn} onClick={onBack} title="Back to Chat">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>
+          <ArrowLeft size={20} />
         </button>
         <h2 className={styles.headerTitle}>
           {isOneOnOne ? 'Chat Details' : isEventGroup ? 'Activity Details' : 'Group Info'}
@@ -478,11 +475,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                 onClick={() => setShowMenu(!showMenu)}
                 title="Options"
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="1"></circle>
-                  <circle cx="12" cy="5" r="1"></circle>
-                  <circle cx="12" cy="19" r="1"></circle>
-                </svg>
+                <MoreVertical size={20} />
               </button>
               {showMenu && (
                 <div className={styles.dropdownMenu}>
@@ -503,11 +496,10 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       </div>
 
       <div className={styles.scrollBody} key="details-scroll">
-        {/* Large Avatar Block */}
         <div className={styles.avatarSection}>
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <Avatar
-              src={conversation.avatar || conversation.avatarKey || (isEventGroup ? activity?.coverImage : targetUser?.avatar)}
+              src={conversation.avatar || conversation.avatarKey || (isEventGroup ? (activity?.coverImage || conversation.coverImage || conversation.icon) : (targetUser?.avatar || conversation.otherUser?.avatar || conversation.targetUser?.avatar))}
               name={conversation.name || targetUser?.displayName}
               size="120px"
               isGroup={isGroup}

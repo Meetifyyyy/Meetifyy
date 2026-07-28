@@ -1,5 +1,7 @@
 import { Suspense, lazy } from 'react';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
+import { useData } from '@shared/hooks/useData';
+import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import ChatMessageList from './ChatMessageList';
 import ChatInputArea from './ChatInputArea';
@@ -57,6 +59,7 @@ export default function ChatAreaLayout({
   showTypingAvatar = false,
 }) {
   const { openViewer } = useMediaViewer();
+  const { sendDirectMessage } = useData();
 
   const messages = conversation?.messages || [];
 
@@ -105,6 +108,7 @@ export default function ChatAreaLayout({
           <div className={styles.loadingState}>Loading messages…</div>
         ) : (
           <ChatMessageList
+            key={conversation?.id || conversation?.publicId || 'chat-list'}
             messages={messages}
             conversation={conversation}
             currentUser={currentUser}
@@ -117,7 +121,7 @@ export default function ChatAreaLayout({
             onContextMenu={openContextMenu}
             onReplyTo={setReplyingTo}
             onRetry={onRetryMessage}
-            onOpenMediaModal={(url) => openViewer([{ url }], 0)}
+            onOpenMediaModal={(url, type) => openViewer([{ url, type: type || 'image' }], 0)}
             conversations={conversations}
             onMarkSeen={onMarkSeen}
           />
@@ -163,9 +167,24 @@ export default function ChatAreaLayout({
       {forwardingMsg && (
         <Suspense fallback={null}>
           <ForwardMessageModal
+            isOpen={Boolean(forwardingMsg)}
             msg={forwardingMsg}
             conversations={conversations}
             onClose={() => setForwardingMsg(null)}
+            onConfirmForward={async (targetIds) => {
+              try {
+                const text = forwardingMsg.text || forwardingMsg.payload?.text || '';
+                const mediaUrl = forwardingMsg.mediaUrl || forwardingMsg.payload?.mediaUrl || null;
+                const mediaType = forwardingMsg.mediaType || forwardingMsg.payload?.mediaType || null;
+                for (const id of targetIds) {
+                  await sendDirectMessage(id, { text, mediaUrl, mediaType });
+                }
+              } catch (e) {
+                // ignore
+              } finally {
+                setForwardingMsg(null);
+              }
+            }}
           />
         </Suspense>
       )}

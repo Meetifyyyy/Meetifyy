@@ -4,7 +4,6 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 import { communitiesApi } from '@shared/api/apiClient';
 
-import { useTheme } from '@shared/context/ThemeContext';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
@@ -21,7 +20,6 @@ export default function CampusCommunitiesPage() {
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
   const queryClient = useQueryClient();
-  const { theme } = useTheme();
   const { mutate: toggleJoin } = useJoinCommunity();
 
   const toggleJoinCampusGroup = (id) => {

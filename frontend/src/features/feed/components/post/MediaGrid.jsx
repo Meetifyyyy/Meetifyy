@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { getMediaUrl } from '@shared/api/apiClient';
+import React, { useState, useEffect } from 'react';
+import { mediaCache } from '@shared/utils/MediaCacheManager';
 import styles from './MediaGrid.module.css';
 
 /**
@@ -19,31 +19,51 @@ function normalizeMedia(mediaInput) {
 
   return rawList.map((item) => {
     const rawSrc = item.storageKey || item.url || item.path || '';
-    const src = getMediaUrl(rawSrc);
 
     const typeStr = (item.type || item.mimeType || '').toLowerCase();
     const isVideo =
       typeStr === 'video' ||
       typeStr.startsWith('video/') ||
-      src.endsWith('.mp4') ||
-      src.endsWith('.webm') ||
-      src.startsWith('data:video');
+      rawSrc.endsWith('.mp4') ||
+      rawSrc.endsWith('.webm') ||
+      rawSrc.startsWith('data:video');
 
     return {
       raw: item,
-      url: src,
+      rawSrc: rawSrc,
+      url: null, // Will be resolved
       isVideo,
       type: isVideo ? 'video' : 'image',
     };
-  }).filter((item) => Boolean(item.url));
+  }).filter((item) => Boolean(item.rawSrc));
 }
 
 export function MediaGrid({ media, onMediaClick }) {
-  const mediaList = normalizeMedia(media);
+  const [mediaList, setMediaList] = useState(() => normalizeMedia(media));
   const [loadedStates, setLoadedStates] = useState({});
   const [singleAspect, setSingleAspect] = useState(null);
 
-  if (!mediaList.length) return null;
+  useEffect(() => {
+    const list = normalizeMedia(media);
+    let isMounted = true;
+
+    Promise.all(list.map(async (item) => {
+      try {
+        const resolvedUrl = await mediaCache.getUrl(item.rawSrc);
+        return { ...item, url: resolvedUrl || item.rawSrc };
+      } catch (err) {
+        return { ...item, url: item.rawSrc };
+      }
+    })).then(resolvedList => {
+      if (isMounted) setMediaList(resolvedList);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [media]);
+
+  if (!mediaList.length || !mediaList[0].url) return null;
 
   const handleImageLoad = (index, e) => {
     setLoadedStates((prev) => ({ ...prev, [index]: true }));

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { showToast } from '@shared/utils/toast';
 import styles from './CreateCommunityModal.module.css';
 import { useData } from '@shared/hooks/useData';
@@ -72,6 +72,7 @@ const categories = [
 
 export default function CreateCommunityModal({ onClose, onCreated, isCampusCommunity = false }) {
   const { addCommunity } = useData();
+  useOverlayBack(true, onClose);
 
   // Wizard Steps state
   const [step, setStep] = useState(1);

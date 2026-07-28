@@ -141,8 +141,15 @@ export class UsersService {
 
   async getProfileByUsername(username: string, currentUserId?: string) {
     const cleanUsername = username.trim().toLowerCase();
-    const user = await this.prisma.user.findUnique({
-      where: { username: cleanUsername },
+
+    // First: fetch the user (needed for user.id before we can check block/follow)
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { username: cleanUsername },
+          { id: cleanUsername }
+        ]
+      },
       select: {
         id: true,
         username: true,
@@ -175,33 +182,37 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    if (currentUserId && currentUserId !== user.id) {
-      const isBlocked = await this.prisma.block.findFirst({
-        where: {
-          OR: [
-            { blockerId: currentUserId, blockedId: user.id },
-            { blockerId: user.id, blockedId: currentUserId },
-          ],
-        },
-      });
-      if (isBlocked) {
-        throw new NotFoundException('User not found');
-      }
+    // Now run block check and follow check in parallel — both need user.id
+    const [blockRecord, followRecord] = await Promise.all([
+      currentUserId && currentUserId !== user.id
+        ? this.prisma.block.findFirst({
+            where: {
+              OR: [
+                { blockerId: currentUserId, blockedId: user.id },
+                { blockerId: user.id, blockedId: currentUserId },
+              ],
+            },
+            select: { blockerId: true },
+          })
+        : Promise.resolve(null),
+      currentUserId && currentUserId !== user.id
+        ? this.prisma.follow.findUnique({
+            where: {
+              followerId_followingId: {
+                followerId: currentUserId,
+                followingId: user.id,
+              },
+            },
+            select: { followerId: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    if (blockRecord) {
+      throw new NotFoundException('User not found');
     }
 
-    let isFollowing = false;
-    if (currentUserId && currentUserId !== user.id) {
-      const follow = await this.prisma.follow.findUnique({
-        where: {
-          followerId_followingId: {
-            followerId: currentUserId,
-            followingId: user.id,
-          },
-        },
-        select: { followerId: true },
-      });
-      isFollowing = !!follow;
-    }
+    const isFollowing = !!followRecord;
 
     return {
       id: user.id,

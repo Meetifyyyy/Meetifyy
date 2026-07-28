@@ -2,32 +2,66 @@ import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nest
 import { PrismaService } from '../prisma/prisma.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
+import Redis from 'ioredis';
 
 @Injectable()
 export class CommunitiesService {
   private readonly logger = new Logger('CommunitiesService');
-  private communitiesCache = new Map<string, { data: any[]; timestamp: number }>();
+  private redis: Redis | null = null;
+  // In-process fallback used only when Redis is unavailable
+  private readonly localFallback = new Map<string, { data: any[]; timestamp: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly domainEventService: DomainEventService,
     private readonly redisService: RedisService,
-  ) {}
+  ) {
+    this.redis = this.redisService.getClient();
+  }
+
+  private async getCachedList(key: string): Promise<any[] | null> {
+    if (this.redis) {
+      try {
+        const raw = await this.redis.get(`communities:${key}`);
+        if (raw) return JSON.parse(raw);
+      } catch { /* fallthrough to local */ }
+    }
+    const local = this.localFallback.get(key);
+    if (local && Date.now() - local.timestamp < 60_000) return local.data;
+    return null;
+  }
+
+  private async setCachedList(key: string, data: any[], ttlSeconds = 60): Promise<void> {
+    if (this.redis) {
+      try {
+        await this.redis.set(`communities:${key}`, JSON.stringify(data), 'EX', ttlSeconds);
+        return;
+      } catch { /* fallthrough to local */ }
+    }
+    this.localFallback.set(key, { data, timestamp: Date.now() });
+  }
+
+  private async invalidateCommunityCache(): Promise<void> {
+    if (this.redis) {
+      try {
+        const keys = await this.redis.keys('communities:*');
+        if (keys.length) await this.redis.del(...keys);
+      } catch { /* ignore */ }
+    }
+    this.localFallback.clear();
+  }
 
   async getAllCommunities(userId?: string, limit = 30, offset = 0) {
     const cacheKey = `all:${limit}:${offset}`;
-    let communities;
-    const cached = this.communitiesCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < 60000) {
-      communities = cached.data;
-    } else {
+    let communities = await this.getCachedList(cacheKey);
+    if (!communities) {
       communities = await this.prisma.community.findMany({
         where: { deletedAt: null },
         orderBy: { memberCount: 'desc' },
         take: limit,
         skip: offset,
       });
-      this.communitiesCache.set(cacheKey, { data: communities, timestamp: Date.now() });
+      await this.setCachedList(cacheKey, communities, 60);
     }
 
     if (!userId || communities.length === 0) {
@@ -53,18 +87,15 @@ export class CommunitiesService {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { collegeId: true } });
     if (!user?.collegeId) return [];
     const cacheKey = `campus:${user.collegeId}:${limit}:${offset}`;
-    let communities;
-    const cached = this.communitiesCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < 60000) {
-      communities = cached.data;
-    } else {
+    let communities = await this.getCachedList(cacheKey);
+    if (!communities) {
       communities = await this.prisma.community.findMany({
         where: { deletedAt: null, isCampusCommunity: true, collegeId: user.collegeId },
         orderBy: { memberCount: 'desc' },
         take: limit,
         skip: offset,
       });
-      this.communitiesCache.set(cacheKey, { data: communities, timestamp: Date.now() });
+      await this.setCachedList(cacheKey, communities, 120);
     }
 
     if (communities.length === 0) return [];
@@ -157,6 +188,7 @@ export class CommunitiesService {
           data: { memberCount: { increment: 1 } },
         });
         this.domainEventService.emit('community.memberJoined', { communityId, userId, memberCount: community.memberCount + 1 });
+        await this.invalidateCommunityCache();
       }
 
       return { success: true };
@@ -180,6 +212,7 @@ export class CommunitiesService {
           data: { memberCount: { decrement: 1 } },
         });
         this.domainEventService.emit('community.memberLeft', { communityId, userId, memberCount: Math.max(0, community.memberCount - 1) });
+        await this.invalidateCommunityCache();
       }
 
       return { success: true };
@@ -227,7 +260,9 @@ export class CommunitiesService {
       }
     }
 
-    return this.prisma.community.create({ data: createData });
+    const created = await this.prisma.community.create({ data: createData });
+    await this.invalidateCommunityCache();
+    return created;
   }
 
   async updateCommunity(communityId: string, data: any, requestingUserId: string) {

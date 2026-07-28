@@ -98,6 +98,42 @@ export class StorageService {
     return this.storageProvider.getPublicUrl(key);
   }
 
+  async getSignedUrls(keys: string[], expiresIn = 3600): Promise<{ [key: string]: string }> {
+    if (!keys || keys.length === 0) return {};
+    return this.storageProvider.createSignedUrls(keys, expiresIn);
+  }
+
+  async confirmUpload(key: string, userId: string) {
+    const media = await this.prisma.media.findUnique({ where: { objectKey: key } });
+    if (!media) {
+      // If no media record exists, it might have been an unmonitored upload, let's create it
+      const exists = await this.storageProvider.exists(key);
+      if (!exists) return null;
+      return this.prisma.media.create({
+        data: {
+          ownerId: userId,
+          objectKey: key,
+          provider: this.providerName,
+          bucket: this.bucketName,
+          storageKey: key,
+          mimeType: 'application/octet-stream',
+          fileSize: 0,
+        },
+      });
+    }
+
+    // Optionally update metadata if we can get it from storage provider
+    const metadata = await this.storageProvider.getMetadata(key);
+    
+    return this.prisma.media.update({
+      where: { id: media.id },
+      data: {
+        fileSize: metadata?.contentLength || media.fileSize,
+        mimeType: metadata?.contentType || media.mimeType,
+      }
+    });
+  }
+
   async delete(key: string): Promise<boolean> {
     const deleted = await this.storageProvider.delete(key);
     if (deleted) {

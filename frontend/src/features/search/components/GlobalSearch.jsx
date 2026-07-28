@@ -103,23 +103,26 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
     setQuery(text);
     setIsFocused(false);
     addRecentSearch(text);
-    navigate(`/search?q=${encodeURIComponent(text)}`);
+    const onSearchPage = location.pathname === '/search';
+    navigate(`/search?q=${encodeURIComponent(text)}`, { replace: onSearchPage });
   };
 
   const handleRecentClick = (text) => {
     setQuery(text);
     setIsFocused(false);
-    navigate(`/search?q=${encodeURIComponent(text)}`);
+    const onSearchPage = location.pathname === '/search';
+    navigate(`/search?q=${encodeURIComponent(text)}`, { replace: onSearchPage });
   };
 
   const triggerSearch = () => {
     const trimmed = query.trim();
     addRecentSearch(trimmed);
     setIsFocused(false);
+    const onSearchPage = location.pathname === '/search';
     if (trimmed) {
-      navigate(`/search?q=${encodeURIComponent(trimmed)}`);
+      navigate(`/search?q=${encodeURIComponent(trimmed)}`, { replace: onSearchPage });
     } else {
-      navigate('/search');
+      navigate('/search', { replace: onSearchPage });
     }
   };
 

@@ -105,4 +105,90 @@
 
 .discoverGroupsCard:hover .discoverGroupsText {
   text-decoration: underline;
+}
+
+/* Plus Dropdown Menu */
+.headerActionsRelative {
+  position: relative;
+}
+
+.plusDropdownMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.16), 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 190px;
+  z-index: 1000;
+  animation: plusMenuFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:global([data-theme="dark"]) .plusDropdownMenu {
+  background: var(--color-bg-white, #1e1e1e);
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.15));
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.4), 0 4px 12px -2px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes plusMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.plusMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-main, #0f172a);
+  font-size: 0.86rem;
+  font-weight: 600;
+  font-family: var(--font-family-sans, sans-serif);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  text-align: left;
+  white-space: nowrap;
+}
+
+:global([data-theme="dark"]) .plusMenuItem {
+  color: #ffffff;
+}
+
+.plusMenuItem:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--color-primary, #8f0c13);
+}
+
+:global([data-theme="dark"]) .plusMenuItem:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.plusMenuIcon {
+  flex-shrink: 0;
+  color: var(--color-text-muted, #64748b);
+  transition: color 0.15s ease;
+}
+
+.plusMenuItem:hover .plusMenuIcon {
+  color: var(--color-primary, #8f0c13);
+}
+
+:global([data-theme="dark"]) .plusMenuItem:hover .plusMenuIcon {
+  color: #ffffff;
 }

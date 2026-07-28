@@ -1,51 +1,50 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
-import { CalendarDays } from 'lucide-react';
 import styles from './SharedActivityPreview.module.css';
-import sidebarStyles from '../components/sidebar/ConversationList.module.css';
 import { useData } from '@shared/hooks/useData';
 
 export function SharedActivityPreview({ activity: passedActivity }) {
   const navigate = useNavigate();
-  const { crewActivities } = useData();
+  const { crewActivities, campusCrewActivities } = useData();
 
-  const dbActivity = (crewActivities || []).find(act => act.id === passedActivity?.id) || {};
+  const allActs = [...(crewActivities || []), ...(campusCrewActivities || [])];
+  const dbActivity = allActs.find(act => act.id === passedActivity?.id) || {};
   const activity = { ...dbActivity, ...passedActivity };
 
   if (!activity || (!activity.id && !activity.title)) return null;
 
-  const activityDate = new Date(activity.date || Date.now());
-  const status = (activity?.status || '').toUpperCase();
-  const hasStarted = status === 'IN_PROGRESS' || status === 'STARTED' || status === 'COMPLETED' || status === 'ENDED' || (activity.startDate || activity.date ? (new Date(activity.startDate || activity.date) <= new Date()) : false);
+  const activityDate = new Date(activity.startDate || activity.date || Date.now());
 
   const handleClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
     if (activity?.id) {
-      navigate(`/crew/${activity.id}`, { state: { from: 'chat' } });
+      navigate(`/crew/${activity.id}`, { state: { activity, from: 'chat' } });
     }
   };
 
+  const coverSrc = activity.image || activity.coverImage;
+
   return (
     <div className={styles.activityShareCardNew} onClick={handleClick}>
-      {(activity.image || activity.coverImage) && (
-        <img src={activity.image || activity.coverImage} loading="lazy" className={styles.activityShareCover} alt="Cover" />
-      )}
+      <div className={styles.activityShareCoverWrapper}>
+        <img 
+          src={coverSrc || '/default_activity.webp'} 
+          loading="lazy" 
+          className={styles.activityShareCover} 
+          alt="Activity cover" 
+          onError={(e) => { e.target.onerror = null; e.target.src = '/default_activity.webp'; }}
+        />
+      </div>
       <div className={styles.activityShareContentNew}>
-        {hasStarted ? (
-          <div className={sidebarStyles.startedCalendarBadge}>
-            <CalendarDays size={28} />
-          </div>
-        ) : (
-          <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
-        )}
+        <CalendarIcon date={activity.startDate || activity.date} dateLabel={activity.dateLabel} />
         <div className={styles.activityShareInfoNew}>
           <div className={styles.activityShareTitleNew}>
-            <span>{activity.title}</span>
+            <span>{activity.title || 'Activity'}</span>
           </div>
           <div className={styles.activityShareMetaRowNew}>
-            {activity.dateLabel || activityDate.toLocaleDateString()} • {activity.time}
+            {activity.dateLabel || (isNaN(activityDate.getTime()) ? '' : activityDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))} • {activity.time || 'TBD'}
           </div>
           {activity.location && (
             <div className={styles.activityShareLocationNew}>

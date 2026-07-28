@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
-import { activitiesApi } from '@shared/api/apiClient';
+import { useActivities, useCampusActivities } from '@shared/hooks/useCrew';
 import { useDebounce } from '@shared/hooks/useDebounce';
+import { prefetchActivity } from '@shared/hooks/prefetch';
 import PageLayout from '@layout/PageLayout';
 import PageHeader from '@layout/PageHeader';
 import CrewCard from '../components/cards/CrewCard';
@@ -14,59 +15,80 @@ import styles from './FindYourCrewPage.module.css';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 
 export default function FindYourCrewPage() {
-  const { currentUser, collegeName } = useAuth();
-  const { data: rawActivities = [], isLoading: loading } = useQuery({
-    queryKey: ['activities'],
-    queryFn: activitiesApi.getAll,
+  const { currentUser } = useAuth();
+  const queryClient = useQueryClient();
+
+  // Feature-scoped hooks — no more duplicate queries
+  const {
+    activities: rawActivities,
+    isLoading: loading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useActivities();
+  const { campusActivities: rawCampusActivities } = useCampusActivities();
+
+  const mapActivity = (a) => ({
+    ...a,
+    hostId: a.creatorId,
+    hostName: a.creator?.displayName || a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
+    hostUsername: a.creator?.username || a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
+    hostAvatar: a.creator?.avatar || a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
+    participants: a.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
+    pendingRequests: a.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
+    slotsFilled: a.members?.filter(m => m.status === 'MEMBER').length || 1,
+    slotsNeeded: a.maxMembers || 999,
+    _membersData: a.members?.map(m => m.user) || [],
   });
 
-  const crewActivities = useMemo(() => {
-    return rawActivities.map(a => ({
-      ...a,
-      hostId: a.creatorId,
-      hostName: a.creator?.displayName || a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
-      hostUsername: a.creator?.username || a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
-      hostAvatar: a.creator?.avatar || a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
-      participants: a.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
-      pendingRequests: a.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
-      slotsFilled: a.members?.filter(m => m.status === 'MEMBER').length || 1,
-      slotsNeeded: a.maxMembers || 999,
-      _membersData: a.members?.map(m => m.user) || []
-    }));
-  }, [rawActivities]);
+  const crewActivities = useMemo(() => rawActivities.map(mapActivity), [rawActivities]);
+
+  const allCombinedActivities = useMemo(() => {
+    const map = new Map();
+    [...(rawActivities || []), ...(rawCampusActivities || [])].forEach(a => {
+      if (a && a.id) map.set(a.id, a);
+    });
+    return Array.from(map.values()).map(mapActivity);
+  }, [rawActivities, rawCampusActivities]);
+
   const savedActivities = useSavedActivitiesStore(state => state.savedActivities);
   const navigate = useNavigate();
   const location = useLocation();
   const [selectedTab, setSelectedTab] = useState(location.state?.selectedTab || 'For You');
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 200);
-  const [visibleCount, setVisibleCount] = useState(3);
 
-  const observer = useRef(null);
-  const lastElementRef = useCallback(node => {
-    if (loading) return;
-    if (observer.current) observer.current.disconnect();
-    observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting) {
-        setVisibleCount(prev => prev + 3);
-      }
-    });
-    if (node) observer.current.observe(node);
-  }, [loading]);
+  // IntersectionObserver sentinel — triggers fetchNextPage instead of visibleCount++
+  const sentinelRef = useRef(null);
+  useEffect(() => {
+    if (!sentinelRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: '400px' } // Start fetching 400px before the user reaches the bottom
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const filteredActivities = useMemo(() => {
     if (!crewActivities) return [];
 
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const now = new Date();
 
-    // Helper: is this activity "ended" by date/status?
+    // Helper: has activity ended?
     const isActivityEnded = (a) => {
-      if (a.status === 'ENDED' || a.status === 'CANCELLED') return true;
-      if (a.endDate && new Date(a.endDate) < now) return true;
-      if (a.date) {
-        const activityDate = new Date(a.date);
+      if (!a) return false;
+      const status = (a.status || '').toUpperCase();
+      if (status === 'ENDED' || status === 'CANCELLED' || status === 'CLOSED' || status === 'COMPLETED') return true;
+      if (a.endDate) {
+        if (new Date(a.endDate) < today) return true;
+      }
+      if (a.startDate || a.date) {
+        const activityDate = new Date(a.startDate || a.date);
         activityDate.setHours(0, 0, 0, 0);
         if (activityDate < today) return true;
       }
@@ -90,6 +112,12 @@ export default function FindYourCrewPage() {
       return false;
     };
 
+    // Saved tab: show ALL activities saved by the user (whether ended or not, campus or global)
+    if (selectedTab === 'Saved') {
+      const savedList = allCombinedActivities.filter(a => savedActivities?.includes(a.id));
+      return filterActivities(savedList, { search: debouncedSearchQuery });
+    }
+
     // "My Activities" — show ALL activities the user is part of (created or joined), regardless of college visibility.
     if (selectedTab === 'My Activities') {
       const mine = crewActivities.filter(a =>
@@ -106,8 +134,6 @@ export default function FindYourCrewPage() {
 
     if (selectedTab === 'For You') {
       if (!searchQuery) activities = activities.slice(0, 10);
-    } else if (selectedTab === 'Saved') {
-      activities = activities.filter(a => savedActivities?.includes(a.id));
     } else if (selectedTab === '1 on 1' || selectedTab === 'Popular') {
       activities = activities.filter(a => {
         const limit = Number(a.maxMembers || a.slotsNeeded || a.maxParticipants || 0);
@@ -116,7 +142,7 @@ export default function FindYourCrewPage() {
     }
 
     return filterActivities(activities, { search: debouncedSearchQuery });
-  }, [crewActivities, debouncedSearchQuery, selectedTab, currentUser, savedActivities, collegeName, searchQuery]);
+  }, [crewActivities, allCombinedActivities, debouncedSearchQuery, selectedTab, currentUser, savedActivities, searchQuery]);
 
   const { ongoingActivities, upcomingActivities, pastActivities } = useMemo(() => {
     if (selectedTab !== 'My Activities') {
@@ -199,7 +225,7 @@ export default function FindYourCrewPage() {
             tabs={['For You', '1 on 1', 'My Activities', 'Saved']}
             activeTab={selectedTab === 'Popular' ? '1 on 1' : selectedTab}
             onTabChange={setSelectedTab}
-            tabVariant="underline"
+            tabVariant="pills"
           />
 
           <div className={styles.layout}>
@@ -273,7 +299,14 @@ export default function FindYourCrewPage() {
                     ) : (
                       <div className={styles.list}>
                         {filteredActivities.length > 0 ? (
-                          filteredActivities.slice(0, visibleCount).map(a => <CrewCard key={a.id} activity={a} onClick={() => handleActivityClick(a)} />)
+                          filteredActivities.map(a => (
+                            <CrewCard
+                              key={a.id}
+                              activity={a}
+                              onClick={() => handleActivityClick(a)}
+                              onMouseEnter={() => prefetchActivity(queryClient, a.id)}
+                            />
+                          ))
                         ) : (
                           <div className={styles.empty}>
                             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
@@ -286,8 +319,14 @@ export default function FindYourCrewPage() {
                       </div>
                     )}
                     
-                    {selectedTab !== 'My Activities' && filteredActivities.length > visibleCount && (
-                      <div ref={lastElementRef} style={{ height: '20px', width: '100%', margin: '1rem 0' }}></div>
+                    {selectedTab !== 'My Activities' && hasNextPage && (
+                      <div ref={sentinelRef} style={{ height: '20px', width: '100%', margin: '1rem 0' }} />
+                    )}
+                    {isFetchingNextPage && (
+                      <div className={styles.list}>
+                        <CrewCardSkeleton />
+                        <CrewCardSkeleton />
+                      </div>
                     )}
                   </section>
                 </>

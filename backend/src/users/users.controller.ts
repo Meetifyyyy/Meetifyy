@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Req, Query } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { CacheControl } from '../common/decorators/cache-control.decorator';
 
 @Controller('api/users')
 export class UsersController {
@@ -8,6 +9,7 @@ export class UsersController {
 
   @Get()
   @UseGuards(JwtGuard)
+  @CacheControl('private, max-age=60, stale-while-revalidate=300')
   async getAllUsers(@Query('limit') limit?: string, @Query('offset') offset?: string) {
     const limitNum = limit ? parseInt(limit, 10) : 20;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
@@ -16,6 +18,7 @@ export class UsersController {
 
   @Get('campus')
   @UseGuards(JwtGuard)
+  @CacheControl('private, max-age=600, stale-while-revalidate=1800')
   async getCampusUsers(@Req() req: any, @Query('limit') limit?: string, @Query('offset') offset?: string) {
     const limitNum = limit ? parseInt(limit, 10) : 100;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
@@ -24,6 +27,7 @@ export class UsersController {
 
   @Get('id/:id')
   @UseGuards(JwtGuard)
+  @CacheControl('private, max-age=120, stale-while-revalidate=600')
   async getUserById(@Param('id') id: string) {
     return this.usersService.getUserById(id);
   }
@@ -50,6 +54,7 @@ export class UsersController {
 
   @Get(':username')
   @UseGuards(JwtGuard)
+  @CacheControl('private, max-age=120, stale-while-revalidate=600')
   async getProfile(@Param('username') username: string, @Req() req: any) {
     const currentUserId = req.user?.id; 
     return this.usersService.getProfileByUsername(username, currentUserId);
@@ -57,6 +62,7 @@ export class UsersController {
 
   @Get(':username/followers')
   @UseGuards(JwtGuard)
+  @CacheControl('private, max-age=60, stale-while-revalidate=300')
   async getFollowers(
     @Param('username') username: string,
     @Req() req: any,
@@ -70,6 +76,7 @@ export class UsersController {
 
   @Get(':username/following')
   @UseGuards(JwtGuard)
+  @CacheControl('private, max-age=60, stale-while-revalidate=300')
   async getFollowing(
     @Param('username') username: string,
     @Req() req: any,

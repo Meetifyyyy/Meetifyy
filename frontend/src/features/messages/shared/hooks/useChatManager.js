@@ -7,6 +7,7 @@ import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipe
 import { useData } from '@shared/hooks/useData';
 import { appendMessageToCache, updateMessageInCache, updateConversationPreview } from '../utils/cacheUtils';
 import { queuePendingMessage, removePendingMessage } from '../utils/offlineSync';
+import { idbGetMessages, idbSaveMessages, idbPatchMessage } from '../utils/idbMessages';
 
 
 export function useChatManager(activeChatId, type = 'messages', currentUserParam) {
@@ -35,12 +36,40 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     isFetchingNextPage
   } = useInfiniteQuery({
     queryKey: ['messages', activeChatId],
-    queryFn: ({ pageParam }) => activeChatId ? getApi().getHistory(activeChatId, undefined, pageParam) : null,
+    queryFn: async ({ pageParam }) => {
+      if (!activeChatId) return null;
+      const res = await getApi().getHistory(activeChatId, undefined, pageParam);
+      if (res && res.messages) {
+        idbSaveMessages(activeChatId, res.messages).catch(console.warn);
+      }
+      return res;
+    },
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
     enabled: !!activeChatId && !String(activeChatId).startsWith('temp_') && !String(activeChatId).startsWith('c_temp_'),
     staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 2, // Purge decrypted RAM cache aggressively after 2 minutes
+    placeholderData: undefined, // Override global (prev) => prev to prevent stale chat UI leak
   });
+
+  // Pre-seed from IDB for instant rendering
+  useEffect(() => {
+    if (!activeChatId) return;
+    const currentData = queryClient.getQueryData(['messages', activeChatId]);
+    if (!currentData || !currentData.pages || currentData.pages.length === 0) {
+      idbGetMessages(activeChatId).then(messages => {
+        if (messages && messages.length > 0) {
+          const latestData = queryClient.getQueryData(['messages', activeChatId]);
+          if (!latestData || !latestData.pages || latestData.pages.length === 0) {
+            queryClient.setQueryData(['messages', activeChatId], {
+              pages: [{ messages, nextCursor: null }],
+              pageParams: [undefined]
+            });
+          }
+        }
+      });
+    }
+  }, [activeChatId, queryClient]);
 
   // Decrypt E2EE messages on the fly (optimistic/background)
   useEffect(() => {
@@ -119,32 +148,88 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     });
   }, [historyPages]);
 
+  const lastMarkedReadRef = useRef(null);
+
+  const clearActiveChatUnread = useCallback((force = false) => {
+    if (!activeChatId) return;
+
+    // Skip redundant network requests if this chat was already marked read in the current session
+    if (!force && lastMarkedReadRef.current === activeChatId) {
+      return;
+    }
+
+    lastMarkedReadRef.current = activeChatId;
+
+    queryClient.setQueryData(['conversations'], (oldConvs) => {
+      if (!Array.isArray(oldConvs)) return oldConvs;
+      const cleanActiveId = String(activeChatId).replace(/^(act_)+/, '');
+      let modified = false;
+
+      const updated = oldConvs.map((c) => {
+        const cleanCid = String(c.id).replace(/^(act_)+/, '');
+        const cleanActId = c.activityId ? String(c.activityId).replace(/^(act_)+/, '') : null;
+        const isMatch = String(c.id) === String(activeChatId) ||
+          String(c.publicId) === String(activeChatId) ||
+          String(c.internalId) === String(activeChatId) ||
+          cleanCid === cleanActiveId ||
+          (cleanActId && cleanActId === cleanActiveId);
+
+        if (isMatch && ((c.unreadCount || 0) > 0 || (c.unread || 0) > 0)) {
+          modified = true;
+          return {
+            ...c,
+            unreadCount: 0,
+            unread: 0,
+          };
+        }
+        return c;
+      });
+
+      return modified ? updated : oldConvs;
+    });
+
+    if (socket?.connected) {
+      socket.emit('conversation:mark_seen', { conversationId: activeChatId });
+    }
+
+    messagesApi.markAsRead(activeChatId).catch(() => {});
+  }, [activeChatId, queryClient, socket]);
+
+  useEffect(() => {
+    lastMarkedReadRef.current = null;
+    clearActiveChatUnread(true);
+  }, [activeChatId]);
+
   // Strict Seen Evaluator: checks all 5 conditions (open, active app, visible window, near bottom, rendered)
   const markSeenIfEligible = useCallback((isNearBottom = true) => {
     isNearBottomRef.current = isNearBottom;
 
-    if (!socket?.connected || !activeChatId) return;
+    if (!activeChatId) return;
     if (typeof document === 'undefined') return;
 
     const isVisible = document.visibilityState === 'visible';
     const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
 
     if (isVisible && hasFocus && isNearBottom) {
-      const lastMsg = allMessages[allMessages.length - 1];
-      socket.emit('messages:seen', {
-        conversationId: activeChatId,
-        lastMessageId: lastMsg?.id,
-      });
-      socket.emit('conversation:mark_seen', {
-        conversationId: activeChatId,
-        lastMessageId: lastMsg?.id,
-      });
+      clearActiveChatUnread();
+
+      if (socket?.connected) {
+        const lastMsg = allMessages[allMessages.length - 1];
+        socket.emit('messages:seen', {
+          conversationId: activeChatId,
+          lastMessageId: lastMsg?.id,
+        });
+        socket.emit('conversation:mark_seen', {
+          conversationId: activeChatId,
+          lastMessageId: lastMsg?.id,
+        });
+      }
     }
-  }, [socket, activeChatId, allMessages]);
+  }, [socket, activeChatId, allMessages, clearActiveChatUnread]);
 
   // Listen for window focus & tab visibility changes
   useEffect(() => {
-    if (!socket || !activeChatId) return;
+    if (!activeChatId) return;
 
     const handleActiveStateChange = () => {
       markSeenIfEligible(isNearBottomRef.current);
@@ -159,7 +244,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       window.removeEventListener('blur', handleActiveStateChange);
       document.removeEventListener('visibilitychange', handleActiveStateChange);
     };
-  }, [socket, activeChatId, markSeenIfEligible]);
+  }, [activeChatId, markSeenIfEligible]);
 
   // Optimistic Message Sender (supports both positional arguments and single object parameter)
   const sendMessageOptimistically = useCallback(async (convIdOrObj, textArg, replyToArg, mentionsArg, mediaUrlArg, mediaTypeArg, explicitLinkPreviewArg, explicitInviteDataArg, optionsArg) => {
@@ -213,6 +298,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
 
     appendMessageToCache(queryClient, targetConvId, tempMessage);
     updateConversationPreview(queryClient, targetConvId, payloadText, tempMessage.createdAt, 0);
+    idbSaveMessages(targetConvId, [tempMessage]);
 
     let finalMediaUrl = mediaUrl;
 
@@ -234,6 +320,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         }
       } catch (err) {
         updateMessageInCache(queryClient, targetConvId, tempId, { status: 'failed' });
+        idbPatchMessage(targetConvId, tempId, { status: 'failed' });
         return;
       }
     }
@@ -260,10 +347,12 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
               const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
               const incomingRank = STATUS_RANK['sent'] ?? 1;
               const existingRank = STATUS_RANK[currentStatus] ?? -1;
+              const finalStatus = existingRank > incomingRank ? currentStatus : 'sent';
+              idbPatchMessage(targetConvId, response.message.id || tempId, { ...response.message, status: finalStatus });
               return {
                 ...response.message,
                 id: response.message.id || tempId,
-                status: existingRank > incomingRank ? currentStatus : 'sent',
+                status: finalStatus,
               };
             });
           } else {
@@ -271,12 +360,15 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
               const currentStatus = existing?.status;
               const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
               const existingRank = STATUS_RANK[currentStatus] ?? -1;
-              return { status: existingRank > 1 ? currentStatus : 'sent' };
+              const finalStatus = existingRank > 1 ? currentStatus : 'sent';
+              idbPatchMessage(targetConvId, tempId, { status: finalStatus });
+              return { status: finalStatus };
             });
           }
           removePendingMessage(tempId);
         } else {
           updateMessageInCache(queryClient, targetConvId, tempId, { status: 'failed' });
+          idbPatchMessage(targetConvId, tempId, { status: 'failed' });
           queuePendingMessage({ ...payload, tempId });
         }
       });
@@ -287,15 +379,18 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
           const currentStatus = existing?.status;
           const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
           const existingRank = STATUS_RANK[currentStatus] ?? -1;
+          const finalStatus = existingRank > 1 ? currentStatus : 'sent';
+          idbPatchMessage(targetConvId, res?.id || tempId, { ...res, status: finalStatus });
           return {
             ...res,
             id: res?.id || tempId,
-            status: existingRank > 1 ? currentStatus : 'sent',
+            status: finalStatus,
           };
         });
         removePendingMessage(tempId);
       } catch (err) {
         updateMessageInCache(queryClient, targetConvId, tempId, { status: 'failed' });
+        idbPatchMessage(targetConvId, tempId, { status: 'failed' });
         queuePendingMessage({ ...payload, tempId });
       }
     }
@@ -346,6 +441,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
 
       // Append to local cache (handles the publicId/internalId alias the event arrived with)
       appendMessageToCache(queryClient, activeChatId, msg);
+      idbSaveMessages(activeChatId, [msg]);
       updateConversationPreview(
         queryClient,
         convId,
@@ -383,6 +479,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
               msg.status !== 'seen'
             ) {
               hasChanges = true;
+              idbPatchMessage(activeChatId, msg.id || msg.tempId, { status: 'delivered' });
               return { ...msg, status: 'delivered' };
             }
             return msg;
@@ -421,6 +518,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
               // Strictly before lastReadAt — no buffer to prevent race conditions
               if (!isNaN(msgTime) && msgTime <= lastReadTime) {
                 hasChanges = true;
+                idbPatchMessage(activeChatId, msg.id || msg.tempId, { status: 'read' });
                 return { ...msg, status: 'read' };
               }
             }

@@ -316,11 +316,10 @@
   width: 100%;
   cursor: pointer;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease;
 }
 
 .createCardBtn:hover {
-  transform: translateY(-1px);
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
 }
 
@@ -334,6 +333,11 @@
   justify-content: center;
   color: white;
   flex-shrink: 0;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.createCardBtn:hover .createCardBtnIcon {
+  transform: rotate(90deg);
 }
 
 .btnAsterisk {
@@ -349,6 +353,10 @@
   font-size: 0.82rem;
   letter-spacing: 0.05em;
   font-family: var(--font-family-sans), sans-serif;
+  flex: 1;
+  text-align: center;
+  margin-left: 12px;
+  transition: margin 0.25s ease;
 }
 
 .createCardBtnArrow {
@@ -356,10 +364,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 0;
   margin-right: 12px;
-  transition: transform 0.2s ease;
+  opacity: 0;
+  transform: translateX(-12px);
+  overflow: hidden;
+  transition: opacity 0.25s ease, transform 0.25s ease, width 0.25s ease, margin 0.25s ease;
+}
+
+.createCardBtn:hover .createCardBtnText {
+  margin-left: 0;
 }
 
 .createCardBtn:hover .createCardBtnArrow {
-  transform: translateX(4px);
+  opacity: 1;
+  width: 16px;
+  margin-right: 14px;
+  transform: translateX(0);
 }

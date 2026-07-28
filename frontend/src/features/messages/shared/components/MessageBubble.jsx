@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Reply, MoreVertical } from 'lucide-react';
 import Avatar from '@shared/components/avatar/Avatar';
 import { isImageUrl } from '@shared/utils/avatar';
+import { mediaCache } from '@shared/utils/MediaCacheManager';
 import RichText from '@shared/components/mentions/RichText';
 import { generateConversationUrl } from '@shared/utils/conversationUrl';
 import { SharedPostPreview } from '../previews/SharedPostPreview';
@@ -14,6 +15,7 @@ import { SharedActivityPreview } from '../previews/SharedActivityPreview';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import styles from './ChatMessageList.module.css';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
+import { useData } from '@shared/hooks/useData';
 
 function MessageHoverActions({ msg, isMe, onReplyTo, onContextMenu }) {
   const handleReply = (e) => {
@@ -108,16 +110,55 @@ function SystemMessageContent({ text, navigate }) {
 }
 
 function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false, onErrorChange }) {
+  const [imgSrc, setImgSrc] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
+    let isMounted = true;
     setLoaded(false);
     setError(false);
     if (onErrorChange) onErrorChange(false);
-  }, [src]);
+
+    if (!src) {
+      setError(true);
+      if (onErrorChange) onErrorChange(true);
+      return;
+    }
+
+    const fetchUrl = async () => {
+      try {
+        const resolvedUrl = await mediaCache.getUrl(src);
+        if (isMounted) {
+          if (resolvedUrl) {
+            setImgSrc(resolvedUrl);
+          } else {
+            setError(true);
+            if (onErrorChange) onErrorChange(true);
+          }
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(true);
+          if (onErrorChange) onErrorChange(true);
+        }
+      }
+    };
+
+    fetchUrl();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [src, retryCount]);
 
   const handleError = () => {
+    if (retryCount === 0 && src) {
+      mediaCache.invalidate(src);
+      setRetryCount(1);
+      return;
+    }
     setError(true);
     if (onErrorChange) onErrorChange(true);
   };
@@ -141,10 +182,10 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
         <div className={`${styles.msgMediaSkeleton} ${isStandalone ? styles.msgMediaSkeletonStandalone : ''}`} />
       )}
       <img
-        src={src}
+        src={imgSrc || src}
         alt={alt || ''}
         className={`${className} ${!loaded ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
-        onClick={onClick}
+        onClick={() => onClick && onClick(imgSrc || src)}
         onLoad={() => setLoaded(true)}
         onError={handleError}
       />
@@ -359,9 +400,9 @@ const MessageBubble = memo(function MessageBubble({
   
   const inviteData = msg.inviteData || msg.payload?.inviteData;
   const activityData = msg.payload?.activity || msg.payload?.inviteData?.activity;
-  const postData = msg.payload?.post;
-  const profileData = msg.payload?.profile;
-  const communityData = msg.payload?.community;
+  const postData = msg.payload?.post || msg.payload?.inviteData?.post;
+  const profileData = msg.payload?.profile || msg.payload?.inviteData?.profile;
+  const communityData = msg.payload?.community || msg.payload?.inviteData?.community;
   
   let rawText = msg.decryptedText || msg.text || msg.payload?.text || msg.content || '';
   if (rawText && typeof rawText === 'object') {
@@ -386,8 +427,22 @@ const MessageBubble = memo(function MessageBubble({
 
   let innerContent = null;
 
-  // 1. Group Invite Card Message
-  if (inviteData && inviteData.type !== 'activityShare') {
+  // 1. Profile Share Card Message
+  if (profileData || (inviteData && inviteData.type === 'profileShare')) {
+    const prof = profileData || inviteData?.profile;
+    innerContent = (
+      <div className={styles.msgImageCardContainer}>
+        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+          <SharedProfilePreview profile={prof} />
+          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+        </div>
+        <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
+          {timeText}
+        </div>
+      </div>
+    );
+  } else if (inviteData && inviteData.type !== 'activityShare' && inviteData.type !== 'profileShare' && inviteData.type !== 'postShare' && inviteData.type !== 'communityShare') {
+    // 2. Group Invite Card Message
     innerContent = (
       <div className={styles.msgImageCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
@@ -499,6 +554,18 @@ const MessageBubble = memo(function MessageBubble({
     );
   }
 
+  const { getUserById } = useData();
+
+  const handleSenderProfileClick = (e) => {
+    e.stopPropagation();
+    const senderId = msg.senderId || msg.sender?.id || (msg.from !== 'me' ? msg.from : null);
+    const liveUser = (senderId && getUserById) ? getUserById(senderId) : null;
+    const target = liveUser?.username || msg.senderUsername || msg.sender?.username || senderId;
+    if (target) {
+      navigate(`/profile/${target}`);
+    }
+  };
+
   return (
     <div 
       className={`${styles.msgBubbleContainer} ${isMe ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}
@@ -508,13 +575,15 @@ const MessageBubble = memo(function MessageBubble({
     >
       <div className={styles.msgBubbleWrapper}>
         {showSenderAvatar && (
-          <div className={styles.msgAvatar}>
+          <div className={styles.msgAvatar} onClick={handleSenderProfileClick} style={{ cursor: 'pointer' }} title={`View ${msg.senderName || 'profile'}`}>
             <Avatar src={msg.senderAvatar} name={msg.senderName} size="28px" />
           </div>
         )}
         <div className={styles.msgBubbleContent}>
           {showSenderAvatar && (
-            <span className={styles.msgSenderName}>{msg.senderName}</span>
+            <span className={styles.msgSenderName} onClick={handleSenderProfileClick} style={{ cursor: 'pointer' }} title={`View ${msg.senderName || 'profile'}`}>
+              {msg.senderName}
+            </span>
           )}
           
           {innerContent}

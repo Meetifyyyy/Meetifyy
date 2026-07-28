@@ -172,6 +172,7 @@ model User {
   pollVotes                PollVote[]
   posts                    Post[]
   bookmarks                PostBookmark[]
+  activityBookmarks        ActivityBookmark[]
   likes                    PostLike[]
   shares                   PostShare[]
   reportsMade              Report[]                  @relation("Reporter")
@@ -489,6 +490,7 @@ model CrewActivity {
   college             College?              @relation("ActivityCollege", fields: [collegeId], references: [id])
   members             CrewActivityMember[]
   conversation        Conversation?         @relation("ActivityConversation")
+  bookmarks           ActivityBookmark[]
 
   coverMedia Media? @relation("ActivityCover", fields: [coverMediaId], references: [id])
 
@@ -496,6 +498,8 @@ model CrewActivity {
   @@index([createdAt])
   @@index([status])
   @@index([deletedAt, status, createdAt])
+  @@index([status, createdAt(sort: Desc)])         // getAllActivities ORDER BY
+  @@index([collegeId, status, createdAt(sort: Desc)]) // getCampusActivities filter
 }
 
 model CrewActivityMember {
@@ -548,6 +552,21 @@ model PostBookmark {
   @@unique([userId, postId])
   @@index([userId])
   @@index([postId])
+  @@index([createdAt])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model ActivityBookmark {
+  id         String       @id @default(uuid())
+  userId     String
+  activityId String
+  createdAt  DateTime     @default(now())
+  activity   CrewActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, activityId])
+  @@index([userId])
+  @@index([activityId])
   @@index([createdAt])
   @@index([userId, createdAt(sort: Desc)])
 }

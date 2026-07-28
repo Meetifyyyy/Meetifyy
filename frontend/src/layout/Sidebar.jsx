@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useData } from '@shared/hooks/useData';
 import { useAuth } from '@shared/context/AuthContext';
 
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import styles from './Sidebar.module.css';
@@ -83,10 +84,13 @@ const SidebarCommunityItem = ({ comm, navigate }) => {
   );
 };
 
+import { useUnreadCounts } from '@features/messages/hooks/useUnreadCounts';
+
 export default function Sidebar({ onCommunityClick }) {
   const { initial, currentUser } = useAuth();
   const { communities } = useData();
-  const navigate = useNavigate();
+  const { total: unreadMessagesCount } = useUnreadCounts();
+  const { smartNavigate: navigate } = useSmartNavigation();
   const location = useLocation();
   const [isCommunitiesMenuOpen, setIsCommunitiesMenuOpen] = useState(false);
 
@@ -143,6 +147,11 @@ export default function Sidebar({ onCommunityClick }) {
               <MessagesOutline />
             )}
             <span className={styles.linkText}>Messages</span>
+            {unreadMessagesCount > 0 && (
+              <span className={styles.badge}>
+                {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+              </span>
+            )}
           </a>
 
           <a
