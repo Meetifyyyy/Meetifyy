@@ -22,19 +22,12 @@ export class AuthController {
   @Post('sync')
   @UseGuards(JwtGuard)
   async syncProfile(@CurrentUser() user: { id: string; email: string }) {
-    // Bundle bookmark IDs alongside profile sync — eliminates 2 extra frontend requests
-    const [syncedUser, postBookmarks, activityBookmarks] = await Promise.all([
-      this.authService.syncProfile(user),
-      this.authService.getPostBookmarkIds(user.id),
-      this.authService.getActivityBookmarkIds(user.id),
-    ]);
+    const syncedUser = await this.authService.syncProfile(user);
+    // syncProfile already fetches bookmarks internally — do not query them again.
     return {
       message: 'Profile synchronized successfully',
       user: syncedUser,
-      meta: {
-        postBookmarkIds: postBookmarks,
-        activityBookmarkIds: activityBookmarks,
-      },
+      meta: (syncedUser as any).meta || {},
     };
   }
 

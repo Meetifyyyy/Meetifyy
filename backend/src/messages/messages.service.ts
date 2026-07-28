@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
 import { DomainEventService } from '../events/domain-event.service';
@@ -6,7 +7,8 @@ import { generatePublicId } from '../common/utils/public-id.util';
 import { MessagingCoreService } from './core/messaging-core.service';
 
 @Injectable()
-export class MessagesService extends MessagingCoreService implements OnModuleInit {
+export class MessagesService extends MessagingCoreService implements OnModuleInit, OnModuleDestroy {
+  private instantMatchCleanupTimer?: NodeJS.Timeout;
   protected readonly logger = new Logger(MessagesService.name);
 
   constructor(
@@ -18,15 +20,39 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
   }
 
   async onModuleInit() {
-    // publicId backfill for existing conversations was a one-time migration.
-    // Handled via: UPDATE "Conversation" SET "publicId" = gen_random_uuid()::text
-    //              WHERE "publicId" IS NULL OR "publicId" = '';
-    // No per-startup loop needed.
+    await this.cleanupExpiredInstantMatches();
+    this.instantMatchCleanupTimer = setInterval(
+      () => void this.cleanupExpiredInstantMatches(),
+      15 * 60 * 1000,
+    );
+    this.instantMatchCleanupTimer.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.instantMatchCleanupTimer) clearInterval(this.instantMatchCleanupTimer);
+  }
+
+  private async cleanupExpiredInstantMatches() {
+    try {
+      await this.prisma.conversation.deleteMany({
+        where: { isInstantMatch: true, expiresAt: { lt: new Date() } },
+      });
+    } catch (error) {
+      this.logger.warn(`Expired instant-match cleanup failed: ${(error as Error).message}`);
+    }
   }
 
   async resolveConversationId(identifier: string, currentUserId?: string): Promise<string> {
     if (!identifier) return identifier;
     const cleanId = String(identifier).replace(/^(act_)+/, '');
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+    if (isUuid) {
+      const directConv = await this.prisma.conversation.findUnique({
+        where: { id: cleanId },
+        select: { id: true }
+      });
+      if (directConv?.id) return directConv.id;
+    }
     try {
       const conv = await this.prisma.conversation.findFirst({
         where: {
@@ -109,20 +135,18 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
 
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId: senderId, conversationId: realConvId } }
+    const participants = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId: realConvId, deletedAt: null },
+      select: { userId: true, leftAt: true }
     });
-    if (!participant || (participant as any).leftAt || participant.deletedAt) {
+
+    const senderParticipant = participants.find(p => p.userId === senderId);
+    if (!senderParticipant || senderParticipant.leftAt) {
       throw new ForbiddenException('You are no longer a member of this group');
     }
 
-    const otherParticipants = await this.prisma.conversationParticipant.findMany({
-      where: { conversationId: realConvId, userId: { not: senderId }, deletedAt: null },
-      select: { userId: true }
-    });
-
-    if (otherParticipants.length > 0) {
-      const otherUserIds = otherParticipants.map(p => p.userId);
+    const otherUserIds = participants.filter(p => p.userId !== senderId).map(p => p.userId);
+    if (otherUserIds.length > 0) {
       const isBlockedByMe = await this.prisma.block.findFirst({
         where: { blockerId: senderId, blockedId: { in: otherUserIds } }
       });
@@ -366,7 +390,9 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     const messages: any[] = await this.prisma.message.findMany({
       where: whereCondition,
       include: {
-        targets: deviceId ? { where: { deviceId } } : true,
+        // Only load E2EE targets when caller provides a deviceId — otherwise skip the JOIN entirely.
+        // Loading all ciphertext rows for every standard chat page was causing a large unnecessary JOIN.
+        targets: deviceId ? { where: { deviceId } } : false,
         sender: {
           select: { id: true, username: true, displayName: true, avatar: true }
         },
@@ -516,16 +542,8 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
   }
 
   async getUserConversations(userId: string, limit: number = 20, offset: number = 0) {
-    // 1. Fire-and-forget background cleanup of expired instant matches (non-blocking)
-    const now = new Date();
-    this.prisma.conversation.deleteMany({
-      where: {
-        isInstantMatch: true,
-        expiresAt: { lt: now }
-      }
-    }).catch(() => { });
-
-    // 2. Fetch user's active participants
+    // Expired instant matches are removed by a scheduled cleanup, not this hot GET path.
+    // Fetch the user's active participants.
     const participants = await this.prisma.conversationParticipant.findMany({
       where: { userId, deletedAt: null },
       take: limit,
@@ -601,30 +619,45 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
     const convIds = participants.map(p => p.conversation.id);
 
-    // Fetch last messages respecting each participant's clearedAt timestamp
-    const lastMessages = await Promise.all(
-      participants.map(async (part) => {
-        const cId = part.conversation.id;
-        const clearedAt = part.clearedAt;
-        const whereClause: any = {
-          conversationId: cId,
-          deletedAt: null
-        };
-        if (clearedAt) {
-          whereClause.createdAt = { gt: clearedAt };
-        }
-        const lastMsg = await this.prisma.message.findFirst({
-          where: whereClause,
-          orderBy: { createdAt: 'desc' },
-          select: { id: true, conversationId: true, createdAt: true, senderId: true, type: true, payload: true, sender: { select: { id: true, displayName: true, username: true } } }
-        });
-        return { cId, lastMsg };
-      })
-    );
+    // Compute last messages and unread counts with two set-based queries. The old
+    // implementation issued two independent queries per conversation.
+    const lastMsgMap = new Map<string, any>();
+    const unreadMap = new Map<string, number>();
+    if (convIds.length > 0) {
+      const [lastMessages, unreadCounts] = await Promise.all([
+        this.prisma.$queryRaw<any[]>(Prisma.sql`
+          SELECT DISTINCT ON (m."conversationId")
+            m."conversationId" AS "conversationId", m."createdAt" AS "createdAt",
+            m."senderId" AS "senderId", m."type"::text AS "type", m."payload" AS "payload",
+            sender."displayName" AS "senderDisplayName", sender."username" AS "senderUsername"
+          FROM "Message" m
+          INNER JOIN "ConversationParticipant" cp
+            ON cp."conversationId" = m."conversationId" AND cp."userId" = ${userId}
+           AND cp."deletedAt" IS NULL
+          LEFT JOIN "User" sender ON sender."id" = m."senderId"
+          WHERE m."conversationId" IN (${Prisma.join(convIds)})
+            AND m."deletedAt" IS NULL
+            AND (cp."clearedAt" IS NULL OR m."createdAt" > cp."clearedAt")
+          ORDER BY m."conversationId", m."createdAt" DESC, m."id" DESC
+        `),
+        this.prisma.$queryRaw<any[]>(Prisma.sql`
+          SELECT m."conversationId" AS "conversationId", COUNT(*)::bigint AS "count"
+          FROM "Message" m
+          INNER JOIN "ConversationParticipant" cp
+            ON cp."conversationId" = m."conversationId" AND cp."userId" = ${userId}
+           AND cp."deletedAt" IS NULL
+          WHERE m."conversationId" IN (${Prisma.join(convIds)})
+            AND m."senderId" <> ${userId}
+            AND m."deletedAt" IS NULL
+            AND m."createdAt" > GREATEST(
+              COALESCE(cp."lastReadAt", TIMESTAMP 'epoch'),
+              COALESCE(cp."clearedAt", TIMESTAMP 'epoch')
+            )
+          GROUP BY m."conversationId"
+        `),
+      ]);
 
-    const lastMsgMap = new Map(
-      lastMessages.map(({ cId, lastMsg }) => {
-        if (!lastMsg) return [cId, null];
+      for (const lastMsg of lastMessages) {
         const payload = (lastMsg.payload as any) || {};
         let text = payload.text || '';
         if (!text) {
@@ -634,41 +667,17 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
           else if (mType.includes('audio') || mType.includes('voice')) text = 'Audio';
           else if (payload.mediaUrl) text = 'Attachment';
         }
-        return [
-          cId,
-          {
-            createdAt: lastMsg.createdAt,
-            senderId: lastMsg.senderId,
-            senderName: lastMsg.sender?.displayName || lastMsg.sender?.username || 'Member',
-            type: lastMsg.type ? lastMsg.type.toLowerCase() : 'chat',
-            text,
-            mediaUrl: payload.mediaUrl || null,
-            mediaType: payload.mediaType || null
-          }
-        ];
-      })
-    );
-
-    // Compute unread counts in parallel batch queries
-    const unreadMap = new Map<string, number>();
-    if (convIds.length > 0) {
-      await Promise.all(participants.map(async (part) => {
-        const cId = part.conversation.id;
-        const readAt = part.lastReadAt ? new Date(part.lastReadAt).getTime() : 0;
-        const clearAt = part.clearedAt ? new Date(part.clearedAt).getTime() : 0;
-        const maxTime = Math.max(readAt, clearAt);
-        const filterDate = maxTime > 0 ? new Date(maxTime) : new Date(0);
-
-        const count = await this.prisma.message.count({
-          where: {
-            conversationId: cId,
-            senderId: { not: userId },
-            deletedAt: null,
-            createdAt: { gt: filterDate }
-          }
+        lastMsgMap.set(lastMsg.conversationId, {
+          createdAt: lastMsg.createdAt,
+          senderId: lastMsg.senderId,
+          senderName: lastMsg.senderDisplayName || lastMsg.senderUsername || 'Member',
+          type: lastMsg.type ? lastMsg.type.toLowerCase() : 'chat',
+          text,
+          mediaUrl: payload.mediaUrl || null,
+          mediaType: payload.mediaType || null,
         });
-        unreadMap.set(cId, count);
-      }));
+      }
+      for (const row of unreadCounts) unreadMap.set(row.conversationId, Number(row.count));
     }
 
     // Batch presence query via mget
@@ -912,70 +921,63 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
   }
 
   async markAsRead(conversationId: string, userId: string): Promise<{ success: boolean }> {
+    // Acknowledge immediately — DB work runs in setImmediate (write-behind).
+    // WhatsApp/Slack pattern: never block the response on a read-receipt write.
+    setImmediate(() => void this._persistMarkAsRead(conversationId, userId));
+    return { success: true };
+  }
+
+  private async _persistMarkAsRead(conversationId: string, userId: string): Promise<void> {
     try {
+      // resolveConversationId is now cached (30s TTL), so this is near-free after first call
       const realConvId = await this.resolveConversationId(conversationId, userId);
-      const existingConv = await this.prisma.conversation.findUnique({
+
+      // Merge existence check: findFirst returns null without throwing if row doesn't exist
+      const conv = await this.prisma.conversation.findUnique({
         where: { id: realConvId },
         select: { id: true }
       });
-
-      if (!existingConv) {
-        return { success: false };
-      }
+      if (!conv) return;
 
       const now = new Date();
-      await this.prisma.conversationParticipant.upsert({
-        where: {
-          userId_conversationId: {
-            userId,
-            conversationId: realConvId
-          }
-        },
-        update: {
-          lastReadAt: now
-        },
-        create: {
-          userId,
-          conversationId: realConvId,
-          lastReadAt: now
-        }
-      }).catch(() => { });
 
+      // Upsert lastReadAt — now runs after response already returned, no lock contention visible to client
+      await this.prisma.conversationParticipant.upsert({
+        where: { userId_conversationId: { userId, conversationId: realConvId } },
+        update: { lastReadAt: now },
+        create: { userId, conversationId: realConvId, lastReadAt: now }
+      }).catch(() => {});
+
+      // Notify other participants of the read state (socket only, no extra DB read needed for basic ack)
       const participants = await this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, deletedAt: null },
         select: { userId: true, lastReadAt: true, user: { select: { settings: { select: { readReceipts: true } } } } }
       });
 
       const readerParticipant = participants.find(p => p.userId === userId);
-      const readerReadReceipts = readerParticipant?.user?.settings?.readReceipts;
+      if (readerParticipant?.user?.settings?.readReceipts === false) return;
 
-      if (readerReadReceipts !== false) {
-        for (const p of participants) {
-          if (p.userId !== userId) {
-            const otherParticipants = participants.filter(item => item.userId !== p.userId);
-            const otherReadTimestamps = otherParticipants
-              .filter(item => item.user?.settings?.readReceipts !== false && item.lastReadAt != null)
-              .map(item => new Date(item.lastReadAt!).getTime());
+      for (const p of participants) {
+        if (p.userId === userId) continue;
+        const others = participants.filter(item => item.userId !== p.userId);
+        const otherReadTimestamps = others
+          .filter(item => item.user?.settings?.readReceipts !== false && item.lastReadAt != null)
+          .map(item => new Date(item.lastReadAt!).getTime());
 
-            const isAllRead = otherReadTimestamps.length > 0 && otherReadTimestamps.length === otherParticipants.length;
-            const minOtherReadAt = isAllRead ? Math.min(...otherReadTimestamps) : 0;
+        const isAllRead = otherReadTimestamps.length > 0 && otherReadTimestamps.length === others.length;
+        const minOtherReadAt = isAllRead ? Math.min(...otherReadTimestamps) : 0;
 
-            this.domainEventService.emit('conversation:seen', {
-              conversationId,
-              realConvId,
-              readerId: userId,
-              lastReadAt: now.toISOString(),
-              isAllRead,
-              minOtherReadAt: minOtherReadAt ? new Date(minOtherReadAt).toISOString() : null
-            }, [p.userId]);
-          }
-        }
+        this.domainEventService.emit('conversation:seen', {
+          conversationId,
+          realConvId,
+          readerId: userId,
+          lastReadAt: now.toISOString(),
+          isAllRead,
+          minOtherReadAt: minOtherReadAt ? new Date(minOtherReadAt).toISOString() : null
+        }, [p.userId]);
       }
-
-      return { success: true };
     } catch (err) {
-      this.logger.warn(`markAsRead execution skipped/failed: ${(err as Error)?.message}`);
-      return { success: false };
+      this.logger.warn(`markAsRead background write failed: ${(err as Error)?.message}`);
     }
   }
 

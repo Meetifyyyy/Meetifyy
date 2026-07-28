@@ -68,6 +68,23 @@ const getMessageDateGroup = (msg) => {
   return 'Today';
 };
 
+const dateGroupCache = new Map();
+const getMessageDateGroupMemoized = (msg) => {
+  const rawKey = msg.id || msg.clientId || msg.tempId || msg.createdAt || msg.timestamp;
+  if (rawKey && dateGroupCache.has(rawKey)) {
+    return dateGroupCache.get(rawKey);
+  }
+  const result = getMessageDateGroup(msg);
+  if (rawKey) {
+    dateGroupCache.set(rawKey, result);
+    if (dateGroupCache.size > 5000) {
+      const firstKey = dateGroupCache.keys().next().value;
+      dateGroupCache.delete(firstKey);
+    }
+  }
+  return result;
+};
+
 export default function ChatMessageList({
   isLoading,
   error,
@@ -101,13 +118,16 @@ export default function ChatMessageList({
   const prevMessagesCountRef = useRef(messages?.length || 0);
   const prevFirstMsgIdRef = useRef(messages?.[0]?.id);
 
-  // Post-render evaluation: mark seen only after message elements have rendered in DOM
+  // Post-render evaluation: mark seen with debouncing to prevent excessive API calls
   useEffect(() => {
     if (!isLoading && !error && messages && messages.length > 0 && onMarkSeen) {
-      const isNearBottom = bodyRef.current ? bodyRef.current.scrollTop < 150 : true;
-      onMarkSeen(isNearBottom);
+      const timer = setTimeout(() => {
+        const isNearBottom = bodyRef.current ? bodyRef.current.scrollTop < 150 : true;
+        onMarkSeen(isNearBottom);
+      }, 200);
+      return () => clearTimeout(timer);
     }
-  }, [messages, isLoading, error, onMarkSeen]);
+  }, [messages?.length, isLoading, error, onMarkSeen]);
 
   // Resolve typing user avatar & display name from users, conversation participants, or otherUser
   const firstTypingEntry = typingUsers?.size > 0 ? typingUsers.entries().next().value : null;
@@ -190,11 +210,19 @@ export default function ChatMessageList({
       return 0;
     };
 
-    const sortedMessages = [...filteredMessages].sort((a, b) => getMsgTime(a) - getMsgTime(b));
+    // Avoid defensive array copy and sort overhead if messages are already ordered by timestamp
+    let isSorted = true;
+    for (let k = 0; k < filteredMessages.length - 1; k++) {
+      if (getMsgTime(filteredMessages[k]) > getMsgTime(filteredMessages[k + 1])) {
+        isSorted = false;
+        break;
+      }
+    }
+    const sortedMessages = isSorted ? filteredMessages : [...filteredMessages].sort((a, b) => getMsgTime(a) - getMsgTime(b));
 
     let lastDateGroup = null;
     sortedMessages.forEach((msg, i) => {
-      const dateGroup = getMessageDateGroup(msg);
+      const dateGroup = getMessageDateGroupMemoized(msg);
       const stableKey = msg.clientId || msg.tempId || msg.id || `idx_${i}`;
       if (dateGroup !== lastDateGroup) {
         items.push({

@@ -1,14 +1,13 @@
 import { useNavigate } from 'react-router-dom';
-import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import PostPreviewSkeleton from '@shared/components/skeletons/PostPreviewSkeleton';
-import { Link2, Heart, MessageCircle, FileX } from 'lucide-react';
+import { Image as ImageIcon, Heart, MessageCircle, FileX } from 'lucide-react';
 import styles from './SharedPostPreview.module.css';
 import { useData } from '@shared/hooks/useData';
 
 export function SharedPostPreview({ post, isLoading = false }) {
   const navigate = useNavigate();
-  const { getPostById, getUserById, communities } = useData();
+  const { getPostById, getUserById } = useData();
 
   if (isLoading) {
     return <PostPreviewSkeleton />;
@@ -20,7 +19,7 @@ export function SharedPostPreview({ post, isLoading = false }) {
   if (isPostUnavailable) {
     return (
       <div className={styles.unavailable} role="alert">
-        <FileX size={16} />
+        <FileX size={14} />
         <span>This post is no longer available</span>
       </div>
     );
@@ -29,17 +28,18 @@ export function SharedPostPreview({ post, isLoading = false }) {
   const authorId = livePost?.authorId;
   const liveAuthor = authorId ? getUserById(authorId) : null;
   
-  const authorName = liveAuthor?.displayName || post.authorName || 'Someone';
+  const authorName = liveAuthor?.displayName || liveAuthor?.username || post.authorName || 'Someone';
   const authorAvatar = liveAuthor?.avatar || post.authorAvatar;
   const contentText = livePost?.text || post.text || '';
-  const isTruncated = contentText.length > 140;
 
   let mediaUrl = null;
   if (livePost?.media) {
-    mediaUrl = typeof livePost.media === 'string' ? livePost.media : livePost.media.url;
+    mediaUrl = typeof livePost.media === 'string' ? livePost.media : (livePost.media.url || livePost.media.objectKey);
   } else if (post.image) {
     mediaUrl = post.image;
   }
+
+  const hasMedia = Boolean(mediaUrl);
 
   const likesCount = Array.isArray(livePost?.likedBy) 
     ? livePost.likedBy.length 
@@ -48,11 +48,6 @@ export function SharedPostPreview({ post, isLoading = false }) {
   const commentsCount = Array.isArray(livePost?.comments) 
     ? livePost.comments.length 
     : (typeof livePost?.comments === 'number' ? livePost.comments : (post.comments || 0));
-
-  const communityId = livePost?.communityId || post.communityId;
-  const community = communityId ? communities[communityId] : null;
-  const communityName = community?.name || post.community;
-  const isPoll = !!(livePost?.poll || post.pollQuestion);
 
   const handleCardClick = (e) => {
     e.preventDefault();
@@ -65,57 +60,36 @@ export function SharedPostPreview({ post, isLoading = false }) {
       className={styles.container} 
       onClick={handleCardClick}
       role="article"
-      aria-label={`Shared post by ${authorName}`}
+      aria-label={`Post by ${authorName}`}
     >
-      <div className={styles.headerStrip}>
-        <span className={styles.headerTitle}>
-          <Link2 size={12} />
-          {isPoll ? 'Shared Poll' : 'Shared Post'}
-        </span>
+      <div className={styles.authorRow}>
+        <Avatar src={authorAvatar} name={authorName} size="22px" />
+        <span className={styles.authorName}>{authorName}</span>
+        <span className={styles.timestamp}>• {post.time || 'Recent'}</span>
       </div>
 
-      <div className={styles.cardBody}>
-        <div className={styles.authorRow}>
-          {isImageUrl(authorAvatar) ? (
-            <img src={authorAvatar} alt={authorName} className={styles.avatar} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-          ) : (
-            <DefaultAvatar name={authorName} size={24} className={styles.avatar} />
-          )}
-          <span className={styles.authorName}>{authorName}</span>
-          <span className={styles.timestamp}>• {post.time || 'Recent'}</span>
+      {contentText && (
+        <div className={styles.singleLineContent} title={contentText}>
+          {contentText}
         </div>
+      )}
 
-        {contentText && (
-          <div className={`${styles.contentContainer} ${isTruncated ? styles.contentContainerTruncated : ''}`}>
-            <p className={styles.textContent}>
-              {contentText}
-            </p>
-          </div>
-        )}
-
-        {mediaUrl && (
-          <div className={styles.mediaWrapper}>
-            <img src={mediaUrl} alt="Post attachment" className={styles.mediaImg} />
-          </div>
-        )}
-      </div>
+      {hasMedia && (
+        <div className={styles.attachmentPill}>
+          <ImageIcon size={13} />
+          <span>Attachment</span>
+        </div>
+      )}
 
       <div className={styles.metaRow}>
-        <div className={styles.stats}>
-          <span className={styles.statItem}>
-            <Heart size={14} />
-            {likesCount}
-          </span>
-          <span className={styles.statItem}>
-            <MessageCircle size={14} />
-            {commentsCount}
-          </span>
-        </div>
-        {communityName && (
-          <span className={styles.communityBadge}>
-            {communityName}
-          </span>
-        )}
+        <span className={styles.statItem}>
+          <Heart size={13} />
+          {likesCount}
+        </span>
+        <span className={styles.statItem}>
+          <MessageCircle size={13} />
+          {commentsCount}
+        </span>
       </div>
     </div>
   );

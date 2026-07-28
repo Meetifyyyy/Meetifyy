@@ -6,25 +6,45 @@ import styles from './Avatar.module.css';
 
 const isImageUrl = (str) => {
   if (!str || typeof str !== 'string') return false;
-  return str.startsWith('/') || str.startsWith('http://') || str.startsWith('https://') || str.startsWith('data:') || str.startsWith('blob:');
+  const s = str.trim().toLowerCase();
+  return (
+    s.startsWith('/') ||
+    s.startsWith('http://') ||
+    s.startsWith('https://') ||
+    s.startsWith('data:') ||
+    s.startsWith('blob:') ||
+    s.startsWith('src/') ||
+    s.startsWith('assets/') ||
+    s.includes('default_avatar') ||
+    s.endsWith('.webp') ||
+    s.endsWith('.png') ||
+    s.endsWith('.jpg') ||
+    s.endsWith('.jpeg') ||
+    s.endsWith('.svg') ||
+    s.endsWith('.gif')
+  );
 };
 
 // Used only when showInitials=true (campus / directory pages)
-const INITIALS_BG = '#7a8a9e';
+const INITIALS_BG = 'linear-gradient(135deg, #6366f1 0%, #3b82f6 100%)';
 
 export function getProcessedAvatarUrl(src) {
-  if (!src || typeof src !== 'string' || src.length <= 2 || src.includes('default_avatar')) {
+  if (!src) return defaultAvatarImg;
+  let s = src;
+  if (typeof s === 'object') {
+    s = s.url || s.objectKey || s.avatar || s.avatarUrl || '';
+  }
+  if (typeof s !== 'string' || !s.trim() || s.trim().length <= 2) {
     return defaultAvatarImg;
   }
-  if (src.includes('api.dicebear.com/7.x/initials')) {
+  const clean = s.trim();
+  if (clean.includes('default_avatar') || clean.includes('api.dicebear.com/7.x/initials')) {
     return defaultAvatarImg;
   }
-  
-  if (src.startsWith('https://api.dicebear.com/')) {
-    return src.split('&backgroundColor=')[0].split('?backgroundColor=')[0];
+  if (clean.startsWith('https://api.dicebear.com/')) {
+    return clean.split('&backgroundColor=')[0].split('?backgroundColor=')[0];
   }
-  
-  return src;
+  return clean;
 }
 
 const Avatar = forwardRef(({
@@ -33,7 +53,6 @@ const Avatar = forwardRef(({
   size = '40px',
   isGroup = false,
   isOnline = false,
-  showInitials = false,   // only enable for campus "you may know" & directory
   className = '',
   style = {},
   onClick,
@@ -44,24 +63,18 @@ const Avatar = forwardRef(({
   const syncResolved = mediaCache.getSyncUrl(initialProcessedSrc) || (initialProcessedSrc && isImageUrl(initialProcessedSrc) ? initialProcessedSrc : null);
 
   const [imgSrc, setImgSrc] = useState(syncResolved || defaultAvatarImg);
-  const [hasLoaded, setHasLoaded] = useState(Boolean(syncResolved));
-  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
     
     if (!initialProcessedSrc || initialProcessedSrc === defaultAvatarImg) {
       setImgSrc(defaultAvatarImg);
-      setHasLoaded(true);
-      setHasError(false);
       return;
     }
 
     const currentSync = mediaCache.getSyncUrl(initialProcessedSrc);
     if (currentSync) {
       setImgSrc(currentSync);
-      setHasLoaded(true);
-      setHasError(false);
       return;
     }
 
@@ -69,21 +82,11 @@ const Avatar = forwardRef(({
       try {
         const resolvedUrl = await mediaCache.getUrl(initialProcessedSrc);
         if (isMounted) {
-          if (resolvedUrl) {
-            setImgSrc(resolvedUrl);
-            setHasLoaded(true);
-            setHasError(false);
-          } else {
-            setImgSrc(defaultAvatarImg);
-            setHasLoaded(true);
-            setHasError(false);
-          }
+          setImgSrc(resolvedUrl || defaultAvatarImg);
         }
       } catch (err) {
         if (isMounted) {
           setImgSrc(defaultAvatarImg);
-          setHasLoaded(true);
-          setHasError(false);
         }
       }
     };
@@ -96,30 +99,12 @@ const Avatar = forwardRef(({
   }, [initialProcessedSrc]);
 
   const sizeValue = typeof size === 'number' ? `${size}px` : size;
-  const hasValidImageSrc = isImageUrl(imgSrc);
-  const showImage = hasValidImageSrc && !hasError;
-
-  // Initials mode for groups passed as short src string
-  const isInitials = isGroup && src && typeof src === 'string' && src.length <= 2;
-  const initials = isInitials ? src : '';
-
-  // First-letter fallback — only when showInitials is explicitly requested
-  const firstLetter = showInitials && !showImage && !isGroup && name
-    ? name.trim()[0].toUpperCase()
-    : null;
+  const displaySrc = imgSrc || defaultAvatarImg;
 
   const avatarStyle = {
     '--size': sizeValue,
     ...style
   };
-
-  const clipStyle = !showImage && !firstLetter
-    ? { background: 'var(--color-primary, #2563EB)', color: '#ffffff' }
-    : firstLetter
-      ? { background: INITIALS_BG }
-      : (showImage && hasLoaded)
-        ? { background: 'var(--color-bg-soft)' }
-        : { background: 'var(--color-bg-white)' };
 
   const handleClick = (e) => {
     if (onClick) onClick(e);
@@ -129,13 +114,7 @@ const Avatar = forwardRef(({
     if (initialProcessedSrc && initialProcessedSrc !== defaultAvatarImg) {
       mediaCache.invalidate(initialProcessedSrc);
     }
-    if (imgSrc !== defaultAvatarImg) {
-      setImgSrc(defaultAvatarImg);
-      setHasLoaded(true);
-      setHasError(false);
-    } else {
-      setHasError(true);
-    }
+    setImgSrc(defaultAvatarImg);
   };
 
   return (
@@ -147,27 +126,16 @@ const Avatar = forwardRef(({
     >
       <div
         className={styles.avatarClip}
-        style={clipStyle}
+        style={{ background: 'transparent' }}
       >
-        {showImage ? (
-          <img
-            src={imgSrc}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className={styles.avatarImg}
-            onLoad={() => setHasLoaded(true)}
-            onError={handleError}
-          />
-        ) : isInitials ? (
-          <div className={styles.avatarInitials}>{initials}</div>
-        ) : firstLetter ? (
-          <div className={styles.avatarInitials}>{firstLetter}</div>
-        ) : isGroup ? (
-          <UsersIcon className={styles.avatarIcon} />
-        ) : (
-          <UserIcon className={styles.avatarIcon} />
-        )}
+        <img
+          src={displaySrc}
+          alt={name || 'Avatar'}
+          loading="lazy"
+          decoding="async"
+          className={styles.avatarImg}
+          onError={handleError}
+        />
         {children}
       </div>
 

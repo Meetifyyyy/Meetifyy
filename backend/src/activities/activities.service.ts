@@ -66,10 +66,20 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   async getAllActivities(userId?: string, limit = 20, cursor?: string) {
+    let parsedCursorDate: Date | undefined = undefined;
+    if (cursor) {
+      const parsed = new Date(cursor);
+      if (!isNaN(parsed.getTime()) && (cursor.includes('T') || cursor.includes('-'))) {
+        parsedCursorDate = parsed;
+      }
+    }
+
     const [user, excludedUserIds, cursorDate] = await Promise.all([
       userId ? this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }) : Promise.resolve(null),
       userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([]),
-      cursor ? this.prisma.crewActivity.findUnique({ where: { id: cursor }, select: { createdAt: true } }).then(r => r?.createdAt) : Promise.resolve(undefined),
+      cursor && !parsedCursorDate
+        ? this.prisma.crewActivity.findUnique({ where: { id: cursor }, select: { createdAt: true } }).then(r => r?.createdAt)
+        : Promise.resolve(parsedCursorDate),
     ]);
 
     const discoveryOR: any[] = [

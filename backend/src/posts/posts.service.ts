@@ -113,7 +113,16 @@ export class PostsService {
             avatar: true,
           },
         },
-        media: true,
+        media: {
+          select: {
+            id: true,
+            objectKey: true,
+            width: true,
+            height: true,
+            mimeType: true,
+            type: true,
+          },
+        },
       },
     });
 
@@ -182,7 +191,16 @@ export class PostsService {
             avatar: true,
           },
         },
-        media: true,
+        media: {
+          select: {
+            id: true,
+            objectKey: true,
+            width: true,
+            height: true,
+            mimeType: true,
+            type: true,
+          },
+        },
       },
     });
 

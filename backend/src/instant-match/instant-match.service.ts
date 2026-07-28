@@ -188,23 +188,23 @@ export class InstantMatchService {
 
     if (!bestCandidate) return;
 
-    // Remove both from queue
-    await this.prisma.matchQueueEntry.deleteMany({
-      where: { userId: { in: [userId, bestCandidate.userId] } },
-    });
-
     const timer = this.getAcceptTimer(myEntry.activity, myEntry.timePreference);
     const matchExpiresAt = new Date(Date.now() + timer * 1000 + 5000); // +5s buffer
 
-    // Create match session
-    const session = await this.prisma.matchSession.create({
-      data: {
-        userAId: userId,
-        userBId: bestCandidate.userId,
-        activity: myEntry.activity,
-        expiresAt: matchExpiresAt,
-      },
-    });
+    // Atomic transaction: remove both entries and create match session together
+    const [, session] = await this.prisma.$transaction([
+      this.prisma.matchQueueEntry.deleteMany({
+        where: { userId: { in: [userId, bestCandidate.userId] } },
+      }),
+      this.prisma.matchSession.create({
+        data: {
+          userAId: userId,
+          userBId: bestCandidate.userId,
+          activity: myEntry.activity,
+          expiresAt: matchExpiresAt,
+        },
+      }),
+    ]);
 
     const area = myEntry.area ?? bestCandidate.area ?? null;
 

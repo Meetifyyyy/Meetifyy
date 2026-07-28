@@ -342,11 +342,9 @@ export class NotificationsService implements OnModuleInit {
       where: {
         recipientId: userId,
         deletedAt: null,
-        NOT: [
-          { type: NotificationType.MESSAGE },
-          { type: 'JOIN_REQUEST' },
-          { body: { contains: 'requested to join' } }
-        ]
+        type: {
+          notIn: [NotificationType.MESSAGE, NotificationType.JOIN_REQUEST]
+        }
       },
       orderBy: { createdAt: 'desc' },
       take,
