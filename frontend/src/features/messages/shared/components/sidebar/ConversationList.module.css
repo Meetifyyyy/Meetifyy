@@ -230,35 +230,42 @@
   height: 48px;
 }
 
-.calendarBadge {
+/* Clean calendar badge — bottom-right corner of the group avatar */
+.activityCalendarBadge {
   position: absolute;
-  bottom: -4px;
-  right: -4px;
-  transform: scale(0.5);
-  transform-origin: bottom right;
-  z-index: 2;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  border-radius: 10px;
-}
-
-.startedCalendarBadge {
+  bottom: -3px;
+  right: -3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #18181b;
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 46px;
-  border-radius: 10px;
-  background: #000000;
-  border: 1px solid #000000;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  color: #ffffff;
+  z-index: 4;
+  transition: color 0.2s ease, background 0.2s ease;
 }
 
-:global([data-theme="dark"]) .startedCalendarBadge {
-  background: #ffffff;
-  border-color: #ffffff;
-  color: #000000;
+/* Started = green tint */
+.activityCalendarBadge:has(svg[fill="currentColor"]) {
+  color: #10b981;
 }
+
+:global([data-theme="dark"]) .activityCalendarBadge {
+  background: #ffffff;
+  color: #18181b;
+}
+
+:global([data-theme="dark"]) .activityCalendarBadge:has(svg[fill="currentColor"]) {
+  color: #10b981;
+}
+
+/* Old stale classes — unused */
+.calendarBadge { display: none; }
+.startedCalendarBadge { display: none; }
+
+
 
 .convAvatarClip {
   width: 100%;

@@ -1,7 +1,9 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNotifications } from '@shared/hooks/useNotifications';
 import { useAuth } from '@shared/context/AuthContext';
+import { activitiesApi } from '@shared/api/apiClient';
 import { timeAgo } from '@shared/utils/time';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import Skeleton from '@shared/components/skeletons/Skeleton';
@@ -62,11 +64,34 @@ export default function NotificationsRoute() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage, activeTab]);
 
 
-  const invitations = useMemo(() => {
-    return crewActivities ? crewActivities.filter(a => 
-      a.invitedUsers?.includes(currentUser?.id)
-    ) : [];
-  }, [crewActivities, currentUser?.id]);
+  const queryClient = useQueryClient();
+
+  const { data: invitations = [] } = useQuery({
+    queryKey: ['activity-pending-invitations'],
+    queryFn: () => activitiesApi.getPendingInvitations(),
+    staleTime: 10_000,
+    enabled: !!currentUser?.id,
+  });
+
+  const acceptMutation = useMutation({
+    mutationFn: (invitationId) => activitiesApi.acceptInvitation(invitationId),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
+      queryClient.invalidateQueries({ queryKey: ['activities'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      if (res?.activityId) {
+        navigate(`/crew/${res.activityId}`);
+      }
+    },
+  });
+
+  const declineMutation = useMutation({
+    mutationFn: (invitationId) => activitiesApi.declineInvitation(invitationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
 
   const [readInvitations, setReadInvitations] = useState(() => {
     try {
@@ -77,12 +102,13 @@ export default function NotificationsRoute() {
   });
 
   const handleInvClick = (inv) => {
+    const actId = inv.activityId || inv.id;
     if (!readInvitations.includes(inv.id)) {
       const updated = [...readInvitations, inv.id];
       setReadInvitations(updated);
       localStorage.setItem('read_invitations', JSON.stringify(updated));
     }
-    navigate(`/crew/${inv.id}`, { state: { activity: inv } });
+    navigate(`/crew/${actId}`, { state: { activity: inv } });
   };
 
   const error = null;
@@ -152,6 +178,10 @@ export default function NotificationsRoute() {
         if (notif.entityId) {
           navigate(`/crew/${notif.entityId}?discussion=1`);
         }
+        break;
+
+      case 'ACTIVITY_INVITE':
+        setActiveTab('invitations');
         break;
 
       default:
@@ -253,8 +283,8 @@ export default function NotificationsRoute() {
             <InvitationList
               invitations={invitations}
               readInvitations={readInvitations}
-              onAccept={joinCrewActivity}
-              onDecline={declineCrewInvitation}
+              onAccept={(invId) => acceptMutation.mutate(invId)}
+              onDecline={(invId) => declineMutation.mutate(invId)}
               onNavigateHost={(hostId) => navigate(`/profile/${getUserById(hostId)?.username || hostId}`)}
               onViewActivity={handleInvClick}
               pageStyles={styles}

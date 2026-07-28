@@ -93,14 +93,35 @@ export function useGlobalSocketSync() {
           break;
         }
 
+        case 'invitation:new':
+        case 'invitation:updated': {
+          queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
+          queryClient.invalidateQueries({ queryKey: ['notifications'] });
+          queryClient.invalidateQueries({ queryKey: ['notifications', 'unreadCount'] });
+          queryClient.invalidateQueries({ queryKey: ['activities'] });
+          break;
+        }
+
         default:
           break;
       }
     };
 
+    const handleDirectInvitationEvent = () => {
+      queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unreadCount'] });
+      queryClient.invalidateQueries({ queryKey: ['activities'] });
+    };
+
     socket.on('domainEvent', handleDomainEvent);
+    socket.on('invitation:new', handleDirectInvitationEvent);
+    socket.on('invitation:updated', handleDirectInvitationEvent);
+
     return () => {
       socket.off('domainEvent', handleDomainEvent);
+      socket.off('invitation:new', handleDirectInvitationEvent);
+      socket.off('invitation:updated', handleDirectInvitationEvent);
     };
   }, [socket, queryClient, currentUser]);
 }

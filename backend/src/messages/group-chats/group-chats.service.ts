@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { MessagingCoreService } from '../core/messaging-core.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PresenceService } from '../../presence/presence.service';
@@ -326,6 +326,26 @@ export class GroupChatsService extends MessagingCoreService {
       throw new ForbiddenException('Not a member of this conversation');
     }
 
+    const convRecord = await this.prisma.conversation.findUnique({
+      where: { id: realConvId },
+      select: { activityId: true, isActivityChat: true }
+    });
+
+    if (convRecord?.activityId) {
+      const activity = await this.prisma.crewActivity.findUnique({
+        where: { id: convRecord.activityId },
+        select: { startDate: true, status: true }
+      });
+      if (activity) {
+        const startRaw = activity.startDate;
+        const status = activity.status as string;
+        const hasStarted = (status === 'STARTED' || status === 'IN_PROGRESS' || status === 'ENDED') || (startRaw && new Date(startRaw) <= new Date());
+        if (!hasStarted) {
+          throw new BadRequestException('Members cannot be added directly to an activity group chat before the activity starts. Join or invite via the activity.');
+        }
+      }
+    }
+
     await this.prisma.conversationParticipant.upsert({
       where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
       update: {
@@ -383,41 +403,10 @@ export class GroupChatsService extends MessagingCoreService {
       return { success: true };
     }
 
-    const convRecord = await this.prisma.conversation.findUnique({
-      where: { id: realConvId },
-      select: { activityId: true, isActivityChat: true }
-    });
-
-    let isPreStartActivity = false;
-    if (convRecord?.activityId) {
-      const activity = await this.prisma.crewActivity.findUnique({
-        where: { id: convRecord.activityId },
-        select: { startDate: true, status: true }
-      });
-      if (activity) {
-        const startRaw = activity.startDate;
-        const status = activity.status as string;
-        const hasStarted = (status === 'STARTED' || status === 'IN_PROGRESS' || status === 'ENDED') || (startRaw && new Date(startRaw) <= new Date());
-        if (!hasStarted) {
-          isPreStartActivity = true;
-        }
-
-        await this.prisma.crewActivityMember.deleteMany({
-          where: { activityId: convRecord.activityId, userId }
-        }).catch(() => {});
-      }
-    }
-
-    if (isPreStartActivity) {
-      await this.prisma.conversationParticipant.deleteMany({
-        where: { conversationId: realConvId, userId }
-      });
-    } else {
-      await this.prisma.conversationParticipant.update({
+    await this.prisma.conversationParticipant.update({
         where: { userId_conversationId: { userId, conversationId: realConvId } },
         data: { leftAt: new Date() } as any
       });
-    }
 
     if (participant.role === 'OWNER') {
       const oldestAdmin = await this.prisma.conversationParticipant.findFirst({

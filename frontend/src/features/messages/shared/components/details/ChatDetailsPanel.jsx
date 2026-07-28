@@ -570,6 +570,23 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             </>
           )}
 
+          {isEventGroup && (
+            <button
+              type="button"
+              className={styles.viewActivityBtn}
+              onClick={() => {
+                const actId = activity?.id || conversation.activityId || (conversation.id ? String(conversation.id).replace(/^act_/, '') : null);
+                if (actId) {
+                  navigate(`/crew/${actId}`, { state: { activity: activity || conversation.activity } });
+                }
+              }}
+              style={{ margin: '0.75rem 0 1rem 0' }}
+            >
+              <Calendar size={18} />
+              <span>View Activity Details</span>
+            </button>
+          )}
+
           {isGroup && !isClosed && (() => {
             const isApprovalRequired = (
               whoCanJoin === 'APPROVAL' || 
@@ -631,22 +648,6 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
               </div>
             );
           })()}
-
-          {isEventGroup && (
-            <button
-              type="button"
-              className={styles.viewActivityBtn}
-              onClick={() => {
-                const actId = activity?.id || conversation.activityId || (conversation.id ? String(conversation.id).replace(/^act_/, '') : null);
-                if (actId) {
-                  navigate(`/crew/${actId}`, { state: { activity: activity || conversation.activity } });
-                }
-              }}
-            >
-              <Calendar size={18} />
-              <span>View Activity Details</span>
-            </button>
-          )}
         </div>
 
         {/* Dynamic Details depending on style */}

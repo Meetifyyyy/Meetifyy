@@ -35,6 +35,10 @@ export class CreateActivityDto {
   @IsOptional()
   shareToCampus?: boolean;
 
+  @IsString()
+  @IsOptional()
+  visibility?: string;
+
   @IsNumber()
   @IsOptional()
   maxMembers?: number;

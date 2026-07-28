@@ -65,21 +65,26 @@ export class JwtGuard implements CanActivate {
         const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
         const nowSec = Math.floor(now / 1000);
 
-        if (payload && payload.sub && payload.exp && payload.exp > nowSec) {
-          const userPayload = {
-            id: payload.sub,
-            email: payload.email,
-            user_metadata: payload.user_metadata || {},
-            token,
-          };
+        if (payload && payload.sub && payload.exp) {
+          if (payload.exp > nowSec) {
+            const userPayload = {
+              id: payload.sub,
+              email: payload.email,
+              user_metadata: payload.user_metadata || {},
+              token,
+            };
 
-          JwtGuard.setCache(token, {
-            userPayload,
-            expiresAt: payload.exp * 1000,
-          });
+            JwtGuard.setCache(token, {
+              userPayload,
+              expiresAt: payload.exp * 1000,
+            });
 
-          request.user = userPayload;
-          return true;
+            request.user = userPayload;
+            return true;
+          } else {
+            // Token is explicitly expired — fail fast without slow Supabase remote network call
+            throw new UnauthorizedException('Invalid or expired authentication token');
+          }
         }
       }
     } catch (e) {

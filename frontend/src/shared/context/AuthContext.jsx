@@ -49,6 +49,8 @@ export function AuthProvider({ children }) {
   // Derive isLoggedIn from the session object instead of tracking separately in localStorage
   const isLoggedIn = !!session;
 
+  const isLoggingOutRef = useRef(false);
+
   useEffect(() => {
     if (!isSupabaseConfigured) {
        setLoading(false);
@@ -61,12 +63,38 @@ export function AuthProvider({ children }) {
         setCurrentUser(null);
         localStorage.removeItem('currentUser');
       }
-      setSession(session);
+      if (!isLoggingOutRef.current) {
+        setSession(session);
+      }
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, supabaseSession) => {
+        if (event === 'SIGNED_OUT') {
+          isLoggingOutRef.current = false;
+          setSession(null);
+          setCurrentUser(null);
+          localStorage.removeItem('currentUser');
+          localStorage.removeItem('meetifyy_deviceId');
+          localStorage.removeItem('meetifyy_recent_searches');
+          localStorage.removeItem('meetify_muted_communities');
+          localStorage.removeItem('read_invitations');
+          useSavedPostsStore.getState().clearAll?.();
+          useSavedActivitiesStore.getState().clearAll?.();
+          usePostStore.getState().clearAll?.();
+          setLoading(false);
+          return;
+        }
+
+        if (isLoggingOutRef.current) {
+          // Ignore secondary session events triggered during async signOut execution
+          setSession(null);
+          setCurrentUser(null);
+          setLoading(false);
+          return;
+        }
+
         setSession(supabaseSession);
         
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
@@ -120,11 +148,9 @@ export function AuthProvider({ children }) {
                     });
 
                     // Hydrate bookmarks only ONCE per session — not on token refresh events.
-                    // TOKEN_REFRESHED fires every ~60 min; we never want a wasteful API call then.
                     if (!bookmarksHydratedRef.current && event !== 'TOKEN_REFRESHED') {
                       bookmarksHydratedRef.current = true;
 
-                      // Prefer bookmark IDs bundled into the sync response (zero extra network call)
                       const meta = syncRes?.meta;
                       if (meta?.postBookmarkIds) {
                         useSavedPostsStore.getState().hydrateFromServer(meta.postBookmarkIds);
@@ -133,8 +159,6 @@ export function AuthProvider({ children }) {
                         useSavedActivitiesStore.getState().hydrateFromServer(meta.activityBookmarkIds);
                       }
 
-                      // Fallback: if backend doesn't return meta yet, defer 2s so the user
-                      // sees the feed before the bookmark request fires.
                       if (!meta?.postBookmarkIds) {
                         setTimeout(async () => {
                           try {
@@ -157,18 +181,6 @@ export function AuthProvider({ children }) {
           }
         }
         
-        if (event === 'SIGNED_OUT') {
-          setCurrentUser(null);
-          localStorage.removeItem('currentUser');
-          localStorage.removeItem('meetifyy_deviceId');
-          localStorage.removeItem('meetifyy_recent_searches');
-          localStorage.removeItem('meetify_muted_communities');
-          localStorage.removeItem('read_invitations');
-          // Clear saved posts and other stores on logout to isolate sessions
-          useSavedPostsStore.getState().clearAll?.();
-          useSavedActivitiesStore.getState().clearAll?.();
-          usePostStore.getState().clearAll?.();
-        }
         setLoading(false);
       }
     );
@@ -178,6 +190,7 @@ export function AuthProvider({ children }) {
 
 
   const login = useCallback(async (usernameOrEmail, password) => {
+    isLoggingOutRef.current = false;
     if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
     const BASE_URL = getBackendUrl();
@@ -473,6 +486,20 @@ export function AuthProvider({ children }) {
   }, [currentUser, isSupabaseConfigured]);
 
   const logout = useCallback(async () => {
+    isLoggingOutRef.current = true;
+    setSession(null);
+    setCurrentUser(null);
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('meetifyy_deviceId');
+    localStorage.removeItem('meetifyy_recent_searches');
+    localStorage.removeItem('meetify_muted_communities');
+    localStorage.removeItem('read_invitations');
+    localStorage.removeItem('meetify_show_community_details');
+    sessionStorage.removeItem('meetifyy_signup_data');
+    useSavedPostsStore.getState().clearAll?.();
+    useSavedActivitiesStore.getState().clearAll?.();
+    usePostStore.getState().clearAll?.();
+
     if (isSupabaseConfigured) {
       try {
         await supabase.auth.signOut();
@@ -480,10 +507,6 @@ export function AuthProvider({ children }) {
         console.error('Supabase signOut error', e);
       }
     }
-    // Storage cleanup is handled by onAuthStateChange('SIGNED_OUT')
-    localStorage.removeItem('meetify_show_community_details');
-    // Ensure signup data doesn't persist across logouts
-    sessionStorage.removeItem('meetifyy_signup_data');
   }, []);
 
   // Listen to global auth:unauthorized events dispatched from the apiClient

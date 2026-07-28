@@ -22,11 +22,12 @@ export const MESSAGE_KEYS = {
  * Deliberately short staleTime — conversations should stay fresh (unread counts, last message).
  */
 export function useConversations() {
-  const { currentUser } = useAuth();
+  const { currentUser, isLoggedIn } = useAuth();
 
   const { data: rawConversations = [], isLoading, error } = useQuery({
     queryKey: MESSAGE_KEYS.conversations,
     queryFn: messagesApi.getConversations,
+    enabled: Boolean(isLoggedIn || currentUser?.id),
     staleTime: 30 * 1000,   // 30s
     gcTime:    5 * 60 * 1000,
     refetchOnWindowFocus: true,
