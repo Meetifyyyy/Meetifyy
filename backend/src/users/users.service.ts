@@ -133,6 +133,7 @@ export class UsersService {
         bio: true,
         college: true,
         major: true,
+        profileCompleted: true,
       }
     });
     if (!user) throw new NotFoundException('User not found');
@@ -163,6 +164,7 @@ export class UsersService {
         location: true,
         interests: true,
         emailVerified: true,
+        profileCompleted: true,
         createdAt: true,
         college: { select: { name: true } },
         settings: {
@@ -228,6 +230,7 @@ export class UsersService {
       location: user.location,
       interests: user.interests,
       verified: user.emailVerified,
+      profileCompleted: user.profileCompleted,
       createdAt: user.createdAt,
       settings: user.settings || null,
       isPrivate: user.settings?.privateProfile || false,
