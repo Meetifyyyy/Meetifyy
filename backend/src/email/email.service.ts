@@ -35,7 +35,13 @@ export class EmailService {
 
   async sendAdminVerificationOtpEmail(email: string, name: string, otp: string) {
     this.logger.log(`Queuing Super Admin verification OTP email for ${email}`);
-    await this.emailQueue.add('send-admin-verification-otp', { email, name, otp });
+    await this.emailQueue.add('send-admin-verification-otp', {
+      email,
+      name,
+      otp,
+      from: 'Meetifyy Security <noreply@meetifyy.app>',
+    });
   }
 }
+
 

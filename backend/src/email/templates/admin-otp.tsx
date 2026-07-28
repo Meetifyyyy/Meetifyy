@@ -6,19 +6,24 @@ import {
   Heading,
   Hr,
   Html,
+  Img,
   Preview,
   Section,
   Text,
 } from '@react-email/components';
 
+import { SITE_CONFIG } from '../../common/config/site.config';
+
 interface AdminOtpEmailProps {
-  name: string;
-  otp: string;
+  name?: string;
+  otp?: string;
+  logoUrl?: string;
 }
 
 export const AdminOtpEmail = ({
   name = 'Super Admin',
   otp = '123456',
+  logoUrl = SITE_CONFIG.logoUrl,
 }: AdminOtpEmailProps) => {
   return (
     <Html>
@@ -28,6 +33,13 @@ export const AdminOtpEmail = ({
         <Container style={container}>
           <Section style={header}>
             <Text style={badge}>SUPER ADMIN SECURITY</Text>
+            <Img
+              src={logoUrl}
+              width="48"
+              height="48"
+              alt="Meetifyy Admin Logo"
+              style={logoImg}
+            />
             <Heading style={logoText}>Meetifyy Admin</Heading>
           </Section>
           
@@ -49,7 +61,7 @@ export const AdminOtpEmail = ({
             </Section>
             
             <Text style={paragraph}>
-              This code will expire in 5 minutes. If you did not initiate this request, please audit your active sessions immediately.
+              This code will expire in <strong>10 minutes</strong>. If you did not initiate this request, please audit your active sessions immediately.
             </Text>
             <Text style={signature}>
               Meetifyy Security Operations<br />
@@ -90,17 +102,25 @@ const container = {
 };
 
 const header = {
-  background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',
-  padding: '32px 40px',
+  backgroundColor: '#ffffff',
+  padding: '36px 40px 16px',
   textAlign: 'center' as const,
+  borderBottom: '1px solid #f1f5f9',
+};
+
+const logoImg = {
+  margin: '0 auto 10px',
+  display: 'block',
+  width: '56px',
+  height: '56px',
 };
 
 const badge = {
   display: 'inline-block',
   fontSize: '11px',
   fontWeight: '700',
-  color: '#38bdf8',
-  backgroundColor: 'rgba(56, 189, 248, 0.12)',
+  color: '#0284c7',
+  backgroundColor: '#e0f2fe',
   padding: '3px 10px',
   borderRadius: '9999px',
   letterSpacing: '1.2px',
@@ -109,7 +129,7 @@ const badge = {
 };
 
 const logoText = {
-  color: '#ffffff',
+  color: '#0f172a',
   fontSize: '26px',
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   fontWeight: '800',

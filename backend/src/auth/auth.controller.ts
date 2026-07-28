@@ -43,6 +43,25 @@ export class AuthController {
     return this.authService.lookupEmailByUsername(body.username);
   }
 
+  /**
+   * Used by the forgot-password flow to check if an account exists before
+   * triggering a Supabase reset email.
+   *
+   * Security: Always returns HTTP 200 with the same body regardless of whether
+   * an account exists. This prevents user enumeration — an attacker cannot
+   * determine if an email is registered by observing the response.
+   *
+   * The backend still performs the lookup internally so that it can log the
+   * attempt for audit purposes, but the HTTP response is always identical.
+   */
+  @Post('verify-reset-email')
+  async verifyResetEmail(@Body() body: CheckEmailDto) {
+    // Silently checks — never throws, never reveals existence
+    await this.authService.checkExistsForReset(body.email);
+    // Always return the same response — no enumeration possible
+    return { sent: true };
+  }
+
   @Post('check-username')
   async checkUsername(@Body() body: CheckUsernameDto) {
     return this.authService.checkUsernameAvailability(body.username);

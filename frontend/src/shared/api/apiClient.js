@@ -156,6 +156,10 @@ const PUBLIC_PATHS = [
   '/api/auth/signup',
   '/api/auth/login',
   '/api/health',
+  // These are called during signup before the user has a session
+  '/api/auth/check-username',
+  '/api/auth/check-email',
+  '/api/auth/verify-reset-email',
 ];
 
 function isPublicPath(path) {

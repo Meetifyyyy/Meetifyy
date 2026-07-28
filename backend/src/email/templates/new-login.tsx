@@ -6,32 +6,51 @@ import {
   Heading,
   Hr,
   Html,
+  Img,
   Preview,
   Section,
   Text,
 } from '@react-email/components';
 
+import { SITE_CONFIG } from '../../common/config/site.config';
+
 interface NewLoginEmailProps {
-  name: string;
-  device: string;
-  location: string;
-  time: string;
+  name?: string;
+  device?: string;
+  location?: string;
+  time?: string;
+  browser?: string;
+  os?: string;
+  ip?: string;
+  frontendUrl?: string;
+  logoUrl?: string;
 }
 
 export const NewLoginEmail = ({
   name = 'User',
-  device = 'Chrome on Mac OS',
+  device = 'MacBook Pro',
   location = 'Unknown Location',
   time = 'Just now',
+  browser = 'Chrome 126',
+  os = 'macOS Sonoma',
+  ip = '192.168.1.1',
+  frontendUrl = SITE_CONFIG.frontendUrl,
+  logoUrl = SITE_CONFIG.logoUrl,
 }: NewLoginEmailProps) => {
   return (
     <Html>
-      <Head>
-      </Head>
-      <Preview>New login to your Meetifyy account</Preview>
+      <Head />
+      <Preview>New Login to Your Meetifyy Account</Preview>
       <Body style={main}>
         <Container style={container}>
           <Section style={header}>
+            <Img
+              src={logoUrl}
+              width="48"
+              height="48"
+              alt="Meetifyy Logo"
+              style={logoImg}
+            />
             <Heading style={logoText}>Meetifyy</Heading>
           </Section>
           
@@ -39,26 +58,28 @@ export const NewLoginEmail = ({
             <Heading style={heading}>New Login Detected</Heading>
             <Text style={paragraph}>Hi {name},</Text>
             <Text style={paragraph}>
-              We noticed a new login to your Meetifyy account from a device we haven't seen recently.
+              Your Meetifyy account was just accessed from a new device.
             </Text>
             
-            <Section style={infoContainer}>
-              <Text style={infoText}>
-                <strong>Device:</strong> {device}
-                <br />
-                <strong>Location:</strong> {location}
-                <br />
-                <strong>Time:</strong> {time}
-              </Text>
+            <Section style={infoBox}>
+              <Text style={infoTitle}>Login Details</Text>
+              <Text style={listItem}>• <strong>Time:</strong> {time}</Text>
+              <Text style={listItem}>• <strong>Device:</strong> {device}</Text>
+              <Text style={listItem}>• <strong>Browser:</strong> {browser}</Text>
+              <Text style={listItem}>• <strong>Operating System:</strong> {os}</Text>
+              <Text style={listItem}>• <strong>IP Address:</strong> {ip || location}</Text>
             </Section>
             
             <Text style={paragraph}>
-              If this was you, you can safely ignore this email. If you don't recognize this activity, please secure your account by resetting your password immediately.
+              If this was you, no further action is required.
+            </Text>
+
+            <Text style={paragraph}>
+              If you don't recognize this login, we recommend changing your password immediately to help secure your account.
             </Text>
             
             <Text style={signature}>
-              Best,<br />
-              The Meetifyy Team
+              — <strong>The Meetifyy Team</strong>
             </Text>
           </Section>
           
@@ -66,12 +87,12 @@ export const NewLoginEmail = ({
           
           <Section style={footer}>
             <Text style={footerText}>
-              Meetifyy, Inc. • Connecting students globally
+              Meetifyy • Connecting People & Communities
             </Text>
             <Text style={footerLinks}>
-              <a href="https://meetifyy.com/privacy" style={link}>Privacy Policy</a>
+              <a href={SITE_CONFIG.privacyUrl} style={link}>Privacy Policy</a>
               {' • '}
-              <a href="https://meetifyy.com/terms" style={link}>Terms of Service</a>
+              <a href={SITE_CONFIG.termsUrl} style={link}>Terms of Service</a>
             </Text>
           </Section>
         </Container>
@@ -80,9 +101,9 @@ export const NewLoginEmail = ({
   );
 };
 
-// Styles
+// Standard User Email Styles
 const main = {
-  backgroundColor: '#f3f4f6',
+  backgroundColor: '#f8fafc',
   fontFamily:
     '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Ubuntu,sans-serif',
   padding: '40px 0',
@@ -92,24 +113,32 @@ const container = {
   backgroundColor: '#ffffff',
   margin: '0 auto',
   padding: '0',
-  borderRadius: '12px',
-  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.04)',
+  borderRadius: '16px',
+  boxShadow: '0 10px 35px rgba(15, 23, 42, 0.08)',
   overflow: 'hidden',
-  maxWidth: '500px',
+  maxWidth: '520px',
+  border: '1px solid #e2e8f0',
 };
 
 const header = {
-  backgroundColor: '#4f46e5', // A vibrant indigo/purple
-  padding: '30px 40px',
+  backgroundColor: '#ffffff',
+  padding: '36px 40px 16px',
   textAlign: 'center' as const,
+  borderBottom: '1px solid #f1f5f9',
+};
+
+const logoImg = {
+  margin: '0 auto 10px',
+  display: 'block',
+  width: '56px',
+  height: '56px',
 };
 
 const logoText = {
-  color: '#ffffff',
-  fontSize: '32px',
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  fontWeight: '700',
-  letterSpacing: '1px',
+  color: '#0f172a',
+  fontSize: '28px',
+  fontWeight: '800',
+  letterSpacing: '-0.5px',
   margin: '0',
 };
 
@@ -118,72 +147,81 @@ const content = {
 };
 
 const heading = {
-  fontSize: '24px',
+  fontSize: '22px',
   letterSpacing: '-0.5px',
   lineHeight: '1.3',
   fontWeight: '700',
-  color: '#111827',
+  color: '#0f172a',
   margin: '0 0 20px',
   textAlign: 'center' as const,
 };
 
 const paragraph = {
   margin: '0 0 16px',
-  fontSize: '16px',
-  lineHeight: '26px',
-  color: '#4b5563',
+  fontSize: '15px',
+  lineHeight: '25px',
+  color: '#334155',
 };
 
-const infoContainer = {
-  backgroundColor: '#f8fafc',
-  border: '1px solid #e2e8f0',
-  borderRadius: '8px',
-  padding: '16px 20px',
+const infoBox = {
+  backgroundColor: '#f1f5f9',
+  border: '1px solid #cbd5e1',
+  borderRadius: '12px',
+  padding: '20px 24px',
   margin: '24px 0',
 };
 
-const infoText = {
-  margin: '0',
-  fontSize: '15px',
-  lineHeight: '28px',
-  color: '#1e293b',
+const infoTitle = {
+  margin: '0 0 12px',
+  fontSize: '14px',
+  fontWeight: '700',
+  color: '#0f172a',
+};
+
+const listItem = {
+  margin: '0 0 8px',
+  fontSize: '14px',
+  lineHeight: '22px',
+  color: '#334155',
 };
 
 const signature = {
-  margin: '32px 0 0',
-  fontSize: '16px',
-  lineHeight: '26px',
-  color: '#4b5563',
+  margin: '28px 0 0',
+  fontSize: '15px',
+  lineHeight: '24px',
+  color: '#475569',
 };
 
 const hr = {
-  borderColor: '#e5e7eb',
+  borderColor: '#f1f5f9',
   margin: '0',
   borderWidth: '1px',
 };
 
 const footer = {
   padding: '24px 40px',
-  backgroundColor: '#f9fafb',
+  backgroundColor: '#f8fafc',
   textAlign: 'center' as const,
 };
 
 const footerText = {
-  color: '#9ca3af',
+  color: '#94a3b8',
   fontSize: '13px',
   lineHeight: '20px',
-  margin: '0 0 8px',
+  margin: '0 0 6px',
 };
 
 const footerLinks = {
   margin: '0',
-  color: '#9ca3af',
+  color: '#94a3b8',
   fontSize: '13px',
 };
 
 const link = {
-  color: '#6b7280',
+  color: '#64748b',
   textDecoration: 'underline',
 };
 
 export default NewLoginEmail;
+
+
