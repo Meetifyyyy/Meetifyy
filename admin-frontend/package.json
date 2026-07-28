@@ -28,5 +28,11 @@
     "oxlint": "^1.71.0",
     "typescript": "~6.0.2",
     "vite": "^8.1.1"
+  },
+  "overrides": {
+    "brace-expansion": "^2.0.1",
+    "fast-uri": "^3.0.3",
+    "react-router": "^7.18.1",
+    "react-router-dom": "^7.18.1"
   }
 }
