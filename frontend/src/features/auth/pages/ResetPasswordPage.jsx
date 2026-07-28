@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@shared/context/AuthContext';
 import Background from '@shared/components/ui/Background';
 import Toast from '@shared/components/ui/Toast';
@@ -17,21 +17,30 @@ export default function ResetPasswordPage() {
   const [toastVisible, setToastVisible] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasError, setHasError] = useState(false);
+  const [hasValidSession, setHasValidSession] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   
-  const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        showToast('This reset link is invalid or has expired. Please request a new one.');
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          showToast('This reset link is invalid or has expired. Please request a new one.');
+          setTimeout(() => navigate('/forgot-password'), 2500);
+        } else {
+          setHasValidSession(true);
+        }
+      } catch {
+        showToast('Something went wrong. Please request a new reset link.');
         setTimeout(() => navigate('/forgot-password'), 2500);
+      } finally {
+        setIsCheckingSession(false);
       }
     };
     checkSession();
-  }, []);
+  }, [navigate]);
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -54,7 +63,6 @@ export default function ResetPasswordPage() {
     }
     
     setIsSubmitting(true);
-    setHasError(false);
     
     try {
       const { error } = await supabase.auth.updateUser({
@@ -63,13 +71,12 @@ export default function ResetPasswordPage() {
       
       if (error) throw error;
       
-      setIsSubmitted(true);
-      
-      // Optionally trigger password changed email via backend
+      // Optionally notify the user via email that their password changed
       try {
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData?.session?.access_token;
         const { data } = await supabase.auth.getUser();
+        const apiUrl = getBackendUrl();
         if (data?.user?.email && token) {
           await fetch(`${apiUrl}/api/auth/events/password-changed`, {
             method: 'POST',
@@ -81,16 +88,41 @@ export default function ResetPasswordPage() {
           });
         }
       } catch (e) {
-        // Ignore backend error
+        // Ignore backend notification error — password was still changed
+      }
+
+      setIsSubmitted(true);
+
+      // Sign out the reset session immediately after a successful password change.
+      // This prevents the temporary reset session from being used to access the app
+      // without going through a proper login with the new credentials.
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        // Ignore sign-out error
       }
       
     } catch (err) {
-      setHasError(true);
-      showToast(err.message || 'Failed to update password');
+      showToast(err.message || 'Failed to update password. The link may have expired.');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  if (isCheckingSession) {
+    return (
+      <>
+        <Background />
+        <div className={styles.flowContainer}>
+          <div className={styles.contentArea}>
+            <div className={styles.stepWrapper} style={{ alignItems: 'center', justifyContent: 'center' }}>
+              <p style={{ color: 'var(--color-text-muted)' }}>Verifying reset link…</p>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -151,7 +183,7 @@ export default function ResetPasswordPage() {
                     />
                   </div>
                   
-                  <button type="submit" className={styles.continueBtn} disabled={isSubmitting} style={{ marginTop: '1rem' }}>
+                  <button type="submit" className={styles.continueBtn} disabled={isSubmitting || !hasValidSession} style={{ marginTop: '1rem' }}>
                     {isSubmitting ? 'Updating...' : 'Update Password'} <ArrowRight className={styles.btnIcon} />
                   </button>
                 </form>
@@ -163,7 +195,7 @@ export default function ResetPasswordPage() {
                 </div>
                 <h1 className={styles.headline} style={{ textAlign: 'center' }}>Password Updated!</h1>
                 <p className={styles.subheadline} style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
-                  Your password has been successfully reset.
+                  Your password has been reset. Log in with your new credentials.
                 </p>
                 <Link
                   to="/login"
@@ -176,7 +208,7 @@ export default function ResetPasswordPage() {
                     justifyContent: 'center'
                   }}
                 >
-                  Return to log in
+                  Log in
                 </Link>
               </div>
             )}

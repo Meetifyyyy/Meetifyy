@@ -142,7 +142,7 @@ export class AdminAuthService implements OnModuleInit {
     // Generate 6-digit OTP
     const rawOtp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpHash = this.hashOtp(rawOtp);
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
     // Invalidate old OTPs for this admin
     await this.prisma.adminOtp.deleteMany({ where: { adminId: admin.id } });
@@ -166,7 +166,7 @@ export class AdminAuthService implements OnModuleInit {
     const pendingToken = jwt.sign(
       { sub: admin.id, email: admin.email, step: 'OTP' },
       this.getPendingSecret(),
-      { expiresIn: '5m' },
+      { expiresIn: '10m' },
     );
 
     return {

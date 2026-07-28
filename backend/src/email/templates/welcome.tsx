@@ -7,44 +7,73 @@ import {
   Heading,
   Hr,
   Html,
+  Img,
   Preview,
   Section,
   Text,
 } from '@react-email/components';
 
+import { SITE_CONFIG } from '../../common/config/site.config';
+
 interface WelcomeEmailProps {
-  name: string;
+  name?: string;
+  frontendUrl?: string;
+  logoUrl?: string;
 }
 
-export const WelcomeEmail = ({ name = 'Student' }: WelcomeEmailProps) => {
+export const WelcomeEmail = ({
+  name = 'Friend',
+  frontendUrl = SITE_CONFIG.frontendUrl,
+  logoUrl = SITE_CONFIG.logoUrl,
+}: WelcomeEmailProps) => {
   return (
     <Html>
-      <Head>
-      </Head>
-      <Preview>Welcome to Meetifyy - The best place to connect on campus!</Preview>
+      <Head />
+      <Preview>Welcome to Meetifyy! 🎉</Preview>
       <Body style={main}>
         <Container style={container}>
           <Section style={header}>
+            <Img
+              src={logoUrl}
+              width="48"
+              height="48"
+              alt="Meetifyy Logo"
+              style={logoImg}
+            />
             <Heading style={logoText}>Meetifyy</Heading>
           </Section>
           
           <Section style={content}>
-            <Heading style={heading}>Welcome to Meetifyy! 🚀</Heading>
+            <Heading style={heading}>Welcome to Meetifyy 👋</Heading>
             <Text style={paragraph}>Hi {name},</Text>
             <Text style={paragraph}>
-              We're thrilled to have you on board! Meetifyy is designed to help you
-              connect, collaborate, and schedule meetings seamlessly with peers on your campus.
+              Welcome to <strong>Meetifyy</strong>! We're excited to have you join our community.
             </Text>
-            
+            <Text style={paragraph}>
+              Meetifyy helps you discover activities, connect with like-minded people, and build meaningful friendships—whether it's sports, study sessions, hiking, gaming, or anything in between.
+            </Text>
+
+            <Section style={infoBox}>
+              <Text style={infoTitle}>Here's what you can do next:</Text>
+              <Text style={listItem}>• Complete your profile.</Text>
+              <Text style={listItem}>• Explore activities near you.</Text>
+              <Text style={listItem}>• Join groups that match your interests.</Text>
+              <Text style={listItem}>• Meet new people and create lasting connections.</Text>
+            </Section>
+
+            <Text style={paragraph}>
+              Your adventure starts now.
+            </Text>
+
             <Section style={btnContainer}>
-              <Button style={button} href="https://meetifyy.com/dashboard">
-                Get Started
+              <Button style={button} href={SITE_CONFIG.dashboardUrl}>
+                Explore Meetifyy →
               </Button>
             </Section>
             
             <Text style={signature}>
-              Best,<br />
-              The Meetifyy Team
+              See you on Meetifyy!<br /><br />
+              — <strong>The Meetifyy Team</strong>
             </Text>
           </Section>
           
@@ -52,12 +81,12 @@ export const WelcomeEmail = ({ name = 'Student' }: WelcomeEmailProps) => {
           
           <Section style={footer}>
             <Text style={footerText}>
-              Meetifyy, Inc. • Connecting students globally
+              Meetifyy • Connecting People & Communities
             </Text>
             <Text style={footerLinks}>
-              <a href="https://meetifyy.com/privacy" style={link}>Privacy Policy</a>
+              <a href={SITE_CONFIG.privacyUrl} style={link}>Privacy Policy</a>
               {' • '}
-              <a href="https://meetifyy.com/terms" style={link}>Terms of Service</a>
+              <a href={SITE_CONFIG.termsUrl} style={link}>Terms of Service</a>
             </Text>
           </Section>
         </Container>
@@ -66,9 +95,9 @@ export const WelcomeEmail = ({ name = 'Student' }: WelcomeEmailProps) => {
   );
 };
 
-// Styles
+// Standard User Email Styles
 const main = {
-  backgroundColor: '#f3f4f6',
+  backgroundColor: '#f8fafc',
   fontFamily:
     '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Ubuntu,sans-serif',
   padding: '40px 0',
@@ -78,24 +107,32 @@ const container = {
   backgroundColor: '#ffffff',
   margin: '0 auto',
   padding: '0',
-  borderRadius: '12px',
-  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.04)',
+  borderRadius: '16px',
+  boxShadow: '0 10px 35px rgba(15, 23, 42, 0.08)',
   overflow: 'hidden',
-  maxWidth: '500px',
+  maxWidth: '520px',
+  border: '1px solid #e2e8f0',
 };
 
 const header = {
-  backgroundColor: '#4f46e5', // A vibrant indigo/purple
-  padding: '30px 40px',
+  backgroundColor: '#ffffff',
+  padding: '36px 40px 16px',
   textAlign: 'center' as const,
+  borderBottom: '1px solid #f1f5f9',
+};
+
+const logoImg = {
+  margin: '0 auto 10px',
+  display: 'block',
+  width: '56px',
+  height: '56px',
 };
 
 const logoText = {
-  color: '#ffffff',
-  fontSize: '32px',
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  fontWeight: '700',
-  letterSpacing: '1px',
+  color: '#0f172a',
+  fontSize: '28px',
+  fontWeight: '800',
+  letterSpacing: '-0.5px',
   margin: '0',
 };
 
@@ -104,75 +141,99 @@ const content = {
 };
 
 const heading = {
-  fontSize: '24px',
+  fontSize: '22px',
   letterSpacing: '-0.5px',
   lineHeight: '1.3',
   fontWeight: '700',
-  color: '#111827',
+  color: '#0f172a',
   margin: '0 0 20px',
   textAlign: 'center' as const,
 };
 
 const paragraph = {
   margin: '0 0 16px',
-  fontSize: '16px',
-  lineHeight: '26px',
-  color: '#4b5563',
+  fontSize: '15px',
+  lineHeight: '25px',
+  color: '#334155',
+};
+
+const infoBox = {
+  backgroundColor: '#f1f5f9',
+  borderRadius: '12px',
+  padding: '20px 24px',
+  margin: '24px 0',
+  border: '1px solid #cbd5e1',
+};
+
+const infoTitle = {
+  margin: '0 0 12px',
+  fontSize: '14px',
+  fontWeight: '700',
+  color: '#0f172a',
+};
+
+const listItem = {
+  margin: '0 0 8px',
+  fontSize: '14px',
+  lineHeight: '22px',
+  color: '#334155',
 };
 
 const btnContainer = {
   textAlign: 'center' as const,
-  margin: '32px 0',
+  margin: '28px 0',
 };
 
 const button = {
   backgroundColor: '#4f46e5',
-  borderRadius: '8px',
-  color: '#fff',
-  fontSize: '16px',
+  borderRadius: '10px',
+  color: '#ffffff',
+  fontSize: '15px',
   fontWeight: '600',
   textDecoration: 'none',
   textAlign: 'center' as const,
   display: 'inline-block',
   padding: '14px 32px',
-  boxShadow: '0 4px 14px 0 rgba(79, 70, 229, 0.39)',
+  boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)',
 };
 
 const signature = {
-  margin: '32px 0 0',
-  fontSize: '16px',
-  lineHeight: '26px',
-  color: '#4b5563',
+  margin: '28px 0 0',
+  fontSize: '15px',
+  lineHeight: '24px',
+  color: '#475569',
 };
 
 const hr = {
-  borderColor: '#e5e7eb',
+  borderColor: '#f1f5f9',
   margin: '0',
   borderWidth: '1px',
 };
 
 const footer = {
   padding: '24px 40px',
-  backgroundColor: '#f9fafb',
+  backgroundColor: '#f8fafc',
   textAlign: 'center' as const,
 };
 
 const footerText = {
-  color: '#9ca3af',
+  color: '#94a3b8',
   fontSize: '13px',
   lineHeight: '20px',
-  margin: '0 0 8px',
+  margin: '0 0 6px',
 };
 
 const footerLinks = {
   margin: '0',
-  color: '#9ca3af',
+  color: '#94a3b8',
   fontSize: '13px',
 };
 
 const link = {
-  color: '#6b7280',
+  color: '#64748b',
   textDecoration: 'underline',
 };
 
 export default WelcomeEmail;
+
+

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { supabase } from '@shared/context/AuthContext';
 import Background from '@shared/components/ui/Background';
@@ -23,27 +23,44 @@ export default function ForgotPasswordPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email.trim() || !email.includes('@')) {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
       showToast('Please enter a valid email address');
       return;
     }
     
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      // Send the reset email directly via Supabase.
+      //
+      // Security note: We intentionally do NOT check whether the account exists
+      // first. This prevents user enumeration — an attacker cannot probe whether
+      // an email is registered by observing different responses.
+      //
+      // The backend's syncProfile gate ensures that even if a reset link is
+      // clicked for a non-verified/non-existent account, no Prisma user row
+      // is ever created. The password reset link will simply fail silently on
+      // the Supabase side if the account doesn't exist.
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       
-      if (error) throw error;
+      // Always show "check your email" — even if error, to prevent enumeration.
+      // Supabase may return an error for rate limiting, which is the only case
+      // where surfacing feedback makes sense.
+      if (error && error.message?.toLowerCase().includes('rate limit')) {
+        showToast('Too many requests. Please wait a moment before trying again.');
+        return;
+      }
       
       setIsSubmitted(true);
     } catch (err) {
-      const isExpectedError = err.status === 400 || err.status === 422 || err.message?.includes('not found') || err.message?.includes('invalid');
-      if (isExpectedError) {
-        showToast('If an account exists, you will receive a reset link shortly.');
-        setIsSubmitted(true);
+      // Only surface rate limit errors — all other errors are swallowed
+      if (err?.message?.toLowerCase().includes('rate limit')) {
+        showToast('Too many requests. Please try again later.');
       } else {
-        showToast(err.message || 'Something went wrong. Please check your connection and try again.');
+        // Still show success UI to prevent enumeration
+        setIsSubmitted(true);
       }
     } finally {
       setIsSubmitting(false);
@@ -73,7 +90,7 @@ export default function ForgotPasswordPage() {
             {!isSubmitted ? (
               <>
                 <h1 className={styles.headline}>Reset Password</h1>
-                <p className={styles.subheadline}>Enter your email to receive a reset link.</p>
+                <p className={styles.subheadline}>Enter your email and we'll send a reset link if an account exists.</p>
                 <form onSubmit={handleSubmit} style={{ width: '100%', marginTop: '1.5rem' }}>
                   
                   <input
@@ -97,10 +114,10 @@ export default function ForgotPasswordPage() {
                 </div>
                 <h1 className={styles.headline} style={{ textAlign: 'center' }}>Check your email</h1>
                 <p className={styles.subheadline} style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-                  We've sent a password reset link to <strong style={{ color: 'var(--color-text-main)' }}>{email}</strong>.
+                  If an account exists for <strong style={{ color: 'var(--color-text-main)' }}>{email}</strong>, a reset link is on its way.
                 </p>
                 <p className={styles.subheadline} style={{ fontSize: '0.9rem', textAlign: 'center', marginBottom: '2.5rem' }}>
-                  If an account exists, you will receive a reset link shortly.
+                  Didn't get it? Check your spam folder or try again in a few minutes.
                 </p>
                 <Link
                   to="/login"

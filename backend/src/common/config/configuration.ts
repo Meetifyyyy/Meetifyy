@@ -30,3 +30,11 @@ export const resendConfig = registerAs('resend', () => ({
   apiKey: process.env.RESEND_API_KEY || '',
   fromEmail: process.env.RESEND_FROM_EMAIL || 'noreply@meetifyy.app',
 }));
+
+export const emailConfig = registerAs('email', () => ({
+  driver: process.env.EMAIL_DRIVER || 'mailpit',
+  smtpHost: process.env.SMTP_HOST || '127.0.0.1',
+  smtpPort: parseInt(process.env.SMTP_PORT || '1025', 10),
+  fromEmail: process.env.EMAIL_FROM || process.env.RESEND_FROM_EMAIL || 'noreply@meetifyy.app',
+}));
+

@@ -87,6 +87,20 @@ export function AuthProvider({ children }) {
           return;
         }
 
+        // ─── PASSWORD RECOVERY GATE ───────────────────────────────────────────
+        // When a user clicks a password reset link, Supabase fires PASSWORD_RECOVERY
+        // (and sometimes SIGNED_IN immediately after). We must NOT run the account-
+        // creation sync for these sessions — the user hasn't verified their email
+        // via OTP, and the backend's syncProfile will reject the upsert anyway.
+        // We set the session so the ResetPasswordPage can call updateUser(), but
+        // we do NOT sync to the backend or set currentUser as a logged-in app user.
+        // ─────────────────────────────────────────────────────────────────────
+        if (event === 'PASSWORD_RECOVERY') {
+          setSession(supabaseSession);
+          setLoading(false);
+          return;
+        }
+
         if (isLoggingOutRef.current) {
           // Ignore secondary session events triggered during async signOut execution
           setSession(null);
@@ -173,7 +187,11 @@ export function AuthProvider({ children }) {
                     }
                   }
                 } catch (err) {
-                  console.error('Failed to sync profile on auth change', err);
+                  // If the backend rejects with 401 (unverified email gate), silently
+                  // swallow the error — the user will be prompted to verify via OTP.
+                  if (err?.status !== 401) {
+                    console.error('Failed to sync profile on auth change', err);
+                  }
                 }
               }, 200);
               E2EEManager.getInstance().initialize().catch(console.error);
@@ -263,8 +281,17 @@ export function AuthProvider({ children }) {
         : (error.error_description || error.msg || 'Signup failed. Please try again.');
       throw new Error(msg);
     }
+
+    // Supabase signUp returns a user with identities=[] when the email already
+    // exists but is unconfirmed. Detect this and surface a clean error so the
+    // user knows to check their inbox rather than seeing a silent failure.
+    if (data?.user && (!data.user.identities || data.user.identities.length === 0)) {
+      throw new Error(
+        'A signup is already pending for this email. Check your inbox for the verification code, or wait a moment and try again.'
+      );
+    }
     
-    // We don't log them in yet, they must verify OTP first.
+    // We don't log them in yet — they must verify OTP first.
     return true;
   }, []);
 
@@ -321,7 +348,12 @@ export function AuthProvider({ children }) {
       localStorage.setItem('currentUser', JSON.stringify(profile));
       setCurrentUser(profile);
 
-      // Immediately persist gathered profile details to backend database
+      // Clear stale signup session data — the OTP is now used and should not be replayable
+      sessionStorage.removeItem('meetifyy_signup_data');
+
+      // Immediately persist gathered profile details to backend database.
+      // The backend syncProfile gate will allow this because email_confirmed_at
+      // is now set (Supabase marks it on successful OTP verification).
       try {
         const { password, ...safeData } = payloadObj;
         const response = await usersApi.updateProfile({
@@ -556,6 +588,28 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  if (!ctx) {
+    return {
+      isLoggedIn: false,
+      session: null,
+      loading: false,
+      currentUser: null,
+      username: '',
+      displayName: '',
+      initial: '?',
+      collegeName: '',
+      login: async () => {},
+      initiateSignup: async () => {},
+      resendSignupOtp: async () => {},
+      verifySignupOtp: async () => {},
+      completeOnboarding: async () => {},
+      updateProfile: async () => {},
+      updateSettings: async () => {},
+      updateCurrentUser: () => {},
+      changePassword: async () => {},
+      logout: async () => {},
+      isSupabaseConfigured: true,
+    };
+  }
   return ctx;
 }

@@ -1,48 +1,87 @@
-import { Html, Head, Preview, Body, Container, Section, Text, Img } from '@react-email/components';
 import * as React from 'react';
+import {
+  Body,
+  Container,
+  Head,
+  Heading,
+  Hr,
+  Html,
+  Img,
+  Preview,
+  Section,
+  Text,
+} from '@react-email/components';
+
+import { SITE_CONFIG } from '../../common/config/site.config';
 
 interface PasswordChangedEmailProps {
-  name: string;
+  name?: string;
+  time?: string;
+  device?: string;
+  frontendUrl?: string;
+  logoUrl?: string;
 }
 
 export const PasswordChangedEmail: React.FC<Readonly<PasswordChangedEmailProps>> = ({
   name = 'User',
+  time = 'Just now',
+  device = 'Chrome on macOS',
+  frontendUrl = SITE_CONFIG.frontendUrl,
+  logoUrl = SITE_CONFIG.logoUrl,
 }) => {
   return (
     <Html>
-      <Head>
-      </Head>
-      <Preview>Your Meetifyy password has been changed successfully.</Preview>
+      <Head />
+      <Preview>Your Meetifyy Password Was Changed</Preview>
       <Body style={main}>
         <Container style={container}>
-          {/* Header */}
           <Section style={header}>
-            <Text style={logoText}>Meetifyy</Text>
+            <Img
+              src={logoUrl}
+              width="48"
+              height="48"
+              alt="Meetifyy Logo"
+              style={logoImg}
+            />
+            <Heading style={logoText}>Meetifyy</Heading>
           </Section>
 
-          {/* Content */}
           <Section style={content}>
-            <Text style={heading}>Password Updated!</Text>
+            <Heading style={heading}>Your Password Has Been Changed</Heading>
+            <Text style={paragraph}>Hi {name},</Text>
             <Text style={paragraph}>
-              Hey {name},
+              This is a confirmation that the password for your Meetifyy account was successfully changed.
             </Text>
+
+            <Section style={infoBox}>
+              <Text style={infoTitle}>Change Details</Text>
+              <Text style={listItem}>• <strong>Time:</strong> {time}</Text>
+              <Text style={listItem}>• <strong>Device:</strong> {device}</Text>
+            </Section>
+            
             <Text style={paragraph}>
-              This is a quick confirmation that the password for your Meetifyy account has been successfully changed.
+              If you made this change, no further action is required.
             </Text>
+
             <Text style={paragraph}>
-              If you made this change, you can safely ignore this email.
+              If you did <strong>not</strong> change your password, your account may be at risk. Please reset your password immediately and contact support if you need assistance.
             </Text>
-            <Text style={alertParagraph}>
-              <strong>Didn't change your password?</strong><br />
-              Please secure your account immediately by resetting your password and contacting our support team.
+
+            <Text style={signature}>
+              — <strong>The Meetifyy Team</strong>
             </Text>
           </Section>
 
-          {/* Footer */}
+          <Hr style={hr} />
+
           <Section style={footer}>
             <Text style={footerText}>
-              Sent by Meetifyy<br />
-              The Campus Community Platform
+              Meetifyy • Connecting People & Communities
+            </Text>
+            <Text style={footerLinks}>
+              <a href={SITE_CONFIG.privacyUrl} style={link}>Privacy Policy</a>
+              {' • '}
+              <a href={SITE_CONFIG.termsUrl} style={link}>Terms of Service</a>
             </Text>
           </Section>
         </Container>
@@ -53,9 +92,9 @@ export const PasswordChangedEmail: React.FC<Readonly<PasswordChangedEmailProps>>
 
 export default PasswordChangedEmail;
 
-// Styles
+// Standard User Email Styles
 const main = {
-  backgroundColor: '#f6f9fc',
+  backgroundColor: '#f8fafc',
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   padding: '40px 0',
 };
@@ -65,65 +104,112 @@ const container = {
   margin: '0 auto',
   padding: '0',
   borderRadius: '16px',
-  boxShadow: '0 4px 24px rgba(0, 0, 0, 0.05)',
-  maxWidth: '600px',
+  boxShadow: '0 10px 35px rgba(15, 23, 42, 0.08)',
+  maxWidth: '520px',
   overflow: 'hidden',
+  border: '1px solid #e2e8f0',
 };
 
 const header = {
-  backgroundColor: '#4f46e5',
-  padding: '40px 48px',
+  backgroundColor: '#ffffff',
+  padding: '36px 40px 16px',
   textAlign: 'center' as const,
+  borderBottom: '1px solid #f1f5f9',
+};
+
+const logoImg = {
+  margin: '0 auto 10px',
+  display: 'block',
+  width: '56px',
+  height: '56px',
 };
 
 const logoText = {
-  color: '#ffffff',
-  fontSize: '36px',
-  fontWeight: '400',
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  color: '#0f172a',
+  fontSize: '28px',
+  fontWeight: '800',
+  letterSpacing: '-0.5px',
   margin: '0',
-  letterSpacing: '1px',
 };
 
 const content = {
-  padding: '48px',
+  padding: '40px',
 };
 
 const heading = {
-  fontSize: '24px',
+  fontSize: '22px',
+  letterSpacing: '-0.5px',
+  lineHeight: '1.3',
   fontWeight: '700',
-  color: '#111827',
-  margin: '0 0 24px',
+  color: '#0f172a',
+  margin: '0 0 20px',
+  textAlign: 'center' as const,
 };
 
 const paragraph = {
-  fontSize: '16px',
-  lineHeight: '26px',
-  color: '#4b5563',
-  margin: '0 0 24px',
+  margin: '0 0 16px',
+  fontSize: '15px',
+  lineHeight: '25px',
+  color: '#334155',
 };
 
-const alertParagraph = {
+const infoBox = {
+  backgroundColor: '#f1f5f9',
+  border: '1px solid #cbd5e1',
+  borderRadius: '12px',
+  padding: '20px 24px',
+  margin: '24px 0',
+};
+
+const infoTitle = {
+  margin: '0 0 12px',
+  fontSize: '14px',
+  fontWeight: '700',
+  color: '#0f172a',
+};
+
+const listItem = {
+  margin: '0 0 8px',
+  fontSize: '14px',
+  lineHeight: '22px',
+  color: '#334155',
+};
+
+const signature = {
+  margin: '28px 0 0',
   fontSize: '15px',
   lineHeight: '24px',
-  color: '#991b1b',
-  backgroundColor: '#fef2f2',
-  padding: '16px',
-  borderRadius: '8px',
-  borderLeft: '4px solid #ef4444',
-  margin: '32px 0 0',
+  color: '#475569',
+};
+
+const hr = {
+  borderColor: '#f1f5f9',
+  margin: '0',
+  borderWidth: '1px',
 };
 
 const footer = {
-  backgroundColor: '#f9fafb',
-  padding: '32px 48px',
+  padding: '24px 40px',
+  backgroundColor: '#f8fafc',
   textAlign: 'center' as const,
-  borderTop: '1px solid #f3f4f6',
 };
 
 const footerText = {
-  fontSize: '14px',
-  lineHeight: '24px',
-  color: '#9ca3af',
-  margin: '0',
+  color: '#94a3b8',
+  fontSize: '13px',
+  lineHeight: '20px',
+  margin: '0 0 6px',
 };
+
+const footerLinks = {
+  margin: '0',
+  color: '#94a3b8',
+  fontSize: '13px',
+};
+
+const link = {
+  color: '#64748b',
+  textDecoration: 'underline',
+};
+
+

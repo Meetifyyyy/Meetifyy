@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import { Resend } from 'resend';
+import * as nodemailer from 'nodemailer';
 import { render } from '@react-email/render';
 import { createElement } from 'react';
 
@@ -17,13 +18,47 @@ import { AdminOtpEmail } from './templates/admin-otp';
 export class EmailProcessor extends WorkerHost {
   private readonly logger = new Logger(EmailProcessor.name);
   private resend: Resend;
+  private mailpitTransporter: nodemailer.Transporter;
+  private driver: string;
   private fromEmail: string;
 
   constructor(private configService: ConfigService) {
     super();
-    const apiKey = this.configService.get<string>('resend.apiKey') || this.configService.get<string>('RESEND_API_KEY');
+    this.driver = (
+      this.configService.get<string>('email.driver') ||
+      this.configService.get<string>('EMAIL_DRIVER') ||
+      'resend'
+    ).toLowerCase();
+
+    const apiKey =
+      this.configService.get<string>('resend.apiKey') ||
+      this.configService.get<string>('RESEND_API_KEY');
     this.resend = new Resend(apiKey);
-    this.fromEmail = this.configService.get<string>('resend.fromEmail') || this.configService.get<string>('EMAIL_FROM') || 'noreply@meetifyy.app';
+
+    const smtpHost =
+      this.configService.get<string>('email.smtpHost') ||
+      this.configService.get<string>('SMTP_HOST') ||
+      '127.0.0.1';
+    const smtpPort =
+      this.configService.get<number>('email.smtpPort') ||
+      parseInt(this.configService.get<string>('SMTP_PORT') || '1025', 10);
+
+    this.mailpitTransporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: false,
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+
+    this.fromEmail =
+      this.configService.get<string>('email.fromEmail') ||
+      this.configService.get<string>('resend.fromEmail') ||
+      this.configService.get<string>('EMAIL_FROM') ||
+      'noreply@meetifyy.app';
+
+    this.logger.log(`Email service initialized using driver: [${this.driver}] (SMTP target: ${smtpHost}:${smtpPort})`);
   }
 
   async process(job: Job<any, any, string>): Promise<any> {
@@ -86,8 +121,23 @@ export class EmailProcessor extends WorkerHost {
 
     try {
       const replyTo = this.configService.get<string>('EMAIL_REPLY_TO');
+      const rawFrom = job.data.from || this.fromEmail || 'noreply@meetifyy.app';
+      const from = rawFrom.includes('<') ? rawFrom : `Meetifyy <${rawFrom}>`;
+
+      if (this.driver === 'mailpit' || this.driver === 'smtp') {
+        const info = await this.mailpitTransporter.sendMail({
+          from,
+          to: job.data.email,
+          subject,
+          html,
+          ...(replyTo ? { replyTo } : {}),
+        });
+        this.logger.log(`Successfully dispatched email to Mailpit server for ${job.data.email}. Message ID: ${info.messageId}`);
+        return info;
+      }
+
       const { data, error } = await this.resend.emails.send({
-        from: this.fromEmail,
+        from,
         to: job.data.email,
         subject: subject,
         html: html,
@@ -107,3 +157,4 @@ export class EmailProcessor extends WorkerHost {
     }
   }
 }
+
