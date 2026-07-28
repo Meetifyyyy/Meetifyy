@@ -40,6 +40,10 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   private convAliasCache = new Map<string, { id: string; publicId: string | null; cachedAt: number }>();
   private readonly ALIAS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+  // Cache target user presence settings to avoid database queries on getPresence events
+  private userPresenceSettingsCache = new Map<string, { settings: any; cachedAt: number }>();
+  private readonly PRESENCE_SETTINGS_TTL_MS = 60 * 1000; // 60 seconds
+
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly messagesService: MessagesService,
@@ -269,18 +273,28 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     const viewerId = (client as any).userId;
     const targetUserId = data.userId;
 
-    const targetUser = await this.prisma.user.findUnique({
-      where: { id: targetUserId },
-      select: {
-        id: true,
-        settings: {
-          select: {
-            showOnlineStatus: true,
-            whoCanSeeOnline: true
+    let targetUser: any;
+    const now = Date.now();
+    const cachedSettings = this.userPresenceSettingsCache.get(targetUserId);
+    if (cachedSettings && (now - cachedSettings.cachedAt < this.PRESENCE_SETTINGS_TTL_MS)) {
+      targetUser = cachedSettings.settings;
+    } else {
+      targetUser = await this.prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: {
+          id: true,
+          settings: {
+            select: {
+              showOnlineStatus: true,
+              whoCanSeeOnline: true
+            }
           }
         }
+      });
+      if (targetUser) {
+        this.userPresenceSettingsCache.set(targetUserId, { settings: targetUser, cachedAt: now });
       }
-    });
+    }
 
     const presence = await this.presenceService.getPresence(targetUserId);
     if (!targetUser) {

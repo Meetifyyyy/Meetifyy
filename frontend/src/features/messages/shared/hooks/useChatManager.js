@@ -156,11 +156,12 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
   }, [historyPages]);
 
   const lastMarkedReadRef = useRef(null);
+  const markReadDebounceRef = useRef(null);
 
   const clearActiveChatUnread = useCallback((force = false) => {
     if (!activeChatId) return;
 
-    // Skip redundant network requests if this chat was already marked read in the current session
+    // Skip if already marked for this chat (guards against duplicate HTTP + socket fire)
     if (!force && lastMarkedReadRef.current === activeChatId) {
       return;
     }
@@ -183,11 +184,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
 
         if (isMatch && ((c.unreadCount || 0) > 0 || (c.unread || 0) > 0)) {
           modified = true;
-          return {
-            ...c,
-            unreadCount: 0,
-            unread: 0,
-          };
+          return { ...c, unreadCount: 0, unread: 0 };
         }
         return c;
       });
@@ -195,19 +192,26 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       return modified ? updated : oldConvs;
     });
 
+    // Single authoritative path: socket if connected, HTTP fallback only if not.
+    // Never fire both — the backend writes on either event.
     if (socket?.connected) {
       socket.emit('conversation:mark_seen', { conversationId: activeChatId });
+    } else {
+      messagesApi.markAsRead(activeChatId).catch(() => {});
     }
-
-    messagesApi.markAsRead(activeChatId).catch(() => {});
   }, [activeChatId, queryClient, socket]);
 
   useEffect(() => {
+    // Clear any pending debounce from the previous chat before marking new one read
+    if (markReadDebounceRef.current) {
+      clearTimeout(markReadDebounceRef.current);
+      markReadDebounceRef.current = null;
+    }
     lastMarkedReadRef.current = null;
     clearActiveChatUnread(true);
   }, [activeChatId]);
 
-  // Strict Seen Evaluator: checks all 5 conditions (open, active app, visible window, near bottom, rendered)
+  // Seen evaluator: debounced 800ms to avoid repeated calls during scroll/focus events
   const markSeenIfEligible = useCallback((isNearBottom = true) => {
     isNearBottomRef.current = isNearBottom;
 
@@ -218,19 +222,22 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
 
     if (isVisible && hasFocus && isNearBottom) {
-      clearActiveChatUnread();
-
-      if (socket?.connected) {
-        const lastMsg = allMessages[allMessages.length - 1];
-        socket.emit('messages:seen', {
-          conversationId: activeChatId,
-          lastMessageId: lastMsg?.id,
-        });
-        socket.emit('conversation:mark_seen', {
-          conversationId: activeChatId,
-          lastMessageId: lastMsg?.id,
-        });
-      }
+      // Debounce — collapse rapid scroll/focus events into one network call per conversation
+      if (markReadDebounceRef.current) clearTimeout(markReadDebounceRef.current);
+      markReadDebounceRef.current = setTimeout(() => {
+        clearActiveChatUnread();
+        // messages:seen is the detailed per-message event; conversation:mark_seen is handled
+        // inside clearActiveChatUnread, so we only emit the one extra messages:seen here.
+        if (socket?.connected) {
+          const lastMsg = allMessages[allMessages.length - 1];
+          if (lastMsg?.id) {
+            socket.emit('messages:seen', {
+              conversationId: activeChatId,
+              lastMessageId: lastMsg.id,
+            });
+          }
+        }
+      }, 800);
     }
   }, [socket, activeChatId, allMessages, clearActiveChatUnread]);
 

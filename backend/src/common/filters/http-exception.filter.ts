@@ -55,13 +55,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const userId = (request as any).user?.id ? ` user=${(request as any).user.id}` : '';
 
-    // Log the error
-    this.logger.error(
-      `[HTTP] ${request.method} ${request.url} ${status} ${reqId}${userId}${bodySnippet} - Error: ${
-        typeof message === 'object' ? JSON.stringify(redact(message)) : message
-      }`,
-      exception instanceof Error ? exception.stack : '',
-    );
+    // Log errors: 5xx as error with stack trace, 4xx as warning without stack trace
+    const logMsg = `[HTTP] ${request.method} ${request.url} ${status} ${reqId}${userId}${bodySnippet} - Error: ${
+      typeof message === 'object' ? JSON.stringify(redact(message)) : message
+    }`;
+
+    if (status >= 500) {
+      this.logger.error(logMsg, exception instanceof Error ? exception.stack : '');
+    } else {
+      this.logger.warn(logMsg);
+    }
 
     // Format safe response structure
     const errorResponse = {

@@ -1,6 +1,7 @@
-import { Injectable, UnauthorizedException, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException, ConflictException, BadRequestException, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { RedisService } from '../redis/redis.service';
 
 function validateBirthday(birthdayStr: string) {
   if (!birthdayStr) {
@@ -55,10 +56,13 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private domainCache = new Map<string, { collegeId: string | null; timestamp: number }>();
   private syncCache = new Map<string, { data: any; timestamp: number }>();
+  /** Coalesces concurrent syncProfile calls for the same user into one DB round-trip. */
+  private syncInflight = new Map<string, Promise<any>>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly supabaseService: SupabaseService,
+    @Optional() private readonly redisService?: RedisService,
   ) {}
 
   async syncProfile(user: any) {
@@ -72,6 +76,18 @@ export class AuthService {
       return cached.data;
     }
 
+    // If another request for this user is already in-flight, wait for it instead of querying DB again.
+    const existing = this.syncInflight.get(user.id);
+    if (existing) return existing;
+
+    const promise = this._doSyncProfile(user).finally(() => {
+      this.syncInflight.delete(user.id);
+    });
+    this.syncInflight.set(user.id, promise);
+    return promise;
+  }
+
+  private async _doSyncProfile(user: any) {
     // Fast-path: If user already exists in database, return with following list for client hydration
     const existingUser = await this.prisma.user.findUnique({
       where: { id: user.id },
@@ -145,9 +161,7 @@ export class AuthService {
           where: { userId: existingUser.id },
           select: { activityId: true },
         }).catch(() => []),
-        this.prisma.notification.count({
-          where: { recipientId: existingUser.id, readAt: null, deletedAt: null, type: { not: 'MESSAGE' as any } },
-        }).catch(() => 0),
+        this._getUnreadNotifCount(existingUser.id),
       ]);
 
       const result = {
@@ -489,4 +503,27 @@ export class AuthService {
 
     return user;
   }
+
+  private async _getUnreadNotifCount(userId: string): Promise<number> {
+    const redis = this.redisService?.getClient();
+    const redisKey = `notifications:unread:${userId}`;
+    if (redis) {
+      try {
+        const cached = await redis.get(redisKey);
+        if (cached !== null && cached !== undefined) {
+          return parseInt(cached, 10);
+        }
+      } catch {}
+    }
+
+    const count = await this.prisma.notification.count({
+      where: { recipientId: userId, readAt: null, deletedAt: null, type: { not: 'MESSAGE' as any } },
+    }).catch(() => 0);
+
+    if (redis) {
+      redis.set(redisKey, count.toString(), 'EX', 3600).catch(() => {});
+    }
+    return count;
+  }
 }
+

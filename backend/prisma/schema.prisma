@@ -390,6 +390,7 @@ model ConversationParticipant {
   @@index([conversationId])
   @@index([userId, deletedAt])
   @@index([conversationId, deletedAt])
+  @@index([conversationId, deletedAt, userId])
 }
 
 model Message {
@@ -510,6 +511,7 @@ model CrewActivity {
   @@index([status, createdAt(sort: Desc)])         // getAllActivities ORDER BY
   @@index([collegeId, status, createdAt(sort: Desc)]) // getCampusActivities filter
   @@index([visibility, status, createdAt(sort: Desc)])
+  @@index([status, deletedAt, endDate, startDate])
 }
 
 model CrewActivityMember {
@@ -547,6 +549,7 @@ model Notification {
   @@index([recipientId, readAt])
   @@index([recipientId, deletedAt, readAt])
   @@index([recipientId, deletedAt, createdAt(sort: Desc)])
+  @@index([recipientId, type, deletedAt, createdAt(sort: Desc)])
   @@index([createdAt])
   @@index([type])
 }

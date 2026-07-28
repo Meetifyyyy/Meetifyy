@@ -7,6 +7,15 @@ import { MessageResponseDto } from './dto/message-response.dto';
 
 @Injectable()
 export class MessagingCoreService {
+  /**
+   * Short-lived in-process cache: publicId/actId → internalUUID.
+   * Conversation IDs are immutable after creation, so a 30s TTL is safe.
+   * This eliminates 1–3 DB queries from every messaging endpoint call.
+   * Modelled on Discord's conversation ID resolution layer.
+   */
+  private readonly convIdCache = new Map<string, { id: string; expiresAt: number }>();
+  private static readonly CONV_CACHE_TTL_MS = 30_000;
+
   constructor(
     protected prisma: PrismaService,
     protected presenceService: PresenceService,
@@ -16,6 +25,25 @@ export class MessagingCoreService {
   async resolveConversationId(identifier: string, currentUserId?: string): Promise<string> {
     if (!identifier) return identifier;
     const cleanId = String(identifier).replace(/^(act_)+/, '');
+
+    // Fast path: return cached mapping if still fresh
+    const cached = this.convIdCache.get(identifier) ?? this.convIdCache.get(cleanId);
+    if (cached && cached.expiresAt > Date.now()) return cached.id;
+
+    const cacheResult = (id: string) => {
+      const entry = { id, expiresAt: Date.now() + MessagingCoreService.CONV_CACHE_TTL_MS };
+      this.convIdCache.set(identifier, entry);
+      if (cleanId !== identifier) this.convIdCache.set(cleanId, entry);
+      // Prevent unbounded growth: prune when over 2 000 entries
+      if (this.convIdCache.size > 2000) {
+        const now = Date.now();
+        for (const [k, v] of this.convIdCache) {
+          if (v.expiresAt <= now) this.convIdCache.delete(k);
+          if (this.convIdCache.size <= 1000) break;
+        }
+      }
+    };
+
     try {
       const conv = await this.prisma.conversation.findFirst({
         where: {
@@ -30,6 +58,7 @@ export class MessagingCoreService {
         select: { id: true }
       });
       if (conv?.id) {
+        cacheResult(conv.id);
         return conv.id;
       }
 
@@ -45,11 +74,12 @@ export class MessagingCoreService {
           select: { id: true }
         });
         if (dm?.id) {
+          cacheResult(dm.id);
           return dm.id;
         }
       }
     } catch (err) {
-      // ignore
+      // ignore transient errors, return identifier as-is
     }
     return identifier;
   }

@@ -11,6 +11,9 @@ const getBackendUrl = (): string => {
 
 const BASE_URL = getBackendUrl();
 
+/** Single-flight guard — concurrent 401 retries share one refresh attempt. */
+let refreshPromise: Promise<boolean> | null = null;
+
 function getCsrfToken(): string | null {
   const match = document.cookie.match(new RegExp('(^| )admin_csrf=([^;]+)'));
   return match ? decodeURIComponent(match[2]) : null;
@@ -41,16 +44,24 @@ export async function apiRequest<T = any>(
     credentials: 'include', // Includes HttpOnly cookies (admin_access, admin_refresh)
   });
 
-  // Handle 401 & attempt token refresh once
+  // Handle 401 & attempt token refresh once.
+  // Coalesce concurrent refresh calls to avoid token-reuse revocation.
   if (response.status === 401 && !endpoint.includes('/admin/auth/refresh') && !endpoint.includes('/admin/auth/login')) {
     try {
-      const refreshRes = await fetch(`${BASE_URL}/admin/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      });
+      if (!refreshPromise) {
+        refreshPromise = fetch(`${BASE_URL}/admin/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+        })
+          .then(r => r.ok)
+          .catch(() => false)
+          .finally(() => { refreshPromise = null; });
+      }
 
-      if (refreshRes.ok) {
+      const refreshed = await refreshPromise;
+
+      if (refreshed) {
         // Retry original request
         const retryHeaders: Record<string, string> = {
           'Content-Type': 'application/json',
@@ -78,6 +89,10 @@ export async function apiRequest<T = any>(
       window.location.href = '/login';
       throw new Error('Session expired. Please log in again.');
     }
+
+    // Refresh did not succeed — redirect to login
+    window.location.href = '/login';
+    throw new Error('Session expired. Please log in again.');
   }
 
   if (!response.ok) {

@@ -27,7 +27,7 @@ export function NotificationsActivity() {
 
   return (
     <div className={styles.panelCard}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingLeft: '0.35rem', paddingRight: '0.25rem' }}>
         <h3 className={styles.panelTitle} style={{ marginBottom: 0 }}>Recent Activity</h3>
         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', cursor: 'pointer', fontWeight: 500 }} onClick={() => navigate('/notifications')}>See all</span>
       </div>
@@ -122,31 +122,43 @@ export function NotificationsActivity() {
                 key={n.id} 
                 className={styles.friendItem} 
                 onClick={handleItemClick}
-                style={{ borderBottom: 'none', alignItems: 'center', cursor: 'pointer' }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  padding: '0.5rem 0.25rem',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  borderBottom: 'none'
+                }}
               >
                 <Avatar 
                   src={actorAvatar} 
                   name={actorName} 
-                  size="36px" 
+                  size="38px" 
                 />
                 
-                <div className={styles.friendInfo} style={{ paddingLeft: '0.25rem', flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.8rem', lineHeight: 1.35, color: 'var(--color-text-muted)' }}>
-                    <strong style={{ color: 'var(--color-text-main)', fontWeight: 700 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.82rem', lineHeight: 1.35, color: 'var(--color-text-muted)' }}>
+                    <strong style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>
                       {actorName}
                     </strong>{' '}
-                    {bodyText}{' '}
-                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-light)' }}>• {timeStr}</span>
+                    <span>{bodyText}</span>{' '}
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-light)', whiteSpace: 'nowrap' }}>• {timeStr}</span>
                   </div>
                 </div>
 
-                <div style={{ flexShrink: 0, marginLeft: '0.5rem' }}>
+                <div style={{ flexShrink: 0, marginLeft: '0.35rem', display: 'flex', alignItems: 'center' }}>
                   {isFollow && targetUsername ? (
                     <div onClick={(e) => e.stopPropagation()}>
-                      <FollowButton targetUsername={targetUsername} size="sm" />
+                      <FollowButton 
+                        targetUsername={targetUsername} 
+                        size="sm" 
+                        style={{ padding: '0.3rem 0.75rem', fontSize: '0.78rem', minWidth: '70px', height: '30px' }}
+                      />
                     </div>
                   ) : postMedia ? (
-                    <img src={postMedia} alt="" style={{ width: '32px', height: '32px', borderRadius: '6px', objectFit: 'cover' }} />
+                    <img src={postMedia} alt="" style={{ width: '34px', height: '34px', borderRadius: '6px', objectFit: 'cover' }} />
                   ) : null}
                 </div>
               </div>
