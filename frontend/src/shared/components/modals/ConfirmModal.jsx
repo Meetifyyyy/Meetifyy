@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import styles from './ConfirmModal.module.css';
 
 export default function ConfirmModal({ title, desc, visible, onCancel, onConfirm, confirmText = 'Confirm' }) {
   const overlayRef = useRef(null);
+  useOverlayBack(visible, onCancel);
 
   useEffect(() => {
     if (visible && overlayRef.current) {

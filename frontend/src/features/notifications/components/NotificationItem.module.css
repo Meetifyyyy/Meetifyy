@@ -1,6 +1,6 @@
 .item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.85rem;
   padding: 0.85rem 1rem;
   cursor: pointer;
@@ -37,7 +37,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 2px;
 }
 
 .content {

@@ -104,7 +104,14 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
       xhr.send(file);
     });
 
-    // 3. Return the generic media details
+    // 3. Confirm upload with backend to link media record
+    try {
+      await apiClient.post('/api/media/confirm', { key });
+    } catch (confirmError) {
+      console.warn('Failed to confirm upload with backend, but file is in storage:', confirmError);
+    }
+
+    // 4. Return the generic media details
     return { publicUrl, key, mediaId };
   } catch (error) {
     console.error('Direct upload failed:', error);

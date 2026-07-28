@@ -70,9 +70,49 @@ export const getMediaUrl = (pathOrUrl) => {
   return `${backendUrl.replace(/\/+$/, '')}${cleanPath}`;
 };
 
-// Synchronous token read — O(1), no async overhead
+// Synchronous token read — O(1), no async overhead with localStorage fallback on boot
 function getToken() {
-  return _cachedToken;
+  if (_cachedToken) return _cachedToken;
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('sb-') || key.includes('auth-token'))) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const token = parsed?.access_token || parsed?.currentSession?.access_token;
+            if (token) {
+              _cachedToken = token;
+              _hasSession = true;
+              return token;
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore storage parse exceptions
+  }
+
+  return '';
+}
+
+// ── In-flight request deduplication ─────────────────────────────────────────
+// Prevents duplicate network calls when multiple components request the same
+// URL before the first response resolves (common on route mount).
+const _inflight = new Map();
+
+// ── ETag store ───────────────────────────────────────────────────────────────
+// Stores the last ETag per URL in sessionStorage so If-None-Match can be sent,
+// enabling 304 Not Modified responses when data hasn't changed.
+const ETAG_PREFIX = '__etag__';
+function getStoredEtag(url) {
+  try { return sessionStorage.getItem(ETAG_PREFIX + url) || ''; } catch { return ''; }
+}
+function storeEtag(url, etag) {
+  try { if (etag) sessionStorage.setItem(ETAG_PREFIX + url, etag); } catch {}
 }
 
 async function request(method, path, body, signal) {
@@ -89,8 +129,17 @@ async function request(method, path, body, signal) {
   if (deviceId) {
     headers['x-device-id'] = deviceId;
   }
+  // Send ETag for GET requests — enables 304 Not Modified on unchanged data
+  if (method === 'GET') {
+    const baseUrl = getBackendUrl();
+    const cleanUrl = `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+    const storedEtag = getStoredEtag(cleanUrl);
+    if (storedEtag) headers['If-None-Match'] = storedEtag;
+  }
 
-  const options = { method, headers, cache: 'no-store' };
+  // GET: use browser default caching (backend sends Cache-Control).
+  // POST/PATCH/PUT/DELETE: always bypass cache — never stale mutation responses.
+  const options = { method, headers, cache: method === 'GET' ? 'default' : 'no-store' };
   if (signal) options.signal = signal;
   if (body !== undefined) {
     if (body instanceof FormData) {
@@ -103,7 +152,29 @@ async function request(method, path, body, signal) {
 
   const baseUrl = getBackendUrl();
   const cleanUrl = `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+
+  // In-flight deduplication: GET requests only — share one promise per URL
+  if (method === 'GET') {
+    const inflightKey = cleanUrl;
+    if (_inflight.has(inflightKey)) {
+      return _inflight.get(inflightKey);
+    }
+    const promise = _doFetch(cleanUrl, options).finally(() => _inflight.delete(inflightKey));
+    _inflight.set(inflightKey, promise);
+    return promise;
+  }
+
+  return _doFetch(cleanUrl, options);
+}
+
+async function _doFetch(cleanUrl, options) {
   const res = await fetch(cleanUrl, options);
+
+  // Store ETag from successful GET responses for future If-None-Match requests
+  if (options.method === 'GET' && res.ok) {
+    const etag = res.headers.get('ETag');
+    if (etag) storeEtag(cleanUrl, etag);
+  }
 
   if (res.status === 401) {
     // Only treat as a real session expiry if there's actually a live session.
@@ -251,8 +322,16 @@ export const communitiesApi = {
 };
 
 export const activitiesApi = {
-  getAll: () => apiClient.get('/api/activities'),
-  getCampusActivities: () => apiClient.get('/api/activities/campus'),
+  getAll: (limit = 20, cursor) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.set('cursor', cursor);
+    return apiClient.get(`/api/activities?${params.toString()}`);
+  },
+  getCampusActivities: (limit = 20, cursor) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.set('cursor', cursor);
+    return apiClient.get(`/api/activities/campus?${params.toString()}`);
+  },
   getById: (id) => apiClient.get(`/api/activities/${id}`),
   create: (data) => apiClient.post('/api/activities', data),
   join: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/join`, undefined, { signal }),
@@ -262,6 +341,14 @@ export const activitiesApi = {
   rejectJoinRequest: (id, userId) => apiClient.post(`/api/activities/${id}/requests/${userId}/reject`),
   declineCrewInvitation: (id) => apiClient.post(`/api/activities/${id}/decline`),
   endCrewActivity: (id) => apiClient.post(`/api/activities/${id}/end`),
+  bookmark: (id) => apiClient.post(`/api/activities/${id}/bookmark`),
+  unbookmark: (id) => apiClient.delete(`/api/activities/${id}/bookmark`),
+  getBookmarks: (limit = 20, cursor) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.append('cursor', cursor);
+    return apiClient.get(`/api/activities/bookmarks?${params.toString()}`);
+  },
+  getBookmarkIds: () => apiClient.get('/api/activities/bookmarks/ids'),
 };
 
 export const usersApi = {

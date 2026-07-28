@@ -29,7 +29,7 @@ export default function DMChatHeader({
       </button>
 
       <div className={`${styles.msgChatUser} ${styles.msgChatUserClickable}`}>
-        <Avatar src={conversation.avatar} name={conversation.name} size="38px" isOnline={isOnline} />
+        <Avatar src={conversation.avatar || conversation.otherUser?.avatar || conversation.targetUser?.avatar || conversation.icon} name={conversation.name} size="38px" isOnline={isOnline} />
         <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
           <div className={styles.msgChatName}>
             <span className={styles.msgChatNameText}>{conversation.name}</span>

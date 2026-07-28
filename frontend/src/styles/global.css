@@ -19,14 +19,20 @@ textarea,
   -ms-user-select: text !important;
 }
 
-/* Globally prevent selection and dragging of images and avatars */
+/* Globally prevent selection and dragging of images, videos, and avatars */
 img,
+svg,
+video,
 .ui-avatar,
 .ui-avatar img,
 .ui-avatar-img {
   user-select: none;
   -webkit-user-select: none;
   -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
 }
 
 body {
@@ -39,6 +45,16 @@ body {
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* Toast Notification Clearance */
+[data-sonner-toaster] {
+  top: 16px !important;
+  padding: 0 16px !important;
+}
+
+[data-sonner-toast] {
+  margin-top: 8px !important;
 }
 
 html {

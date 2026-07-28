@@ -30,6 +30,9 @@ export default function SocketManager() {
     if (!socket) return;
 
     const handleNewNotification = (notification) => {
+      if (notification.type?.toUpperCase() === 'MESSAGE') {
+        return; // Handled via global message:new event
+      }
       // Invalidate queries so useNotifications hook fetches the latest
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
 
@@ -158,6 +161,8 @@ export default function SocketManager() {
                 alignItems: 'center',
                 gap: '12px',
                 width: '360px',
+                maxWidth: 'calc(100vw - 32px)',
+                margin: '0 auto',
                 boxSizing: 'border-box',
                 cursor: 'pointer',
                 fontFamily: 'var(--font-family-sans, sans-serif)',
@@ -444,12 +449,26 @@ export default function SocketManager() {
 
     const handleGlobalConversationSeen = (payload) => {
       if (!payload) return;
-      const convId = payload.conversationId || payload.realConvId;
-      if (!convId || !payload.lastReadAt) return;
+      const convId = payload.conversationId || payload.realConvId || payload.publicId;
+      if (!convId) return;
 
       const currentUserId = session?.user?.id;
-      const isRecipientReader = !payload.readerId || String(payload.readerId) !== String(currentUserId);
-      if (!isRecipientReader) return;
+      const isMySeen = payload.readerId && String(payload.readerId) === String(currentUserId);
+
+      if (isMySeen) {
+        queryClient.setQueryData(['conversations'], (oldConvs) => {
+          if (!Array.isArray(oldConvs)) return oldConvs;
+          return oldConvs.map((c) => {
+            if (c.id === convId || c.publicId === convId || c.internalId === convId) {
+              return { ...c, unreadCount: 0, unread: 0 };
+            }
+            return c;
+          });
+        });
+        return;
+      }
+
+      if (!payload.lastReadAt) return;
 
       const lastReadTime = new Date(payload.lastReadAt).getTime();
       const keys = [payload.conversationId, payload.realConvId, payload.publicId].filter(Boolean);
@@ -539,10 +558,170 @@ export default function SocketManager() {
       });
     };
 
+    const handleGlobalMessageNew = (message) => {
+      if (!message) return;
+      const currentUserId = session?.user?.id;
+
+      const isSenderSelf = String(message.senderId) === String(currentUserId) || message.from === 'me' || message.senderId === 'me';
+      if (isSenderSelf) return;
+
+      const convId = message.conversationId || message.publicId || message.internalId;
+      if (!convId) return;
+
+      const currentPath = window.location.pathname;
+      const isMessagesRoute = currentPath.startsWith('/messages') || currentPath.startsWith('/inbox');
+
+      let isViewingCurrentChat = false;
+      if (isMessagesRoute) {
+        const pathParts = currentPath.split('/').filter(Boolean);
+        const param1 = pathParts[1];
+        const param2 = pathParts[2];
+        const routeInfo = parseConversationRoute(param1, param2);
+        const viewedId = routeInfo.publicId;
+
+        if (viewedId) {
+          if (viewedId === convId || viewedId === message.conversationId || viewedId === message.publicId || viewedId === message.internalId) {
+            isViewingCurrentChat = true;
+          }
+        }
+      }
+
+      // 1. Instant update of ['conversations'] cache so unread counts, latest snippet, and timestamps update immediately
+      queryClient.setQueryData(['conversations'], (oldConvs) => {
+        if (!Array.isArray(oldConvs)) return oldConvs;
+
+        let found = false;
+        const updatedConvs = oldConvs.map((c) => {
+          const match = c.id === convId || c.publicId === convId || c.internalId === convId ||
+            (message.conversationId && (c.id === message.conversationId || c.publicId === message.conversationId)) ||
+            (message.publicId && (c.id === message.publicId || c.publicId === message.publicId));
+
+          if (match) {
+            found = true;
+            const currentUnread = c.unreadCount || c.unread || 0;
+            const textSnippet = message.text || (message.mediaType === 'image' ? 'Photo' : message.mediaType === 'video' ? 'Video' : message.mediaUrl ? 'Media' : '');
+            return {
+              ...c,
+              lastMessage: message,
+              lastMsg: textSnippet,
+              updatedAt: message.createdAt || new Date().toISOString(),
+              timestamp: new Date(message.createdAt || Date.now()).getTime(),
+              unreadCount: isViewingCurrentChat ? currentUnread : currentUnread + 1,
+              unread: isViewingCurrentChat ? currentUnread : currentUnread + 1,
+            };
+          }
+          return c;
+        });
+
+        if (!found) {
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          return oldConvs;
+        }
+
+        return [...updatedConvs].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      });
+
+      // 2. Instant update of ['messages', convId] query cache if present
+      const targetKeys = [message.conversationId, message.publicId, message.internalId].filter(Boolean);
+      targetKeys.forEach((key) => {
+        queryClient.setQueryData(['messages', key], (oldData) => {
+          if (!oldData) return oldData;
+          if (oldData.messages) {
+            if (oldData.messages.some(m => m.id === message.id)) return oldData;
+            return {
+              ...oldData,
+              messages: [...oldData.messages, message]
+            };
+          }
+          if (oldData.pages) {
+            const firstPage = oldData.pages[0];
+            if (firstPage && firstPage.messages && firstPage.messages.some(m => m.id === message.id)) return oldData;
+            return {
+              ...oldData,
+              pages: oldData.pages.map((page, idx) => {
+                if (idx === 0) {
+                  return { ...page, messages: [...(page.messages || []), message] };
+                }
+                return page;
+              })
+            };
+          }
+          return oldData;
+        });
+      });
+
+      // 3. If chat is NOT currently open, show instant screen toast notification
+      if (!isViewingCurrentChat) {
+        const convs = queryClient.getQueryData(['conversations']) || [];
+        const targetConv = convs.find(c => c.id === convId || c.publicId === convId || c.internalId === convId);
+        const isMuted = Boolean(targetConv?.muted || targetConv?.isMuted);
+
+        if (!isMuted) {
+          toast.custom((t) => {
+            const actorName = message.senderName || message.sender?.displayName || message.sender?.username || 'Someone';
+            const actorAvatar = message.senderAvatar || message.sender?.avatar || '';
+            const isGroupMessage = Boolean(message.isGroup || targetConv?.isGroup);
+            const groupName = targetConv?.name || 'Group';
+            const groupAvatar = targetConv?.avatar || '';
+            const textSnippet = message.text || (message.mediaType === 'image' ? 'Sent a photo' : message.mediaType === 'video' ? 'Sent a video' : message.mediaUrl ? 'Sent media' : 'New message');
+
+            return (
+              <div
+                onClick={() => {
+                  toast.dismiss(t);
+                  navigate(`/messages/${convId}`);
+                }}
+                style={{
+                  background: 'var(--color-bg-white, #ffffff)',
+                  border: '1px solid var(--color-border, #e2e8f0)',
+                  boxShadow: '0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06)',
+                  borderRadius: '16px',
+                  padding: '12px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  width: '360px',
+                  boxSizing: 'border-box',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-family-sans, sans-serif)',
+                  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                }}
+              >
+                <div style={{ flexShrink: 0 }}>
+                  <Avatar 
+                    src={isGroupMessage ? (groupAvatar || actorAvatar) : actorAvatar} 
+                    name={isGroupMessage ? groupName : actorName} 
+                    size="40px" 
+                    isGroup={isGroupMessage} 
+                  />
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%' }}>
+                    <strong style={{ color: 'var(--color-text-main, #0f172a)', fontWeight: 700, fontSize: '0.86rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {isGroupMessage ? groupName : actorName}
+                    </strong>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-light, #94a3b8)', fontWeight: 500, flexShrink: 0 }}>
+                      just now
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: '0.83rem', color: 'var(--color-text-muted, #475569)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {isGroupMessage ? <><span style={{ fontWeight: 600, color: 'var(--color-text-main, #0f172a)' }}>{actorName}:</span> {textSnippet}</> : textSnippet}
+                  </div>
+                </div>
+              </div>
+            );
+          }, { duration: 4000 });
+        }
+      }
+    };
+
     socket.on('notification:new', handleNewNotification);
     socket.on('notification:count', handleNotificationCount);
     socket.on('presence:update', handlePresenceUpdate);
     socket.on('conversation:updated', handleConversationUpdated);
+    socket.on('message:new', handleGlobalMessageNew);
     socket.on('message:updated', handleMessageUpdated);
     socket.on('group:member_added', handleGroupMemberChange);
     socket.on('group:member_removed', handleGroupMemberChange);
@@ -552,6 +731,7 @@ export default function SocketManager() {
       socket.off('notification:count', handleNotificationCount);
       socket.off('presence:update', handlePresenceUpdate);
       socket.off('conversation:updated', handleConversationUpdated);
+      socket.off('message:new', handleGlobalMessageNew);
       socket.off('message:updated', handleMessageUpdated);
       socket.off('group:member_added', handleGroupMemberChange);
       socket.off('group:member_removed', handleGroupMemberChange);

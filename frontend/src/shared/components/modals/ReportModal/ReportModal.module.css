@@ -197,6 +197,10 @@
 
 .textarea {
   width: 100%;
+  box-sizing: border-box;
+  height: 100px;
+  min-height: 100px;
+  max-height: 100px;
   padding: 0.75rem 1rem;
   border-radius: 12px;
   border: 1px solid var(--color-border, #d1d5db);
@@ -204,9 +208,11 @@
   color: var(--color-text-main, #111827);
   font-family: inherit;
   font-size: 0.875rem;
-  resize: vertical;
+  resize: none;
+  overflow-y: auto;
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  scrollbar-width: thin;
 }
 
 .textarea:focus {

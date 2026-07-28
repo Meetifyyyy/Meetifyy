@@ -81,6 +81,42 @@ export class UploadsController {
   }
 
   /**
+   * POST /api/media/signed-urls
+   * Retrieve signed URLs in bulk for an array of object keys.
+   */
+  @Post('signed-urls')
+  async getSignedUrls(
+    @Body() body: { keys: string[]; expiresIn?: number },
+  ) {
+    const { keys, expiresIn } = body || {};
+    if (!keys || !Array.isArray(keys)) {
+      throw new BadRequestException('keys must be an array of strings');
+    }
+    return this.storageService.getSignedUrls(keys, expiresIn || 3600);
+  }
+
+  /**
+   * POST /api/media/confirm
+   * Confirms a direct client upload and updates the DB Media record.
+   */
+  @UseGuards(JwtGuard)
+  @Post('confirm')
+  async confirmUpload(
+    @Body('key') key: string,
+    @Req() req: any
+  ) {
+    if (!key) {
+      throw new BadRequestException('key is required');
+    }
+    const userId = req.user.id;
+    const result = await this.storageService.confirmUpload(key, userId);
+    if (!result) {
+      throw new BadRequestException('Failed to confirm upload. Object might not exist.');
+    }
+    return result;
+  }
+
+  /**
    * GET /api/media/:folder/:filename
    * Serves file directly if stored locally, or redirects to cloud storage provider URL
    */

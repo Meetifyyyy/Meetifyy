@@ -91,7 +91,7 @@ export default function NotificationList({
 
   const virtualizer = useWindowVirtualizer({
     count: flatItems.length,
-    estimateSize: (index) => (flatItems[index]?.type === 'header' ? 34 : 68),
+    estimateSize: (index) => (flatItems[index]?.type === 'header' ? (index === 0 ? 38 : 52) : 68),
     overscan: 6,
   });
 
@@ -136,7 +136,19 @@ export default function NotificationList({
             }}
           >
             {item.type === 'header' ? (
-              <h2 className={pageStyles.groupTitle} style={{ margin: '0.5rem 0 0.25rem 0.5rem' }}>
+              <h2
+                className={pageStyles.groupTitle}
+                style={{
+                  margin: 0,
+                  padding: virtualItem.index === 0 ? '0.75rem 1rem 0.5rem 1rem' : '1.25rem 1rem 0.5rem 1rem',
+                  borderTop: virtualItem.index > 0 ? '1px solid var(--color-border-light)' : 'none',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  color: 'var(--color-text-muted)',
+                  textTransform: 'uppercase'
+                }}
+              >
                 {item.title}
               </h2>
             ) : (

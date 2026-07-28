@@ -14,6 +14,7 @@ import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ActivityDetailPage.module.css';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import { useJoinActivity } from '../hooks/useJoinActivity';
+import { useActivityById } from '@shared/hooks/useCrew';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -67,40 +68,39 @@ function DetailsCard({ date, time, duration, actLocation, isOnline, slotsFilled,
 /* ── Main component ────────────────────────────────────────── */
 export default function ActivityDetailPage() {
   const { id } = useParams();
+  const cleanId = useMemo(() => id ? id.replace(/^(act_)+/, '') : id, [id]);
   const location = useLocation();
   const { currentUser } = useAuth();
   const goBack = useSmartBack();
   const queryClient = useQueryClient();
+  const { data: rawActivity, isLoading: isActivityLoading } = useActivityById(cleanId);
 
-  const { data: rawActivities = [] } = useQuery({
-    queryKey: ['activities'],
-    queryFn: activitiesApi.getAll,
-  });
+  const activity = useMemo(() => {
+    // If we have state from navigation, use it initially
+    const baseAct = rawActivity || location.state?.activity;
+    if (!baseAct) return null;
 
-  const crewActivities = useMemo(() => {
-    return rawActivities.map(a => {
-      const startD = a.startDate ? new Date(a.startDate) : null;
-      const endD = a.endDate ? new Date(a.endDate) : null;
-      return {
-        ...a,
-        date: a.startDate || null,
-        endDate: a.endDate || null,
-        dateFormatted: startD ? startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null,
-        dateLabel: startD ? startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null,
-        time: startD ? startD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null,
-        endTime: endD ? endD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null,
-        hostId: a.creatorId,
-        hostName: a.creator?.displayName || a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
-        hostUsername: a.creator?.username || a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
-        hostAvatar: a.creator?.avatar || a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
-        participants: a.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
-        pendingRequests: a.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
-        slotsFilled: a.members?.filter(m => m.status === 'MEMBER').length || 1,
-        slotsNeeded: a.maxMembers || 999,
-        _membersData: a.members?.map(m => m.user) || []
-      };
-    });
-  }, [rawActivities]);
+    const startD = baseAct.startDate ? new Date(baseAct.startDate) : null;
+    const endD = baseAct.endDate ? new Date(baseAct.endDate) : null;
+    return {
+      ...baseAct,
+      date: baseAct.startDate || null,
+      endDate: baseAct.endDate || null,
+      dateFormatted: startD ? startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null,
+      dateLabel: startD ? startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null,
+      time: startD ? startD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null,
+      endTime: endD ? endD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null,
+      hostId: baseAct.creatorId,
+      hostName: baseAct.creator?.displayName || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.displayName || 'Host',
+      hostUsername: baseAct.creator?.username || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.username || 'host',
+      hostAvatar: baseAct.creator?.avatar || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.avatar || '',
+      participants: baseAct.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
+      pendingRequests: baseAct.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
+      slotsFilled: baseAct.members?.filter(m => m.status === 'MEMBER').length || 1,
+      slotsNeeded: baseAct.maxMembers || 999,
+      _membersData: baseAct.members?.map(m => m.user) || []
+    };
+  }, [rawActivity, location.state]);
 
   const { mutate: toggleJoin } = useJoinActivity();
 
@@ -131,10 +131,6 @@ export default function ActivityDetailPage() {
       }, 300);
     }
   }, [location.search]);
-
-  const activity = useMemo(() => {
-    return crewActivities?.find(a => a.id === id) || location.state?.activity;
-  }, [crewActivities, id, location.state]);
 
   const containerRef = useRef(null);
 
@@ -195,6 +191,16 @@ export default function ActivityDetailPage() {
   const [comments, setComments] = useState([
     { id: 1, author: 'Jane Doe', text: 'Looking forward to this!', time: '2 hours ago' },
   ]);
+  const [isActionLoading, setIsActionLoading] = useState(false);
+
+  if (isActivityLoading && !activity) {
+    return (
+      <div className={styles.notFound} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ width: '28px', height: '28px', border: '3px solid rgba(255,255,255,0.15)', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '12px' }} />
+        <span style={{ fontSize: '0.88rem', opacity: 0.7 }}>Loading activity...</span>
+      </div>
+    );
+  }
 
   if (!activity) {
     return (
@@ -255,8 +261,6 @@ export default function ActivityDetailPage() {
       }
     }
   }
-
-  const [isActionLoading, setIsActionLoading] = useState(false);
 
   const handleJoin = () => {
     toggleJoin({ activityId: activity.id, isJoined: true, currentUser });

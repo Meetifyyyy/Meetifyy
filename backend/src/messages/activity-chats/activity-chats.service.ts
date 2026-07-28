@@ -185,7 +185,7 @@ export class ActivityChatsService extends MessagingCoreService {
 
       const actStartDate = conv.activity?.startDate;
       const actStatus = (conv.activity?.status || conv.status || '').toUpperCase();
-      const hasStarted = actStatus === 'IN_PROGRESS' || actStatus === 'STARTED' || actStatus === 'COMPLETED' || actStatus === 'ENDED' || (!!actStartDate && new Date(actStartDate) <= new Date());
+      const hasStarted = ['IN_PROGRESS', 'STARTED', 'COMPLETED', 'ENDED', 'CLOSED', 'CANCELLED'].includes(actStatus) || (!!actStartDate && new Date(actStartDate) <= new Date());
 
       return {
         id: pubId,

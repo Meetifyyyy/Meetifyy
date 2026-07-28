@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, OnModuleInit, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
 import { DomainEventService } from '../events/domain-event.service';
@@ -7,6 +7,8 @@ import { MessagingCoreService } from './core/messaging-core.service';
 
 @Injectable()
 export class MessagesService extends MessagingCoreService implements OnModuleInit {
+  protected readonly logger = new Logger(MessagesService.name);
+
   constructor(
     prisma: PrismaService,
     presenceService: PresenceService,
@@ -45,7 +47,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       if (currentUserId && identifier !== currentUserId) {
         const dm = await this.prisma.conversation.findFirst({
           where: {
-            type: 'DIRECT' as any,
+            type: 'DM',
             AND: [
               { participants: { some: { userId: currentUserId } } },
               { participants: { some: { userId: identifier } } }
@@ -710,11 +712,11 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       }
 
       const pubId = (conv as any).publicId || conv.id;
-        const isGroupConv = conv.type === 'GROUP' || (conv as any).isGroup;
-        const groupAvatar = conv.avatarKey || (conv as any).activity?.coverImage || null;
+        const isGroupConv = conv.type === 'GROUP' || conv.type === 'ACTIVITY' || (conv as any).isGroup;
+        const groupAvatar = conv.avatarKey || (conv as any).activity?.coverImage || (conv as any).activity?.image || null;
         const actStartDate = (conv as any).activity?.startDate;
         const actStatus = ((conv as any).activity?.status || conv.status || '').toUpperCase();
-        const hasStarted = actStatus === 'IN_PROGRESS' || actStatus === 'STARTED' || actStatus === 'COMPLETED' || actStatus === 'ENDED' || (!!actStartDate && new Date(actStartDate) <= new Date());
+        const hasStarted = ['IN_PROGRESS', 'STARTED', 'COMPLETED', 'ENDED', 'CLOSED', 'CANCELLED'].includes(actStatus) || (!!actStartDate && new Date(actStartDate) <= new Date());
 
         return {
           id: pubId,
@@ -729,7 +731,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
           activityHasStarted: hasStarted,
           isActivityChat: conv.type === 'ACTIVITY' || !!conv.activityId,
           isGroup: isGroupConv,
-          name: isGroupConv ? (conv.name || 'Group') : (conv.name || otherUser?.displayName || 'Chat'),
+          name: isGroupConv ? (conv.name || (conv as any).activity?.title || 'Group') : (conv.name || otherUser?.displayName || 'Chat'),
           avatar: isGroupConv ? groupAvatar : (conv.avatarKey || otherUser?.avatar || null),
           description: conv.description || null,
         status: conv.status || 'ACTIVE',
@@ -816,8 +818,8 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         where: {
           type: 'DM',
           AND: [
-            { participants: { some: { userId: currentUserId, deletedAt: null } } },
-            { participants: { some: { userId: otherUserId, deletedAt: null } } }
+            { participants: { some: { userId: currentUserId } } },
+            { participants: { some: { userId: otherUserId } } }
           ]
         }
       });
@@ -866,60 +868,72 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     return { success: true };
   }
 
-  async markAsRead(conversationId: string, userId: string) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    const now = new Date();
-    await this.prisma.conversationParticipant.upsert({
-      where: {
-        userId_conversationId: {
-          userId,
-          conversationId: realConvId
-        }
-      },
-      update: {
-        lastReadAt: now
-      },
-      create: {
-        userId,
-        conversationId: realConvId,
-        lastReadAt: now
+  async markAsRead(conversationId: string, userId: string): Promise<{ success: boolean }> {
+    try {
+      const realConvId = await this.resolveConversationId(conversationId, userId);
+      const existingConv = await this.prisma.conversation.findUnique({
+        where: { id: realConvId },
+        select: { id: true }
+      });
+
+      if (!existingConv) {
+        return { success: false };
       }
-    }).catch(() => { });
 
-    const userSettings = await this.prisma.userSettings.findUnique({
-      where: { userId },
-      select: { readReceipts: true }
-    });
+      const now = new Date();
+      await this.prisma.conversationParticipant.upsert({
+        where: {
+          userId_conversationId: {
+            userId,
+            conversationId: realConvId
+          }
+        },
+        update: {
+          lastReadAt: now
+        },
+        create: {
+          userId,
+          conversationId: realConvId,
+          lastReadAt: now
+        }
+      }).catch(() => { });
 
-    if (userSettings?.readReceipts !== false) {
       const participants = await this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, deletedAt: null },
         select: { userId: true, lastReadAt: true, user: { select: { settings: { select: { readReceipts: true } } } } }
       });
 
-      for (const p of participants) {
-        if (p.userId !== userId) {
-          const otherParticipants = participants.filter(item => item.userId !== p.userId);
-          const otherReadTimestamps = otherParticipants
-            .filter(item => item.user?.settings?.readReceipts !== false && item.lastReadAt != null)
-            .map(item => new Date(item.lastReadAt!).getTime());
+      const readerParticipant = participants.find(p => p.userId === userId);
+      const readerReadReceipts = readerParticipant?.user?.settings?.readReceipts;
 
-          const isAllRead = otherReadTimestamps.length > 0 && otherReadTimestamps.length === otherParticipants.length;
-          const minOtherReadAt = isAllRead ? Math.min(...otherReadTimestamps) : 0;
+      if (readerReadReceipts !== false) {
+        for (const p of participants) {
+          if (p.userId !== userId) {
+            const otherParticipants = participants.filter(item => item.userId !== p.userId);
+            const otherReadTimestamps = otherParticipants
+              .filter(item => item.user?.settings?.readReceipts !== false && item.lastReadAt != null)
+              .map(item => new Date(item.lastReadAt!).getTime());
 
-          this.domainEventService.emit('conversation:seen', {
-            conversationId,
-            realConvId,
-            readerId: userId,
-            lastReadAt: now.toISOString(),
-            isAllRead,
-            minOtherReadAt: minOtherReadAt ? new Date(minOtherReadAt).toISOString() : null
-          }, [p.userId]);
+            const isAllRead = otherReadTimestamps.length > 0 && otherReadTimestamps.length === otherParticipants.length;
+            const minOtherReadAt = isAllRead ? Math.min(...otherReadTimestamps) : 0;
+
+            this.domainEventService.emit('conversation:seen', {
+              conversationId,
+              realConvId,
+              readerId: userId,
+              lastReadAt: now.toISOString(),
+              isAllRead,
+              minOtherReadAt: minOtherReadAt ? new Date(minOtherReadAt).toISOString() : null
+            }, [p.userId]);
+          }
         }
       }
-    }
 
-    return { success: true };
+      return { success: true };
+    } catch (err) {
+      this.logger.warn(`markAsRead execution skipped/failed: ${(err as Error)?.message}`);
+      return { success: false };
+    }
   }
 
   async isUserConversationMuted(conversationId: string, userId: string): Promise<boolean> {

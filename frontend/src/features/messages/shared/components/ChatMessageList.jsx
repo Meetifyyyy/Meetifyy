@@ -79,6 +79,7 @@ export default function ChatMessageList({
   initial,
   searchQuery,
   openViewer,
+  onOpenMediaModal,
   onReply,
   onReplyTo,
   onRetryMessage,
@@ -298,11 +299,6 @@ export default function ChatMessageList({
 
   const handleScroll = () => {
     if (!bodyRef.current) return;
-
-    const isNearBottom = bodyRef.current.scrollTop < 150;
-    if (onMarkSeen) {
-      onMarkSeen(isNearBottom);
-    }
     
     if (!hasMore || isLoadingMore || isLoading) return;
     
@@ -357,19 +353,22 @@ export default function ChatMessageList({
                 }}
               >
                 {item.type === 'load_more' && (
-                  <div style={{ display: 'flex', justifyContent: 'center', padding: '0.75rem 0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', padding: '0.85rem 0' }}>
                     <div 
                       className="spinner" 
                       style={{ 
-                        width: '22px', 
-                        height: '22px', 
+                        width: '18px', 
+                        height: '18px', 
                         borderWidth: '2.5px', 
                         borderStyle: 'solid',
-                        borderColor: 'var(--color-primary) transparent transparent transparent',
+                        borderColor: 'var(--color-primary, #3b82f6) transparent transparent transparent',
                         borderRadius: '50%',
                         animation: 'spin 0.75s linear infinite'
                       }} 
                     />
+                    <span style={{ fontSize: '0.78rem', fontWeight: 500, color: 'var(--color-text-secondary, #9ca3af)', letterSpacing: '0.02em' }}>
+                      Loading older messages…
+                    </span>
                   </div>
                 )}
 
@@ -407,6 +406,7 @@ export default function ChatMessageList({
                     onReplyTo={onReplyTo || onReply}
                     onContextMenu={onContextMenu || onOpenContextMenu}
                     onOpenContextMenu={onOpenContextMenu}
+                    onOpenMediaModal={onOpenMediaModal || openViewer}
                   />
                 )}
 

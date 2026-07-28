@@ -1,4 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
 import styles from './BottomNav.module.css';
@@ -39,9 +40,12 @@ const CampusSolid = () => (
   </svg>
 );
 
+import { useUnreadCounts } from '@features/messages/hooks/useUnreadCounts';
+
 export default function BottomNav() {
-  const navigate = useNavigate();
+  const { smartNavigate: navigate } = useSmartNavigation();
   const location = useLocation();
+  const { total: unreadMessagesCount } = useUnreadCounts();
 
   const handleTabClick = (path) => {
     navigate(path);
@@ -68,7 +72,9 @@ export default function BottomNav() {
         onClick={() => handleTabClick('/home')}
         onMouseEnter={() => import('@features/feed/pages/FeedRoute')}
       >
-        {isHomeActive ? <HomeSolid /> : <HomeOutline />}
+        <div className={styles.iconWrapper}>
+          {isHomeActive ? <HomeSolid /> : <HomeOutline />}
+        </div>
         <span>Home</span>
       </button>
 
@@ -77,7 +83,9 @@ export default function BottomNav() {
         onClick={() => handleTabClick('/campus')}
         onMouseEnter={() => import('@features/campus/pages/CampusPage')}
       >
-        {isCampusActive ? <CampusSolid /> : <CampusOutline />}
+        <div className={styles.iconWrapper}>
+          {isCampusActive ? <CampusSolid /> : <CampusOutline />}
+        </div>
         <span>Campus</span>
       </button>
 
@@ -86,7 +94,14 @@ export default function BottomNav() {
         onClick={() => handleTabClick('/messages')}
         onMouseEnter={() => import('@features/messages/pages/MessagesRoute')}
       >
-        {isMessagesActive ? <MessagesSolid /> : <MessagesOutline />}
+        <div className={styles.iconWrapper}>
+          {isMessagesActive ? <MessagesSolid /> : <MessagesOutline />}
+          {unreadMessagesCount > 0 && (
+            <span className={styles.unreadBadge}>
+              {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+            </span>
+          )}
+        </div>
         <span>Messages</span>
       </button>
 
@@ -95,7 +110,9 @@ export default function BottomNav() {
         onClick={() => handleTabClick('/crew')}
         onMouseEnter={() => import('@features/crew/pages/FindYourCrewPage')}
       >
-        {isCrewActive ? <CompassSolid /> : <CompassOutline />}
+        <div className={styles.iconWrapper}>
+          {isCrewActive ? <CompassSolid /> : <CompassOutline />}
+        </div>
         <span>Crew</span>
       </button>
 
@@ -104,12 +121,14 @@ export default function BottomNav() {
         onClick={() => handleTabClick(`/profile/${username}`)}
         onMouseEnter={() => import('@features/profile/pages/ProfilePage')}
       >
-        <Avatar
-          src={currentUser?.avatar}
-          name={currentUser?.displayName}
-          size="24px"
-          className={isProfileActive ? styles.activeAvatarBorder : ''}
-        />
+        <div className={styles.iconWrapper}>
+          <Avatar
+            src={currentUser?.avatar}
+            name={currentUser?.displayName}
+            size="24px"
+            className={isProfileActive ? styles.activeAvatarBorder : ''}
+          />
+        </div>
         <span>Profile</span>
       </button>
     </div>

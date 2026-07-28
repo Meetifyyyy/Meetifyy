@@ -1,3 +1,4 @@
+import { ArrowLeft } from 'lucide-react';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './GroupEditPage.module.css';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -34,10 +35,7 @@ export default function GroupEditPage({
           onClick={onBack} 
           title="Back"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>
+          <ArrowLeft size={20} />
         </button>
         <h2 className={sharedStyles.headerTitle}>Edit Group</h2>
         <button 
@@ -58,25 +56,16 @@ export default function GroupEditPage({
         <div className={styles.settingsForm}>
           {/* Avatar Section inside Settings */}
           <div className={sharedStyles.avatarSection} style={{ marginBottom: '2rem' }}>
-            {isEventGroup ? (
-              <Avatar
-                src={conversation.avatar}
-                name={conversation.name}
-                size="120px"
-                isGroup={true}
-              />
-            ) : (
-              <Avatar
-                src={editAvatar}
-                name={editName}
-                size="120px"
-                isGroup={isGroup}
-                onClick={handleAvatarClick}
-                disableHover={true}
-                className={canEdit ? sharedStyles.avatarWrapperClickable : ''}
-              />
-            )}
-            {canEdit && !isEventGroup && (
+            <Avatar
+              src={editAvatar || conversation.avatar || conversation.avatarKey}
+              name={editName}
+              size="120px"
+              isGroup={isGroup}
+              onClick={canEdit ? handleAvatarClick : undefined}
+              disableHover={!canEdit}
+              className={canEdit ? sharedStyles.avatarWrapperClickable : ''}
+            />
+            {canEdit && (
               <button 
                 type="button"
                 className={styles.changePhotoBtn}

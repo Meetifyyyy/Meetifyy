@@ -135,6 +135,10 @@ export class NotificationsService implements OnModuleInit {
   }
 
   async createNotification(dto: CreateNotificationDto) {
+    if ((dto.type as any) === 'MESSAGE') {
+      return null; // Message updates are handled via real-time message:new flow, not notifications list
+    }
+
     if (dto.recipientId === dto.actorId) {
       return null; // Don't notify self
     }
@@ -179,7 +183,7 @@ export class NotificationsService implements OnModuleInit {
         }
         if (dto.type === NotificationType.COMMENT && !prefs.comments) return null;
         if (dto.type === NotificationType.MENTION && !prefs.mentions) return null;
-        if (dto.type === NotificationType.MESSAGE && !prefs.messages) return null;
+        if ((dto.type as any) === 'MESSAGE' && !prefs.messages) return null;
         if (dto.type === NotificationType.JOIN_REQUEST && !prefs.activities) return null;
         if (dto.type === NotificationType.GROUP_INVITE && !prefs.groups) return null;
         if (dto.type === NotificationType.SYSTEM && !prefs.system) return null;
@@ -313,7 +317,7 @@ export class NotificationsService implements OnModuleInit {
       }
 
       this.domainEventService.emit('notification:new', populatedNotif, [dto.recipientId]);
-      if (dto.type !== NotificationType.MESSAGE) {
+      if ((dto.type as any) !== 'MESSAGE') {
         await this.incrementUnreadCount(dto.recipientId);
         await this.emitUnreadCount(dto.recipientId);
       }
@@ -339,6 +343,7 @@ export class NotificationsService implements OnModuleInit {
         recipientId: userId,
         deletedAt: null,
         NOT: [
+          { type: NotificationType.MESSAGE },
           { type: 'JOIN_REQUEST' },
           { body: { contains: 'requested to join' } }
         ]

@@ -3,27 +3,36 @@ import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import { timeAgo } from '@shared/utils/time';
 import { Pin, VolumeX, CalendarDays, MapPin } from 'lucide-react';
 import { useAuth } from '@shared/context/AuthContext';
+import { useActivityById } from '@shared/hooks/useCrew';
 import styles from '../../../shared/components/sidebar/ConversationList.module.css';
 
 export default function ActivityChatItem({ conv, activeChatId, onSelect, onContextMenu }) {
   const { currentUser } = useAuth();
-  const isActive = String(conv.id) === String(activeChatId) || String(conv.publicId) === String(activeChatId) || String(conv.activityId) === String(activeChatId);
+  const cleanActId = String(conv.activityId || conv.id || '').replace(/^(act_)+/, '');
+  const { data: dbActivity } = useActivityById(cleanActId);
+
+  const isActive = Boolean(activeChatId) && (
+    String(conv.id) === String(activeChatId) ||
+    (Boolean(conv.publicId) && String(conv.publicId) === String(activeChatId)) ||
+    (Boolean(conv.activityId) && String(conv.activityId) === String(activeChatId))
+  );
   const isUnread = conv.unread > 0;
 
-  const activityDate = conv.activity?.startDate || conv.activity?.date || conv.date;
-  const isHost = String(conv.hostId || conv.activity?.hostId) === String(currentUser?.id);
+  const activityDate = conv.activity?.startDate || conv.activity?.date || conv.date || dbActivity?.startDate || dbActivity?.date;
+  const isHost = String(conv.hostId || conv.activity?.hostId || dbActivity?.creatorId || dbActivity?.hostId) === String(currentUser?.id);
 
   const hasStarted = (() => {
-    const status = (conv.activity?.status || conv.status || '').toUpperCase();
-    if (status === 'IN_PROGRESS' || status === 'STARTED' || status === 'COMPLETED' || status === 'ENDED') {
+    const status = (conv.activity?.status || conv.status || dbActivity?.status || '').toUpperCase();
+    if (['IN_PROGRESS', 'STARTED', 'COMPLETED', 'ENDED', 'CLOSED', 'CANCELLED'].includes(status)) {
       return true;
     }
-    if (conv.messages?.some(m => String(m.text || m.payload?.text).includes('Activity has started!'))) {
+    if (conv.messages?.some(m => {
+      const txt = String(m.text || m.payload?.text || '');
+      return txt.includes('Activity has started!') || txt.includes('closed the group') || txt.includes('ended');
+    })) {
       return true;
     }
-    if (conv.activityHasStarted) return true;
-    if (conv.hasStarted) return true;
-    if (conv.activity?.hasStarted) return true;
+    if (conv.activityHasStarted || conv.hasStarted || conv.activity?.hasStarted || dbActivity?.hasStarted) return true;
     if (activityDate) {
       const d = new Date(activityDate);
       if (!isNaN(d.getTime())) {
@@ -70,7 +79,7 @@ export default function ActivityChatItem({ conv, activeChatId, onSelect, onConte
     >
       <div className={styles.convAvatar}>
         <div className={styles.activityAvatarWrapper}>
-          <Avatar src={conv.avatar || conv.activity?.coverImage} name={conv.name} size="48px" isGroup={true} />
+          <Avatar src={conv.avatar || conv.activity?.coverImage || conv.coverImage || conv.icon} name={conv.name} size="48px" isGroup={true} />
           <div className={styles.calendarBadge}>
             {hasStarted ? (
               <div className={styles.startedCalendarBadge}>
@@ -88,7 +97,6 @@ export default function ActivityChatItem({ conv, activeChatId, onSelect, onConte
           <span className={`${styles.convNameText} ${isUnread ? styles.convNameTextUnread : ''}`}>
             {conv.name}
           </span>
-          {isHost && <span className={styles.tagActivity}>Host</span>}
         </div>
 
         {previewText && (

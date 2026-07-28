@@ -18,22 +18,58 @@ const isImageUrl = (str) => {
 };
 
 function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
-  if (act.startsInLabel && !act.date) return act.startsInLabel;
+  if (!act) return 'Starts soon';
+
+  if (act.status === 'ENDED' || act.status === 'COMPLETED' || act.isEnded) {
+    return 'Ended';
+  }
+  if (act.status === 'CANCELLED') {
+    return 'Cancelled';
+  }
+
+  if (act.startsInLabel && !act.date && !act.startDate) return act.startsInLabel;
+
   try {
-    if (act.date) {
-      const targetDate = new Date(act.date);
-      if (act.time) {
-        const match = act.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    const rawDate = act.startDate || act.date;
+    if (rawDate) {
+      const targetDate = new Date(rawDate);
+      if (isNaN(targetDate.getTime())) return 'Starts soon';
+
+      if (act.time && typeof act.time === 'string') {
+        const match = act.time.match(/(\d+):(\d+)\s*(AM|PM)?/i);
         if (match) {
           let h = parseInt(match[1], 10);
           const m = parseInt(match[2], 10);
-          const ampm = match[3].toUpperCase();
+          const ampm = match[3] ? match[3].toUpperCase() : null;
           if (ampm === 'PM' && h < 12) h += 12;
           if (ampm === 'AM' && h === 12) h = 0;
           targetDate.setHours(h, m, 0, 0);
         }
       }
-      const diffMs = targetDate.getTime() - nowTime;
+
+      const startTime = targetDate.getTime();
+
+      let endTime = null;
+      if (act.endDate) {
+        const parsedEnd = new Date(act.endDate).getTime();
+        if (!isNaN(parsedEnd)) endTime = parsedEnd;
+      }
+
+      if (!endTime) {
+        let durationHours = 2;
+        if (act.duration) {
+          const match = String(act.duration).match(/(\d+)/);
+          if (match) durationHours = parseInt(match[1], 10);
+        }
+        endTime = startTime + durationHours * 60 * 60 * 1000;
+      }
+
+      if (nowTime >= endTime) {
+        return 'Ended';
+      }
+
+      const diffMs = startTime - nowTime;
+
       if (diffMs > 0) {
         if (diffMs >= 24 * 60 * 60 * 1000) {
           const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));

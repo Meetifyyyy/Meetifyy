@@ -346,7 +346,7 @@
 
 @media (max-width: 768px) {
   .header {
-    padding: 0 1rem;
+    padding: 0 0.5rem;
     height: 56px;
     display: flex;
     align-items: center;
@@ -362,7 +362,13 @@
     border: none;
     color: var(--color-text-main);
     cursor: pointer;
-    padding: 0.25rem;
+    padding: 0.25rem 0.15rem;
+    margin-right: 0;
+  }
+
+  .hamburgerBtn svg {
+    width: 27px;
+    height: 27px;
   }
 
   .navLeft {
@@ -375,7 +381,7 @@
     transform: none !important;
     max-width: none !important;
     flex: 1;
-    margin: 0 0.75rem;
+    margin: 0 0.55rem;
     order: 2;
   }
 
@@ -383,7 +389,7 @@
     display: flex !important;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.5rem;
+    gap: 0.25rem;
     flex: 0 0 auto !important;
     margin-left: 0 !important;
     order: 3;

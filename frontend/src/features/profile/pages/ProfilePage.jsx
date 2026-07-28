@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { messagesApi, usersApi, postsApi } from '@shared/api/apiClient';
@@ -47,6 +47,7 @@ function getSafeCoverUrl(url, fallback) {
 
 export default function ProfilePage() {
   const { profileUsername } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const queryClient = useQueryClient();
@@ -54,6 +55,23 @@ export default function ProfilePage() {
   const targetUsername = profileUsername || currentUserUsername;
 
   const [modalType, setModalType] = useState(null);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'followers' || tab === 'following') {
+      setModalType(tab);
+    }
+  }, [searchParams]);
+
+  const handleCloseUserListModal = useCallback(() => {
+    setModalType(null);
+    if (searchParams.get('tab')) {
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('tab');
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [showCoverEditor, setShowCoverEditor] = useState(false);
@@ -360,11 +378,11 @@ export default function ProfilePage() {
                   <span className={s.statNumber}>{profileUser.stats?.posts ?? posts.length}</span>
                   <span className={s.statLabel}>Posts</span>
                 </div>
-                <div className={s.statItem} onClick={() => setModalType('followers')}>
+                <div className={s.statItem} onClick={(e) => { e.stopPropagation(); setModalType('followers'); }}>
                   <span className={s.statNumber}>{profileUser.stats?.followers?.toLocaleString?.() ?? profileUser.followersList?.length ?? 0}</span>
                   <span className={s.statLabel}>Followers</span>
                 </div>
-                <div className={s.statItem} onClick={() => setModalType('following')}>
+                <div className={s.statItem} onClick={(e) => { e.stopPropagation(); setModalType('following'); }}>
                   <span className={s.statNumber}>{profileUser.stats?.following?.toLocaleString?.() ?? profileUser.followingList?.length ?? 0}</span>
                   <span className={s.statLabel}>Following</span>
                 </div>
@@ -434,7 +452,7 @@ export default function ProfilePage() {
           type={modalType}
           profileUsername={targetUsername}
           profileUser={profileUser}
-          onClose={() => setModalType(null)}
+          onClose={handleCloseUserListModal}
         />
       )}
 
@@ -500,6 +518,7 @@ export default function ProfilePage() {
         <MediaCropper
           imageFile={cropFile}
           aspect={cropType === 'avatar' ? 1 : 3}
+          cropShape={cropType === 'avatar' ? 'round' : 'rect'}
           onCropComplete={handleCropComplete}
           onCancel={() => {
             setCropFile(null);

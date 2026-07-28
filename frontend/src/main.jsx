@@ -14,20 +14,45 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60 * 2,       // fresh for 2 min
-      gcTime:    1000 * 60 * 10,       // cached for 10 min
+      gcTime:    1000 * 60 * 15,       // cached for 15 min
       refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
       retry: 1,
+      placeholderData: (prev) => prev, // SWR: show stale instantly, fetch in background
     },
   },
 });
 
-// Clear out old Service Workers in development mode to prevent old cache/mock data issues
-if (import.meta.env.DEV && 'serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (let registration of registrations) {
-      registration.unregister();
+// Disable browser context menu on images and videos globally
+if (typeof window !== 'undefined') {
+  window.addEventListener('contextmenu', (e) => {
+    const target = e.target;
+    if (target && (
+      target.tagName === 'IMG' ||
+      target.tagName === 'VIDEO' ||
+      target.closest('img') ||
+      target.closest('video')
+    )) {
+      e.preventDefault();
     }
-  });
+  }, true);
+}
+
+// Service Worker — register in production, unregister stale SWs in development
+if ('serviceWorker' in navigator) {
+  if (import.meta.env.DEV) {
+    // Unregister any existing SW in dev to avoid stale cache interfering
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const registration of registrations) registration.unregister();
+    });
+  } else {
+    // Register SW in production / staging
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
+        console.warn('SW registration failed:', err);
+      });
+    });
+  }
 }
 
 createRoot(document.getElementById('root')).render(

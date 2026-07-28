@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { isImageUrl } from '@shared/utils/avatar';
 import { showToast } from '@shared/utils/toast';
 import ImageViewer from './ImageViewer';
@@ -9,6 +10,8 @@ import styles from './MediaViewer.module.css';
 import SharePostModal from '@features/feed/components/modals/SharePostModal';
 import { isSafeUrl } from '@shared/utils/urlSanitize';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import ForwardMessageModal from '@features/messages/shared/components/modals/ForwardMessageModal';
+import { useData } from '@shared/hooks/useData';
 
 /** Detect video items by explicit type field OR URL extension. */
 function isVideo(item) {
@@ -32,10 +35,19 @@ export default function MediaViewer() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showForwardModal, setShowForwardModal] = useState(false);
+  const { conversations, sendDirectMessage } = useData();
   const [savedUrls, setSavedUrls] = useState(() => new Set());
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
   const didClose = useRef(false);
+
+  const handleClose = useCallback(() => {
+    setVisible(false);
+    setTimeout(closeViewer, 280);
+  }, [closeViewer]);
+
+  useOverlayBack(open, handleClose);
 
   const currentItem = items[index] || null;
   const prevItem = items[index - 1] || null;
@@ -78,17 +90,12 @@ export default function MediaViewer() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [open, navigate, isVid]);
+  }, [open, navigate, isVid, handleClose]);
 
   // ── Focus trap ──
   useEffect(() => {
     if (open) overlayRef.current?.focus();
   }, [open]);
-
-  const handleClose = useCallback(() => {
-    setVisible(false);
-    setTimeout(closeViewer, 280);
-  }, [closeViewer]);
 
   const toggleControls = useCallback(() => {
     setControlsVisible(v => !v);
@@ -190,22 +197,13 @@ export default function MediaViewer() {
         <div className={styles.topBarRight}>
           {/* Forward */}
           {meta?.source !== 'Post' && (
-            <button className={styles.iconBtn} onClick={() => showToast('Forwarded!')} aria-label="Forward">
+            <button className={styles.iconBtn} onClick={() => setShowForwardModal(true)} aria-label="Forward">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 17 20 12 15 7" />
                 <path d="M4 18v-2a4 4 0 0 1 4-4h12" />
               </svg>
             </button>
           )}
-
-          {/* Share */}
-          <button className={styles.iconBtn} onClick={handleShare} aria-label="Share">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-            </svg>
-          </button>
 
           {/* More menu */}
           <div className={styles.moreMenuWrap}>
@@ -222,10 +220,6 @@ export default function MediaViewer() {
               <button className={styles.moreMenuItem} onClick={() => { handleDownload(); setShowMoreMenu(false); }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                 Download
-              </button>
-              <button className={styles.moreMenuItem} onClick={handleSave}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill={currentItem?.url && savedUrls.has(currentItem.url) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
-                {currentItem?.url && savedUrls.has(currentItem.url) ? 'Saved' : 'Save'}
               </button>
               <button
                 className={styles.moreMenuItem}
@@ -336,6 +330,30 @@ export default function MediaViewer() {
         reportedFrom="media-viewer"
         onSubmitted={() => setHasReported(true)}
       />
+
+      {showForwardModal && (
+        <ForwardMessageModal
+          isOpen={showForwardModal}
+          msg={{ mediaUrl: currentItem?.url, mediaType: currentItem?.type || 'image' }}
+          conversations={conversations || []}
+          onClose={() => setShowForwardModal(false)}
+          onConfirmForward={async (targetIds) => {
+            try {
+              for (const id of targetIds) {
+                await sendDirectMessage(id, {
+                  text: '',
+                  mediaUrl: currentItem?.url,
+                  mediaType: currentItem?.type || 'image'
+                });
+              }
+            } catch (e) {
+              // ignore
+            } finally {
+              setShowForwardModal(false);
+            }
+          }}
+        />
+      )}
 
     </div>,
     document.body

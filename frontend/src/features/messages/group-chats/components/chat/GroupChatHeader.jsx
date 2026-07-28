@@ -43,7 +43,7 @@ export default function GroupChatHeader({
       </button>
 
       <div className={`${styles.msgChatUser} ${styles.msgChatUserClickable}`}>
-        <Avatar src={conversation.avatar} name={conversation.name} size="38px" isGroup />
+        <Avatar src={conversation.avatar || conversation.icon || conversation.coverImage || conversation.avatarUrl} name={conversation.name} size="38px" isGroup />
         <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
           <div className={styles.msgChatName}>
             <span className={styles.msgChatNameText}>{conversation.name}</span>

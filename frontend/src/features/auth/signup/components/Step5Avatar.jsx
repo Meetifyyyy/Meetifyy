@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useSignup } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
-import { useTheme } from '@shared/context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import AnimatedStep from './AnimatedStep';
 import { motion } from 'framer-motion';
@@ -22,7 +21,6 @@ const presetAvatars = [
 export default function Step5Avatar() {
   const { signupData, clearSignupData } = useSignup();
   const { updateProfile, currentUser } = useAuth();
-  const { theme } = useTheme();
   const navigate = useNavigate();
 
   

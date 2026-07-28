@@ -1,7 +1,6 @@
 import { forwardRef, useState, useEffect } from 'react';
 import { UsersIcon, UserIcon } from '@heroicons/react/24/solid';
-import { useTheme } from '@shared/context/ThemeContext';
-import { getMediaUrl } from '@shared/api/apiClient';
+import { mediaCache } from '@shared/utils/MediaCacheManager';
 import defaultAvatarImg from '../../../assets/images/default_avatar.webp';
 import styles from './Avatar.module.css';
 
@@ -20,21 +19,12 @@ export function getProcessedAvatarUrl(src) {
   if (src.includes('api.dicebear.com/7.x/initials')) {
     return null;
   }
-
-  let finalUrl = getMediaUrl(src);
-
-  // Rewrite localhost backend URLs to current network host when accessing from another device (e.g. mobile)
-  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-    const host = window.location.hostname;
-    if (host !== 'localhost' && host !== '127.0.0.1') {
-      finalUrl = finalUrl.replace(/http:\/\/(?:localhost|127\.0\.0\.1):4000/g, `${window.location.protocol}//${host}:4000`);
-    }
+  
+  if (src.startsWith('https://api.dicebear.com/')) {
+    return src.split('&backgroundColor=')[0].split('?backgroundColor=')[0];
   }
-
-  if (finalUrl.startsWith('https://api.dicebear.com/')) {
-    return finalUrl.split('&backgroundColor=')[0].split('?backgroundColor=')[0];
-  }
-  return finalUrl;
+  
+  return src; // Let MediaCacheManager handle the resolution
 }
 
 const Avatar = forwardRef(({
@@ -50,19 +40,48 @@ const Avatar = forwardRef(({
   disableHover = false,
   children
 }, ref) => {
-  const { theme } = useTheme();
+  const [imgSrc, setImgSrc] = useState(null);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
-  const processedSrc = getProcessedAvatarUrl(src, theme);
+  const initialProcessedSrc = getProcessedAvatarUrl(src);
 
   useEffect(() => {
+    let isMounted = true;
+    
     setHasLoaded(false);
     setHasError(false);
-  }, [processedSrc]);
+
+    if (!initialProcessedSrc) {
+      setImgSrc(null);
+      return;
+    }
+
+    const fetchUrl = async () => {
+      try {
+        const resolvedUrl = await mediaCache.getUrl(initialProcessedSrc);
+        if (isMounted) {
+          if (resolvedUrl) {
+            setImgSrc(resolvedUrl);
+          } else {
+            setHasError(true);
+          }
+        }
+      } catch (err) {
+        if (isMounted) setHasError(true);
+      }
+    };
+    
+    fetchUrl();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [initialProcessedSrc, retryCount]);
 
   const sizeValue = typeof size === 'number' ? `${size}px` : size;
-  const hasValidImageSrc = isImageUrl(processedSrc);
+  const hasValidImageSrc = isImageUrl(imgSrc);
   const showImage = hasValidImageSrc && !hasError;
 
   // Initials mode for groups passed as short src string
@@ -90,6 +109,15 @@ const Avatar = forwardRef(({
   const handleClick = (e) => {
     if (onClick) onClick(e);
   };
+  
+  const handleError = () => {
+    if (retryCount === 0 && initialProcessedSrc) {
+      mediaCache.invalidate(initialProcessedSrc);
+      setRetryCount(1);
+      return;
+    }
+    setHasError(true);
+  };
 
   return (
     <div
@@ -104,13 +132,13 @@ const Avatar = forwardRef(({
       >
         {showImage ? (
           <img
-            src={processedSrc}
+            src={imgSrc}
             alt={name || (isGroup ? 'Group Avatar' : 'User Avatar')}
             loading="lazy"
             decoding="async"
             className={styles.avatarImg}
             onLoad={() => setHasLoaded(true)}
-            onError={() => setHasError(true)}
+            onError={handleError}
           />
         ) : isInitials ? (
           <div className={styles.avatarInitials}>{initials}</div>

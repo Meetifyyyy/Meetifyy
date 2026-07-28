@@ -40,3 +40,15 @@
   min-width: 18px;
   text-align: center;
 }
+
+@media (max-width: 768px) {
+  .bellWrapper {
+    padding: 0.35rem 0.25rem;
+  }
+
+  .iconContainer svg {
+    width: 27px;
+    height: 27px;
+  }
+}
+

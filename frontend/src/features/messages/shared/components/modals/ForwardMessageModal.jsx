@@ -4,7 +4,7 @@ import { Search, Check, X } from 'lucide-react';
 import styles from './ForwardMessageModal.module.css';
 
 export default function ForwardMessageModal({
-  isOpen,
+  isOpen = true,
   onClose,
   conversations = [],
   onConfirmForward

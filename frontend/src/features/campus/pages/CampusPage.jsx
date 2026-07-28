@@ -1,8 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/hooks/useData';
-import { useTheme } from '@shared/context/ThemeContext';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
@@ -10,16 +9,28 @@ import pageStyles from './CampusPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import CreateCommunityModal from '@features/communities/components/modals/CreateCommunityModal';
 import CrewCard from '@features/crew/components/cards/CrewCard';
-import { Plus, Users } from 'lucide-react';
+import { Plus, Users, Calendar } from 'lucide-react';
 import ActivityTemplatesRow from '../components/ActivityTemplatesRow';
 
 export default function CampusPage() {
   const navigate = useNavigate();
   const { currentUser, collegeName: authCollegeName } = useAuth();
   const { campusCrewActivities, campusUsers, campusCommunities, createCampusGroup } = useData();
-  const { theme } = useTheme();
 
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!isPlusMenuOpen) return;
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setIsPlusMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isPlusMenuOpen]);
 
   const userCollegeId = currentUser?.collegeId || 'unknown';
   const collegeCommunity = campusCommunities[userCollegeId];
@@ -63,8 +74,6 @@ export default function CampusPage() {
     navigate(`/communities/${id}`);
   };
 
-
-
   return (
     <main className={`centre centre-wide ${styles.hubContainer}`}>
       {/* HEADER SECTION */}
@@ -72,14 +81,40 @@ export default function CampusPage() {
         <header className={styles.header}>
           <h1 className={styles.collegeTitle}>{collegeName}</h1>
 
-          <div className={styles.headerActions}>
-
+          <div className={`${styles.headerActions} ${styles.headerActionsRelative}`} ref={menuRef}>
             <button
               className={styles.headerSquareBtn}
-              onClick={() => navigate('/crew/create')}
+              onClick={() => setIsPlusMenuOpen(prev => !prev)}
+              aria-label="Create menu"
             >
               <Plus size={20} />
             </button>
+
+            {isPlusMenuOpen && (
+              <div className={styles.plusDropdownMenu}>
+                <button
+                  className={styles.plusMenuItem}
+                  onClick={() => {
+                    setIsPlusMenuOpen(false);
+                    navigate('/crew/create');
+                  }}
+                >
+                  <Calendar size={18} className={styles.plusMenuIcon} />
+                  <span>Create activity</span>
+                </button>
+
+                <button
+                  className={styles.plusMenuItem}
+                  onClick={() => {
+                    setIsPlusMenuOpen(false);
+                    setIsGroupModalOpen(true);
+                  }}
+                >
+                  <Users size={18} className={styles.plusMenuIcon} />
+                  <span>Create community</span>
+                </button>
+              </div>
+            )}
           </div>
         </header>
 

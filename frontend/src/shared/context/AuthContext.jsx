@@ -123,12 +123,28 @@ export function AuthProvider({ children }) {
                     // TOKEN_REFRESHED fires every ~60 min; we never want a wasteful API call then.
                     if (!bookmarksHydratedRef.current && event !== 'TOKEN_REFRESHED') {
                       bookmarksHydratedRef.current = true;
-                      try {
-                        const response = await postsApi.getBookmarks(50);
-                        const bookmarkedPostIds = (response?.posts || response?.data || []).map(p => p.id);
-                        useSavedPostsStore.getState().hydrateFromServer(bookmarkedPostIds);
-                      } catch (bookmarkErr) {
-                        console.error('Failed to hydrate bookmarks on auth change', bookmarkErr);
+
+                      // Prefer bookmark IDs bundled into the sync response (zero extra network call)
+                      const meta = syncRes?.meta;
+                      if (meta?.postBookmarkIds) {
+                        useSavedPostsStore.getState().hydrateFromServer(meta.postBookmarkIds);
+                      }
+                      if (meta?.activityBookmarkIds) {
+                        useSavedActivitiesStore.getState().hydrateFromServer(meta.activityBookmarkIds);
+                      }
+
+                      // Fallback: if backend doesn't return meta yet, defer 2s so the user
+                      // sees the feed before the bookmark request fires.
+                      if (!meta?.postBookmarkIds) {
+                        setTimeout(async () => {
+                          try {
+                            const response = await postsApi.getBookmarks(50);
+                            const bookmarkedPostIds = (response?.posts || response?.data || []).map(p => p.id);
+                            useSavedPostsStore.getState().hydrateFromServer(bookmarkedPostIds);
+                          } catch (bookmarkErr) {
+                            console.error('Failed to hydrate bookmarks', bookmarkErr);
+                          }
+                        }, 2000);
                       }
                     }
                   }

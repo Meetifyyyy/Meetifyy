@@ -6,7 +6,10 @@ import styles from '../../../shared/components/sidebar/ConversationList.module.c
 
 export default function DMItem({ conv, activeChatId, onSelect, onContextMenu }) {
   const { currentUser } = useAuth();
-  const isActive = String(conv.id) === String(activeChatId) || String(conv.publicId) === String(activeChatId);
+  const isActive = Boolean(activeChatId) && (
+    String(conv.id) === String(activeChatId) ||
+    (Boolean(conv.publicId) && String(conv.publicId) === String(activeChatId))
+  );
   const isUnread = conv.unread > 0;
 
   const remainingTime = (() => {
@@ -39,7 +42,7 @@ export default function DMItem({ conv, activeChatId, onSelect, onContextMenu }) 
     >
       <div className={styles.convAvatar}>
         <Avatar 
-          src={conv.avatar} 
+          src={conv.avatar || conv.otherUser?.avatar || conv.targetUser?.avatar || conv.icon} 
           name={conv.name} 
           size="48px" 
           isOnline={Boolean(conv.targetUser ? conv.targetUser.isOnline : (conv.online ?? conv.isOnline ?? false))} 

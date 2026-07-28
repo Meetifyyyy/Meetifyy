@@ -252,9 +252,6 @@ export default function DirectoryPage() {
                 <button className={styles.headerSquareBtn} onClick={() => setShowSearch(true)} title="Search Directory">
                   <Search size={20} />
                 </button>
-                <button className={styles.headerSquareBtn} onClick={() => showToast('Feature coming soon!')} title="Add Student">
-                  <Plus size={20} />
-                </button>
               </div>
             </>
           )}

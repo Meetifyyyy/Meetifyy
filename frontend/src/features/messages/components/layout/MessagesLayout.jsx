@@ -57,6 +57,26 @@ export default function MessagesLayout() {
   const [activeChatId, setActiveChatId] = useState(routeChatId);
   const [showChatOnMobile, setShowChatOnMobile] = useState(!!routeChatId);
 
+  const handleBack = () => {
+    setShowChatOnMobile(false);
+    setActiveChatId(null);
+    setHasLeftGroup(false);
+    setLeaveConfirm(false);
+    const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
+    navigate(basePath, { replace: true });
+  };
+
+  const handleSelectChat = (id, selectedConv) => {
+    const targetConv = selectedConv || conversations.find(c => String(c.id) === String(id) || String(c.publicId) === String(id));
+    const targetId = targetConv?.publicId || targetConv?.id || id;
+    setActiveChatId(targetId);
+    setShowChatOnMobile(true);
+
+    const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
+    const targetPath = generateConversationUrl(targetConv || { id: targetId }, currentUser?.id, basePath);
+    navigate(targetPath);
+  };
+
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchVal, setSearchVal] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -93,11 +113,22 @@ export default function MessagesLayout() {
   // Find active conversation and merge history messages
   const baseConv = useMemo(() => {
     if (!activeChatId) return null;
-    const cleanAid = String(activeChatId).replace(/^(act_)+/, '');
+    const targetStr = String(activeChatId);
+    const cleanAid = targetStr.replace(/^(act_)+/, '');
     return conversations.find((c) => {
-      const cleanCid = String(c.id).replace(/^(act_)+/, '');
-      const cleanActId = c.activityId ? String(c.activityId).replace(/^(act_)+/, '') : null;
-      return String(c.id) === String(activeChatId) || String(c.publicId) === String(activeChatId) || cleanCid === cleanAid || cleanActId === cleanAid;
+      if (!c) return false;
+      const idStr = c.id != null ? String(c.id) : null;
+      const pubIdStr = c.publicId != null ? String(c.publicId) : null;
+      const actIdStr = c.activityId != null ? String(c.activityId) : null;
+      const cleanCid = idStr ? idStr.replace(/^(act_)+/, '') : null;
+      const cleanActId = actIdStr ? actIdStr.replace(/^(act_)+/, '') : null;
+
+      return (
+        (idStr && idStr === targetStr) ||
+        (pubIdStr && pubIdStr === targetStr) ||
+        (cleanCid && cleanCid === cleanAid) ||
+        (cleanActId && cleanActId === cleanAid)
+      );
     }) || { id: activeChatId };
   }, [conversations, activeChatId]);
 
@@ -107,7 +138,7 @@ export default function MessagesLayout() {
     const latestPage = rawPages?.[rawPages.length - 1];
     return {
       ...baseConv,
-      messages: allMessages.length > 0 ? allMessages : (baseConv.messages || []),
+      messages: allMessages,
       participants: latestPage?.participants || baseConv.participants || baseConv.members || [],
       nextCursor: latestPage?.nextCursor || null,
     };
@@ -159,26 +190,6 @@ export default function MessagesLayout() {
         return timeB - timeA;
       });
   }, [conversations, activeFilter, searchVal]);
-
-  const handleSelectChat = (id, selectedConv) => {
-    const targetConv = selectedConv || conversations.find(c => String(c.id) === String(id) || String(c.publicId) === String(id));
-    const targetId = targetConv?.publicId || targetConv?.id || id;
-    setActiveChatId(targetId);
-    setShowChatOnMobile(true);
-
-    const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
-    const targetPath = generateConversationUrl(targetConv || { id: targetId }, currentUser?.id, basePath);
-    navigate(targetPath);
-  };
-
-  const handleBack = () => {
-    setShowChatOnMobile(false);
-    setActiveChatId(null);
-    setHasLeftGroup(false);
-    setLeaveConfirm(false);
-    const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
-    navigate(basePath, { replace: true });
-  };
 
   // Called by ActivityChatHeader — just opens the confirm modal, no async work yet
   const handleLeaveActivity = () => {
@@ -352,9 +363,12 @@ export default function MessagesLayout() {
             onMarkSeen: markSeenIfEligible,
           };
 
+          const activeKey = activeChatId || activeConv?.id || 'chat';
+
           if (type === 'activity') {
             return (
               <ActivityChatArea
+                key={activeKey}
                 conversation={activeConv}
                 onSendMessage={sendMessageOptimistically}
                 onReactMessage={reactToMessage}
@@ -374,6 +388,7 @@ export default function MessagesLayout() {
           if (type === 'group') {
             return (
               <GroupChatArea
+                key={activeKey}
                 conversation={activeConv}
                 onSendMessage={sendMessageOptimistically}
                 onReactMessage={reactToMessage}
@@ -390,6 +405,7 @@ export default function MessagesLayout() {
           }
           return (
             <DMChatArea
+              key={activeKey}
               conversation={activeConv}
               onSendMessage={sendMessageOptimistically}
               onReactMessage={reactToMessage}
