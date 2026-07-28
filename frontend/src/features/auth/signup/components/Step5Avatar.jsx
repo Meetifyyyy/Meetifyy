@@ -26,7 +26,6 @@ export default function Step5Avatar() {
   
   const [avatar, setAvatar] = useState(signupData.avatar || '');
   const [isUploading, setIsUploading] = useState(false);
-  const bgHex = theme === 'dark' ? '202020' : 'ffffff';
 
   const getProcessedAvatarUrl = (url) => {
     if (!url || !url.startsWith('https://api.dicebear.com/')) return url;
