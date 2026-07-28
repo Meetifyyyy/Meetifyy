@@ -106,19 +106,24 @@ export function useTypingIndicator(conversationId, currentUserId) {
       const uId = data.userId;
       if (!uId) return;
 
-      // Clear any previous timer if it existed (shouldn't after this change, but be safe)
+      // Clear any existing auto-clear timer for this user
       if (autoClearTimersRef.current.has(uId)) {
         clearTimeout(autoClearTimersRef.current.get(uId));
         autoClearTimersRef.current.delete(uId);
       }
 
-      // No auto-expire — the bubble stays until typing:stop, message:new, or presence offline
       setTypingUsers((prev) => {
         const next = new Map(prev);
         const name = data.userName || users[uId]?.displayName || users[uId]?.username || 'Someone';
         next.set(uId, name);
         return next;
       });
+
+      // Auto-clear after 5 seconds of inactivity to prevent indicator lingering forever if tab closes
+      const timer = setTimeout(() => {
+        clearUserTyping(uId);
+      }, 5000);
+      autoClearTimersRef.current.set(uId, timer);
     };
 
     const onTypingStop = (data) => {

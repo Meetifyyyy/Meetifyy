@@ -127,6 +127,12 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
       return;
     }
 
+    if (src.startsWith('blob:') || src.startsWith('data:')) {
+      setImgSrc(src);
+      setLoaded(true);
+      return;
+    }
+
     const fetchUrl = async () => {
       try {
         const resolvedUrl = await mediaCache.getUrl(src);

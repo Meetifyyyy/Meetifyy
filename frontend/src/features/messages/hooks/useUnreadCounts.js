@@ -9,8 +9,8 @@ export function useUnreadCounts() {
     let group = 0;
 
     conversations.forEach(conv => {
-      const isUnread = (conv.unread || 0) > 0;
-      if (!isUnread) return;
+      const count = Math.max(0, conv.unreadCount || conv.unread || 0);
+      if (count === 0) return;
 
       const isGroupChat =
         conv.isGroup ||
@@ -21,9 +21,9 @@ export function useUnreadCounts() {
         String(conv.id).startsWith('act_');
 
       if (isGroupChat) {
-        group += conv.unread;
+        group += count;
       } else {
-        dm += conv.unread;
+        dm += count;
       }
     });
 

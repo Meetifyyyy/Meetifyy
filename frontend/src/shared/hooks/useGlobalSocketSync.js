@@ -4,6 +4,8 @@ import { useGlobalSocketStore } from '../store/useGlobalSocketStore';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../hooks/useData';
 
+import { flushPendingQueue } from '../../features/messages/shared/utils/offlineSync';
+
 export function useGlobalSocketSync() {
   const queryClient = useQueryClient();
   const { socket, isConnected } = useGlobalSocketStore();
@@ -16,39 +18,69 @@ export function useGlobalSocketSync() {
     conversationsRef.current = conversations;
   }, [conversations]);
 
-  // 1. Join Conversation Rooms for O(1) routing — run on initial connect AND reconnects
+  // 1. Join Conversation Rooms & Flush Offline Queue on connect/reconnect
   useEffect(() => {
     if (!socket || !isConnected) return;
 
-    const joinAllRooms = () => {
+    const syncOnConnect = () => {
       const convs = conversationsRef.current;
-      if (!convs || convs.length === 0) return;
+      if (convs && convs.length > 0) {
+        const conversationIds = [];
+        convs.forEach((c) => {
+          if (c.id) conversationIds.push(c.id);
+          if (c.publicId && c.publicId !== c.id) conversationIds.push(c.publicId);
+          if (c.internalId && c.internalId !== c.id && c.internalId !== c.publicId) {
+            conversationIds.push(c.internalId);
+          }
+        });
 
-      // Send BOTH id and publicId so the backend room matches regardless of which alias it used
-      const conversationIds = [];
-      convs.forEach((c) => {
-        if (c.id) conversationIds.push(c.id);
-        if (c.publicId && c.publicId !== c.id) conversationIds.push(c.publicId);
-        if (c.internalId && c.internalId !== c.id && c.internalId !== c.publicId) {
-          conversationIds.push(c.internalId);
+        const unique = [...new Set(conversationIds.filter(Boolean))];
+        if (unique.length > 0) {
+          socket.emit('conversation:join_rooms', { conversationIds: unique });
+        }
+      }
+
+      // Flush queued offline messages automatically
+      flushPendingQueue(socket, (tempId, serverMsg) => {
+        if (serverMsg?.conversationId) {
+          queryClient.invalidateQueries({ queryKey: ['messages', serverMsg.conversationId] });
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
         }
       });
 
-      const unique = [...new Set(conversationIds.filter(Boolean))];
-      if (unique.length > 0) {
-        socket.emit('conversation:join_rooms', { conversationIds: unique });
+      // Request missed messages catchup using last active timestamp
+      const lastActiveTime = localStorage.getItem('meetifyy_last_socket_sync') || new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      socket.emit('message:catchup', { since: lastActiveTime }, (res) => {
+        if (res?.status === 'ok' && Array.isArray(res.messages) && res.messages.length > 0) {
+          res.messages.forEach(msg => {
+            const convId = msg.conversationId || msg.publicId || msg.internalId;
+            if (convId) {
+              queryClient.invalidateQueries({ queryKey: ['messages', convId] });
+            }
+          });
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        }
+        localStorage.setItem('meetifyy_last_socket_sync', new Date().toISOString());
+      });
+    };
+
+    syncOnConnect();
+
+    // Re-sync on every reconnect
+    socket.on('connect', syncOnConnect);
+
+    // Periodic heartbeat to maintain presence active status
+    const heartbeatInterval = setInterval(() => {
+      if (socket.connected) {
+        socket.emit('presence:heartbeat');
       }
-    };
+    }, 25000);
 
-    // Join now (handles initial connect + when conversations load after connect)
-    joinAllRooms();
-
-    // Re-join on every reconnect — socket.on('connect') fires on reconnect too
-    socket.on('connect', joinAllRooms);
     return () => {
-      socket.off('connect', joinAllRooms);
+      socket.off('connect', syncOnConnect);
+      clearInterval(heartbeatInterval);
     };
-  }, [socket, isConnected]);
+  }, [socket, isConnected, queryClient]);
 
   // 2. Global domain event listener (follow/unfollow, etc.)
   useEffect(() => {

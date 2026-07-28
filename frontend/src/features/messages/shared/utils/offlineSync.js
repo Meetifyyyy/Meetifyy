@@ -11,16 +11,21 @@ export function getPendingQueue() {
 
 export function queuePendingMessage(msgPayload) {
   const queue = getPendingQueue();
-  queue.push(msgPayload);
-  try {
-    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-  } catch (e) {
-    console.error('Failed to store pending offline message', e);
+  const key = msgPayload.clientId || msgPayload.tempId;
+  const exists = queue.some(m => (m.clientId && m.clientId === key) || (m.tempId && m.tempId === key));
+  if (!exists) {
+    queue.push(msgPayload);
+    try {
+      localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+    } catch (e) {
+      console.error('Failed to store pending offline message', e);
+    }
   }
 }
 
 export function removePendingMessage(tempId) {
-  const queue = getPendingQueue().filter(m => m.tempId !== tempId);
+  if (!tempId) return;
+  const queue = getPendingQueue().filter(m => m.tempId !== tempId && m.clientId !== tempId);
   try {
     localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
   } catch (e) {
@@ -28,16 +33,20 @@ export function removePendingMessage(tempId) {
   }
 }
 
-export function flushPendingQueue(socket, onAck) {
+export async function flushPendingQueue(socket, onAck) {
   const queue = getPendingQueue();
   if (queue.length === 0 || !socket || !socket.connected) return;
 
-  queue.forEach((msg) => {
-    socket.emit('message:send', msg, (ack) => {
-      if (ack?.status === 'ok') {
-        removePendingMessage(msg.tempId);
-        if (onAck) onAck(msg.tempId, ack.message);
-      }
+  for (const msg of queue) {
+    const key = msg.clientId || msg.tempId;
+    await new Promise((resolve) => {
+      socket.emit('message:send', msg, (ack) => {
+        if (ack?.status === 'ok') {
+          removePendingMessage(key);
+          if (onAck) onAck(key, ack.message);
+        }
+        resolve();
+      });
     });
-  });
+  }
 }

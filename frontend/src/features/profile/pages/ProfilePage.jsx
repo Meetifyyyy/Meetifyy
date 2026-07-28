@@ -227,16 +227,36 @@ export default function ProfilePage() {
   const posts = postsData?.posts || [];
 
   const handleMessageClick = async () => {
-    if (isOwnProfile) return;
+    if (isOwnProfile || !profileUser?.id) return;
+
+    // 1. Instant local cache lookup
+    const cachedConvs = queryClient.getQueryData(['conversations']);
+    if (Array.isArray(cachedConvs)) {
+      const existing = cachedConvs.find(c => {
+        if (c.type !== 'DM' && c.type !== 'dm') return false;
+        const targetId = c.targetUser?.id || c.otherUser?.id || c.userId;
+        if (targetId && String(targetId) === String(profileUser.id)) return true;
+        if (Array.isArray(c.participants) && c.participants.some(p => String(p.userId || p.id) === String(profileUser.id))) return true;
+        return false;
+      });
+
+      if (existing?.publicId || existing?.id) {
+        navigate(`/messages/${existing.publicId || existing.id}`);
+        return;
+      }
+    }
+
+    // 2. Fallback API call with non-blocking UI navigation
     try {
-      const res = await messagesApi.startConversation([profileUser.id, authUser.id]);
-      if (res?.id) {
-        navigate(`/messages/${res.id}`);
+      const res = await dmApi.startDM(profileUser.id);
+      if (res?.id || res?.publicId) {
+        navigate(`/messages/${res.publicId || res.id}`);
       } else {
-        alert('Failed to start conversation. Please try again.');
+        const legacyRes = await messagesApi.startConversation([profileUser.id, authUser.id]);
+        if (legacyRes?.id) navigate(`/messages/${legacyRes.id}`);
       }
     } catch (e) {
-      alert('Failed to start conversation: ' + e.message);
+      console.error('Start DM failed', e);
     }
   };
 

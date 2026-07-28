@@ -23,11 +23,28 @@ export class DomainEventService {
    * Emits an event locally and publishes it to Redis Pub/Sub for horizontal scaling.
    */
   async emit(type: string, data: any, targetUserIds?: string[]): Promise<void> {
+    let resolvedTargets = targetUserIds;
+    if (!resolvedTargets || resolvedTargets.length === 0) {
+      if (data && typeof data === 'object') {
+        const candidates = [
+          data.targetUserId,
+          data.followingId,
+          data.recipientId,
+          data.followerId,
+          data.userId,
+          ...(Array.isArray(data.targetUserIds) ? data.targetUserIds : []),
+        ].filter(Boolean);
+        if (candidates.length > 0) {
+          resolvedTargets = [...new Set(candidates)];
+        }
+      }
+    }
+
     const payload: DomainEventPayload = {
       type,
       timestamp: new Date().toISOString(),
       data,
-      ...(targetUserIds && { targetUserIds })
+      ...(resolvedTargets && resolvedTargets.length > 0 && { targetUserIds: resolvedTargets })
     };
 
     // 1. Emit locally via EventEmitter2 (for internal services like Notifications)

@@ -388,10 +388,13 @@ model ConversationParticipant {
   @@id([userId, conversationId])
   @@index([userId])
   @@index([conversationId])
+  @@index([userId, deletedAt])
+  @@index([conversationId, deletedAt])
 }
 
 model Message {
   id                String                   @id @default(uuid())
+  clientMessageId   String?
   conversationId    String
   senderId          String
   createdAt         DateTime                 @default(now())
@@ -415,8 +418,10 @@ model Message {
   attachmentMedia Media? @relation("MessageAttachment", fields: [attachmentMediaId], references: [id])
 
   @@index([conversationId, createdAt])
+  @@index([conversationId, createdAt, senderId])
   @@index([conversationId, deletedAt, createdAt(sort: Desc)])
   @@index([senderId])
+  @@index([senderId, clientMessageId])
 }
 
 model EncryptedMessageTarget {

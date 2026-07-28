@@ -38,18 +38,78 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Debounce guard: SIGNED_IN, TOKEN_REFRESHED, and INITIAL_SESSION can all fire
-  // within milliseconds of each other on page load. Only allow one sync per 5 seconds.
-  const lastSyncAtRef = useRef(0);
-  const syncDebounceRef = useRef(null);
-  // Hydration guard: bookmarks should only be fetched on the first sign-in event,
-  // never on TOKEN_REFRESHED (which fires every ~60 min and wastes a network call).
-  const bookmarksHydratedRef = useRef(false);
-
-  // Derive isLoggedIn from the session object instead of tracking separately in localStorage
   const isLoggedIn = !!session;
 
+  const lastSyncAtRef = useRef(0);
+  const syncPromiseRef = useRef(null);
+  const bookmarksHydratedRef = useRef(false);
+  const syncDebounceRef = useRef(null);
   const isLoggingOutRef = useRef(false);
+
+  const performSync = useCallback(async (supabaseSession, event) => {
+    if (syncPromiseRef.current) {
+      return syncPromiseRef.current;
+    }
+
+    syncPromiseRef.current = (async () => {
+      try {
+        const syncRes = await apiClient.post('/api/auth/sync');
+        const syncedUser = syncRes?.user || syncRes;
+        lastSyncAtRef.current = Date.now();
+        if (isValidUser(syncedUser)) {
+          setCurrentUser(prev => {
+            const sbEmail = supabaseSession?.user?.email;
+            const cleanEmail = (syncedUser.email && !syncedUser.email.endsWith('@meetifyy.user'))
+              ? syncedUser.email
+              : (sbEmail || prev?.email || '');
+            const mergedUser = {
+              ...syncedUser,
+              email: cleanEmail,
+              settings: syncedUser.settings || prev?.settings || prev?.preferences,
+              preferences: syncedUser.settings || prev?.preferences || prev?.settings,
+              isNewUser: syncedUser.profileCompleted !== true
+            };
+            localStorage.setItem('currentUser', JSON.stringify(mergedUser));
+            return mergedUser;
+          });
+
+          // Hydrate bookmarks only ONCE per session — not on token refresh events.
+          if (!bookmarksHydratedRef.current && event !== 'TOKEN_REFRESHED') {
+            bookmarksHydratedRef.current = true;
+
+            const meta = syncRes?.meta;
+            if (meta?.postBookmarkIds) {
+              useSavedPostsStore.getState().hydrateFromServer(meta.postBookmarkIds);
+            }
+            if (meta?.activityBookmarkIds) {
+              useSavedActivitiesStore.getState().hydrateFromServer(meta.activityBookmarkIds);
+            }
+
+            if (!meta?.postBookmarkIds) {
+              setTimeout(async () => {
+                try {
+                  const response = await postsApi.getBookmarks(50);
+                  const bookmarkedPostIds = (response?.posts || response?.data || []).map(p => p.id);
+                  useSavedPostsStore.getState().hydrateFromServer(bookmarkedPostIds);
+                } catch (bookmarkErr) {
+                  console.error('Failed to hydrate bookmarks', bookmarkErr);
+                }
+              }, 2000);
+            }
+          }
+        }
+        return syncRes;
+      } catch (err) {
+        if (err?.status !== 401) {
+          console.error('Failed to sync profile on auth change', err);
+        }
+      } finally {
+        syncPromiseRef.current = null;
+      }
+    })();
+
+    return syncPromiseRef.current;
+  }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -87,14 +147,6 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        // ─── PASSWORD RECOVERY GATE ───────────────────────────────────────────
-        // When a user clicks a password reset link, Supabase fires PASSWORD_RECOVERY
-        // (and sometimes SIGNED_IN immediately after). We must NOT run the account-
-        // creation sync for these sessions — the user hasn't verified their email
-        // via OTP, and the backend's syncProfile will reject the upsert anyway.
-        // We set the session so the ResetPasswordPage can call updateUser(), but
-        // we do NOT sync to the backend or set currentUser as a logged-in app user.
-        // ─────────────────────────────────────────────────────────────────────
         if (event === 'PASSWORD_RECOVERY') {
           setSession(supabaseSession);
           setLoading(false);
@@ -102,7 +154,6 @@ export function AuthProvider({ children }) {
         }
 
         if (isLoggingOutRef.current) {
-          // Ignore secondary session events triggered during async signOut execution
           setSession(null);
           setCurrentUser(null);
           setLoading(false);
@@ -112,7 +163,6 @@ export function AuthProvider({ children }) {
         setSession(supabaseSession);
         
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-          // Optimistically set currentUser based on metadata to avoid blank profile / wrong role during sync delay
           const sbUser = supabaseSession?.user;
           if (sbUser) {
             const isNew = sbUser.user_metadata?.profileCompleted !== true;
@@ -133,66 +183,13 @@ export function AuthProvider({ children }) {
           }
 
           if (supabaseSession?.user) {
-            // Debounce: skip if a sync completed within the last 5 seconds
             const now = Date.now();
             if (now - lastSyncAtRef.current < 5000) {
               E2EEManager.getInstance().initialize().catch(console.error);
             } else {
               if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
-              syncDebounceRef.current = setTimeout(async () => {
-                try {
-                  const syncRes = await apiClient.post('/api/auth/sync');
-                  const syncedUser = syncRes?.user || syncRes;
-                  lastSyncAtRef.current = Date.now();
-                  if (isValidUser(syncedUser)) {
-                    setCurrentUser(prev => {
-                      const sbEmail = supabaseSession?.user?.email;
-                      const cleanEmail = (syncedUser.email && !syncedUser.email.endsWith('@meetifyy.user'))
-                        ? syncedUser.email
-                        : (sbEmail || prev?.email || '');
-                      const mergedUser = {
-                        ...syncedUser,
-                        email: cleanEmail,
-                        settings: syncedUser.settings || prev?.settings || prev?.preferences,
-                        preferences: syncedUser.settings || prev?.preferences || prev?.settings,
-                        isNewUser: syncedUser.profileCompleted !== true
-                      };
-                      localStorage.setItem('currentUser', JSON.stringify(mergedUser));
-                      return mergedUser;
-                    });
-
-                    // Hydrate bookmarks only ONCE per session — not on token refresh events.
-                    if (!bookmarksHydratedRef.current && event !== 'TOKEN_REFRESHED') {
-                      bookmarksHydratedRef.current = true;
-
-                      const meta = syncRes?.meta;
-                      if (meta?.postBookmarkIds) {
-                        useSavedPostsStore.getState().hydrateFromServer(meta.postBookmarkIds);
-                      }
-                      if (meta?.activityBookmarkIds) {
-                        useSavedActivitiesStore.getState().hydrateFromServer(meta.activityBookmarkIds);
-                      }
-
-                      if (!meta?.postBookmarkIds) {
-                        setTimeout(async () => {
-                          try {
-                            const response = await postsApi.getBookmarks(50);
-                            const bookmarkedPostIds = (response?.posts || response?.data || []).map(p => p.id);
-                            useSavedPostsStore.getState().hydrateFromServer(bookmarkedPostIds);
-                          } catch (bookmarkErr) {
-                            console.error('Failed to hydrate bookmarks', bookmarkErr);
-                          }
-                        }, 2000);
-                      }
-                    }
-                  }
-                } catch (err) {
-                  // If the backend rejects with 401 (unverified email gate), silently
-                  // swallow the error — the user will be prompted to verify via OTP.
-                  if (err?.status !== 401) {
-                    console.error('Failed to sync profile on auth change', err);
-                  }
-                }
+              syncDebounceRef.current = setTimeout(() => {
+                performSync(supabaseSession, event);
               }, 200);
               E2EEManager.getInstance().initialize().catch(console.error);
             }
@@ -204,7 +201,7 @@ export function AuthProvider({ children }) {
     );
     
     return () => subscription.unsubscribe();
-  }, []);
+  }, [performSync]);
 
 
   const login = useCallback(async (usernameOrEmail, password) => {

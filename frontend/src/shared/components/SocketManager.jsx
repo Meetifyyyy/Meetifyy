@@ -8,6 +8,7 @@ import Avatar from './avatar/Avatar';
 import { parseConversationRoute } from '../utils/conversationUrl';
 import { messagesApi } from '../api/apiClient';
 import { useGlobalSocketSync } from '../hooks/useGlobalSocketSync';
+import { appendMessageToCache } from '../../features/messages/shared/utils/cacheUtils';
 
 export default function SocketManager() {
   const { session, isLoggedIn } = useAuth();
@@ -622,32 +623,9 @@ export default function SocketManager() {
       });
 
       // 2. Instant update of ['messages', convId] query cache if present
-      const targetKeys = [message.conversationId, message.publicId, message.internalId].filter(Boolean);
+      const targetKeys = [...new Set([message.conversationId, message.publicId, message.internalId].filter(Boolean))];
       targetKeys.forEach((key) => {
-        queryClient.setQueryData(['messages', key], (oldData) => {
-          if (!oldData) return oldData;
-          if (oldData.messages) {
-            if (oldData.messages.some(m => m.id === message.id)) return oldData;
-            return {
-              ...oldData,
-              messages: [...oldData.messages, message]
-            };
-          }
-          if (oldData.pages) {
-            const firstPage = oldData.pages[0];
-            if (firstPage && firstPage.messages && firstPage.messages.some(m => m.id === message.id)) return oldData;
-            return {
-              ...oldData,
-              pages: oldData.pages.map((page, idx) => {
-                if (idx === 0) {
-                  return { ...page, messages: [...(page.messages || []), message] };
-                }
-                return page;
-              })
-            };
-          }
-          return oldData;
-        });
+        appendMessageToCache(queryClient, key, message);
       });
 
       // 3. If chat is NOT currently open, show instant screen toast notification

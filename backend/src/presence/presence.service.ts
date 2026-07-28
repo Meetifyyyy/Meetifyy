@@ -45,7 +45,14 @@ export class PresenceService {
     return `presence:${userId}`;
   }
 
+  private disconnectTimers = new Map<string, NodeJS.Timeout>();
+
   async setOnline(userId: string, socketId: string): Promise<void> {
+    // Cancel any pending disconnect grace timer for this user
+    if (this.disconnectTimers.has(userId)) {
+      clearTimeout(this.disconnectTimers.get(userId));
+      this.disconnectTimers.delete(userId);
+    }
     try {
       if (this.redis) {
         const key = this.getPresenceKey(userId);
@@ -69,7 +76,7 @@ export class PresenceService {
           this.logger.log(`Online user=${userId}`);
         }
         
-        await this.redis.set(key, JSON.stringify(presence));
+        await this.redis.set(key, JSON.stringify(presence), 'EX', 60);
       } else {
         let presence = this.memoryPresence.get(userId) || null;
         presence = this.cleanPresence(presence);
@@ -105,7 +112,7 @@ export class PresenceService {
               presence.status = 'offline';
               this.logger.log(`Offline user=${userId}`);
             }
-            await this.redis.set(key, JSON.stringify(presence));
+            await this.redis.set(key, JSON.stringify(presence), 'EX', 60);
           }
         }
       } else {
