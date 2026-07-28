@@ -1,17 +1,18 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import styles from './CreateActivityPage.module.css';
 
 import ImageSearchModal from '@shared/components/modals/ImageSearchModal';
+
 import { getRelativeDateLabel } from '@shared/utils/time';
 import {
   ArrowLeft, Send, ImageIcon,
   MapPin, Users, Pencil, Bell, CalendarClock,
   ChevronLeft, ChevronRight, ChevronDown, X, Search, GraduationCap,
-  BellOff, ChevronsUpDown, Eye
+  BellOff, ChevronsUpDown, Eye, Link, Check
 } from 'lucide-react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { activitiesApi } from '@shared/api/apiClient';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { activitiesApi, usersApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS_OF_WEEK = ['S','M','T','W','T','F','S'];
@@ -94,16 +95,33 @@ function DateTimeModal({ formData, set, onClose }) {
 
   const updateStartDate = (newStart) => {
     const currentStart = getParsedDate(formData.startDateYear, formData.startDateMonth, formData.startDateDay, formData.startTimeHour, formData.startTimeMinute, formData.startTimeAmPm);
-    const currentEnd = getParsedDate(formData.endDateYear, formData.endDateMonth, formData.endDateDay, formData.endTimeHour, formData.endTimeMinute, formData.endTimeAmPm);
-    
-    let duration = (currentEnd && currentStart) ? currentEnd.getTime() - currentStart.getTime() : 60 * 60000;
-    if (duration < 60 * 60000) duration = 60 * 60000; // minimum 1 hr
-    if (duration > 30 * 24 * 60 * 60000) duration = 30 * 24 * 60 * 60000; // max 30 days
-    
-    const newEnd = new Date(newStart.getTime() + duration);
+    const currentEnd   = getParsedDate(formData.endDateYear,   formData.endDateMonth,   formData.endDateDay,   formData.endTimeHour,   formData.endTimeMinute,   formData.endTimeAmPm);
+
+    const MIN_MS  = 5  * 60 * 1000;   // 5 minutes
+    const DEF_MS  = 60 * 60 * 1000;   // 1 hour (used when end would be invalid)
+    const MAX_MS  = 30 * 24 * 60 * 60 * 1000;
+
+    // Preserve existing duration — only reset to 1 hr if new start overtakes end
+    let duration = (currentEnd && currentStart) ? currentEnd.getTime() - currentStart.getTime() : DEF_MS;
+    const newEndCandidate = new Date(newStart.getTime() + duration);
+
+    let newEnd;
+    if (currentEnd && newEndCandidate.getTime() - newStart.getTime() >= MIN_MS) {
+      // End is still safely ahead — keep the same duration
+      newEnd = newEndCandidate;
+    } else {
+      // New start overtook (or nearly overtook) end — push end 1 hr ahead
+      newEnd = new Date(newStart.getTime() + DEF_MS);
+    }
+
+    // Cap at 30-day maximum
+    if (newEnd.getTime() - newStart.getTime() > MAX_MS) {
+      newEnd = new Date(newStart.getTime() + MAX_MS);
+    }
+
     const s = formatToState(newStart);
     const e = formatToState(newEnd);
-    
+
     set({
       startDateYear: s.y, startDateMonth: s.m, startDateDay: s.d,
       startTimeHour: s.h, startTimeMinute: s.min, startTimeAmPm: s.ap,
@@ -115,12 +133,13 @@ function DateTimeModal({ formData, set, onClose }) {
   const updateEndDate = (newEnd) => {
     const currentStart = getParsedDate(formData.startDateYear, formData.startDateMonth, formData.startDateDay, formData.startTimeHour, formData.startTimeMinute, formData.startTimeAmPm);
     if (currentStart) {
-      if (newEnd.getTime() < currentStart.getTime() + 60 * 60000) {
-        newEnd = new Date(currentStart.getTime() + 60 * 60000); // enforce min 1 hour duration
+      const MIN_MS = 5 * 60 * 1000;
+      if (newEnd.getTime() < currentStart.getTime() + MIN_MS) {
+        newEnd = new Date(currentStart.getTime() + MIN_MS); // minimum 5 min gap
       }
-      const maxEnd = new Date(currentStart.getTime() + 30 * 24 * 60 * 60000);
+      const maxEnd = new Date(currentStart.getTime() + 30 * 24 * 60 * 60 * 1000);
       if (newEnd.getTime() > maxEnd.getTime()) {
-        newEnd = maxEnd; // enforce max 30 days duration
+        newEnd = maxEnd;
       }
     }
     const e = formatToState(newEnd);
@@ -350,6 +369,240 @@ const RANDOM_COVERS = [
 ];
 const getRandomCover = () => RANDOM_COVERS[Math.floor(Math.random() * RANDOM_COVERS.length)];
 
+/* ─── Post-publish Invite Modal ─── */
+function ActivityCreatedModal({ activityTitle, creationPromise, onDone }) {
+  const { currentUser } = useAuth();
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const { data: friendsList = [], isLoading } = useQuery({
+    queryKey: ['user-following-friends', currentUser?.username],
+    queryFn: () => usersApi.getFollowing(currentUser?.username, 100, 0),
+    enabled: !!currentUser?.username,
+    staleTime: 30_000,
+  });
+
+  const filtered = useMemo(() => {
+    if (!Array.isArray(friendsList)) return [];
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return friendsList;
+    return friendsList.filter(u =>
+      (u.displayName || '').toLowerCase().includes(q) ||
+      (u.username || '').toLowerCase().includes(q)
+    );
+  }, [friendsList, searchQuery]);
+
+  const toggle = (id) => setSelectedIds(prev =>
+    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+  );
+
+  // Awaits the in-flight creation promise, then sends invites
+  const handleSend = async () => {
+    setIsSending(true);
+    try {
+      const activity = await creationPromise;
+      if (selectedIds.length > 0 && activity?.id) {
+        await activitiesApi.inviteFriends(activity.id, selectedIds).catch(() => {});
+      }
+    } catch {
+      // creation failed — navigate anyway
+    }
+    onDone();
+  };
+
+  const handleSkip = async () => {
+    // still await so the cache is populated before we navigate
+    await creationPromise.catch(() => {});
+    onDone();
+  };
+
+  const handleCopy = async () => {
+    try {
+      const activity = await creationPromise;
+      const url = `${window.location.origin}/crew/${activity?.id || ''}`;
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,0.72)',
+      backdropFilter: 'blur(12px)',
+      WebkitBackdropFilter: 'blur(12px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '1rem',
+    }}>
+      <div style={{
+        background: 'rgba(24,24,27,0.96)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: '20px',
+        width: '100%',
+        maxWidth: '420px',
+        maxHeight: '80vh',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+      }}>
+
+        {/* Header */}
+        <div style={{ padding: '1.5rem 1.5rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: '10px',
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <Check size={18} color="#fff" strokeWidth={2.5} />
+            </div>
+            <div>
+              <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem', color: '#fff' }}>Activity published!</p>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'rgba(255,255,255,0.45)' }}>{activityTitle}</p>
+            </div>
+          </div>
+
+          {/* Copy link */}
+          <button
+            onClick={handleCopy}
+            style={{
+              marginTop: '0.75rem',
+              width: '100%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+              padding: '0.6rem 1rem',
+              borderRadius: '10px',
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: copied ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.05)',
+              color: copied ? '#10b981' : 'rgba(255,255,255,0.8)',
+              fontSize: '0.85rem', fontWeight: 500, cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            {copied ? <Check size={15} /> : <Link size={15} />}
+            {copied ? 'Link copied!' : 'Copy activity link'}
+          </button>
+        </div>
+
+        {/* Friends list */}
+        <div style={{ padding: '1rem 1.5rem 0.5rem', flexShrink: 0 }}>
+          <p style={{ margin: '0 0 0.75rem', fontWeight: 600, fontSize: '0.88rem', color: 'rgba(255,255,255,0.7)' }}>
+            Invite friends
+          </p>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '0.5rem',
+            background: 'rgba(255,255,255,0.06)',
+            borderRadius: '10px', padding: '0.5rem 0.75rem',
+            border: '1px solid rgba(255,255,255,0.08)',
+          }}>
+            <Search size={14} color="rgba(255,255,255,0.35)" />
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search friends…"
+              style={{
+                flex: 1, background: 'none', border: 'none', outline: 'none',
+                color: '#fff', fontSize: '0.85rem',
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 1.5rem' }}>
+          {isLoading ? (
+            <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '0.82rem', padding: '1rem 0' }}>Loading…</p>
+          ) : filtered.length === 0 ? (
+            <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '0.82rem', padding: '1rem 0' }}>No friends found</p>
+          ) : filtered.map(u => {
+            const sel = selectedIds.includes(u.id);
+            return (
+              <button
+                key={u.id}
+                onClick={() => toggle(u.id)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem',
+                  padding: '0.6rem 0', background: 'none', border: 'none', cursor: 'pointer',
+                  borderBottom: '1px solid rgba(255,255,255,0.05)',
+                }}
+              >
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <img
+                    src={u.avatar || '/default_avatar.webp'}
+                    alt=""
+                    style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', background: '#333' }}
+                  />
+                  {sel && (
+                    <span style={{
+                      position: 'absolute', bottom: -2, right: -2,
+                      width: 16, height: 16, borderRadius: '50%',
+                      background: '#6366f1', border: '2px solid #18181b',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Check size={9} color="#fff" strokeWidth={3} />
+                    </span>
+                  )}
+                </div>
+                <div style={{ flex: 1, textAlign: 'left' }}>
+                  <p style={{ margin: 0, fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>{u.displayName || u.username}</p>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)' }}>@{u.username}</p>
+                </div>
+                <div style={{
+                  width: 22, height: 22, borderRadius: '6px', flexShrink: 0,
+                  border: sel ? 'none' : '1.5px solid rgba(255,255,255,0.2)',
+                  background: sel ? '#6366f1' : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'all 0.15s ease',
+                }}>
+                  {sel && <Check size={12} color="#fff" strokeWidth={2.5} />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: '1rem 1.5rem',
+          borderTop: '1px solid rgba(255,255,255,0.07)',
+          display: 'flex', gap: '0.75rem',
+        }}>
+          <button
+            onClick={handleSkip}
+            style={{
+              flex: 1, padding: '0.7rem', borderRadius: '10px',
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'transparent', color: 'rgba(255,255,255,0.6)',
+              fontSize: '0.88rem', fontWeight: 500, cursor: 'pointer',
+            }}
+          >
+            Skip
+          </button>
+          <button
+            onClick={handleSend}
+            disabled={isSending}
+            style={{
+              flex: 2, padding: '0.7rem', borderRadius: '10px',
+              border: 'none',
+              background: selectedIds.length > 0
+                ? 'linear-gradient(135deg, #6366f1, #8b5cf6)'
+                : 'rgba(99,102,241,0.25)',
+              color: selectedIds.length > 0 ? '#fff' : 'rgba(255,255,255,0.4)',
+              fontSize: '0.88rem', fontWeight: 600, cursor: isSending ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            {isSending ? 'Sending…' : selectedIds.length > 0 ? `Invite ${selectedIds.length} friend${selectedIds.length > 1 ? 's' : ''}` : 'Invite friends'}
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 export default function CreateActivityPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -365,6 +618,8 @@ export default function CreateActivityPage() {
   const [showCapacity, setShowCapacity] = useState(false);
   const [showWhoCanJoin, setShowWhoCanJoin] = useState(false);
   const [hasInteractedWithDT, setHasInteractedWithDT] = useState(true);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const creationPromiseRef = useRef(null); // holds the in-flight create promise
   const reminderRef = useRef(null);
   const whoCanJoinRef = useRef(null);
   const containerRef = useRef(null);
@@ -506,34 +761,84 @@ export default function CreateActivityPage() {
   // Note: We don't block canPublish on isPast because we will auto-correct it on publish
   const canPublish = !!(isTitleValid && isDescriptionValid && isLocationValid && hasInteractedWithDT && startD && endD && !isEndBeforeStart && !isDurationOver30Days);
 
-  const createMutation = useMutation({
-    mutationFn: (data) => activitiesApi.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['activities'] });
-      navigate(returnTo);
-    },
-    onError: (err) => {
-      console.error(err);
-      // fallback navigate anyway for UI flow
-      navigate(returnTo);
-    },
-  });
-
   const handlePublish = () => {
     if (!canPublish) return;
     const { startD: finalStart, endD: finalEnd, fd } = getCorrectedDates();
     if (finalEnd <= finalStart) return;
-    
-    createMutation.mutate({
+
+    // ── Optimistic update (Twitter/Instagram pattern) ──────────────────────
+    // Inject a fake activity into the cache RIGHT NOW so it appears instantly
+    // everywhere in the app. No loading, no waiting.
+    const tempId = `optimistic_${Date.now()}`;
+    const optimisticActivity = {
+      id: tempId,
+      _isOptimistic: true,
+      title: formData.title,
+      description: formData.description,
+      location: fd.location,
+      coverImage: formData.coverImage,
+      startDate: finalStart.toISOString(),
+      endDate: finalEnd.toISOString(),
+      createdAt: new Date().toISOString(),
+      creatorId: currentUser?.id,
+      creator: currentUser,
+      members: [{ userId: currentUser?.id, status: 'MEMBER', role: 'HOST', user: currentUser }],
+      status: 'UPCOMING',
+      createActivityGroup: fd.createEventGroup,
+      maxMembers: fd.slotsNeeded === 999 ? null : fd.slotsNeeded,
+    };
+
+    // Snapshot current cache for rollback
+    const previousCache = queryClient.getQueryData(['activities']);
+
+    queryClient.setQueryData(['activities'], (old) => {
+      if (!old?.pages) return old;
+      const newPages = old.pages.map((page, i) => {
+        if (i !== 0) return page;
+        const acts = page?.activities ?? page ?? [];
+        return Array.isArray(page?.activities)
+          ? { ...page, activities: [optimisticActivity, ...acts] }
+          : [optimisticActivity, ...acts];
+      });
+      return { ...old, pages: newPages };
+    });
+
+    // Show modal immediately — user browses friends while API runs in background
+    setShowInviteModal(true);
+
+    // ── Background API call ─────────────────────────────────────────────────
+    creationPromiseRef.current = activitiesApi.create({
       title: formData.title,
       description: formData.description,
       location: fd.location,
       maxMembers: fd.slotsNeeded === 999 ? null : fd.slotsNeeded,
       coverImage: formData.coverImage,
       createActivityGroup: fd.createEventGroup,
+      visibility: fd.whoCanJoin === 'College' ? 'COLLEGE_ONLY' : fd.whoCanJoin === 'No one' ? 'PRIVATE' : 'PUBLIC',
       shareToCampus: fd.whoCanJoin === 'College',
       startDate: finalStart.toISOString(),
       endDate: finalEnd.toISOString(),
+    }).then((realActivity) => {
+      // Swap optimistic entry with real server data
+      queryClient.setQueryData(['activities'], (old) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page) => {
+            const acts = page?.activities ?? page ?? [];
+            const replaced = acts.map((a) => a.id === tempId ? realActivity : a);
+            return Array.isArray(page?.activities)
+              ? { ...page, activities: replaced }
+              : replaced;
+          }),
+        };
+      });
+      return realActivity;
+    }).catch((err) => {
+      // Rollback — remove the optimistic entry
+      queryClient.setQueryData(['activities'], previousCache);
+      console.error('Failed to create activity', err);
+      throw err;
     });
   };
 
@@ -774,6 +1079,7 @@ export default function CreateActivityPage() {
               </button>
             </div>
 
+
           </div>
         </div>
       </div>
@@ -791,6 +1097,13 @@ export default function CreateActivityPage() {
           value={formData.slotsNeeded}
           onSave={n => set({ slotsNeeded: n })}
           onClose={() => setShowCapacity(false)}
+        />
+      )}
+      {showInviteModal && (
+        <ActivityCreatedModal
+          activityTitle={formData.title}
+          creationPromise={creationPromiseRef.current}
+          onDone={() => navigate(returnTo)}
         />
       )}
     </main>

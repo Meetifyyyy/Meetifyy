@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { communitiesApi, activitiesApi, usersApi, messagesApi, postsApi, groupApi, dmApi, activityChatApi } from '../api/apiClient';
+import { communitiesApi, activitiesApi, usersApi, messagesApi, postsApi, groupApi, dmApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
 import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline';
@@ -38,7 +38,7 @@ export function useData() {
   const { campusActivities: rawCampusActivities } = useCampusActivities();
   const { conversations: processedConversations, rawConversations, isLoading: isConversationsLoading, error: conversationsError } = useConversations();
   // Users: small general list (20) for mention lookups; campus limited to 50 not 200
-  const { data: rawUsers = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll(20, 0), staleTime: 5 * 60_000 });
+  const { data: rawUsers = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll(20, 0), enabled: Boolean(currentUser?.id), staleTime: 5 * 60_000 });
   const { campusUsers: rawCampusUsers } = useCampusUsers(50);
 
   const conversations = useMemo(() => {
@@ -319,8 +319,6 @@ export function useData() {
       let res;
       if (String(convId).startsWith('c_')) {
         res = await groupApi.sendMessage(String(convId).replace('c_', ''), payload);
-      } else if (String(convId).startsWith('act_')) {
-        res = await activityChatApi.sendMessage(String(convId).replace('act_', ''), payload);
       } else {
         res = await dmApi.sendMessage(convId, payload);
       }

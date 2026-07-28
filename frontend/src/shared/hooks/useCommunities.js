@@ -10,6 +10,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { communitiesApi } from '@shared/api/apiClient';
 import { idbGet, idbSet } from '@shared/lib/idb';
+import { useAuth } from '@shared/context/AuthContext';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
 export const COMMUNITY_KEYS = {
@@ -26,6 +27,7 @@ export const COMMUNITY_KEYS = {
  */
 export function useCommunities() {
   const qk = COMMUNITY_KEYS.all;
+  const { isLoggedIn } = useAuth();
 
   const query = useQuery({
     queryKey: qk,
@@ -35,6 +37,7 @@ export function useCommunities() {
       idbSet('communities', 'all', data);
       return data;
     },
+    enabled: isLoggedIn,
     staleTime: 5 * 60 * 1000,   // 5 min
     gcTime:    15 * 60 * 1000,  // 15 min
     placeholderData: (prev) => prev,
@@ -72,6 +75,7 @@ export function useCommunities() {
  */
 export function useCampusCommunities() {
   const qk = COMMUNITY_KEYS.campus;
+  const { isLoggedIn } = useAuth();
 
   const query = useQuery({
     queryKey: qk,
@@ -80,6 +84,7 @@ export function useCampusCommunities() {
       idbSet('communities', 'campus', data);
       return data;
     },
+    enabled: isLoggedIn,
     staleTime: 10 * 60 * 1000,
     gcTime:    30 * 60 * 1000,
     placeholderData: (prev) => prev,

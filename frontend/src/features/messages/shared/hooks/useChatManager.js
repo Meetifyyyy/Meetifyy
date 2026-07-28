@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useCallback, useRef } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { messagesApi, dmApi, groupApi, activityChatApi } from '@shared/api/apiClient';
+import { messagesApi, dmApi, groupApi } from '@shared/api/apiClient';
 import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
 import { E2EEManager } from '@shared/lib/signal/E2EEManager';
 import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
@@ -23,7 +23,6 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     switch(type) {
       case 'dm': return dmApi;
       case 'group': return groupApi;
-      case 'activity': return activityChatApi;
       default: return messagesApi;
     }
   };

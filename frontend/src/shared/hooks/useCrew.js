@@ -9,6 +9,7 @@ import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tansta
 import { useCallback, useEffect, useMemo } from 'react';
 import { activitiesApi } from '@shared/api/apiClient';
 import { idbGet, idbSet } from '@shared/lib/idb';
+import { useAuth } from '@shared/context/AuthContext';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
 export const CREW_KEYS = {
@@ -26,6 +27,7 @@ export const CREW_KEYS = {
  */
 export function useActivities() {
   const queryClient = useQueryClient();
+  const { isLoggedIn } = useAuth();
 
   const query = useInfiniteQuery({
     queryKey: CREW_KEYS.all,
@@ -35,6 +37,7 @@ export function useActivities() {
       if (!pageParam) idbSet('activities', 'all_page1', data);
       return data;
     },
+    enabled: isLoggedIn,
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     staleTime: 2 * 60 * 1000,
@@ -101,6 +104,7 @@ export function useActivitiesList() {
  */
 export function useCampusActivities() {
   const queryClient = useQueryClient();
+  const { isLoggedIn } = useAuth();
 
   const query = useInfiniteQuery({
     queryKey: CREW_KEYS.campus,
@@ -109,6 +113,7 @@ export function useCampusActivities() {
       if (!pageParam) idbSet('activities', 'campus_page1', data);
       return data;
     },
+    enabled: isLoggedIn,
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     staleTime: 5 * 60 * 1000,

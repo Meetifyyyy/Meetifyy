@@ -8,8 +8,8 @@ import { messagesApi } from '@shared/api/apiClient';
 import { toast } from 'sonner';
 
 /**
- * Shared state + handlers for all ChatArea variants (DM, Group, Activity).
- * Eliminates the ~85% duplication across DMChatArea / GroupChatArea / ActivityChatArea.
+ * Shared state + handlers for all ChatArea variants (DM, Group).
+ * Eliminates duplication across DMChatArea and GroupChatArea.
  */
 export function useChatAreaState(conversation) {
   const queryClient = useQueryClient();

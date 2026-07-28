@@ -1,6 +1,6 @@
 import Avatar from '@shared/components/avatar/Avatar';
 import { timeAgo } from '@shared/utils/time';
-import { Pin, VolumeX, Users } from 'lucide-react';
+import { Pin, VolumeX, CalendarDays } from 'lucide-react';
 import { useAuth } from '@shared/context/AuthContext';
 import styles from '../../../shared/components/sidebar/ConversationList.module.css';
 
@@ -15,6 +15,9 @@ export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu 
 
   const memberCount = conv.memberCount || conv.members?.length || conv.participants?.length || 0;
   const pendingCount = conv.pendingRequests?.length || conv.pendingCount || 0;
+
+  const isActivityChat = !!(conv.isActivityChat || conv.activityId || String(conv.id).startsWith('act_'));
+  const hasStarted = !!(conv.hasStarted || conv.activityHasStarted);
 
   const previewText = (() => {
     const lastMsgObj = (Array.isArray(conv.messages) && conv.messages.length > 0)
@@ -53,6 +56,11 @@ export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu 
     >
       <div className={styles.convAvatar}>
         <Avatar src={conv.avatar || conv.icon || conv.coverImage || conv.avatarUrl} name={conv.name} size="48px" isGroup={true} />
+        {isActivityChat && (
+          <span className={styles.activityCalendarBadge} title={hasStarted ? 'Activity in progress' : 'Activity group'}>
+            <CalendarDays size={11} strokeWidth={hasStarted ? 0 : 2} fill={hasStarted ? 'currentColor' : 'none'} />
+          </span>
+        )}
         {pendingCount > 0 && (
           <span 
             style={{

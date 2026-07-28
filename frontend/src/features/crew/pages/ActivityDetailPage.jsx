@@ -10,8 +10,10 @@ import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import ShareActivityModal from '../components/modals/ShareActivityModal';
 import ActivityJoinedModal from '../components/modals/ActivityJoinedModal';
+import InviteFriendsModal from '@shared/components/modals/InviteFriendsModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ActivityDetailPage.module.css';
+import { UserPlus } from 'lucide-react';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import { useJoinActivity } from '../hooks/useJoinActivity';
 import { useActivityById } from '@shared/hooks/useCrew';
@@ -176,6 +178,7 @@ export default function ActivityDetailPage() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showJoinedModal, setShowJoinedModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const isSaved = savedActivities?.includes(activity?.id);
   const [comment, setComment] = useState('');
   const [showHeaderTitle, setShowHeaderTitle] = useState(false);
@@ -333,17 +336,27 @@ export default function ActivityDetailPage() {
               </svg>
             </button>
             {isHost && !hasStarted && (
-              <button
-                className={styles.actionBtn}
-                onClick={handleEndActivity}
-                title="End Activity"
-                style={{ color: '#f87171', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)' }}
-              >
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
+              <>
+                <button
+                  className={styles.actionBtn}
+                  onClick={() => setShowInviteModal(true)}
+                  title="Invite Friends"
+                  style={{ color: '#818cf8', background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.3)' }}
+                >
+                  <UserPlus size={17} />
+                </button>
+                <button
+                  className={styles.actionBtn}
+                  onClick={handleEndActivity}
+                  title="End Activity"
+                  style={{ color: '#f87171', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)' }}
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -412,7 +425,31 @@ export default function ActivityDetailPage() {
 
               {/* Attendees Section */}
               <div className={styles.attendeesSection}>
-                <h3 className={styles.attendeesTitle}>Attendees ({activity.participants?.length || 0})</h3>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                  <h3 className={styles.attendeesTitle} style={{ margin: 0 }}>Attendees ({activity.participants?.length || 0})</h3>
+                  {isHost && !hasStarted && (
+                    <button
+                      type="button"
+                      onClick={() => setShowInviteModal(true)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        padding: '0.4rem 0.85rem',
+                        borderRadius: '20px',
+                        background: 'rgba(99, 102, 241, 0.15)',
+                        border: '1px solid rgba(99, 102, 241, 0.35)',
+                        color: '#818cf8',
+                        fontWeight: 600,
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <UserPlus size={14} />
+                      Invite Friends
+                    </button>
+                  )}
+                </div>
                 
                 <div className={styles.attendeesList}>
                   {activity.participants?.includes(activity.hostId) && (
@@ -470,9 +507,27 @@ export default function ActivityDetailPage() {
               Already started!
             </button>
           ) : isHost ? (
-            <button className={`${styles.joinBtn} ${styles.joinedBtn}`} disabled style={{ cursor: 'not-allowed' }}>
-              Joined
-            </button>
+            <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+              <button className={`${styles.joinBtn} ${styles.joinedBtn}`} disabled style={{ flex: 1, cursor: 'default' }}>
+                Hosted by you
+              </button>
+              {!hasStarted && (
+                <button
+                  type="button"
+                  className={styles.joinBtn}
+                  onClick={() => setShowInviteModal(true)}
+                  style={{
+                    flex: 1,
+                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                    color: '#fff',
+                    border: 'none'
+                  }}
+                >
+                  <UserPlus size={16} style={{ marginRight: '0.4rem' }} />
+                  Invite Friends
+                </button>
+              )}
+            </div>
           ) : isJoined ? (
             <button 
               className={`${styles.joinBtn} ${styles.joinedBtn}`} 
@@ -481,11 +536,19 @@ export default function ActivityDetailPage() {
             >
               {isActionLoading ? <span className={styles.btnSpinner} /> : 'Joined'}
             </button>
+          ) : activity?.canJoin === false && activity?.joinRestrictionCode === 'COLLEGE_RESTRICTED' ? (
+            <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ background: 'rgba(239, 68, 68, 0.12)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)' }} title={activity.joinRestrictionReason}>
+              Restricted to College
+            </button>
+          ) : activity?.canJoin === false && activity?.joinRestrictionCode === 'PRIVATE' ? (
+            <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ background: 'rgba(107, 114, 128, 0.12)', color: '#9ca3af', border: '1px solid rgba(107, 114, 128, 0.3)' }} title={activity.joinRestrictionReason}>
+              Invitation Only
+            </button>
           ) : (
             <button 
               className={styles.joinBtn} 
               onClick={handleJoin} 
-              disabled={isFull || isActionLoading}
+              disabled={isFull || isActionLoading || activity?.canJoin === false}
             >
               {isActionLoading ? <span className={styles.btnSpinner} /> : (isFull ? 'Activity Full' : 'Join Activity')}
             </button>

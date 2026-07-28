@@ -51,7 +51,11 @@ export const useGlobalSocketStore = create((set, get) => ({
   disconnect: () => {
     const { socket } = get();
     if (socket) {
-      socket.disconnect();
+      try {
+        socket.removeAllListeners();
+        socket.disconnect();
+        socket.close();
+      } catch {}
       set({ socket: null, isConnected: false, _lastToken: null, reconnectCount: 0 });
     }
   },

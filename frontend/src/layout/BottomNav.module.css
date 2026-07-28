@@ -45,10 +45,10 @@
   flex-shrink: 0;
 }
 
-.bottomNavItem svg,
-.iconWrapper svg {
-  width: 26px;
-  height: 26px;
+.bottomNavItem > svg,
+.iconWrapper > svg {
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
 }
 
@@ -97,8 +97,8 @@
     gap: 0.15rem;
   }
   .iconWrapper,
-  .bottomNavItem svg,
-  .iconWrapper svg {
+  .bottomNavItem > svg,
+  .iconWrapper > svg {
     width: 22px;
     height: 22px;
   }

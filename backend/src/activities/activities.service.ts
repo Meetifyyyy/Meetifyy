@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
 import { DomainEventService } from '../events/domain-event.service';
+import { ActivityAuthorizationService } from './activity-authorization.service';
 
 @Injectable()
 export class ActivitiesService implements OnModuleInit {
@@ -14,7 +15,8 @@ export class ActivitiesService implements OnModuleInit {
     private readonly notificationsService: NotificationsService,
     private readonly notificationFactory: NotificationFactory,
     private readonly blocksService: BlocksService,
-    private readonly domainEventService: DomainEventService
+    private readonly domainEventService: DomainEventService,
+    private readonly activityAuthorizationService: ActivityAuthorizationService,
   ) {}
 
   onModuleInit() {
@@ -49,6 +51,11 @@ export class ActivitiesService implements OnModuleInit {
           data: { status: 'ENDED' }
         });
 
+        await this.prisma.activityInvitation.updateMany({
+          where: { activityId: { in: expiredIds }, status: 'PENDING' },
+          data: { status: 'EXPIRED' }
+        });
+
         for (const actId of expiredIds) {
           this.domainEventService.emit('activity.updated', { id: actId, status: 'ENDED' });
         }
@@ -59,23 +66,41 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   async getAllActivities(userId?: string, limit = 20, cursor?: string) {
-
-    const [excludedUserIds, cursorDate] = await Promise.all([
+    const [user, excludedUserIds, cursorDate] = await Promise.all([
+      userId ? this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }) : Promise.resolve(null),
       userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([]),
       cursor ? this.prisma.crewActivity.findUnique({ where: { id: cursor }, select: { createdAt: true } }).then(r => r?.createdAt) : Promise.resolve(undefined),
     ]);
+
+    const discoveryOR: any[] = [
+      { visibility: 'PUBLIC' },
+    ];
+
+    if (userId) {
+      discoveryOR.push({ creatorId: userId });
+      discoveryOR.push({ members: { some: { userId } } });
+      if (user?.collegeId) {
+        discoveryOR.push({ visibility: 'COLLEGE_ONLY', collegeId: user.collegeId });
+        discoveryOR.push({ shareToCampus: true, collegeId: user.collegeId });
+      }
+    }
 
     const whereClause: any = {
       deletedAt: null,
       creatorId: { notIn: excludedUserIds },
       ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
+      OR: discoveryOR,
     };
 
     if (userId) {
-      whereClause.OR = [
-        { status: 'OPEN' },
-        { creatorId: userId },
-        { members: { some: { userId } } }
+      whereClause.AND = [
+        {
+          OR: [
+            { status: 'OPEN' },
+            { creatorId: userId },
+            { members: { some: { userId } } }
+          ]
+        }
       ];
     } else {
       whereClause.status = 'OPEN';
@@ -134,7 +159,7 @@ export class ActivitiesService implements OnModuleInit {
 
     const [excludedUserIds, user, cursorDate] = await Promise.all([
       this.blocksService.getExcludedUserIds(userId),
-      this.prisma.user.findUnique({ where: { id: userId }, select: { collegeId: true } }),
+      this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }),
       cursor ? this.prisma.crewActivity.findUnique({ where: { id: cursor }, select: { createdAt: true } }).then(r => r?.createdAt) : Promise.resolve(undefined),
     ]);
 
@@ -143,8 +168,8 @@ export class ActivitiesService implements OnModuleInit {
     const whereClause: any = {
       deletedAt: null,
       creatorId: { notIn: excludedUserIds },
-      shareToCampus: true,
       collegeId: user.collegeId,
+      visibility: { not: 'PRIVATE' },
       ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
     };
 
@@ -204,28 +229,42 @@ export class ActivitiesService implements OnModuleInit {
 
   async getActivityById(id: string, userId?: string) {
     const cleanId = id ? id.replace(/^(act_)+/, '') : id;
-    // Parallelize: fetch activity and blocked users simultaneously
-    const [activity, excludedUserIds] = await Promise.all([
+    const [activity, user, excludedUserIds] = await Promise.all([
       this.prisma.crewActivity.findUnique({
         where: { id: cleanId },
         include: {
           members: {
             include: { user: { select: { id: true, username: true, displayName: true, avatar: true } } }
           },
+          invitations: { select: { inviteeId: true, status: true } },
           creator: { select: { id: true, username: true, displayName: true, avatar: true } },
         },
       }),
+      userId ? this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }) : Promise.resolve(null),
       userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([]),
     ]);
 
     if (!activity || (excludedUserIds.length > 0 && excludedUserIds.includes(activity.creatorId))) {
       throw new NotFoundException('Activity not found');
     }
+
+    const viewDecision = this.activityAuthorizationService.canView(user, activity as any);
+    if (!viewDecision.allowed) {
+      throw new ForbiddenException(viewDecision.reason || 'Not authorized to view activity');
+    }
+
+    const joinDecision = user
+      ? this.activityAuthorizationService.canJoin(user, activity as any)
+      : { allowed: false, reason: 'Login required', code: 'NOT_FOUND' as const };
+
     const myMembership = userId ? activity.members.find(m => m.userId === userId) : null;
     return {
       ...activity,
       isJoined: myMembership?.status === 'MEMBER',
       myStatus: myMembership?.status || null,
+      canJoin: joinDecision.allowed,
+      joinRestrictionReason: joinDecision.reason || null,
+      joinRestrictionCode: joinDecision.code || 'ALLOWED',
     };
   }
 
@@ -257,6 +296,17 @@ export class ActivitiesService implements OnModuleInit {
       }
     }
 
+    let visibility: 'PUBLIC' | 'COLLEGE_ONLY' | 'PRIVATE' = 'PUBLIC';
+    if (data.visibility === 'COLLEGE_ONLY' || data.visibility === 'PRIVATE' || data.visibility === 'PUBLIC') {
+      visibility = data.visibility;
+    } else if (data.whoCanJoin === 'College' || data.shareToCampus) {
+      visibility = 'COLLEGE_ONLY';
+    } else if (data.whoCanJoin === 'No one') {
+      visibility = 'PRIVATE';
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: creatorId }, select: { collegeId: true } });
+
     const createData: any = {
       creatorId,
       title: data.title,
@@ -267,18 +317,13 @@ export class ActivitiesService implements OnModuleInit {
       location: data.location,
       createActivityGroup: data.createActivityGroup,
       maxMembers: data.maxMembers ? parseInt(data.maxMembers, 10) : null,
+      visibility,
+      shareToCampus: visibility === 'COLLEGE_ONLY' || Boolean(data.shareToCampus),
+      collegeId: user?.collegeId || null,
       members: {
         create: [{ userId: creatorId, status: 'MEMBER' }],
       },
     };
-
-    if (data.shareToCampus) {
-      const user = await this.prisma.user.findUnique({ where: { id: creatorId }, select: { collegeId: true } });
-      if (user?.collegeId) {
-        createData.shareToCampus = true;
-        createData.collegeId = user.collegeId;
-      }
-    }
 
     const createdActivity = await this.prisma.crewActivity.create({
       data: createData,
@@ -318,17 +363,26 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   async joinActivity(activityId: string, userId: string): Promise<any> {
-    const activity = await this.prisma.crewActivity.findUnique({
-      where: { id: activityId },
-      include: { members: true },
-    });
+    const [activity, user] = await Promise.all([
+      this.prisma.crewActivity.findUnique({
+        where: { id: activityId },
+        include: {
+          members: true,
+          invitations: { select: { inviteeId: true, status: true } },
+        },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, collegeId: true },
+      }),
+    ]);
 
-    if (!activity) {
+    if (!activity || activity.deletedAt) {
       throw new NotFoundException('Activity not found');
     }
 
-    if (activity.status !== 'OPEN') {
-      throw new BadRequestException('Activity is not open for joining');
+    if (!user) {
+      throw new NotFoundException('User not found');
     }
 
     const startRaw = activity.startDate || (activity as any).date;
@@ -342,8 +396,9 @@ export class ActivitiesService implements OnModuleInit {
       if (existingMember.status === 'PENDING') throw new BadRequestException('Join request already pending');
     }
 
-    if (activity.maxMembers && activity.members.filter(m => m.status === 'MEMBER').length >= activity.maxMembers) {
-      throw new BadRequestException('Activity is full');
+    const authDecision = this.activityAuthorizationService.canJoin(user, activity as any);
+    if (!authDecision.allowed) {
+      throw new ForbiddenException(authDecision.reason || 'You are not authorized to join this activity');
     }
 
     await this.prisma.crewActivityMember.upsert({
@@ -475,27 +530,13 @@ export class ActivitiesService implements OnModuleInit {
         where: { userId_activityId: { userId, activityId } }
       });
 
+      // Broadcast a system message to the group chat if one exists.
+      // NOTE: leaving the activity does NOT remove the user from the group chat —
+      // they stay in the conversation. Only leaving via the group chat itself removes them.
       if (activity?.createActivityGroup) {
         try {
           const convId = `act_${activityId}`;
           const userHandle = actor?.username ? `@${actor.username}` : (actor?.displayName || 'Someone');
-
-          const startRaw = (activity as any)?.startDate;
-          const activityStatus = (activity as any)?.status;
-          const hasStarted = (activityStatus === 'STARTED' || activityStatus === 'IN_PROGRESS' || activityStatus === 'ENDED') || (startRaw && new Date(startRaw) <= new Date());
-
-          if (!hasStarted) {
-            // Pre-activity: completely remove participant record so chat disappears from message section
-            await this.prisma.conversationParticipant.deleteMany({
-              where: { conversationId: convId, userId }
-            }).catch(() => {});
-          } else {
-            // Post-activity: set leftAt timestamp so chat remains read-only in message section
-            await this.prisma.conversationParticipant.updateMany({
-              where: { conversationId: convId, userId },
-              data: { leftAt: new Date() } as any
-            }).catch(() => {});
-          }
 
           const sysMsg = await this.prisma.message.create({
             data: {
@@ -525,20 +566,13 @@ export class ActivitiesService implements OnModuleInit {
               status: 'sent'
             };
 
-            const membersList = await this.prisma.crewActivityMember.findMany({
-              where: { activityId },
-              select: { userId: true }
-            }).catch(() => []);
-
             const participantsList = await this.prisma.conversationParticipant.findMany({
               where: { conversationId: convId, leftAt: null, deletedAt: null } as any,
               select: { userId: true }
             }).catch(() => []);
 
             const recipientUserIds = Array.from(new Set([
-              userId,
               activity?.creatorId,
-              ...membersList.map(m => m.userId),
               ...participantsList.map(p => p.userId)
             ].filter(Boolean))) as string[];
 
@@ -555,7 +589,7 @@ export class ActivitiesService implements OnModuleInit {
             }, recipientUserIds);
           }
         } catch (err) {
-          this.logger.warn('Failed group chat update during leaveActivity', err);
+          this.logger.warn('Failed group chat system message during leaveActivity', err);
         }
       }
     }
@@ -644,6 +678,18 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   async declineCrewInvitation(activityId: string, userId: string) {
+    const invitation = await this.prisma.activityInvitation.findFirst({
+      where: {
+        activityId,
+        inviteeId: userId,
+        status: 'PENDING',
+      },
+    });
+
+    if (invitation) {
+      return this.declineInvitation(invitation.id, userId);
+    }
+
     await this.prisma.crewActivityMember.updateMany({
       where: { activityId, userId, status: 'PENDING' },
       data: { status: 'DECLINED' }
@@ -659,6 +705,11 @@ export class ActivitiesService implements OnModuleInit {
 
     const startRaw = activity.startDate || (activity as any).date;
     const hasStarted = startRaw ? new Date(startRaw) <= new Date() : false;
+
+    await this.prisma.activityInvitation.updateMany({
+      where: { activityId, status: 'PENDING' },
+      data: { status: 'EXPIRED' },
+    });
 
     if (!hasStarted) {
       const convId = `act_${activityId}`;
@@ -820,5 +871,316 @@ export class ActivitiesService implements OnModuleInit {
       activities: formattedActivities,
       nextCursor
     };
+  }
+
+  async inviteFriends(activityId: string, inviterId: string, inviteeIds: string[]) {
+    const activity = await this.prisma.crewActivity.findUnique({
+      where: { id: activityId },
+      include: { members: true },
+    });
+
+    if (!activity || activity.deletedAt) {
+      throw new NotFoundException('Activity not found');
+    }
+
+    if (activity.creatorId !== inviterId) {
+      throw new BadRequestException('Only the activity creator can invite friends');
+    }
+
+    if (activity.status !== 'OPEN') {
+      throw new BadRequestException('Activity is not open for invitations');
+    }
+
+    const cleanInviteeIds = Array.from(new Set((inviteeIds || []).filter(id => id && id !== inviterId)));
+    if (cleanInviteeIds.length === 0) {
+      return { results: [] };
+    }
+
+    const inviter = await this.prisma.user.findUnique({
+      where: { id: inviterId },
+      select: { id: true, displayName: true, username: true, avatar: true },
+    });
+
+    const existingMembers = new Set(activity.members.map(m => m.userId));
+    const existingInvitations = await this.prisma.activityInvitation.findMany({
+      where: {
+        activityId,
+        inviteeId: { in: cleanInviteeIds },
+      },
+    });
+
+    const invitationMap = new Map(existingInvitations.map(inv => [inv.inviteeId, inv]));
+    const results: any[] = [];
+    const fourHoursMs = 4 * 60 * 60 * 1000;
+
+    for (const inviteeId of cleanInviteeIds) {
+      if (existingMembers.has(inviteeId)) {
+        results.push({ inviteeId, status: 'MEMBER', message: 'User is already a participant' });
+        continue;
+      }
+
+      const existingInv = invitationMap.get(inviteeId);
+      if (existingInv) {
+        if (existingInv.status === 'PENDING') {
+          results.push({ inviteeId, status: 'PENDING', message: 'Invitation Pending' });
+          continue;
+        }
+
+        if (existingInv.status === 'DECLINED' && existingInv.respondedAt) {
+          const timeSinceDecline = Date.now() - new Date(existingInv.respondedAt).getTime();
+          if (timeSinceDecline < fourHoursMs) {
+            const remainingMins = Math.ceil((fourHoursMs - timeSinceDecline) / 60000);
+            results.push({
+              inviteeId,
+              status: 'COOLDOWN',
+              message: `User recently declined. Cooldown active (${remainingMins} mins left)`,
+            });
+            continue;
+          }
+        }
+      }
+
+      const excludedUserIds = await this.blocksService.getExcludedUserIds(inviterId);
+      if (excludedUserIds.includes(inviteeId)) {
+        results.push({ inviteeId, status: 'BLOCKED', message: 'Cannot invite user' });
+        continue;
+      }
+
+      const invitation = await this.prisma.activityInvitation.upsert({
+        where: { activityId_inviteeId: { activityId, inviteeId } },
+        update: {
+          inviterId,
+          status: 'PENDING',
+          createdAt: new Date(),
+          respondedAt: null,
+        },
+        create: {
+          activityId,
+          inviterId,
+          inviteeId,
+          status: 'PENDING',
+        },
+      });
+
+      const notif = await this.notificationsService.createNotification({
+        recipientId: inviteeId,
+        actorId: inviterId,
+        type: 'ACTIVITY_INVITE' as any,
+        entityType: 'ACTIVITY' as any,
+        entityId: activityId,
+        title: 'Activity Invitation',
+        body: `${inviter?.displayName || inviter?.username || 'Someone'} invited you to join ${activity.title}`,
+        metadata: {
+          invitationId: invitation.id,
+          activityId: activity.id,
+          title: activity.title,
+          location: activity.location,
+          startDate: activity.startDate,
+          endDate: activity.endDate,
+          coverImage: activity.coverImage,
+          hostId: inviterId,
+          hostName: inviter?.displayName || inviter?.username || 'Host',
+          hostAvatar: inviter?.avatar,
+          hostUsername: inviter?.username,
+        },
+      });
+
+      this.domainEventService.emit('invitation:new', {
+        ...invitation,
+        activity: {
+          id: activity.id,
+          title: activity.title,
+          location: activity.location,
+          startDate: activity.startDate,
+          endDate: activity.endDate,
+          coverImage: activity.coverImage,
+        },
+        inviter: {
+          id: inviter?.id,
+          name: inviter?.displayName || inviter?.username,
+          username: inviter?.username,
+          avatar: inviter?.avatar,
+        },
+      }, [inviteeId]);
+
+      if (notif) {
+        this.domainEventService.emit('notification:new', notif, [inviteeId]);
+      }
+
+      results.push({ inviteeId, status: 'INVITED', invitationId: invitation.id });
+    }
+
+    return { results };
+  }
+
+  async getPendingInvitations(userId: string) {
+    const invitations = await this.prisma.activityInvitation.findMany({
+      where: {
+        inviteeId: userId,
+        status: 'PENDING',
+        activity: {
+          deletedAt: null,
+          status: 'OPEN',
+        },
+      },
+      include: {
+        inviter: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+          },
+        },
+        activity: {
+          include: {
+            _count: { select: { members: true } },
+            members: {
+              take: 5,
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    username: true,
+                    displayName: true,
+                    avatar: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return invitations.map(inv => ({
+      id: inv.id,
+      activityId: inv.activityId,
+      title: inv.activity.title,
+      description: inv.activity.description,
+      location: inv.activity.location,
+      coverImage: inv.activity.coverImage,
+      startDate: inv.activity.startDate,
+      endDate: inv.activity.endDate,
+      status: inv.status,
+      createdAt: inv.createdAt,
+      hostId: inv.inviter.id,
+      hostName: inv.inviter.displayName || inv.inviter.username,
+      hostUsername: inv.inviter.username,
+      hostAvatar: inv.inviter.avatar,
+      participantsCount: inv.activity._count.members,
+      sampleParticipants: inv.activity.members.map(m => m.user).filter(Boolean),
+    }));
+  }
+
+  async acceptInvitation(invitationId: string, userId: string) {
+    const invitation = await this.prisma.activityInvitation.findUnique({
+      where: { id: invitationId },
+      include: { activity: true },
+    });
+
+    if (!invitation || invitation.inviteeId !== userId || invitation.status !== 'PENDING') {
+      throw new NotFoundException('Invitation not found or no longer pending');
+    }
+
+    await this.joinActivity(invitation.activityId, userId);
+
+    await this.prisma.activityInvitation.update({
+      where: { id: invitationId },
+      data: {
+        status: 'ACCEPTED',
+        respondedAt: new Date(),
+      },
+    });
+
+    await this.notificationsService.cancelNotificationByCriteria({
+      recipientId: userId,
+      entityId: invitation.activityId,
+      type: 'ACTIVITY_INVITE' as any,
+    }).catch(() => {});
+
+    this.domainEventService.emit('invitation:updated', {
+      invitationId,
+      status: 'ACCEPTED',
+      activityId: invitation.activityId,
+    }, [invitation.inviterId, userId]);
+
+    return { success: true, activityId: invitation.activityId };
+  }
+
+  async declineInvitation(invitationId: string, userId: string) {
+    const invitation = await this.prisma.activityInvitation.findUnique({
+      where: { id: invitationId },
+    });
+
+    if (!invitation || invitation.inviteeId !== userId || invitation.status !== 'PENDING') {
+      throw new NotFoundException('Invitation not found or no longer pending');
+    }
+
+    await this.prisma.activityInvitation.update({
+      where: { id: invitationId },
+      data: {
+        status: 'DECLINED',
+        respondedAt: new Date(),
+      },
+    });
+
+    await this.notificationsService.cancelNotificationByCriteria({
+      recipientId: userId,
+      entityId: invitation.activityId,
+      type: 'ACTIVITY_INVITE' as any,
+    }).catch(() => {});
+
+    this.domainEventService.emit('invitation:updated', {
+      invitationId,
+      status: 'DECLINED',
+      activityId: invitation.activityId,
+    }, [invitation.inviterId, userId]);
+
+    return { success: true };
+  }
+
+  async getInvitationStatuses(activityId: string, hostId: string) {
+    const activity = await this.prisma.crewActivity.findUnique({
+      where: { id: activityId },
+      include: { members: true, invitations: true },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity not found');
+    }
+
+    const memberSet = new Set(activity.members.map(m => m.userId));
+    const fourHoursMs = 4 * 60 * 60 * 1000;
+
+    const statuses: Record<string, { status: string; remainingMins?: number }> = {};
+
+    for (const m of activity.members) {
+      statuses[m.userId] = { status: 'MEMBER' };
+    }
+
+    for (const inv of activity.invitations) {
+      if (memberSet.has(inv.inviteeId)) {
+        statuses[inv.inviteeId] = { status: 'MEMBER' };
+        continue;
+      }
+
+      if (inv.status === 'PENDING') {
+        statuses[inv.inviteeId] = { status: 'PENDING' };
+      } else if (inv.status === 'DECLINED' && inv.respondedAt) {
+        const timeSinceDecline = Date.now() - new Date(inv.respondedAt).getTime();
+        if (timeSinceDecline < fourHoursMs) {
+          const remainingMins = Math.ceil((fourHoursMs - timeSinceDecline) / 60000);
+          statuses[inv.inviteeId] = { status: 'COOLDOWN', remainingMins };
+        } else {
+          statuses[inv.inviteeId] = { status: 'EXPIRED_DECLINE' };
+        }
+      } else {
+        statuses[inv.inviteeId] = { status: inv.status };
+      }
+    }
+
+    return statuses;
   }
 }

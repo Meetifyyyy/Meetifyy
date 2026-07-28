@@ -48,6 +48,27 @@ export class ActivitiesController {
     return this.activitiesService.getSavedActivityIds(user.id);
   }
 
+  @Get('invitations/me')
+  async getPendingInvitations(@CurrentUser() user: any) {
+    return this.activitiesService.getPendingInvitations(user.id);
+  }
+
+  @Post('invitations/:invitationId/accept')
+  async acceptInvitation(
+    @Param('invitationId') invitationId: string,
+    @CurrentUser() user: any
+  ) {
+    return this.activitiesService.acceptInvitation(invitationId, user.id);
+  }
+
+  @Post('invitations/:invitationId/decline')
+  async declineInvitation(
+    @Param('invitationId') invitationId: string,
+    @CurrentUser() user: any
+  ) {
+    return this.activitiesService.declineInvitation(invitationId, user.id);
+  }
+
   @Post(':id/bookmark')
   async bookmarkActivity(@Param('id') id: string, @CurrentUser() user: any) {
     return this.activitiesService.bookmarkActivity(id, user.id);
@@ -110,5 +131,22 @@ export class ActivitiesController {
   @Post(':id/end')
   async endCrewActivity(@Param('id') id: string, @CurrentUser() user: any) {
     return this.activitiesService.endCrewActivity(id, user.id);
+  }
+
+  @Post(':id/invite')
+  async inviteFriends(
+    @Param('id') id: string,
+    @Body('userIds') userIds: string[],
+    @CurrentUser() user: any
+  ) {
+    return this.activitiesService.inviteFriends(id, user.id, userIds);
+  }
+
+  @Get(':id/invitations/status')
+  async getInvitationStatuses(
+    @Param('id') id: string,
+    @CurrentUser() user: any
+  ) {
+    return this.activitiesService.getInvitationStatuses(id, user.id);
   }
 }

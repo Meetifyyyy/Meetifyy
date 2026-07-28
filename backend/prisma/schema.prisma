@@ -184,6 +184,8 @@ model User {
   matchesAsA               MatchSession[]            @relation("MatchUserA")
   matchesAsB               MatchSession[]            @relation("MatchUserB")
   deletedMessages          DeletedMessage[]
+  invitationsSent          ActivityInvitation[]      @relation("ActivityInvitationsSent")
+  invitationsReceived      ActivityInvitation[]      @relation("ActivityInvitationsReceived")
 
   avatarMedia Media? @relation("UserAvatar", fields: [avatarMediaId], references: [id])
   coverMedia  Media? @relation("UserCover", fields: [coverMediaId], references: [id])
@@ -486,11 +488,13 @@ model CrewActivity {
   collegeId           String?
   participationType   CrewParticipationType @default(OPEN)
   shareToCampus       Boolean               @default(false)
+  visibility          ActivityVisibility    @default(PUBLIC)
   creator             User                  @relation("ActivityCreator", fields: [creatorId], references: [id], onDelete: Cascade)
   college             College?              @relation("ActivityCollege", fields: [collegeId], references: [id])
   members             CrewActivityMember[]
   conversation        Conversation?         @relation("ActivityConversation")
   bookmarks           ActivityBookmark[]
+  invitations         ActivityInvitation[]
 
   coverMedia Media? @relation("ActivityCover", fields: [coverMediaId], references: [id])
 
@@ -500,6 +504,7 @@ model CrewActivity {
   @@index([deletedAt, status, createdAt])
   @@index([status, createdAt(sort: Desc)])         // getAllActivities ORDER BY
   @@index([collegeId, status, createdAt(sort: Desc)]) // getCampusActivities filter
+  @@index([visibility, status, createdAt(sort: Desc)])
 }
 
 model CrewActivityMember {
@@ -724,6 +729,7 @@ enum NotificationType {
   COMMENT_LIKE
   MESSAGE
   GROUP_INVITE
+  ACTIVITY_INVITE
 }
 
 enum ConversationType {
@@ -749,6 +755,12 @@ enum CrewActivityStatus {
   FULL
   CANCELLED
   ENDED
+}
+
+enum ActivityVisibility {
+  PUBLIC
+  COLLEGE_ONLY
+  PRIVATE
 }
 
 enum CrewMemberStatus {
@@ -1141,3 +1153,33 @@ model DeletedMessage {
   @@index([userId])
   @@index([messageId])
 }
+
+model ActivityInvitation {
+  id          String                   @id @default(uuid())
+  activityId  String
+  inviterId   String
+  inviteeId   String
+  status      ActivityInvitationStatus @default(PENDING)
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  respondedAt DateTime?
+
+  activity CrewActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  inviter  User         @relation("ActivityInvitationsSent", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee  User         @relation("ActivityInvitationsReceived", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, inviteeId])
+  @@index([activityId, inviteeId])
+  @@index([inviteeId, status])
+  @@index([inviterId])
+  @@index([activityId, status])
+}
+
+enum ActivityInvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  EXPIRED
+}
+

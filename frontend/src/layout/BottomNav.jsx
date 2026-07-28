@@ -6,10 +6,12 @@ import styles from './BottomNav.module.css';
 import {
   HomeIcon as HomeOutline,
   ChatBubbleOvalLeftEllipsisIcon as MessagesOutline,
+  UserIcon as ProfileOutline,
 } from '@heroicons/react/24/outline';
 import {
   HomeIcon as HomeSolid,
   ChatBubbleOvalLeftEllipsisIcon as MessagesSolid,
+  UserIcon as ProfileSolid,
 } from '@heroicons/react/24/solid';
 
 const CompassOutline = () => (
@@ -122,12 +124,16 @@ export default function BottomNav() {
         onMouseEnter={() => import('@features/profile/pages/ProfilePage')}
       >
         <div className={styles.iconWrapper}>
-          <Avatar
-            src={currentUser?.avatar}
-            name={currentUser?.displayName}
-            size="24px"
-            className={isProfileActive ? styles.activeAvatarBorder : ''}
-          />
+          {currentUser?.avatar ? (
+            <Avatar
+              src={currentUser.avatar}
+              name={currentUser?.displayName}
+              size="22px"
+              className={isProfileActive ? styles.activeAvatarBorder : ''}
+            />
+          ) : (
+            isProfileActive ? <ProfileSolid /> : <ProfileOutline />
+          )}
         </div>
         <span>Profile</span>
       </button>

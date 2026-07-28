@@ -13,13 +13,16 @@ import { supabase } from '@shared/lib/supabase';
 // Seeded on module load; refreshed instantly on every auth state change.
 let _cachedToken = '';
 let _hasSession = false;
+let _initSessionPromise = null;
 
 if (supabase) {
-  // Seed immediately from the stored session (non-blocking)
-  supabase.auth.getSession().then(({ data: { session } }) => {
+  // Seed immediately from stored session — keep reference so initial requests can await it
+  _initSessionPromise = supabase.auth.getSession().then(({ data: { session } }) => {
     _cachedToken = session?.access_token ?? '';
     _hasSession = !!session;
-  });
+    return session;
+  }).catch(() => null);
+
   // Keep in sync with all future auth events (login, logout, token refresh)
   supabase.auth.onAuthStateChange((_event, session) => {
     _cachedToken = session?.access_token ?? '';
@@ -115,9 +118,63 @@ function storeEtag(url, etag) {
   try { if (etag) sessionStorage.setItem(ETAG_PREFIX + url, etag); } catch {}
 }
 
+let _refreshPromise = null;
+
+async function refreshSessionIfNeeded() {
+  if (_refreshPromise) return _refreshPromise;
+
+  _refreshPromise = (async () => {
+    try {
+      if (!supabase) return null;
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error || !data?.session) {
+        const { data: sData } = await supabase.auth.getSession();
+        if (sData?.session) {
+          _cachedToken = sData.session.access_token;
+          _hasSession = true;
+          return sData.session;
+        }
+        return null;
+      }
+      _cachedToken = data.session.access_token;
+      _hasSession = true;
+      return data.session;
+    } catch {
+      return null;
+    } finally {
+      _refreshPromise = null;
+    }
+  })();
+
+  return _refreshPromise;
+}
+
+const PUBLIC_PATHS = [
+  '/api/auth/lookup-email',
+  '/api/auth/verify-otp',
+  '/api/auth/resend-otp',
+  '/api/auth/signup',
+  '/api/auth/login',
+  '/api/health',
+];
+
+function isPublicPath(path) {
+  const clean = path.startsWith('/') ? path : `/${path}`;
+  return PUBLIC_PATHS.some(p => clean === p || clean.startsWith(`${p}?`) || clean.startsWith(`${p}/`));
+}
+
 async function request(method, path, body, signal) {
-  const token = getToken(); // synchronous — no await needed
+  // If session seeding is in-flight on initial page load / reload, wait for it
+  if (!_cachedToken && _initSessionPromise) {
+    await _initSessionPromise;
+  }
+
+  const token = getToken(); // synchronous
   const deviceId = localStorage.getItem('meetifyy_deviceId');
+
+  if (!token && !isPublicPath(path)) {
+    throw new Error('Unauthorized: Missing access token');
+  }
 
   const headers = {
     'Content-Type': 'application/json',
@@ -167,7 +224,7 @@ async function request(method, path, body, signal) {
   return _doFetch(cleanUrl, options);
 }
 
-async function _doFetch(cleanUrl, options) {
+async function _doFetch(cleanUrl, options, isRetry = false) {
   const res = await fetch(cleanUrl, options);
 
   // Store ETag from successful GET responses for future If-None-Match requests
@@ -176,10 +233,18 @@ async function _doFetch(cleanUrl, options) {
     if (etag) storeEtag(cleanUrl, etag);
   }
 
-  if (res.status === 401) {
-    // Only treat as a real session expiry if there's actually a live session.
-    // Use the cached session flag — no extra getSession() round-trip needed.
-    // 401s during login race-condition (session not yet persisted) are ignored.
+  if (res.status === 401 && !isRetry) {
+    // Attempt automatic session refresh before declaring unauthorized
+    const session = await refreshSessionIfNeeded();
+    if (session?.access_token) {
+      const retryHeaders = {
+        ...options.headers,
+        Authorization: `Bearer ${session.access_token}`
+      };
+      return _doFetch(cleanUrl, { ...options, headers: retryHeaders }, true);
+    }
+
+    // Only treat as a real session expiry if refresh truly failed AND we had a session
     if (supabase && _hasSession) {
       await supabase.auth.signOut().catch(console.error);
       _cachedToken = '';
@@ -341,6 +406,11 @@ export const activitiesApi = {
   rejectJoinRequest: (id, userId) => apiClient.post(`/api/activities/${id}/requests/${userId}/reject`),
   declineCrewInvitation: (id) => apiClient.post(`/api/activities/${id}/decline`),
   endCrewActivity: (id) => apiClient.post(`/api/activities/${id}/end`),
+  inviteFriends: (id, userIds) => apiClient.post(`/api/activities/${id}/invite`, { userIds }),
+  getPendingInvitations: () => apiClient.get('/api/activities/invitations/me'),
+  acceptInvitation: (invitationId) => apiClient.post(`/api/activities/invitations/${invitationId}/accept`),
+  declineInvitation: (invitationId) => apiClient.post(`/api/activities/invitations/${invitationId}/decline`),
+  getInvitationStatuses: (id) => apiClient.get(`/api/activities/${id}/invitations/status`),
   bookmark: (id) => apiClient.post(`/api/activities/${id}/bookmark`),
   unbookmark: (id) => apiClient.delete(`/api/activities/${id}/bookmark`),
   getBookmarks: (limit = 20, cursor) => {
@@ -448,25 +518,7 @@ export const groupApi = {
   reactToMessage: (messageId, reaction) => apiClient.post(`/api/group-chats/${messageId}/react`, { reaction }),
 };
 
-export const activityChatApi = {
-  getConversations: (limit, offset) => apiClient.get(`/api/activity-chats?limit=${limit || 20}&offset=${offset || 0}`),
-  initActivityChat: (activityId) => apiClient.post(`/api/activity-chats/${activityId}/init`),
-  getHistory: (conversationId, deviceId, beforeCursor, limit) => {
-    const params = new URLSearchParams();
-    if (deviceId) params.set('deviceId', deviceId);
-    if (beforeCursor) params.set('before', beforeCursor);
-    if (limit) params.set('limit', String(limit));
-    const query = params.toString();
-    return apiClient.get(`/api/activity-chats/${conversationId}${query ? `?${query}` : ''}`);
-  },
-  sendMessage: (conversationId, payload) => apiClient.post(`/api/activity-chats/${conversationId}/messages`, payload),
-  markAsRead: (conversationId) => apiClient.post(`/api/activity-chats/${conversationId}/read`),
-  muteConversation: (conversationId, muted) => apiClient.patch(`/api/activity-chats/${conversationId}/mute`, { muted }),
-  unsendMessage: (messageId) => apiClient.delete(`/api/activity-chats/msg/${messageId}`),
-  deleteMessageForMe: (messageId) => apiClient.delete(`/api/activity-chats/msg/${messageId}/for-me`),
-  forwardMessage: (messageId, targetConversationIds) => apiClient.post(`/api/activity-chats/msg/${messageId}/forward`, { targetConversationIds }),
-  reactToMessage: (messageId, reaction) => apiClient.post(`/api/activity-chats/${messageId}/react`, { reaction }),
-};
+
 
 export const messagesApi = {
   getConversations: (limit, offset) => {
