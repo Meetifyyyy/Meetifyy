@@ -125,5 +125,9 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "overrides": {
+    "brace-expansion": "^2.0.1",
+    "fast-uri": "^3.0.3"
   }
 }
