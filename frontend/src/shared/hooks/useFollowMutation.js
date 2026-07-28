@@ -27,28 +27,61 @@ export function useFollowMutation(targetUsername) {
   const entityKey = `follow:${targetUsername}`;
 
   const applyOptimisticUpdate = useCallback((isFollowing) => {
-    // Target profile
+    const delta = isFollowing ? 1 : -1;
+
+    // Target profile by username
     queryClient.setQueryData(['profile', targetUsername], (old) => {
       if (!old) return old;
+      const currentFollowers = old.followersCount ?? old.stats?.followers ?? 0;
       return {
         ...old,
         isFollowing,
-        followersCount: Math.max(0, (old.followersCount ?? old.stats?.followers ?? 0) + (isFollowing ? 1 : -1)),
+        followersCount: Math.max(0, currentFollowers + delta),
         stats: old.stats ? {
           ...old.stats,
-          followers: Math.max(0, (old.stats.followers ?? 0) + (isFollowing ? 1 : -1)),
+          followers: Math.max(0, (old.stats.followers ?? 0) + delta),
         } : old.stats,
       };
+    });
+
+    // Target user in generic user lists (e.g., suggested users, user cards)
+    const updateUserObj = (u) => {
+      if (!u) return u;
+      if (u.username === targetUsername) {
+        return {
+          ...u,
+          isFollowing,
+          followersCount: Math.max(0, (u.followersCount ?? 0) + delta),
+        };
+      }
+      return u;
+    };
+
+    queryClient.setQueryData(['users'], (old) => (Array.isArray(old) ? old.map(updateUserObj) : old));
+    queryClient.setQueryData(['campusUsers'], (old) => (Array.isArray(old) ? old.map(updateUserObj) : old));
+
+    // Update search result queries
+    queryClient.setQueriesData({ queryKey: ['search'] }, (old) => {
+      if (!old) return old;
+      if (Array.isArray(old.users)) {
+        return { ...old, users: old.users.map(updateUserObj) };
+      }
+      if (Array.isArray(old)) {
+        return old.map(updateUserObj);
+      }
+      return old;
     });
 
     // Current user's following count
     queryClient.setQueryData(['profile', currentUser?.username], (old) => {
       if (!old) return old;
+      const currentFollowing = old.followingCount ?? old.stats?.following ?? 0;
       return {
         ...old,
+        followingCount: Math.max(0, currentFollowing + delta),
         stats: old.stats ? {
           ...old.stats,
-          following: Math.max(0, (old.stats.following ?? 0) + (isFollowing ? 1 : -1)),
+          following: Math.max(0, (old.stats.following ?? 0) + delta),
         } : old.stats,
       };
     });

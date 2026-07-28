@@ -16,7 +16,7 @@ export default function NotificationList({
 
   const resolveActor = (notif) => {
     const actorId = notif.actor?.id || notif.actorId || notif.metadata?.actorId;
-    const actorUsername = notif.actor?.username || notif.metadata?.actorUsername || notif.metadata?.username || notif.metadata?.actorName;
+    const actorUsername = notif.actor?.username || notif.metadata?.actorUsername;
 
     let liveUser = null;
     if (actorId && getUserById) {
@@ -26,11 +26,7 @@ export default function NotificationList({
       if (actorId && users[actorId]) {
         liveUser = users[actorId];
       } else if (actorUsername) {
-        liveUser = Object.values(users).find(u => 
-          u.username === actorUsername || 
-          u.displayName === actorUsername || 
-          u.name === actorUsername
-        );
+        liveUser = Object.values(users).find(u => u.username === actorUsername);
       }
     }
 
@@ -50,11 +46,11 @@ export default function NotificationList({
       };
     }
 
-    if (notif.metadata?.actorName || notif.metadata?.actorDisplayName || notif.metadata?.username || notif.metadata?.actorUsername) {
+    if (notif.metadata?.actorDisplayName || notif.metadata?.actorName || notif.metadata?.actorUsername) {
       return { 
-        name: notif.metadata.actorName || notif.metadata.actorDisplayName || notif.metadata.username || notif.metadata.actorUsername, 
+        name: notif.metadata.actorDisplayName || notif.metadata.actorName || notif.metadata.actorUsername, 
         avatar: notif.metadata.actorAvatar || '',
-        username: notif.metadata.actorUsername || notif.metadata.username || '' 
+        username: notif.metadata.actorUsername || '' 
       };
     }
 

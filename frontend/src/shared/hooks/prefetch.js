@@ -32,7 +32,7 @@ export function prefetchCommunity(queryClient, id) {
  * Prefetch a user profile by username on hover intent (mention, avatar, name link).
  */
 export function prefetchProfile(queryClient, username) {
-  if (!username || !queryClient) return;
+  if (!username || username === 'unknown' || !queryClient) return;
   queryClient.prefetchQuery({
     queryKey: ['profile', username],
     queryFn: () => usersApi.getByUsername(username),

@@ -46,7 +46,7 @@ export default function PostDetailRoute() {
 
   const { data: profile } = useQuery({
     queryKey: ['profile', author?.username],
-    queryFn: () => usersApi.getProfile(author.username),
+    queryFn: () => usersApi.getByUsername(author.username),
     enabled: !!author?.username && author.username !== 'unknown',
     staleTime: 1000 * 60,
   });

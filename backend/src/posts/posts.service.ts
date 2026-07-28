@@ -263,7 +263,7 @@ export class PostsService {
           });
         }
 
-        this.domainEventService.emit('post.liked', { postId, userId, likeCount: updatedCount });
+        this.domainEventService.emit('post.liked', { postId, userId, likeCount: updatedCount }, [post.authorId]);
       }
 
       return {
@@ -299,7 +299,7 @@ export class PostsService {
       ]);
       updatedCount = updated.likeCount;
       
-      this.domainEventService.emit('post.unliked', { postId, userId, likeCount: updatedCount });
+      this.domainEventService.emit('post.unliked', { postId, userId, likeCount: updatedCount }, [post.authorId]);
     }
 
     return {
@@ -598,7 +598,7 @@ export class PostsService {
       create: { userId, postId }
     });
     
-    this.domainEventService.emit('post.saved', { postId, userId });
+    this.domainEventService.emit('post.saved', { postId, userId }, [userId]);
     return { success: true };
   }
 
@@ -610,7 +610,7 @@ export class PostsService {
       await this.prisma.postBookmark.delete({
         where: { userId_postId: { userId, postId } }
       });
-      this.domainEventService.emit('post.unsaved', { postId, userId });
+      this.domainEventService.emit('post.unsaved', { postId, userId }, [userId]);
     }
     return { success: true };
   }

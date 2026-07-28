@@ -15,6 +15,38 @@ class MediaCacheManager {
    * If cached and valid, returns immediately.
    * Otherwise, batches the request with others and fetches them together.
    */
+  /**
+   * Synchronously return cached URL if available immediately, or key if direct URL.
+   */
+  getSyncUrl(rawKey) {
+    if (!rawKey || typeof rawKey !== 'string') return null;
+    let key = rawKey;
+
+    if (key.startsWith('data:') || key.startsWith('blob:') || key.startsWith('/')) {
+      return key;
+    }
+
+    if ((key.startsWith('http://') || key.startsWith('https://')) && !key.includes('/api/media/')) {
+      return key;
+    }
+
+    if (key.includes('/api/media/')) {
+      const match = key.match(/\/api\/media\/(.+)$/);
+      if (match) {
+        key = match[1].split('?')[0];
+      }
+    }
+
+    key = key.replace(/^\/+/, '');
+
+    const cached = this.cache.get(key);
+    if (cached && cached.expiresAt > Date.now() + this.EXPIRY_BUFFER) {
+      return cached.url;
+    }
+
+    return null;
+  }
+
   async getUrl(rawKey) {
     if (!rawKey) return null;
     let key = rawKey;

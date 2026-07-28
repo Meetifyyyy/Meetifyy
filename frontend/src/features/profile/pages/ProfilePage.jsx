@@ -177,7 +177,7 @@ export default function ProfilePage() {
   } = useQuery({
     queryKey: ['profile', targetUsername],
     queryFn: () => usersApi.getByUsername(targetUsername),
-    enabled: !!targetUsername,
+    enabled: !!targetUsername && targetUsername !== 'unknown',
   });
 
   // Query User Posts
@@ -187,7 +187,7 @@ export default function ProfilePage() {
   } = useQuery({
     queryKey: ['user-posts', targetUsername],
     queryFn: () => postsApi.getUserPosts(targetUsername, 20),
-    enabled: !!targetUsername,
+    enabled: !!targetUsername && targetUsername !== 'unknown',
   });
 
   if (isLoadingProfile) {

@@ -16,6 +16,35 @@ export class PrismaService extends PrismaClient<
         { emit: 'stdout', level: 'warn' },
       ],
     });
+
+    // Handle transient database connection drops with automatic retry
+    this.$use(async (params, next) => {
+      let retries = 2;
+      while (retries >= 0) {
+        try {
+          return await next(params);
+        } catch (error: any) {
+          const isConnError =
+            error?.code === 'P1001' ||
+            error?.code === 'P1002' ||
+            error?.code === 'P1008' ||
+            error?.code === 'P1017' ||
+            (error?.message && (
+              error.message.includes("Can't reach database server") ||
+              error.message.includes('Timed out fetching a new connection') ||
+              error.message.includes('Connection pool timeout')
+            ));
+
+          if (isConnError && retries > 0) {
+            retries--;
+            this.logger.warn(`Database transient connection issue (${error.code || 'network'}). Retrying... (${retries} attempts remaining)`);
+            await new Promise((res) => setTimeout(res, 300));
+            continue;
+          }
+          throw error;
+        }
+      }
+    });
   }
 
   async onModuleInit() {
