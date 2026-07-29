@@ -63,15 +63,11 @@ export default function Step5Avatar() {
     // Clear persistence to prevent stale state for future signups
     clearSignupData();
     
-    navigate('/onboarding');
+    window.location.replace('/onboarding');
   };
 
   return (
     <AnimatedStep className={styles.stepWrapper}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-primary)', marginBottom: '1rem' }}>
-        <Camera size={24} />
-        <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>Profile Picture</span>
-      </div>
       <h2 className={styles.headline}>Add a profile picture</h2>
       <p className={styles.subheadline}>Show your tribe who you are. You can always change this later.</p>
 

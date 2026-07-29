@@ -5,6 +5,9 @@ import { NotificationFactory } from '../notifications/notification.factory';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from './blocks.service';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { NOTIFICATIONS_QUEUE, FollowNotifJob } from '../notifications/notifications.processor';
 
 function validateBirthday(birthdayStr: string) {
   if (!birthdayStr) {
@@ -25,8 +28,8 @@ function validateBirthday(birthdayStr: string) {
   }
 
   const currentYear = new Date().getFullYear();
-  if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1990 || y > currentYear) {
-    throw new BadRequestException(`Year of birth must be between 1990 and ${currentYear}.`);
+  if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1950 || y > currentYear) {
+    throw new BadRequestException(`Year of birth must be between 1950 and ${currentYear}.`);
   }
 
   const dateObj = new Date(y, m - 1, d);
@@ -64,6 +67,7 @@ export class UsersService {
     private readonly domainEventService: DomainEventService,
     private readonly redisService: RedisService,
     private readonly blocksService: BlocksService,
+    @InjectQueue(NOTIFICATIONS_QUEUE) private readonly notifQueue: Queue,
   ) {}
 
   async getAllUsers(limit: number, offset: number) {
@@ -237,108 +241,167 @@ export class UsersService {
   }
 
   async followUser(followerId: string, followingUsername: string) {
+    const t0 = performance.now();
     const cleanUsername = followingUsername.trim().toLowerCase();
-    const targetUser = await this.prisma.user.findUnique({ where: { username: cleanUsername } });
-    if (!targetUser) throw new NotFoundException('Target user not found');
-    if (targetUser.id === followerId) throw new BadRequestException('Cannot follow yourself');
-
-    const lockKey = `toggle:follow:${followerId}:${targetUser.id}`;
-
-    return this.redisService.withLock(lockKey, 2000, async () => {
-      const isBlocked = await this.prisma.block.findFirst({
-        where: {
-          OR: [
-            { blockerId: followerId, blockedId: targetUser.id },
-            { blockerId: targetUser.id, blockedId: followerId },
-          ],
-        },
-      });
-      if (isBlocked) throw new BadRequestException('Action not allowed due to user block');
-
-      // Fully atomic: INSERT ... ON CONFLICT DO NOTHING
-      // Never throws P2002 regardless of concurrent requests.
-      const result = await this.prisma.$executeRaw`
+    
+    // Single atomic CTE query combining: user lookup + block check + follow insert + count calculation
+    // Reduces database network round-trips from 4 down to 1!
+    const rows: any[] = await this.prisma.$queryRaw`
+      WITH target_user AS (
+        SELECT "id", "username", "displayName", "avatar"
+        FROM "User"
+        WHERE "username" = ${cleanUsername} OR "id" = ${cleanUsername}
+        LIMIT 1
+      ),
+      block_check AS (
+        SELECT 1 FROM "Block" b, target_user tu
+        WHERE (b."blockerId" = ${followerId} AND b."blockedId" = tu."id")
+           OR (b."blockerId" = tu."id" AND b."blockedId" = ${followerId})
+        LIMIT 1
+      ),
+      ins AS (
         INSERT INTO "Follow" ("followerId", "followingId", "createdAt")
-        VALUES (${followerId}, ${targetUser.id}, NOW())
+        SELECT ${followerId}, tu."id", NOW()
+        FROM target_user tu
+        WHERE NOT EXISTS (SELECT 1 FROM block_check)
+          AND tu."id" != ${followerId}
         ON CONFLICT ("followerId", "followingId") DO NOTHING
-      `;
-      const newlyFollowed = result === 1;
+        RETURNING "followingId"
+      )
+      SELECT 
+        tu."id" AS "targetId",
+        tu."username" AS "targetUsername",
+        tu."displayName" AS "targetDisplayName",
+        tu."avatar" AS "targetAvatar",
+        EXISTS(SELECT 1 FROM block_check) AS "isBlocked",
+        EXISTS(SELECT 1 FROM ins) AS "newlyFollowed",
+        (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followingId" = tu."id") AS "targetFollowers",
+        (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followerId" = tu."id") AS "targetFollowing",
+        (SELECT COUNT(*)::int FROM "Follow" f WHERE f."followerId" = ${followerId}) AS "currentFollowing"
+      FROM target_user tu;
+    `;
 
-      const [targetFollowers, targetFollowing, currentFollowing] = await Promise.all([
-        this.prisma.follow.count({ where: { followingId: targetUser.id } }),
-        this.prisma.follow.count({ where: { followerId: targetUser.id } }),
-        this.prisma.follow.count({ where: { followerId } }),
-      ]);
+    const tDb = performance.now();
 
-      if (newlyFollowed) {
-        this.domainEventService.emit('follow.created', {
-          followerId,
-          followingId: targetUser.id,
-          followingUsername: targetUser.username,
-          followerStats: { followingCount: currentFollowing },
-          targetStats: { followersCount: targetFollowers },
-        }).catch(err => this.logger.warn('Failed to emit follow.created event', err));
-      }
+    if (!rows || rows.length === 0) {
+      throw new NotFoundException('Target user not found');
+    }
 
-      return {
-        success: true,
-        isFollowing: true,
-        targetUser: {
-          id: targetUser.id,
-          username: targetUser.username,
-          followersCount: targetFollowers,
-          followingCount: targetFollowing,
+    const res = rows[0];
+
+    if (res.targetId === followerId) {
+      throw new BadRequestException('Cannot follow yourself');
+    }
+
+    if (res.isBlocked) {
+      throw new BadRequestException('Action not allowed due to user block');
+    }
+
+    if (res.newlyFollowed) {
+      // Async non-blocking notification queue
+      const jobData: FollowNotifJob = {
+        followerId,
+        followingId: res.targetId,
+        actor: {
+          username: res.targetUsername,
+          displayName: res.targetDisplayName,
+          avatar: res.targetAvatar,
         },
-        currentUserStats: { followingCount: currentFollowing },
       };
-    });
+      this.notifQueue.add('follow-notification', jobData, {
+        removeOnComplete: true,
+        removeOnFail: { count: 50 },
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+      }).catch(err => this.logger.warn('Failed to enqueue follow notification', err));
+
+      // Async non-blocking domain event broadcast
+      this.domainEventService.emit('follow.created', {
+        followerId,
+        followingId: res.targetId,
+        followingUsername: res.targetUsername,
+        followerStats: { followingCount: res.currentFollowing },
+        targetStats: { followersCount: res.targetFollowers },
+      }).catch(err => this.logger.warn('Failed to emit follow.created event', err));
+    }
+
+    const tEnd = performance.now();
+    this.logger.log(`[TIMING followUser] singleQueryDb=${(tDb - t0).toFixed(1)}ms total=${(tEnd - t0).toFixed(1)}ms (1 round-trip)`);
+
+    return {
+      success: true,
+      isFollowing: true,
+      targetUser: {
+        id: res.targetId,
+        username: res.targetUsername,
+        followersCount: res.targetFollowers,
+        followingCount: res.targetFollowing,
+      },
+      currentUserStats: { followingCount: res.currentFollowing },
+    };
   }
 
   async unfollowUser(followerId: string, followingUsername: string) {
+    const t0 = performance.now();
     const cleanUsername = followingUsername.trim().toLowerCase();
-    const targetUser = await this.prisma.user.findUnique({ where: { username: cleanUsername } });
-    if (!targetUser) throw new NotFoundException('Target user not found');
+    
+    // Single atomic CTE query combining: user lookup + follow delete + count calculation
+    // Reduces database network round-trips from 3 down to 1!
+    const rows: any[] = await this.prisma.$queryRaw`
+      WITH target_user AS (
+        SELECT "id", "username"
+        FROM "User"
+        WHERE "username" = ${cleanUsername} OR "id" = ${cleanUsername}
+        LIMIT 1
+      ),
+      del AS (
+        DELETE FROM "Follow" f
+        USING target_user tu
+        WHERE f."followerId" = ${followerId} AND f."followingId" = tu."id"
+        RETURNING f."followingId"
+      )
+      SELECT 
+        tu."id" AS "targetId",
+        tu."username" AS "targetUsername",
+        EXISTS(SELECT 1 FROM del) AS "unfollowed",
+        (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followingId" = tu."id") AS "targetFollowers",
+        (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followerId" = tu."id") AS "targetFollowing",
+        (SELECT COUNT(*)::int FROM "Follow" f WHERE f."followerId" = ${followerId}) AS "currentFollowing"
+      FROM target_user tu;
+    `;
 
-    const lockKey = `toggle:follow:${followerId}:${targetUser.id}`;
+    const tDb = performance.now();
 
-    return this.redisService.withLock(lockKey, 2000, async () => {
-      const deleteRes = await this.prisma.follow.deleteMany({
-        where: {
-          followerId,
-          followingId: targetUser.id,
-        },
-      });
+    if (!rows || rows.length === 0) {
+      throw new NotFoundException('User not found');
+    }
 
-      const [targetFollowers, targetFollowing, currentFollowing] = await Promise.all([
-        this.prisma.follow.count({ where: { followingId: targetUser.id } }),
-        this.prisma.follow.count({ where: { followerId: targetUser.id } }),
-        this.prisma.follow.count({ where: { followerId } }),
-      ]);
+    const res = rows[0];
 
-      if (deleteRes.count > 0) {
-        this.domainEventService.emit('follow.deleted', {
-          followerId,
-          followingId: targetUser.id,
-          followingUsername: targetUser.username,
-          followerStats: { followingCount: currentFollowing },
-          targetStats: { followersCount: targetFollowers }
-        }).catch(err => this.logger.warn('Failed to emit follow.deleted event', err));
-      }
+    if (res.unfollowed) {
+      this.domainEventService.emit('follow.deleted', {
+        followerId,
+        followingId: res.targetId,
+        followingUsername: res.targetUsername,
+        followerStats: { followingCount: res.currentFollowing },
+        targetStats: { followersCount: res.targetFollowers },
+      }).catch(err => this.logger.warn('Failed to emit follow.deleted event', err));
+    }
 
-      return {
-        success: true,
-        isFollowing: false,
-        targetUser: {
-          id: targetUser.id,
-          username: targetUser.username,
-          followersCount: targetFollowers,
-          followingCount: targetFollowing,
-        },
-        currentUserStats: {
-          followingCount: currentFollowing,
-        },
-      };
-    });
+    const tEnd = performance.now();
+    this.logger.log(`[TIMING unfollowUser] singleQueryDb=${(tDb - t0).toFixed(1)}ms total=${(tEnd - t0).toFixed(1)}ms (1 round-trip)`);
+
+    return {
+      success: true,
+      isFollowing: false,
+      targetUser: {
+        id: res.targetId,
+        username: res.targetUsername,
+        followersCount: res.targetFollowers,
+        followingCount: res.targetFollowing,
+      },
+      currentUserStats: { followingCount: res.currentFollowing },
+    };
   }
 
   async getFollowers(username: string, currentUserId?: string, limit = 20, offset = 0) {
@@ -503,20 +566,26 @@ export class UsersService {
 
     // Parse graduationYear / year safely as integer
     const rawYear = graduationYear !== undefined ? graduationYear : data.year;
-    if (rawYear !== undefined && rawYear !== null) {
+    if (rawYear !== undefined && rawYear !== null && rawYear !== '') {
+      const currentYear = new Date().getFullYear();
+      const maxGraduationYear = currentYear + 6;
+
+      let parsedYear = NaN;
       if (typeof rawYear === 'number') {
-        updateData.graduationYear = Math.floor(rawYear);
+        parsedYear = Math.floor(rawYear);
       } else if (typeof rawYear === 'string') {
-        const parsed = parseInt(rawYear.replace(/\D/g, ''), 10);
-        if (!isNaN(parsed) && parsed >= 1990 && parsed <= 2100) {
-          updateData.graduationYear = parsed;
-        } else {
-          const currentYear = new Date().getFullYear();
-          if (rawYear.includes('1st')) updateData.graduationYear = currentYear + 3;
-          else if (rawYear.includes('2nd')) updateData.graduationYear = currentYear + 2;
-          else if (rawYear.includes('3rd')) updateData.graduationYear = currentYear + 1;
-          else if (rawYear.includes('4th')) updateData.graduationYear = currentYear;
-        }
+        parsedYear = parseInt(rawYear.replace(/\D/g, ''), 10);
+      }
+
+      if (!isNaN(parsedYear) && parsedYear >= 2026 && parsedYear <= maxGraduationYear) {
+        updateData.graduationYear = parsedYear;
+      } else if (typeof rawYear === 'string' && (rawYear.includes('1st') || rawYear.includes('2nd') || rawYear.includes('3rd') || rawYear.includes('4th'))) {
+        if (rawYear.includes('1st')) updateData.graduationYear = currentYear + 3;
+        else if (rawYear.includes('2nd')) updateData.graduationYear = currentYear + 2;
+        else if (rawYear.includes('3rd')) updateData.graduationYear = currentYear + 1;
+        else if (rawYear.includes('4th')) updateData.graduationYear = currentYear;
+      } else {
+        throw new BadRequestException(`Year of passing must be between 2026 and ${maxGraduationYear}.`);
       }
     }
 

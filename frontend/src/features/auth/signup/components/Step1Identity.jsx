@@ -141,51 +141,55 @@ export default function Step1Identity() {
       <form onSubmit={handleSubmit} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
         {/* Full Name */}
         <div className={styles.inputGroup}>
-          <input
-            id="name"
-            type="text"
-            className={`${styles.largeInput} ${attempted && nameError ? styles.inputError : ''}`}
-            placeholder=" "
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <label htmlFor="name" className={styles.floatingLabel}>Full Name</label>
+          <div className={styles.inputWrapper}>
+            <input
+              id="name"
+              type="text"
+              className={`${styles.largeInput} ${attempted && nameError ? styles.inputError : ''}`}
+              placeholder=" "
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <label htmlFor="name" className={styles.floatingLabel}>Full Name</label>
+          </div>
           <div className={styles.errorText} style={{ visibility: attempted && nameError ? 'visible' : 'hidden' }}>
-            <AlertCircle size={14} /> {nameError || ' '}
+            <AlertCircle size={13} /> {nameError || ' '}
           </div>
         </div>
 
         {/* Username */}
-        <div className={styles.inputGroup} style={{ position: 'relative' }}>
-          <input
-            id="username"
-            type="text"
-            className={`${styles.largeInput} ${showError ? styles.inputError : ''}`}
-            placeholder=" "
-            value={username}
-            onChange={(e) => {
-              const val = e.target.value.toLowerCase();
-              if (val !== '' && /[^a-z0-9_.]/.test(val)) return;
-              setUsername(val);
-            }}
-            style={{ paddingRight: '2rem' }}
-          />
-          <label htmlFor="username" className={styles.floatingLabel}>Username</label>
+        <div className={styles.inputGroup}>
+          <div className={styles.inputWrapper}>
+            <input
+              id="username"
+              type="text"
+              className={`${styles.largeInput} ${showError ? styles.inputError : ''}`}
+              placeholder=" "
+              value={username}
+              onChange={(e) => {
+                const val = e.target.value.toLowerCase();
+                if (val !== '' && /[^a-z0-9_.]/.test(val)) return;
+                setUsername(val);
+              }}
+              style={{ paddingRight: '2.5rem' }}
+            />
+            <label htmlFor="username" className={styles.floatingLabel}>Username</label>
 
-          {/* Status indicator */}
-          <div style={{ position: 'absolute', right: '0.25rem', top: '1.15rem', display: 'flex', alignItems: 'center' }}>
-            {usernameStatus === 'checking' && (
-              <Loader2 size={18} style={{ color: 'var(--color-primary)', animation: 'spin 1s linear infinite' }} />
-            )}
-            {usernameStatus === 'available' && (
-              <Check size={18} style={{ color: '#10b981' }} />
-            )}
-            {usernameStatus === 'taken' && (
-              <X size={18} style={{ color: '#ef4444' }} />
-            )}
-            {usernameStatus === 'network-error' && (
-              <WifiOff size={16} style={{ color: 'var(--color-text-muted)' }} />
-            )}
+            {/* Status indicator */}
+            <div style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
+              {usernameStatus === 'checking' && (
+                <Loader2 size={16} style={{ color: 'var(--color-primary)', animation: 'spin 1s linear infinite' }} />
+              )}
+              {usernameStatus === 'available' && (
+                <Check size={16} style={{ color: '#10b981' }} />
+              )}
+              {usernameStatus === 'taken' && (
+                <X size={16} style={{ color: '#ef4444' }} />
+              )}
+              {usernameStatus === 'network-error' && (
+                <WifiOff size={15} style={{ color: 'var(--color-text-muted)' }} />
+              )}
+            </div>
           </div>
 
           {/* Error text */}
@@ -193,7 +197,7 @@ export default function Step1Identity() {
             className={styles.errorText}
             style={{ visibility: showError ? 'visible' : 'hidden' }}
           >
-            <AlertCircle size={14} /> {activeUsernameError || ' '}
+            <AlertCircle size={13} /> {activeUsernameError || ' '}
           </div>
 
           {/* Network error hint — shown inline, not as a blocking error */}
@@ -205,8 +209,8 @@ export default function Step1Identity() {
         </div>
 
         {/* Date of Birth */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem' }}>
-          <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)', marginLeft: '0.25rem', marginBottom: '0.25rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+          <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--color-text-muted)', marginLeft: '0.25rem', marginBottom: '0.35rem' }}>
             Date of Birth
           </label>
           <div className={styles.dateSelectRow}>
@@ -232,7 +236,7 @@ export default function Step1Identity() {
               value={year}
               onChange={setYear}
               placeholder="Year"
-              options={Array.from({ length: new Date().getFullYear() - 1990 + 1 }, (_, i) => new Date().getFullYear() - i).map(y => ({
+              options={Array.from({ length: new Date().getFullYear() - 1950 + 1 }, (_, i) => new Date().getFullYear() - i).map(y => ({
                 value: y,
                 label: y,
               }))}
@@ -246,13 +250,19 @@ export default function Step1Identity() {
         <button
           type="submit"
           className={styles.continueBtn}
-          style={{ width: '100%', justifyContent: 'center', marginTop: '1.5rem' }}
+          style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}
           disabled={isChecking}
         >
           {isChecking ? (
-            <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite', marginRight: '0.5rem' }} /> Checking...</>
+            <>
+              <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+              <span>Checking...</span>
+            </>
           ) : (
-            <>Continue <ArrowRight className={styles.btnIcon} /></>
+            <>
+              <span>Continue</span>
+              <ArrowRight size={18} className={styles.btnIcon} />
+            </>
           )}
         </button>
       </form>

@@ -1,12 +1,32 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 
 import { INTERESTS_BY_CATEGORY } from '../constants/interestsData';
 import styles from './OnboardingRoute.module.css';
 import { useData } from '@shared/hooks/useData';
 import { communitiesApi } from '@shared/api/apiClient';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Check, ChevronDown } from 'lucide-react';
+import Background from '@shared/components/ui/Background';
+
+const FEATURED_INTERESTS = [
+  { emoji: "📚", label: "Reading" },
+  { emoji: "📸", label: "Photography" },
+  { emoji: "💻", label: "Coding & Tech" },
+  { emoji: "🏋️", label: "Gym & Fitness" },
+  { emoji: "✈️", label: "Traveling" },
+  { emoji: "🎨", label: "Graphic Design" },
+  { emoji: "🎤", label: "Arijit Singh" },
+  { emoji: "🎧", label: "AP Dhillon" },
+  { emoji: "🎯", label: "BGMI / PUBG" },
+  { emoji: "🔥", label: "Valorant" },
+  { emoji: "🏏", label: "Cricket" },
+  { emoji: "⚽", label: "Football" },
+  { emoji: "☕", label: "Coffee & Tea" },
+  { emoji: "🎬", label: "Movies & Cinema" },
+  { emoji: "⚡", label: "Anime" },
+];
 
 export default function OnboardingRoute() {
   const { currentUser, completeOnboarding } = useAuth();
@@ -18,6 +38,7 @@ export default function OnboardingRoute() {
   const [selectedCommunities, setSelectedCommunities] = useState([]); // stores community IDs
   const [isCompleting, setIsCompleting] = useState(false);
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
+  const [showAll, setShowAll] = useState(false);
 
   const loadingMessages = [
     'Creating your profile...',
@@ -26,14 +47,31 @@ export default function OnboardingRoute() {
     'Almost ready!'
   ];
 
-  // Redirect if not a new user
-  useEffect(() => {
-    if (currentUser && !currentUser.isNewUser && !isCompleting) {
-      navigate('/home', { replace: true });
-    }
-  }, [currentUser, navigate, isCompleting]);
 
-  if (!currentUser || (!currentUser.isNewUser && !isCompleting)) return null;
+
+  // Completely disable browser back navigation while on onboarding
+  useEffect(() => {
+    window.history.pushState(null, '', window.location.href);
+
+    const handlePopState = () => {
+      window.history.pushState(null, '', window.location.href);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
+  if (!currentUser) {
+    window.location.replace('/login');
+    return <div style={{ minHeight: '100vh', backgroundColor: 'var(--color-bg-main, #121212)' }} />;
+  }
+
+  if (!currentUser.isNewUser && !isCompleting) {
+    window.location.replace('/home');
+    return <div style={{ minHeight: '100vh', backgroundColor: 'var(--color-bg-main, #121212)' }} />;
+  }
 
   const toggleInterest = (id) => {
     setSelectedInterests(prev => {
@@ -53,10 +91,16 @@ export default function OnboardingRoute() {
     );
   };
 
+  // Filter communities for step 2 — must be above handleNext so it can be referenced inside
+  const suggestedCommunities = communities.filter(c => !c.isUniversity).slice(0, 5);
+
   const handleNext = async () => {
     if (step === 1) {
-      setStep(2);
-    } else {
+      if (suggestedCommunities.length > 0) {
+        setStep(2);
+        return;
+      }
+      // No communities to show — skip straight to completing
       setIsCompleting(true);
 
       const interval = setInterval(() => {
@@ -93,12 +137,10 @@ export default function OnboardingRoute() {
     }
   };
 
-  // Filter communities based on selected interests for step 2
-  const suggestedCommunities = communities.filter(c => !c.isUniversity).slice(0, 5);
-
   if (isCompleting) {
     return (
       <div className={styles.onboardingContainer} style={{ justifyContent: 'center', alignItems: 'center' }}>
+        <Background />
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '2rem' }}>
           <div style={{ position: 'relative', marginBottom: '2rem' }}>
             <motion.div
@@ -125,6 +167,7 @@ export default function OnboardingRoute() {
 
   return (
     <div className={styles.onboardingContainer}>
+      <Background />
       <div className={styles.contentArea}>
         {step === 1 && (
           <div className="animate-in" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -134,37 +177,93 @@ export default function OnboardingRoute() {
                 ? `You can select up to 10 topics (${selectedInterests.length}/10)`
                 : "Choose a few tags to personalize your profile and customize your feed."}
             </p>
-            
-            <div className={styles.categoriesWrapper}>
-              {INTERESTS_BY_CATEGORY.map((category, catIndex) => {
-                const row1 = category.tags.filter((_, i) => i % 2 === 0);
-                const row2 = category.tags.filter((_, i) => i % 2 !== 0);
-                return (
-                  <div key={catIndex} className={styles.categorySection}>
-                    <h2 className={styles.categoryTitle}>{category.title}</h2>
-                    <div className={styles.tagsContainer}>
-                      {[row1, row2].map((rowTags, rowIndex) => (
-                        <div key={rowIndex} className={styles.tagsRow}>
-                          {rowTags.map((tag, tagIndex) => {
-                            const isSelected = selectedInterests.includes(tag.label);
-                            return (
-                              <div 
-                                key={tagIndex}
-                                className={`${styles.optionPill} ${isSelected ? styles.selected : ''}`}
-                                onClick={() => toggleInterest(tag.label)}
-                              >
-                                <span className={styles.pillIcon}>{tag.emoji}</span>
-                                <span className={styles.pillLabel}>{tag.label}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+
+            {/* Header bar above interests */}
+            <div className={styles.sectionHeaderBar}>
+              <span className={styles.sectionHeaderText}>{showAll ? 'All Categories' : 'Popular Topics'}</span>
+              <span 
+                className={styles.exploreTextLink}
+                onClick={() => setShowAll(!showAll)}
+              >
+                {showAll ? 'Show top picks' : 'See all topics →'}
+              </span>
             </div>
+
+            <AnimatePresence mode="wait">
+              {!showAll ? (
+                <motion.div
+                  key="featured-grid"
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -15 }}
+                  transition={{ duration: 0.25, ease: "easeInOut" }}
+                  style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+                >
+                  <div className={styles.majorGrid}>
+                    {FEATURED_INTERESTS.map((item, idx) => {
+                      const isSelected = selectedInterests.includes(item.label);
+                      return (
+                        <motion.div
+                          key={idx}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          className={`${styles.majorCard} ${isSelected ? styles.majorCardSelected : ''}`}
+                          onClick={() => toggleInterest(item.label)}
+                        >
+                          <span className={styles.majorEmoji}>{item.emoji}</span>
+                          <span className={styles.majorLabel} title={item.label}>{item.label}</span>
+                          {isSelected && (
+                            <div className={styles.checkBadge}>
+                              <Check size={12} />
+                            </div>
+                          )}
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="all-categories"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 15 }}
+                  transition={{ duration: 0.25, ease: "easeInOut" }}
+                  style={{ width: '100%' }}
+                >
+                  <div className={styles.categoriesWrapper}>
+                    {INTERESTS_BY_CATEGORY.map((category, catIndex) => {
+                      const row1 = category.tags.filter((_, i) => i % 2 === 0);
+                      const row2 = category.tags.filter((_, i) => i % 2 !== 0);
+                      return (
+                        <div key={catIndex} className={styles.categorySection}>
+                          <h2 className={styles.categoryTitle}>{category.title}</h2>
+                          <div className={styles.tagsContainer}>
+                            {[row1, row2].map((rowTags, rowIndex) => (
+                              <div key={rowIndex} className={styles.tagsRow}>
+                                {rowTags.map((tag, tagIndex) => {
+                                  const isSelected = selectedInterests.includes(tag.label);
+                                  return (
+                                    <div 
+                                      key={tagIndex}
+                                      className={`${styles.optionPill} ${isSelected ? styles.selected : ''}`}
+                                      onClick={() => toggleInterest(tag.label)}
+                                    >
+                                      <span className={styles.pillIcon}>{tag.emoji}</span>
+                                      <span className={styles.pillLabel}>{tag.label}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             <div className={styles.actionsFooter}>
               <button 

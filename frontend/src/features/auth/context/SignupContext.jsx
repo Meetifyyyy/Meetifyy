@@ -22,40 +22,62 @@ const initialData = {
 // from a previous abandoned signup from leaking into a new one. The key is
 // stored in sessionStorage alongside the data so it can be validated on restore.
 const SESSION_KEY = 'meetifyy_signup_data';
-const SESSION_EPOCH_KEY = 'meetifyy_signup_epoch';
+const STEP_KEY = 'meetifyy_signup_step';
+const TIMESTAMP_KEY = 'meetifyy_signup_time';
+const MAX_SESSION_AGE_MS = 30 * 60 * 1000; // 30 minutes TTL
 
 export const SignupProvider = ({ children }) => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const location = useLocation();
 
+  // Handle fresh signup intent from navigation (e.g. state.fresh = true or ?fresh=true)
+  const isFreshIntent = location.state?.fresh === true || searchParams.get('fresh') === 'true';
+
+  // Restore saved step if URL step is omitted
   const urlStep = parseInt(searchParams.get('step'), 10);
-  const currentStep = !isNaN(urlStep) && urlStep >= 1 && urlStep <= 5 ? urlStep : 1;
+  const savedStepStr = sessionStorage.getItem(STEP_KEY);
+  const savedStep = savedStepStr ? parseInt(savedStepStr, 10) : null;
+
+  const currentStep = isFreshIntent
+    ? 1
+    : (!isNaN(urlStep) && urlStep >= 1 && urlStep <= 5
+        ? urlStep
+        : (savedStep && savedStep >= 1 && savedStep <= 5 ? savedStep : 1));
 
   const [signupData, setSignupData] = useState(() => {
-    // If we're starting fresh at step 1 (no step param or step=1), clear any
-    // stale sessionStorage from a previous abandoned signup attempt.
-    const incomingStep = parseInt(new URLSearchParams(window.location.search).get('step'), 10);
-    const isStartingFresh = isNaN(incomingStep) || incomingStep === 1;
-
-    if (isStartingFresh) {
-      // Clear stale session data so username/email from a previous attempt
-      // don't pollute the availability checks in Step1 and Step2.
+    if (isFreshIntent) {
       sessionStorage.removeItem(SESSION_KEY);
-      sessionStorage.removeItem(SESSION_EPOCH_KEY);
+      sessionStorage.removeItem(STEP_KEY);
+      sessionStorage.removeItem(TIMESTAMP_KEY);
+      let freshData = { ...initialData };
+      if (location.state && location.state.email) {
+        freshData.email = location.state.email;
+      }
+      return freshData;
     }
 
-    let parsed = initialData;
-    if (!isStartingFresh) {
-      try {
-        const saved = sessionStorage.getItem(SESSION_KEY);
-        if (saved) {
-          parsed = JSON.parse(saved);
-        }
-      } catch (e) {
-        // Corrupted storage — start fresh
+    // Check for stale session expiry (30 mins TTL)
+    const savedTime = sessionStorage.getItem(TIMESTAMP_KEY);
+    if (savedTime) {
+      const age = Date.now() - parseInt(savedTime, 10);
+      if (isNaN(age) || age > MAX_SESSION_AGE_MS) {
+        // Session expired — purge stale draft
         sessionStorage.removeItem(SESSION_KEY);
+        sessionStorage.removeItem(STEP_KEY);
+        sessionStorage.removeItem(TIMESTAMP_KEY);
+        return { ...initialData };
       }
+    }
+
+    let parsed = { ...initialData };
+    try {
+      const saved = sessionStorage.getItem(SESSION_KEY);
+      if (saved) {
+        const decoded = JSON.parse(saved);
+        parsed = { ...initialData, ...decoded };
+      }
+    } catch (e) {
+      sessionStorage.removeItem(SESSION_KEY);
     }
     
     if (location.state && location.state.email) {
@@ -64,17 +86,30 @@ export const SignupProvider = ({ children }) => {
     return parsed;
   });
 
+  // Keep step parameter synced in URL & sessionStorage
   useEffect(() => {
-    if (!searchParams.get('step')) {
-      setSearchParams({ step: 1 }, { replace: true });
+    const stepInUrl = parseInt(searchParams.get('step'), 10);
+    if (isNaN(stepInUrl) || stepInUrl !== currentStep) {
+      setSearchParams({ step: currentStep }, { replace: true });
     }
-  }, [searchParams, setSearchParams]);
+    sessionStorage.setItem(STEP_KEY, String(currentStep));
+  }, [currentStep, searchParams, setSearchParams]);
 
+  // Persist signup data on change (passwords are omitted) and bump timestamp
   useEffect(() => {
-    // Never persist passwords — even temporarily
     const { password, ...safeData } = signupData;
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(safeData));
+    sessionStorage.setItem(TIMESTAMP_KEY, String(Date.now()));
   }, [signupData]);
+
+  // Step safety guards: prevent jumping ahead if prerequisite data is missing on refresh
+  useEffect(() => {
+    if (currentStep === 2 && !signupData.name && !signupData.username) {
+      setSearchParams({ step: 1 }, { replace: true });
+    } else if ((currentStep === 3 || currentStep === 4) && !signupData.email) {
+      setSearchParams({ step: 2 }, { replace: true });
+    }
+  }, [currentStep, signupData, setSearchParams]);
 
   const updateData = (newData) => {
     setSignupData((prev) => ({ ...prev, ...newData }));
@@ -82,22 +117,27 @@ export const SignupProvider = ({ children }) => {
 
   const clearSignupData = () => {
     sessionStorage.removeItem(SESSION_KEY);
-    sessionStorage.removeItem(SESSION_EPOCH_KEY);
+    sessionStorage.removeItem(STEP_KEY);
+    sessionStorage.removeItem(TIMESTAMP_KEY);
     setSignupData(initialData);
   };
 
   const nextStep = () => {
     const next = Math.min(currentStep + 1, 5);
     setSearchParams({ step: next });
+    sessionStorage.setItem(STEP_KEY, String(next));
   };
   
   const prevStep = () => {
     const prev = Math.max(currentStep - 1, 1);
     setSearchParams({ step: prev });
+    sessionStorage.setItem(STEP_KEY, String(prev));
   };
   
   const goToStep = (step) => {
-    setSearchParams({ step });
+    const valid = Math.max(1, Math.min(step, 5));
+    setSearchParams({ step: valid });
+    sessionStorage.setItem(STEP_KEY, String(valid));
   };
 
   return (

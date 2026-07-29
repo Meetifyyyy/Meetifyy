@@ -6,7 +6,6 @@ export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('theme');
     if (saved) return saved;
-    if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark';
     return 'light';
   });
 
@@ -16,20 +15,6 @@ export function ThemeProvider({ children }) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handle = (e) => {
-      if (!localStorage.getItem('theme_preference_set')) {
-        setTheme(e.matches ? 'dark' : 'light');
-      }
-    };
-    mq.addEventListener ? mq.addEventListener('change', handle) : mq.addListener(handle);
-    return () =>
-      mq.removeEventListener
-        ? mq.removeEventListener('change', handle)
-        : mq.removeListener(handle);
-  }, []);
 
   const toggleTheme = () => {
     if (isTransitioningRef.current) return;

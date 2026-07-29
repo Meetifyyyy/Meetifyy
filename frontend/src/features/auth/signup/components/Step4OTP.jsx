@@ -120,21 +120,15 @@ export default function Step4OTP() {
 
   return (
     <AnimatedStep className={styles.stepWrapper}>
-
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-primary)', marginBottom: '1rem' }}>
-        <Mail size={24} />
-        <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>Verify Email</span>
-      </div>
       <h2 className={styles.headline}>Enter verification code</h2>
       <p className={styles.subheadline}>We sent a 6-digit code to <strong>{signupData.email || 'your email'}</strong></p>
 
       {status === 'success' ? (
         <div className={styles.statusContainer}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--color-success)', marginBottom: '1.5rem' }}>
-            <Check size={36} />
+          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.1)', color: 'var(--color-success)', marginBottom: '1rem' }}>
+            <Check size={32} />
           </div>
-          <p style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-success)', margin: 0 }}>Email verified successfully!</p>
+          <p style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--color-success)', margin: 0 }}>Email verified successfully!</p>
         </div>
       ) : (
         <form onSubmit={(e) => { e.preventDefault(); handleVerify(); }} style={{ width: '100%' }}>
@@ -157,9 +151,9 @@ export default function Step4OTP() {
             ))}
           </div>
 
-          <div style={{ minHeight: '2rem', textAlign: 'center' }}>
+          <div style={{ minHeight: '1.5rem', textAlign: 'center' }}>
             {error && (
-              <div className={styles.errorText} style={{ justifyContent: 'center' }}><AlertCircle size={16} /> {error}</div>
+              <div className={styles.errorText} style={{ justifyContent: 'center' }}><AlertCircle size={13} /> {error}</div>
             )}
           </div>
 

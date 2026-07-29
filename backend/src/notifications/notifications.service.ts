@@ -27,32 +27,11 @@ export class NotificationsService implements OnModuleInit {
   }
 
   onModuleInit() {
-    // 1. Follow / Unfollow Reconciliation
-    this.eventEmitter.on('follow.created', async (payload: DomainEventPayload) => {
-      const { followerId, followingId } = payload.data || {};
-      if (!followerId || !followingId) return;
-      const actor = await this.prisma.user.findUnique({
-        where: { id: followerId },
-        select: { username: true, displayName: true, avatar: true }
-      });
-      await this.createNotification({
-        recipientId: followingId,
-        actorId: followerId,
-        type: 'FOLLOW' as any,
-        entityType: undefined,
-        entityId: followerId,
-        title: 'New Follower',
-        body: `${actor?.displayName || actor?.username || 'Someone'} started following you.`,
-        metadata: {
-          version: 1,
-          actorId: followerId,
-          username: actor?.username,
-          actorDisplayName: actor?.displayName,
-          actorAvatar: actor?.avatar,
-        },
-      }).catch(err => this.logger.warn('Failed to reconcile follow.created event', err));
-    });
+    // Follow notifications are now handled by BullMQ (NotificationsProcessor).
+    // The follow.created event is still emitted for real-time socket broadcasts
+    // (presence updates, feed invalidation) but notification creation is decoupled.
 
+    // Unfollow: cancel notification when user unfollows
     this.eventEmitter.on('follow.deleted', async (payload: DomainEventPayload) => {
       const { followerId, followingId } = payload.data || {};
       if (!followerId || !followingId) return;
@@ -95,32 +74,60 @@ export class NotificationsService implements OnModuleInit {
     });
   }
 
-  private async incrementUnreadCount(userId: string) {
-    if (!this.redis) return;
+  /**
+   * Increments the unread count only if the key already exists in Redis
+   * (avoids seeding a wrong starting value).
+   * Uses a pipeline to combine EXISTS + INCR into one round-trip.
+   * Returns the new count if incremented, or null.
+   */
+  private async incrementUnreadCount(userId: string): Promise<number | null> {
+    if (!this.redis) return null;
     const redisKey = `notifications:unread:${userId}`;
     try {
-      const exists = await this.redis.exists(redisKey);
-      if (exists) {
-        await this.redis.incr(redisKey);
+      // Pipeline: EXISTS and INCR in one network round-trip.
+      // If EXISTS returns 0 (key absent), we skip INCR so we don't create a
+      // stale counter — getUnreadCount will seed it from DB on next read.
+      const pipeline = this.redis.pipeline();
+      pipeline.exists(redisKey);
+      pipeline.incr(redisKey);
+      const results = await pipeline.exec();
+      // results[0] = [err, existsResult], results[1] = [err, incrResult]
+      const existsResult = results?.[0]?.[1] as number;
+      const incrResult = results?.[1]?.[1] as number;
+      if (!existsResult) {
+        // Key didn't exist before — the INCR wrongly seeded it to 1. Delete it.
+        await this.redis.del(redisKey);
+        return null;
       }
+      return incrResult;
     } catch (err) {
       this.logger.error('Failed to increment unread count in Redis', err);
+      return null;
     }
   }
 
-  private async decrementUnreadCount(userId: string) {
-    if (!this.redis) return;
+  /**
+   * Decrements unread count using a Lua script so the whole read-check-decr
+   * is atomic in a single round-trip.
+   * Returns the new count if decremented, or null.
+   */
+  private async decrementUnreadCount(userId: string): Promise<number | null> {
+    if (!this.redis) return null;
     const redisKey = `notifications:unread:${userId}`;
+    // Lua: only decrement if the key exists and value > 0.
+    const luaScript = `
+      local v = redis.call('GET', KEYS[1])
+      if v == false then return nil end
+      local n = tonumber(v)
+      if n == nil or n <= 0 then return 0 end
+      return redis.call('DECR', KEYS[1])
+    `;
     try {
-      const exists = await this.redis.exists(redisKey);
-      if (exists) {
-        const countStr = await this.redis.get(redisKey);
-        if (countStr && parseInt(countStr, 10) > 0) {
-          await this.redis.decr(redisKey);
-        }
-      }
+      const result = await (this.redis as any).eval(luaScript, 1, redisKey) as number | null;
+      return result;
     } catch (err) {
       this.logger.error('Failed to decrement unread count in Redis', err);
+      return null;
     }
   }
 
@@ -172,10 +179,23 @@ export class NotificationsService implements OnModuleInit {
     }
 
     try {
-      // 1. Check Preferences
-      const prefs = await this.prisma.notificationPreferences.findUnique({
-        where: { userId: dto.recipientId },
-      });
+      // 1. Check Preferences — cached in Redis for 5 minutes (Fix #5)
+      const prefsKey = `notif:prefs:${dto.recipientId}`;
+      let prefs: any = null;
+      if (this.redis) {
+        try {
+          const cached = await this.redis.get(prefsKey);
+          if (cached) prefs = JSON.parse(cached);
+        } catch { /* ignore redis errors */ }
+      }
+      if (!prefs) {
+        prefs = await this.prisma.notificationPreferences.findUnique({
+          where: { userId: dto.recipientId },
+        });
+        if (prefs && this.redis) {
+          this.redis.set(prefsKey, JSON.stringify(prefs), 'EX', 300).catch(() => {});
+        }
+      }
 
       if (prefs) {
         if (dto.type === NotificationType.LIKE || dto.type === NotificationType.COMMENT_LIKE) {
@@ -309,7 +329,9 @@ export class NotificationsService implements OnModuleInit {
 
       let populatedNotif: any = notification;
       if (notification?.actorId) {
-        const actor = await this.prisma.user.findUnique({
+        // Use pre-populated actor if provided by the caller (e.g. BullMQ job) to
+        // skip a DB round-trip. Fall back to DB fetch for all other code paths.
+        const actor = dto.prePopulatedActor ?? await this.prisma.user.findUnique({
           where: { id: notification.actorId },
           select: { id: true, username: true, displayName: true, avatar: true },
         });
@@ -318,8 +340,9 @@ export class NotificationsService implements OnModuleInit {
 
       this.domainEventService.emit('notification:new', populatedNotif, [dto.recipientId]);
       if ((dto.type as any) !== 'MESSAGE') {
-        await this.incrementUnreadCount(dto.recipientId);
-        await this.emitUnreadCount(dto.recipientId);
+        const newCount = await this.incrementUnreadCount(dto.recipientId);
+        // Pass newCount to avoid a Redis re-read inside emitUnreadCount
+        await this.emitUnreadCount(dto.recipientId, newCount ?? undefined);
       }
 
       this.logger.log(`Notification delivered type=${dto.type} to=${dto.recipientId}`);
@@ -401,8 +424,12 @@ export class NotificationsService implements OnModuleInit {
     return { count };
   }
 
-  async emitUnreadCount(userId: string) {
-    const { count } = await this.getUnreadCount(userId);
+  async emitUnreadCount(userId: string, knownCount?: number) {
+    // If the caller already knows the new count (e.g. just after incr/decr), use it
+    // directly to skip the Redis re-read.
+    const count = knownCount !== undefined
+      ? knownCount
+      : (await this.getUnreadCount(userId)).count;
     this.domainEventService.emit('notifications:unread_count', { count }, [userId]);
   }
 
@@ -415,10 +442,11 @@ export class NotificationsService implements OnModuleInit {
       where: { id },
       data: { readAt: new Date() },
     });
+    let newCount: number | null = null;
     if (!notification.readAt) {
-      await this.decrementUnreadCount(userId);
+      newCount = await this.decrementUnreadCount(userId);
     }
-    await this.emitUnreadCount(userId);
+    await this.emitUnreadCount(userId, newCount ?? undefined);
     return updated;
   }
 
@@ -428,7 +456,7 @@ export class NotificationsService implements OnModuleInit {
       data: { readAt: new Date() },
     });
     await this.setUnreadCountZero(userId);
-    await this.emitUnreadCount(userId);
+    await this.emitUnreadCount(userId, 0);
     return { success: true };
   }
 
@@ -443,10 +471,11 @@ export class NotificationsService implements OnModuleInit {
       data: { deletedAt: new Date() },
     });
     
+    let newCount: number | null = null;
     if (!notification.readAt) {
-      await this.decrementUnreadCount(userId);
+      newCount = await this.decrementUnreadCount(userId);
     }
-    await this.emitUnreadCount(userId);
+    await this.emitUnreadCount(userId, newCount ?? undefined);
     return { success: true };
   }
 
@@ -475,9 +504,10 @@ export class NotificationsService implements OnModuleInit {
       data: { deletedAt: new Date() },
     });
 
+    let newCount: number | null = null;
     if (!existing.readAt) {
-      await this.decrementUnreadCount(recipientId);
-      await this.emitUnreadCount(recipientId);
+      newCount = await this.decrementUnreadCount(recipientId);
+      await this.emitUnreadCount(recipientId, newCount ?? undefined);
     }
 
     this.domainEventService.emit('notification:cancelled', {

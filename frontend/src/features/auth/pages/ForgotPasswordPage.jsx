@@ -69,15 +69,11 @@ export default function ForgotPasswordPage() {
 
   return (
     <>
-      <Background />
       <div className={styles.flowContainer}>
         
         <div className={styles.progressContainer}>
-          <button onClick={() => goBack('/login')} className={styles.backButton}>
-            <span className={styles.iconCircle}>
-              <ArrowLeft size={20} />
-            </span>
-            <span className={styles.backText}>Back</span>
+          <button onClick={() => goBack('/login')} className={styles.backButton} aria-label="Go back">
+            <ArrowLeft size={22} />
           </button>
         </div>
 
@@ -92,17 +88,22 @@ export default function ForgotPasswordPage() {
                 <h1 className={styles.headline}>Reset Password</h1>
                 <p className={styles.subheadline}>Enter your email and we'll send a reset link if an account exists.</p>
                 <form onSubmit={handleSubmit} style={{ width: '100%', marginTop: '1.5rem' }}>
+                  <div className={styles.inputGroup}>
+                    <div className={styles.inputWrapper}>
+                      <input
+                        id="email"
+                        type="email"
+                        autoFocus
+                        className={styles.largeInput}
+                        placeholder=" "
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                      />
+                      <label htmlFor="email" className={styles.floatingLabel}>Email Address</label>
+                    </div>
+                  </div>
                   
-                  <input
-                    type="email"
-                    autoFocus
-                    className={styles.largeInput}
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                  
-                  <button type="submit" className={styles.continueBtn} disabled={isSubmitting} style={{ marginTop: '1.5rem' }}>
+                  <button type="submit" className={styles.continueBtn} disabled={isSubmitting} style={{ marginTop: '1.25rem' }}>
                     {isSubmitting ? 'Sending...' : 'Send Reset Link'} <ArrowRight className={styles.btnIcon} />
                   </button>
                 </form>

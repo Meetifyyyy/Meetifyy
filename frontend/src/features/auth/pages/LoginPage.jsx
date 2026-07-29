@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { ArrowRight, AlertCircle } from 'lucide-react';
+import { ArrowRight, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import loginIllustration from '@assets/login-illustration.png';
 import s from './LoginPage.module.css';
 
@@ -10,6 +10,7 @@ export default function LoginPage() {
 
   const [user, setUser] = useState('');
   const [pass, setPass] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -28,8 +29,6 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      // Just call login — PublicRoute will redirect to /home
-      // automatically once isLoggedIn flips true via onAuthStateChange.
       await login(user.trim(), pass);
     } catch (err) {
       setError(err.message || 'Invalid username or password.');
@@ -58,59 +57,69 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               {/* User box */}
               <div className={s.inputGroup}>
-                <input
-                  id="user"
-                  type="text"
-                  autoFocus
-                  autoComplete="username"
-                  className={`${s.textInput} ${error && !user.trim() ? s.textInputError : ''}`}
-                  placeholder=" "
-                  value={user}
-                  onChange={(e) => {
-                    // If it contains @ it's an email — allow uppercase, else force lowercase
-                    const val = e.target.value;
-                    setUser(val.includes('@') ? val : val.toLowerCase());
-                    if (error) setError(null);
-                  }}
-                />
-                <label htmlFor="user" className={s.floatingLabel}>Username or Email</label>
+                <div className={s.inputWrapper}>
+                  <input
+                    id="user"
+                    type="text"
+                    autoFocus
+                    autoComplete="username"
+                    className={`${s.textInput} ${error && !user.trim() ? s.textInputError : ''}`}
+                    placeholder=" "
+                    value={user}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setUser(val.includes('@') ? val : val.toLowerCase());
+                      if (error) setError(null);
+                    }}
+                  />
+                  <label htmlFor="user" className={s.floatingLabel}>Username or Email</label>
+                </div>
               </div>
 
               {/* Password box */}
               <div className={s.inputGroup}>
-                <input
-                  id="password"
-                  type="password"
-                  className={`${s.textInput} ${error && user.trim() && !pass ? s.textInputError : ''}`}
-                  placeholder=" "
-                  value={pass}
-                  onChange={(e) => {
-                    setPass(e.target.value);
-                    if (error) setError(null);
-                  }}
-                />
-                <label htmlFor="password" className={s.floatingLabel}>Password</label>
+                <div className={s.inputWrapper}>
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    className={`${s.textInput} ${s.passwordInput} ${error && user.trim() && !pass ? s.textInputError : ''}`}
+                    placeholder=" "
+                    value={pass}
+                    onChange={(e) => {
+                      setPass(e.target.value);
+                      if (error) setError(null);
+                    }}
+                  />
+                  <label htmlFor="password" className={s.floatingLabel}>Password</label>
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    className={s.togglePassBtn}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
 
               {/* Actions Row */}
               <div className={s.actionsRow}>
-                {/* Forgot password button */}
                 <Link to="/forgot-password" className={s.forgotLink}>
                   Forgot password?
                 </Link>
               </div>
 
-              <div style={{ minHeight: '1rem', marginBottom: '0.75rem' }}>
-                {error && (
-                  <div className={s.errorBox}>
-                    <AlertCircle size={16} />
-                    <span>{error}</span>
-                  </div>
-                )}
-              </div>
+              {error && (
+                <div className={s.errorBox}>
+                  <AlertCircle size={13} />
+                  <span>{error}</span>
+                </div>
+              )}
 
               {/* Log In Button */}
               <button

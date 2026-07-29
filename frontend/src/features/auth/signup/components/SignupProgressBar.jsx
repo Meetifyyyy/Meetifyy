@@ -21,11 +21,8 @@ export default function SignupProgressBar() {
   return (
     <>
       <div className={styles.progressContainer}>
-        <button onClick={handleBack} className={styles.backButton}>
-          <span className={styles.iconCircle}>
-            <ArrowLeft size={20} />
-          </span>
-          <span className={styles.backText}>Back</span>
+        <button onClick={handleBack} className={styles.backButton} aria-label="Go back">
+          <ArrowLeft size={22} />
         </button>
         <div className={styles.progressTrack}>
           <div

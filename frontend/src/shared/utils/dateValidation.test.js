@@ -38,8 +38,8 @@ describe('validateDOB', () => {
       expect(res.isValid).toBe(true);
     });
 
-    it('accepts older users', () => {
-      const res = validateDOB(1990, 1, 1);
+    it('accepts older users back to 1950', () => {
+      const res = validateDOB(1950, 1, 1);
       expect(res.isValid).toBe(true);
     });
 

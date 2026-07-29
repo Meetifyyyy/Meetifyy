@@ -86,19 +86,32 @@ function ProtectedRoute({ children }) {
   const location = useLocation();
   if (loading) return null;
   if (!isLoggedIn) return <Navigate to="/" replace state={{ from: location }} />;
-  if (currentUser?.isNewUser && location.pathname !== '/onboarding' && location.pathname !== '/signup') return <Navigate to="/onboarding" replace />;
+  if (currentUser?.isNewUser && location.pathname !== '/onboarding') {
+    window.location.replace('/onboarding');
+    return null;
+  }
   return children;
 }
 
 function PublicRoute({ children }) {
   const { isLoggedIn, currentUser, loading } = useAuth();
-  const location = useLocation();
   if (loading) return null;
   if (isLoggedIn) {
-    if (currentUser?.isNewUser && location.pathname === '/signup') {
-      return children;
+    if (currentUser?.isNewUser) {
+      window.location.replace('/onboarding');
+      return null;
     }
     return <Navigate to="/home" replace />;
+  }
+  return children;
+}
+
+function StaticRoute({ children }) {
+  const { isLoggedIn, currentUser, loading } = useAuth();
+  if (loading) return null;
+  if (isLoggedIn && currentUser?.isNewUser) {
+    window.location.replace('/onboarding');
+    return null;
   }
   return children;
 }
@@ -202,15 +215,15 @@ export default function App() {
         },
         {
           path: '/about',
-          element: withBoundary(<AboutPage />, null),
+          element: <StaticRoute>{withBoundary(<AboutPage />, null)}</StaticRoute>,
         },
         {
           path: '/privacy-policy',
-          element: withBoundary(<PrivacyPolicyPage />, null),
+          element: <StaticRoute>{withBoundary(<PrivacyPolicyPage />, null)}</StaticRoute>,
         },
         {
           path: '/terms-and-conditions',
-          element: withBoundary(<TermsPage />, null),
+          element: <StaticRoute>{withBoundary(<TermsPage />, null)}</StaticRoute>,
         },
         {
           path: '/terms',
@@ -218,15 +231,15 @@ export default function App() {
         },
         {
           path: '/community-guidelines',
-          element: withBoundary(<CommunityGuidelinesPage />, null),
+          element: <StaticRoute>{withBoundary(<CommunityGuidelinesPage />, null)}</StaticRoute>,
         },
         {
           path: '/cookie-policy',
-          element: withBoundary(<CookiePolicyPage />, null),
+          element: <StaticRoute>{withBoundary(<CookiePolicyPage />, null)}</StaticRoute>,
         },
         {
           path: '/contact',
-          element: withBoundary(<ContactPage />, null),
+          element: <StaticRoute>{withBoundary(<ContactPage />, null)}</StaticRoute>,
         },
         {
           element: (

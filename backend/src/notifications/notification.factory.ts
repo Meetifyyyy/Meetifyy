@@ -11,6 +11,8 @@ export interface CreateNotificationDto {
   body: string;
   metadata: any;
   expiresAt?: Date;
+  /** Pre-populated actor data — skips the actor DB re-fetch in createNotification */
+  prePopulatedActor?: { id: string; username: string; displayName: string | null; avatar: string | null };
 }
 
 @Injectable()
