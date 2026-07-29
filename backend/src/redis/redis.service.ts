@@ -102,20 +102,38 @@ export class RedisService implements OnModuleDestroy {
 
     const lockKey = `lock:${key}`;
     const lockVal = Math.random().toString(36).substring(2);
+
+    // Retry acquiring the lock for up to ttlMs/2, with 50ms backoff steps.
+    const maxWait = Math.floor(ttlMs / 2);
+    const step = 50;
+    let waited = 0;
     let acquired = false;
 
-    try {
+    while (waited <= maxWait) {
       const res = await this.client.set(lockKey, lockVal, 'PX', ttlMs, 'NX');
-      acquired = res === 'OK';
+      if (res === 'OK') {
+        acquired = true;
+        break;
+      }
+      await new Promise(r => setTimeout(r, step));
+      waited += step;
+    }
+
+    if (!acquired) {
+      // Fall through to running the function without distributed exclusion
+      // (in-process lock still serializes within this instance).
+      this.logger.warn(`Redis lock contended for key=${key}, proceeding without distributed lock`);
+      return fn();
+    }
+
+    try {
       return await fn();
     } finally {
-      if (acquired && this.client) {
-        try {
-          const currentVal = await this.client.get(lockKey);
-          if (currentVal === lockVal) await this.client.del(lockKey);
-        } catch {
-          // Ignore release errors
-        }
+      try {
+        const currentVal = await this.client.get(lockKey);
+        if (currentVal === lockVal) await this.client.del(lockKey);
+      } catch {
+        // Ignore release errors
       }
     }
   }

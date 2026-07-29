@@ -111,22 +111,18 @@ export default function ResetPasswordPage() {
 
   if (isCheckingSession) {
     return (
-      <>
-        <Background />
-        <div className={styles.flowContainer}>
-          <div className={styles.contentArea}>
-            <div className={styles.stepWrapper} style={{ alignItems: 'center', justifyContent: 'center' }}>
-              <p style={{ color: 'var(--color-text-muted)' }}>Verifying reset link…</p>
-            </div>
+      <div className={styles.flowContainer}>
+        <div className={styles.contentArea}>
+          <div className={styles.stepWrapper} style={{ alignItems: 'center', justifyContent: 'center' }}>
+            <p style={{ color: 'var(--color-text-muted)' }}>Verifying reset link…</p>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
   return (
     <>
-      <Background />
       <div className={styles.flowContainer}>
         
         <div className={styles.progressContainer}>
@@ -142,48 +138,49 @@ export default function ResetPasswordPage() {
               <>
                 <h1 className={styles.headline}>Set New Password</h1>
                 <p className={styles.subheadline}>Please choose a new, secure password.</p>
-                <form onSubmit={handleSubmit} style={{ width: '100%', marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <form onSubmit={handleSubmit} style={{ width: '100%', marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      autoFocus
-                      className={styles.largeInput}
-                      placeholder="New password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      style={{ paddingRight: '2.5rem' }}
-                    />
-                    <button
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={{
-                        position: 'absolute',
-                        right: 0,
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'var(--color-text-light)'
-                      }}
-                    >
-                      {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                    </button>
+                  <div className={styles.inputGroup}>
+                    <div className={styles.inputWrapper}>
+                      <input
+                        id="new-password"
+                        type={showPassword ? 'text' : 'password'}
+                        autoFocus
+                        className={styles.largeInput}
+                        placeholder=" "
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        style={{ paddingRight: '2.75rem' }}
+                      />
+                      <label htmlFor="new-password" className={styles.floatingLabel}>New Password</label>
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        className={styles.togglePassBtn}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
                   </div>
                   
-                  <div>
-                    <input
-                      type="password"
-                      className={styles.largeInput}
-                      placeholder="Confirm new password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                    />
+                  <div className={styles.inputGroup}>
+                    <div className={styles.inputWrapper}>
+                      <input
+                        id="confirm-new-password"
+                        type="password"
+                        className={styles.largeInput}
+                        placeholder=" "
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                      />
+                      <label htmlFor="confirm-new-password" className={styles.floatingLabel}>Confirm New Password</label>
+                    </div>
                   </div>
                   
-                  <button type="submit" className={styles.continueBtn} disabled={isSubmitting || !hasValidSession} style={{ marginTop: '1rem' }}>
+                  <button type="submit" className={styles.continueBtn} disabled={isSubmitting || !hasValidSession} style={{ marginTop: '1.25rem' }}>
                     {isSubmitting ? 'Updating...' : 'Update Password'} <ArrowRight className={styles.btnIcon} />
                   </button>
                 </form>

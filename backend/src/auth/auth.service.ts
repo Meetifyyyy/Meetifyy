@@ -22,8 +22,8 @@ function validateBirthday(birthdayStr: string) {
   }
 
   const currentYear = new Date().getFullYear();
-  if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1990 || y > currentYear) {
-    throw new BadRequestException(`Year of birth must be between 1990 and ${currentYear}.`);
+  if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1950 || y > currentYear) {
+    throw new BadRequestException(`Year of birth must be between 1950 and ${currentYear}.`);
   }
 
   const dateObj = new Date(y, m - 1, d);

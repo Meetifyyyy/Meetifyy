@@ -81,6 +81,7 @@ export function useActivities() {
  */
 export function useActivitiesList() {
   const queryClient = useQueryClient();
+  const { isLoggedIn } = useAuth();
   const cached = queryClient.getQueryData(CREW_KEYS.all);
   const flat = useMemo(
     () => cached?.pages?.flatMap((p) => p?.activities ?? p ?? []) ?? [],
@@ -91,7 +92,7 @@ export function useActivitiesList() {
   const query = useQuery({
     queryKey: ['activities', 'list'],
     queryFn: () => activitiesApi.getAll(20),
-    enabled: flat.length === 0,
+    enabled: Boolean(isLoggedIn) && flat.length === 0,
     staleTime: 2 * 60 * 1000,
     select: (data) => data?.activities ?? data ?? [],
   });

@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useSignup } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';
-import { ArrowRight, AlertCircle, Lock, Eye, EyeOff } from 'lucide-react';
+import { ArrowRight, AlertCircle, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import styles from '../SignupFlow.module.css';
 
 export default function Step3Password() {
@@ -13,6 +13,8 @@ export default function Step3Password() {
   const [showPassword, setShowPassword] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [submitError, setSubmitError] = useState(null);
 
   const passwordError = useMemo(() => {
     if (!password) return "Password is required.";
@@ -31,6 +33,7 @@ export default function Step3Password() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setAttempted(true);
+    setSubmitError(null);
     if (isValid) {
       setIsSubmitting(true);
       try {
@@ -42,7 +45,7 @@ export default function Step3Password() {
         }
       } catch (err) {
         const message = typeof err === 'string' ? err : (err?.message || 'Failed to initiate signup. Please try again.');
-        alert(message);
+        setSubmitError(message);
       } finally {
         setIsSubmitting(false);
       }
@@ -51,69 +54,78 @@ export default function Step3Password() {
 
   return (
     <AnimatedStep className={styles.stepWrapper}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-primary)', marginBottom: '1rem' }}>
-        <Lock size={24} />
-        <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>Secure Account</span>
-      </div>
       <h2 className={styles.headline}>Set up a password</h2>
       <p className={styles.subheadline}>Keep your Meetifyy profile secure and private.</p>
 
       <form onSubmit={handleSubmit} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        <div>
-          <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>Choose Password</label>
-          <div style={{ position: 'relative' }}>
+        <div className={styles.inputGroup}>
+          <div className={styles.inputWrapper}>
             <input
+              id="choose-password"
               type={showPassword ? 'text' : 'password'}
               className={`${styles.largeInput} ${attempted && passwordError ? styles.inputError : ''}`}
-              placeholder="••••••••"
+              placeholder=" "
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              style={{ fontSize: '1.35rem', padding: '0.35rem 2.5rem 0.35rem 0', margin: '0.25rem 0 0 0' }}
+              style={{ paddingRight: '2.75rem' }}
             />
+            <label htmlFor="choose-password" className={styles.floatingLabel}>Choose Password</label>
             <button
               type="button"
+              tabIndex={-1}
+              className={styles.togglePassBtn}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => setShowPassword(!showPassword)}
-              style={{
-                position: 'absolute',
-                right: 0,
-                top: '8px',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--color-text-light)'
-              }}
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
-              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
           {attempted && passwordError && (
-            <div className={styles.errorText} style={{ marginTop: '0.25rem' }}><AlertCircle size={14} /> {passwordError}</div>
+            <div className={styles.errorText} style={{ marginTop: '0.25rem' }}><AlertCircle size={13} /> {passwordError}</div>
           )}
         </div>
 
-        <div>
-          <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>Confirm Password</label>
-          <input
-            type="password"
-            className={`${styles.largeInput} ${attempted && confirmError ? styles.inputError : ''}`}
-            placeholder="••••••••"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            style={{ fontSize: '1.35rem', padding: '0.35rem 0', margin: '0.25rem 0 0 0' }}
-          />
+        <div className={styles.inputGroup}>
+          <div className={styles.inputWrapper}>
+            <input
+              id="confirm-password"
+              type="password"
+              className={`${styles.largeInput} ${attempted && confirmError ? styles.inputError : ''}`}
+              placeholder=" "
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+            <label htmlFor="confirm-password" className={styles.floatingLabel}>Confirm Password</label>
+          </div>
           {attempted && confirmError && (
-            <div className={styles.errorText} style={{ marginTop: '0.25rem' }}><AlertCircle size={14} /> {confirmError}</div>
+            <div className={styles.errorText} style={{ marginTop: '0.25rem' }}><AlertCircle size={13} /> {confirmError}</div>
           )}
         </div>
 
-        <button 
-          type="submit" 
+        {submitError && (
+          <div className={styles.errorText} style={{ minHeight: 'auto', height: 'auto', whiteSpace: 'normal', color: 'var(--color-danger, #ef4444)' }}>
+            <AlertCircle size={13} /> {submitError}
+          </div>
+        )}
+
+        <button
+          type="submit"
           className={styles.continueBtn}
           disabled={isSubmitting}
-          style={{ width: '100%', justifyContent: 'center', marginTop: '1.5rem' }}
+          style={{ width: '100%', justifyContent: 'center', marginTop: '1.25rem' }}
         >
-          {isSubmitting ? 'Creating account...' : 'Continue'} <ArrowRight className={styles.btnIcon} />
+          {isSubmitting ? (
+            <>
+              <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+              <span>Creating account...</span>
+            </>
+          ) : (
+            <>
+              <span>Continue</span>
+              <ArrowRight size={18} className={styles.btnIcon} />
+            </>
+          )}
         </button>
       </form>
     </AnimatedStep>

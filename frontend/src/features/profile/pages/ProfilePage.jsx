@@ -171,13 +171,17 @@ export default function ProfilePage() {
   // Query Profile Data
   const { 
     data: profileUser, 
-    isLoading: isLoadingProfile, 
+    isLoading: isLoadingProfile,
+    isFetching: isFetchingProfile,
     error: profileError, 
     refetch: refetchProfile 
   } = useQuery({
     queryKey: ['profile', targetUsername],
     queryFn: () => usersApi.getByUsername(targetUsername),
     enabled: !!targetUsername && targetUsername !== 'unknown',
+    // Always refetch on mount — prevents stale data from a previous
+    // profile visit rendering silently while the new fetch runs in background.
+    staleTime: 0,
   });
 
   // Query User Posts
@@ -188,9 +192,14 @@ export default function ProfilePage() {
     queryKey: ['user-posts', targetUsername],
     queryFn: () => postsApi.getUserPosts(targetUsername, 20),
     enabled: !!targetUsername && targetUsername !== 'unknown',
+    staleTime: 0,
   });
 
-  if (isLoadingProfile) {
+  // Show skeleton on first load OR while fetching a different profile
+  // (isFetching covers the background-refetch case where cached data exists
+  //  but belongs to a previously visited profile)
+  const showingSkeleton = isLoadingProfile || (isFetchingProfile && !profileUser);
+  if (showingSkeleton) {
     return <ProfilePageSkeleton />;
   }
 

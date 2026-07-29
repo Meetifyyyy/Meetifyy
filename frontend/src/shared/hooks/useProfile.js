@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect } from 'react';
 import { usersApi } from '@shared/api/apiClient';
 import { idbGet, idbSet } from '@shared/lib/idb';
+import { useAuth } from '@shared/context/AuthContext';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
 export const PROFILE_KEYS = {
@@ -62,6 +63,7 @@ export function useProfile(username) {
  */
 export function useCampusUsers(limit = 50) {
   const queryClient = useQueryClient();
+  const { isLoggedIn } = useAuth();
 
   const query = useQuery({
     queryKey: [...PROFILE_KEYS.campusUsers, limit],
@@ -70,6 +72,7 @@ export function useCampusUsers(limit = 50) {
       idbSet('profiles', 'campus_users', data);
       return data;
     },
+    enabled: Boolean(isLoggedIn),
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
     placeholderData: (prev) => prev,

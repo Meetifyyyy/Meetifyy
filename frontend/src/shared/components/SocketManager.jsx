@@ -89,7 +89,7 @@ export default function SocketManager() {
             messagesApi.markAsRead(convIdToRead).catch(() => {});
           }
         }
-      } else if (!isMuted) {
+      } else if (!isMuted && window.location.pathname !== '/onboarding') {
         toast.custom((t) => {
           const isGroupMessage = Boolean(notification.metadata?.isGroup || notification.metadata?.conversationType === 'GROUP');
           const actorName = notification.actor?.displayName || notification.actor?.username || notification.metadata?.actorDisplayName || notification.metadata?.actorName || notification.metadata?.actorUsername || 'Someone';
@@ -664,7 +664,7 @@ export default function SocketManager() {
       if (!isViewingCurrentChat) {
         const isMuted = Boolean(targetConv?.muted || targetConv?.isMuted);
 
-        if (!isMuted) {
+        if (!isMuted && window.location.pathname !== '/onboarding') {
           toast.custom((t) => {
             const actorName = message.senderName || message.sender?.displayName || message.sender?.username || 'Someone';
             const actorAvatar = message.senderAvatar || message.sender?.avatar || '';

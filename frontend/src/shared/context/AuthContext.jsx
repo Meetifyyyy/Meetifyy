@@ -260,12 +260,19 @@ export function AuthProvider({ children }) {
   const initiateSignup = useCallback(async (userData) => {
     if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
+    if (!userData.email || !userData.email.trim()) {
+      throw new Error('College email is required to sign up. Please check your details.');
+    }
+    if (!userData.password) {
+      throw new Error('Password is required.');
+    }
+
     const { data, error } = await supabase.auth.signUp({
-      email: userData.email,
+      email: userData.email.trim().toLowerCase(),
       password: userData.password,
       options: {
         data: {
-          displayName: userData.firstName ? `${userData.firstName} ${userData.lastName || ''}`.trim() : userData.username,
+          displayName: userData.name || userData.displayName || userData.username,
           username: userData.username,
           birthday: userData.birthday,
         }

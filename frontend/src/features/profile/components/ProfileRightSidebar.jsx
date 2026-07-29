@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { PROFILE_KEYS } from '@shared/hooks/useProfile';
 
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -109,6 +111,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
   
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
 
   const [suggestedUsers, setSuggestedUsers] = useState([]);
   const [nowTime, setNowTime] = useState(Date.now());
@@ -209,7 +212,11 @@ export default function ProfileRightSidebar({ embedded = false }) {
             <div 
               key={u.id} 
               className={s.personItem}
-              onClick={() => navigate(`/profile/${u.username}`, { state: { from: location.pathname } })}
+              onClick={() => {
+                // Pre-seed the cache so ProfilePage renders instantly (no skeleton flash)
+                queryClient.setQueryData(PROFILE_KEYS.byUsername(u.username), u);
+                navigate(`/profile/${u.username}`, { state: { from: location.pathname } });
+              }}
               style={{ cursor: 'pointer' }}
             >
               <Avatar src={u.avatar} name={u.displayName || u.username} size="38px" />
