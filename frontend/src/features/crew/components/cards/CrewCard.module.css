@@ -39,11 +39,12 @@
 
 .calendarBadge {
   position: absolute;
-  bottom: -3px;
-  right: -3px;
+  bottom: -8px;
+  right: -10px;
   z-index: 5;
-  transform: scale(0.72);
+  transform: scale(0.92);
   transform-origin: bottom right;
+  box-shadow: none;
 }
 
 .clickable {
@@ -322,7 +323,7 @@
     border-radius: 6px;
     bottom: -8px;
     right: -2px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+    box-shadow: none;
   }
 
   .calMonth {

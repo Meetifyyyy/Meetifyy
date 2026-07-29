@@ -80,6 +80,15 @@ export class AdminCollegesController {
     return this.collegesService.addDomain(id, domain, isPrimary);
   }
 
+  @Patch(':id/domains/:domainId/status')
+  async toggleDomainStatus(
+    @Param('id') id: string,
+    @Param('domainId') domainId: string,
+    @Body('status') status: 'ACTIVE' | 'DISABLED',
+  ) {
+    return this.collegesService.toggleDomainStatus(id, domainId, status);
+  }
+
   @Delete(':id/domains/:domainId')
   async removeDomain(
     @Param('id') id: string,
@@ -91,5 +100,26 @@ export class AdminCollegesController {
   @Delete(':id')
   async deleteCollege(@Param('id') id: string) {
     return this.collegesService.softDeleteCollege(id);
+  }
+
+  @Get('requests/list')
+  async listCollegeRequests(
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.collegesService.listCollegeRequests({
+      status,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  @Patch('requests/:requestId/status')
+  async updateCollegeRequestStatus(
+    @Param('requestId') requestId: string,
+    @Body('status') status: string,
+  ) {
+    return this.collegesService.updateCollegeRequestStatus(requestId, status);
   }
 }

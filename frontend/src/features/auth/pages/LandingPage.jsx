@@ -56,6 +56,12 @@ export default function LandingPage() {
     const bodyEl = document.body;
     const rootEl = document.getElementById('root');
 
+    htmlEl.classList.add('landing-scroll-active');
+    bodyEl.classList.add('landing-scroll-active');
+    if (rootEl) {
+      rootEl.classList.add('landing-scroll-active');
+    }
+
     const prevHtmlOverflow = htmlEl.style.overflow;
     const prevBodyHeight = bodyEl.style.height;
     const prevBodyOverflow = bodyEl.style.overflow;
@@ -76,6 +82,11 @@ export default function LandingPage() {
     }
 
     return () => {
+      htmlEl.classList.remove('landing-scroll-active');
+      bodyEl.classList.remove('landing-scroll-active');
+      if (rootEl) {
+        rootEl.classList.remove('landing-scroll-active');
+      }
       htmlEl.style.overflow = prevHtmlOverflow;
       bodyEl.style.height = prevBodyHeight;
       bodyEl.style.overflow = prevBodyOverflow;

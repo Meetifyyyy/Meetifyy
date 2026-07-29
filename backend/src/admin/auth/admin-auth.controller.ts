@@ -9,6 +9,7 @@ import {
   Param,
   HttpCode,
   HttpStatus,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AdminAuthService } from './admin-auth.service';
@@ -111,7 +112,7 @@ export class AdminAuthController {
     const refreshToken = req.cookies?.admin_refresh || req.body?.refreshToken;
     if (!refreshToken) {
       this.clearAuthCookies(res);
-      return res.status(HttpStatus.UNAUTHORIZED).json({ message: 'Refresh token missing' });
+      throw new UnauthorizedException('Refresh token missing');
     }
 
     const ip = (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';

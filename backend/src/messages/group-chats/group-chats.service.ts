@@ -16,20 +16,20 @@ export class GroupChatsService extends MessagingCoreService {
   }
 
   async getUserGroupConversations(userId: string, limit: number = 20, offset: number = 0) {
-    const participants = await this.prisma.conversationParticipant.findMany({
+    const allParticipants = await this.prisma.conversationParticipant.findMany({
       where: {
         userId,
         deletedAt: null,
         conversation: { type: 'GROUP' }
       },
-      take: limit,
-      skip: offset,
       select: {
         isMuted: true,
         isPinned: true,
         clearedAt: true,
         lastReadAt: true,
+        unreadCount: true,
         groupUpdatesActive: true,
+        leftAt: true,
         conversation: {
           select: {
             id: true,
@@ -42,159 +42,51 @@ export class GroupChatsService extends MessagingCoreService {
             status: true,
             activityId: true,
             isActivityChat: true,
-            activity: true,
+            activity: { select: { id: true, title: true, coverImage: true, startDate: true, endDate: true, status: true } },
+            lastMessageId: true,
+            lastMessageText: true,
+            lastMessageType: true,
+            lastMessageAt: true,
+            lastMessageSenderId: true,
             createdAt: true,
             updatedAt: true,
             whoCanJoin: true,
             visibility: true,
             allowSharing: true,
             editGroupPermission: true,
-            joinRequests: {
-              where: { status: 'PENDING' },
-              select: {
-                userId: true,
-                createdAt: true,
-                user: {
-                  select: {
-                    id: true,
-                    username: true,
-                    displayName: true,
-                    avatar: true
-                  }
-                }
-              }
-            },
-            participants: {
-              where: { leftAt: null, deletedAt: null } as any,
-              select: {
-                userId: true,
-                role: true,
-                joinedAt: true,
-                user: {
-                  select: {
-                    id: true,
-                    username: true,
-                    displayName: true,
-                    avatar: true,
-                    settings: {
-                      select: {
-                        showOnlineStatus: true,
-                        whoCanSeeOnline: true,
-                        readReceipts: true
-                      }
-                    }
-                  }
-                }
-              }
-            },
+            _count: { select: { participants: true } }
           }
         }
       }
     });
 
-    const convIds = participants.map(p => p.conversation.id);
+    (allParticipants as any[]).sort((a: any, b: any) => {
+      const timeA = new Date(a.conversation.lastMessageAt || a.conversation.updatedAt || a.conversation.createdAt).getTime();
+      const timeB = new Date(b.conversation.lastMessageAt || b.conversation.updatedAt || b.conversation.createdAt).getTime();
+      return timeB - timeA;
+    });
 
-    const lastMessages = await Promise.all(
-      participants.map(async (part) => {
-        const cId = part.conversation.id;
-        const clearedAt = part.clearedAt;
-        const whereClause: any = {
-          conversationId: cId,
-          deletedAt: null
-        };
-        if (clearedAt) {
-          whereClause.createdAt = { gt: clearedAt };
-        }
-        const lastMsg = await this.prisma.message.findFirst({
-          where: whereClause,
-          orderBy: { createdAt: 'desc' },
-          select: { id: true, conversationId: true, createdAt: true, senderId: true, type: true, payload: true, sender: { select: { id: true, displayName: true, username: true } } }
-        });
-        return { cId, lastMsg };
-      })
-    );
+    const participants = allParticipants.slice(offset, offset + limit);
 
-    const lastMsgMap = new Map(
-      lastMessages.map(({ cId, lastMsg }) => {
-        if (!lastMsg) return [cId, null];
-        const payload = (lastMsg.payload as any) || {};
-        let text = payload.text || '';
-        if (!text) {
-          const mType = (payload.mediaType || lastMsg.type || '').toLowerCase();
-          if (mType.includes('image') || mType.includes('photo')) text = 'Photo';
-          else if (mType.includes('video')) text = 'Video';
-          else if (mType.includes('audio') || mType.includes('voice')) text = 'Audio';
-          else if (payload.mediaUrl) text = 'Attachment';
-        }
-        return [
-          cId,
-          {
-            createdAt: lastMsg.createdAt,
-            senderId: lastMsg.senderId,
-            senderName: lastMsg.sender?.displayName || lastMsg.sender?.username || 'Member',
-            type: lastMsg.type ? lastMsg.type.toLowerCase() : 'chat',
-            text,
-            mediaUrl: payload.mediaUrl || null,
-            mediaType: payload.mediaType || null
-          }
-        ];
-      })
-    );
-
-    const unreadMap = new Map<string, number>();
-    if (convIds.length > 0) {
-      await Promise.all(participants.map(async (part) => {
-        const cId = part.conversation.id;
-        const readAt = part.lastReadAt ? new Date(part.lastReadAt).getTime() : 0;
-        const clearAt = part.clearedAt ? new Date(part.clearedAt).getTime() : 0;
-        const maxTime = Math.max(readAt, clearAt);
-        const filterDate = maxTime > 0 ? new Date(maxTime) : new Date(0);
-
-        const count = await this.prisma.message.count({
-          where: {
-            conversationId: cId,
-            senderId: { not: userId },
-            deletedAt: null,
-            createdAt: { gt: filterDate }
-          }
-        });
-        unreadMap.set(cId, count);
-      }));
-    }
-
-    return Promise.all(participants.map(async (p) => {
+    return (participants as any[]).map((p: any) => {
       const conv = p.conversation;
-      const allParticipants = conv.participants || [];
-      const getRoleRank = (part: any, ownerId?: string | null) => {
-        if ((ownerId && part.userId === ownerId) || part.role === 'OWNER') return 0;
-        if (part.role === 'ADMIN') return 1;
-        return 2;
-      };
+      const pubId = conv.publicId || conv.id;
+      const groupAvatar = conv.avatarKey || conv.activity?.coverImage || null;
+      const actStartDate = conv.activity?.startDate;
+      const actStatus = (conv.activity?.status || conv.status || '').toUpperCase();
+      const hasStarted = ['IN_PROGRESS', 'STARTED', 'COMPLETED', 'ENDED', 'CLOSED', 'CANCELLED'].includes(actStatus) || (!!actStartDate && new Date(actStartDate) <= new Date());
+      const unreadCount = p.unreadCount || 0;
 
-      const sortedParticipants = [...allParticipants].sort((a, b) => {
-        const rankA = getRoleRank(a, conv.ownerId);
-        const rankB = getRoleRank(b, conv.ownerId);
-        if (rankA !== rankB) return rankA - rankB;
-        const timeA = a.joinedAt ? new Date(a.joinedAt).getTime() : 0;
-        const timeB = b.joinedAt ? new Date(b.joinedAt).getTime() : 0;
-        return timeA - timeB;
-      });
-
-      const adminsList = sortedParticipants.filter(part => part.role === 'OWNER' || part.role === 'ADMIN').map(part => part.userId);
-      const membersList = sortedParticipants.map(part => ({
-        userId: part.userId,
-        role: part.role,
-        joinedAt: part.joinedAt,
-        user: part.user
-      }));
-
-      const lastMsgInfo = lastMsgMap.get(conv.id);
-      const unreadCount = unreadMap.get(conv.id) || 0;
-      const pubId = (conv as any).publicId || conv.id;
-      const groupAvatar = conv.avatarKey || (conv as any).activity?.coverImage || null;
-      const actStartDate = (conv as any).activity?.startDate;
-      const actStatus = ((conv as any).activity?.status || conv.status || '').toUpperCase();
-      const hasStarted = actStatus === 'IN_PROGRESS' || actStatus === 'STARTED' || actStatus === 'COMPLETED' || actStatus === 'ENDED' || (!!actStartDate && new Date(actStartDate) <= new Date());
+      const resolvedLastMsg = conv.lastMessageAt ? {
+        id: conv.lastMessageId || null,
+        createdAt: conv.lastMessageAt,
+        senderId: conv.lastMessageSenderId || '',
+        senderName: conv.lastMessageSenderId === userId ? 'You' : '',
+        text: conv.lastMessageText || '',
+        type: conv.lastMessageType ? conv.lastMessageType.toLowerCase() : 'chat',
+        mediaUrl: null,
+        mediaType: null,
+      } : null;
 
       return {
         id: pubId,
@@ -206,9 +98,9 @@ export class GroupChatsService extends MessagingCoreService {
         hasStarted,
         activityHasStarted: hasStarted,
         isActivityChat: conv.type === 'ACTIVITY' || !!conv.activityId,
-        isMember: (p as any).leftAt == null,
+        isMember: p.leftAt == null,
         ownerId: conv.ownerId || null,
-        name: conv.name || 'Group',
+        name: conv.name || conv.activity?.title || 'Group',
         avatar: groupAvatar,
         description: conv.description || null,
         status: conv.status || 'ACTIVE',
@@ -219,35 +111,17 @@ export class GroupChatsService extends MessagingCoreService {
         allowSharing: conv.allowSharing !== false,
         editGroupPermission: conv.editGroupPermission || 'ADMIN',
         groupUpdatesActive: p.groupUpdatesActive !== false,
-        pendingRequests: (conv.joinRequests || []).map((r: any) => ({
-          userId: r.userId,
-          user: r.user ? {
-            id: r.user.id,
-            username: r.user.username,
-            displayName: r.user.displayName,
-            avatar: r.user.avatar,
-            name: r.user.displayName || r.user.username
-          } : null,
-          createdAt: r.createdAt
-        })),
-        admins: adminsList,
-        members: membersList,
-        memberCount: allParticipants.length,
+        pendingRequests: [],
+        admins: [],
+        members: [],
+        memberCount: conv._count?.participants || 0,
         pinned: p.isPinned || false,
         muted: p.isMuted || false,
         unreadCount,
         unread: unreadCount,
-        lastMessage: lastMsgInfo ? {
-          createdAt: lastMsgInfo.createdAt,
-          senderId: lastMsgInfo.senderId,
-          senderName: lastMsgInfo.senderName,
-          text: lastMsgInfo.text,
-          type: lastMsgInfo.type,
-          mediaUrl: lastMsgInfo.mediaUrl,
-          mediaType: lastMsgInfo.mediaType
-        } : null,
+        lastMessage: resolvedLastMsg,
       };
-    }));
+    });
   }
 
   async createGroup(userIds: string[], currentUserId: string, groupName: string) {
@@ -275,17 +149,24 @@ export class GroupChatsService extends MessagingCoreService {
 
   async updateGroupInfo(conversationId: string, userId: string, data: { name?: string; description?: string; avatarKey?: string; avatar?: string }) {
     const realConvId = await this.resolveConversationId(conversationId);
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } }
-    });
+
+    const [participant, conversation, user] = await Promise.all([
+      this.prisma.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId, conversationId: realConvId } }
+      }),
+      this.prisma.conversation.findUnique({
+        where: { id: realConvId },
+        select: { id: true, name: true, description: true, avatarKey: true, editGroupPermission: true, activityId: true, publicId: true }
+      }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { username: true, displayName: true }
+      })
+    ]);
+
     if (!participant) {
       throw new ForbiddenException('Not a member of this conversation');
     }
-
-    const conversation = await this.prisma.conversation.findUnique({
-      where: { id: realConvId },
-      select: { editGroupPermission: true }
-    });
 
     const perm = (conversation?.editGroupPermission || '').toUpperCase();
     const isAllowed = participant.role === 'OWNER' || participant.role === 'ADMIN' || perm === 'EVERYONE' || perm === 'ALL_MEMBERS' || perm === 'ALL';
@@ -298,23 +179,35 @@ export class GroupChatsService extends MessagingCoreService {
       avatarVal = undefined;
     }
 
-    const updated = await this.prisma.conversation.update({
-      where: { id: realConvId },
-      data: {
-        ...(data.name !== undefined ? { name: data.name } : {}),
-        ...(data.description !== undefined ? { description: data.description } : {}),
-        ...(avatarVal !== undefined ? { avatarKey: avatarVal } : {}),
-      }
-    });
-
-    if (updated.activityId && avatarVal !== undefined) {
-      await this.prisma.crewActivity.update({
-        where: { id: updated.activityId },
+    const [updated, participantRows] = await Promise.all([
+      this.prisma.conversation.update({
+        where: { id: realConvId },
+        data: {
+          ...(data.name !== undefined ? { name: data.name } : {}),
+          ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(avatarVal !== undefined ? { avatarKey: avatarVal } : {}),
+        }
+      }),
+      this.prisma.conversationParticipant.findMany({
+        where: { conversationId: realConvId, leftAt: null, deletedAt: null },
+        select: { userId: true }
+      }),
+      conversation?.activityId && avatarVal !== undefined ? this.prisma.crewActivity.update({
+        where: { id: conversation.activityId },
         data: { coverImage: avatarVal }
-      }).catch(() => {});
-    }
+      }).catch(() => {}) : Promise.resolve(null)
+    ]);
 
-    return updated;
+    const participantIds = participantRows.map(p => p.userId);
+    const rawName = user?.username || user?.displayName || 'Someone';
+    const actorHandle = rawName.startsWith('@') ? rawName : `@${rawName}`;
+
+    return {
+      updated,
+      convBefore: conversation,
+      actorHandle,
+      participantIds
+    };
   }
 
   async addGroupMember(conversationId: string, requesterId: string, targetUserId: string) {
@@ -362,16 +255,19 @@ export class GroupChatsService extends MessagingCoreService {
 
   async removeGroupMember(conversationId: string, requesterId: string, targetUserId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
-    const requester = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId: requesterId, conversationId: realConvId } }
-    });
+
+    const [requester, target] = await Promise.all([
+      this.prisma.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId: requesterId, conversationId: realConvId } }
+      }),
+      this.prisma.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } }
+      })
+    ]);
+
     if (!requester || (requester.role !== 'OWNER' && requester.role !== 'ADMIN')) {
       throw new ForbiddenException('Only group admins can remove members');
     }
-
-    const target = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } }
-    });
 
     if (!target || (target as any).leftAt || target.deletedAt) {
       throw new NotFoundException('Member not found in group');

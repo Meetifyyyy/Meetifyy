@@ -1,25 +1,56 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, OnModuleInit, OnModuleDestroy, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { generatePublicId } from '../common/utils/public-id.util';
 import { LruCache } from '../common/utils/lru-cache.util';
 import { MessagingCoreService } from './core/messaging-core.service';
+import { RedisService } from '../redis/redis.service';
+import { BlocksService } from '../users/blocks.service';
 
 @Injectable()
 export class MessagesService extends MessagingCoreService implements OnModuleInit, OnModuleDestroy {
   private instantMatchCleanupTimer?: NodeJS.Timeout;
   protected readonly logger = new Logger(MessagesService.name);
   private handleCache = new LruCache<string, string>(5000, 3600000);
+  private readonly redis: Redis | null;
 
   constructor(
     protected readonly prisma: PrismaService,
     protected readonly presenceService: PresenceService,
     protected readonly domainEventService: DomainEventService,
+    @Optional() private readonly redisService?: RedisService,
+    @Optional() private readonly blocksService?: BlocksService,
   ) {
     super(prisma, presenceService, domainEventService);
+    this.redis = this.redisService?.getClient() ?? null;
   }
+
+  async invalidateUserConversationsCache(userIds?: string[]) {
+    if (!this.redis) return;
+    try {
+      if (userIds && userIds.length > 0) {
+        for (const uId of userIds) {
+          let cursor = '0';
+          do {
+            const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', `user:conversations:${uId}:*`, 'COUNT', 50);
+            cursor = nextCursor;
+            if (keys && keys.length > 0) await this.redis.del(...keys);
+          } while (cursor !== '0');
+        }
+      } else {
+        let cursor = '0';
+        do {
+          const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', 'user:conversations:*', 'COUNT', 100);
+          cursor = nextCursor;
+          if (keys && keys.length > 0) await this.redis.del(...keys);
+        } while (cursor !== '0');
+      }
+    } catch {}
+  }
+
 
   async onModuleInit() {
     await this.cleanupExpiredInstantMatches();
@@ -48,6 +79,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
   async resolveConversationId(identifier: string, currentUserId?: string): Promise<string> {
     if (!identifier) return identifier;
+    const isActPrefix = String(identifier).startsWith('act_');
     const cleanId = String(identifier).replace(/^(act_)+/, '');
 
     const cacheKey = `${identifier}:${currentUserId || ''}`;
@@ -56,8 +88,20 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       return cached.id;
     }
 
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
     try {
+      // 1. Fast path for activity IDs: check activityId first before any other lookups
+      if (isActPrefix) {
+        const actConv = await this.prisma.conversation.findUnique({
+          where: { activityId: cleanId },
+          select: { id: true }
+        });
+        if (actConv?.id) {
+          this.resolveCache.set(cacheKey, { id: actConv.id, timestamp: Date.now() });
+          return actConv.id;
+        }
+      }
+
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
       if (isUuid) {
         const directConv = await this.prisma.conversation.findUnique({
           where: { id: cleanId },
@@ -69,7 +113,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         }
       }
 
-      // 1. Direct index lookup via publicId (@unique index scan: 0.01ms)
+      // 2. Direct index lookup via publicId (@unique index scan: 0.01ms)
       const pubConv = await this.prisma.conversation.findUnique({
         where: { publicId: cleanId },
         select: { id: true }
@@ -79,14 +123,16 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         return pubConv.id;
       }
 
-      // 2. Direct index lookup via activityId (@unique index scan: 0.01ms)
-      const actConv = await this.prisma.conversation.findUnique({
-        where: { activityId: cleanId },
-        select: { id: true }
-      });
-      if (actConv?.id) {
-        this.resolveCache.set(cacheKey, { id: actConv.id, timestamp: Date.now() });
-        return actConv.id;
+      // 3. Fallback index lookup via activityId
+      if (!isActPrefix) {
+        const actConv = await this.prisma.conversation.findUnique({
+          where: { activityId: cleanId },
+          select: { id: true }
+        });
+        if (actConv?.id) {
+          this.resolveCache.set(cacheKey, { id: actConv.id, timestamp: Date.now() });
+          return actConv.id;
+        }
       }
 
       if (currentUserId && identifier !== currentUserId) {
@@ -265,7 +311,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     const pubId = publicIdOrId || realConvId;
     const clientKey = msgPayload.clientId || msgPayload.tempId || clientMsgIdHint || null;
 
-    return {
+    const msgRes = {
       id: message.id,
       conversationId: pubId,
       publicId: pubId,
@@ -288,6 +334,10 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       tempId: clientKey,
       clientId: clientKey,
     };
+
+    this.invalidateUserConversationsCache().catch(() => {});
+
+    return msgRes;
   }
 
   async getCatchupMessages(userId: string, sinceTimestamp: string) {
@@ -326,24 +376,43 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
   async getConversationHistory(conversationId: string, currentUserId?: string, deviceId?: string, beforeCursor?: string, limit: number = 50) {
     const realConvId = await this.resolveConversationId(conversationId, currentUserId);
+    const isActivityGroup = conversationId.startsWith('act_') || realConvId.startsWith('act_');
+    const actId = isActivityGroup ? (conversationId || realConvId).replace(/^act_/, '') : null;
+
     let clearedAt: Date | null = null;
     const whereCondition: any = {
       conversationId: realConvId,
       deletedAt: null
     };
 
-    const [blocksMade, participants] = await Promise.all([
+    const [blocksMade, currentParticipant, nonActivityParticipants, activity] = await Promise.all([
       currentUserId ? this.prisma.block.findMany({
         where: { blockerId: currentUserId },
         select: { blockedId: true }
       }) : Promise.resolve([]),
-      this.prisma.conversationParticipant.findMany({
+      currentUserId ? this.prisma.conversationParticipant.findFirst({
+        where: { conversationId: realConvId, userId: currentUserId, deletedAt: null },
+        select: { userId: true, lastReadAt: true, clearedAt: true, leftAt: true }
+      }) : Promise.resolve(null),
+      !isActivityGroup ? this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, deletedAt: null },
         select: { userId: true, lastReadAt: true, clearedAt: true, leftAt: true }
-      })
+      }) : Promise.resolve([]),
+      actId ? this.prisma.crewActivity.findUnique({
+        where: { id: actId },
+        select: { id: true, title: true, startDate: true, createdAt: true, creatorId: true }
+      }) : Promise.resolve(null)
     ]);
 
-    const participant = participants.find(p => p.userId === currentUserId);
+    if (currentUserId && !currentParticipant) {
+      throw new ForbiddenException('Not a member of this conversation');
+    }
+
+    const participant = currentParticipant;
+    const participants = isActivityGroup 
+      ? (currentParticipant ? [currentParticipant] : []) 
+      : nonActivityParticipants;
+
     if (participant) {
       clearedAt = participant.clearedAt;
       const pLeftAt = participant.leftAt;
@@ -362,7 +431,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       whereCondition.createdAt = { ...(whereCondition.createdAt || {}), gt: clearedAt };
     }
 
-    if (deviceId) {
+    if (deviceId && !isActivityGroup) {
       whereCondition.OR = [
         { targets: { some: { deviceId } } },
         { targets: { none: {} } }
@@ -375,12 +444,8 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       let cursorId: string | null = null;
 
       if (beforeCursor.startsWith('sys_created_')) {
-        const actId = beforeCursor.replace(/^sys_created_/, '');
-        const activity = await this.prisma.crewActivity.findUnique({ where: { id: actId }, select: { createdAt: true } });
         if (activity?.createdAt) cursorDate = activity.createdAt;
       } else if (beforeCursor.startsWith('sys_started_')) {
-        const actId = beforeCursor.replace(/^sys_started_/, '');
-        const activity = await this.prisma.crewActivity.findUnique({ where: { id: actId }, select: { startDate: true } });
         if (activity?.startDate) cursorDate = activity.startDate;
       } else {
         const cursorMessage = await this.prisma.message.findUnique({
@@ -411,7 +476,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     const messages: any[] = await this.prisma.message.findMany({
       where: whereCondition,
       include: {
-        targets: deviceId ? { where: { deviceId } } : false,
+        targets: (deviceId && !isActivityGroup) ? { where: { deviceId } } : false,
         sender: {
           select: { id: true, username: true, displayName: true, avatar: true }
         },
@@ -420,6 +485,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
             id: true,
             senderId: true,
             payload: true,
+            sender: { select: { displayName: true, username: true } }
           }
         }
       },
@@ -437,7 +503,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     const nextCursor = hasMore && oldestRealMessage ? oldestRealMessage.id : null;
     const otherParticipants = participants.filter(p => currentUserId && p.userId !== currentUserId);
     const otherReadTimestamps = otherParticipants
-      .filter(p => (p as any).user?.settings?.readReceipts !== false && p.lastReadAt != null)
+      .filter(p => p.lastReadAt != null)
       .map(p => new Date(p.lastReadAt!).getTime());
 
     const isAllRead = otherReadTimestamps.length > 0 && otherReadTimestamps.length === otherParticipants.length;
@@ -485,67 +551,59 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       };
     });
 
-    if (conversationId.startsWith('act_') || realConvId.startsWith('act_')) {
-      const actId = (conversationId || realConvId).replace(/^act_/, '');
-      const activity = await this.prisma.crewActivity.findUnique({
-        where: { id: actId },
-        select: { id: true, title: true, startDate: true, createdAt: true, creatorId: true }
-      });
+    if (activity) {
+      const hasCreatedMsg = messagesMapped.some(m => String(m.text).includes('group chat created'));
+      if (!hasCreatedMsg) {
+        const createdSysMsg: any = {
+          id: `sys_created_${activity.id}`,
+          conversationId,
+          senderId: activity.creatorId,
+          senderName: 'System',
+          senderAvatar: '',
+          from: 'them',
+          createdAt: activity.createdAt || new Date(),
+          timestamp: activity.createdAt || new Date(),
+          time: activity.createdAt ? new Date(activity.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+          type: 'system',
+          ciphertext: null,
+          payload: { text: 'Activity group chat created' },
+          text: 'Activity group chat created',
+          mediaUrl: null,
+          mediaType: null,
+          mentions: [],
+          inviteData: null,
+          replyTo: null,
+          status: 'sent',
+          state: 'NORMAL'
+        };
+        messagesMapped.unshift(createdSysMsg);
+      }
 
-      if (activity) {
-        const hasCreatedMsg = messagesMapped.some(m => String(m.text).includes('group chat created'));
-        if (!hasCreatedMsg) {
-          const createdSysMsg: any = {
-            id: `sys_created_${activity.id}`,
-            conversationId,
-            senderId: activity.creatorId,
-            senderName: 'System',
-            senderAvatar: '',
-            from: 'them',
-            createdAt: activity.createdAt || new Date(),
-            timestamp: activity.createdAt || new Date(),
-            time: activity.createdAt ? new Date(activity.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-            type: 'system',
-            ciphertext: null,
-            payload: { text: 'Activity group chat created' },
-            text: 'Activity group chat created',
-            mediaUrl: null,
-            mediaType: null,
-            mentions: [],
-            inviteData: null,
-            replyTo: null,
-            status: 'sent',
-            state: 'NORMAL'
-          };
-          messagesMapped.unshift(createdSysMsg);
-        }
-
-        const hasStarted = messagesMapped.some(m => String(m.text).includes('has started'));
-        if (!hasStarted && activity.startDate && new Date(activity.startDate) <= new Date()) {
-          const startedSysMsg: any = {
-            id: `sys_started_${activity.id}`,
-            conversationId,
-            senderId: 'system',
-            senderName: 'System',
-            senderAvatar: '',
-            from: 'them',
-            createdAt: activity.startDate,
-            timestamp: activity.startDate,
-            time: new Date(activity.startDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            type: 'system',
-            ciphertext: null,
-            payload: { text: 'Activity has started!' },
-            text: 'Activity has started!',
-            mediaUrl: null,
-            mediaType: null,
-            mentions: [],
-            inviteData: null,
-            replyTo: null,
-            status: 'sent',
-            state: 'NORMAL'
-          };
-          messagesMapped.push(startedSysMsg);
-        }
+      const hasStarted = messagesMapped.some(m => String(m.text).includes('has started'));
+      if (!hasStarted && activity.startDate && new Date(activity.startDate) <= new Date()) {
+        const startedSysMsg: any = {
+          id: `sys_started_${activity.id}`,
+          conversationId,
+          senderId: 'system',
+          senderName: 'System',
+          senderAvatar: '',
+          from: 'them',
+          createdAt: activity.startDate,
+          timestamp: activity.startDate,
+          time: new Date(activity.startDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          type: 'system',
+          ciphertext: null,
+          payload: { text: 'Activity has started!' },
+          text: 'Activity has started!',
+          mediaUrl: null,
+          mediaType: null,
+          mentions: [],
+          inviteData: null,
+          replyTo: null,
+          status: 'sent',
+          state: 'NORMAL'
+        };
+        messagesMapped.push(startedSysMsg);
       }
     }
 
@@ -561,12 +619,17 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
   private presenceCache = new Map<string, { data: any; expiresAt: number }>();
   async getUserConversations(userId: string, limit: number = 20, offset: number = 0) {
-    const [participants, userBlocks] = await Promise.all([
+    const cacheKey = `user:conversations:${userId}:${limit}:${offset}`;
+    if (this.redis) {
+      try {
+        const cached = await this.redis.get(cacheKey);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+
+    const [allParticipants, excludedUserIds] = await Promise.all([
       this.prisma.conversationParticipant.findMany({
         where: { userId, deletedAt: null },
-        orderBy: { conversation: { updatedAt: 'desc' } },
-        take: limit,
-        skip: offset,
         select: {
           isMuted: true,
           isPinned: true,
@@ -584,7 +647,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
               description: true,
               type: true,
               activityId: true,
-              activity: { select: { id: true, title: true, coverImage: true, startDate: true, status: true } },
+              activity: { select: { id: true, title: true, coverImage: true, startDate: true, endDate: true, status: true } },
               ownerId: true,
               status: true,
               lastMessageId: true,
@@ -604,21 +667,19 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
           }
         }
       }),
-      this.prisma.block.findMany({
-        where: {
-          OR: [
-            { blockerId: userId },
-            { blockedId: userId },
-          ],
-        },
-        select: { blockerId: true, blockedId: true },
-      })
+      this.blocksService ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([])
     ]);
 
-    const blockedByMeSet = new Set(userBlocks.filter(b => b.blockerId === userId).map(b => b.blockedId));
-    const blockedByThemSet = new Set(userBlocks.filter(b => b.blockedId === userId).map(b => b.blockerId));
+    (allParticipants as any[]).sort((a: any, b: any) => {
+      const timeA = new Date(a.conversation.lastMessageAt || a.conversation.updatedAt || a.conversation.createdAt).getTime();
+      const timeB = new Date(b.conversation.lastMessageAt || b.conversation.updatedAt || b.conversation.createdAt).getTime();
+      return timeB - timeA;
+    });
 
-    const dmConvIds = participants.filter(p => p.conversation.type === 'DM').map(p => p.conversation.id);
+    const participants = allParticipants.slice(offset, offset + limit);
+    const blockedSet = new Set(excludedUserIds);
+
+    const dmConvIds = (participants as any[]).filter((p: any) => p.conversation.type === 'DM').map((p: any) => p.conversation.id);
     const dmOtherParticipants = dmConvIds.length > 0 ? await this.prisma.conversationParticipant.findMany({
       where: { conversationId: { in: dmConvIds }, userId: { not: userId }, leftAt: null, deletedAt: null },
       select: {
@@ -630,45 +691,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     const targetUserByConvId = new Map<string, any>();
     dmOtherParticipants.forEach(op => {
       if (op.user) targetUserByConvId.set(op.conversationId, op.user);
-    });
-
-    const groupConvIds = participants
-      .filter(p => p.conversation.type === 'GROUP' || p.conversation.type === 'ACTIVITY')
-      .map(p => p.conversation.id);
-
-    const groupParticipants = groupConvIds.length > 0 ? await this.prisma.conversationParticipant.findMany({
-      where: { conversationId: { in: groupConvIds }, leftAt: null, deletedAt: null },
-      select: {
-        conversationId: true,
-        userId: true,
-        role: true,
-        joinedAt: true,
-        user: { select: { id: true, username: true, displayName: true, avatar: true } }
-      }
-    }) : [];
-
-    const membersByConvId = new Map<string, any[]>();
-    const adminsByConvId = new Map<string, string[]>();
-
-    groupParticipants.forEach(gp => {
-      if (!membersByConvId.has(gp.conversationId)) {
-        membersByConvId.set(gp.conversationId, []);
-        adminsByConvId.set(gp.conversationId, []);
-      }
-      const memberObj = {
-        id: gp.userId,
-        userId: gp.userId,
-        username: gp.user?.username || '',
-        displayName: gp.user?.displayName || '',
-        name: gp.user?.displayName || gp.user?.username || '',
-        avatar: gp.user?.avatar || '',
-        role: gp.role,
-        joinedAt: gp.joinedAt
-      };
-      membersByConvId.get(gp.conversationId)!.push(memberObj);
-      if (gp.role === 'ADMIN' || gp.role === 'OWNER') {
-        adminsByConvId.get(gp.conversationId)!.push(gp.userId);
-      }
     });
 
     const targetUserIds = Array.from(targetUserByConvId.values()).map(u => u.id);
@@ -698,7 +720,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       }
     }
 
-    return participants.map((p) => {
+    const result = (participants as any[]).map((p: any) => {
       const conv = p.conversation;
       const otherUser = targetUserByConvId.get(conv.id);
       const isGroupConv = conv.type === 'GROUP' || conv.type === 'ACTIVITY' || (conv as any).isGroup;
@@ -712,10 +734,9 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       let blockStatus = { isBlocked: false, isBlockedByMe: false, isBlockedByThem: false };
 
       if (otherUser) {
-        const isBlockedByMe = blockedByMeSet.has(otherUser.id);
-        const isBlockedByThem = blockedByThemSet.has(otherUser.id);
-        blockStatus = { isBlocked: isBlockedByMe, isBlockedByMe, isBlockedByThem };
-        if (isBlockedByThem) canSeeOnline = false;
+        const isBlocked = blockedSet.has(otherUser.id);
+        blockStatus = { isBlocked, isBlockedByMe: isBlocked, isBlockedByThem: false };
+        if (isBlocked) canSeeOnline = false;
       }
 
       const pubId = (conv as any).publicId || conv.id;
@@ -759,9 +780,9 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         editGroupPermission: conv.editGroupPermission || 'ADMIN',
         groupUpdatesActive: p.groupUpdatesActive !== false,
         pendingRequests: [],
-        admins: isGroupConv ? (adminsByConvId.get(conv.id) || []) : [],
-        members: isGroupConv ? (membersByConvId.get(conv.id) || []) : [],
-        memberCount: isGroupConv ? (membersByConvId.get(conv.id)?.length || (conv as any).memberCount || 0) : 0,
+        admins: [],
+        members: [],
+        memberCount: isGroupConv ? ((conv as any).memberCount || 0) : 0,
         pinned: p.isPinned || false,
         muted: p.isMuted || false,
         blocked: blockStatus.isBlockedByMe,
@@ -780,6 +801,12 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         } : null
       };
     });
+
+    if (this.redis) {
+      this.redis.setex(cacheKey, 60, JSON.stringify(result)).catch(() => {});
+    }
+
+    return result;
   }
 
   async isUserBlockedBy(userId: string, targetUserId: string): Promise<boolean> {
@@ -1064,7 +1091,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       });
 
       const results = await Promise.all(promises);
-      results.forEach(msg => {
+      results.forEach((msg: any) => {
         if (msg) forwarded.push(msg);
       });
     }

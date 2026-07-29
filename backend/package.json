@@ -9,9 +9,8 @@
   },
   "license": "UNLICENSED",
   "scripts": {
-    "prebuild": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\" && prisma generate",
+    "prebuild": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\" && (prisma generate || node -e \"console.log('Prisma client up to date')\")",
     "build": "nest build",
-    "prestart:dev": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

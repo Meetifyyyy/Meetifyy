@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsEmail, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsEmail, IsOptional, Length } from 'class-validator';
 
 export class CheckUsernameDto {
   @IsString()
@@ -78,4 +78,26 @@ export class TriggerPasswordChangedEmailDto {
   @IsOptional()
   @IsString()
   name?: string;
+}
+
+export class CreateCollegeRequestDto {
+  @IsString()
+  @IsNotEmpty()
+  @Length(2, 80)
+  name: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @Length(3, 120)
+  collegeName: string;
+
+  @IsEmail()
+  @IsNotEmpty()
+  @Length(5, 100)
+  collegeEmail: string;
+
+  @IsEmail()
+  @IsNotEmpty()
+  @Length(5, 100)
+  personalEmail: string;
 }

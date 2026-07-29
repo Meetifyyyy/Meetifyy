@@ -5,11 +5,19 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { MessagingCoreModule } from './core/messaging-core.module';
+import { RedisModule } from '../redis/redis.module';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => RealtimeModule), NotificationsModule, MessagingCoreModule],
+  imports: [
+    PrismaModule,
+    RedisModule,
+    forwardRef(() => RealtimeModule),
+    NotificationsModule,
+    MessagingCoreModule,
+  ],
   controllers: [MessagesController],
   providers: [MessagesService],
   exports: [MessagesService]
 })
 export class MessagesModule {}
+

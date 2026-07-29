@@ -100,7 +100,7 @@ export default function CrewCard({ activity, onClick }) {
         
         {(activity.startDate || activity.date || activity.dateLabel) && (
           <div className={styles.calendarBadge}>
-            <CalendarIcon date={activity.startDate || activity.date} dateLabel={activity.dateLabel} />
+            <CalendarIcon date={activity.startDate || activity.date} dateLabel={activity.dateLabel} style={{ border: '3.5px solid var(--color-bg-white, #ffffff)', boxShadow: 'none' }} />
           </div>
         )}
       </div>

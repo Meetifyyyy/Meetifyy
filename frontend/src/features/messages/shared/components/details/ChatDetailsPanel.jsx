@@ -190,6 +190,10 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
     ? crewActivities.find(a => a.id === (conversation.activityId || String(conversation.id).replace(/^act_/, '')))
     : null;
 
+  const actStatus = (activity?.status || conversation.activity?.status || conversation.status || '').toUpperCase();
+  const isEnded = actStatus === 'ENDED' || actStatus === 'CLOSED' || actStatus === 'COMPLETED' || actStatus === 'CANCELLED';
+  const actDate = conversation.startDate || conversation.date || activity?.startDate || activity?.date || conversation.activity?.startDate;
+
   const isHost = activity ? activity.creatorId === currentUser?.id || activity.hostId === currentUser?.id : false;
   const activityHasStarted = activity
     ? (() => {
@@ -582,7 +586,11 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
               }}
               style={{ margin: '0.75rem 0 1rem 0' }}
             >
-              <Calendar size={18} />
+              {activityHasStarted ? (
+                <CalendarDays size={18} />
+              ) : (
+                <CalendarIcon date={activity?.startDate || activity?.date || conversation.startDate || conversation.date} size="badge" />
+              )}
               <span>View Activity Details</span>
             </button>
           )}

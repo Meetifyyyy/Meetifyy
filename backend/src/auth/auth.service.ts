@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException, NotFoundException, ConflictException, BadRequestException, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { DomainValidatorService } from '../common/services/domain-validator.service';
 import { RedisService } from '../redis/redis.service';
 
 function validateBirthday(birthdayStr: string) {
@@ -76,6 +77,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly supabaseService: SupabaseService,
+    private readonly domainValidatorService: DomainValidatorService,
     @Optional() private readonly redisService?: RedisService,
   ) {}
 
@@ -171,6 +173,14 @@ export class AuthService {
 
     if (rows && rows.length > 0) {
       const row = rows[0];
+
+      // Enforce strict domain & active college verification on every login / profile sync
+      const domainCheck = await this.domainValidatorService.validateDomain(row.email);
+      if (!domainCheck.isValid) {
+        this.logger.warn(`Access blocked for user ${row.id} (${row.email}): ${domainCheck.reason}`);
+        throw new UnauthorizedException(domainCheck.reason);
+      }
+
       const settings = row.settings_id ? {
         id: row.settings_id,
         userId: row.id,
@@ -184,7 +194,18 @@ export class AuthService {
         readReceipts: row.readReceipts,
       } : null;
 
-      const college = row.college_id ? { id: row.college_id, name: row.college_name } : null;
+      let college = row.college_id ? { id: row.college_id, name: row.college_name } : null;
+
+      // If user has no collegeId assigned or domain mapping changed, auto-link to active matching college
+      if (domainCheck.info?.collegeId && row.college_id !== domainCheck.info.collegeId) {
+        row.college_id = domainCheck.info.collegeId;
+        row.college_name = domainCheck.info.collegeName;
+        college = { id: domainCheck.info.collegeId, name: domainCheck.info.collegeName };
+        this.prisma.user.update({
+          where: { id: row.id },
+          data: { collegeId: domainCheck.info.collegeId },
+        }).catch((err) => this.logger.error(`Failed to auto-link user collegeId: ${err.message}`));
+      }
 
       const result = {
         id: row.id,
@@ -199,7 +220,7 @@ export class AuthService {
         avatar: row.avatar,
         avatarMediaId: row.avatarMediaId,
         collegeEmail: row.collegeEmail,
-        collegeId: row.collegeId,
+        collegeId: row.college_id,
         cover: row.cover,
         coverMediaId: row.coverMediaId,
         emailVerified: row.emailVerified,
@@ -272,27 +293,12 @@ export class AuthService {
     const displayName = sbUser.user_metadata?.displayName || username;
 
     let email = sbUser.email || '';
-    email = email.trim().toLowerCase();
-    const domain = email.split('@')[1];
-
-    let collegeId = null;
-    if (domain) {
-      if (!this.domainCache) this.domainCache = new Map();
-      const cached = this.domainCache.get(domain);
-      const now = Date.now();
-      if (cached && now - cached.timestamp < 300000) { // 5-min TTL
-        collegeId = cached.collegeId;
-      } else {
-        const collegeDomain = await this.prisma.collegeDomain.findUnique({
-          where: { domain },
-          include: { college: true },
-        });
-        if (collegeDomain && collegeDomain.college && collegeDomain.college.isActive && collegeDomain.college.status !== 'DISABLED') {
-          collegeId = collegeDomain.college.id;
-        }
-        this.domainCache.set(domain, { collegeId, timestamp: now });
-      }
+    const domainValidation = await this.domainValidatorService.validateDomain(email);
+    if (!domainValidation.isValid) {
+      this.logger.warn(`Account creation rejected for ${email}: ${domainValidation.reason}`);
+      throw new UnauthorizedException(domainValidation.reason);
     }
+    const collegeId = domainValidation.info?.collegeId || null;
 
     // Run email and username conflict checks in parallel — they are independent queries
     const [existingUserByEmail, existingUserByUsername] = await Promise.all([
@@ -426,6 +432,11 @@ export class AuthService {
   }
 
   async checkEmailAvailability(email: string): Promise<{ available: boolean; reason?: string }> {
+    const domainValidation = await this.domainValidatorService.validateDomain(email);
+    if (!domainValidation.isValid) {
+      return { available: false, reason: domainValidation.reason };
+    }
+
     const trimmed = (email || '').trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmed)) {
@@ -571,6 +582,47 @@ export class AuthService {
       redis.set(redisKey, count.toString(), 'EX', 3600).catch(() => {});
     }
     return count;
+  }
+
+  async createCollegeRequest(dto: {
+    name: string;
+    collegeName: string;
+    collegeEmail: string;
+    personalEmail: string;
+  }) {
+    const sanitizeStr = (str: string) =>
+      (str || '')
+        .replace(/<[^>]*>?/g, '')
+        .replace(/[\u200B-\u200D\uFEFF\u0000-\u001F\u007F-\u009F]/g, '')
+        .trim();
+
+    const name = sanitizeStr(dto.name);
+    const collegeName = sanitizeStr(dto.collegeName);
+    const collegeEmail = sanitizeStr(dto.collegeEmail).toLowerCase();
+    const personalEmail = sanitizeStr(dto.personalEmail).toLowerCase();
+
+    if (!name || name.length < 2 || name.length > 80) {
+      throw new BadRequestException('Please enter a valid full name (2-80 characters).');
+    }
+    if (!collegeName || collegeName.length < 3 || collegeName.length > 120) {
+      throw new BadRequestException('Please enter a valid college name (3-120 characters).');
+    }
+    if (!personalEmail || !personalEmail.includes('@') || personalEmail.length > 100) {
+      throw new BadRequestException('Please enter a valid personal email address.');
+    }
+    if (!collegeEmail || !collegeEmail.includes('@') || collegeEmail.length > 100) {
+      throw new BadRequestException('Please enter a valid college email address.');
+    }
+
+    return this.prisma.collegeRequest.create({
+      data: {
+        name,
+        collegeName,
+        collegeEmail,
+        personalEmail,
+        status: 'PENDING',
+      },
+    });
   }
 }
 

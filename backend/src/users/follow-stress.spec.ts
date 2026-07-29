@@ -6,6 +6,9 @@ import { ConfigService } from '@nestjs/config';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { RedisService } from '../redis/redis.service';
+import { getQueueToken } from '@nestjs/bullmq';
+import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
+import { BlocksService } from './blocks.service';
 
 describe('Follow / Unfollow High Concurrency Stress Test', () => {
   let service: UsersService;
@@ -31,6 +34,19 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
       await new Promise((resolve) => setTimeout(resolve, Math.random() * 5));
       return 1;
     }),
+    $queryRaw: jest.fn().mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, Math.random() * 5));
+      return [{
+        targetId: 'target-user-id',
+        targetUsername: 'sarthak',
+        targetDisplayName: 'Sarthak',
+        targetAvatar: null,
+        isBlocked: false,
+        inserted: true,
+        followersCount: 42,
+        followingCount: 10,
+      }];
+    }),
   };
 
   const mockDomainEventService = {
@@ -53,6 +69,8 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
         { provide: DomainEventService, useValue: mockDomainEventService },
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: RedisService, useValue: mockRedisService },
+        { provide: BlocksService, useValue: { isBlocked: jest.fn().mockResolvedValue(false) } },
+        { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 

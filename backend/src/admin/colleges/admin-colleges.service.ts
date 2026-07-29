@@ -5,10 +5,18 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DomainValidatorService } from '../../common/services/domain-validator.service';
 
 @Injectable()
 export class AdminCollegesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly domainValidatorService: DomainValidatorService,
+  ) {}
+
+  private async notifyCacheChange() {
+    await this.domainValidatorService.invalidateCache().catch(() => {});
+  }
 
   private async deleteSoftDeletedDomains(domains: string[], excludeCollegeId?: string) {
     if (!domains || domains.length === 0) return;
@@ -52,11 +60,17 @@ export class AdminCollegesService {
     }
 
     if (query.search) {
+      let normalizedSearch = query.search;
+      try {
+        normalizedSearch = this.domainValidatorService.normalizeDomain(query.search);
+      } catch {
+        normalizedSearch = query.search;
+      }
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
         { shortName: { contains: query.search, mode: 'insensitive' } },
         { city: { contains: query.search, mode: 'insensitive' } },
-        { domains: { some: { domain: { contains: query.search, mode: 'insensitive' } } } },
+        { domains: { some: { domain: { contains: normalizedSearch, mode: 'insensitive' } } } },
       ];
     }
 
@@ -68,7 +82,9 @@ export class AdminCollegesService {
         take: limit,
         orderBy: { name: 'asc' },
         include: {
-          domains: true,
+          domains: {
+            orderBy: { isPrimary: 'desc' },
+          },
           _count: {
             select: { users: true },
           },
@@ -91,7 +107,9 @@ export class AdminCollegesService {
     const college = await this.prisma.college.findUnique({
       where: { id },
       include: {
-        domains: true,
+        domains: {
+          orderBy: { isPrimary: 'desc' },
+        },
         _count: {
           select: { users: true },
         },
@@ -117,26 +135,33 @@ export class AdminCollegesService {
     bannerKey?: string;
     isPrivate?: boolean;
   }) {
-    // Generate slug if not provided
     const slug = (dto.slug || dto.shortName || dto.name)
       .toLowerCase()
       .trim()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
 
-    // Check slug uniqueness
     const existingSlug = await this.prisma.college.findFirst({ where: { slug } });
     if (existingSlug) {
       throw new ConflictException(`College slug '${slug}' is already taken`);
     }
 
-    // Check domain uniqueness
     const cleanedDomains = Array.from(
-      new Set(dto.domains.map((d) => d.toLowerCase().trim()).filter(Boolean)),
+      new Set(
+        dto.domains
+          .map((d) => {
+            try {
+              return this.domainValidatorService.normalizeDomain(d);
+            } catch {
+              return null;
+            }
+          })
+          .filter(Boolean) as string[],
+      ),
     );
 
     if (cleanedDomains.length === 0) {
-      throw new BadRequestException('At least one college domain is required');
+      throw new BadRequestException('At least one valid college domain is required');
     }
 
     const existingDomain = await this.prisma.collegeDomain.findFirst({
@@ -150,10 +175,9 @@ export class AdminCollegesService {
       throw new ConflictException(`Domain '${existingDomain.domain}' is already assigned to another active college`);
     }
 
-    // Clean up any stale domain mappings from soft-deleted colleges
     await this.deleteSoftDeletedDomains(cleanedDomains);
 
-    return this.prisma.college.create({
+    const created = await this.prisma.college.create({
       data: {
         name: dto.name.trim(),
         shortName: dto.shortName?.trim() || null,
@@ -169,6 +193,8 @@ export class AdminCollegesService {
           create: cleanedDomains.map((domain, index) => ({
             domain,
             isPrimary: index === 0,
+            status: 'ACTIVE',
+            isVerified: true,
           })),
         },
       },
@@ -176,6 +202,9 @@ export class AdminCollegesService {
         domains: true,
       },
     });
+
+    await this.notifyCacheChange();
+    return created;
   }
 
   async updateCollege(id: string, dto: {
@@ -204,14 +233,23 @@ export class AdminCollegesService {
 
     if (domains && Array.isArray(domains)) {
       const cleanedDomains = Array.from(
-        new Set(domains.map((d) => d.toLowerCase().trim()).filter(Boolean)),
+        new Set(
+          domains
+            .map((d) => {
+              try {
+                return this.domainValidatorService.normalizeDomain(d);
+              } catch {
+                return null;
+              }
+            })
+            .filter(Boolean) as string[],
+        ),
       );
 
       if (cleanedDomains.length === 0) {
-        throw new BadRequestException('At least one college domain is required');
+        throw new BadRequestException('At least one valid college domain is required');
       }
 
-      // Check conflict with other active colleges
       const conflictDomain = await this.prisma.collegeDomain.findFirst({
         where: {
           domain: { in: cleanedDomains },
@@ -224,10 +262,8 @@ export class AdminCollegesService {
         throw new ConflictException(`Domain '${conflictDomain.domain}' is already assigned to another active college`);
       }
 
-      // Clean up stale mappings from soft-deleted colleges
       await this.deleteSoftDeletedDomains(cleanedDomains, id);
 
-      // Remove domains no longer in cleanedDomains for this college
       await this.prisma.collegeDomain.deleteMany({
         where: {
           collegeId: id,
@@ -235,7 +271,6 @@ export class AdminCollegesService {
         },
       });
 
-      // Upsert all domains in cleanedDomains for this college
       for (let i = 0; i < cleanedDomains.length; i++) {
         const domain = cleanedDomains[i];
         await this.prisma.collegeDomain.upsert({
@@ -244,6 +279,8 @@ export class AdminCollegesService {
             collegeId: id,
             domain,
             isPrimary: i === 0,
+            status: 'ACTIVE',
+            isVerified: true,
           },
           update: {
             collegeId: id,
@@ -253,11 +290,14 @@ export class AdminCollegesService {
       }
     }
 
-    return this.prisma.college.update({
+    const updated = await this.prisma.college.update({
       where: { id },
       data,
       include: { domains: true },
     });
+
+    await this.notifyCacheChange();
+    return updated;
   }
 
   async changeStatus(id: string, status: any) {
@@ -266,10 +306,13 @@ export class AdminCollegesService {
       throw new NotFoundException(`College ${id} not found`);
     }
 
-    return this.prisma.college.update({
+    const updated = await this.prisma.college.update({
       where: { id },
       data: { status, isActive: status === 'APPROVED' },
     });
+
+    await this.notifyCacheChange();
+    return updated;
   }
 
   async restoreCollege(id: string) {
@@ -278,15 +321,18 @@ export class AdminCollegesService {
       throw new NotFoundException(`College ${id} not found`);
     }
 
-    return this.prisma.college.update({
+    const restored = await this.prisma.college.update({
       where: { id },
       data: { deletedAt: null, isActive: true, status: 'APPROVED' },
       include: { domains: true },
     });
+
+    await this.notifyCacheChange();
+    return restored;
   }
 
   async addDomain(collegeId: string, domainStr: string, isPrimary: boolean = false) {
-    const domain = domainStr.toLowerCase().trim();
+    const domain = this.domainValidatorService.normalizeDomain(domainStr);
     const existing = await this.prisma.collegeDomain.findFirst({
       where: {
         domain,
@@ -298,7 +344,6 @@ export class AdminCollegesService {
       throw new ConflictException(`Domain '${domain}' is already assigned to another active college`);
     }
 
-    // Clean up any stale domain mapping from soft-deleted colleges
     await this.deleteSoftDeletedDomains([domain], collegeId);
 
     if (isPrimary) {
@@ -308,13 +353,36 @@ export class AdminCollegesService {
       });
     }
 
-    return this.prisma.collegeDomain.create({
+    const createdDomain = await this.prisma.collegeDomain.create({
       data: {
         collegeId,
         domain,
         isPrimary,
+        status: 'ACTIVE',
+        isVerified: true,
       },
     });
+
+    await this.notifyCacheChange();
+    return createdDomain;
+  }
+
+  async toggleDomainStatus(collegeId: string, domainId: string, status: 'ACTIVE' | 'DISABLED') {
+    const domain = await this.prisma.collegeDomain.findFirst({
+      where: { id: domainId, collegeId },
+    });
+
+    if (!domain) {
+      throw new NotFoundException('Domain record not found');
+    }
+
+    const updated = await this.prisma.collegeDomain.update({
+      where: { id: domainId },
+      data: { status },
+    });
+
+    await this.notifyCacheChange();
+    return updated;
   }
 
   async removeDomain(collegeId: string, domainId: string) {
@@ -332,6 +400,7 @@ export class AdminCollegesService {
     }
 
     await this.prisma.collegeDomain.delete({ where: { id: domainId } });
+    await this.notifyCacheChange();
     return { success: true };
   }
 
@@ -346,6 +415,38 @@ export class AdminCollegesService {
       data: { deletedAt: new Date(), isActive: false, status: 'DISABLED' },
     });
 
+    await this.notifyCacheChange();
     return { success: true };
+  }
+
+  async listCollegeRequests(query: { status?: string; page?: number; limit?: number }) {
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.min(100, Math.max(1, query.limit || 20));
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (query.status) where.status = query.status;
+
+    const [total, requests] = await Promise.all([
+      this.prisma.collegeRequest.count({ where }),
+      this.prisma.collegeRequest.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    return {
+      data: requests,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async updateCollegeRequestStatus(id: string, status: string) {
+    return this.prisma.collegeRequest.update({
+      where: { id },
+      data: { status },
+    });
   }
 }
