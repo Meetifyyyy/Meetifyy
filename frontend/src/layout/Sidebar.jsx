@@ -5,6 +5,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { isImageUrl } from '@shared/utils/avatar';
+import { getMediaUrl } from '@shared/api/apiClient';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import styles from './Sidebar.module.css';
 import {
@@ -61,6 +62,7 @@ const SidebarCommunityItem = ({ comm, navigate }) => {
   const location = useLocation();
   const [imgError, setImgError] = useState(false);
   const isImage = isImageUrl(comm.avatar);
+  const avatarSrc = isImage ? getMediaUrl(comm.avatar) : '';
 
   return (
     <a
@@ -73,7 +75,7 @@ const SidebarCommunityItem = ({ comm, navigate }) => {
         style={{ background: (!isImage || imgError) ? (comm.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
       >
         {isImage && !imgError ? (
-          <img src={comm.avatar} alt={comm.name} onError={() => setImgError(true)} />
+          <img src={avatarSrc} alt={comm.name} onError={() => setImgError(true)} />
         ) : (
           <span style={{ color: '#FFFFFF', fontWeight: 700 }}>
             {comm.avatar || (comm.name ? comm.name.charAt(0).toUpperCase() : '')}

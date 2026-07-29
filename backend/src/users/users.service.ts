@@ -8,6 +8,7 @@ import { BlocksService } from './blocks.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { NOTIFICATIONS_QUEUE, FollowNotifJob } from '../notifications/notifications.processor';
+import { clearAuthSyncCache } from '../auth/auth.service';
 
 function validateBirthday(birthdayStr: string) {
   if (!birthdayStr) {
@@ -615,6 +616,8 @@ export class UsersService {
     if (existingUserRecord && (existingUserRecord.email.endsWith('@meetifyy.user') || !existingUserRecord.email) && realEmail && !realEmail.endsWith('@meetifyy.user')) {
       updateData.email = realEmail;
     }
+
+    clearAuthSyncCache(userId);
 
     return this.prisma.user.upsert({
       where: { id: userId },

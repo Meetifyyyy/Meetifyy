@@ -1,7 +1,7 @@
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { messagesApi, usersApi, postsApi } from '@shared/api/apiClient';
+import { messagesApi, usersApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PROFILE_KEYS } from '@shared/hooks/useProfile';
@@ -64,16 +64,19 @@ INTERESTS_BY_CATEGORY.forEach(category => {
 });
 
 
-function getSafeCoverUrl(url, fallback) {
-  if (!url || typeof url !== 'string') return fallback;
-  if (url.startsWith('data:image/')) return url;
-  try {
-    const parsed = new URL(url, window.location.origin);
-    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
-      return url;
-    }
-  } catch {}
-  return fallback;
+export function getCoverStyle(cover, fallback) {
+  if (!cover || typeof cover !== 'string' || !cover.trim()) {
+    return { backgroundImage: `url("${fallback}")` };
+  }
+  const clean = cover.trim();
+  if (clean.startsWith('linear-gradient') || clean.startsWith('radial-gradient') || clean.startsWith('conic-gradient')) {
+    return { background: clean };
+  }
+  if (clean.startsWith('data:image/') || clean.startsWith('blob:')) {
+    return { backgroundImage: `url("${clean}")` };
+  }
+  const fullUrl = getMediaUrl(clean);
+  return { backgroundImage: `url("${encodeURI(fullUrl)}")` };
 }
 
 export default function ProfilePage() {
@@ -318,7 +321,7 @@ export default function ProfilePage() {
             <div className={s.coverWrap}>
               <div
                 className={s.coverPhoto}
-                style={{ backgroundImage: `url("${encodeURI(getSafeCoverUrl(effectiveUser.cover, defaultCover))}")` }}
+                style={getCoverStyle(effectiveUser.cover, defaultCover)}
               />
               {/* Own profile — edit cover button */}
               {isOwnProfile && (
@@ -558,7 +561,19 @@ export default function ProfilePage() {
                   key={i}
                   onClick={() => handleCoverGradient(g)}
                   disabled={savingCover}
-                  style={{ height: '56px', borderRadius: '10px', background: g, border: '2px solid transparent', cursor: 'pointer', transition: 'transform 0.15s, border-color 0.15s', opacity: savingCover ? 0.5 : 1 }}
+                  style={{
+                    height: '56px',
+                    borderRadius: '12px',
+                    background: g,
+                    border: 'none',
+                    outline: 'none',
+                    padding: 0,
+                    overflow: 'hidden',
+                    cursor: 'pointer',
+                    transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                    opacity: savingCover ? 0.5 : 1,
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)'
+                  }}
                   onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.04)'}
                   onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                 />

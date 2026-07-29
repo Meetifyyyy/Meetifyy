@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import styles from './CreateActivityPage.module.css';
 
@@ -12,7 +13,7 @@ import {
   BellOff, ChevronsUpDown, Eye, Link, Check
 } from 'lucide-react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
-import { activitiesApi, usersApi } from '@shared/api/apiClient';
+import { activitiesApi, usersApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS_OF_WEEK = ['S','M','T','W','T','F','S'];
@@ -313,7 +314,6 @@ function CapacityModal({ value, onSave, onClose }) {
           />
         </div>
         <div className={styles.dtFooter}>
-          <button className={styles.capResetBtn} onClick={() => { onSave(999); onClose(); }}>Unlimited</button>
           <button className={styles.capResetBtn} onClick={() => { onSave(2); onClose(); }}>One-on-one</button>
           <button className={styles.dtDone} onClick={save}>Save</button>
         </div>
@@ -370,7 +370,7 @@ const RANDOM_COVERS = [
 const getRandomCover = () => RANDOM_COVERS[Math.floor(Math.random() * RANDOM_COVERS.length)];
 
 /* ─── Post-publish Invite Modal ─── */
-function ActivityCreatedModal({ activityTitle, creationPromise, onDone }) {
+function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creationPromise, onDone }) {
   const { currentUser } = useAuth();
   const [selectedIds, setSelectedIds] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -428,94 +428,145 @@ function ActivityCreatedModal({ activityTitle, creationPromise, onDone }) {
     } catch {}
   };
 
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'rgba(0,0,0,0.72)',
-      backdropFilter: 'blur(12px)',
-      WebkitBackdropFilter: 'blur(12px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: '1rem',
-    }}>
-      <div style={{
-        background: 'rgba(24,24,27,0.96)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: '20px',
-        width: '100%',
-        maxWidth: '420px',
-        maxHeight: '80vh',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
-      }}>
-
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0, 0, 0, 0.5)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        animation: 'fadeIn 0.2s ease',
+      }}
+      onClick={handleSkip}
+    >
+      <div
+        style={{
+          background: 'var(--color-bg-white)',
+          color: 'var(--color-text-main)',
+          border: '1px solid var(--color-border-light)',
+          borderRadius: '20px 20px 0 0',
+          width: '100%',
+          maxWidth: '500px',
+          height: '500px',
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          boxShadow: '0 -8px 40px rgba(0, 0, 0, 0.15)',
+          animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
         {/* Header */}
-        <div style={{ padding: '1.5rem 1.5rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: '10px',
-              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <Check size={18} color="#fff" strokeWidth={2.5} />
+        <div style={{ padding: '1.25rem 1.5rem 1rem', borderBottom: '1px solid var(--color-border-light)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flex: 1 }}>
+              {coverImage ? (
+                <img
+                  src={getMediaUrl(coverImage) || coverImage}
+                  alt=""
+                  style={{
+                    width: 44, height: 44, borderRadius: '10px',
+                    objectFit: 'cover', flexShrink: 0,
+                    background: 'var(--color-bg-soft)',
+                    border: '1px solid var(--color-border-light)',
+                  }}
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
+              ) : (
+                <div style={{
+                  width: 44, height: 44, borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <Check size={22} color="#ffffff" strokeWidth={2.5} />
+                </div>
+              )}
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p style={{
+                  margin: 0, fontWeight: 700, fontSize: '1rem',
+                  color: 'var(--color-text-main)',
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>
+                  {activityTitle || 'Untitled Activity'}
+                </p>
+                {activityDate && (
+                  <p style={{
+                    margin: '2px 0 0', fontSize: '0.78rem',
+                    color: 'var(--color-text-muted)',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    {activityDate}
+                  </p>
+                )}
+              </div>
             </div>
-            <div>
-              <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem', color: '#fff' }}>Activity published!</p>
-              <p style={{ margin: 0, fontSize: '0.78rem', color: 'rgba(255,255,255,0.45)' }}>{activityTitle}</p>
-            </div>
+            <button
+              onClick={handleSkip}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--color-text-muted)', padding: '4px', borderRadius: '50%',
+                flexShrink: 0,
+              }}
+              aria-label="Close"
+            >
+              <X size={20} />
+            </button>
           </div>
-
-          {/* Copy link */}
-          <button
-            onClick={handleCopy}
-            style={{
-              marginTop: '0.75rem',
-              width: '100%',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-              padding: '0.6rem 1rem',
-              borderRadius: '10px',
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: copied ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.05)',
-              color: copied ? '#10b981' : 'rgba(255,255,255,0.8)',
-              fontSize: '0.85rem', fontWeight: 500, cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            {copied ? <Check size={15} /> : <Link size={15} />}
-            {copied ? 'Link copied!' : 'Copy activity link'}
-          </button>
         </div>
 
-        {/* Friends list */}
+        {/* Friends list header + Copy link button */}
         <div style={{ padding: '1rem 1.5rem 0.5rem', flexShrink: 0 }}>
-          <p style={{ margin: '0 0 0.75rem', fontWeight: 600, fontSize: '0.88rem', color: 'rgba(255,255,255,0.7)' }}>
+          <p style={{ margin: '0 0 0.6rem', fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text-main)' }}>
             Invite friends
           </p>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            background: 'rgba(255,255,255,0.06)',
-            borderRadius: '10px', padding: '0.5rem 0.75rem',
-            border: '1px solid rgba(255,255,255,0.08)',
-          }}>
-            <Search size={14} color="rgba(255,255,255,0.35)" />
-            <input
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search friends…"
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <div style={{
+              flex: 1,
+              display: 'flex', alignItems: 'center', gap: '0.6rem',
+              background: 'var(--color-bg-soft)',
+              borderRadius: '12px', padding: '0.55rem 0.85rem',
+              border: '1px solid var(--color-border)',
+            }}>
+              <Search size={16} color="var(--color-text-light)" />
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search friends…"
+                style={{
+                  flex: 1, background: 'none', border: 'none', outline: 'none',
+                  color: 'var(--color-text-main)', fontSize: '0.88rem',
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleCopy}
+              title={copied ? 'Link copied!' : 'Copy activity link'}
               style={{
-                flex: 1, background: 'none', border: 'none', outline: 'none',
-                color: '#fff', fontSize: '0.85rem',
+                width: 38, height: 38, borderRadius: '12px',
+                border: '1px solid var(--color-border)',
+                background: copied ? 'rgba(16, 185, 129, 0.15)' : 'var(--color-bg-soft)',
+                color: copied ? '#10b981' : 'var(--color-text-main)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', flexShrink: 0,
+                transition: 'all 0.2s ease',
               }}
-            />
+              aria-label="Copy activity link"
+            >
+              {copied ? <Check size={18} /> : <Link size={18} />}
+            </button>
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 1.5rem' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 1.5rem', display: 'flex', flexDirection: 'column' }}>
           {isLoading ? (
-            <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '0.82rem', padding: '1rem 0' }}>Loading…</p>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
+              <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0 }}>Loading…</p>
+            </div>
           ) : filtered.length === 0 ? (
-            <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '0.82rem', padding: '1rem 0' }}>No friends found</p>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
+              <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0 }}>No friends found</p>
+            </div>
           ) : filtered.map(u => {
             const sel = selectedIds.includes(u.id);
             return (
@@ -524,21 +575,24 @@ function ActivityCreatedModal({ activityTitle, creationPromise, onDone }) {
                 onClick={() => toggle(u.id)}
                 style={{
                   width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem',
-                  padding: '0.6rem 0', background: 'none', border: 'none', cursor: 'pointer',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
+                  padding: '0.65rem 0', background: 'none', border: 'none', cursor: 'pointer',
+                  borderBottom: '1px solid var(--color-border-light)',
+                  transform: 'none',
+                  transition: 'none',
                 }}
               >
                 <div style={{ position: 'relative', flexShrink: 0 }}>
                   <img
-                    src={u.avatar || '/default_avatar.webp'}
+                    src={getMediaUrl(u.avatar) || '/default_avatar.webp'}
                     alt=""
-                    style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', background: '#333' }}
+                    style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', background: 'var(--color-bg-soft)' }}
+                    onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}
                   />
                   {sel && (
                     <span style={{
                       position: 'absolute', bottom: -2, right: -2,
                       width: 16, height: 16, borderRadius: '50%',
-                      background: '#6366f1', border: '2px solid #18181b',
+                      background: 'var(--color-primary, #2563eb)', border: '2px solid var(--color-bg-white)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
                       <Check size={9} color="#fff" strokeWidth={3} />
@@ -546,15 +600,16 @@ function ActivityCreatedModal({ activityTitle, creationPromise, onDone }) {
                   )}
                 </div>
                 <div style={{ flex: 1, textAlign: 'left' }}>
-                  <p style={{ margin: 0, fontWeight: 600, fontSize: '0.85rem', color: '#fff' }}>{u.displayName || u.username}</p>
-                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)' }}>@{u.username}</p>
+                  <p style={{ margin: 0, fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text-main)' }}>{u.displayName || u.username}</p>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>@{u.username}</p>
                 </div>
                 <div style={{
                   width: 22, height: 22, borderRadius: '6px', flexShrink: 0,
-                  border: sel ? 'none' : '1.5px solid rgba(255,255,255,0.2)',
-                  background: sel ? '#6366f1' : 'transparent',
+                  border: sel ? 'none' : '1.5px solid var(--color-border)',
+                  background: sel ? 'var(--color-primary, #2563eb)' : 'transparent',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transition: 'all 0.15s ease',
+                  transform: 'none',
+                  transition: 'none',
                 }}>
                   {sel && <Check size={12} color="#fff" strokeWidth={2.5} />}
                 </div>
@@ -565,17 +620,18 @@ function ActivityCreatedModal({ activityTitle, creationPromise, onDone }) {
 
         {/* Footer */}
         <div style={{
-          padding: '1rem 1.5rem',
-          borderTop: '1px solid rgba(255,255,255,0.07)',
+          padding: '1rem 1.5rem 1.5rem',
+          borderTop: '1px solid var(--color-border-light)',
           display: 'flex', gap: '0.75rem',
         }}>
           <button
             onClick={handleSkip}
             style={{
-              flex: 1, padding: '0.7rem', borderRadius: '10px',
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'transparent', color: 'rgba(255,255,255,0.6)',
-              fontSize: '0.88rem', fontWeight: 500, cursor: 'pointer',
+              flex: 1, height: '42px', borderRadius: '9999px',
+              border: '1px solid var(--color-border)',
+              background: 'var(--color-bg-soft)', color: 'var(--color-text-main)',
+              fontSize: '0.88rem', fontWeight: 600, cursor: 'pointer',
+              transition: 'all 0.2s ease',
             }}
           >
             Skip
@@ -584,13 +640,13 @@ function ActivityCreatedModal({ activityTitle, creationPromise, onDone }) {
             onClick={handleSend}
             disabled={isSending}
             style={{
-              flex: 2, padding: '0.7rem', borderRadius: '10px',
+              flex: 2, height: '42px', borderRadius: '9999px',
               border: 'none',
               background: selectedIds.length > 0
-                ? 'linear-gradient(135deg, #6366f1, #8b5cf6)'
-                : 'rgba(99,102,241,0.25)',
-              color: selectedIds.length > 0 ? '#fff' : 'rgba(255,255,255,0.4)',
-              fontSize: '0.88rem', fontWeight: 600, cursor: isSending ? 'not-allowed' : 'pointer',
+                ? 'var(--color-primary, #2563eb)'
+                : 'rgba(37, 99, 235, 0.25)',
+              color: selectedIds.length > 0 ? '#ffffff' : 'var(--color-text-muted)',
+              fontSize: '0.88rem', fontWeight: 700, cursor: isSending ? 'not-allowed' : 'pointer',
               transition: 'all 0.2s ease',
             }}
           >
@@ -599,7 +655,8 @@ function ActivityCreatedModal({ activityTitle, creationPromise, onDone }) {
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1102,6 +1159,8 @@ export default function CreateActivityPage() {
       {showInviteModal && (
         <ActivityCreatedModal
           activityTitle={formData.title}
+          coverImage={formData.coverImage}
+          activityDate={`${MONTHS[(formData.startDateMonth || 1) - 1] || ''} ${formData.startDateDay || ''}, ${formData.startTimeHour}:${formData.startTimeMinute} ${formData.startTimeAmPm}`}
           creationPromise={creationPromiseRef.current}
           onDone={() => navigate(returnTo, { replace: true })}
         />

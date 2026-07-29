@@ -50,7 +50,7 @@ class MediaCacheManager {
       return cached.url;
     }
 
-    return null;
+    return getMediaUrl(rawKey);
   }
 
   async getUrl(rawKey) {
