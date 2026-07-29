@@ -73,7 +73,7 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean | string) => void) => {
       if (!origin) return callback(null, true);
-       const isDevelopmentOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      const isDevelopmentOrigin = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/i.test(origin);
        const isAllowed = isProd
          ? configuredCorsOrigins.includes(origin)
          : configuredCorsOrigins.includes(origin) || isDevelopmentOrigin;
