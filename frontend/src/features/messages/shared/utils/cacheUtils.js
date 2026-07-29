@@ -1,7 +1,74 @@
-/**
- * Smart Cache Utilities for TanStack Query
- * Enables direct cache updates to eliminate full query invalidations and flickering.
- */
+export function matchesConversationId(c, targetId) {
+  if (!c || !targetId) return false;
+  const targetStr = String(targetId).trim().toLowerCase();
+  if (!targetStr) return false;
+
+  const cleanTarget = targetStr.replace(/^(act_)+/, '').replace(/^(c_)+/, '');
+
+  const candidates = [
+    c.id,
+    c.publicId,
+    c.internalId,
+    c.activityId,
+    c.username,
+    c.otherUser?.username,
+    c.otherUser?.id,
+  ].filter(Boolean).map(val => String(val).trim().toLowerCase());
+
+  if (candidates.includes(targetStr)) return true;
+
+  for (const cand of candidates) {
+    const cleanCand = cand.replace(/^(act_)+/, '').replace(/^(c_)+/, '');
+    if (cleanCand && cleanCand === cleanTarget) return true;
+  }
+
+  const participants = c.participants || c.members || [];
+  for (const p of participants) {
+    if (!p) continue;
+    const pUserId = p.userId != null ? String(p.userId).trim().toLowerCase() : null;
+    const pId = p.id != null ? String(p.id).trim().toLowerCase() : null;
+    const pUsername = p.username != null ? String(p.username).trim().toLowerCase() : null;
+
+    if (pUserId === targetStr || pId === targetStr || pUsername === targetStr) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function getConversationAliases(c) {
+  if (!c) return [];
+  const set = new Set();
+  [
+    c.id,
+    c.publicId,
+    c.internalId,
+    c.activityId,
+    c.username,
+    c.otherUser?.username,
+    c.otherUser?.id,
+  ].forEach(val => {
+    if (val != null) {
+      const s = String(val).trim();
+      if (s) {
+        set.add(s);
+        const clean = s.replace(/^(act_)+/, '').replace(/^(c_)+/, '');
+        if (clean) set.add(clean);
+      }
+    }
+  });
+
+  const participants = c.participants || c.members || [];
+  for (const p of participants) {
+    if (!p) continue;
+    if (p.userId) set.add(String(p.userId).trim());
+    if (p.id) set.add(String(p.id).trim());
+    if (p.username) set.add(String(p.username).trim());
+  }
+
+  return Array.from(set);
+}
 
 export function appendMessageToCache(queryClient, activeChatId, message) {
   if (!queryClient || !activeChatId || !message) return;
@@ -89,11 +156,7 @@ export function updateConversationPreview(queryClient, conversationId, previewTe
 
     if (!list) return old;
 
-    const idx = list.findIndex((c) =>
-      c.id === conversationId ||
-      c.publicId === conversationId ||
-      c.internalId === conversationId
-    );
+    const idx = list.findIndex((c) => matchesConversationId(c, conversationId));
     if (idx !== -1) {
       const targetConv = {
         ...list[idx],

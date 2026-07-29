@@ -8,7 +8,7 @@ import Avatar from './avatar/Avatar';
 import { parseConversationRoute } from '../utils/conversationUrl';
 import { messagesApi } from '../api/apiClient';
 import { useGlobalSocketSync } from '../hooks/useGlobalSocketSync';
-import { appendMessageToCache } from '../../features/messages/shared/utils/cacheUtils';
+import { appendMessageToCache, matchesConversationId, getConversationAliases } from '../../features/messages/shared/utils/cacheUtils';
 
 export default function SocketManager() {
   const { session, isLoggedIn } = useAuth();
@@ -569,6 +569,15 @@ export default function SocketManager() {
       const convId = message.conversationId || message.publicId || message.internalId;
       if (!convId) return;
 
+      const convs = queryClient.getQueryData(['conversations']) || [];
+      const targetConv = convs.find(
+        (c) =>
+          matchesConversationId(c, convId) ||
+          matchesConversationId(c, message.conversationId) ||
+          matchesConversationId(c, message.publicId) ||
+          matchesConversationId(c, message.internalId)
+      );
+
       const currentPath = window.location.pathname;
       const isMessagesRoute = currentPath.startsWith('/messages') || currentPath.startsWith('/inbox');
 
@@ -578,10 +587,16 @@ export default function SocketManager() {
         const param1 = pathParts[1];
         const param2 = pathParts[2];
         const routeInfo = parseConversationRoute(param1, param2);
-        const viewedId = routeInfo.publicId;
+        const viewedId = routeInfo.publicId || param2 || param1;
 
         if (viewedId) {
-          if (viewedId === convId || viewedId === message.conversationId || viewedId === message.publicId || viewedId === message.internalId) {
+          if (
+            viewedId === convId ||
+            viewedId === message.conversationId ||
+            viewedId === message.publicId ||
+            viewedId === message.internalId ||
+            (targetConv && matchesConversationId(targetConv, viewedId))
+          ) {
             isViewingCurrentChat = true;
           }
         }
@@ -593,9 +608,10 @@ export default function SocketManager() {
 
         let found = false;
         const updatedConvs = oldConvs.map((c) => {
-          const match = c.id === convId || c.publicId === convId || c.internalId === convId ||
-            (message.conversationId && (c.id === message.conversationId || c.publicId === message.conversationId)) ||
-            (message.publicId && (c.id === message.publicId || c.publicId === message.publicId));
+          const match =
+            matchesConversationId(c, convId) ||
+            (message.conversationId && matchesConversationId(c, message.conversationId)) ||
+            (message.publicId && matchesConversationId(c, message.publicId));
 
           if (match) {
             found = true;
@@ -622,16 +638,15 @@ export default function SocketManager() {
         return [...updatedConvs].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       });
 
-      // 2. Instant update of ['messages', convId] query cache if present
-      const targetKeys = [...new Set([message.conversationId, message.publicId, message.internalId].filter(Boolean))];
+      // 2. Instant update of ['messages', key] query cache for all aliases
+      const aliases = targetConv ? getConversationAliases(targetConv) : [];
+      const targetKeys = [...new Set([message.conversationId, message.publicId, message.internalId, ...aliases].filter(Boolean))];
       targetKeys.forEach((key) => {
         appendMessageToCache(queryClient, key, message);
       });
 
       // 3. If chat is NOT currently open, show instant screen toast notification
       if (!isViewingCurrentChat) {
-        const convs = queryClient.getQueryData(['conversations']) || [];
-        const targetConv = convs.find(c => c.id === convId || c.publicId === convId || c.internalId === convId);
         const isMuted = Boolean(targetConv?.muted || targetConv?.isMuted);
 
         if (!isMuted) {

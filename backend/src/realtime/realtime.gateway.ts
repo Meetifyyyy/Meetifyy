@@ -232,30 +232,29 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     const deviceId = (client as any).deviceId;
     
     if (userId) {
-      // Broadcast typing:stop to all conversation rooms this socket was in
-      const rooms = Array.from(client.rooms || []);
-      rooms.forEach(room => {
-        if (room.startsWith('conv_')) {
-          const conversationId = room.replace(/^conv_/, '');
-          this.server.to(room).emit('typing:stop', { conversationId, userId });
-        }
+      let userConvIds: string[] = [];
+      try {
+        const userConvs = await this.prisma.conversationParticipant.findMany({
+          where: { userId, deletedAt: null, leftAt: null },
+          select: { conversationId: true }
+        });
+        userConvIds = userConvs.map(p => p.conversationId).filter(Boolean);
+      } catch (err) {
+        this.logger.error('Failed to fetch conversation rooms on disconnect', err);
+      }
+
+      userConvIds.forEach(cId => {
+        this.server.to(`conv_${cId}`).emit('typing:stop', { conversationId: cId, userId });
       });
 
       await this.presenceService.setOffline(userId, client.id);
       const presence = await this.presenceService.getPresence(userId);
       if (!presence || presence.status === 'offline') {
-        // Scoped broadcast: only rooms this user was in
         const offlinePayload = { userId, status: 'offline', lastActive: presence?.lastSeen || new Date().toISOString() };
-        let broadcastToAny = false;
-        rooms.forEach(room => {
-          if (room.startsWith('conv_')) {
-            this.server.to(room).emit('presence:update', offlinePayload);
-            broadcastToAny = true;
-          }
+        userConvIds.forEach(cId => {
+          this.server.to(`conv_${cId}`).emit('presence:update', offlinePayload);
         });
-        if (!broadcastToAny) {
-          this.server.to(userId).emit('presence:update', offlinePayload);
-        }
+        this.server.to(userId).emit('presence:update', offlinePayload);
       }
     }
     if (deviceId) {
