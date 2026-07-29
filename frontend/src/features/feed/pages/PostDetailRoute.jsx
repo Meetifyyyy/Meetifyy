@@ -1,5 +1,6 @@
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useProfile, PROFILE_KEYS } from '@shared/hooks/useProfile';
 import { postsApi } from '@shared/api/apiClient';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useData } from '@shared/hooks/useData';
@@ -44,12 +45,8 @@ export default function PostDetailRoute() {
     communities: []
   };
 
-  const { data: profile } = useQuery({
-    queryKey: ['profile', author?.username],
-    queryFn: () => usersApi.getByUsername(author.username),
-    enabled: !!author?.username && author.username !== 'unknown',
-    staleTime: 1000 * 60,
-  });
+  // Instant profile loading with IndexedDB & query cache synchronization
+  const { profile } = useProfile(author?.username);
 
   const renderRightPanelSkeleton = () => {
     return (
@@ -234,11 +231,19 @@ export default function PostDetailRoute() {
         </RightPanel>
       );
     } else {
-      const isSelf = currentUser && author.id === currentUser.id;
+      const isSelf = currentUser && (profile?.id === currentUser.id || author.id === currentUser.id);
 
-      const isFollowingUser = profile?.isFollowing || false;
-      const displayFollowers = profile?.stats?.followers ?? author.followers ?? 0;
-      const displayFollowing = profile?.stats?.following ?? author.following ?? 0;
+      const effectiveUser = {
+        id: profile?.id || author?.id,
+        displayName: profile?.displayName || author?.displayName || 'Unknown User',
+        username: profile?.username || author?.username || 'unknown',
+        avatar: profile?.avatar || author?.avatarUrl || author?.avatar,
+        bio: profile?.bio ?? author?.bio ?? author?.desc ?? '',
+        followers: profile?.stats?.followers ?? profile?.followersCount ?? author?.followers ?? 0,
+        following: profile?.stats?.following ?? profile?.followingCount ?? author?.following ?? 0,
+        isFollowing: profile?.isFollowing ?? false,
+        communities: profile?.communities || author?.communities || []
+      };
 
       return (
         <RightPanel>
@@ -247,87 +252,93 @@ export default function PostDetailRoute() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               {/* Avatar */}
               <Avatar 
-                src={author.avatarUrl || author.avatar} 
-                name={author.displayName} 
+                src={effectiveUser.avatar} 
+                name={effectiveUser.displayName} 
                 size="80px" 
-                onClick={() => navigate(`/profile/${author.username || author.displayName?.toLowerCase().replace(/\s+/g, '')}`, { state: { from: location.pathname } })}
+                onClick={() => navigate(`/profile/${effectiveUser.username}`, { state: { from: location.pathname } })}
               />
               
               <div 
                 style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', cursor: 'pointer' }}
-                onClick={() => navigate(`/profile/${author.username || author.displayName?.toLowerCase().replace(/\s+/g, '')}`, { state: { from: location.pathname } })}
+                onClick={() => navigate(`/profile/${effectiveUser.username}`, { state: { from: location.pathname } })}
               >
-                <h2 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--color-text-main)', fontFamily: 'var(--font-family-display)' }}>{author.displayName}</h2>
-                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>@{author.username || author.displayName?.toLowerCase().replace(/\s+/g, '')}</div>
+                <h2 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--color-text-main)', fontFamily: 'var(--font-family-display)' }}>{effectiveUser.displayName}</h2>
+                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>@{effectiveUser.username}</div>
               </div>
 
               {/* Description */}
-              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--color-text-main)', lineHeight: '1.5' }}>
-                {author.bio || author.desc || 'Passionate about coding, design, and building communities. Always learning something new.'}
-              </p>
-
-              {/* Action Buttons */}
-              {!isSelf && (
-                <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
-                  <FollowButton targetUsername={author.username} initialFollowing={isFollowingUser} style={{ flex: 1 }} />
-                </div>
-              )}
+              {effectiveUser.bio ? (
+                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--color-text-main)', lineHeight: '1.5' }}>
+                  {effectiveUser.bio}
+                </p>
+              ) : null}
 
               {/* Stats */}
-              <div style={{ display: 'flex', gap: '2.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid var(--color-border-light)' }}>
+              <div style={{ display: 'flex', gap: '2.5rem' }}>
                 <div>
-                  <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '1.15rem' }}>{displayFollowers.toLocaleString()}</div>
+                  <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '1.15rem' }}>{effectiveUser.followers.toLocaleString()}</div>
                   <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', fontWeight: 500 }}>Followers</div>
                 </div>
                 <div>
-                  <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '1.15rem' }}>{displayFollowing.toLocaleString()}</div>
+                  <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '1.15rem' }}>{effectiveUser.following.toLocaleString()}</div>
                   <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', fontWeight: 500 }}>Following</div>
                 </div>
               </div>
 
-              {/* Communities */}
-              <div>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>Member of</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {(() => {
-                    const displayedCommunities = isSelf
-                      ? communities.filter(c => c.isMember).map(c => c.name)
-                      : (author.communities || []);
-                    return displayedCommunities && displayedCommunities.length > 0 ? displayedCommunities.map((commName, i) => {
-                      const commEntry = Object.entries(communities).find(([_, c]) => c.name === commName);
-                      const commId = commEntry ? commEntry[0] : null;
-                      return (
-                      <div 
-                        key={i} 
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: commId ? 'pointer' : 'default' }}
-                        onClick={() => commId && navigate(`/communities/${commId}`, { state: { from: location.pathname } })}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                          {commEntry?.[1]?.avatar ? (
-                            <img 
-                              src={commEntry[1].avatar} 
-                              alt={commName} 
-                              style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} 
-                             onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-                          ) : (
-                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'linear-gradient(135deg, #22C55E, #10B981)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#FFFFFF', fontSize: '0.8rem', fontWeight: 700 }}>
-                              {commName.charAt(0)}
-                            </div>
-                          )}
-                          <div>
-                            <div style={{ fontWeight: 700, color: 'var(--color-text-main)', fontSize: '0.85rem' }}>{commName}</div>
-                            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Member</div>
-                          </div>
-                        </div>
-                        <button style={{ background: 'var(--color-border-light)', color: 'var(--color-text-muted)', border: 'none', borderRadius: 'var(--radius-full)', padding: '0.25rem 0.6rem', fontSize: '0.75rem', fontWeight: 600, cursor: 'default' }}>Joined</button>
-                      </div>
-                      );
-                    }) : (
-                      <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>No communities yet.</div>
-                    );
-                  })()}
+              {/* Action Buttons */}
+              {!isSelf && (
+                <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
+                  <FollowButton targetUsername={effectiveUser.username} initialFollowing={effectiveUser.isFollowing} style={{ flex: 1 }} />
                 </div>
-              </div>
+              )}
+
+              {/* Communities */}
+              {(() => {
+                const displayedCommunities = isSelf
+                  ? communities.filter(c => c.isMember).map(c => c.name)
+                  : (Array.isArray(effectiveUser.communities) ? effectiveUser.communities.map(c => typeof c === 'string' ? c : c.name) : []);
+
+                if (!displayedCommunities || displayedCommunities.length === 0) return null;
+
+                return (
+                  <div style={{ paddingTop: '1.25rem', borderTop: '1px solid var(--color-border-light)' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>Member of</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {displayedCommunities.map((commName, i) => {
+                        const commEntry = Object.entries(communities).find(([_, c]) => c.name === commName);
+                        const commId = commEntry ? commEntry[0] : null;
+                        return (
+                          <div 
+                            key={i} 
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: commId ? 'pointer' : 'default' }}
+                            onClick={() => commId && navigate(`/communities/${commId}`, { state: { from: location.pathname } })}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                              {commEntry?.[1]?.avatar ? (
+                                <img 
+                                  src={commEntry[1].avatar} 
+                                  alt={commName} 
+                                  style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} 
+                                  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} 
+                                />
+                              ) : (
+                                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'linear-gradient(135deg, #22C55E, #10B981)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#FFFFFF', fontSize: '0.8rem', fontWeight: 700 }}>
+                                  {commName.charAt(0)}
+                                </div>
+                              )}
+                              <div>
+                                <div style={{ fontWeight: 700, color: 'var(--color-text-main)', fontSize: '0.85rem' }}>{commName}</div>
+                                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Member</div>
+                              </div>
+                            </div>
+                            <button style={{ background: 'var(--color-border-light)', color: 'var(--color-text-muted)', border: 'none', borderRadius: 'var(--radius-full)', padding: '0.25rem 0.6rem', fontSize: '0.75rem', fontWeight: 600, cursor: 'default' }}>Joined</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </RightPanel>

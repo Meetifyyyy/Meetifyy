@@ -3,6 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useGlobalSocketStore } from '../store/useGlobalSocketStore';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../hooks/useData';
+import { PROFILE_KEYS } from './useProfile';
+import { toggleRegistry } from '../utils/mutationRegistry';
 
 import { flushPendingQueue } from '../../features/messages/shared/utils/offlineSync';
 
@@ -95,32 +97,49 @@ export function useGlobalSocketSync() {
           const { followerId, followingUsername, followerStats, targetStats } = event.data;
           const isFollowing = event.type === 'follow.created';
           const isCurrentUserFollower = followerId === currentUser.id;
+          const cleanTarget = followingUsername?.toLowerCase();
+          const cleanCurrent = currentUser?.username?.toLowerCase();
 
-          queryClient.setQueryData(['profile', followingUsername], (old) => {
-            if (!old) return old;
-            return {
-              ...old,
-              stats: {
-                ...old.stats,
-                followers: targetStats?.followersCount ?? old.stats.followers,
-              },
-              ...(isCurrentUserFollower ? { isFollowing } : {}),
-            };
-          });
+          // Check if current user has an active optimistic toggle pending
+          const entityKey = `follow:${cleanTarget}`;
+          const hasPendingLocalIntent = toggleRegistry.latestIntents.has(entityKey);
 
-          if (isCurrentUserFollower) {
-            queryClient.setQueryData(['profile', currentUser.username], (old) => {
+          // Skip websocket state overwrite if current user triggered this and is mid-toggle
+          if (isCurrentUserFollower && hasPendingLocalIntent) {
+            break;
+          }
+
+          if (cleanTarget) {
+            queryClient.setQueryData(PROFILE_KEYS.byUsername(cleanTarget), (old) => {
               if (!old) return old;
+              const newFollowers = targetStats?.followersCount ?? old.stats?.followers ?? old.followersCount ?? 0;
               return {
                 ...old,
+                followersCount: newFollowers,
                 stats: {
                   ...old.stats,
-                  following: followerStats?.followingCount ?? old.stats.following,
+                  followers: newFollowers,
+                },
+                ...(isCurrentUserFollower ? { isFollowing } : {}),
+              };
+            });
+          }
+
+          if (isCurrentUserFollower && cleanCurrent) {
+            queryClient.setQueryData(PROFILE_KEYS.byUsername(cleanCurrent), (old) => {
+              if (!old) return old;
+              const newFollowing = followerStats?.followingCount ?? old.stats?.following ?? old.followingCount ?? 0;
+              return {
+                ...old,
+                followingCount: newFollowing,
+                stats: {
+                  ...old.stats,
+                  following: newFollowing,
                 },
               };
             });
-            queryClient.invalidateQueries({ queryKey: ['following', currentUser.username] });
-            queryClient.invalidateQueries({ queryKey: ['followers', followingUsername] });
+            queryClient.invalidateQueries({ queryKey: ['following', cleanCurrent] });
+            queryClient.invalidateQueries({ queryKey: ['followers', cleanTarget] });
           }
           break;
         }

@@ -16,7 +16,11 @@ export default function SavedPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const { getUserById } = useData();
-  const [activeTab, setActiveTab] = useState('activities'); // 'activities' | 'posts'
+  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'activities' | 'posts'
+
+  const handleTabClick = (tab) => {
+    setActiveTab((prev) => (prev === tab ? 'all' : tab));
+  };
 
   const savedActivities = useSavedActivitiesStore(state => state.savedActivities);
   const fetchSavedActivityIds = useSavedActivitiesStore(state => state.fetchSavedActivityIds);
@@ -58,16 +62,24 @@ export default function SavedPage() {
   });
 
   // Query all raw activities as fallback for locally bookmarked items
-  const { data: rawActivities = [] } = useQuery({
+  const { data: rawActivitiesData } = useQuery({
     queryKey: ['activities'],
-    queryFn: activitiesApi.getAll,
+    queryFn: () => activitiesApi.getAll(),
     staleTime: 30_000,
   });
-  const { data: rawCampusActivities = [] } = useQuery({
+  const { data: rawCampusActivitiesData } = useQuery({
     queryKey: ['campusActivities'],
-    queryFn: activitiesApi.getCampusActivities,
+    queryFn: () => activitiesApi.getCampusActivities(),
     staleTime: 30_000,
   });
+
+  const rawActivitiesList = Array.isArray(rawActivitiesData) 
+    ? rawActivitiesData 
+    : (Array.isArray(rawActivitiesData?.activities) ? rawActivitiesData.activities : []);
+
+  const rawCampusActivitiesList = Array.isArray(rawCampusActivitiesData) 
+    ? rawCampusActivitiesData 
+    : (Array.isArray(rawCampusActivitiesData?.activities) ? rawCampusActivitiesData.activities : []);
 
   const fullPosts = postsData?.pages.flatMap(page => page.posts || []) ?? [];
 
@@ -82,7 +94,7 @@ export default function SavedPage() {
       if (a && a.id) actMap.set(a.id, a);
     });
     // Add any raw/campus activity that is in savedActivities array
-    [...(rawActivities || []), ...(rawCampusActivities || [])].forEach(a => {
+    [...rawActivitiesList, ...rawCampusActivitiesList].forEach(a => {
       if (a && a.id && savedActivities?.includes(a.id) && !actMap.has(a.id)) {
         actMap.set(a.id, a);
       }
@@ -115,7 +127,7 @@ export default function SavedPage() {
       );
       if (loadMoreRef.current) observer.observe(loadMoreRef.current);
       return () => observer.disconnect();
-    } else {
+    } else if (activeTab === 'activities') {
       if (!hasNextActivitiesPage || isActivitiesLoading || isFetchingNextActivitiesPage) return;
       const observer = new IntersectionObserver(
         (entries) => {
@@ -146,6 +158,10 @@ export default function SavedPage() {
     localStorage.setItem('saved_view_mode', viewMode);
   }, [viewMode]);
 
+  const showActivities = activeTab === 'all' || activeTab === 'activities';
+  const showPosts = activeTab === 'all' || activeTab === 'posts';
+  const hasNoItems = fullSavedActivities.length === 0 && fullPosts.length === 0;
+
   return (
     <main className="centre animate-in">
       <header className={styles.header}>
@@ -159,127 +175,137 @@ export default function SavedPage() {
           <h1 className={styles.title}>Saved</h1>
         </div>
 
-        {activeTab === 'posts' && fullPosts.length > 0 && (
-          <div className={styles.viewToggleGroup}>
-            <button 
-              className={`${styles.viewToggleBtn} ${viewMode === 'compact' ? styles.active : ''}`}
-              onClick={() => setViewMode('compact')}
-              title="Compact View"
+        <div className={styles.headerRight}>
+          {/* Integrated Filter Pills */}
+          <div className={styles.tabGroup}>
+            <button
+              className={`${styles.tabBtn} ${activeTab === 'activities' ? styles.active : ''}`}
+              onClick={() => handleTabClick('activities')}
             >
-              <List size={18} />
+              <Calendar size={15} />
+              <span>Activities ({fullSavedActivities.length})</span>
             </button>
-            <button 
-              className={`${styles.viewToggleBtn} ${viewMode === 'expanded' ? styles.active : ''}`}
-              onClick={() => setViewMode('expanded')}
-              title="Expanded View"
+            <button
+              className={`${styles.tabBtn} ${activeTab === 'posts' ? styles.active : ''}`}
+              onClick={() => handleTabClick('posts')}
             >
-              <Grid size={18} />
+              <FileText size={15} />
+              <span>Posts ({fullPosts.length})</span>
             </button>
           </div>
-        )}
-      </header>
 
-      {/* TABS HEADER */}
-      <div className={styles.tabGroup}>
-        <button
-          className={`${styles.tabBtn} ${activeTab === 'activities' ? styles.active : ''}`}
-          onClick={() => setActiveTab('activities')}
-        >
-          <Calendar size={16} />
-          <span>Activities ({fullSavedActivities.length})</span>
-        </button>
-        <button
-          className={`${styles.tabBtn} ${activeTab === 'posts' ? styles.active : ''}`}
-          onClick={() => setActiveTab('posts')}
-        >
-          <FileText size={16} />
-          <span>Posts ({fullPosts.length})</span>
-        </button>
-      </div>
+          {showPosts && fullPosts.length > 0 && (
+            <div className={styles.viewToggleGroup}>
+              <button 
+                className={`${styles.viewToggleBtn} ${viewMode === 'compact' ? styles.active : ''}`}
+                onClick={() => setViewMode('compact')}
+                title="Compact View"
+              >
+                <List size={18} />
+              </button>
+              <button 
+                className={`${styles.viewToggleBtn} ${viewMode === 'expanded' ? styles.active : ''}`}
+                onClick={() => setViewMode('expanded')}
+                title="Expanded View"
+              >
+                <Grid size={18} />
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
 
       {/* CONTENT SECTION */}
       <div style={{ padding: '0.75rem' }}>
-        {activeTab === 'activities' ? (
-          isLoadingSavedActivities && fullSavedActivities.length === 0 ? (
-            <div className={styles.activitiesGrid}>
-              <CrewCardSkeleton />
-              <CrewCardSkeleton />
+        {(isActivitiesLoading || isPostsLoading) && hasNoItems ? (
+          <div className={styles.activitiesGrid}>
+            <CrewCardSkeleton />
+            <CrewCardSkeleton />
+          </div>
+        ) : hasNoItems ? (
+          <div className={styles.emptyState}>
+            <div className={styles.emptyIconWrapper}>
+              <Bookmark size={48} strokeWidth={1} />
             </div>
-          ) : fullSavedActivities.length === 0 ? (
-            <div className={styles.emptyState}>
-              <div className={styles.emptyIconWrapper}>
-                <Bookmark size={48} strokeWidth={1} />
-              </div>
-              <h2>No saved activities</h2>
-              <p>Tap the bookmark on any activity to save it here</p>
-            </div>
-          ) : (
-            <div className={styles.activitiesGrid}>
-              {fullSavedActivities.map(act => (
-                <CrewCard
-                  key={act.id}
-                  activity={act}
-                  onClick={() => navigate(`/crew/${act.id}`, { state: { activity: act, from: '/saved' } })}
-                />
-              ))}
-            </div>
-          )
+            <h2>Nothing saved yet</h2>
+            <p>Tap the bookmark icon on any activity or post to save it here</p>
+          </div>
         ) : (
-          <div className={`${styles.content} ${viewMode === 'expanded' ? styles.expandedLayout : styles.compactLayout}`}>
-            {!fullPosts || fullPosts.length === 0 ? (
-              <div className={styles.emptyState}>
-                <div className={styles.emptyIconWrapper}>
-                  <Bookmark size={48} strokeWidth={1} />
-                </div>
-                <h2>Nothing saved yet</h2>
-                <p>Tap the bookmark on any post to save it here</p>
-              </div>
-            ) : viewMode === 'expanded' ? (
-              <div className={styles.expandedContainer}>
-                {fullPosts.map(post => (
-                  <div key={post.id} className={styles.postWrapper}>
-                    <Post 
-                      postData={post} 
-                      hideCommunityTag={false} 
-                      onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved', from: '/saved' } })} 
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {/* ACTIVITIES SECTION */}
+            {showActivities && fullSavedActivities.length > 0 && (
+              <div className={styles.sectionContainer}>
+                {activeTab === 'all' && showPosts && fullPosts.length > 0 && (
+                  <h3 className={styles.sectionTitle}>Saved Activities</h3>
+                )}
+                <div className={styles.activitiesGrid}>
+                  {fullSavedActivities.map(act => (
+                    <CrewCard
+                      key={act.id}
+                      activity={act}
+                      onClick={() => navigate(`/crew/${act.id}`, { state: { activity: act, from: '/saved' } })}
                     />
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            ) : (
-              <div className={styles.compactContainer}>
-                {fullPosts.map(post => {
-                  const author = getUserById ? getUserById(post.authorId) : null;
-                  const displayName = author?.displayName || author?.username || 'Unknown';
-                  const avatar = author?.avatar;
-                  const previewText = post.text?.length > 80 ? post.text.substring(0, 80) + '...' : post.text;
+            )}
 
-                  return (
-                    <div key={post.id} className={styles.compactRow} onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved', from: '/saved' } })}>
-                      <div className={styles.compactAvatar}>
-                        <Avatar 
-                          src={avatar} 
-                          name={displayName} 
-                          size="36px" 
-                        />
-                      </div>
-                      <div className={styles.compactInfo}>
-                        <div className={styles.compactHeader}>
-                          <span className={styles.compactAuthorName}>{displayName}</span>
-                          {author?.username && <span className={styles.compactUsername}>@{author.username}</span>}
+            {/* POSTS SECTION */}
+            {showPosts && fullPosts.length > 0 && (
+              <div className={styles.sectionContainer}>
+                {activeTab === 'all' && showActivities && fullSavedActivities.length > 0 && (
+                  <h3 className={styles.sectionTitle}>Saved Posts</h3>
+                )}
+                <div className={`${styles.content} ${viewMode === 'expanded' ? styles.expandedLayout : styles.compactLayout}`}>
+                  {viewMode === 'expanded' ? (
+                    <div className={styles.expandedContainer}>
+                      {fullPosts.map(post => (
+                        <div key={post.id} className={styles.postWrapper}>
+                          <Post 
+                            postData={post} 
+                            hideCommunityTag={false} 
+                            onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved', from: '/saved' } })} 
+                          />
                         </div>
-                        <span className={styles.compactPreview}>{previewText}</span>
-                      </div>
+                      ))}
                     </div>
-                  );
-                })}
+                  ) : (
+                    <div className={styles.compactContainer}>
+                      {fullPosts.map(post => {
+                        const author = getUserById ? getUserById(post.authorId) : null;
+                        const displayName = author?.displayName || author?.username || 'Unknown';
+                        const avatar = author?.avatar;
+                        const previewText = post.text?.length > 80 ? post.text.substring(0, 80) + '...' : post.text;
+
+                        return (
+                          <div key={post.id} className={styles.compactRow} onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved', from: '/saved' } })}>
+                            <div className={styles.compactAvatar}>
+                              <Avatar 
+                                src={avatar} 
+                                name={displayName} 
+                                size="36px" 
+                              />
+                            </div>
+                            <div className={styles.compactInfo}>
+                              <div className={styles.compactHeader}>
+                                <span className={styles.compactAuthorName}>{displayName}</span>
+                                {author?.username && <span className={styles.compactUsername}>@{author.username}</span>}
+                              </div>
+                              <span className={styles.compactPreview}>{previewText}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
         )}
       </div>
 
-      {((activeTab === 'posts' && hasNextPostsPage) || (activeTab === 'activities' && hasNextActivitiesPage)) && (
+      {((showPosts && hasNextPostsPage) || (showActivities && hasNextActivitiesPage)) && (
         <div ref={loadMoreRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
           <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '3px' }} />
         </div>

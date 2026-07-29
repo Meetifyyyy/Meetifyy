@@ -4,6 +4,7 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { messagesApi, usersApi, postsApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { PROFILE_KEYS } from '@shared/hooks/useProfile';
 
 import { showToast } from '@shared/utils/toast';
 import Post from '@features/feed/components/post/Post';
@@ -23,6 +24,36 @@ import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { getCollegeName } from '@shared/utils/user';
 
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
+
+function formatMajor(majorStr) {
+  if (!majorStr || typeof majorStr !== 'string') return '';
+  const parts = majorStr.split(/\s*-\s*/);
+  const uniqueParts = Array.from(new Set(parts.map(p => p.trim()).filter(Boolean)));
+  return uniqueParts.join(' - ');
+}
+
+function balanceTagsIntoTwoRows(tags) {
+  if (!tags || tags.length === 0) return [[], []];
+  if (tags.length === 1) return [tags, []];
+
+  const row1 = [];
+  const row2 = [];
+  let len1 = 0;
+  let len2 = 0;
+
+  tags.forEach(tag => {
+    const tagLen = (tag.label || '').length + 6;
+    if (len1 <= len2) {
+      row1.push(tag);
+      len1 += tagLen;
+    } else {
+      row2.push(tag);
+      len2 += tagLen;
+    }
+  });
+
+  return [row1, row2];
+}
 
 // Build emoji lookup map
 const emojiMap = {};
@@ -99,7 +130,7 @@ export default function ProfilePage() {
     try {
       await usersApi.updateProfile({ cover: gradient });
       await updateProfile({ cover: gradient });
-      queryClient.invalidateQueries(['profile', targetUsername]);
+      queryClient.invalidateQueries(PROFILE_KEYS.byUsername(targetUsername));
       showToast('Cover updated!');
       setShowCoverEditor(false);
     } catch {
@@ -147,7 +178,7 @@ export default function ProfilePage() {
       const updateData = cropType === 'avatar' ? { avatar: publicUrl } : { cover: publicUrl };
       await usersApi.updateProfile(updateData);
       await updateProfile(updateData);
-      queryClient.invalidateQueries(['profile', targetUsername]);
+      queryClient.invalidateQueries(PROFILE_KEYS.byUsername(targetUsername));
       showToast(`${cropType === 'avatar' ? 'Avatar' : 'Cover'} updated!`);
       if (cropType === 'cover') setShowCoverEditor(false);
     } catch (e) {
@@ -176,7 +207,7 @@ export default function ProfilePage() {
     error: profileError, 
     refetch: refetchProfile 
   } = useQuery({
-    queryKey: ['profile', targetUsername],
+    queryKey: PROFILE_KEYS.byUsername(targetUsername),
     queryFn: () => usersApi.getByUsername(targetUsername),
     enabled: !!targetUsername && targetUsername !== 'unknown',
     // Always refetch on mount — prevents stale data from a previous
@@ -223,7 +254,10 @@ export default function ProfilePage() {
   }
 
   if (effectiveUser.major) {
-    userTags.push({ icon: '🤖', label: effectiveUser.major });
+    const cleanMajor = formatMajor(effectiveUser.major);
+    if (cleanMajor) {
+      userTags.push({ icon: '🤖', label: cleanMajor });
+    }
   }
 
   if (effectiveUser.interests && Array.isArray(effectiveUser.interests)) {
@@ -382,24 +416,33 @@ export default function ProfilePage() {
               {effectiveUser.bio && <p className={s.bio}>{effectiveUser.bio}</p>}
 
               {/* Interest tags */}
-              <div className={s.tagsScrollWrapper}>
-                <div className={s.tagsRow}>
-                  {userTags.filter((_, idx) => idx % 2 === 0).map((tag, idx) => (
-                    <div key={`tag-row1-${idx}`} className={s.tag}>
-                      <span>{tag.icon}</span>
-                      <span>{tag.label}</span>
+              {(() => {
+                const [row1Tags, row2Tags] = balanceTagsIntoTwoRows(userTags);
+                if (userTags.length === 0) return null;
+
+                return (
+                  <div className={s.tagsScrollWrapper}>
+                    <div className={s.tagsRow}>
+                      {row1Tags.map((tag, idx) => (
+                        <div key={`tag-row1-${idx}`} className={s.tag}>
+                          <span>{tag.icon}</span>
+                          <span>{tag.label}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                <div className={s.tagsRow}>
-                  {userTags.filter((_, idx) => idx % 2 !== 0).map((tag, idx) => (
-                    <div key={`tag-row2-${idx}`} className={s.tag}>
-                      <span>{tag.icon}</span>
-                      <span>{tag.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                    {row2Tags.length > 0 && (
+                      <div className={s.tagsRow}>
+                        {row2Tags.map((tag, idx) => (
+                          <div key={`tag-row2-${idx}`} className={s.tag}>
+                            <span>{tag.icon}</span>
+                            <span>{tag.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Stats */}
               <div className={s.statsContainer}>
@@ -420,7 +463,7 @@ export default function ProfilePage() {
               {/* Action buttons */}
               {!isOwnProfile ? (
                 <div className={s.actionButtons}>
-                  <FollowButton targetUsername={profileUser.username} />
+                  <FollowButton targetUsername={profileUser.username} style={{ height: '42px', width: '100%', flex: '1 1 0%' }} />
                   <button className={s.secondaryBtn} onClick={handleMessageClick}>
                     Message
                   </button>

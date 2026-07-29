@@ -11,6 +11,7 @@
  *   <a onMouseEnter={() => prefetchProfile(queryClient, username)}>...</a>
  */
 import { communitiesApi, activitiesApi, usersApi, messagesApi } from '@shared/api/apiClient';
+import { PROFILE_KEYS } from './useProfile';
 
 // ── Community ────────────────────────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ export function prefetchCommunity(queryClient, id) {
 export function prefetchProfile(queryClient, username) {
   if (!username || username === 'unknown' || !queryClient) return;
   queryClient.prefetchQuery({
-    queryKey: ['profile', username],
+    queryKey: PROFILE_KEYS.byUsername(username),
     queryFn: () => usersApi.getByUsername(username),
     staleTime: 2 * 60 * 1000,
   });
