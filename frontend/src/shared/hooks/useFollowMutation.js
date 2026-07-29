@@ -22,7 +22,7 @@ const DEBOUNCE_MS = 300;
  * 5. One silent refetch only after the FINAL mutation settles
  */
 export function useFollowMutation(targetUsername) {
-  const { currentUser } = useAuth();
+  const { currentUser, updateCurrentUser } = useAuth();
   const queryClient = useQueryClient();
   const mutationSeqRef = useRef(0);
 
@@ -33,18 +33,42 @@ export function useFollowMutation(targetUsername) {
   const applyOptimisticUpdate = useCallback((isFollowing) => {
     if (!cleanTarget) return;
 
+    // Synchronize AuthContext's currentUser.followingList immediately
+    if (currentUser && targetUsername) {
+      const currentList = Array.isArray(currentUser.followingList) ? currentUser.followingList : [];
+      let nextList = currentList;
+      if (isFollowing && !currentList.some(u => u?.toLowerCase() === cleanTarget)) {
+        nextList = [...currentList, targetUsername];
+      } else if (!isFollowing) {
+        nextList = currentList.filter(u => u?.toLowerCase() !== cleanTarget);
+      }
+      if (nextList !== currentList) {
+        updateCurrentUser({ ...currentUser, followingList: nextList });
+      }
+    }
+
     // Target profile by username
     queryClient.setQueryData(PROFILE_KEYS.byUsername(cleanTarget), (old) => {
       if (!old) return old;
-      const currentFollowers = old.stats?.followers ?? old.followersCount ?? 0;
+      const currentFollowers = old.stats?.followers ?? old.followersCount ?? old.followersList?.length ?? 0;
       const currentlyFollowing = Boolean(old.isFollowing);
       const delta = isFollowing ? (currentlyFollowing ? 0 : 1) : (currentlyFollowing ? -1 : 0);
       const newFollowers = Math.max(0, currentFollowers + delta);
+
+      let updatedFollowersList = old.followersList;
+      if (Array.isArray(old.followersList) && cleanCurrent) {
+        if (isFollowing && !old.followersList.includes(cleanCurrent)) {
+          updatedFollowersList = [...old.followersList, cleanCurrent];
+        } else if (!isFollowing) {
+          updatedFollowersList = old.followersList.filter(u => u?.toLowerCase() !== cleanCurrent);
+        }
+      }
 
       return {
         ...old,
         isFollowing,
         followersCount: newFollowers,
+        ...(updatedFollowersList ? { followersList: updatedFollowersList } : {}),
         stats: {
           ...old.stats,
           followers: newFollowers,
@@ -56,7 +80,7 @@ export function useFollowMutation(targetUsername) {
     const updateUserObj = (u) => {
       if (!u) return u;
       if (u.username?.toLowerCase() === cleanTarget) {
-        const currentFollowers = u.stats?.followers ?? u.followersCount ?? 0;
+        const currentFollowers = u.stats?.followers ?? u.followersCount ?? u.followersList?.length ?? 0;
         const currentlyFollowing = Boolean(u.isFollowing);
         const delta = isFollowing ? (currentlyFollowing ? 0 : 1) : (currentlyFollowing ? -1 : 0);
         const newFollowers = Math.max(0, currentFollowers + delta);
@@ -67,7 +91,7 @@ export function useFollowMutation(targetUsername) {
           stats: u.stats ? {
             ...u.stats,
             followers: newFollowers,
-          } : u.stats,
+          } : { followers: newFollowers },
         };
       }
       return u;
@@ -93,13 +117,23 @@ export function useFollowMutation(targetUsername) {
     if (cleanCurrent) {
       queryClient.setQueryData(PROFILE_KEYS.byUsername(cleanCurrent), (old) => {
         if (!old) return old;
-        const currentFollowing = old.stats?.following ?? old.followingCount ?? 0;
-        const currentlyFollowingTarget = Boolean(old.isFollowing);
+        const currentFollowing = old.stats?.following ?? old.followingCount ?? old.followingList?.length ?? 0;
         const delta = isFollowing ? 1 : -1;
         const newFollowing = Math.max(0, currentFollowing + delta);
+
+        let updatedFollowingList = old.followingList;
+        if (Array.isArray(old.followingList)) {
+          if (isFollowing && !old.followingList.includes(cleanTarget)) {
+            updatedFollowingList = [...old.followingList, targetUsername];
+          } else if (!isFollowing) {
+            updatedFollowingList = old.followingList.filter(u => u?.toLowerCase() !== cleanTarget);
+          }
+        }
+
         return {
           ...old,
           followingCount: newFollowing,
+          ...(updatedFollowingList ? { followingList: updatedFollowingList } : {}),
           stats: {
             ...old.stats,
             following: newFollowing,
@@ -107,7 +141,7 @@ export function useFollowMutation(targetUsername) {
         };
       });
     }
-  }, [queryClient, cleanTarget, cleanCurrent]);
+  }, [queryClient, cleanTarget, cleanCurrent, currentUser, targetUsername, updateCurrentUser]);
 
   const scheduleRequest = useCallback((intentFollow) => {
     if (!cleanTarget) return;

@@ -186,7 +186,15 @@ export class UsersService {
               WHERE f."followerId" = ${currentUserId || ''} AND f."followingId" = u."id"
             )
           ELSE false 
-        END AS "isFollowing"
+        END AS "isFollowing",
+        CASE 
+          WHEN ${currentUserId ? currentUserId : ''}::text != '' AND ${currentUserId ? currentUserId : ''}::text != u."id" THEN
+            EXISTS(
+              SELECT 1 FROM "Follow" f 
+              WHERE f."followerId" = u."id" AND f."followingId" = ${currentUserId || ''}
+            )
+          ELSE false 
+        END AS "isFollowedBy"
       FROM "User" u
       LEFT JOIN "College" c ON u."collegeId" = c."id"
       LEFT JOIN "UserSettings" s ON s."userId" = u."id"
@@ -213,6 +221,9 @@ export class UsersService {
         }
       : null;
 
+    const isFollowing = !!row.isFollowing;
+    const isFollowedBy = !!row.isFollowedBy;
+
     return {
       id: row.id,
       username: row.username,
@@ -236,7 +247,9 @@ export class UsersService {
         following: Number(row.followingCount || 0),
         posts: Number(row.postsCount || 0),
       },
-      isFollowing: !!row.isFollowing,
+      isFollowing,
+      isFollowedBy,
+      isMutual: isFollowing && isFollowedBy,
     };
   }
 

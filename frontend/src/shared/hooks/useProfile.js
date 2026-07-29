@@ -40,20 +40,31 @@ export function useProfile(username) {
     placeholderData: (prev) => prev,
   });
 
+  // If cached data is present but incomplete (missing stats), invalidate to fetch complete profile
+  const isDataIncomplete = query.data && !query.data.stats;
+  useEffect(() => {
+    if (isDataIncomplete && username && username !== 'unknown') {
+      queryClient.invalidateQueries({ queryKey: qk });
+    }
+  }, [isDataIncomplete, username, qk, queryClient]);
+
   // Hydrate from IndexedDB before first network response
   useEffect(() => {
     if (!username || username === 'unknown' || query.data) return;
     idbGet('profiles', username.toLowerCase()).then((cached) => {
-      if (cached?.value) queryClient.setQueryData(qk, cached.value);
+      if (cached?.value && cached.value.stats) {
+        queryClient.setQueryData(qk, cached.value);
+      }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
   return {
     profile: query.data,
-    isLoading: query.isLoading,
+    isLoading: query.isLoading || (query.isFetching && isDataIncomplete),
     isError: query.isError,
     error: query.error,
+    refetch: query.refetch,
   };
 }
 
