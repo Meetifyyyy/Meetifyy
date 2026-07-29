@@ -48,6 +48,26 @@ export class TriggerLoginEmailDto {
   @IsOptional()
   @IsString()
   time?: string;
+
+  @IsOptional()
+  @IsString()
+  timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  userAgent?: string;
+
+  @IsOptional()
+  @IsString()
+  browser?: string;
+
+  @IsOptional()
+  @IsString()
+  os?: string;
+
+  @IsOptional()
+  @IsString()
+  ip?: string;
 }
 
 export class TriggerPasswordChangedEmailDto {

@@ -79,7 +79,10 @@ export class EmailProcessor extends WorkerHost {
           name: job.data.name,
           device: job.data.device,
           location: job.data.location,
-          time: job.data.time
+          time: job.data.time,
+          browser: job.data.browser,
+          os: job.data.os,
+          ip: job.data.ip,
         }));
         break;
 

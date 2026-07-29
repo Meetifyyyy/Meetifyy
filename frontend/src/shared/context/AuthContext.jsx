@@ -248,6 +248,19 @@ export function AuthProvider({ children }) {
         body: JSON.stringify({
           email: user.email,
           name: user.user_metadata?.displayName || user.email.split('@')[0],
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          userAgent: navigator.userAgent,
+          time: new Date().toLocaleString('en-US', {
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            weekday: 'short',
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true,
+          }),
         }),
       });
     } catch (e) {

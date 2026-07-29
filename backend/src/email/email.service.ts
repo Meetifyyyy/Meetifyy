@@ -13,10 +13,20 @@ export class EmailService {
     await this.emailQueue.add('send-welcome-email', { email, name });
   }
 
-  async sendNewLoginEmail(email: string, name: string, device: string, location: string, time: string) {
+  async sendNewLoginEmail(
+    email: string,
+    name: string,
+    device: string,
+    location: string,
+    time: string,
+    browser?: string,
+    os?: string,
+    ip?: string,
+  ) {
     this.logger.log(`Queuing new login email for ${email}`);
-    await this.emailQueue.add('send-new-login-email', { email, name, device, location, time });
+    await this.emailQueue.add('send-new-login-email', { email, name, device, location, time, browser, os, ip });
   }
+
 
   async sendResetPasswordEmail(email: string, name: string, resetLink: string) {
     this.logger.log(`Queuing reset password email for ${email}`);
