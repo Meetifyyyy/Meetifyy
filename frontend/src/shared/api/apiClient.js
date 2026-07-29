@@ -42,10 +42,12 @@ export const getBackendUrl = () => {
       return `${window.location.protocol}//${host}:4000`;
     }
   }
-  if (envUrl) {
-    return envUrl;
+
+  let finalUrl = envUrl || 'https://meetifyy-production.up.railway.app';
+  if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+    finalUrl = `https://${finalUrl}`;
   }
-  return 'https://meetifyy-production.up.railway.app';
+  return finalUrl;
 };
 
 export const getMediaUrl = (pathOrUrl) => {
