@@ -105,6 +105,11 @@ async function bootstrap() {
 
   const port = process.env.PORT || 4000;
   await app.listen(port, '0.0.0.0');
+
+  const server = app.getHttpServer();
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 66000;
+
   const logger = new NestLogger('Bootstrap');
   const env = process.env.NODE_ENV === 'production' ? 'Production' : 'Development';
   

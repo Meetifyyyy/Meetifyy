@@ -27,10 +27,14 @@ export class RedisService implements OnModuleDestroy {
         const options = {
           maxRetriesPerRequest: null,
           enableReadyCheck: false,
+          keepAlive: 10000,
+          noDelay: true,
+          family: 4,
+          connectTimeout: 5000,
           tls: isTls ? { rejectUnauthorized: false } : undefined,
           retryStrategy(times: number) {
-            if (times > 3) return null;
-            return Math.min(times * 500, 2000);
+            if (times > 5) return 2000;
+            return Math.min(times * 200, 1000);
           },
         };
 

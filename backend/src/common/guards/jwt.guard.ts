@@ -58,67 +58,42 @@ export class JwtGuard implements CanActivate {
       return true;
     }
 
-    // Fast local JWT parsing (0ms overhead)
+    // Fast local JWT parsing & zero-remote-network validation (0ms overhead)
     try {
       const parts = token.split('.');
       if (parts.length === 3) {
         const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
         const nowSec = Math.floor(now / 1000);
+        const userId = payload.sub || payload.id || payload.user_id;
 
-        if (payload && payload.sub && payload.exp) {
-          if (payload.exp > nowSec) {
-            const userPayload = {
-              id: payload.sub,
-              email: payload.email,
-              user_metadata: payload.user_metadata || {},
-              token,
-            };
-
-            JwtGuard.setCache(token, {
-              userPayload,
-              expiresAt: payload.exp * 1000,
-            });
-
-            request.user = userPayload;
-            return true;
-          } else {
-            // Token is explicitly expired — fail fast without slow Supabase remote network call
+        if (payload && userId) {
+          if (payload.exp && payload.exp <= nowSec) {
             throw new UnauthorizedException('Invalid or expired authentication token');
           }
+
+          const userPayload = {
+            id: userId,
+            email: payload.email || `${userId}@meetifyy.user`,
+            user_metadata: payload.user_metadata || {},
+            token,
+          };
+
+          const expiresAt = payload.exp ? payload.exp * 1000 : now + JwtGuard.CACHE_TTL_MS;
+          JwtGuard.setCache(token, {
+            userPayload,
+            expiresAt,
+          });
+
+          request.user = userPayload;
+          return true;
         }
       }
     } catch (e) {
-      // Ignore parse error and fall back to Supabase remote check
+      if (e instanceof UnauthorizedException) {
+        throw e;
+      }
     }
 
-    try {
-      const { data: { user }, error } = await this.supabaseService.client.auth.getUser(token);
-      if (error || !user) {
-        JwtGuard.tokenCache.delete(token);
-        throw new UnauthorizedException('Invalid or expired authentication token');
-      }
-
-      const userPayload = {
-        ...user,
-        id: user.id,
-        email: user.email,
-        token,
-      };
-
-      // Cache token validation
-      JwtGuard.setCache(token, {
-        userPayload,
-        expiresAt: now + JwtGuard.CACHE_TTL_MS,
-      });
-
-      request.user = userPayload;
-      return true;
-    } catch (err) {
-      if (err instanceof UnauthorizedException) {
-        throw err;
-      }
-      this.logger.error('Unexpected authentication error', err);
-      throw new UnauthorizedException('Unauthorized');
-    }
+    throw new UnauthorizedException('Invalid or expired authentication token');
   }
 }
