@@ -8,7 +8,7 @@ import Skeleton from '@shared/components/skeletons/Skeleton';
 import { getCollegeName } from '@shared/utils/user';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
-import { dmApi, messagesApi } from '@shared/api/apiClient';
+import { dmApi, messagesApi, getMediaUrl } from '@shared/api/apiClient';
 import defaultCover from '@assets/images/default_cover.webp';
 import s from './UserSidebarCard.module.css';
 
@@ -50,16 +50,19 @@ function balanceTagsIntoTwoRows(tags) {
   return [row1, row2];
 }
 
-function getSafeCoverUrl(url, fallback) {
-  if (!url || typeof url !== 'string') return fallback;
-  if (url.startsWith('data:image/')) return url;
-  try {
-    const parsed = new URL(url, window.location.origin);
-    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
-      return url;
-    }
-  } catch {}
-  return fallback;
+function getCoverStyle(cover, fallback) {
+  if (!cover || typeof cover !== 'string' || !cover.trim()) {
+    return { backgroundImage: `url("${fallback}")` };
+  }
+  const clean = cover.trim();
+  if (clean.startsWith('linear-gradient') || clean.startsWith('radial-gradient') || clean.startsWith('conic-gradient')) {
+    return { background: clean };
+  }
+  if (clean.startsWith('data:image/') || clean.startsWith('blob:')) {
+    return { backgroundImage: `url("${clean}")` };
+  }
+  const fullUrl = getMediaUrl(clean);
+  return { backgroundImage: `url("${encodeURI(fullUrl)}")` };
 }
 
 export function UserSidebarCardSkeleton() {
@@ -223,7 +226,6 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
     return <UserSidebarCardSkeleton />;
   }
 
-  const coverUrl = getSafeCoverUrl(effectiveUser.cover, defaultCover);
   const isVerified = Boolean(effectiveUser.verified);
   const isMutual = Boolean(effectiveUser.isMutual);
 
@@ -233,7 +235,7 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
       <div className={s.coverWrap}>
         <div 
           className={s.coverPhoto} 
-          style={{ backgroundImage: `url("${encodeURI(coverUrl)}")` }}
+          style={getCoverStyle(effectiveUser.cover, defaultCover)}
         />
       </div>
 

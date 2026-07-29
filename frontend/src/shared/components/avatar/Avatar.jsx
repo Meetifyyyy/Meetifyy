@@ -33,7 +33,7 @@ export function getProcessedAvatarUrl(src) {
   if (!src) return defaultAvatarImg;
   let s = src;
   if (typeof s === 'object') {
-    s = s.avatarUrl || s.avatar || s.url || s.objectKey || s.profileImage || '';
+    s = s.avatar || s.avatarUrl || s.url || s.objectKey || s.profileImage || '';
   }
   if (typeof s !== 'string' || !s.trim() || s.trim().length <= 2) {
     return defaultAvatarImg;
@@ -65,14 +65,8 @@ const Avatar = forwardRef(({
   children
 }, ref) => {
   const initialProcessedSrc = getProcessedAvatarUrl(src);
-  // getSyncUrl handles caching; for absolute/external URLs just use directly
   const syncResolved = mediaCache.getSyncUrl(initialProcessedSrc) || (
-    initialProcessedSrc && (
-      initialProcessedSrc.startsWith('https://') ||
-      initialProcessedSrc.startsWith('data:') ||
-      initialProcessedSrc.startsWith('blob:') ||
-      initialProcessedSrc.includes('default_avatar')
-    ) ? initialProcessedSrc : null
+    (initialProcessedSrc && initialProcessedSrc !== defaultAvatarImg) ? initialProcessedSrc : null
   );
 
   const [imgSrc, setImgSrc] = useState(syncResolved || defaultAvatarImg);
@@ -85,22 +79,17 @@ const Avatar = forwardRef(({
       return;
     }
 
-    const currentSync = mediaCache.getSyncUrl(initialProcessedSrc);
-    if (currentSync) {
-      setImgSrc(currentSync);
-      return;
-    }
+    const currentSync = mediaCache.getSyncUrl(initialProcessedSrc) || initialProcessedSrc;
+    setImgSrc(currentSync);
 
     const fetchUrl = async () => {
       try {
         const resolvedUrl = await mediaCache.getUrl(initialProcessedSrc);
-        if (isMounted) {
-          setImgSrc(resolvedUrl || defaultAvatarImg);
+        if (isMounted && resolvedUrl) {
+          setImgSrc(resolvedUrl);
         }
       } catch (err) {
-        if (isMounted) {
-          setImgSrc(defaultAvatarImg);
-        }
+        // Keep currentSync fallback on error
       }
     };
     

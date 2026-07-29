@@ -977,23 +977,24 @@
 }
 
 .dtFooter {
-  padding: 0.75rem 1.3rem;
+  padding: 0.85rem 1.2rem;
   border-top: 1px solid var(--color-border-light);
   flex-shrink: 0;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
 }
 
 .dtDone {
   background: var(--color-primary);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-full);
+  color: #ffffff;
+  border: 1px solid var(--color-primary);
+  border-radius: 10px;
   font-family: var(--font-family-sans);
   font-size: 0.85rem;
   font-weight: 600;
-  padding: 0.5rem 1.4rem;
+  padding: 0.5rem 1.25rem;
   cursor: pointer;
   transition: background var(--transition-fast), transform var(--transition-fast);
   box-shadow: 0 4px 12px rgba(var(--color-primary-rgb), 0.3);
@@ -1008,18 +1009,18 @@
 .capModal {
   background: var(--color-bg-white);
   border: 1px solid var(--color-border);
-  border-radius: 20px;
-  width: 100%;
-  max-width: 320px;
+  border-radius: 22px;
+  width: 90%;
+  max-width: 310px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
   animation: modalIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
 .capBody {
-  padding: 1.25rem 1.3rem 1rem;
+  padding: 1.35rem 1.4rem 1.1rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -1027,7 +1028,7 @@
 
 .capHint {
   font-family: var(--font-family-sans);
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   color: var(--color-text-muted);
   margin: 0;
 }
@@ -1036,13 +1037,13 @@
   width: 100%;
   background: rgba(var(--color-primary-rgb), 0.04);
   border: 1.5px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 14px;
   color: var(--color-text-main);
   font-family: var(--font-family-display);
-  font-size: 1.8rem;
+  font-size: 1.9rem;
   font-weight: 700;
   text-align: center;
-  padding: 0.6rem;
+  padding: 0.65rem;
   outline: none;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   -moz-appearance: textfield;
@@ -1065,17 +1066,60 @@
   box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1);
 }
 
-.capResetBtn {
-  background: rgba(var(--color-bg-white-rgb, 255, 255, 255), 0.15);
-  border: none;
-  border-radius: var(--radius-full);
-  color: var(--color-text-muted);
+.capModal .dtFooter {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.capModal .capResetBtn,
+.capModal .dtDone {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   font-family: var(--font-family-sans);
-  font-size: 0.82rem;
-  font-weight: 500;
-  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.capModal .capResetBtn {
+  background: var(--color-bg-soft, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--color-border);
+  color: var(--color-text-main);
+  padding: 0 0.3rem;
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: all var(--transition-fast);
+}
+
+.capModal .capResetBtn:hover {
+  background: var(--color-bg-hover, rgba(255, 255, 255, 0.12));
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.capModal .dtDone {
+  background: var(--color-primary);
+  color: #ffffff;
+  border: 1px solid var(--color-primary);
+  padding: 0 0.3rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+  box-shadow: 0 4px 12px rgba(var(--color-primary-rgb), 0.3);
+}
+
+.capModal .dtDone:hover {
+  background: var(--color-primary-hover);
+  transform: translateY(-1px);
 }
 
 .capResetBtn:hover {

@@ -62,9 +62,12 @@ export function AuthProvider({ children }) {
             const cleanEmail = (syncedUser.email && !syncedUser.email.endsWith('@meetifyy.user'))
               ? syncedUser.email
               : (sbEmail || prev?.email || '');
+            const newAvatar = syncedUser.avatar || syncedUser.avatarUrl || prev?.avatar || prev?.avatarUrl;
             const mergedUser = {
               ...syncedUser,
               email: cleanEmail,
+              avatar: newAvatar,
+              avatarUrl: newAvatar,
               settings: syncedUser.settings || prev?.settings || prev?.preferences,
               preferences: syncedUser.settings || prev?.preferences || prev?.settings,
               isNewUser: syncedUser.profileCompleted !== true
@@ -427,7 +430,13 @@ export function AuthProvider({ children }) {
   const updateProfile = useCallback(async (updatedData) => {
     setCurrentUser(prev => {
       if (!prev) return prev;
-      const updated = { ...prev, ...updatedData };
+      const newAvatar = updatedData.avatar !== undefined ? updatedData.avatar : (updatedData.avatarUrl !== undefined ? updatedData.avatarUrl : prev.avatar);
+      const updated = {
+        ...prev,
+        ...updatedData,
+        avatar: newAvatar,
+        avatarUrl: newAvatar,
+      };
       delete updated.password;
       localStorage.setItem('currentUser', JSON.stringify(updated));
       return updated;
@@ -438,7 +447,13 @@ export function AuthProvider({ children }) {
       const syncedUser = response?.user || response;
       if (syncedUser) {
         setCurrentUser(prev => {
-          const updated = { ...prev, ...syncedUser };
+          const newAvatar = syncedUser.avatar !== undefined ? syncedUser.avatar : prev.avatar;
+          const updated = {
+            ...prev,
+            ...syncedUser,
+            avatar: newAvatar,
+            avatarUrl: newAvatar,
+          };
           delete updated.password;
           localStorage.setItem('currentUser', JSON.stringify(updated));
           return updated;
@@ -500,7 +515,12 @@ export function AuthProvider({ children }) {
       return;
     }
     if (isValidUser(user)) {
-      const safeUser = { ...user };
+      const safeAvatar = user.avatar || user.avatarUrl;
+      const safeUser = {
+        ...user,
+        avatar: safeAvatar,
+        avatarUrl: safeAvatar,
+      };
       delete safeUser.password;
       setCurrentUser(safeUser);
       localStorage.setItem('currentUser', JSON.stringify(safeUser));

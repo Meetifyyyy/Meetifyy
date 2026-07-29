@@ -51,13 +51,27 @@ function validateBirthday(birthdayStr: string) {
   }
 }
 
+const syncCache = new Map<string, { data: any; timestamp: number }>();
+
+export function clearAuthSyncCache(userId?: string) {
+  if (userId) {
+    syncCache.delete(userId);
+  } else {
+    syncCache.clear();
+  }
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private domainCache = new Map<string, { collegeId: string | null; timestamp: number }>();
-  private syncCache = new Map<string, { data: any; timestamp: number }>();
+  private syncCache = syncCache;
   /** Coalesces concurrent syncProfile calls for the same user into one DB round-trip. */
   private syncInflight = new Map<string, Promise<any>>();
+
+  clearSyncCache(userId?: string) {
+    clearAuthSyncCache(userId);
+  }
 
   constructor(
     private readonly prisma: PrismaService,

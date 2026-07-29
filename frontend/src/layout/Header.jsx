@@ -18,12 +18,13 @@ import {
 } from '@heroicons/react/24/outline';
 import styles from './Header.module.css';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { communitiesApi } from '@shared/api/apiClient';
+import { communitiesApi, getMediaUrl } from '@shared/api/apiClient';
 
 const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
   const location = useLocation();
   const [imgError, setImgError] = useState(false);
   const isImage = isImageUrl(comm.avatar);
+  const avatarSrc = isImage ? getMediaUrl(comm.avatar) : '';
 
   return (
     <a
@@ -40,7 +41,7 @@ const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
         style={{ background: (!isImage || imgError) ? (comm.color || 'var(--color-bg-white)') : 'transparent' }}
       >
         {isImage && !imgError ? (
-          <img src={comm.avatar} alt={comm.name} onError={() => setImgError(true)} />
+          <img src={avatarSrc} alt={comm.name} onError={() => setImgError(true)} />
         ) : (
           <span style={{ color: '#FFFFFF', fontWeight: 700 }}>
             {comm.avatar || (comm.name ? comm.name.charAt(0).toUpperCase() : '')}
@@ -128,7 +129,7 @@ export default function Header({ variant = 'dashboard' }) {
             <div className={styles.drawerProfileHeader}>
               <div style={{ width: 48, height: 48, flexShrink: 0 }}>
                 <Avatar
-                  src={currentUser?.avatarUrl || currentUser?.avatar}
+                  src={currentUser?.avatar || currentUser?.avatarUrl}
                   name={currentUser?.displayName}
                   size="100%"
                 />
@@ -238,7 +239,7 @@ export default function Header({ variant = 'dashboard' }) {
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setDropdownOpen(!dropdownOpen); }}}
             >
               <Avatar
-                src={currentUser?.avatarUrl || currentUser?.avatar}
+                src={currentUser?.avatar || currentUser?.avatarUrl}
                 name={currentUser?.displayName}
                 size="42px"
               />
@@ -250,7 +251,7 @@ export default function Header({ variant = 'dashboard' }) {
               >
                 <div style={{ width: 32, height: 32, flexShrink: 0 }}>
                   <Avatar
-                    src={currentUser?.avatarUrl || currentUser?.avatar}
+                    src={currentUser?.avatar || currentUser?.avatarUrl}
                     name={currentUser?.displayName}
                     size="32px"
                   />
