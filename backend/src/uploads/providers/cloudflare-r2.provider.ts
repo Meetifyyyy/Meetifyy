@@ -40,7 +40,7 @@ export class CloudflareR2Provider implements StorageProvider {
     folder = 'general',
     expiresIn = 900,
   ): Promise<{ uploadUrl: string; publicUrl: string; key: string }> {
-    const ext = filename.split('.').pop() || 'bin';
+    const ext = filename.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'bin';
     const key = `${folder}/${randomUUID()}.${ext}`;
 
     if (!this.isConfigured || !this.s3) {

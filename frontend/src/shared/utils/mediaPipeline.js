@@ -71,6 +71,7 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
     await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', uploadUrl);
+      xhr.withCredentials = uploadUrl.startsWith('/');
       xhr.setRequestHeader('Content-Type', file.type);
 
       if (onProgress && xhr.upload) {
