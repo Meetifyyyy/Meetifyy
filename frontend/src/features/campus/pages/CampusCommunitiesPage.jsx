@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 import { communitiesApi } from '@shared/api/apiClient';
@@ -17,6 +17,7 @@ import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
 
 export default function CampusCommunitiesPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
   const queryClient = useQueryClient();
@@ -68,13 +69,13 @@ export default function CampusCommunitiesPage() {
 
   const handleCreateCommunity = async (id) => {
     showToast('Community created successfully! 🚀');
-    navigate(`/communities/${id}`);
+    navigate(`/communities/${id}`, { state: { from: location.pathname } });
   };
 
   const handleCommunityClick = (community) => {
     const isMember = currentUser?.campusGroups?.map(String).includes(String(community.id));
     if (isMember) {
-      navigate(`/messages/${community.id}`);
+      navigate(`/messages/${community.id}`, { state: { from: location.pathname } });
     } else {
       setSelectedCommunity(community);
       setIsJoinModalOpen(true);
@@ -89,7 +90,7 @@ export default function CampusCommunitiesPage() {
     } else {
       toggleJoinCampusGroup(selectedCommunity.id);
       showToast('Joined community successfully! 🎉');
-      navigate(`/messages/${selectedCommunity.id}`);
+      navigate(`/messages/${selectedCommunity.id}`, { state: { from: location.pathname } });
     }
     setIsJoinModalOpen(false);
     setSelectedCommunity(null);

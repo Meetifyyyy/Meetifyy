@@ -192,7 +192,7 @@ export default function FindYourCrewPage() {
   }, [filteredActivities, selectedTab]);
 
   const handleActivityClick = useCallback((activity) => {
-    navigate(`/crew/${activity.id}`, { state: { activity } });
+    navigate(`/crew/${activity.id}`, { state: { activity, from: '/crew' } });
   }, [navigate]);
 
   return (

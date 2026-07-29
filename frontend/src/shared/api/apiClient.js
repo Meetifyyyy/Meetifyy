@@ -527,8 +527,8 @@ export const groupApi = {
 export const messagesApi = {
   getConversations: (limit, offset) => {
     const params = new URLSearchParams();
-    const resolvedLimit = typeof limit === 'object' ? 50 : limit;
-    const resolvedOffset = typeof offset === 'object' ? 0 : offset;
+    const resolvedLimit = typeof limit === 'number' ? limit : (typeof limit === 'object' && typeof limit?.limit === 'number' ? limit.limit : 20);
+    const resolvedOffset = typeof offset === 'number' ? offset : (typeof limit === 'object' && typeof limit?.offset === 'number' ? limit.offset : 0);
     
     if (resolvedLimit) params.set('limit', String(resolvedLimit));
     if (resolvedOffset) params.set('offset', String(resolvedOffset));

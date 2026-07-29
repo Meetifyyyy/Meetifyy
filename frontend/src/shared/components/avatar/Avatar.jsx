@@ -32,7 +32,7 @@ export function getProcessedAvatarUrl(src) {
   if (!src) return defaultAvatarImg;
   let s = src;
   if (typeof s === 'object') {
-    s = s.url || s.objectKey || s.avatar || s.avatarUrl || '';
+    s = s.avatarUrl || s.avatar || s.url || s.objectKey || s.profileImage || '';
   }
   if (typeof s !== 'string' || !s.trim() || s.trim().length <= 2) {
     return defaultAvatarImg;

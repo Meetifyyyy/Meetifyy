@@ -241,7 +241,7 @@ export default function ProfilePage() {
       });
 
       if (existing?.publicId || existing?.id) {
-        navigate(`/messages/${existing.publicId || existing.id}`);
+        navigate(`/messages/${existing.publicId || existing.id}`, { state: { from: location.pathname } });
         return;
       }
     }
@@ -250,10 +250,10 @@ export default function ProfilePage() {
     try {
       const res = await dmApi.startDM(profileUser.id);
       if (res?.id || res?.publicId) {
-        navigate(`/messages/${res.publicId || res.id}`);
+        navigate(`/messages/${res.publicId || res.id}`, { state: { from: location.pathname } });
       } else {
         const legacyRes = await messagesApi.startConversation([profileUser.id, authUser.id]);
-        if (legacyRes?.id) navigate(`/messages/${legacyRes.id}`);
+        if (legacyRes?.id) navigate(`/messages/${legacyRes.id}`, { state: { from: location.pathname } });
       }
     } catch (e) {
       console.error('Start DM failed', e);
@@ -261,7 +261,7 @@ export default function ProfilePage() {
   };
 
   const handlePostClick = (post) => {
-    navigate(`/post/${post.id}`, { state: { post, sourceContext: 'profile' } });
+    navigate(`/post/${post.id}`, { state: { post, sourceContext: 'profile', from: location.pathname } });
   };
 
   return (
@@ -291,7 +291,7 @@ export default function ProfilePage() {
                   Edit cover
                 </button>
               )}
-              <button className={s.mobileBackBtn} onClick={() => goBack('/home')} aria-label="Go back">
+              <button className={s.mobileBackBtn} onClick={() => navigate(location.state?.from ?? '/home', { replace: true })} aria-label="Go back">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="19" y1="12" x2="5" y2="12" />
                   <polyline points="12 19 5 12 12 5" />

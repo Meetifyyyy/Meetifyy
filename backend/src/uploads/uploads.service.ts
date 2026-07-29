@@ -115,9 +115,33 @@ export class StorageService {
     return this.storageProvider.getPublicUrl(key);
   }
 
+  private signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
+
   async getSignedUrls(keys: string[], expiresIn = 3600): Promise<{ [key: string]: string }> {
     if (!keys || keys.length === 0) return {};
-    return this.storageProvider.createSignedUrls(keys, expiresIn);
+    const now = Date.now();
+    const result: { [key: string]: string } = {};
+    const uncachedKeys: string[] = [];
+
+    for (const key of keys) {
+      const cached = this.signedUrlCache.get(key);
+      if (cached && cached.expiresAt > now + 60000) {
+        result[key] = cached.url;
+      } else {
+        uncachedKeys.push(key);
+      }
+    }
+
+    if (uncachedKeys.length > 0) {
+      const freshUrls = await this.storageProvider.createSignedUrls(uncachedKeys, expiresIn);
+      const cacheExpiresAt = now + Math.max(expiresIn - 60, 300) * 1000;
+      for (const [key, url] of Object.entries(freshUrls)) {
+        result[key] = url;
+        this.signedUrlCache.set(key, { url, expiresAt: cacheExpiresAt });
+      }
+    }
+
+    return result;
   }
 
   async getSignedUrlsForUser(keys: string[], expiresIn: number, userId: string) {

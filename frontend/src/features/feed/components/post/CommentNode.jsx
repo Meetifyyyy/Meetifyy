@@ -300,7 +300,7 @@ export default function CommentNode({
 
 
   // ── Handlers ───────────────────────────────────────────────────────────────
-  const handleProfileClick = () => navigate(`/profile/${author.username}`);
+  const handleProfileClick = () => navigate(`/profile/${author.username}`, { state: { from: window.location.pathname } });
   const handleReplyClick   = () => { setIsReplying(r => !r); setReplyContent({ text: '', mentions: [] }); };
   const handleCancelReply  = () => { setIsReplying(false); setReplyContent({ text: '', mentions: [] }); };
 

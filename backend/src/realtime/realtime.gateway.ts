@@ -179,9 +179,15 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     try {
       const activeConvs = await this.prisma.conversationParticipant.findMany({
         where: { userId, deletedAt: null, leftAt: null },
-        select: { conversationId: true }
+        select: {
+          conversationId: true,
+          conversation: { select: { publicId: true } }
+        }
       });
-      activeConvs.forEach(p => client.join(`conv_${p.conversationId}`));
+      activeConvs.forEach(p => {
+        if (p.conversationId) client.join(`conv_${p.conversationId}`);
+        if (p.conversation?.publicId) client.join(`conv_${p.conversation.publicId}`);
+      });
     } catch (err) {
       this.logger.error('Failed to pre-join conversation rooms', err);
     }
@@ -608,34 +614,43 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     const userId = (client as any).userId;
     if (!userId || !data?.conversationIds || !Array.isArray(data.conversationIds)) return;
 
+    // Skip DB lookup if client is already joined to all requested rooms
+    const unjoinedIds = data.conversationIds.filter(id => id && !client.rooms.has(`conv_${id}`));
+    if (unjoinedIds.length === 0) return;
+
     try {
+      // Step 1: Indexed lookup on Conversation (id PK and publicId unique index)
+      const matchingConvs = await this.prisma.conversation.findMany({
+        where: {
+          OR: [
+            { id: { in: unjoinedIds } },
+            { publicId: { in: unjoinedIds } }
+          ]
+        },
+        select: { id: true, publicId: true }
+      });
+
+      if (matchingConvs.length === 0) return;
+
+      const validInternalIds = new Set(matchingConvs.map(c => c.id));
+
+      // Step 2: Fast indexed lookup on ConversationParticipant by (userId, conversationId)
       const validParticipants = await this.prisma.conversationParticipant.findMany({
         where: {
           userId,
+          conversationId: { in: Array.from(validInternalIds) },
           deletedAt: null,
-          leftAt: null,
-          conversation: {
-            OR: [
-              { id: { in: data.conversationIds } },
-              { publicId: { in: data.conversationIds } },
-            ]
-          }
+          leftAt: null
         },
-        select: {
-          conversationId: true,
-          conversation: { select: { publicId: true } }
-        }
+        select: { conversationId: true }
       });
 
-      const allowedIds = new Set<string>();
-      validParticipants.forEach(p => {
-        if (p.conversationId) allowedIds.add(p.conversationId);
-        if (p.conversation?.publicId) allowedIds.add(p.conversation.publicId);
-      });
+      const allowedInternalIds = new Set(validParticipants.map(p => p.conversationId));
 
-      data.conversationIds.forEach(id => {
-        if (allowedIds.has(id)) {
-          client.join(`conv_${id}`);
+      matchingConvs.forEach(c => {
+        if (allowedInternalIds.has(c.id)) {
+          if (c.id) client.join(`conv_${c.id}`);
+          if (c.publicId) client.join(`conv_${c.publicId}`);
         }
       });
     } catch (err) {

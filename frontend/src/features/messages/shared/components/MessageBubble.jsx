@@ -86,7 +86,7 @@ function SystemMessageContent({ text, navigate }) {
         onClick={(e) => {
           e.stopPropagation();
           if (navigate && mentionUsername) {
-            navigate(`/profile/${mentionUsername}`);
+            navigate(`/profile/${mentionUsername}`, { state: { from: window.location.pathname } });
           }
         }}
         title={`View @${mentionUsername}'s profile`}
@@ -616,7 +616,7 @@ const MessageBubble = memo(function MessageBubble({
     const liveUser = (senderId && getUserById) ? getUserById(senderId) : null;
     const target = liveUser?.username || msg.senderUsername || msg.sender?.username || senderId;
     if (target) {
-      navigate(`/profile/${target}`);
+      navigate(`/profile/${target}`, { state: { from: window.location.pathname } });
     }
   };
 

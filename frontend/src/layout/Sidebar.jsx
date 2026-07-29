@@ -58,6 +58,7 @@ const CampusSolid = () => (
 );
 
 const SidebarCommunityItem = ({ comm, navigate }) => {
+  const location = useLocation();
   const [imgError, setImgError] = useState(false);
   const isImage = isImageUrl(comm.avatar);
 
@@ -65,7 +66,7 @@ const SidebarCommunityItem = ({ comm, navigate }) => {
     <a
       href="#"
       className={styles.communityItem}
-      onClick={(e) => { e.preventDefault(); navigate(`/communities/${comm.id}`); }}
+      onClick={(e) => { e.preventDefault(); navigate(`/communities/${comm.id}`, { state: { from: location.pathname } }); }}
     >
       <div 
         className={styles.communityAvatar}
@@ -110,7 +111,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname === '/home' ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/home'); }}
+            onClick={(e) => { e.preventDefault(); navigate('/home', { replace: true }); }}
             onMouseEnter={() => import('@features/feed/pages/FeedRoute')}
           >
             {location.pathname === '/home' ? (
@@ -124,7 +125,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/feed') || location.pathname.startsWith('/search') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/search'); }}
+            onClick={(e) => { e.preventDefault(); navigate('/search', { replace: true }); }}
             onMouseEnter={() => import('@features/search/pages/SearchResultsRoute')}
           >
             {location.pathname.startsWith('/feed') || location.pathname.startsWith('/search') ? (
@@ -138,7 +139,14 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/messages') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/messages'); }}
+            onClick={(e) => { 
+              e.preventDefault(); 
+              if (location.pathname.startsWith('/messages') || location.pathname.startsWith('/inbox')) {
+                navigate('/messages', { replace: true, state: location.state });
+              } else {
+                navigate('/messages', { state: { from: location.pathname } });
+              }
+            }}
             onMouseEnter={() => import('@features/messages/pages/MessagesRoute')}
           >
             {location.pathname.startsWith('/messages') ? (
@@ -157,7 +165,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/campus') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/campus'); }}
+            onClick={(e) => { e.preventDefault(); navigate('/campus', { replace: true }); }}
             onMouseEnter={() => import('@features/campus/pages/CampusPage')}
           >
             {location.pathname.startsWith('/campus') ? (
@@ -171,7 +179,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/crew') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/crew'); }}
+            onClick={(e) => { e.preventDefault(); navigate('/crew', { replace: true }); }}
             onMouseEnter={() => import('@features/crew/pages/FindYourCrewPage')}
           >
             {location.pathname.startsWith('/crew') ? (
@@ -185,7 +193,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/notifications') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/notifications'); }}
+            onClick={(e) => { e.preventDefault(); navigate('/notifications', { replace: true }); }}
           >
             {location.pathname.startsWith('/notifications') ? (
               <BellSolid />
@@ -198,7 +206,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/profile') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate(`/profile/${username}`); }}
+            onClick={(e) => { e.preventDefault(); navigate(`/profile/${username}`, { replace: true }); }}
             onMouseEnter={() => import('@features/profile/pages/ProfilePage')}
           >
             {location.pathname.startsWith('/profile') ? (
@@ -212,7 +220,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/settings') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/settings'); }}
+            onClick={(e) => { e.preventDefault(); navigate('/settings', { replace: true }); }}
             onMouseEnter={() => import('@features/settings/pages/SettingsRoute')}
           >
             {location.pathname.startsWith('/settings') ? (

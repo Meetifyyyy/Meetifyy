@@ -3,7 +3,6 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/hooks/useData';
-import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useChatManager } from '../../shared/hooks/useChatManager';
 import { matchesConversationId } from '../../shared/utils/cacheUtils';
 import { generateConversationUrl, correctConversationUrl } from '@shared/utils/conversationUrl';
@@ -30,7 +29,6 @@ export default function MessagesLayout() {
   const location = useLocation();
   const queryClient = useQueryClient();
   const { currentUser } = useAuth();
-  const goBack = useSmartBack();
 
   const {
     conversations = [],
@@ -54,13 +52,14 @@ export default function MessagesLayout() {
   const [showChatOnMobile, setShowChatOnMobile] = useState(!!routeChatId);
 
   const handleBack = () => {
-    setShowChatOnMobile(false);
-    setActiveChatId(null);
-    const fallbackPath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
-    if (location.state?.from) {
-      navigate(location.state.from, { replace: true });
+    const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
+    if (activeChatId || showChatOnMobile) {
+      setShowChatOnMobile(false);
+      setActiveChatId(null);
+      navigate(basePath, { replace: true, state: location.state });
     } else {
-      goBack(fallbackPath);
+      const fromPath = location.state?.from;
+      navigate(fromPath && fromPath !== location.pathname ? fromPath : '/home', { replace: true });
     }
   };
 
@@ -72,7 +71,7 @@ export default function MessagesLayout() {
 
     const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
     const targetPath = generateConversationUrl(targetConv || { id: targetId }, currentUser?.id, basePath);
-    navigate(targetPath);
+    navigate(targetPath, { replace: true, state: location.state });
   };
 
   const [activeFilter, setActiveFilter] = useState('All');

@@ -126,7 +126,7 @@ function ActivityRow({ activity, onClick }) {
           if (hasRequested) return;
           if (isJoined) {
             const chatId = String(activity.id).startsWith('act_') ? activity.id : `act_${activity.id}`;
-            navigate(`/messages/${chatId}`);
+            navigate(`/messages/${chatId}`, { state: { from: location.pathname } });
             return;
           }
           if (isApproval) {
@@ -187,7 +187,7 @@ function PersonRow({ user }) {
   const navigate = useNavigate();
 
   return (
-    <div className={styles.personRow} onClick={() => navigate(`/profile/${user.username}`)}>
+    <div className={styles.personRow} onClick={() => navigate(`/profile/${user.username}`, { state: { from: '/search' } })}>
       <Avatar src={user.avatar} name={user.displayName} size="40px" disableHover />
       <div className={styles.sidebarItemInfo}>
         <div className={styles.sidebarItemNameRow}>
@@ -294,14 +294,14 @@ export default function SearchResultsRoute() {
                 <div className={styles.sectionBlock}>
                   <div className={styles.sectionHeader}>
                     <h2 className={styles.sectionTitle}>Trending Activities</h2>
-                    <button className={styles.viewAllBtn} onClick={() => navigate('/crew')}>View all</button>
+                    <button className={styles.viewAllBtn} onClick={() => navigate('/crew', { replace: true })}>View all</button>
                   </div>
                   <div className={styles.rowList}>
                     {trendingActivities.map(activity => (
                       <ActivityRow
                         key={activity.id}
                         activity={activity}
-                        onClick={() => navigate(`/crew/${activity.id}`, { state: { activity } })}
+                        onClick={() => navigate(`/crew/${activity.id}`, { state: { activity, from: '/search' } })}
                       />
                     ))}
                   </div>
@@ -313,13 +313,13 @@ export default function SearchResultsRoute() {
                 <div className={styles.sectionBlock}>
                   <div className={styles.sectionHeader}>
                     <h2 className={styles.sectionTitle}>Top Posts</h2>
-                    <button className={styles.viewAllBtn} onClick={() => navigate('/home')}>View all</button>
+                    <button className={styles.viewAllBtn} onClick={() => navigate('/home', { replace: true })}>View all</button>
                   </div>
                   <div className={styles.topPostsList}>
                     {topPosts.map((post) => {
                       const author = users ? Object.values(users).find(u => u.id === post.authorId) : null;
                       return (
-                        <button key={post.id} className={styles.topPostCard} onClick={() => navigate(`/post/${post.id}`)}>
+                        <button key={post.id} className={styles.topPostCard} onClick={() => navigate(`/post/${post.id}`, { state: { post, from: '/search' } })}>
                           <div className={styles.topPostAvatar}>
                             <Avatar src={author?.avatar} name={author?.displayName} size="36px" disableHover />
                           </div>
@@ -346,14 +346,14 @@ export default function SearchResultsRoute() {
                 <div className={styles.sidebarBlock}>
                   <div className={styles.sectionHeader}>
                     <h2 className={styles.sectionTitle}>Popular Communities</h2>
-                    <button className={styles.viewAllBtn} onClick={() => navigate('/communities')}>View all</button>
+                    <button className={styles.viewAllBtn} onClick={() => navigate('/communities', { replace: true })}>View all</button>
                   </div>
                   <div className={styles.rowList}>
                     {popularCommunities.slice(0, 5).map(c => (
                       <CommunityRow
                         key={c.id}
                         comm={c}
-                        onClick={() => navigate(`/communities/${c.id}`)}
+                        onClick={() => navigate(`/communities/${c.id}`, { state: { from: '/search' } })}
                       />
                     ))}
                   </div>
@@ -390,10 +390,10 @@ export default function SearchResultsRoute() {
               <h3 className={styles.emptyTitle}>No results found</h3>
               <p className={styles.emptySubtitle}>We couldn't find matching activities or communities for "{q}".</p>
               <div className={styles.emptyActions}>
-                <button className={styles.emptyBtnPrimary} onClick={() => navigate('/crew')}>
+                <button className={styles.emptyBtnPrimary} onClick={() => navigate('/crew', { replace: true })}>
                   Explore Activities
                 </button>
-                <button className={styles.emptyBtnSecondary} onClick={() => navigate('/communities')}>
+                <button className={styles.emptyBtnSecondary} onClick={() => navigate('/communities', { replace: true })}>
                   Browse Communities
                 </button>
               </div>
@@ -406,10 +406,10 @@ export default function SearchResultsRoute() {
                     <div className={styles.list}>
                       {topMatches.map(r => {
                         if (r.type === 'user') return <PersonRow key={`top-u-${r.item.id}`} user={r.item} />;
-                        if (r.type === 'community') return <CommunityRow key={`top-c-${r.item.id}`} comm={r.item} onClick={() => navigate(`/communities/${r.item.id}`)} />;
+                        if (r.type === 'community') return <CommunityRow key={`top-c-${r.item.id}`} comm={r.item} onClick={() => navigate(`/communities/${r.item.id}`, { state: { from: '/search' } })} />;
                         if (r.type === 'college') return <CollegeResult key={`top-col-${r.item.id}`} result={r} onClick={handleNavigate} />;
                         if (r.type === 'post') return <PostResult key={`top-p-${r.item.id}`} result={r} onClick={handleNavigate} />;
-                        if (r.type === 'crew') return <ActivityRow key={`top-cr-${r.item.id}`} activity={r.item} onClick={() => navigate(`/crew/${r.item.id}`, { state: { activity: r.item } })} />;
+                        if (r.type === 'crew') return <ActivityRow key={`top-cr-${r.item.id}`} activity={r.item} onClick={() => navigate(`/crew/${r.item.id}`, { state: { activity: r.item, from: '/search' } })} />;
                         return null;
                       })}
                     </div>
@@ -426,14 +426,14 @@ export default function SearchResultsRoute() {
               {activeSection === 'activities' && (
                 <div className={styles.resultsContainer}>
                   {results.crew.length > 0
-                    ? <div className={styles.list}>{results.crew.map(r => <ActivityRow key={`cr-${r.item.id}`} activity={r.item} onClick={() => navigate(`/crew/${r.item.id}`, { state: { activity: r.item } })} />)}</div>
+                    ? <div className={styles.list}>{results.crew.map(r => <ActivityRow key={`cr-${r.item.id}`} activity={r.item} onClick={() => navigate(`/crew/${r.item.id}`, { state: { activity: r.item, from: '/search' } })} />)}</div>
                     : <div className={styles.sectionEmpty}>No activities for "{q}"</div>}
                 </div>
               )}
               {activeSection === 'community' && (
                 <div className={styles.resultsContainer}>
                   {results.communities.length > 0
-                    ? <div className={styles.list}>{results.communities.map(r => <CommunityRow key={`c-${r.item.id}`} comm={r.item} onClick={() => navigate(`/communities/${r.item.id}`)} />)}</div>
+                    ? <div className={styles.list}>{results.communities.map(r => <CommunityRow key={`c-${r.item.id}`} comm={r.item} onClick={() => navigate(`/communities/${r.item.id}`, { state: { from: '/search' } })} />)}</div>
                     : <div className={styles.sectionEmpty}>No communities for "{q}"</div>}
                 </div>
               )}
