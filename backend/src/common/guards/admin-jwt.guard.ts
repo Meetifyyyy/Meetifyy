@@ -72,7 +72,7 @@ export class AdminJwtGuard implements CanActivate {
       const csrfHeader = request.headers['x-csrf-token'];
       const csrfCookie = request.cookies?.admin_csrf;
 
-      if (csrfCookie && csrfHeader !== csrfCookie) {
+      if (!csrfCookie || typeof csrfHeader !== 'string' || csrfHeader !== csrfCookie) {
         throw new ForbiddenException('CSRF validation failed');
       }
     }

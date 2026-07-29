@@ -1,5 +1,7 @@
 import { Injectable, BadRequestException, ForbiddenException, UnprocessableEntityException } from '@nestjs/common';
 import * as cheerio from 'cheerio';
+import { lookup } from 'dns/promises';
+import { isIP } from 'net';
 
 @Injectable()
 export class LinkPreviewService {
@@ -19,21 +21,7 @@ export class LinkPreviewService {
       throw new BadRequestException('Protocol not supported. Only http and https allowed.');
     }
 
-    const blockedHosts = [
-      'localhost',
-      '127.0.0.1',
-      '0.0.0.0',
-      '::1',
-      '10.',
-      '192.168.',
-      '172.16.',
-      '169.254.',
-    ];
-
-    const isBlocked = blockedHosts.some((host) => parsedUrl.hostname.startsWith(host) || parsedUrl.hostname.endsWith(host));
-    if (isBlocked) {
-      throw new ForbiddenException('Forbidden target host');
-    }
+    await this.assertPublicTarget(parsedUrl);
 
     try {
       const controller = new AbortController();
@@ -42,11 +30,15 @@ export class LinkPreviewService {
       const response = await fetch(url, {
         headers: { 'User-Agent': 'Meetifyy Link Preview Bot/1.0' },
         signal: controller.signal,
+        redirect: 'manual',
       });
 
       clearTimeout(timeoutId);
 
       if (!response.ok) {
+        if (response.status >= 300 && response.status < 400) {
+          throw new ForbiddenException('Redirects are not allowed for link previews');
+        }
         throw new UnprocessableEntityException(`Target responded with status ${response.status}`);
       }
 
@@ -56,11 +48,24 @@ export class LinkPreviewService {
         throw new BadRequestException('URL did not return an HTML document');
       }
 
-      const html = await response.text();
-      // Enforce content length limit (e.g. max 1MB)
-      if (html.length > 1024 * 1024) {
-        throw new BadRequestException('HTML payload too large');
-      }
+       const maxBytes = 1024 * 1024;
+       const contentLength = Number(response.headers.get('content-length') || 0);
+       if (contentLength > maxBytes) throw new BadRequestException('HTML payload too large');
+       if (!response.body) throw new BadRequestException('Empty HTML response');
+       const reader = response.body.getReader();
+       const chunks: Buffer[] = [];
+       let totalBytes = 0;
+       while (true) {
+         const { done, value } = await reader.read();
+         if (done) break;
+         totalBytes += value.byteLength;
+         if (totalBytes > maxBytes) {
+           await reader.cancel();
+           throw new BadRequestException('HTML payload too large');
+         }
+         chunks.push(Buffer.from(value));
+       }
+       const html = Buffer.concat(chunks).toString('utf8');
 
       const $ = cheerio.load(html);
 
@@ -89,5 +94,29 @@ export class LinkPreviewService {
       }
       throw new UnprocessableEntityException(`Could not fetch preview: ${err.message}`);
     }
+  }
+
+  private async assertPublicTarget(parsedUrl: URL): Promise<void> {
+    const hostname = parsedUrl.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) {
+      throw new ForbiddenException('Forbidden target host');
+    }
+
+    const addresses = isIP(hostname)
+      ? [hostname]
+      : (await lookup(hostname, { all: true })).map(({ address }) => address);
+    if (addresses.length === 0 || addresses.some((address) => this.isPrivateAddress(address))) {
+      throw new ForbiddenException('Forbidden target host');
+    }
+  }
+
+  private isPrivateAddress(address: string): boolean {
+    const normalized = address.toLowerCase();
+    if (isIP(normalized) === 4) {
+      const octets = normalized.split('.').map(Number);
+      const [a, b] = octets;
+      return a === 0 || a === 10 || a === 127 || a === 169 && b === 254 || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168 || a >= 224;
+    }
+    return normalized === '::1' || normalized === '::' || normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe8') || normalized.startsWith('fe9') || normalized.startsWith('fea') || normalized.startsWith('feb') || normalized.startsWith('::ffff:127.') || normalized.startsWith('::ffff:10.') || normalized.startsWith('::ffff:192.168.');
   }
 }
