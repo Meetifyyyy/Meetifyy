@@ -40,6 +40,10 @@ export class NoCacheInterceptor implements NestInterceptor {
       map((body) => {
         if (body === null || body === undefined) return body;
         const json = typeof body === 'string' ? body : JSON.stringify(body);
+        if (json.length < 512) {
+          return body;
+        }
+
         const etag = `"${createHash('md5').update(json).digest('hex').slice(0, 16)}"`;
         response.setHeader('ETag', etag);
 

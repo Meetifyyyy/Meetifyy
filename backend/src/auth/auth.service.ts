@@ -88,90 +88,123 @@ export class AuthService {
   }
 
   private async _doSyncProfile(user: any) {
-    // Fast-path: If user already exists in database, return with following list for client hydration
-    const existingUser = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      include: {
-        settings: true,
-        college: { select: { id: true, name: true } },
-        following: {
-          select: {
-            following: { select: { username: true } }
-          }
-        }
-      }
-    });
+    const rows: any[] = await this.prisma.$queryRaw`
+      SELECT 
+        u."id",
+        u."username",
+        u."displayName",
+        u."email",
+        u."bio",
+        u."major",
+        u."location",
+        u."createdAt",
+        u."updatedAt",
+        u."avatar",
+        u."avatarMediaId",
+        u."collegeEmail",
+        u."collegeId",
+        u."cover",
+        u."coverMediaId",
+        u."emailVerified",
+        u."graduationYear",
+        u."birthday",
+        u."interests",
+        u."profileCompleted",
+        u."accountStatus",
+        u."role",
+        u."canPost",
+        u."canMessage",
+        u."canActivity",
+        c."id" AS "college_id",
+        c."name" AS "college_name",
+        s."id" AS "settings_id",
+        s."emailNotifs",
+        s."pushNotifs",
+        s."privateProfile",
+        s."showOnlineStatus",
+        s."showLastSeen",
+        s."whoCanSeeOnline",
+        s."whoCanSeeLastSeen",
+        s."readReceipts",
+        COALESCE(
+          (SELECT JSON_AGG(u_fol."username") 
+           FROM "Follow" f 
+           JOIN "User" u_fol ON f."followingId" = u_fol."id" 
+           WHERE f."followerId" = u."id"),
+          '[]'::json
+        ) AS "followingList",
+        COALESCE(
+          (SELECT JSON_AGG(pb."postId") 
+           FROM "PostBookmark" pb 
+           WHERE pb."userId" = u."id"),
+          '[]'::json
+        ) AS "postBookmarkIds",
+        COALESCE(
+          (SELECT JSON_AGG(ab."activityId") 
+           FROM "ActivityBookmark" ab 
+           WHERE ab."userId" = u."id"),
+          '[]'::json
+        ) AS "activityBookmarkIds",
+        (SELECT COUNT(*)::int 
+         FROM "Notification" n 
+         WHERE n."recipientId" = u."id" AND n."readAt" IS NULL AND n."deletedAt" IS NULL AND n."type" != 'MESSAGE'::"NotificationType") AS "unreadNotifCount"
+      FROM "User" u
+      LEFT JOIN "College" c ON u."collegeId" = c."id"
+      LEFT JOIN "UserSettings" s ON s."userId" = u."id"
+      WHERE u."id" = ${user.id}
+      LIMIT 1;
+    `;
 
-    if (existingUser) {
-      // Auto-heal real email from Supabase user if email is fallback @meetifyy.user
-      const sbEmail = user.email || user.user_metadata?.email;
-      if (sbEmail && (existingUser.email.endsWith('@meetifyy.user') || !existingUser.email)) {
-        const cleanRealEmail = sbEmail.trim().toLowerCase();
-        await this.prisma.user.update({
-          where: { id: existingUser.id },
-          data: { email: cleanRealEmail }
-        }).catch(() => {});
-        existingUser.email = cleanRealEmail;
-      }
+    if (rows && rows.length > 0) {
+      const row = rows[0];
+      const settings = row.settings_id ? {
+        id: row.settings_id,
+        userId: row.id,
+        emailNotifs: row.emailNotifs,
+        pushNotifs: row.pushNotifs,
+        privateProfile: row.privateProfile,
+        showOnlineStatus: row.showOnlineStatus,
+        showLastSeen: row.showLastSeen,
+        whoCanSeeOnline: row.whoCanSeeOnline,
+        whoCanSeeLastSeen: row.whoCanSeeLastSeen,
+        readReceipts: row.readReceipts,
+      } : null;
 
-      const followingList = existingUser.following.map(f => f.following.username);
-      // Lazy-create settings for existing users who pre-date the settings feature
-      let userSettings = existingUser.settings;
-      if (!userSettings) {
-        userSettings = await this.prisma.userSettings.upsert({
-          where: { userId: existingUser.id },
-          create: { userId: existingUser.id },
-          update: {},
-        }).catch(() => null);
-      }
-
-      // Auto-heal missing college linkage for existing users
-      if (!existingUser.collegeId && existingUser.email) {
-        const cleanEmail = existingUser.email.trim().toLowerCase();
-        const domain = cleanEmail.split('@')[1];
-        if (domain) {
-          const collegeDomain = await this.prisma.collegeDomain.findFirst({
-            where: {
-              OR: [
-                { domain: domain },
-                { domain: { endsWith: domain } },
-              ]
-            },
-            include: { college: true },
-          });
-          if (collegeDomain && collegeDomain.college && collegeDomain.college.isActive && collegeDomain.college.status !== 'DISABLED') {
-            await this.prisma.user.update({
-              where: { id: existingUser.id },
-              data: { collegeId: collegeDomain.college.id }
-            });
-            existingUser.collegeId = collegeDomain.college.id;
-            existingUser.college = { id: collegeDomain.college.id, name: collegeDomain.college.name };
-          }
-        }
-      }
-
-      const [postBookmarks, activityBookmarks, unreadNotifCount] = await Promise.all([
-        this.prisma.postBookmark.findMany({
-          where: { userId: existingUser.id },
-          select: { postId: true },
-          orderBy: { createdAt: 'desc' },
-          take: 100,
-        }).catch(() => []),
-        this.prisma.activityBookmark.findMany({
-          where: { userId: existingUser.id },
-          select: { activityId: true },
-        }).catch(() => []),
-        this._getUnreadNotifCount(existingUser.id),
-      ]);
+      const college = row.college_id ? { id: row.college_id, name: row.college_name } : null;
 
       const result = {
-        ...existingUser,
-        settings: userSettings,
-        followingList,
+        id: row.id,
+        username: row.username,
+        displayName: row.displayName,
+        email: row.email,
+        bio: row.bio,
+        major: row.major,
+        location: row.location,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        avatar: row.avatar,
+        avatarMediaId: row.avatarMediaId,
+        collegeEmail: row.collegeEmail,
+        collegeId: row.collegeId,
+        cover: row.cover,
+        coverMediaId: row.coverMediaId,
+        emailVerified: row.emailVerified,
+        graduationYear: row.graduationYear,
+        birthday: row.birthday,
+        interests: row.interests || [],
+        profileCompleted: row.profileCompleted,
+        accountStatus: row.accountStatus,
+        role: row.role,
+        canPost: row.canPost,
+        canMessage: row.canMessage,
+        canActivity: row.canActivity,
+        college,
+        settings,
+        followingList: row.followingList || [],
         meta: {
-          postBookmarkIds: postBookmarks.map(b => b.postId),
-          activityBookmarkIds: activityBookmarks.map(b => b.activityId),
-          unreadNotifCount,
+          postBookmarkIds: row.postBookmarkIds || [],
+          activityBookmarkIds: row.activityBookmarkIds || [],
+          unreadNotifCount: Number(row.unreadNotifCount || 0),
         },
       };
       this.syncCache.set(user.id, { data: result, timestamp: Date.now() });

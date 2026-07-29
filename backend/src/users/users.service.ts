@@ -143,103 +143,96 @@ export class UsersService {
   async getProfileByUsername(username: string, currentUserId?: string) {
     const cleanUsername = username.trim().toLowerCase();
 
-    // First: fetch the user (needed for user.id before we can check block/follow)
-    const user = await this.prisma.user.findFirst({
-      where: {
-        OR: [
-          { username: cleanUsername },
-          { id: cleanUsername }
-        ]
-      },
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-        avatar: true,
-        cover: true,
-        bio: true,
-        birthday: true,
-        major: true,
-        graduationYear: true,
-        location: true,
-        interests: true,
-        emailVerified: true,
-        profileCompleted: true,
-        createdAt: true,
-        college: { select: { name: true } },
-        settings: {
-          select: {
-            privateProfile: true,
-            showOnlineStatus: true,
-            whoCanSeeOnline: true
-          }
-        },
-        _count: {
-          select: { followers: true, following: true, posts: true },
-        },
-      },
-    });
+    const rows: any[] = await this.prisma.$queryRaw`
+      SELECT 
+        u."id",
+        u."username",
+        u."displayName",
+        u."avatar",
+        u."cover",
+        u."bio",
+        u."birthday",
+        u."major",
+        u."graduationYear",
+        u."location",
+        u."interests",
+        u."emailVerified",
+        u."profileCompleted",
+        u."createdAt",
+        c."name" AS "collegeName",
+        s."privateProfile",
+        s."showOnlineStatus",
+        s."whoCanSeeOnline",
+        (SELECT COUNT(*)::int FROM "Follow" f WHERE f."followingId" = u."id") AS "followersCount",
+        (SELECT COUNT(*)::int FROM "Follow" f WHERE f."followerId" = u."id") AS "followingCount",
+        (SELECT COUNT(*)::int FROM "Post" p WHERE p."authorId" = u."id" AND p."deletedAt" IS NULL) AS "postsCount",
+        CASE 
+          WHEN ${currentUserId ? currentUserId : ''}::text != '' AND ${currentUserId ? currentUserId : ''}::text != u."id" THEN
+            EXISTS(
+              SELECT 1 FROM "Block" b 
+              WHERE (b."blockerId" = ${currentUserId || ''} AND b."blockedId" = u."id") 
+                 OR (b."blockerId" = u."id" AND b."blockedId" = ${currentUserId || ''})
+            )
+          ELSE false 
+        END AS "isBlocked",
+        CASE 
+          WHEN ${currentUserId ? currentUserId : ''}::text != '' AND ${currentUserId ? currentUserId : ''}::text != u."id" THEN
+            EXISTS(
+              SELECT 1 FROM "Follow" f 
+              WHERE f."followerId" = ${currentUserId || ''} AND f."followingId" = u."id"
+            )
+          ELSE false 
+        END AS "isFollowing"
+      FROM "User" u
+      LEFT JOIN "College" c ON u."collegeId" = c."id"
+      LEFT JOIN "UserSettings" s ON s."userId" = u."id"
+      WHERE u."username" = ${cleanUsername} OR u."id" = ${cleanUsername}
+      LIMIT 1;
+    `;
 
-    if (!user) {
+    if (!rows || rows.length === 0) {
       throw new NotFoundException('User not found');
     }
 
-    // Now run block check and follow check in parallel — both need user.id
-    const [blockRecord, followRecord] = await Promise.all([
-      currentUserId && currentUserId !== user.id
-        ? this.prisma.block.findFirst({
-            where: {
-              OR: [
-                { blockerId: currentUserId, blockedId: user.id },
-                { blockerId: user.id, blockedId: currentUserId },
-              ],
-            },
-            select: { blockerId: true },
-          })
-        : Promise.resolve(null),
-      currentUserId && currentUserId !== user.id
-        ? this.prisma.follow.findUnique({
-            where: {
-              followerId_followingId: {
-                followerId: currentUserId,
-                followingId: user.id,
-              },
-            },
-            select: { followerId: true },
-          })
-        : Promise.resolve(null),
-    ]);
+    const row = rows[0];
 
-    if (blockRecord) {
+    if (row.isBlocked) {
       throw new NotFoundException('User not found');
     }
 
-    const isFollowing = !!followRecord;
+    const hasSettings = row.privateProfile !== null || row.showOnlineStatus !== null || row.whoCanSeeOnline !== null;
+    const settings = hasSettings
+      ? {
+          privateProfile: !!row.privateProfile,
+          showOnlineStatus: row.showOnlineStatus ?? true,
+          whoCanSeeOnline: row.whoCanSeeOnline ?? 'everyone',
+        }
+      : null;
 
     return {
-      id: user.id,
-      username: user.username,
-      displayName: user.displayName,
-      avatar: user.avatar,
-      cover: user.cover,
-      bio: user.bio,
-      birthday: user.birthday,
-      college: user.college?.name || null,
-      major: user.major,
-      graduationYear: user.graduationYear,
-      location: user.location,
-      interests: user.interests,
-      verified: user.emailVerified,
-      profileCompleted: user.profileCompleted,
-      createdAt: user.createdAt,
-      settings: user.settings || null,
-      isPrivate: user.settings?.privateProfile || false,
+      id: row.id,
+      username: row.username,
+      displayName: row.displayName,
+      avatar: row.avatar,
+      cover: row.cover,
+      bio: row.bio,
+      birthday: row.birthday,
+      college: row.collegeName || null,
+      major: row.major,
+      graduationYear: row.graduationYear,
+      location: row.location,
+      interests: row.interests || [],
+      verified: row.emailVerified,
+      profileCompleted: row.profileCompleted,
+      createdAt: row.createdAt,
+      settings,
+      isPrivate: row.privateProfile || false,
       stats: {
-        followers: user._count.followers,
-        following: user._count.following,
-        posts: user._count.posts,
+        followers: Number(row.followersCount || 0),
+        following: Number(row.followingCount || 0),
+        posts: Number(row.postsCount || 0),
       },
-      isFollowing,
+      isFollowing: !!row.isFollowing,
     };
   }
 
@@ -350,91 +343,83 @@ export class UsersService {
 
   async getFollowers(username: string, currentUserId?: string, limit = 20, offset = 0) {
     const cleanUsername = username.trim().toLowerCase();
-    const targetUser = await this.prisma.user.findUnique({ where: { username: cleanUsername } });
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { username: cleanUsername },
+      select: { id: true },
+    });
     if (!targetUser) throw new NotFoundException('User not found');
 
-    const follows = await this.prisma.follow.findMany({
-      where: { followingId: targetUser.id },
-      take: limit,
-      skip: offset,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        follower: {
-          select: {
-            id: true,
-            username: true,
-            displayName: true,
-            avatar: true,
-            bio: true,
-            role: true,
-          },
-        },
-      },
-    });
+    const rows: any[] = await this.prisma.$queryRaw`
+      SELECT 
+        u."id",
+        u."username",
+        u."displayName",
+        u."avatar",
+        u."bio",
+        u."role",
+        CASE WHEN ${currentUserId ? currentUserId : ''}::text != '' THEN
+          EXISTS(
+            SELECT 1 FROM "Follow" my_f 
+            WHERE my_f."followerId" = ${currentUserId || ''} AND my_f."followingId" = u."id"
+          )
+        ELSE false END AS "isFollowing"
+      FROM "Follow" f
+      JOIN "User" u ON f."followerId" = u."id"
+      WHERE f."followingId" = ${targetUser.id}
+      ORDER BY f."createdAt" DESC
+      LIMIT ${limit} OFFSET ${offset};
+    `;
 
-    const validFollows = follows.filter(f => f.follower != null);
-    const followerUserIds = validFollows.map(f => f.follower.id);
-
-    let myFollowingSet = new Set<string>();
-    if (currentUserId && followerUserIds.length > 0) {
-      const myFollows = await this.prisma.follow.findMany({
-        where: {
-          followerId: currentUserId,
-          followingId: { in: followerUserIds },
-        },
-        select: { followingId: true },
-      });
-      myFollowingSet = new Set(myFollows.map(f => f.followingId));
-    }
-
-    return validFollows.map(f => ({
-      ...f.follower,
-      isFollowing: currentUserId ? myFollowingSet.has(f.follower.id) : false,
+    return rows.map(r => ({
+      id: r.id,
+      username: r.username,
+      displayName: r.displayName,
+      avatar: r.avatar,
+      bio: r.bio,
+      role: r.role,
+      isFollowing: !!r.isFollowing,
     }));
   }
 
   async getFollowing(username: string, currentUserId?: string, limit = 20, offset = 0) {
     const cleanUsername = username.trim().toLowerCase();
-    const targetUser = await this.prisma.user.findUnique({ where: { username: cleanUsername } });
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { username: cleanUsername },
+      select: { id: true },
+    });
     if (!targetUser) throw new NotFoundException('User not found');
 
-    const follows = await this.prisma.follow.findMany({
-      where: { followerId: targetUser.id },
-      take: limit,
-      skip: offset,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        following: {
-          select: {
-            id: true,
-            username: true,
-            displayName: true,
-            avatar: true,
-            bio: true,
-            role: true,
-          },
-        },
-      },
-    });
+    const rows: any[] = await this.prisma.$queryRaw`
+      SELECT 
+        u."id",
+        u."username",
+        u."displayName",
+        u."avatar",
+        u."bio",
+        u."role",
+        CASE WHEN ${currentUserId ? currentUserId : ''}::text != '' THEN
+          EXISTS(
+            SELECT 1 FROM "Follow" my_f 
+            WHERE my_f."followerId" = ${currentUserId || ''} AND my_f."followingId" = u."id"
+          )
+        ELSE false END AS "isFollowing"
+      FROM "Follow" f
+      JOIN "User" u ON f."followingId" = u."id"
+      WHERE f."followerId" = ${targetUser.id}
+      ORDER BY f."createdAt" DESC
+      LIMIT ${limit} OFFSET ${offset};
+    `;
 
-    const validFollows = follows.filter(f => f.following != null);
-    const followingUserIds = validFollows.map(f => f.following.id);
-
-    let myFollowingSet = new Set<string>();
-    if (currentUserId && followingUserIds.length > 0) {
-      const myFollows = await this.prisma.follow.findMany({
-        where: {
-          followerId: currentUserId,
-          followingId: { in: followingUserIds },
-        },
-        select: { followingId: true },
-      });
-      myFollowingSet = new Set(myFollows.map(f => f.followingId));
-    }
-
-    return validFollows.map(f => ({
-      ...f.following,
-      isFollowing: currentUserId ? myFollowingSet.has(f.following.id) : false,
+    return rows.map(r => ({
+      id: r.id,
+      username: r.username,
+      displayName: r.displayName,
+      avatar: r.avatar,
+      bio: r.bio,
+      role: r.role,
+      isFollowing: !!r.isFollowing,
     }));
   }
 

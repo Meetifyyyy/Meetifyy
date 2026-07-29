@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
@@ -95,64 +96,93 @@ export class PostsService {
       }
     }
 
-    const posts = await this.prisma.post.findMany({
-      take: limit + 1,
-      where: { 
-        deletedAt: null,
-        authorId: { notIn: excludedUserIds },
-        ...(communityId ? { communityId } : {}),
-        ...(cursorDate ? { createdAt: { lt: cursorDate } } : {})
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        author: {
-          select: {
-            id: true,
-            username: true,
-            displayName: true,
-            avatar: true,
-          },
-        },
-        media: {
-          select: {
-            id: true,
-            objectKey: true,
-            width: true,
-            height: true,
-            mimeType: true,
-            type: true,
-          },
-        },
-      },
-    });
+    const fetchLimit = limit + 1;
+
+    const rawPosts: any[] = await this.prisma.$queryRaw`
+      SELECT 
+        p.id,
+        p."authorId",
+        p."communityId",
+        p.text,
+        p."likeCount",
+        p."commentCount",
+        p."createdAt",
+        p."updatedAt",
+        JSON_BUILD_OBJECT(
+          'id', u.id,
+          'username', u.username,
+          'displayName', u."displayName",
+          'avatar', u.avatar
+        ) AS author,
+        COALESCE(
+          (
+            SELECT JSON_AGG(
+              JSON_BUILD_OBJECT(
+                'id', m.id,
+                'objectKey', m."objectKey",
+                'width', m.width,
+                'height', m.height,
+                'mimeType', m."mimeType",
+                'type', m.type
+              )
+            )
+            FROM "Media" m 
+            WHERE m."postId" = p.id
+          ),
+          '[]'::json
+        ) AS media,
+        CASE WHEN ${userId ? userId : ''}::text != '' THEN
+          EXISTS(SELECT 1 FROM "PostLike" pl WHERE pl."userId" = ${userId || ''} AND pl."postId" = p.id)
+        ELSE false END AS "isLiked",
+        CASE WHEN ${userId ? userId : ''}::text != '' THEN
+          EXISTS(SELECT 1 FROM "PostBookmark" pb WHERE pb."userId" = ${userId || ''} AND pb."postId" = p.id)
+        ELSE false END AS "isBookmarked"
+      FROM "Post" p
+      JOIN "User" u ON p."authorId" = u.id
+      WHERE p."deletedAt" IS NULL
+        ${communityId ? Prisma.sql`AND p."communityId" = ${communityId}` : Prisma.empty}
+        ${cursorDate ? Prisma.sql`AND p."createdAt" < ${cursorDate}` : Prisma.empty}
+        ${excludedUserIds.length > 0 ? Prisma.sql`AND p."authorId" NOT IN (${Prisma.join(excludedUserIds)})` : Prisma.empty}
+      ORDER BY p."createdAt" DESC
+      LIMIT ${fetchLimit};
+    `;
 
     let nextCursor: string | undefined = undefined;
-    if (posts.length > limit) {
-      const nextItem = posts.pop();
-      nextCursor = nextItem?.createdAt.toISOString();
+    if (rawPosts.length > limit) {
+      const nextItem = rawPosts.pop();
+      nextCursor = nextItem?.createdAt ? new Date(nextItem.createdAt).toISOString() : undefined;
     }
 
-    if (posts.length === 0) {
+    if (rawPosts.length === 0) {
       return { posts: [], nextCursor: undefined };
     }
 
-    const postIds = posts.map(p => p.id);
+    const formattedPosts = rawPosts.map((post) => {
+      const isLiked = !!post.isLiked;
+      const isBookmarked = !!post.isBookmarked;
+      const likeCount = Number(post.likeCount ?? 0);
+      const commentCount = Number(post.commentCount ?? 0);
 
-    const [userLikes, userBookmarks] = await Promise.all([
-      userId ? this.prisma.postLike.findMany({
-        where: { userId, postId: { in: postIds } },
-        select: { postId: true }
-      }) : [],
-      userId ? this.prisma.postBookmark.findMany({
-        where: { userId, postId: { in: postIds } },
-        select: { postId: true }
-      }) : [],
-    ]);
-
-    const likedSet = new Set(userLikes.map(l => l.postId));
-    const bookmarkedSet = new Set(userBookmarks.map(b => b.postId));
-
-    const formattedPosts = posts.map((post) => this.formatPost(post, likedSet, bookmarkedSet));
+      return {
+        id: post.id,
+        authorId: post.authorId,
+        communityId: post.communityId,
+        text: post.text,
+        likeCount,
+        likesCount: likeCount,
+        commentCount,
+        commentsCount: commentCount,
+        createdAt: post.createdAt,
+        updatedAt: post.updatedAt,
+        author: post.author,
+        media: post.media || [],
+        hasLiked: isLiked,
+        isLiked: isLiked,
+        isLikedByMe: isLiked,
+        hasBookmarked: isBookmarked,
+        isBookmarked: isBookmarked,
+      };
+    });
 
     return {
       posts: formattedPosts,
