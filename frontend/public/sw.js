@@ -15,7 +15,7 @@
  *   Falls back to /offline.html for navigation requests that fail.
  */
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const STATIC_CACHE   = `meetifyy-static-${CACHE_VERSION}`;
 const IMAGE_CACHE    = `meetifyy-images-${CACHE_VERSION}`;
 const API_CACHE      = `meetifyy-api-${CACHE_VERSION}`;
