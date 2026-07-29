@@ -40,6 +40,11 @@ async function bootstrap() {
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
 
+  const configuredCorsOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+
   // Security Headers
   app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -47,12 +52,12 @@ async function bootstrap() {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.jsdelivr.net"],
+         scriptSrc: ["'self'", "https://cdn.jsdelivr.net"],
         workerSrc: ["'self'", "blob:", "https://cdn.jsdelivr.net"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        imgSrc: ["'self'", "data:", "blob:", "https://*"],
-        connectSrc: ["'self'", "https://*", "wss://*"],
+         imgSrc: ["'self'", "data:", "blob:", "https://images.unsplash.com", "https://media.giphy.com"],
+         connectSrc: ["'self'", ...configuredCorsOrigins],
       },
     },
     hsts: {
@@ -68,13 +73,10 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean | string) => void) => {
       if (!origin) return callback(null, true);
-      const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').map(o => o.trim().replace(/\/+$/, ''));
-      const isAllowed =
-        process.env.NODE_ENV !== 'production' ||
-        corsOrigins.includes(origin) ||
-        origin.endsWith('.vercel.app') ||
-        origin.includes('localhost') ||
-        origin.includes('127.0.0.1');
+       const isDevelopmentOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+       const isAllowed = isProd
+         ? configuredCorsOrigins.includes(origin)
+         : configuredCorsOrigins.includes(origin) || isDevelopmentOrigin;
 
       // Fix: passing `true` as the second arg still allows the origin.
       // Reject unknown origins in production by passing an Error instead.

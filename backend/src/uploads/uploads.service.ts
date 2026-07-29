@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger, BadRequestException } from '@nestjs/common';
 import type { StorageProvider } from './providers/storage-provider.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
@@ -20,13 +20,24 @@ export class StorageService {
       : (this.configService.get<string>('supabase.bucketName') || 'meetifyy-dev');
   }
 
+  isSafeStorageKey(key: string): boolean {
+    return typeof key === 'string' && /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+$/.test(key);
+  }
+
+  async userOwnsMediaKey(key: string, userId: string): Promise<boolean> {
+    if (!this.isSafeStorageKey(key)) return false;
+    const media = await this.prisma.media.findUnique({ where: { objectKey: key }, select: { ownerId: true } });
+    return media?.ownerId === userId;
+  }
+
   /**
    * Upload file securely (pass-through) and register Media.
    */
   async uploadFile(userId: string, file: Express.Multer.File, folder = 'general') {
-    const ext = file.originalname.split('.').pop() || 'bin';
+    const safeFolder = this.normalizeFolder(folder);
+    const ext = this.extensionForMime(file.mimetype);
     const randomHex = require('crypto').randomBytes(16).toString('hex');
-    const key = `${folder}/${randomHex}.${ext}`;
+    const key = `${safeFolder}/${randomHex}.${ext}`;
 
     await this.storageProvider.upload(key, file.buffer, file.mimetype);
 
@@ -64,10 +75,16 @@ export class StorageService {
     folder = 'general',
     fileSize = 0,
   ) {
+    const safeFolder = this.normalizeFolder(folder);
+    if (typeof contentType !== 'string' || !this.isAllowedMimeType(contentType)) throw new BadRequestException('Unsupported content type');
+    const requestedFileSize = Number(fileSize);
+    if (!Number.isFinite(requestedFileSize) || requestedFileSize < 0 || requestedFileSize > 25 * 1024 * 1024) {
+      throw new BadRequestException('Invalid file size');
+    }
     const { uploadUrl, publicUrl: providerUrl, key } = await this.storageProvider.createSignedUploadUrl(
       filename,
       contentType,
-      folder,
+      safeFolder,
     );
 
     // Register media in database (pending state)
@@ -84,7 +101,7 @@ export class StorageService {
           ? 'AUDIO'
           : 'IMAGE', // Legacy fallback
         mimeType: contentType,
-        fileSize: fileSize,
+        fileSize: requestedFileSize,
       },
     });
 
@@ -103,8 +120,19 @@ export class StorageService {
     return this.storageProvider.createSignedUrls(keys, expiresIn);
   }
 
+  async getSignedUrlsForUser(keys: string[], expiresIn: number, userId: string) {
+    const media = await this.prisma.media.findMany({
+      where: { objectKey: { in: keys } },
+      select: { objectKey: true, ownerId: true, visibility: true },
+    });
+    const allowedKeys = media.filter((item) => item.visibility === 'public' || item.ownerId === userId).map((item) => item.objectKey);
+    return this.getSignedUrls(allowedKeys, expiresIn);
+  }
+
   async confirmUpload(key: string, userId: string) {
+    if (!this.isSafeStorageKey(key)) return null;
     const media = await this.prisma.media.findUnique({ where: { objectKey: key } });
+    if (media && media.ownerId !== userId) return null;
     if (!media) {
       // If no media record exists, it might have been an unmonitored upload, let's create it
       const exists = await this.storageProvider.exists(key);
@@ -132,6 +160,24 @@ export class StorageService {
         mimeType: metadata?.contentType || media.mimeType,
       }
     });
+  }
+
+  private normalizeFolder(folder = 'general'): string {
+    if (!/^[a-zA-Z0-9_-]+$/.test(folder)) throw new Error('Invalid upload folder');
+    return folder;
+  }
+
+  private isAllowedMimeType(contentType: string): boolean {
+    return /^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|ogg)|audio\/(mpeg|wav|webm|ogg))$/i.test(contentType);
+  }
+
+  private extensionForMime(contentType: string): string {
+    const extensions: Record<string, string> = {
+      'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+      'video/mp4': 'mp4', 'video/webm': 'webm', 'video/ogg': 'ogv',
+      'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/webm': 'webm', 'audio/ogg': 'oga',
+    };
+    return extensions[contentType.toLowerCase()] || 'bin';
   }
 
   async delete(key: string): Promise<boolean> {
