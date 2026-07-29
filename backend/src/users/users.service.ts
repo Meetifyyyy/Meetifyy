@@ -275,9 +275,9 @@ export class UsersService {
         tu."avatar" AS "targetAvatar",
         EXISTS(SELECT 1 FROM block_check) AS "isBlocked",
         EXISTS(SELECT 1 FROM ins) AS "newlyFollowed",
-        (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followingId" = tu."id") AS "targetFollowers",
+        ((SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followingId" = tu."id") + CASE WHEN EXISTS(SELECT 1 FROM ins) THEN 1 ELSE 0 END) AS "targetFollowers",
         (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followerId" = tu."id") AS "targetFollowing",
-        (SELECT COUNT(*)::int FROM "Follow" f WHERE f."followerId" = ${followerId}) AS "currentFollowing"
+        ((SELECT COUNT(*)::int FROM "Follow" f WHERE f."followerId" = ${followerId}) + CASE WHEN EXISTS(SELECT 1 FROM ins) THEN 1 ELSE 0 END) AS "currentFollowing"
       FROM target_user tu;
     `;
 
@@ -364,9 +364,9 @@ export class UsersService {
         tu."id" AS "targetId",
         tu."username" AS "targetUsername",
         EXISTS(SELECT 1 FROM del) AS "unfollowed",
-        (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followingId" = tu."id") AS "targetFollowers",
+        GREATEST(0, (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followingId" = tu."id") - CASE WHEN EXISTS(SELECT 1 FROM del) THEN 1 ELSE 0 END) AS "targetFollowers",
         (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followerId" = tu."id") AS "targetFollowing",
-        (SELECT COUNT(*)::int FROM "Follow" f WHERE f."followerId" = ${followerId}) AS "currentFollowing"
+        GREATEST(0, (SELECT COUNT(*)::int FROM "Follow" f WHERE f."followerId" = ${followerId}) - CASE WHEN EXISTS(SELECT 1 FROM del) THEN 1 ELSE 0 END) AS "currentFollowing"
       FROM target_user tu;
     `;
 

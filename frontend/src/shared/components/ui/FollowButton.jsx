@@ -4,6 +4,7 @@ import { useFollowMutation } from '@shared/hooks/useFollowMutation';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usersApi } from '@shared/api/apiClient';
+import { PROFILE_KEYS } from '@shared/hooks/useProfile';
 import styles from './FollowButton.module.css';
 
 const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className, style }) => {
@@ -12,15 +13,17 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
   const [hovered, setHovered] = useState(false);
   const sizeClass = size === 'sm' ? styles.sizeSm : styles.sizeMd;
 
+  const cleanTargetUsername = targetUsername?.toLowerCase();
+  const cleanCurrentUser = currentUser?.username?.toLowerCase();
+
   // Derive the follow state from TanStack Query directly!
-  // This is the core of the single-source-of-truth architecture.
   const { data: targetProfile, isLoading: isProfileLoading } = useQuery({
-    queryKey: ['profile', targetUsername],
+    queryKey: PROFILE_KEYS.byUsername(cleanTargetUsername),
     queryFn: () => usersApi.getByUsername(targetUsername),
-    enabled: !!targetUsername && targetUsername !== currentUser?.username && targetUsername !== 'unknown',
+    enabled: !!cleanTargetUsername && cleanTargetUsername !== cleanCurrentUser && cleanTargetUsername !== 'unknown',
     staleTime: 1000 * 60,
     initialData: () => {
-      const cached = queryClient.getQueryData(['profile', targetUsername]);
+      const cached = queryClient.getQueryData(PROFILE_KEYS.byUsername(cleanTargetUsername));
       if (cached) return cached;
       if (initialFollowing !== undefined) {
         return { isFollowing: initialFollowing };
@@ -30,13 +33,13 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
   });
 
   const following = targetProfile?.isFollowing || false;
-  const entityKey = `follow:${targetUsername}`;
+  const entityKey = `follow:${cleanTargetUsername}`;
   const displayFollowing = toggleRegistry.getLatestIntent(entityKey, following);
 
   const { follow, unfollow } = useFollowMutation(targetUsername);
 
   // Don't render for own profile
-  if (!targetUsername || targetUsername === currentUser?.username) return null;
+  if (!targetUsername || cleanTargetUsername === cleanCurrentUser) return null;
 
   // While checking follow state from API
   if (isProfileLoading && targetProfile === undefined) {
@@ -95,4 +98,5 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
 };
 
 export default FollowButton;
+
 

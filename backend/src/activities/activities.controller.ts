@@ -17,7 +17,8 @@ export class ActivitiesController {
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string
   ) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 20;
+    const rawLimit = parseInt(limit || '', 10);
+    const parsedLimit = !isNaN(rawLimit) && rawLimit > 0 ? rawLimit : 20;
     return this.activitiesService.getAllActivities(user?.id, parsedLimit, cursor);
   }
 
@@ -28,7 +29,8 @@ export class ActivitiesController {
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string
   ) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 20;
+    const rawLimit = parseInt(limit || '', 10);
+    const parsedLimit = !isNaN(rawLimit) && rawLimit > 0 ? rawLimit : 20;
     return this.activitiesService.getCampusActivities(user?.id, parsedLimit, cursor);
   }
 

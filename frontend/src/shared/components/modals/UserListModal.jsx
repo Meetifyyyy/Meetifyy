@@ -27,7 +27,8 @@ export default function UserListModal({ type, profileUsername, onClose }) {
   }, [onClose]);
 
   const isFollowers = type === 'followers';
-  const queryKey = [isFollowers ? 'followers' : 'following', profileUsername];
+  const cleanProfileUsername = profileUsername?.toLowerCase();
+  const queryKey = [isFollowers ? 'followers' : 'following', cleanProfileUsername];
 
   const {
     data,
@@ -153,7 +154,7 @@ export default function UserListModal({ type, profileUsername, onClose }) {
                     <div className={styles.userUsername}>@{user.username}</div>
                   </div>
                   <div className={styles.followBtnWrap} onClick={(e) => e.stopPropagation()}>
-                    {user.username !== currentUser?.username && (
+                    {user.username?.toLowerCase() !== currentUser?.username?.toLowerCase() && (
                       <FollowButton
                         targetUsername={user.username}
                         initialFollowing={user.isFollowing}
