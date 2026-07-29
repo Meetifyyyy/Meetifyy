@@ -1,4 +1,4 @@
-import { Controller, Post, Put, Body, UseGuards, Req, Get, Param, Query, Res, UseInterceptors, UploadedFile, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Controller, Post, Put, Body, UseGuards, Req, Get, Param, Query, Res, UseInterceptors, UploadedFile, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { StorageService } from './uploads.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -16,7 +16,13 @@ export class UploadsController {
    */
   @UseGuards(JwtGuard)
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', {
+    limits: { fileSize: 25 * 1024 * 1024 },
+    fileFilter: (_req, file, callback) => {
+      const allowed = /^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|ogg)|audio\/(mpeg|wav|webm|ogg))$/i.test(file.mimetype);
+      callback(null, allowed);
+    },
+  }))
   async upload(
     @UploadedFile() file: Express.Multer.File,
     @Body('folder') folder: string = 'general',
@@ -52,16 +58,27 @@ export class UploadsController {
    * Direct upload endpoint for local development environment fallback.
    */
   @Put('direct-upload')
+  @UseGuards(JwtGuard)
   async directUpload(
     @Query('key') key: string,
     @Req() req: Request,
     @Res() res: Response,
   ) {
     if (!key) throw new BadRequestException('Key parameter is required');
+    if (!this.storageService.isSafeStorageKey(key)) throw new BadRequestException('Invalid storage key');
+    const userId = (req as any).user?.id;
+    if (!userId || !(await this.storageService.userOwnsMediaKey(key, userId))) {
+      throw new ForbiddenException('You are not allowed to upload to this key');
+    }
 
     const cwd = process.cwd();
     const uploadsDir = cwd.endsWith('backend') ? path.join(cwd, 'uploads') : path.join(cwd, 'backend', 'uploads');
-    const filePath = path.join(uploadsDir, key);
+    const resolvedUploadsDir = path.resolve(uploadsDir);
+    const filePath = path.resolve(resolvedUploadsDir, key);
+    if (!filePath.startsWith(`${resolvedUploadsDir}${path.sep}`)) throw new BadRequestException('Invalid storage path');
+    const maxUploadBytes = 25 * 1024 * 1024;
+    const declaredLength = Number(req.headers['content-length'] || 0);
+    if (declaredLength > maxUploadBytes) throw new BadRequestException('File is too large');
     const folderPath = path.dirname(filePath);
 
     if (!fs.existsSync(folderPath)) {
@@ -69,13 +86,27 @@ export class UploadsController {
     }
 
     const writeStream = fs.createWriteStream(filePath);
+    let receivedBytes = 0;
+    let tooLarge = false;
+    req.on('data', (chunk: Buffer) => {
+      receivedBytes += chunk.length;
+      if (receivedBytes > maxUploadBytes && !tooLarge) {
+        tooLarge = true;
+        req.unpipe(writeStream);
+        writeStream.destroy();
+        req.destroy();
+        if (!res.headersSent) res.status(413).json({ error: 'File is too large' });
+      }
+    });
     req.pipe(writeStream);
 
     writeStream.on('finish', () => {
+      if (tooLarge) return;
       return res.status(200).json({ status: 'ok', key, publicUrl: `/api/media/${key}` });
     });
 
     writeStream.on('error', (err) => {
+      if (tooLarge) return;
       return res.status(500).json({ error: err.message });
     });
   }
@@ -85,14 +116,20 @@ export class UploadsController {
    * Retrieve signed URLs in bulk for an array of object keys.
    */
   @Post('signed-urls')
+  @UseGuards(JwtGuard)
   async getSignedUrls(
     @Body() body: { keys: string[]; expiresIn?: number },
+    @Req() req: any,
   ) {
     const { keys, expiresIn } = body || {};
     if (!keys || !Array.isArray(keys)) {
       throw new BadRequestException('keys must be an array of strings');
     }
-    return this.storageService.getSignedUrls(keys, expiresIn || 3600);
+    if (keys.length === 0 || keys.length > 100 || keys.some((key) => !this.storageService.isSafeStorageKey(key))) {
+      throw new BadRequestException('keys must contain 1 to 100 valid storage keys');
+    }
+    const safeExpiresIn = Math.min(Math.max(Number(expiresIn) || 3600, 60), 3600);
+    return this.storageService.getSignedUrlsForUser(keys, safeExpiresIn, req.user.id);
   }
 
   /**
@@ -127,6 +164,9 @@ export class UploadsController {
     @Res() res: Response,
   ) {
     const key = `${folder}/${filename}`;
+    if (!this.storageService.isSafeStorageKey(key)) {
+      return res.status(400).json({ error: 'Invalid media key' });
+    }
     const cwd = process.cwd();
     
     // Check multiple potential uploads locations on local disk
