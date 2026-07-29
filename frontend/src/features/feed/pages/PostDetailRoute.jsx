@@ -1,17 +1,14 @@
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useProfile, PROFILE_KEYS } from '@shared/hooks/useProfile';
 import { postsApi } from '@shared/api/apiClient';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useData } from '@shared/hooks/useData';
-import FollowButton from '@shared/components/ui/FollowButton';
-import { usersApi } from '@shared/api/apiClient';
 import { EmptyState } from '@shared/components/ui/StateViews';
 import PostView from '../components/post/PostView';
-import RightPanel from '@layout/RightPanel';
+import RightPanel, { OnlineFriends } from '@layout/RightPanel';
 import rightPanelStyles from '@layout/RightPanel.module.css';
-import Avatar from '@shared/components/avatar/Avatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
+import UserSidebarCard, { UserSidebarCardSkeleton } from '@shared/components/ui/UserSidebarCard';
 import postViewStyles from '../components/post/PostView.module.css';
 
 export default function PostDetailRoute() {
@@ -19,7 +16,7 @@ export default function PostDetailRoute() {
   const goBack = useSmartBack();
   const location = useLocation();
   const { id } = useParams();
-  const { getUserById, communities, currentUser } = useData();
+  const { getUserById, communities } = useData();
 
 
   const handleBack = () => {
@@ -45,57 +42,11 @@ export default function PostDetailRoute() {
     communities: []
   };
 
-  // Instant profile loading with IndexedDB & query cache synchronization
-  const { profile } = useProfile(author?.username);
-
   const renderRightPanelSkeleton = () => {
     return (
       <RightPanel>
-        <div className={rightPanelStyles.panelCard} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <Skeleton type="circle" width="80px" height="80px" style={{ margin: 0 }} />
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <Skeleton type="text" width="140px" height="18px" style={{ margin: 0 }} />
-              <Skeleton type="text" width="90px" height="12px" style={{ margin: 0 }} />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <Skeleton type="text" width="100%" height="12px" style={{ margin: 0 }} />
-              <Skeleton type="text" width="90%" height="12px" style={{ margin: 0 }} />
-            </div>
-
-            <div style={{ display: 'flex', gap: '2.5rem', paddingBottom: '1.25rem', borderBottom: '1px solid var(--color-border-light)' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <Skeleton type="text" width="40px" height="16px" style={{ margin: 0 }} />
-                <Skeleton type="text" width="60px" height="10px" style={{ margin: 0 }} />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <Skeleton type="text" width="40px" height="16px" style={{ margin: 0 }} />
-                <Skeleton type="text" width="60px" height="10px" style={{ margin: 0 }} />
-              </div>
-            </div>
-
-            <div>
-              <Skeleton type="text" width="80px" height="10px" style={{ textTransform: 'uppercase', marginBottom: '0.75rem' }} />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                      <Skeleton type="circle" width="28px" height="28px" />
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <Skeleton type="text" width="80px" height="12px" style={{ margin: 0 }} />
-                        <Skeleton type="text" width="50px" height="10px" style={{ margin: 0 }} />
-                      </div>
-                    </div>
-                    <Skeleton type="rect" width="50px" height="22px" style={{ borderRadius: 'var(--radius-full)' }} />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-          </div>
-        </div>
+        <UserSidebarCardSkeleton />
+        <OnlineFriends />
       </RightPanel>
     );
   };
@@ -197,15 +148,16 @@ export default function PostDetailRoute() {
   const communityId = location.state?.communityId || post?.communityId;
 
   const renderRightPanel = () => {
-    if (sourceContext === 'community' && communityId) {
-      const comm = communities[communityId];
-      if (!comm) return null;
+    const comm = (sourceContext === 'community' && communityId)
+      ? (communities?.[communityId] || (Array.isArray(communities) ? communities.find(c => c.id === communityId || c.name === communityId) : null) || (Object.values(communities || {}).find(c => c?.id === communityId)))
+      : null;
 
-      return (
-        <RightPanel>
+    return (
+      <RightPanel>
+        {comm ? (
           <div className={rightPanelStyles.panelCard}>
             <h3 className={rightPanelStyles.panelTitle}>About Community</h3>
-            <p style={{ fontSize: '0.9rem', color: 'var(--color-text-main)', marginBottom: '1.5rem', lineHeight: '1.5' }}>{comm.desc}</p>
+            <p style={{ fontSize: '0.9rem', color: 'var(--color-text-main)', marginBottom: '1.5rem', lineHeight: '1.5' }}>{comm.desc || comm.description || 'Welcome to the community!'}</p>
 
             <div style={{ display: 'flex', gap: '2rem', marginBottom: '1.5rem' }}>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -221,129 +173,21 @@ export default function PostDetailRoute() {
               </div>
             </div>
 
-            <div style={{ paddingTop: '1.2rem', borderTop: '1px solid var(--color-border-light)', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-              Created {comm.created}
-            </div>
-          </div>
-        </RightPanel>
-      );
-    } else {
-      const isSelf = currentUser && (profile?.id === currentUser.id || author.id === currentUser.id);
-
-      const effectiveUser = {
-        id: profile?.id || author?.id,
-        displayName: profile?.displayName || author?.displayName || 'Unknown User',
-        username: profile?.username || author?.username || 'unknown',
-        avatar: profile?.avatar || author?.avatarUrl || author?.avatar,
-        bio: profile?.bio ?? author?.bio ?? author?.desc ?? '',
-        followers: profile?.stats?.followers ?? profile?.followersCount ?? author?.followers ?? 0,
-        following: profile?.stats?.following ?? profile?.followingCount ?? author?.following ?? 0,
-        isFollowing: profile?.isFollowing ?? false,
-        communities: profile?.communities || author?.communities || []
-      };
-
-      return (
-        <RightPanel>
-          <div className={rightPanelStyles.panelCard} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-            {/* Profile Info */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* Avatar */}
-              <Avatar 
-                src={effectiveUser.avatar} 
-                name={effectiveUser.displayName} 
-                size="80px" 
-                onClick={() => navigate(`/profile/${effectiveUser.username}`, { state: { from: location.pathname } })}
-              />
-              
-              <div 
-                style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', cursor: 'pointer' }}
-                onClick={() => navigate(`/profile/${effectiveUser.username}`, { state: { from: location.pathname } })}
-              >
-                <h2 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--color-text-main)', fontFamily: 'var(--font-family-display)' }}>{effectiveUser.displayName}</h2>
-                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>@{effectiveUser.username}</div>
+            {comm.created && (
+              <div style={{ paddingTop: '1.2rem', borderTop: '1px solid var(--color-border-light)', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+                Created {comm.created}
               </div>
-
-              {/* Description */}
-              {effectiveUser.bio ? (
-                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--color-text-main)', lineHeight: '1.5' }}>
-                  {effectiveUser.bio}
-                </p>
-              ) : null}
-
-              {/* Stats */}
-              <div style={{ display: 'flex', gap: '2.5rem' }}>
-                <div>
-                  <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '1.15rem' }}>{effectiveUser.followers.toLocaleString()}</div>
-                  <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', fontWeight: 500 }}>Followers</div>
-                </div>
-                <div>
-                  <div style={{ fontWeight: 800, color: 'var(--color-text-main)', fontSize: '1.15rem' }}>{effectiveUser.following.toLocaleString()}</div>
-                  <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', fontWeight: 500 }}>Following</div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              {!isSelf && (
-                <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
-                  <FollowButton targetUsername={effectiveUser.username} initialFollowing={effectiveUser.isFollowing} style={{ flex: 1 }} />
-                </div>
-              )}
-
-              {/* Communities */}
-              {(() => {
-                const displayedCommunities = isSelf
-                  ? communities.filter(c => c.isMember).map(c => c.name)
-                  : (Array.isArray(effectiveUser.communities) ? effectiveUser.communities.map(c => typeof c === 'string' ? c : c.name) : []);
-
-                if (!displayedCommunities || displayedCommunities.length === 0) return null;
-
-                return (
-                  <div style={{ paddingTop: '1.25rem', borderTop: '1px solid var(--color-border-light)' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>Member of</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      {displayedCommunities.map((commName, i) => {
-                        const commEntry = Object.entries(communities).find(([_, c]) => c.name === commName);
-                        const commId = commEntry ? commEntry[0] : null;
-                        return (
-                          <div 
-                            key={i} 
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: commId ? 'pointer' : 'default' }}
-                            onClick={() => commId && navigate(`/communities/${commId}`, { state: { from: location.pathname } })}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                              {commEntry?.[1]?.avatar ? (
-                                <img 
-                                  src={commEntry[1].avatar} 
-                                  alt={commName} 
-                                  style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} 
-                                  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} 
-                                />
-                              ) : (
-                                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'linear-gradient(135deg, #22C55E, #10B981)', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#FFFFFF', fontSize: '0.8rem', fontWeight: 700 }}>
-                                  {commName.charAt(0)}
-                                </div>
-                              )}
-                              <div>
-                                <div style={{ fontWeight: 700, color: 'var(--color-text-main)', fontSize: '0.85rem' }}>{commName}</div>
-                                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Member</div>
-                              </div>
-                            </div>
-                            <button style={{ background: 'var(--color-border-light)', color: 'var(--color-text-muted)', border: 'none', borderRadius: 'var(--radius-full)', padding: '0.25rem 0.6rem', fontSize: '0.75rem', fontWeight: 600, cursor: 'default' }}>Joined</button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
+            )}
           </div>
-        </RightPanel>
-      );
-    }
+        ) : (
+          <UserSidebarCard username={author?.username} initialUser={author} />
+        )}
+        <OnlineFriends />
+      </RightPanel>
+    );
   };
 
   return (

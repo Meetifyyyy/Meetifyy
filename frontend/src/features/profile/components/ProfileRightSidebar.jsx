@@ -113,7 +113,6 @@ export default function ProfileRightSidebar({ embedded = false }) {
   const location = useLocation();
   const queryClient = useQueryClient();
 
-  const [suggestedUsers, setSuggestedUsers] = useState([]);
   const [nowTime, setNowTime] = useState(Date.now());
 
   useEffect(() => {
@@ -123,16 +122,22 @@ export default function ProfileRightSidebar({ embedded = false }) {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (suggestedUsers.length === 0 && users && currentUser) {
-      const suggestions = Object.values(users)
-        .filter(u => u.id !== currentUser.id && !currentUser.followingList?.includes(u.username))
-        .slice(0, 3);
-      if (suggestions.length > 0) {
-        setSuggestedUsers(suggestions);
-      }
-    }
-  }, [users, currentUser, suggestedUsers.length]);
+  const suggestedUsers = useMemo(() => {
+    if (!users || !currentUser) return [];
+    const followingSet = new Set((currentUser.followingList || []).map(u => (typeof u === 'string' ? u : u?.username)?.toLowerCase()).filter(Boolean));
+    return Object.values(users)
+      .filter(u => {
+        if (!u || !u.username) return false;
+        const cleanName = u.username.toLowerCase();
+        if (cleanName === currentUser.username?.toLowerCase() || u.id === currentUser.id) return false;
+        if (followingSet.has(cleanName)) return false;
+
+        const entityKey = `follow:${cleanName}`;
+        const intent = toggleRegistry.getLatestIntent(entityKey, u.isFollowing || false);
+        return !intent;
+      })
+      .slice(0, 3);
+  }, [users, currentUser]);
 
   const myUpcoming = useMemo(() => {
     if (!currentUser) return [];
@@ -213,8 +218,8 @@ export default function ProfileRightSidebar({ embedded = false }) {
               key={u.id} 
               className={s.personItem}
               onClick={() => {
-                // Pre-seed the cache so ProfilePage renders instantly (no skeleton flash)
-                queryClient.setQueryData(PROFILE_KEYS.byUsername(u.username), u);
+                // Only pre-seed if query data isn't already populated with full profile
+                queryClient.setQueryData(PROFILE_KEYS.byUsername(u.username), (old) => old?.stats ? old : u);
                 navigate(`/profile/${u.username}`, { state: { from: location.pathname } });
               }}
               style={{ cursor: 'pointer' }}
@@ -224,7 +229,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
                 <div className={s.personName}>{u.displayName || u.username}</div>
                 <div className={s.personSub}>@{u.username}</div>
               </div>
-              <FollowButton targetUsername={u.username} initialFollowing={false} size="sm" />
+              <FollowButton targetUsername={u.username} initialFollowing={u.isFollowing || false} size="sm" />
             </div>
           ))}
         </div>

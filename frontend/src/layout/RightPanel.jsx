@@ -446,7 +446,7 @@ export function UniversityMembers({ members, title = 'Members', onViewAll }) {
               </div>
             </div>
             {!isSelf && (
-              <FollowButton targetUsername={targetUsername} size="sm" />
+              <FollowButton targetUsername={targetUsername} initialFollowing={targetUser?.isFollowing} size="sm" />
             )}
           </div>
         );
