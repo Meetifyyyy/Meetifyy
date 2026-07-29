@@ -90,7 +90,7 @@ export default function ActivitiesPage() {
                 <button className={sharedStyles.headerSquareBtn} onClick={() => setShowSearch(true)} title="Search">
                   <Search size={20} />
                 </button>
-                <button className={sharedStyles.headerSquareBtn} onClick={() => navigate('/crew/create')} title="Create Activity">
+                <button className={sharedStyles.headerSquareBtn} onClick={() => navigate('/crew/create', { state: { returnTo: '/campus/activities' } })} title="Create Activity">
                   <Plus size={20} />
                 </button>
               </div>
@@ -109,7 +109,7 @@ export default function ActivitiesPage() {
               <CrewCard
                 key={act.id}
                 activity={act}
-                onClick={() => navigate(`/crew/${act.id}`, { state: { activity: act } })}
+                onClick={() => navigate(`/crew/${act.id}`, { state: { activity: act, from: '/campus/activities' } })}
               />
             ))
           ) : (

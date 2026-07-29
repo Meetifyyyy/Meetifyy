@@ -148,7 +148,19 @@ export class MessagingCoreService {
 
     await this.prisma.conversation.update({
       where: { id: realConvId },
-      data: { updatedAt: new Date() }
+      data: {
+        updatedAt: new Date(),
+        lastMessageId: message.id,
+        lastMessageText: payload.text || (payload.mediaUrl ? (payload.mediaType === 'image' ? 'Photo' : payload.mediaType === 'video' ? 'Video' : 'Audio') : ''),
+        lastMessageType: type,
+        lastMessageAt: message.createdAt,
+        lastMessageSenderId: senderId,
+      }
+    });
+
+    await this.prisma.conversationParticipant.updateMany({
+      where: { conversationId: realConvId, userId: { not: senderId } },
+      data: { unreadCount: { increment: 1 } }
     });
 
     const msgPayload = (message.payload as any) || {};
@@ -206,13 +218,11 @@ export class MessagingCoreService {
       deletedAt: null
     };
 
-    if (currentUserId) {
-      whereCondition.deletedByUsers = {
-        none: { userId: currentUserId }
-      };
-    }
-
-    const [participant, blocksMade, participants] = await Promise.all([
+    const [deletedForUser, participant, blocksMade, participants] = await Promise.all([
+      currentUserId ? this.prisma.deletedMessage.findMany({
+        where: { userId: currentUserId, message: { conversationId: realConvId } },
+        select: { messageId: true }
+      }) : Promise.resolve([]),
       currentUserId ? this.prisma.conversationParticipant.findFirst({
         where: { userId: currentUserId, conversationId: realConvId }
       }) : Promise.resolve(null),
@@ -225,6 +235,10 @@ export class MessagingCoreService {
         select: { userId: true, lastReadAt: true, user: { select: { settings: { select: { readReceipts: true } } } } }
       })
     ]);
+
+    if (deletedForUser && deletedForUser.length > 0) {
+      whereCondition.id = { notIn: deletedForUser.map(d => d.messageId) };
+    }
 
     if (participant) {
       clearedAt = participant.clearedAt;
@@ -454,12 +468,14 @@ export class MessagingCoreService {
         }
       },
       update: {
-        lastReadAt: now
+        lastReadAt: now,
+        unreadCount: 0,
       },
       create: {
         userId,
         conversationId: realConvId,
-        lastReadAt: now
+        lastReadAt: now,
+        unreadCount: 0,
       }
     }).catch(() => {});
 

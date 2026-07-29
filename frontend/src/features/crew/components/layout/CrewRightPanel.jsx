@@ -187,7 +187,7 @@ export default function CrewRightPanel({ onCreateActivity, onViewAll }) {
                 className={styles.eventItem}
                 onClick={() => {
                   const chatId = String(activity.id).startsWith('act_') ? activity.id : `act_${activity.id}`;
-                  navigate(`/messages/${chatId}`);
+                  navigate(`/messages/${chatId}`, { state: { from: location.pathname } });
                 }}
                 style={{ cursor: 'pointer' }}
               >

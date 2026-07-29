@@ -80,7 +80,7 @@ export default function NotificationsRoute() {
       queryClient.invalidateQueries({ queryKey: ['activities'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       if (res?.activityId) {
-        navigate(`/crew/${res.activityId}`);
+        navigate(`/crew/${res.activityId}`, { state: { from: '/notifications' } });
       }
     },
   });
@@ -108,7 +108,7 @@ export default function NotificationsRoute() {
       setReadInvitations(updated);
       localStorage.setItem('read_invitations', JSON.stringify(updated));
     }
-    navigate(`/crew/${actId}`, { state: { activity: inv } });
+    navigate(`/crew/${actId}`, { state: { activity: inv, from: '/notifications' } });
   };
 
   const error = null;
@@ -131,52 +131,52 @@ export default function NotificationsRoute() {
     switch (type) {
       case 'FOLLOW':
         if (actorUsername) {
-          navigate(`/profile/${actorUsername}`);
+          navigate(`/profile/${actorUsername}`, { state: { from: '/notifications' } });
         } else if (notif.entityId) {
-          navigate(`/profile/${notif.entityId}`);
+          navigate(`/profile/${notif.entityId}`, { state: { from: '/notifications' } });
         }
         break;
 
       case 'LIKE':
       case 'POST_LIKE':
         if (postId) {
-          navigate(`/post/${postId}`);
+          navigate(`/post/${postId}`, { state: { from: '/notifications' } });
         } else if (notif.entityId) {
-          navigate(`/post/${notif.entityId}`);
+          navigate(`/post/${notif.entityId}`, { state: { from: '/notifications' } });
         }
         break;
 
       case 'COMMENT':
       case 'COMMENT_LIKE':
         if (postId && commentId) {
-          navigate(`/post/${postId}#comment-${commentId}`);
+          navigate(`/post/${postId}#comment-${commentId}`, { state: { from: '/notifications' } });
         } else if (postId) {
-          navigate(`/post/${postId}`);
+          navigate(`/post/${postId}`, { state: { from: '/notifications' } });
         } else if (notif.entityId) {
-          navigate(`/post/${notif.entityId}`);
+          navigate(`/post/${notif.entityId}`, { state: { from: '/notifications' } });
         }
         break;
 
       case 'MENTION':
         if (postId) {
-          navigate(`/post/${postId}`);
+          navigate(`/post/${postId}`, { state: { from: '/notifications' } });
         } else if (notif.metadata?.conversationId || notif.convId) {
-          navigate(`/messages/${notif.metadata?.conversationId || notif.convId}`);
+          navigate(`/messages/${notif.metadata?.conversationId || notif.convId}`, { state: { from: '/notifications' } });
         } else if (notif.entityId) {
-          navigate(`/post/${notif.entityId}`);
+          navigate(`/post/${notif.entityId}`, { state: { from: '/notifications' } });
         }
         break;
 
       case 'MESSAGE':
         if (notif.entityId) {
-          navigate(`/messages/${notif.entityId}`);
+          navigate(`/messages/${notif.entityId}`, { state: { from: '/notifications' } });
         }
         break;
 
       case 'JOIN_REQUEST':
       case 'ACTIVITY_JOIN_REQUEST':
         if (notif.entityId) {
-          navigate(`/crew/${notif.entityId}?discussion=1`);
+          navigate(`/crew/${notif.entityId}?discussion=1`, { state: { from: '/notifications' } });
         }
         break;
 
@@ -186,11 +186,11 @@ export default function NotificationsRoute() {
 
       default:
         if (actorUsername) {
-          navigate(`/profile/${actorUsername}`);
+          navigate(`/profile/${actorUsername}`, { state: { from: '/notifications' } });
         } else if (postId) {
-          navigate(`/post/${postId}`);
+          navigate(`/post/${postId}`, { state: { from: '/notifications' } });
         } else {
-          navigate('/home');
+          navigate('/home', { replace: true });
         }
         break;
     }

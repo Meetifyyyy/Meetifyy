@@ -51,11 +51,18 @@ export function useTypingIndicator(conversationId, currentUserId) {
     };
   }, [conversationId, stopTypingNow]);
 
+  const conversationsRef = useRef(conversations);
+  const usersRef = useRef(users);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+    usersRef.current = users;
+  }, [conversations, users]);
+
   // Listen for typing, message, and presence events
   useEffect(() => {
     if (!socket || !conversationId) return;
 
-    const matchedConv = conversations?.find(
+    const matchedConv = conversationsRef.current?.find(
       c =>
         String(c.id) === String(conversationId) ||
         String(c.publicId) === String(conversationId) ||
@@ -159,7 +166,7 @@ export function useTypingIndicator(conversationId, currentUserId) {
       socket.off('message:new', onNewMessage);
       socket.off('presence:update', onPresenceUpdate);
     };
-  }, [socket, conversationId, currentUserId, users, conversations]);
+  }, [socket, conversationId, currentUserId]);
 
   const typingNames = Array.from(typingUsers.values());
 

@@ -22,7 +22,7 @@ export default function PostDetailRoute() {
 
 
   const handleBack = () => {
-    goBack('/home');
+    navigate(location.state?.from ?? '/home', { replace: true });
   };
 
   const initialPost = location.state?.post || null;
@@ -250,12 +250,12 @@ export default function PostDetailRoute() {
                 src={author.avatarUrl || author.avatar} 
                 name={author.displayName} 
                 size="80px" 
-                onClick={() => navigate(`/profile/${author.username || author.displayName?.toLowerCase().replace(/\s+/g, '')}`)}
+                onClick={() => navigate(`/profile/${author.username || author.displayName?.toLowerCase().replace(/\s+/g, '')}`, { state: { from: location.pathname } })}
               />
               
               <div 
                 style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', cursor: 'pointer' }}
-                onClick={() => navigate(`/profile/${author.username || author.displayName?.toLowerCase().replace(/\s+/g, '')}`)}
+                onClick={() => navigate(`/profile/${author.username || author.displayName?.toLowerCase().replace(/\s+/g, '')}`, { state: { from: location.pathname } })}
               >
                 <h2 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--color-text-main)', fontFamily: 'var(--font-family-display)' }}>{author.displayName}</h2>
                 <div style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>@{author.username || author.displayName?.toLowerCase().replace(/\s+/g, '')}</div>
@@ -300,7 +300,7 @@ export default function PostDetailRoute() {
                       <div 
                         key={i} 
                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: commId ? 'pointer' : 'default' }}
-                        onClick={() => commId && navigate(`/communities/${commId}`)}
+                        onClick={() => commId && navigate(`/communities/${commId}`, { state: { from: location.pathname } })}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                           {commEntry?.[1]?.avatar ? (

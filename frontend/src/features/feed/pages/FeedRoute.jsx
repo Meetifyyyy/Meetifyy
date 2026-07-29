@@ -10,7 +10,7 @@ export default function FeedRoute() {
   const handlePostClick = (post, sourceContext, communityId) => {
     const postId = post.id;
     if (postId) {
-      navigate(`/post/${postId}`, { state: { post, sourceContext, communityId } });
+      navigate(`/post/${postId}`, { state: { post, sourceContext, communityId, from: '/home' } });
     }
   };
 

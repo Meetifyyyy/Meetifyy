@@ -273,7 +273,7 @@ export default function DirectoryPage() {
             <div
               key={`current-user-${currentUser.id}`}
               className={styles.directoryCard}
-              onClick={() => navigate(`/profile/${currentUser.username}`)}
+              onClick={() => navigate(`/profile/${currentUser.username}`, { state: { from: '/campus/directory' } })}
             >
               <Avatar
                 src={currentUser.avatar}
@@ -299,7 +299,7 @@ export default function DirectoryPage() {
             <div
               key={student.id}
               className={styles.directoryCard}
-              onClick={() => navigate(`/profile/${student.username}`)}
+              onClick={() => navigate(`/profile/${student.username}`, { state: { from: '/campus/directory' } })}
             >
               <Avatar
                 src={student.avatar}

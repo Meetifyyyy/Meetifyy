@@ -86,7 +86,7 @@ export function InstantMatchProvider({ children }) {
         setFormData(initialFormData);
         setStep(1);
         setActiveMatch(null);
-        navigate(`/messages/${targetChatId}`);
+        navigate(`/messages/${targetChatId}`, { state: { from: '/home' } });
       }, 1500);
     });
 

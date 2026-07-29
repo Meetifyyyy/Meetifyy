@@ -60,7 +60,7 @@ export default function NotificationItem({
       onClick={() => onClick(notif)}
     >
       <div className={styles.avatarWrapper}>
-        <Avatar src={actor?.avatar} name={actorName} size="40px" />
+        <Avatar src={actor?.avatarUrl || actor?.avatar || notif.actor?.avatarUrl || notif.actor?.avatar || notif.metadata?.actorAvatarUrl || notif.metadata?.actorAvatar} name={actorName} size="40px" />
       </div>
 
       <div className={styles.content}>
@@ -70,7 +70,7 @@ export default function NotificationItem({
             onClick={(e) => {
               if (targetUsername) {
                 e.stopPropagation();
-                navigate(`/profile/${targetUsername}`);
+                navigate(`/profile/${targetUsername}`, { state: { from: '/notifications' } });
               }
             }}
             style={{ cursor: targetUsername ? 'pointer' : 'default' }}

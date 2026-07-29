@@ -881,7 +881,7 @@ export default function CreateActivityPage() {
         {/* ── Top bar ── */}
         <header className={styles.topBar}>
           <div className={styles.headerLeft}>
-            <button className={styles.backBtn} onClick={() => navigate(returnTo)} aria-label="Go back">
+            <button className={styles.backBtn} onClick={() => navigate(returnTo, { replace: true })} aria-label="Go back">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                 <line x1="19" y1="12" x2="5" y2="12" />
                 <polyline points="12 19 5 12 12 5" />
@@ -1103,7 +1103,7 @@ export default function CreateActivityPage() {
         <ActivityCreatedModal
           activityTitle={formData.title}
           creationPromise={creationPromiseRef.current}
-          onDone={() => navigate(returnTo)}
+          onDone={() => navigate(returnTo, { replace: true })}
         />
       )}
     </main>

@@ -71,7 +71,7 @@ export default function CampusPage() {
 
   const handleCreateGroup = async (id) => {
     showToast('Community created successfully! 🚀');
-    navigate(`/communities/${id}`);
+    navigate(`/communities/${id}`, { state: { from: '/campus' } });
   };
 
   return (
@@ -96,7 +96,7 @@ export default function CampusPage() {
                   className={styles.plusMenuItem}
                   onClick={() => {
                     setIsPlusMenuOpen(false);
-                    navigate('/crew/create');
+                    navigate('/crew/create', { state: { returnTo: '/campus' } });
                   }}
                 >
                   <Calendar size={18} className={styles.plusMenuIcon} />
@@ -160,7 +160,7 @@ export default function CampusPage() {
                 <CrewCard
                   key={act.id}
                   activity={act}
-                  onClick={() => navigate(`/crew/${act.id}`, { state: { activity: act } })}
+                  onClick={() => navigate(`/crew/${act.id}`, { state: { activity: act, from: '/campus' } })}
                 />
               ))}
             </div>
@@ -178,7 +178,7 @@ export default function CampusPage() {
             </div>
             <div className={styles.knowListContainer}>
               {suggestedUsers.map(user => (
-                <div key={user.id} className={styles.knowCard} onClick={() => navigate(`/profile/${user.username}`)} style={{ cursor: 'pointer' }}>
+                <div key={user.id} className={styles.knowCard} onClick={() => navigate(`/profile/${user.username}`, { state: { from: '/campus' } })} style={{ cursor: 'pointer' }}>
                   <Avatar
                     src={user.avatar}
                     name={user.displayName || user.username}

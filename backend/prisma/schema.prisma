@@ -355,6 +355,11 @@ model Conversation {
   isActivityChat      Boolean                   @default(false)
   activityId          String?                   @unique
   status              String                    @default("ACTIVE")
+  lastMessageId       String?
+  lastMessageText     String?
+  lastMessageType     String?
+  lastMessageAt       DateTime?
+  lastMessageSenderId String?
   updatedAt           DateTime                  @updatedAt
   type                ConversationType
   owner               User?                     @relation("ConversationOwner", fields: [ownerId], references: [id])
@@ -368,6 +373,7 @@ model Conversation {
 
   @@index([ownerId])
   @@index([activityId])
+  @@index([updatedAt(sort: Desc)])
 }
 
 model ConversationParticipant {
@@ -379,6 +385,7 @@ model ConversationParticipant {
   isMuted            Boolean          @default(false)
   isPinned           Boolean          @default(false)
   groupUpdatesActive Boolean          @default(true)
+  unreadCount        Int              @default(0)
   clearedAt          DateTime?
   leftAt             DateTime?
   deletedAt          DateTime?
@@ -389,6 +396,7 @@ model ConversationParticipant {
   @@index([userId])
   @@index([conversationId])
   @@index([userId, deletedAt])
+  @@index([userId, deletedAt, leftAt])
   @@index([conversationId, deletedAt])
   @@index([conversationId, deletedAt, userId])
 }
@@ -419,6 +427,7 @@ model Message {
   attachmentMedia Media? @relation("MessageAttachment", fields: [attachmentMediaId], references: [id])
 
   @@index([conversationId, createdAt])
+  @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([conversationId, createdAt, senderId])
   @@index([conversationId, deletedAt, createdAt(sort: Desc)])
   @@index([senderId])

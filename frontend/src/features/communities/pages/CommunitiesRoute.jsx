@@ -6,7 +6,7 @@ export default function CommunitiesRoute() {
   const navigate = useNavigate();
 
   const handleOpenCommunity = (id) => {
-    navigate(`/communities/${id}`);
+    navigate(`/communities/${id}`, { state: { from: '/communities' } });
   };
 
   return (

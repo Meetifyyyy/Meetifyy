@@ -58,7 +58,7 @@ export function NotificationsActivity() {
                              (users && actorUsername ? Object.values(users).find(u => u.username === actorUsername) : null);
 
             const actorName = liveUser?.displayName || liveUser?.username || n.actor?.displayName || n.actor?.username || n.metadata?.actorDisplayName || n.metadata?.actorName || n.metadata?.actorUsername || 'Someone';
-            const actorAvatar = liveUser?.avatar || n.actor?.avatar || n.metadata?.actorAvatar || '';
+            const actorAvatar = liveUser?.avatarUrl || liveUser?.avatar || n.actor?.avatarUrl || n.actor?.avatar || n.metadata?.actorAvatarUrl || n.metadata?.actorAvatar || '';
             const targetUsername = liveUser?.username || n.actor?.username || n.metadata?.actorUsername || '';
 
             const notifType = (n.type || '').toLowerCase();
@@ -109,11 +109,11 @@ export function NotificationsActivity() {
             const handleItemClick = () => {
               const postId = n.metadata?.postId || (n.entityType === 'POST' ? n.entityId : null);
               if (isFollow && targetUsername) {
-                navigate(`/profile/${targetUsername}`);
+                navigate(`/profile/${targetUsername}`, { state: { from: location.pathname } });
               } else if (postId) {
-                navigate(`/post/${postId}`);
+                navigate(`/post/${postId}`, { state: { from: location.pathname } });
               } else {
-                navigate('/notifications');
+                navigate('/notifications', { state: { from: location.pathname } });
               }
             };
 
@@ -212,7 +212,7 @@ export function OnlineFriends() {
               gap: '4px',
               width: '56px'
             }}
-            onClick={() => f.username && navigate(`/profile/${f.username}`)}
+            onClick={() => f.username && navigate(`/profile/${f.username}`, { state: { from: location.pathname } })}
           >
             <Avatar 
               src={f.avatarUrl || f.avatar} 
@@ -371,7 +371,7 @@ export function UpcomingEvents() {
           <p className={styles.emptyText}>No upcoming activities yet. Join one to get started!</p>
         ) : (
           myActivities.slice(0, 2).map((activity, i) => (
-            <div key={activity.id} className={styles.eventItem} onClick={() => navigate(`/crew/${activity.id}`, { state: { activity } })}>
+            <div key={activity.id} className={styles.eventItem} onClick={() => navigate(`/crew/${activity.id}`, { state: { activity, from: location.pathname } })}>
               <CalendarIcon date={activity.date} dateLabel={activity.dateLabel} />
               <div className={styles.eventDetail}>
                 <div className={styles.eventName}>{activity.title}</div>
@@ -436,9 +436,9 @@ export function UniversityMembers({ members, title = 'Members', onViewAll }) {
               src={m.avatar} 
               name={m.name} 
               size="36px" 
-              onClick={() => navigate(`/profile/${targetUsername}`)}
+              onClick={() => navigate(`/profile/${targetUsername}`, { state: { from: location.pathname } })}
             />
-            <div className={styles.friendInfo} style={{ cursor: 'pointer' }} onClick={() => navigate(`/profile/${targetUsername}`)}>
+            <div className={styles.friendInfo} style={{ cursor: 'pointer' }} onClick={() => navigate(`/profile/${targetUsername}`, { state: { from: location.pathname } })}>
               <div className={styles.friendName}>{m.name} {m.admin && '👑'}</div>
               <div className={styles.memberBranch}>{m.branch} • {m.year}</div>
               <div className={`${styles.friendStatus}${isOnline ? ` ${styles.online}` : ''}`}>

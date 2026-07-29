@@ -1,15 +1,12 @@
-import { useNavigate, useParams, Navigate } from 'react-router-dom';
-import { useSmartBack } from '@shared/hooks/useSmartBack';
-
+import { useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 import CommunityView from '../components/view/CommunityView';
 import { useData } from '@shared/hooks/useData';
 
-
 export default function CommunityDetailRoute() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const { communities } = useData();
-  const goBack = useSmartBack();
 
   const comm = communities[id];
 
@@ -18,12 +15,12 @@ export default function CommunityDetailRoute() {
   }
 
   const handleBack = () => {
-    goBack('/communities');
+    navigate(location.state?.from ?? '/communities', { replace: true });
   };
 
   const handlePostClick = (post, sourceContext, communityId) => {
     if (post.id) {
-      navigate(`/post/${post.id}`, { state: { post, sourceContext, communityId } });
+      navigate(`/post/${post.id}`, { state: { post, sourceContext, communityId, from: location.pathname } });
     }
   };
 

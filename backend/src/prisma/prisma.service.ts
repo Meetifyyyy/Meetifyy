@@ -32,7 +32,10 @@ export class PrismaService extends PrismaClient<
             (error?.message && (
               error.message.includes("Can't reach database server") ||
               error.message.includes('Timed out fetching a new connection') ||
-              error.message.includes('Connection pool timeout')
+              error.message.includes('Connection pool timeout') ||
+              error.message.includes('EMAXCONNSESSION') ||
+              error.message.includes('max clients reached') ||
+              error.message.includes('ConnectionReset')
             ));
 
           if (isConnError && retries > 0) {

@@ -526,7 +526,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                   <button
                     type="button"
                     className={styles.actionIconButton}
-                    onClick={() => navigate(`/profile/${targetUser.username}`)}
+                    onClick={() => navigate(`/profile/${targetUser.username}`, { state: { from: window.location.pathname } })}
                     title="View Profile"
                   >
                     <User size={24} />
@@ -858,7 +858,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                                 className={styles.dropdownItem}
                                 onClick={() => {
                                   setActiveMemberMenu(null);
-                                  navigate(`/profile/${userObj.username}`);
+                                  navigate(`/profile/${userObj.username}`, { state: { from: window.location.pathname } });
                                 }}
                               >
                                 View Profile

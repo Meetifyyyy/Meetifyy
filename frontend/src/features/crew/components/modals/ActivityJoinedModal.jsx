@@ -25,7 +25,7 @@ export default function ActivityJoinedModal({ activity, isOpen, onClose }) {
     setTimeout(() => {
       onClose();
       const chatId = String(activity.id).startsWith('act_') ? activity.id : `act_${activity.id}`;
-      navigate(`/messages/${chatId}`);
+      navigate(`/messages/${chatId}`, { state: { from: '/crew' } });
     }, 150);
   };
 

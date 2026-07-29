@@ -26,11 +26,11 @@ export function useConversations() {
 
   const { data: rawConversations = [], isLoading, error } = useQuery({
     queryKey: MESSAGE_KEYS.conversations,
-    queryFn: messagesApi.getConversations,
+    queryFn: () => messagesApi.getConversations(20, 0),
     enabled: Boolean(isLoggedIn || currentUser?.id),
-    staleTime: 30 * 1000,   // 30s
+    staleTime: 60 * 1000,   // 60s
     gcTime:    5 * 60 * 1000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 
   const conversations = useMemo(() => {

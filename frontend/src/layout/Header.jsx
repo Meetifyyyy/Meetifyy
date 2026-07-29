@@ -21,6 +21,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi } from '@shared/api/apiClient';
 
 const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
+  const location = useLocation();
   const [imgError, setImgError] = useState(false);
   const isImage = isImageUrl(comm.avatar);
 
@@ -30,7 +31,7 @@ const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
       className={styles.communityItem}
       onClick={(e) => { 
         e.preventDefault(); 
-        navigate(`/communities/${comm.id}`); 
+        navigate(`/communities/${comm.id}`, { state: { from: location.pathname } }); 
         onClose();
       }}
     >
@@ -122,12 +123,12 @@ export default function Header({ variant = 'dashboard' }) {
           {/* User Profile Info */}
           <div 
             className={styles.drawerProfile} 
-            onClick={() => { navigate(`/profile/${username}`); setDrawerOpen(false); }}
+            onClick={() => { navigate(`/profile/${username}`, { state: { from: location.pathname } }); setDrawerOpen(false); }}
           >
             <div className={styles.drawerProfileHeader}>
               <div style={{ width: 48, height: 48, flexShrink: 0 }}>
                 <Avatar
-                  src={currentUser?.avatar}
+                  src={currentUser?.avatarUrl || currentUser?.avatar}
                   name={currentUser?.displayName}
                   size="100%"
                 />
@@ -139,11 +140,11 @@ export default function Header({ variant = 'dashboard' }) {
             </div>
             
             <div className={styles.drawerProfileStats}>
-              <div className={styles.statItem} onClick={(e) => { e.stopPropagation(); navigate(`/profile/${username}?tab=followers`); setDrawerOpen(false); }}>
+              <div className={styles.statItem} onClick={(e) => { e.stopPropagation(); navigate(`/profile/${username}?tab=followers`, { state: { from: location.pathname } }); setDrawerOpen(false); }}>
                 <span className={styles.statNumber}>{currentUser?.stats?.followers ?? currentUser?.followers ?? 0}</span>
                 <span className={styles.statLabel}>Followers</span>
               </div>
-              <div className={styles.statItem} onClick={(e) => { e.stopPropagation(); navigate(`/profile/${username}?tab=following`); setDrawerOpen(false); }}>
+              <div className={styles.statItem} onClick={(e) => { e.stopPropagation(); navigate(`/profile/${username}?tab=following`, { state: { from: location.pathname } }); setDrawerOpen(false); }}>
                 <span className={styles.statNumber}>{currentUser?.stats?.following ?? currentUser?.followingList?.length ?? currentUser?.following ?? 0}</span>
                 <span className={styles.statLabel}>Following</span>
               </div>
@@ -237,7 +238,7 @@ export default function Header({ variant = 'dashboard' }) {
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setDropdownOpen(!dropdownOpen); }}}
             >
               <Avatar
-                src={currentUser?.avatar}
+                src={currentUser?.avatarUrl || currentUser?.avatar}
                 name={currentUser?.displayName}
                 size="42px"
               />
@@ -245,11 +246,11 @@ export default function Header({ variant = 'dashboard' }) {
             <div className={`${styles.dropdown} ${dropdownOpen ? styles.dropdownOpen : ''}`} ref={dropdownRef}>
               <button 
                 className={styles.dropdownProfileBtn}
-                onClick={() => { navigate(`/profile/${username}`); setDropdownOpen(false); }}
+                onClick={() => { navigate(`/profile/${username}`, { state: { from: location.pathname } }); setDropdownOpen(false); }}
               >
                 <div style={{ width: 32, height: 32, flexShrink: 0 }}>
                   <Avatar
-                    src={currentUser?.avatar}
+                    src={currentUser?.avatarUrl || currentUser?.avatar}
                     name={currentUser?.displayName}
                     size="32px"
                   />

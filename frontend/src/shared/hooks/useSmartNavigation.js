@@ -72,9 +72,26 @@ export function SmartBackTracker() {
       }
     }
 
+    // Home is the navigation root — collapse all prior in-app history.
+    // After this point, browser Back exits the app rather than re-entering
+    // previously visited in-app pages.
+    if (currentPath === '/home') {
+      _state.stack = ['/home'];
+    }
+
     saveStack();
   }, [location.pathname, location.search, navType]);
 
+  return null;
+}
+
+export function getLastNonMessagePath() {
+  for (let i = _state.stack.length - 1; i >= 0; i--) {
+    const p = _state.stack[i];
+    if (p && !p.startsWith('/messages') && !p.startsWith('/inbox')) {
+      return p;
+    }
+  }
   return null;
 }
 
@@ -92,6 +109,11 @@ export function useSmartNavigation() {
 
   const goBack = useCallback(
     (fallbackPath = '/home', options = { replace: true }) => {
+      // 0. Home is the navigation root — never navigate further back in-app.
+      //    Let the browser handle Back naturally from here (exit to external,
+      //    close tab, or do nothing depending on how the user arrived).
+      if (location.pathname === '/home') return;
+
       // 1. Check if any overlay (modal/drawer/sheet) is open and close it first
       if (overlayManager.hasOpenOverlays()) {
         overlayManager.closeTop();
@@ -104,6 +126,23 @@ export function useSmartNavigation() {
       setTimeout(() => {
         isNavigating.current = false;
       }, 350);
+
+      // Check explicit state.from origin first
+      if (location.state?.from && location.state.from !== location.pathname) {
+        navigate(location.state.from, { replace: true });
+        return;
+      }
+
+      const isMessagesRoute = location.pathname.startsWith('/messages') || location.pathname.startsWith('/inbox');
+      if (isMessagesRoute) {
+        const lastNonMsg = getLastNonMessagePath();
+        if (lastNonMsg && lastNonMsg !== location.pathname) {
+          navigate(lastNonMsg, { replace: true });
+          return;
+        }
+        navigate(fallbackPath, { replace: true });
+        return;
+      }
 
       const idx = window.history.state?.idx;
       const currentPath = getMeaningfulPath(location.pathname);
@@ -140,7 +179,7 @@ export function useSmartNavigation() {
         }
       }
     },
-    [navigate, location.pathname]
+    [navigate, location.pathname, location.state]
   );
 
   const smartNavigate = useCallback(

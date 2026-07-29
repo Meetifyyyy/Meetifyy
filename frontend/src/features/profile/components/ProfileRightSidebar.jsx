@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
 import FollowButton from '@shared/components/ui/FollowButton';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import s from './ProfileRightSidebar.module.css';
 import { useQuery } from '@tanstack/react-query';
@@ -108,6 +108,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
   const { mutate: toggleJoin } = useJoinCommunity();
   
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [suggestedUsers, setSuggestedUsers] = useState([]);
   const [nowTime, setNowTime] = useState(Date.now());
@@ -189,7 +190,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
         <div className={s.panelCard}>
           <h3 className={s.panelTitle}>{activitiesTitle}</h3>
           {displayActivities.map((act, i) => (
-            <div key={i} className={s.eventItem} onClick={() => navigate(`/crew/${act.id}`, { state: { activity: act } })}>
+            <div key={i} className={s.eventItem} onClick={() => navigate(`/crew/${act.id}`, { state: { activity: act, from: location.pathname } })}>
               <CalendarIcon date={act.date} dateLabel={act.dateLabel} />
               <div className={s.eventDetail}>
                 <div className={s.eventName}>{act.title}</div>
@@ -208,7 +209,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
             <div 
               key={u.id} 
               className={s.personItem}
-              onClick={() => navigate(`/profile/${u.username}`)}
+              onClick={() => navigate(`/profile/${u.username}`, { state: { from: location.pathname } })}
               style={{ cursor: 'pointer' }}
             >
               <Avatar src={u.avatar} name={u.displayName || u.username} size="38px" />
@@ -234,7 +235,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
               <div 
                 key={c.id} 
                 className={s.communityItem}
-                onClick={() => navigate(`/communities/${c.id}`)}
+                onClick={() => navigate(`/communities/${c.id}`, { state: { from: location.pathname } })}
                 style={{ cursor: 'pointer' }}
               >
                 <div

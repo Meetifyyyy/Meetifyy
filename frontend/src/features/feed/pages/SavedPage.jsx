@@ -219,7 +219,7 @@ export default function SavedPage() {
                 <CrewCard
                   key={act.id}
                   activity={act}
-                  onClick={() => navigate(`/crew/${act.id}`, { state: { activity: act } })}
+                  onClick={() => navigate(`/crew/${act.id}`, { state: { activity: act, from: '/saved' } })}
                 />
               ))}
             </div>
@@ -241,7 +241,7 @@ export default function SavedPage() {
                     <Post 
                       postData={post} 
                       hideCommunityTag={false} 
-                      onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved' } })} 
+                      onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved', from: '/saved' } })} 
                     />
                   </div>
                 ))}
@@ -255,7 +255,7 @@ export default function SavedPage() {
                   const previewText = post.text?.length > 80 ? post.text.substring(0, 80) + '...' : post.text;
 
                   return (
-                    <div key={post.id} className={styles.compactRow} onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved' } })}>
+                    <div key={post.id} className={styles.compactRow} onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved', from: '/saved' } })}>
                       <div className={styles.compactAvatar}>
                         <Avatar 
                           src={avatar} 

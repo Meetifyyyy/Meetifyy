@@ -142,7 +142,8 @@ export default function SocketManager() {
             if (notifType === 'message') {
               const convId = notification.metadata?.conversationId || notification.entityId;
               if (convId) {
-                navigate(`/messages/${convId}`);
+                const origin = window.location.pathname.startsWith('/messages') || window.location.pathname.startsWith('/inbox') ? '/notifications' : window.location.pathname;
+                navigate(`/messages/${convId}`, { state: { from: origin } });
                 return;
               }
             }
@@ -676,7 +677,8 @@ export default function SocketManager() {
               <div
                 onClick={() => {
                   toast.dismiss(t);
-                  navigate(`/messages/${convId}`);
+                  const origin = window.location.pathname.startsWith('/messages') || window.location.pathname.startsWith('/inbox') ? '/home' : window.location.pathname;
+                  navigate(`/messages/${convId}`, { state: { from: origin } });
                 }}
                 style={{
                   background: 'var(--color-bg-white, #ffffff)',

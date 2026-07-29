@@ -417,11 +417,16 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     }
   }, [activeChatId, currentUser, queryClient, socket]);
 
+  const conversationsRef = useRef(conversations);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
   // Socket sync & Room Management
   useEffect(() => {
     if (!socket || !activeChatId) return;
 
-    const matchedConv = conversations?.find((c) => matchesConversationId(c, activeChatId));
+    const matchedConv = conversationsRef.current?.find((c) => matchesConversationId(c, activeChatId));
 
     const aliases = getConversationAliases(matchedConv);
     const allCandidateIds = Array.from(
@@ -568,7 +573,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       socket.off('messages:seen', handleConversationSeen);
       socket.off('conversation:seen', handleConversationSeen);
     };
-  }, [socket, activeChatId, queryClient, currentUser, conversations, markSeenIfEligible]);
+  }, [socket, activeChatId, queryClient, currentUser, markSeenIfEligible]);
 
   return {
     messages: allMessages,
