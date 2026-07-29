@@ -1,6 +1,7 @@
 import { forwardRef, useState, useEffect } from 'react';
-import { UsersIcon, UserIcon } from '@heroicons/react/24/solid';
+import { UsersIcon } from '@heroicons/react/24/solid';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
+import { getMediaUrl } from '@shared/api/apiClient';
 import defaultAvatarImg from '../../../assets/images/default_avatar.webp';
 import styles from './Avatar.module.css';
 
@@ -44,6 +45,10 @@ export function getProcessedAvatarUrl(src) {
   if (clean.startsWith('https://api.dicebear.com/')) {
     return clean.split('&backgroundColor=')[0].split('?backgroundColor=')[0];
   }
+  // Convert /api/media/ relative paths to absolute backend URL so they work on Vercel
+  if (clean.startsWith('/api/media/') || (!clean.startsWith('http') && !clean.startsWith('data:') && !clean.startsWith('blob:') && !clean.startsWith('/'))) {
+    return getMediaUrl(clean);
+  }
   return clean;
 }
 
@@ -60,7 +65,15 @@ const Avatar = forwardRef(({
   children
 }, ref) => {
   const initialProcessedSrc = getProcessedAvatarUrl(src);
-  const syncResolved = mediaCache.getSyncUrl(initialProcessedSrc) || (initialProcessedSrc && isImageUrl(initialProcessedSrc) ? initialProcessedSrc : null);
+  // getSyncUrl handles caching; for absolute/external URLs just use directly
+  const syncResolved = mediaCache.getSyncUrl(initialProcessedSrc) || (
+    initialProcessedSrc && (
+      initialProcessedSrc.startsWith('https://') ||
+      initialProcessedSrc.startsWith('data:') ||
+      initialProcessedSrc.startsWith('blob:') ||
+      initialProcessedSrc.includes('default_avatar')
+    ) ? initialProcessedSrc : null
+  );
 
   const [imgSrc, setImgSrc] = useState(syncResolved || defaultAvatarImg);
 
@@ -117,6 +130,8 @@ const Avatar = forwardRef(({
     setImgSrc(defaultAvatarImg);
   };
 
+  const isDefaultGroupAvatar = isGroup && (!imgSrc || imgSrc === defaultAvatarImg || !initialProcessedSrc || initialProcessedSrc === defaultAvatarImg);
+
   return (
     <div
       ref={ref}
@@ -124,20 +139,30 @@ const Avatar = forwardRef(({
       style={avatarStyle}
       onClick={handleClick}
     >
-      <div
-        className={styles.avatarClip}
-        style={{ background: 'transparent' }}
-      >
-        <img
-          src={displaySrc}
-          alt={name || 'Avatar'}
-          loading="lazy"
-          decoding="async"
-          className={styles.avatarImg}
-          onError={handleError}
-        />
-        {children}
-      </div>
+      {isDefaultGroupAvatar ? (
+        <div
+          className={styles.avatarClip}
+          style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', color: '#ffffff' }}
+        >
+          <UsersIcon className={styles.avatarIcon} />
+          {children}
+        </div>
+      ) : (
+        <div
+          className={styles.avatarClip}
+          style={{ background: 'transparent' }}
+        >
+          <img
+            src={displaySrc}
+            alt={name || 'Avatar'}
+            loading="lazy"
+            decoding="async"
+            className={styles.avatarImg}
+            onError={handleError}
+          />
+          {children}
+        </div>
+      )}
 
       {isOnline && !isGroup && (
         <span className={styles.onlineDot} />

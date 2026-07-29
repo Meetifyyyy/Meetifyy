@@ -4,17 +4,19 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { generatePublicId } from '../common/utils/public-id.util';
+import { LruCache } from '../common/utils/lru-cache.util';
 import { MessagingCoreService } from './core/messaging-core.service';
 
 @Injectable()
 export class MessagesService extends MessagingCoreService implements OnModuleInit, OnModuleDestroy {
   private instantMatchCleanupTimer?: NodeJS.Timeout;
   protected readonly logger = new Logger(MessagesService.name);
+  private handleCache = new LruCache<string, string>(5000, 3600000);
 
   constructor(
-    prisma: PrismaService,
-    presenceService: PresenceService,
-    domainEventService: DomainEventService,
+    protected readonly prisma: PrismaService,
+    protected readonly presenceService: PresenceService,
+    protected readonly domainEventService: DomainEventService,
   ) {
     super(prisma, presenceService, domainEventService);
   }
@@ -55,32 +57,36 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     }
 
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
-    if (isUuid) {
-      const directConv = await this.prisma.conversation.findUnique({
-        where: { id: cleanId },
-        select: { id: true }
-      });
-      if (directConv?.id) {
-        this.resolveCache.set(cacheKey, { id: directConv.id, timestamp: Date.now() });
-        return directConv.id;
-      }
-    }
     try {
-      const conv = await this.prisma.conversation.findFirst({
-        where: {
-          OR: [
-            { id: identifier },
-            { publicId: identifier },
-            { id: cleanId },
-            { publicId: cleanId },
-            { activityId: cleanId },
-          ]
-        },
+      if (isUuid) {
+        const directConv = await this.prisma.conversation.findUnique({
+          where: { id: cleanId },
+          select: { id: true }
+        });
+        if (directConv?.id) {
+          this.resolveCache.set(cacheKey, { id: directConv.id, timestamp: Date.now() });
+          return directConv.id;
+        }
+      }
+
+      // 1. Direct index lookup via publicId (@unique index scan: 0.01ms)
+      const pubConv = await this.prisma.conversation.findUnique({
+        where: { publicId: cleanId },
         select: { id: true }
       });
-      if (conv?.id) {
-        this.resolveCache.set(cacheKey, { id: conv.id, timestamp: Date.now() });
-        return conv.id;
+      if (pubConv?.id) {
+        this.resolveCache.set(cacheKey, { id: pubConv.id, timestamp: Date.now() });
+        return pubConv.id;
+      }
+
+      // 2. Direct index lookup via activityId (@unique index scan: 0.01ms)
+      const actConv = await this.prisma.conversation.findUnique({
+        where: { activityId: cleanId },
+        select: { id: true }
+      });
+      if (actConv?.id) {
+        this.resolveCache.set(cacheKey, { id: actConv.id, timestamp: Date.now() });
+        return actConv.id;
       }
 
       if (currentUserId && identifier !== currentUserId) {
@@ -256,11 +262,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       };
     }
 
-    const convRecord = await this.prisma.conversation.findUnique({
-      where: { id: realConvId },
-      select: { publicId: true }
-    });
-    const pubId = convRecord?.publicId || publicIdOrId;
+    const pubId = publicIdOrId || realConvId;
     const clientKey = msgPayload.clientId || msgPayload.tempId || clientMsgIdHint || null;
 
     return {
@@ -337,7 +339,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       }) : Promise.resolve([]),
       this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, deletedAt: null },
-        select: { userId: true, lastReadAt: true, clearedAt: true, leftAt: true, user: { select: { settings: { select: { readReceipts: true } } } } }
+        select: { userId: true, lastReadAt: true, clearedAt: true, leftAt: true }
       })
     ]);
 
@@ -435,7 +437,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     const nextCursor = hasMore && oldestRealMessage ? oldestRealMessage.id : null;
     const otherParticipants = participants.filter(p => currentUserId && p.userId !== currentUserId);
     const otherReadTimestamps = otherParticipants
-      .filter(p => p.user?.settings?.readReceipts !== false && p.lastReadAt != null)
+      .filter(p => (p as any).user?.settings?.readReceipts !== false && p.lastReadAt != null)
       .map(p => new Date(p.lastReadAt!).getTime());
 
     const isAllRead = otherReadTimestamps.length > 0 && otherReadTimestamps.length === otherParticipants.length;
@@ -551,7 +553,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       messages: messagesMapped,
       participants: participants.map(p => ({
         userId: p.userId,
-        lastReadAt: p.user?.settings?.readReceipts !== false ? p.lastReadAt : null
+        lastReadAt: (p as any).user?.settings?.readReceipts !== false ? p.lastReadAt : null
       })),
       nextCursor
     };
@@ -582,7 +584,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
               description: true,
               type: true,
               activityId: true,
-              activity: true,
+              activity: { select: { id: true, title: true, coverImage: true, startDate: true, status: true } },
               ownerId: true,
               status: true,
               lastMessageId: true,
@@ -628,6 +630,45 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     const targetUserByConvId = new Map<string, any>();
     dmOtherParticipants.forEach(op => {
       if (op.user) targetUserByConvId.set(op.conversationId, op.user);
+    });
+
+    const groupConvIds = participants
+      .filter(p => p.conversation.type === 'GROUP' || p.conversation.type === 'ACTIVITY')
+      .map(p => p.conversation.id);
+
+    const groupParticipants = groupConvIds.length > 0 ? await this.prisma.conversationParticipant.findMany({
+      where: { conversationId: { in: groupConvIds }, leftAt: null, deletedAt: null },
+      select: {
+        conversationId: true,
+        userId: true,
+        role: true,
+        joinedAt: true,
+        user: { select: { id: true, username: true, displayName: true, avatar: true } }
+      }
+    }) : [];
+
+    const membersByConvId = new Map<string, any[]>();
+    const adminsByConvId = new Map<string, string[]>();
+
+    groupParticipants.forEach(gp => {
+      if (!membersByConvId.has(gp.conversationId)) {
+        membersByConvId.set(gp.conversationId, []);
+        adminsByConvId.set(gp.conversationId, []);
+      }
+      const memberObj = {
+        id: gp.userId,
+        userId: gp.userId,
+        username: gp.user?.username || '',
+        displayName: gp.user?.displayName || '',
+        name: gp.user?.displayName || gp.user?.username || '',
+        avatar: gp.user?.avatar || '',
+        role: gp.role,
+        joinedAt: gp.joinedAt
+      };
+      membersByConvId.get(gp.conversationId)!.push(memberObj);
+      if (gp.role === 'ADMIN' || gp.role === 'OWNER') {
+        adminsByConvId.get(gp.conversationId)!.push(gp.userId);
+      }
     });
 
     const targetUserIds = Array.from(targetUserByConvId.values()).map(u => u.id);
@@ -718,9 +759,9 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         editGroupPermission: conv.editGroupPermission || 'ADMIN',
         groupUpdatesActive: p.groupUpdatesActive !== false,
         pendingRequests: [],
-        admins: [],
-        members: [],
-        memberCount: 0,
+        admins: isGroupConv ? (adminsByConvId.get(conv.id) || []) : [],
+        members: isGroupConv ? (membersByConvId.get(conv.id) || []) : [],
+        memberCount: isGroupConv ? (membersByConvId.get(conv.id)?.length || (conv as any).memberCount || 0) : 0,
         pinned: p.isPinned || false,
         muted: p.isMuted || false,
         blocked: blockStatus.isBlockedByMe,
@@ -1526,13 +1567,19 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
   }
 
   async getUserHandle(userId: string): Promise<string> {
+    if (!userId) return '@user';
+    const cached = this.handleCache.get(userId);
+    if (cached) return cached;
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { username: true, displayName: true }
     });
     if (!user) return 'Someone';
     const rawName = user.username || user.displayName || 'Someone';
-    return rawName.startsWith('@') ? rawName : `@${rawName}`;
+    const handle = rawName.startsWith('@') ? rawName : `@${rawName}`;
+    this.handleCache.set(userId, handle);
+    return handle;
   }
 
   async createSystemMessage(conversationId: string, senderId: string, text: string) {

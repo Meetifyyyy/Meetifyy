@@ -44,8 +44,12 @@ export class CommunitiesService {
   private async invalidateCommunityCache(): Promise<void> {
     if (this.redis) {
       try {
-        const keys = await this.redis.keys('communities:*');
-        if (keys.length) await this.redis.del(...keys);
+        const stream = this.redis.scanStream({ match: 'communities:*', count: 100 });
+        stream.on('data', (keys: string[]) => {
+          if (keys.length > 0 && this.redis) {
+            this.redis.del(...keys).catch(() => {});
+          }
+        });
       } catch { /* ignore */ }
     }
     this.localFallback.clear();

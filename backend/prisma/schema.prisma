@@ -191,6 +191,7 @@ model User {
   coverMedia  Media? @relation("UserCover", fields: [coverMediaId], references: [id])
 
   @@index([collegeId])
+  @@index([collegeId, createdAt(sort: Desc)])
   @@index([deletedAt, createdAt])
   @@index([lastSeenAt])
   @@index([createdAt])
@@ -257,6 +258,7 @@ model Comment {
   likes             CommentLike[]
 
   @@index([postId])
+  @@index([postId, createdAt(sort: Asc)])
   @@index([authorId])
   @@index([isDeleted, postId])
   @@index([deletedAt, createdAt])
@@ -399,6 +401,7 @@ model ConversationParticipant {
   @@index([userId, deletedAt, leftAt])
   @@index([conversationId, deletedAt])
   @@index([conversationId, deletedAt, userId])
+  @@index([conversationId, deletedAt, leftAt, userId])
 }
 
 model Message {
@@ -430,6 +433,7 @@ model Message {
   @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([conversationId, createdAt, senderId])
   @@index([conversationId, deletedAt, createdAt(sort: Desc)])
+  @@index([conversationId, deletedAt, createdAt(sort: Desc), id(sort: Desc)])
   @@index([senderId])
   @@index([senderId, clientMessageId])
 }
@@ -559,6 +563,7 @@ model Notification {
   @@index([recipientId, deletedAt, readAt])
   @@index([recipientId, deletedAt, createdAt(sort: Desc)])
   @@index([recipientId, type, deletedAt, createdAt(sort: Desc)])
+  @@index([recipientId, deletedAt, type, createdAt(sort: Desc)])
   @@index([createdAt])
   @@index([type])
 }

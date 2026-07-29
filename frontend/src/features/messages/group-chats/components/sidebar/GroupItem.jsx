@@ -93,9 +93,6 @@ export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu 
           <span className={`${styles.convNameText} ${isUnread ? styles.convNameTextUnread : ''}`}>
             {conv.name}
           </span>
-          {isCampusGroup && (
-            <span className={styles.tagGroup}>Campus</span>
-          )}
         </div>
 
         {previewText && (
