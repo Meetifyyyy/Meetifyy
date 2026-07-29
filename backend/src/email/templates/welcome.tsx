@@ -66,7 +66,7 @@ export const WelcomeEmail = ({
             </Text>
 
             <Section style={btnContainer}>
-              <Button style={button} href={SITE_CONFIG.dashboardUrl}>
+              <Button style={button} href={`${frontendUrl}/home`}>
                 Explore Meetifyy →
               </Button>
             </Section>
