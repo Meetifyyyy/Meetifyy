@@ -32,33 +32,22 @@ export class SupabaseStorageProvider implements StorageProvider {
     const key = `${folder}/${randomUUID()}.${ext}`;
 
     if (!this.supabaseService.isConfigured) {
-      const uploadUrl = `/api/media/direct-upload?key=${encodeURIComponent(key)}`;
-      const publicUrl = `/api/media/${key}`;
-      return { uploadUrl, publicUrl, key };
+      throw new Error('Supabase Storage is not configured. Cannot generate upload URL.');
     }
 
-    try {
-      const client = this.supabaseService.client;
-      const { data: uploadData, error: uploadError } = await client.storage
-        .from(this.bucketName)
-        .createSignedUploadUrl(key);
+    const client = this.supabaseService.client;
+    const { data: uploadData, error: uploadError } = await client.storage
+      .from(this.bucketName)
+      .createSignedUploadUrl(key);
 
-      if (uploadError || !uploadData?.signedUrl) {
-        this.logger.warn(`Supabase storage failed to generate presigned URL (${uploadError?.message || 'No signedUrl'}). Falling back to local direct upload.`);
-        const uploadUrl = `/api/media/direct-upload?key=${encodeURIComponent(key)}`;
-        const publicUrl = `/api/media/${key}`;
-        return { uploadUrl, publicUrl, key };
-      }
-
-      const { data: publicUrlData } = client.storage.from(this.bucketName).getPublicUrl(key);
-      return { uploadUrl: uploadData.signedUrl, publicUrl: publicUrlData.publicUrl, key };
-    } catch (err: any) {
-      this.logger.warn(`Supabase storage exception (${err?.message}). Falling back to local direct upload.`);
-      const uploadUrl = `/api/media/direct-upload?key=${encodeURIComponent(key)}`;
-      const publicUrl = `/api/media/${key}`;
-      return { uploadUrl, publicUrl, key };
+    if (uploadError || !uploadData?.signedUrl) {
+      throw new Error(`Failed to generate upload URL: ${uploadError?.message || 'No signedUrl returned'}`);
     }
+
+    const { data: publicUrlData } = client.storage.from(this.bucketName).getPublicUrl(key);
+    return { uploadUrl: uploadData.signedUrl, publicUrl: publicUrlData.publicUrl, key };
   }
+
 
   async createSignedDownloadUrl(key: string, expiresIn = 3600): Promise<string> {
     if (!this.supabaseService.isConfigured) return `/api/media/${key}`;

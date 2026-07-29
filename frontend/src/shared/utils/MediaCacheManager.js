@@ -1,4 +1,4 @@
-import { apiClient } from '../api/apiClient';
+import { apiClient, getMediaUrl } from '../api/apiClient';
 
 class MediaCacheManager {
   constructor() {
@@ -22,11 +22,17 @@ class MediaCacheManager {
     if (!rawKey || typeof rawKey !== 'string') return null;
     let key = rawKey;
 
-    if (key.startsWith('data:') || key.startsWith('blob:') || key.startsWith('/')) {
+    if (key.startsWith('data:') || key.startsWith('blob:')) {
       return key;
     }
 
+    // Full external URL not on our backend — return as-is
     if ((key.startsWith('http://') || key.startsWith('https://')) && !key.includes('/api/media/')) {
+      return key;
+    }
+
+    // Paths starting with / that are NOT /api/media/ (e.g. local dev assets) return as-is
+    if (key.startsWith('/') && !key.includes('/api/media/')) {
       return key;
     }
 
@@ -122,15 +128,15 @@ class MediaCacheManager {
           this.cache.set(key, { url, expiresAt });
           resolve(url);
         } else {
-          resolve(`/api/media/${key}`); // Graceful fallback
+          // Use absolute backend URL so avatars work on Vercel (frontend-only deployments)
+          resolve(getMediaUrl(key));
         }
         this.pendingRequests.delete(key);
       });
     } catch (error) {
       console.warn('Bulk signed URL fetch fallback triggered:', error?.message || error);
       resolversToProcess.forEach(({ resolve, key }) => {
-        const fallbackUrl = `/api/media/${key}`;
-        resolve(fallbackUrl);
+        resolve(getMediaUrl(key));
         this.pendingRequests.delete(key);
       });
     }

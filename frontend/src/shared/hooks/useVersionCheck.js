@@ -1,14 +1,34 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * Custom hook that polls public/version.json to detect new GitHub deployments
- * and automatically force-refreshes active user sessions.
+ * Polls /version.json every 30s and on window focus.
+ * On version mismatch: wipes all caches, service workers, and forces a hard
+ * navigation to the current URL with a cache-bust param — no soft reload.
  */
 export function useVersionCheck() {
   const currentVersionRef = useRef(null);
 
   useEffect(() => {
     let active = true;
+
+    const forceHardRefresh = async () => {
+      // 1. Unregister all service workers
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map(r => r.unregister()));
+      }
+
+      // 2. Nuke all Cache API caches
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+
+      // 3. Navigate (not reload) with cache-bust so browser fetches fresh HTML
+      const url = new URL(window.location.href);
+      url.searchParams.set('_v', Date.now().toString());
+      window.location.replace(url.toString());
+    };
 
     const checkVersion = async () => {
       try {
@@ -22,25 +42,11 @@ export function useVersionCheck() {
 
         if (currentVersionRef.current === null) {
           currentVersionRef.current = newVersion;
-        } else if (currentVersionRef.current !== newVersion) {
-          // New deployment detected! Clear all caches & force hard refresh
-          if (active) {
-            currentVersionRef.current = newVersion;
-            if ('serviceWorker' in navigator) {
-              const registrations = await navigator.serviceWorker.getRegistrations();
-              for (const reg of registrations) {
-                await reg.unregister();
-              }
-            }
-            if ('caches' in window) {
-              const keys = await caches.keys();
-              await Promise.all(keys.map(k => caches.delete(k)));
-            }
-            window.location.reload(true);
-          }
+        } else if (active && currentVersionRef.current !== newVersion) {
+          await forceHardRefresh();
         }
-      } catch (e) {
-        // Silently ignore network interruptions during background polling
+      } catch {
+        // Silently ignore network interruptions
       }
     };
 

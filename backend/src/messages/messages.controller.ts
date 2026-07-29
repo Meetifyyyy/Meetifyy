@@ -445,10 +445,12 @@ export class MessagesController {
   @UseGuards(JwtGuard)
   async promoteAdmin(@Req() req: any, @Param('id') conversationId: string, @Body('targetUserId') targetUserId: string) {
     const userId = req.user?.id;
-    const targetHandle = await this.messagesService.getUserHandle(targetUserId);
+    const [targetHandle, actorHandle] = await Promise.all([
+      this.messagesService.getUserHandle(targetUserId),
+      this.messagesService.getUserHandle(userId)
+    ]);
     const result = await this.messagesService.promoteToAdmin(conversationId, userId, targetUserId);
-    const actorHandle = await this.messagesService.getUserHandle(userId);
-    await this.broadcastSystemMessage(conversationId, userId, `${actorHandle} promoted ${targetHandle} to Admin`);
+    this.broadcastSystemMessage(conversationId, userId, `${actorHandle} promoted ${targetHandle} to Admin`).catch(() => {});
     return result;
   }
 
@@ -456,10 +458,12 @@ export class MessagesController {
   @UseGuards(JwtGuard)
   async demoteAdmin(@Req() req: any, @Param('id') conversationId: string, @Param('targetUserId') targetUserId: string) {
     const userId = req.user?.id;
-    const targetHandle = await this.messagesService.getUserHandle(targetUserId);
+    const [targetHandle, actorHandle] = await Promise.all([
+      this.messagesService.getUserHandle(targetUserId),
+      this.messagesService.getUserHandle(userId)
+    ]);
     const result = await this.messagesService.demoteFromAdmin(conversationId, userId, targetUserId);
-    const actorHandle = await this.messagesService.getUserHandle(userId);
-    await this.broadcastSystemMessage(conversationId, userId, `${actorHandle} demoted ${targetHandle} to Member`);
+    this.broadcastSystemMessage(conversationId, userId, `${actorHandle} demoted ${targetHandle} to Member`).catch(() => {});
     return result;
   }
 

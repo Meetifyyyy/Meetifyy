@@ -191,7 +191,15 @@ export class PostsService {
   }
 
   async getUserPosts(userId: string, username: string, limit = 10, cursor?: string) {
+    const targetAuthor = await this.prisma.user.findUnique({
+      where: { username: username.trim().toLowerCase() },
+      select: { id: true }
+    });
+    if (!targetAuthor) return { posts: [], nextCursor: undefined };
+
     const excludedUserIds = userId ? await this.blocksService.getExcludedUserIds(userId) : [];
+    if (excludedUserIds.includes(targetAuthor.id)) return { posts: [], nextCursor: undefined };
+
     let cursorDate: Date | undefined = undefined;
     if (cursor) {
       const parsed = new Date(cursor);
@@ -207,8 +215,7 @@ export class PostsService {
       take: limit + 1,
       where: {
         deletedAt: null,
-        author: { username },
-        authorId: { notIn: excludedUserIds },
+        authorId: targetAuthor.id,
         ...(cursorDate ? { createdAt: { lt: cursorDate } } : {})
       },
       orderBy: { createdAt: 'desc' },
@@ -539,9 +546,9 @@ export class PostsService {
   }
 
   async getPostById(postId: string, userId: string) {
-    const excludedUserIds = userId ? await this.blocksService.getExcludedUserIds(userId) : [];
-    // Round-trip 1: parallelized fetch of core post, its media, comments, and current user likes/bookmarks
-    const [post, media, rawComments, postLike, postBookmark] = await Promise.all([
+    // Single parallel burst: fetch block exclusions, core post, media, comments, and user likes/bookmarks together
+    const [excludedUserIds, post, media, rawComments, postLike, postBookmark] = await Promise.all([
+      userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([] as string[]),
       this.prisma.post.findUnique({
         where: { id: postId, deletedAt: null },
         include: {
@@ -551,16 +558,9 @@ export class PostsService {
       this.prisma.media.findMany({
         where: { postId },
       }),
-      // Include soft-deleted comments so thread hierarchy is preserved as placeholders.
-      // We filter out comments from blocked users ONLY when they're not soft-deleted
-      // (a deleted placeholder must stay regardless of block state to anchor replies).
       this.prisma.comment.findMany({
         where: {
           postId,
-          OR: [
-            { isDeleted: true },  // always include placeholders
-            { isDeleted: false, authorId: { notIn: excludedUserIds } },
-          ],
         },
         take: 50,
         include: {
@@ -568,8 +568,8 @@ export class PostsService {
         },
         orderBy: { createdAt: 'asc' },
       }),
-      userId ? this.prisma.postLike.findUnique({ where: { userId_postId: { userId, postId } } }) : null,
-      userId ? this.prisma.postBookmark.findUnique({ where: { userId_postId: { userId, postId } } }) : null,
+      userId ? this.prisma.postLike.findUnique({ where: { userId_postId: { userId, postId } } }) : Promise.resolve(null),
+      userId ? this.prisma.postBookmark.findUnique({ where: { userId_postId: { userId, postId } } }) : Promise.resolve(null),
     ]);
 
     if (!post || (excludedUserIds.length > 0 && excludedUserIds.includes(post.authorId))) throw new NotFoundException('Post not found');

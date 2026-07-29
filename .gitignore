@@ -66,3 +66,7 @@ desktop.ini
 .turbo/
 .vite/
 
+# Local media uploads
+uploads/
+**/uploads/
+

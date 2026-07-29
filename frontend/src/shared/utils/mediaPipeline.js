@@ -57,9 +57,27 @@ export const compressImage = async (file, options = {}) => {
 export const uploadFileDirect = async (file, folder = 'general', onProgress = null) => {
   try {
     if (onProgress) onProgress(10);
+
+    // Normalize filename extension to match actual MIME type after compression
+    const mimeToExt = {
+      'image/webp': 'webp',
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+      'video/mp4': 'mp4',
+      'video/webm': 'webm',
+      'audio/mpeg': 'mp3',
+      'audio/wav': 'wav',
+      'audio/webm': 'weba',
+      'audio/ogg': 'oga',
+    };
+    const ext = mimeToExt[file.type] || file.name.split('.').pop() || 'bin';
+    const baseName = file.name.replace(/\.[^.]+$/, '');
+    const normalizedName = `${baseName}.${ext}`;
+
     // 1. Get presigned URL from backend
     const { uploadUrl, publicUrl, key, mediaId } = await apiClient.post('/api/media/presigned-url', {
-      filename: file.name,
+      filename: normalizedName,
       contentType: file.type,
       folder,
       fileSize: file.size,

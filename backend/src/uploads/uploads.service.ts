@@ -145,12 +145,33 @@ export class StorageService {
   }
 
   async getSignedUrlsForUser(keys: string[], expiresIn: number, userId: string) {
+    if (!keys || keys.length === 0) return {};
+
     const media = await this.prisma.media.findMany({
       where: { objectKey: { in: keys } },
       select: { objectKey: true, ownerId: true, visibility: true },
     });
-    const allowedKeys = media.filter((item) => item.visibility === 'public' || item.ownerId === userId).map((item) => item.objectKey);
-    return this.getSignedUrls(allowedKeys, expiresIn);
+
+    const mediaMap = new Map(media.map((m) => [m.objectKey, m]));
+    const result: { [key: string]: string } = {};
+    const keysToSign: string[] = [];
+
+    for (const key of keys) {
+      const item = mediaMap.get(key);
+      // Public media or unregistered keys return public URL instantly (0ms network overhead)
+      if (!item || item.visibility === 'public') {
+        result[key] = this.getPublicUrl(key);
+      } else if (item.ownerId === userId) {
+        keysToSign.push(key);
+      }
+    }
+
+    if (keysToSign.length > 0) {
+      const signed = await this.getSignedUrls(keysToSign, expiresIn);
+      Object.assign(result, signed);
+    }
+
+    return result;
   }
 
   async confirmUpload(key: string, userId: string) {
@@ -174,16 +195,20 @@ export class StorageService {
       });
     }
 
-    // Optionally update metadata if we can get it from storage provider
-    const metadata = await this.storageProvider.getMetadata(key);
-    
-    return this.prisma.media.update({
-      where: { id: media.id },
-      data: {
-        fileSize: metadata?.contentLength || media.fileSize,
-        mimeType: metadata?.contentType || media.mimeType,
+    // Non-blocking background metadata synchronization
+    this.storageProvider.getMetadata(key).then(metadata => {
+      if (metadata && (metadata.contentLength || metadata.contentType)) {
+        this.prisma.media.update({
+          where: { id: media.id },
+          data: {
+            fileSize: metadata.contentLength || media.fileSize,
+            mimeType: metadata.contentType || media.mimeType,
+          }
+        }).catch(() => {});
       }
-    });
+    }).catch(() => {});
+
+    return media;
   }
 
   private normalizeFolder(folder = 'general'): string {
