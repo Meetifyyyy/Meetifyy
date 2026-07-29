@@ -32,22 +32,25 @@ if (supabase) {
 
 export const getBackendUrl = () => {
   const envUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+
+  if (envUrl) {
+    if (!envUrl.startsWith('http://') && !envUrl.startsWith('https://')) {
+      return `https://${envUrl}`;
+    }
+    return envUrl;
+  }
+
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
     const host = window.location.hostname;
     const isLocalHost = host === 'localhost' || host === '127.0.0.1';
-    const isProdDomain = host.includes('meetifyy.com') || host.includes('vercel.app') || host.includes('railway.app');
 
     // If accessing from network IP in dev mode (e.g. 192.168.x.x), direct backend calls to host:4000
-    if (!isLocalHost && !isProdDomain) {
+    if (!isLocalHost) {
       return `${window.location.protocol}//${host}:4000`;
     }
   }
 
-  let finalUrl = envUrl || 'https://meetifyy-production.up.railway.app';
-  if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
-    finalUrl = `https://${finalUrl}`;
-  }
-  return finalUrl;
+  return 'http://127.0.0.1:4000';
 };
 
 export const getMediaUrl = (pathOrUrl) => {
@@ -57,8 +60,8 @@ export const getMediaUrl = (pathOrUrl) => {
 
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
     const host = window.location.hostname;
-    const isProdDomain = host.includes('meetifyy.com') || host.includes('vercel.app') || host.includes('railway.app');
-    if (!isProdDomain) {
+    const isLocalHost = host === 'localhost' || host === '127.0.0.1';
+    if (!isLocalHost && !import.meta.env.VITE_API_URL) {
       finalUrl = finalUrl.replace(/^http:\/\/(?:localhost|127\.0\.0\.1):4000/g, `${window.location.protocol}//${host}:4000`);
     } else {
       finalUrl = finalUrl.replace(/^http:\/\/(?:localhost|127\.0\.0\.1):4000/g, getBackendUrl());
