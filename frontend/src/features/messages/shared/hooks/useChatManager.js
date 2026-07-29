@@ -5,7 +5,7 @@ import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
 import { E2EEManager } from '@shared/lib/signal/E2EEManager';
 import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
 import { useData } from '@shared/hooks/useData';
-import { appendMessageToCache, updateMessageInCache, updateConversationPreview } from '../utils/cacheUtils';
+import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases } from '../utils/cacheUtils';
 import { queuePendingMessage, removePendingMessage } from '../utils/offlineSync';
 import { idbGetMessages, idbSaveMessages, idbPatchMessage } from '../utils/idbMessages';
 
@@ -421,58 +421,64 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
   useEffect(() => {
     if (!socket || !activeChatId) return;
 
-    const matchedConv = conversations?.find(
-      c =>
-        String(c.id) === String(activeChatId) ||
-        String(c.publicId) === String(activeChatId) ||
-        String(c.internalId) === String(activeChatId)
-    );
+    const matchedConv = conversations?.find((c) => matchesConversationId(c, activeChatId));
 
-    // Send BOTH id and publicId so we catch events emitted to either alias
+    const aliases = getConversationAliases(matchedConv);
     const allCandidateIds = Array.from(
-      new Set(
-        [
-          activeChatId,
-          matchedConv?.id,
-          matchedConv?.publicId,
-          matchedConv?.internalId,
-        ].filter(Boolean)
-      )
+      new Set([activeChatId, ...aliases].filter(Boolean))
     );
 
     socket.emit('conversation:join_rooms', { conversationIds: allCandidateIds });
     markSeenIfEligible(isNearBottomRef.current);
 
-    const isMatch = (receivedId) => {
-      if (!receivedId) return false;
-      return allCandidateIds.some((id) => String(id) === String(receivedId));
+    const isMatch = (receivedId, msgObj) => {
+      if (receivedId && allCandidateIds.some((id) => String(id) === String(receivedId))) return true;
+      if (msgObj) {
+        const keys = [msgObj.conversationId, msgObj.publicId, msgObj.internalId].filter(Boolean);
+        return keys.some((k) => allCandidateIds.some((id) => String(id) === String(k)));
+      }
+      return false;
     };
 
     // Single authoritative message:new handler for this conversation.
-    // useGlobalSocketSync no longer registers its own handler — this is the source of truth.
     const handleIncomingNewMessage = (payload) => {
       const msg = payload?.message || payload;
       const convId = payload?.conversationId || msg?.conversationId;
-      if (!isMatch(convId) || !msg) return;
+      if (!isMatch(convId, msg) || !msg) return;
 
       const isMyMsg =
         msg.from === 'me' ||
         String(msg.senderId) === String(currentUser?.id) ||
         msg.senderId === 'me';
 
-      // Append to local cache (handles the publicId/internalId alias the event arrived with)
-      appendMessageToCache(queryClient, activeChatId, msg);
-      idbSaveMessages(activeChatId, [msg]);
+      // Instant cache append across all aliases (activeChatId + convId + publicId + internalId)
+      const keysToUpdate = Array.from(
+        new Set(
+          [
+            activeChatId,
+            convId,
+            msg.conversationId,
+            msg.publicId,
+            msg.internalId,
+            ...allCandidateIds,
+          ].filter(Boolean)
+        )
+      );
+
+      keysToUpdate.forEach((key) => {
+        appendMessageToCache(queryClient, key, msg);
+        idbSaveMessages(key, [msg]).catch(console.warn);
+      });
+
       updateConversationPreview(
         queryClient,
-        convId,
+        convId || activeChatId,
         msg.text || msg.payload?.text,
         msg.createdAt,
-        isMyMsg ? 0 : 0  // unread already managed by SocketManager handleConversationUpdated
+        0
       );
 
       if (!isMyMsg) {
-        // Single delivery ACK — message:delivered only (message:received is an alias handled on backend)
         if (msg.id && socket?.connected) {
           socket.emit('message:delivered', {
             conversationId: activeChatId,

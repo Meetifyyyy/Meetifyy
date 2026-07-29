@@ -5,6 +5,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/hooks/useData';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useChatManager } from '../../shared/hooks/useChatManager';
+import { matchesConversationId } from '../../shared/utils/cacheUtils';
 import { generateConversationUrl, correctConversationUrl } from '@shared/utils/conversationUrl';
 import { MessageSquarePlus, Search } from 'lucide-react';
 
@@ -103,23 +104,7 @@ export default function MessagesLayout() {
   // Find active conversation and merge history messages
   const baseConv = useMemo(() => {
     if (!activeChatId) return null;
-    const targetStr = String(activeChatId);
-    const cleanAid = targetStr.replace(/^(act_)+/, '');
-    return conversations.find((c) => {
-      if (!c) return false;
-      const idStr = c.id != null ? String(c.id) : null;
-      const pubIdStr = c.publicId != null ? String(c.publicId) : null;
-      const actIdStr = c.activityId != null ? String(c.activityId) : null;
-      const cleanCid = idStr ? idStr.replace(/^(act_)+/, '') : null;
-      const cleanActId = actIdStr ? actIdStr.replace(/^(act_)+/, '') : null;
-
-      return (
-        (idStr && idStr === targetStr) ||
-        (pubIdStr && pubIdStr === targetStr) ||
-        (cleanCid && cleanCid === cleanAid) ||
-        (cleanActId && cleanActId === cleanAid)
-      );
-    }) || { id: activeChatId };
+    return conversations.find((c) => matchesConversationId(c, activeChatId)) || { id: activeChatId };
   }, [conversations, activeChatId]);
 
   const activeConv = useMemo(() => {

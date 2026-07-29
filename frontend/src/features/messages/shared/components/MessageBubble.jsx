@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { Reply, MoreVertical } from 'lucide-react';
+import { Reply, MoreVertical, Image as ImageIcon } from 'lucide-react';
 import Avatar from '@shared/components/avatar/Avatar';
 import { isImageUrl } from '@shared/utils/avatar';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
@@ -183,9 +183,11 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
   }
 
   return (
-    <div className={styles.msgMediaWrapper}>
+    <div className={`${styles.msgMediaWrapper} ${isStandalone ? styles.msgMediaWrapperStandalone : ''}`}>
       {!loaded && (
-        <div className={`${styles.msgMediaSkeleton} ${isStandalone ? styles.msgMediaSkeletonStandalone : ''}`} />
+        <div className={`${styles.msgMediaSkeleton} ${isStandalone ? styles.msgMediaSkeletonStandalone : ''}`}>
+          <ImageIcon size={22} className={styles.msgMediaSkeletonIcon} />
+        </div>
       )}
       <img
         src={imgSrc || src}
