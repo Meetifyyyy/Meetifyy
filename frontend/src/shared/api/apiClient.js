@@ -31,23 +31,26 @@ if (supabase) {
 }
 
 export const getBackendUrl = () => {
-  const envUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
-
-  if (envUrl) {
-    if (!envUrl.startsWith('http://') && !envUrl.startsWith('https://')) {
-      return `https://${envUrl}`;
-    }
-    return envUrl;
-  }
+  const rawEnv = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
 
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
     const host = window.location.hostname;
     const isLocalHost = host === 'localhost' || host === '127.0.0.1';
 
-    // If accessing from network IP in dev mode (e.g. 192.168.x.x), direct backend calls to host:4000
+    // If accessing frontend via local network IP (e.g. 192.168.x.x:5173 on phone),
+    // point API requests to host:4000 instead of loopback 127.0.0.1:4000
     if (!isLocalHost) {
-      return `${window.location.protocol}//${host}:4000`;
+      if (!rawEnv || rawEnv.includes('localhost') || rawEnv.includes('127.0.0.1')) {
+        return `${window.location.protocol}//${host}:4000`;
+      }
     }
+  }
+
+  if (rawEnv) {
+    if (!rawEnv.startsWith('http://') && !rawEnv.startsWith('https://')) {
+      return `https://${rawEnv}`;
+    }
+    return rawEnv;
   }
 
   return 'http://127.0.0.1:4000';
