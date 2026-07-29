@@ -45,18 +45,29 @@ export class MessagingCoreService {
     };
 
     try {
-      const conv = await this.prisma.conversation.findFirst({
-        where: {
-          OR: [
-            { id: identifier },
-            { publicId: identifier },
-            { id: cleanId },
-            { publicId: cleanId },
-            { activityId: cleanId },
-          ]
-        },
+      let conv = await this.prisma.conversation.findUnique({
+        where: { id: cleanId },
         select: { id: true }
       });
+      if (!conv && identifier !== cleanId) {
+        conv = await this.prisma.conversation.findUnique({
+          where: { id: identifier },
+          select: { id: true }
+        });
+      }
+      if (!conv) {
+        conv = await this.prisma.conversation.findUnique({
+          where: { publicId: cleanId },
+          select: { id: true }
+        });
+      }
+      if (!conv) {
+        conv = await this.prisma.conversation.findUnique({
+          where: { activityId: cleanId },
+          select: { id: true }
+        });
+      }
+
       if (conv?.id) {
         cacheResult(conv.id);
         return conv.id;

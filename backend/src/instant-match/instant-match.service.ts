@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MessagesService } from '../messages/messages.service';
@@ -64,13 +65,19 @@ export function setRealtimeGatewayRef(ref: typeof realtimeGatewayRef) {
 }
 
 @Injectable()
-export class InstantMatchService {
+export class InstantMatchService implements OnModuleInit {
   private readonly logger = new Logger(InstantMatchService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly messagesService: MessagesService,
   ) {}
+
+  onModuleInit() {
+    setInterval(() => {
+      this.expireStale().catch((err) => this.logger.error('Failed to expire stale matches', err));
+    }, 2 * 60 * 1000);
+  }
 
   // ─── Accept timer ────────────────────────────────────────────────────────────
 

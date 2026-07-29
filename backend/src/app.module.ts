@@ -29,6 +29,7 @@ import { PresenceModule } from './presence/presence.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
 import { EmailModule } from './email/email.module';
 import { InstantMatchModule } from './instant-match/instant-match.module';
 import { UploadsModule } from './uploads/uploads.module';
@@ -36,9 +37,11 @@ import { ModerationModule } from './moderation/moderation.module';
 import { AdminModule } from './admin/admin.module';
 import { RedisModule } from './redis/redis.module';
 import { EventsModule } from './events/events.module';
+import { DomainValidatorModule } from './common/services/domain-validator.module';
 
 @Module({
   imports: [
+    DomainValidatorModule,
     ConfigModule.forRoot({
       isGlobal: true,
       load: [appConfig, supabaseConfig, redisConfig, r2Config, resendConfig],
@@ -135,8 +138,19 @@ import { EventsModule } from './events/events.module';
           };
         }
 
+        let sharedProducerClient: Redis | null = null;
+
         return {
           connection,
+          createClient: (type: 'client' | 'subscriber' | 'bclient', opts?: any) => {
+            if (type === 'client') {
+              if (!sharedProducerClient) {
+                sharedProducerClient = new Redis({ ...connection, ...(opts || {}) });
+              }
+              return sharedProducerClient;
+            }
+            return new Redis({ ...connection, ...(opts || {}) });
+          },
           defaultJobOptions: {
             removeOnComplete: true,
             removeOnFail: { count: 100 },

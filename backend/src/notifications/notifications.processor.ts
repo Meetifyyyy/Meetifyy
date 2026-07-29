@@ -2,6 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { Logger } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
+import { DomainEventService } from '../events/domain-event.service';
 
 export const NOTIFICATIONS_QUEUE = 'notifications';
 
@@ -15,11 +16,31 @@ export interface FollowNotifJob {
   };
 }
 
+export interface ActivityInvitationsJob {
+  activityId: string;
+  inviterId: string;
+  invitations: Array<{ inviteeId: string; invitationId: string }>;
+  activityTitle: string;
+  activityLocation?: string | null;
+  activityCoverImage?: string | null;
+  startDate?: Date | null;
+  endDate?: Date | null;
+  inviter: {
+    id: string;
+    name: string;
+    username: string;
+    avatar?: string | null;
+  };
+}
+
 @Processor(NOTIFICATIONS_QUEUE)
 export class NotificationsProcessor extends WorkerHost {
   private readonly logger = new Logger('NotificationsProcessor');
 
-  constructor(private readonly notificationsService: NotificationsService) {
+  constructor(
+    private readonly notificationsService: NotificationsService,
+    private readonly domainEventService: DomainEventService,
+  ) {
     super();
   }
 
@@ -27,6 +48,8 @@ export class NotificationsProcessor extends WorkerHost {
     try {
       if (job.name === 'follow-notification') {
         await this.handleFollowNotification(job.data as FollowNotifJob);
+      } else if (job.name === 'activity-invitations') {
+        await this.handleActivityInvitations(job.data as ActivityInvitationsJob);
       }
     } catch (err) {
       this.logger.error(`Job ${job.name} failed: ${err.message}`, err.stack);
@@ -51,7 +74,6 @@ export class NotificationsProcessor extends WorkerHost {
         actorDisplayName: actor.displayName,
         actorAvatar: actor.avatar,
       },
-      // Actor data already in job payload — skip the DB re-fetch inside createNotification
       prePopulatedActor: {
         id: followerId,
         username: actor.username,
@@ -60,4 +82,68 @@ export class NotificationsProcessor extends WorkerHost {
       },
     });
   }
+
+  private async handleActivityInvitations(data: ActivityInvitationsJob) {
+    const { activityId, inviterId, invitations, activityTitle, activityLocation, activityCoverImage, startDate, endDate, inviter } = data;
+
+    for (const item of invitations) {
+      const { inviteeId, invitationId } = item;
+
+      const notif = await this.notificationsService.createNotification({
+        recipientId: inviteeId,
+        actorId: inviterId,
+        type: 'ACTIVITY_INVITE' as any,
+        entityType: 'ACTIVITY' as any,
+        entityId: activityId,
+        title: 'Activity Invitation',
+        body: `${inviter.name || 'Someone'} invited you to join ${activityTitle}`,
+        metadata: {
+          invitationId,
+          activityId,
+          title: activityTitle,
+          location: activityLocation,
+          startDate,
+          endDate,
+          coverImage: activityCoverImage,
+          hostId: inviterId,
+          hostName: inviter.name,
+          hostAvatar: inviter.avatar,
+          hostUsername: inviter.username,
+        },
+        prePopulatedActor: {
+          id: inviterId,
+          username: inviter.username,
+          displayName: inviter.name,
+          avatar: inviter.avatar || null,
+        },
+      });
+
+      this.domainEventService.emit('invitation:new', {
+        id: invitationId,
+        activityId,
+        inviterId,
+        inviteeId,
+        status: 'PENDING',
+        activity: {
+          id: activityId,
+          title: activityTitle,
+          location: activityLocation,
+          startDate,
+          endDate,
+          coverImage: activityCoverImage,
+        },
+        inviter: {
+          id: inviter.id,
+          name: inviter.name,
+          username: inviter.username,
+          avatar: inviter.avatar,
+        },
+      }, [inviteeId]);
+
+      if (notif) {
+        this.domainEventService.emit('notification:new', notif, [inviteeId]);
+      }
+    }
+  }
 }
+

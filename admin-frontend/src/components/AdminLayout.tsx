@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,
@@ -24,6 +26,14 @@ export const AdminLayout: React.FC = () => {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
 
+  const { data: requestsBadgeData } = useQuery({
+    queryKey: ['adminCollegeRequestsBadge'],
+    queryFn: () => apiRequest('/admin/colleges/requests/list?status=PENDING'),
+    refetchInterval: 15000,
+  });
+
+  const pendingCount = requestsBadgeData?.data?.length || 0;
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 1024);
     window.addEventListener('resize', handleResize);
@@ -37,7 +47,7 @@ export const AdminLayout: React.FC = () => {
 
   const navItems = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-    { label: 'Colleges', path: '/colleges', icon: Building2 },
+    { label: 'Colleges', path: '/colleges', icon: Building2, badge: pendingCount },
     { label: 'Users', path: '/users', icon: Users },
     { label: 'Moderation', path: '/reports', icon: ShieldAlert },
     { label: 'Support', path: '/support', icon: HelpCircle },
@@ -270,9 +280,27 @@ export const AdminLayout: React.FC = () => {
                       transition: 'opacity 0.2s ease',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
                     }}
                   >
-                    {item.label}
+                    <span>{item.label}</span>
+                    {!!item.badge && item.badge > 0 && (
+                      <span
+                        style={{
+                          background: 'var(--color-danger)',
+                          color: '#fff',
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          borderRadius: '10px',
+                          padding: '1px 6px',
+                        }}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
                   </span>
                 </NavLink>
               );

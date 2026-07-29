@@ -33,17 +33,31 @@ model College {
   activities    CrewActivity[]  @relation("ActivityCollege")
   logoMedia     Media?          @relation("CollegeLogo", fields: [logoMediaId], references: [id])
   bannerMedia   Media?          @relation("CollegeBanner", fields: [bannerMediaId], references: [id])
+  @@index([status])
+  @@index([isActive])
+  @@index([deletedAt])
 }
 
 model CollegeDomain {
-  id        String   @id @default(uuid())
-  domain    String   @unique
-  collegeId String
-  isPrimary Boolean  @default(false)
-  createdAt DateTime @default(now())
-  college   College  @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  id          String       @id @default(uuid())
+  domain      String       @unique
+  collegeId   String
+  isPrimary   Boolean      @default(false)
+  isVerified  Boolean      @default(true)
+  status      DomainStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  college     College      @relation(fields: [collegeId], references: [id], onDelete: Cascade)
 
   @@index([collegeId])
+  @@index([collegeId, isPrimary])
+  @@index([status])
+  @@index([domain, status])
+}
+
+enum DomainStatus {
+  ACTIVE
+  DISABLED
 }
 
 enum CollegeStatus {
@@ -1060,6 +1074,20 @@ model SupportMessage {
   ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@index([ticketId])
+}
+
+model CollegeRequest {
+  id            String   @id @default(uuid())
+  name          String
+  collegeName   String
+  personalEmail String?
+  collegeEmail  String
+  status        String   @default("PENDING")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 // ─── Broadcast ───────────────────────────────────────────────────────────────

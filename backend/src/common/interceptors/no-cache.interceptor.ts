@@ -1,13 +1,22 @@
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Optional } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { Observable, from, of } from 'rxjs';
+import { map, switchMap } from 'rxjs/operators';
 import { createHash } from 'crypto';
 import { CACHE_CONTROL_KEY } from '../decorators/cache-control.decorator';
+import { RedisService } from '../../redis/redis.service';
+import Redis from 'ioredis';
 
 @Injectable()
 export class NoCacheInterceptor implements NestInterceptor {
-  constructor(private readonly reflector: Reflector) {}
+  private readonly redis: Redis | null;
+
+  constructor(
+    private readonly reflector: Reflector,
+    @Optional() private readonly redisService?: RedisService,
+  ) {
+    this.redis = this.redisService?.getClient() ?? null;
+  }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const ctx = context.switchToHttp();
@@ -29,30 +38,58 @@ export class NoCacheInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    // Generate ETags for cacheable GET responses so clients can send If-None-Match
-    // and receive a 304 Not Modified instead of re-downloading unchanged payloads.
+    // Fast ETag matching for GET responses
     const isCacheableGet = request.method === 'GET';
     if (!isCacheableGet) {
       return next.handle();
     }
 
-    return next.handle().pipe(
-      map((body) => {
-        if (body === null || body === undefined) return body;
-        const json = typeof body === 'string' ? body : JSON.stringify(body);
-        if (json.length < 512) {
-          return body;
-        }
+    const ifNoneMatch = (request.headers['if-none-match'] || '').trim();
+    const userId = request.user?.id || 'anon';
+    const etagKey = `etag:${request.originalUrl || request.url}:${userId}`;
 
-        const etag = `"${createHash('md5').update(json).digest('hex').slice(0, 16)}"`;
-        response.setHeader('ETag', etag);
+    const checkEtagAndProceed = async (): Promise<{ is304: boolean; cachedEtag?: string }> => {
+      if (ifNoneMatch && this.redis) {
+        try {
+          const cachedEtag = await this.redis.get(etagKey);
+          if (cachedEtag && cachedEtag === ifNoneMatch) {
+            return { is304: true, cachedEtag };
+          }
+        } catch {}
+      }
+      return { is304: false };
+    };
 
-        const ifNoneMatch = (request.headers['if-none-match'] || '').trim();
-        if (ifNoneMatch && ifNoneMatch === etag) {
+    return from(checkEtagAndProceed()).pipe(
+      switchMap(({ is304, cachedEtag }) => {
+        if (is304 && cachedEtag) {
+          response.setHeader('ETag', cachedEtag);
           response.status(304);
-          return null;
+          return of(null);
         }
-        return body;
+
+        return next.handle().pipe(
+          map((body) => {
+            if (body === null || body === undefined) return body;
+            const json = typeof body === 'string' ? body : JSON.stringify(body);
+            if (json.length < 512) {
+              return body;
+            }
+
+            const etag = `"${createHash('md5').update(json).digest('hex').slice(0, 16)}"`;
+            response.setHeader('ETag', etag);
+
+            if (this.redis) {
+              this.redis.setex(etagKey, 60, etag).catch(() => {});
+            }
+
+            if (ifNoneMatch && ifNoneMatch === etag) {
+              response.status(304);
+              return null;
+            }
+            return body;
+          }),
+        );
       }),
     );
   }

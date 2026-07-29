@@ -12,6 +12,7 @@ import {
   TriggerWelcomeEmailDto,
   TriggerLoginEmailDto,
   TriggerPasswordChangedEmailDto,
+  CreateCollegeRequestDto,
 } from './dto/auth.dto';
 
 @Controller('api/auth')
@@ -158,5 +159,11 @@ export class AuthController {
   async triggerPasswordChangedEmail(@Body() body: TriggerPasswordChangedEmailDto) {
     await this.emailService.sendPasswordChangedEmail(body.email, body.name || 'User');
     return { success: true };
+  }
+
+  @Post('request-college')
+  async requestCollege(@Body() body: CreateCollegeRequestDto) {
+    const request = await this.authService.createCollegeRequest(body);
+    return { success: true, message: 'Campus request submitted successfully', request };
   }
 }

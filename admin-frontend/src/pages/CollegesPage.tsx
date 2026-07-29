@@ -2,10 +2,11 @@ import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
-import { Plus, Search, X } from 'lucide-react';
+import { Plus, Search, X, Check, Clock } from 'lucide-react';
 
 export const CollegesPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<'colleges' | 'requests'>('colleges');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page] = useState(1);
@@ -29,7 +30,17 @@ export const CollegesPage: React.FC = () => {
       ),
   });
 
+  const { data: requestsData, isLoading: isLoadingRequests } = useQuery({
+    queryKey: ['adminCollegeRequests'],
+    queryFn: () => apiRequest('/admin/colleges/requests/list'),
+  });
+
   const collegesList = data?.data || [];
+  const requestsList = requestsData?.data || [];
+  const pendingRequestsCount = useMemo(
+    () => requestsList.filter((r: any) => r.status === 'PENDING').length,
+    [requestsList],
+  );
 
   const metrics = useMemo(() => {
     let totalDomains = 0;
@@ -89,6 +100,24 @@ export const CollegesPage: React.FC = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminColleges'] }),
   });
 
+  const domainStatusMutation = useMutation({
+    mutationFn: ({ collegeId, domainId, status }: { collegeId: string; domainId: string; status: string }) =>
+      apiRequest(`/admin/colleges/${collegeId}/domains/${domainId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminColleges'] }),
+  });
+
+  const requestStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      apiRequest(`/admin/colleges/requests/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminCollegeRequests'] }),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) =>
       apiRequest(`/admin/colleges/${id}`, { method: 'DELETE' }),
@@ -121,6 +150,19 @@ export const CollegesPage: React.FC = () => {
     setState(college.state || '');
     setFormError(null);
     setShowAddModal(true);
+  };
+
+  const handleApproveRequest = (req: any) => {
+    const domain = req.collegeEmail?.split('@')[1] || '';
+    setEditingCollege(null);
+    setName(req.collegeName || '');
+    setShortName('');
+    setDomainsInput(domain);
+    setCity('');
+    setState('');
+    setFormError(null);
+    setShowAddModal(true);
+    requestStatusMutation.mutate({ id: req.id, status: 'ADDED' });
   };
 
   const handleCloseModal = () => {
@@ -205,198 +247,334 @@ export const CollegesPage: React.FC = () => {
         </div>
 
         <div className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase' }}>Approved</div>
-          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '0.15rem' }}>{metrics.approved}</div>
-        </div>
-      </div>
-
-      {/* SEARCH AND FILTERS */}
-      <div className="glass-panel" style={{ padding: '0.85rem 1rem', marginBottom: '1.25rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
-          <Search size={15} color="var(--color-text-dim)" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }} />
-          <input
-            type="text"
-            placeholder="Search college, code, city, domain..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input-control"
-            style={{ paddingLeft: '2.2rem' }}
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              style={{ position: 'absolute', right: '0.65rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer' }}
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-          {[
-            { id: '', label: 'All' },
-            { id: 'APPROVED', label: 'Approved' },
-            { id: 'PENDING', label: 'Pending' },
-            { id: 'DISABLED', label: 'Disabled' },
-          ].map((item) => {
-            const isActive = statusFilter === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setStatusFilter(item.id)}
-                className={isActive ? 'btn-primary' : 'btn-secondary'}
-                style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* TABLE */}
-      <div className="glass-panel" style={{ overflow: 'hidden' }}>
-        {isLoading ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
-            Loading colleges...
+          <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase' }}>Student Requests</div>
+          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: pendingRequestsCount > 0 ? 'var(--color-warning)' : 'var(--color-text-main)', marginTop: '0.15rem' }}>
+            {pendingRequestsCount} Pending
           </div>
-        ) : (
-          <div className="table-responsive">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>College Name</th>
-                  <th>Domains</th>
-                  <th>Location</th>
-                  <th style={{ textAlign: 'center' }}>Students</th>
-                  <th style={{ textAlign: 'center' }}>Status</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {collegesList.map((college: any) => {
-                  const isDeleted = !!college.deletedAt;
-                  return (
-                    <tr key={college.id} style={{ opacity: isDeleted ? 0.6 : 1 }}>
-                      <td>
-                        <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{college.name}</div>
-                        {college.shortName && (
-                          <div style={{ fontSize: '0.72rem', color: 'var(--color-text-light)' }}>
-                            Code: {college.shortName}
-                          </div>
-                        )}
-                      </td>
+        </div>
+      </div>
 
-                      <td>
-                        <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                          {college.domains?.map((d: any) => (
-                            <span
-                              key={d.id}
-                              style={{
-                                fontSize: '0.72rem',
-                                fontFamily: 'monospace',
-                                background: d.isPrimary ? 'var(--color-primary-tint)' : 'var(--color-bg-soft)',
-                                color: d.isPrimary ? 'var(--color-primary)' : 'var(--color-text-muted)',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                border: '1px solid var(--color-border)',
-                              }}
-                            >
-                              {d.domain}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
+      {/* TABS */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>
+        <button
+          onClick={() => setActiveTab('colleges')}
+          className={activeTab === 'colleges' ? 'btn-primary' : 'btn-secondary'}
+          style={{ fontSize: '0.82rem', padding: '0.4rem 1rem' }}
+        >
+          Approved Colleges Directory
+        </button>
+        <button
+          onClick={() => setActiveTab('requests')}
+          className={activeTab === 'requests' ? 'btn-primary' : 'btn-secondary'}
+          style={{ fontSize: '0.82rem', padding: '0.4rem 1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+        >
+          Student Campus Requests
+          {pendingRequestsCount > 0 && (
+            <span style={{ background: 'var(--color-warning)', color: '#fff', fontSize: '0.68rem', fontWeight: 700, padding: '1px 6px', borderRadius: '10px' }}>
+              {pendingRequestsCount}
+            </span>
+          )}
+        </button>
+      </div>
 
-                      <td style={{ color: 'var(--color-text-light)', fontSize: '0.82rem' }}>
-                        {[college.city, college.state].filter(Boolean).join(', ') || '—'}
-                      </td>
+      {activeTab === 'colleges' ? (
+        <>
+          {/* SEARCH AND FILTERS */}
+          <div className="glass-panel" style={{ padding: '0.85rem 1rem', marginBottom: '1.25rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+              <Search size={15} color="var(--color-text-dim)" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }} />
+              <input
+                type="text"
+                placeholder="Search college, code, city, domain..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="input-control"
+                style={{ paddingLeft: '2.2rem' }}
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  style={{ position: 'absolute', right: '0.65rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer' }}
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
 
-                      <td style={{ textAlign: 'center', fontWeight: 600 }}>
-                        {college._count?.users || 0}
-                      </td>
+            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+              {[
+                { id: '', label: 'All' },
+                { id: 'APPROVED', label: 'Approved' },
+                { id: 'PENDING', label: 'Pending' },
+                { id: 'DISABLED', label: 'Disabled' },
+              ].map((item) => {
+                const isActive = statusFilter === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setStatusFilter(item.id)}
+                    className={isActive ? 'btn-primary' : 'btn-secondary'}
+                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
+          {/* COLLEGES TABLE */}
+          <div className="glass-panel" style={{ overflow: 'hidden' }}>
+            {isLoading ? (
+              <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
+                Loading colleges...
+              </div>
+            ) : (
+              <div className="table-responsive">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>College Name</th>
+                      <th>Domains</th>
+                      <th>Location</th>
+                      <th style={{ textAlign: 'center' }}>Students</th>
+                      <th style={{ textAlign: 'center' }}>Status</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {collegesList.map((college: any) => {
+                      const isDeleted = !!college.deletedAt;
+                      return (
+                        <tr key={college.id} style={{ opacity: isDeleted ? 0.6 : 1 }}>
+                          <td>
+                            <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{college.name}</div>
+                            {college.shortName && (
+                              <div style={{ fontSize: '0.72rem', color: 'var(--color-text-light)' }}>
+                                Code: {college.shortName}
+                              </div>
+                            )}
+                          </td>
+
+                          <td>
+                            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                              {college.domains?.map((d: any) => {
+                                const isDisabled = d.status === 'DISABLED';
+                                return (
+                                  <button
+                                    key={d.id}
+                                    type="button"
+                                    title={isDisabled ? 'Click to Enable domain' : 'Click to Disable domain'}
+                                    onClick={() =>
+                                      domainStatusMutation.mutate({
+                                        collegeId: college.id,
+                                        domainId: d.id,
+                                        status: isDisabled ? 'ACTIVE' : 'DISABLED',
+                                      })
+                                    }
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      fontFamily: 'monospace',
+                                      background: isDisabled
+                                        ? 'rgba(239, 68, 68, 0.1)'
+                                        : d.isPrimary
+                                        ? 'var(--color-primary-tint)'
+                                        : 'var(--color-bg-soft)',
+                                      color: isDisabled
+                                        ? 'var(--color-danger)'
+                                        : d.isPrimary
+                                        ? 'var(--color-primary)'
+                                        : 'var(--color-text-muted)',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      border: isDisabled
+                                        ? '1px dashed rgba(239, 68, 68, 0.4)'
+                                        : '1px solid var(--color-border)',
+                                      cursor: 'pointer',
+                                      textDecoration: isDisabled ? 'line-through' : 'none',
+                                    }}
+                                  >
+                                    {d.domain} {isDisabled ? '(Disabled)' : d.isPrimary ? '★' : ''}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </td>
+
+                          <td style={{ color: 'var(--color-text-light)', fontSize: '0.82rem' }}>
+                            {[college.city, college.state].filter(Boolean).join(', ') || '—'}
+                          </td>
+
+                          <td style={{ textAlign: 'center', fontWeight: 600 }}>
+                            {college._count?.users || 0}
+                          </td>
+
+                          <td style={{ textAlign: 'center' }}>
+                            {isDeleted ? (
+                              <span className="badge badge-danger">Deleted</span>
+                            ) : college.status === 'APPROVED' ? (
+                              <span className="badge badge-success">Approved</span>
+                            ) : college.status === 'PENDING' ? (
+                              <span className="badge badge-warning">Pending</span>
+                            ) : (
+                              <span className="badge badge-neutral">Disabled</span>
+                            )}
+                          </td>
+
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
+                              {isDeleted ? (
+                                <button
+                                  onClick={() => restoreMutation.mutate(college.id)}
+                                  className="btn-secondary"
+                                  style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
+                                >
+                                  Restore
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => handleOpenEdit(college)}
+                                    className="btn-secondary"
+                                    style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
+                                  >
+                                    Edit
+                                  </button>
+
+                                  {college.status !== 'APPROVED' && (
+                                    <button
+                                      onClick={() => statusMutation.mutate({ id: college.id, status: 'APPROVED' })}
+                                      className="btn-secondary"
+                                      style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', color: 'var(--color-success)' }}
+                                    >
+                                      Approve
+                                    </button>
+                                  )}
+                                  {college.status === 'APPROVED' && (
+                                    <button
+                                      onClick={() => statusMutation.mutate({ id: college.id, status: 'DISABLED' })}
+                                      className="btn-secondary"
+                                      style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', color: 'var(--color-warning)' }}
+                                    >
+                                      Disable
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      if (confirm(`Delete ${college.name}?`)) {
+                                        deleteMutation.mutate(college.id);
+                                      }
+                                    }}
+                                    className="btn-danger"
+                                    style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {collegesList.length === 0 && (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-text-dim)', padding: '2.5rem 1rem' }}>
+                          No colleges match your filters.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        /* REQUESTS TABLE */
+        <div className="glass-panel" style={{ overflow: 'hidden' }}>
+          {isLoadingRequests ? (
+            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
+              Loading student requests...
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Student Name</th>
+                    <th>Requested College</th>
+                    <th>College Email</th>
+                    <th>Personal Email</th>
+                    <th>Date</th>
+                    <th style={{ textAlign: 'center' }}>Status</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {requestsList.map((req: any) => (
+                    <tr key={req.id}>
+                      <td style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{req.name}</td>
+                      <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{req.collegeName}</td>
+                      <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{req.collegeEmail}</td>
+                      <td style={{ fontSize: '0.82rem', color: 'var(--color-text-light)' }}>{req.personalEmail || '—'}</td>
+                      <td style={{ fontSize: '0.78rem', color: 'var(--color-text-dim)' }}>
+                        {new Date(req.createdAt).toLocaleDateString()}
+                      </td>
                       <td style={{ textAlign: 'center' }}>
-                        {isDeleted ? (
-                          <span className="badge badge-danger">Deleted</span>
-                        ) : college.status === 'APPROVED' ? (
-                          <span className="badge badge-success">Approved</span>
-                        ) : college.status === 'PENDING' ? (
-                          <span className="badge badge-warning">Pending</span>
+                        {req.status === 'ADDED' ? (
+                          <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                            <Check size={12} /> Whitelisted
+                          </span>
+                        ) : req.status === 'REJECTED' ? (
+                          <span className="badge badge-danger">Rejected</span>
                         ) : (
-                          <span className="badge badge-neutral">Disabled</span>
+                          <span className="badge badge-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                            <Clock size={12} /> Pending
+                          </span>
                         )}
                       </td>
-
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
-                          {isDeleted ? (
+                          {req.status !== 'ADDED' && (
                             <button
-                              onClick={() => restoreMutation.mutate(college.id)}
-                              className="btn-secondary"
-                              style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
+                              type="button"
+                              onClick={() => handleApproveRequest(req)}
+                              className="btn-primary"
+                              style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
                             >
-                              Restore
+                              Approve & Whitelist
                             </button>
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => handleOpenEdit(college)}
-                                className="btn-secondary"
-                                style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
-                              >
-                                Edit
-                              </button>
-
-                              {college.status !== 'APPROVED' && (
-                                <button
-                                  onClick={() => statusMutation.mutate({ id: college.id, status: 'APPROVED' })}
-                                  className="btn-secondary"
-                                  style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', color: 'var(--color-success)' }}
-                                >
-                                  Approve
-                                </button>
-                              )}
-                              {college.status === 'APPROVED' && (
-                                <button
-                                  onClick={() => statusMutation.mutate({ id: college.id, status: 'DISABLED' })}
-                                  className="btn-secondary"
-                                  style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', color: 'var(--color-warning)' }}
-                                >
-                                  Disable
-                                </button>
-                              )}
-                              <button
-                                onClick={() => {
-                                  if (confirm(`Delete ${college.name}?`)) {
-                                    deleteMutation.mutate(college.id);
-                                  }
-                                }}
-                                className="btn-danger"
-                                style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
-                              >
-                                Delete
-                              </button>
-                            </>
+                          )}
+                          {req.status === 'PENDING' && (
+                            <button
+                              type="button"
+                              onClick={() => requestStatusMutation.mutate({ id: req.id, status: 'REJECTED' })}
+                              className="btn-secondary"
+                              style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', color: 'var(--color-danger)' }}
+                            >
+                              Reject
+                            </button>
                           )}
                         </div>
                       </td>
                     </tr>
-                  );
-                })}
+                  ))}
 
-                {collegesList.length === 0 && (
-                  <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-text-dim)', padding: '2.5rem 1rem' }}>
-                      No colleges match your filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                  {requestsList.length === 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: 'center', color: 'var(--color-text-dim)', padding: '2.5rem 1rem' }}>
+                        No campus requests received yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ADD / EDIT MODAL */}
       {showAddModal &&

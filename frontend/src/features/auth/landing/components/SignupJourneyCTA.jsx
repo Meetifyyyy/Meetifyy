@@ -1,7 +1,6 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Sparkles, ArrowRight, School, Compass } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Sparkles, ArrowRight, School, Compass, X, Check, Loader2 } from 'lucide-react';
 import styles from './SignupJourneyCTA.module.css';
 
 const titleVariants = {
@@ -72,16 +71,89 @@ const formVariants = {
 };
 
 export default function SignupJourneyCTA() {
-  const [email, setEmail] = useState('');
-  const navigate = useNavigate();
+  const [collegeInput, setCollegeInput] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const handleSubmit = (e) => {
+  // Modal Form State
+  const [name, setName] = useState('');
+  const [collegeName, setCollegeName] = useState('');
+  const [personalEmail, setPersonalEmail] = useState('');
+  const [collegeEmail, setCollegeEmail] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [isSuccess, setIsSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+
+    document.documentElement.classList.add('landing-modal-open');
+    document.body.classList.add('landing-modal-open');
+
+    return () => {
+      document.documentElement.classList.remove('landing-modal-open');
+      document.body.classList.remove('landing-modal-open');
+    };
+  }, [isModalOpen]);
+
+  const handleOpenModal = (e) => {
     e.preventDefault();
-    if (!email || !email.includes('@')) {
+    setCollegeName(collegeInput.trim());
+    setErrorMsg(null);
+    setIsSuccess(false);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setErrorMsg(null);
+    setIsSuccess(false);
+  };
+
+  const handleModalSubmit = async (e) => {
+    e.preventDefault();
+    setErrorMsg(null);
+
+    if (!name.trim()) {
+      setErrorMsg('Please enter your full name');
       return;
     }
-    
-    navigate('/signup', { state: { email } });
+    if (!collegeName.trim()) {
+      setErrorMsg('Please enter your college name');
+      return;
+    }
+    if (!personalEmail.trim() || !personalEmail.includes('@')) {
+      setErrorMsg('Please enter a valid personal email address');
+      return;
+    }
+    if (!collegeEmail.trim() || !collegeEmail.includes('@')) {
+      setErrorMsg('Please enter a valid college email address');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/auth/request-college', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          collegeName: collegeName.trim(),
+          personalEmail: personalEmail.trim().toLowerCase(),
+          collegeEmail: collegeEmail.trim().toLowerCase(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to submit campus request');
+      }
+
+      setIsSuccess(true);
+    } catch (err) {
+      setErrorMsg(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -223,35 +295,157 @@ export default function SignupJourneyCTA() {
           </div>
         </div>
 
-        {/* Account creation call-to-action form container */}
+        {/* Add College Call-To-Action Form Container */}
         <motion.div
           variants={formVariants}
           className={styles.formContainer}
         >
-          <form onSubmit={handleSubmit} className={styles.form}>
+          <form onSubmit={handleOpenModal} className={styles.form}>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your college email"
+              type="text"
+              value={collegeInput}
+              onChange={(e) => setCollegeInput(e.target.value)}
+              placeholder="Enter your college name"
               className={styles.input}
-              required
             />
             <button
               type="submit"
               className={`${styles.submitBtn} ${styles.notSubmitted}`}
             >
               <span className={styles.btnContent}>
-                Sign Up <ArrowRight size={16} />
+                <span className={styles.btnTextFull}>Add your college</span>
+                <span className={styles.btnTextShort}>Add</span>
+                <ArrowRight size={16} />
               </span>
             </button>
           </form>
 
           <p className={styles.disclaimer}>
-            Join using your verified university email to connect with student circles instantly.
+            Don&apos;t see your institution listed? Request your college domain to get instant access.
           </p>
         </motion.div>
       </motion.div>
+
+      {/* Campus Request Modal */}
+      <AnimatePresence>
+        {isModalOpen && (
+          <motion.div
+            className={styles.modalBackdrop}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={handleCloseModal}
+          >
+            <motion.div
+              className={styles.modalCard}
+              initial={{ y: '100%', opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: '100%', opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={styles.modalHeader}>
+                <div>
+                  <h3 className={styles.modalTitle}>Bring Meetifyy To My Campus 🚀</h3>
+                  <p className={styles.modalSubtitle}>
+                    Submit your college domain details. Our admin team will verify and enable your campus whitelist.
+                  </p>
+                </div>
+                <button type="button" onClick={handleCloseModal} className={styles.closeBtn}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              {isSuccess ? (
+                <div className={styles.successView}>
+                  <div className={styles.successIcon}>
+                    <Check size={28} />
+                  </div>
+                  <h4 className={styles.successTitle}>
+                    Request Submitted! 🎉
+                  </h4>
+                  <p className={styles.successText}>
+                    We will verify your institution details and notify you at <strong>{personalEmail}</strong> as soon as your campus domain is whitelisted.
+                  </p>
+                  <button type="button" onClick={handleCloseModal} className={styles.modalSubmitBtn}>
+                    Got it!
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleModalSubmit} className={styles.modalForm}>
+                  {errorMsg && <div className={styles.errorBox}>{errorMsg}</div>}
+
+                  <div className={styles.fieldGroup}>
+                    <label className={styles.fieldLabel}>Full Name</label>
+                    <input
+                      type="text"
+                      required
+                      minLength={2}
+                      maxLength={80}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className={styles.fieldInput}
+                    />
+                  </div>
+
+                  <div className={styles.fieldGroup}>
+                    <label className={styles.fieldLabel}>College / University Name</label>
+                    <input
+                      type="text"
+                      required
+                      minLength={3}
+                      maxLength={120}
+                      value={collegeName}
+                      onChange={(e) => setCollegeName(e.target.value)}
+                      className={styles.fieldInput}
+                    />
+                  </div>
+
+                  <div className={styles.fieldGroup}>
+                    <label className={styles.fieldLabel}>Personal Email</label>
+                    <input
+                      type="email"
+                      required
+                      maxLength={100}
+                      value={personalEmail}
+                      onChange={(e) => setPersonalEmail(e.target.value)}
+                      className={styles.fieldInput}
+                    />
+                  </div>
+
+                  <div className={styles.fieldGroup}>
+                    <label className={styles.fieldLabel}>College Email</label>
+                    <input
+                      type="email"
+                      required
+                      maxLength={100}
+                      value={collegeEmail}
+                      onChange={(e) => setCollegeEmail(e.target.value)}
+                      className={styles.fieldInput}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className={styles.modalSubmitBtn}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" /> Submitting...
+                      </>
+                    ) : (
+                      <>
+                        Request Campus Access ✨
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }

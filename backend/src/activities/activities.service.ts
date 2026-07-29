@@ -1,14 +1,20 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef, OnModuleInit, Optional } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { ActivityAuthorizationService } from './activity-authorization.service';
+import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class ActivitiesService implements OnModuleInit {
   private readonly logger = new Logger(ActivitiesService.name);
+  private readonly redis: Redis | null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -17,7 +23,26 @@ export class ActivitiesService implements OnModuleInit {
     private readonly blocksService: BlocksService,
     private readonly domainEventService: DomainEventService,
     private readonly activityAuthorizationService: ActivityAuthorizationService,
-  ) {}
+    @Optional() private readonly redisService?: RedisService,
+    @Optional() @InjectQueue(NOTIFICATIONS_QUEUE) private readonly notifQueue?: Queue,
+  ) {
+    this.redis = this.redisService?.getClient() ?? null;
+  }
+
+
+  private async clearActivityFeedCaches() {
+    if (!this.redis) return;
+    try {
+      let cursor = '0';
+      do {
+        const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', 'activities:*', 'COUNT', 100);
+        cursor = nextCursor;
+        if (keys && keys.length > 0) {
+          await this.redis.del(...keys);
+        }
+      } while (cursor !== '0');
+    } catch {}
+  }
 
   onModuleInit() {
     // Run auto-expiration every 60 seconds
@@ -66,6 +91,14 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   async getAllActivities(userId?: string, limit = 20, cursor?: string) {
+    const cacheKey = `activities:feed:${userId || 'anon'}:${limit}:${cursor || 'none'}`;
+    if (this.redis) {
+      try {
+        const cached = await this.redis.get(cacheKey);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+
     let parsedCursorDate: Date | undefined = undefined;
     if (cursor) {
       const parsed = new Date(cursor);
@@ -74,47 +107,25 @@ export class ActivitiesService implements OnModuleInit {
       }
     }
 
-    const [user, excludedUserIds, cursorDate] = await Promise.all([
+    const [user, excludedUserIds, cursorDate, joinedMemberships] = await Promise.all([
       userId ? this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }) : Promise.resolve(null),
       userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([]),
       cursor && !parsedCursorDate
         ? this.prisma.crewActivity.findUnique({ where: { id: cursor }, select: { createdAt: true } }).then(r => r?.createdAt)
         : Promise.resolve(parsedCursorDate),
+      userId ? this.prisma.crewActivityMember.findMany({ where: { userId }, select: { activityId: true, status: true } }) : Promise.resolve([]),
     ]);
 
-    const discoveryOR: any[] = [
-      { visibility: 'PUBLIC' },
-    ];
-
-    if (userId) {
-      discoveryOR.push({ creatorId: userId });
-      discoveryOR.push({ members: { some: { userId } } });
-      if (user?.collegeId) {
-        discoveryOR.push({ visibility: 'COLLEGE_ONLY', collegeId: user.collegeId });
-        discoveryOR.push({ shareToCampus: true, collegeId: user.collegeId });
-      }
-    }
+    const joinedActivityIds = joinedMemberships.map(m => m.activityId);
+    const membershipMap = new Map(joinedMemberships.map(m => [m.activityId, m.status]));
 
     const whereClause: any = {
       deletedAt: null,
-      creatorId: { notIn: excludedUserIds },
+      status: 'OPEN',
+      visibility: { in: ['PUBLIC', 'COLLEGE_ONLY'] },
+      ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
       ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
-      OR: discoveryOR,
     };
-
-    if (userId) {
-      whereClause.AND = [
-        {
-          OR: [
-            { status: 'OPEN' },
-            { creatorId: userId },
-            { members: { some: { userId } } }
-          ]
-        }
-      ];
-    } else {
-      whereClause.status = 'OPEN';
-    }
 
     const activities = await this.prisma.crewActivity.findMany({
       where: whereClause,
@@ -144,14 +155,15 @@ export class ActivitiesService implements OnModuleInit {
       nextCursor = next?.id;
     }
 
-    if (activities.length === 0) return { activities: [], nextCursor: undefined };
+    if (activities.length === 0) {
+      const emptyRes = { activities: [], nextCursor: undefined };
+      if (this.redis) {
+        this.redis.setex(cacheKey, 60, JSON.stringify(emptyRes)).catch(() => {});
+      }
+      return emptyRes;
+    }
 
-    const myMemberships = userId ? await this.prisma.crewActivityMember.findMany({
-      where: { userId, activityId: { in: activities.map(a => a.id) } }
-    }) : [];
-    const membershipMap = new Map(myMemberships.map(m => [m.activityId, m.status]));
-
-    return {
+    const response = {
       activities: activities.map(a => {
         const myStatus = membershipMap.get(a.id);
         return {
@@ -162,32 +174,45 @@ export class ActivitiesService implements OnModuleInit {
       }),
       nextCursor,
     };
+
+    if (this.redis) {
+      this.redis.setex(cacheKey, 60, JSON.stringify(response)).catch(() => {});
+    }
+
+    return response;
   }
 
   async getCampusActivities(userId: string, limit = 20, cursor?: string) {
     if (!userId) return { activities: [], nextCursor: undefined };
 
-    const [excludedUserIds, user, cursorDate] = await Promise.all([
+    const cacheKey = `activities:campus:${userId}:${limit}:${cursor || 'none'}`;
+    if (this.redis) {
+      try {
+        const cached = await this.redis.get(cacheKey);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+
+    const [excludedUserIds, user, cursorDate, joinedMemberships] = await Promise.all([
       this.blocksService.getExcludedUserIds(userId),
       this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }),
       cursor ? this.prisma.crewActivity.findUnique({ where: { id: cursor }, select: { createdAt: true } }).then(r => r?.createdAt) : Promise.resolve(undefined),
+      this.prisma.crewActivityMember.findMany({ where: { userId }, select: { activityId: true, status: true } }),
     ]);
 
     if (!user?.collegeId) return { activities: [], nextCursor: undefined };
 
+    const joinedActivityIds = joinedMemberships.map(m => m.activityId);
+    const membershipMap = new Map(joinedMemberships.map(m => [m.activityId, m.status]));
+
     const whereClause: any = {
       deletedAt: null,
-      creatorId: { notIn: excludedUserIds },
       collegeId: user.collegeId,
-      visibility: { not: 'PRIVATE' },
+      status: 'OPEN',
+      visibility: { in: ['PUBLIC', 'COLLEGE_ONLY'] },
+      ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
       ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
     };
-
-    whereClause.OR = [
-      { status: 'OPEN' },
-      { creatorId: userId },
-      { members: { some: { userId } } }
-    ];
 
     const activities = await this.prisma.crewActivity.findMany({
       where: whereClause,
@@ -217,14 +242,15 @@ export class ActivitiesService implements OnModuleInit {
       nextCursor = next?.id;
     }
 
-    if (activities.length === 0) return { activities: [], nextCursor: undefined };
+    if (activities.length === 0) {
+      const emptyRes = { activities: [], nextCursor: undefined };
+      if (this.redis) {
+        this.redis.setex(cacheKey, 60, JSON.stringify(emptyRes)).catch(() => {});
+      }
+      return emptyRes;
+    }
 
-    const myMemberships = await this.prisma.crewActivityMember.findMany({
-      where: { userId, activityId: { in: activities.map(a => a.id) } }
-    });
-    const membershipMap = new Map(myMemberships.map(m => [m.activityId, m.status]));
-
-    return {
+    const response = {
       activities: activities.map(a => {
         const myStatus = membershipMap.get(a.id);
         return {
@@ -235,6 +261,12 @@ export class ActivitiesService implements OnModuleInit {
       }),
       nextCursor,
     };
+
+    if (this.redis) {
+      this.redis.setex(cacheKey, 60, JSON.stringify(response)).catch(() => {});
+    }
+
+    return response;
   }
 
   async getActivityById(id: string, userId?: string) {
@@ -337,37 +369,64 @@ export class ActivitiesService implements OnModuleInit {
 
     const createdActivity = await this.prisma.crewActivity.create({
       data: createData,
-      include: {
-        members: { include: { user: true } },
-      },
-    });
-
-    if (createdActivity.createActivityGroup) {
-      const convId = `act_${createdActivity.id}`;
-      await this.prisma.conversation.upsert({
-        where: { id: convId },
-        update: { name: createdActivity.title, avatarKey: createdActivity.coverImage },
-        create: {
-          id: convId,
-          name: createdActivity.title,
-          avatarKey: createdActivity.coverImage,
-          type: 'GROUP',
-          isActivityChat: true,
-          activityId: createdActivity.id,
-          ownerId: creatorId,
-          participants: {
-            create: [{ userId: creatorId, role: 'OWNER' }]
-          },
-          messages: {
-            create: [{
-              senderId: creatorId,
-              payload: { text: 'Activity group chat created' },
-              type: 'SYSTEM'
-            }]
+      select: {
+        id: true,
+        creatorId: true,
+        title: true,
+        description: true,
+        coverImage: true,
+        startDate: true,
+        endDate: true,
+        location: true,
+        status: true,
+        visibility: true,
+        shareToCampus: true,
+        createActivityGroup: true,
+        maxMembers: true,
+        createdAt: true,
+        updatedAt: true,
+        members: {
+          take: 5,
+          select: {
+            userId: true,
+            status: true,
+            user: {
+              select: { id: true, username: true, displayName: true, avatar: true }
+            }
           }
         }
-      }).catch(() => {});
-    }
+      }
+    });
+
+    setImmediate(async () => {
+      if (createdActivity.createActivityGroup) {
+        const convId = `act_${createdActivity.id}`;
+        await this.prisma.conversation.upsert({
+          where: { id: convId },
+          update: { name: createdActivity.title, avatarKey: createdActivity.coverImage },
+          create: {
+            id: convId,
+            name: createdActivity.title,
+            avatarKey: createdActivity.coverImage,
+            type: 'GROUP',
+            isActivityChat: true,
+            activityId: createdActivity.id,
+            ownerId: creatorId,
+            participants: {
+              create: [{ userId: creatorId, role: 'OWNER' }]
+            },
+            messages: {
+              create: [{
+                senderId: creatorId,
+                payload: { text: 'Activity group chat created' },
+                type: 'SYSTEM'
+              }]
+            }
+          }
+        }).catch(() => {});
+      }
+      this.clearActivityFeedCaches();
+    });
 
     return createdActivity;
   }
@@ -513,6 +572,7 @@ export class ActivitiesService implements OnModuleInit {
       }
     }
 
+    this.clearActivityFeedCaches();
     return { success: true };
   }
 
@@ -604,6 +664,7 @@ export class ActivitiesService implements OnModuleInit {
       }
     }
 
+    this.clearActivityFeedCaches();
     return { success: true };
   }
 
@@ -886,7 +947,7 @@ export class ActivitiesService implements OnModuleInit {
   async inviteFriends(activityId: string, inviterId: string, inviteeIds: string[]) {
     const activity = await this.prisma.crewActivity.findUnique({
       where: { id: activityId },
-      include: { members: true },
+      include: { members: { select: { userId: true } } },
     });
 
     if (!activity || activity.deletedAt) {
@@ -906,21 +967,25 @@ export class ActivitiesService implements OnModuleInit {
       return { results: [] };
     }
 
-    const inviter = await this.prisma.user.findUnique({
-      where: { id: inviterId },
-      select: { id: true, displayName: true, username: true, avatar: true },
-    });
+    const [inviter, excludedUserIds, existingInvitations] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: inviterId },
+        select: { id: true, displayName: true, username: true, avatar: true },
+      }),
+      this.blocksService.getExcludedUserIds(inviterId),
+      this.prisma.activityInvitation.findMany({
+        where: {
+          activityId,
+          inviteeId: { in: cleanInviteeIds },
+        },
+      }),
+    ]);
 
     const existingMembers = new Set(activity.members.map(m => m.userId));
-    const existingInvitations = await this.prisma.activityInvitation.findMany({
-      where: {
-        activityId,
-        inviteeId: { in: cleanInviteeIds },
-      },
-    });
-
     const invitationMap = new Map(existingInvitations.map(inv => [inv.inviteeId, inv]));
+    const excludedSet = new Set(excludedUserIds);
     const results: any[] = [];
+    const inviteesToProcess: string[] = [];
     const fourHoursMs = 4 * 60 * 60 * 1000;
 
     for (const inviteeId of cleanInviteeIds) {
@@ -950,74 +1015,61 @@ export class ActivitiesService implements OnModuleInit {
         }
       }
 
-      const excludedUserIds = await this.blocksService.getExcludedUserIds(inviterId);
-      if (excludedUserIds.includes(inviteeId)) {
+      if (excludedSet.has(inviteeId)) {
         results.push({ inviteeId, status: 'BLOCKED', message: 'Cannot invite user' });
         continue;
       }
 
-      const invitation = await this.prisma.activityInvitation.upsert({
-        where: { activityId_inviteeId: { activityId, inviteeId } },
-        update: {
-          inviterId,
-          status: 'PENDING',
-          createdAt: new Date(),
-          respondedAt: null,
-        },
-        create: {
-          activityId,
-          inviterId,
-          inviteeId,
-          status: 'PENDING',
-        },
-      });
+      inviteesToProcess.push(inviteeId);
+    }
 
-      const notif = await this.notificationsService.createNotification({
-        recipientId: inviteeId,
-        actorId: inviterId,
-        type: 'ACTIVITY_INVITE' as any,
-        entityType: 'ACTIVITY' as any,
-        entityId: activityId,
-        title: 'Activity Invitation',
-        body: `${inviter?.displayName || inviter?.username || 'Someone'} invited you to join ${activity.title}`,
-        metadata: {
-          invitationId: invitation.id,
-          activityId: activity.id,
-          title: activity.title,
-          location: activity.location,
-          startDate: activity.startDate,
-          endDate: activity.endDate,
-          coverImage: activity.coverImage,
-          hostId: inviterId,
-          hostName: inviter?.displayName || inviter?.username || 'Host',
-          hostAvatar: inviter?.avatar,
-          hostUsername: inviter?.username,
-        },
-      });
+    if (inviteesToProcess.length > 0) {
+      const createdInvitations = await Promise.all(
+        inviteesToProcess.map(inviteeId =>
+          this.prisma.activityInvitation.upsert({
+            where: { activityId_inviteeId: { activityId, inviteeId } },
+            update: {
+              inviterId,
+              status: 'PENDING',
+              createdAt: new Date(),
+              respondedAt: null,
+            },
+            create: {
+              activityId,
+              inviterId,
+              inviteeId,
+              status: 'PENDING',
+            },
+          })
+        )
+      );
 
-      this.domainEventService.emit('invitation:new', {
-        ...invitation,
-        activity: {
-          id: activity.id,
-          title: activity.title,
-          location: activity.location,
-          startDate: activity.startDate,
-          endDate: activity.endDate,
-          coverImage: activity.coverImage,
-        },
-        inviter: {
-          id: inviter?.id,
-          name: inviter?.displayName || inviter?.username,
-          username: inviter?.username,
-          avatar: inviter?.avatar,
-        },
-      }, [inviteeId]);
-
-      if (notif) {
-        this.domainEventService.emit('notification:new', notif, [inviteeId]);
+      for (const inv of createdInvitations) {
+        results.push({ inviteeId: inv.inviteeId, status: 'INVITED', invitationId: inv.id });
       }
 
-      results.push({ inviteeId, status: 'INVITED', invitationId: invitation.id });
+      if (this.notifQueue) {
+        setImmediate(() => {
+          this.notifQueue?.add('activity-invitations', {
+            activityId: activity.id,
+            inviterId,
+            invitations: createdInvitations.map(i => ({ inviteeId: i.inviteeId, invitationId: i.id })),
+            activityTitle: activity.title,
+            activityLocation: activity.location,
+            activityCoverImage: activity.coverImage,
+            startDate: activity.startDate,
+            endDate: activity.endDate,
+            inviter: {
+              id: inviter?.id || inviterId,
+              name: inviter?.displayName || inviter?.username || 'Host',
+              username: inviter?.username || '',
+              avatar: inviter?.avatar,
+            },
+          }, { removeOnComplete: true, attempts: 3, backoff: { type: 'exponential', delay: 1000 } }).catch(err => {
+            this.logger.warn('Failed to enqueue activity invitations job to BullMQ', err);
+          });
+        });
+      }
     }
 
     return { results };

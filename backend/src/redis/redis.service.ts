@@ -6,7 +6,6 @@ import Redis from 'ioredis';
 export class RedisService implements OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
   private client: Redis | null = null;
-  private pubClient: Redis | null = null;
   private subClient: Redis | null = null;
 
   /**
@@ -39,15 +38,12 @@ export class RedisService implements OnModuleDestroy {
         };
 
         this.client = new Redis(redisUrl, options);
-        this.pubClient = new Redis(redisUrl, options);
         this.subClient = new Redis(redisUrl, options);
 
         this.client.on('connect', () => this.logger.log('Shared Redis connection established'));
-        this.pubClient.on('connect', () => this.logger.log('Redis Publisher connection established'));
         this.subClient.on('connect', () => this.logger.log('Redis Subscriber connection established'));
 
         this.client.on('error', (err) => this.logger.warn(`Shared Redis issue: ${err.message || err}`));
-        this.pubClient.on('error', (err) => this.logger.warn(`Redis Publisher issue: ${err.message || err}`));
         this.subClient.on('error', (err) => this.logger.warn(`Redis Subscriber issue: ${err.message || err}`));
       } catch (e) {
         this.logger.error('Failed to parse REDIS_URL', e);
@@ -58,7 +54,7 @@ export class RedisService implements OnModuleDestroy {
   }
 
   getClient(): Redis | null { return this.client; }
-  getPubClient(): Redis | null { return this.pubClient; }
+  getPubClient(): Redis | null { return this.client; }
   getSubClient(): Redis | null { return this.subClient; }
 
   /**
@@ -140,7 +136,6 @@ export class RedisService implements OnModuleDestroy {
 
   async onModuleDestroy() {
     if (this.client) await this.client.quit();
-    if (this.pubClient) await this.pubClient.quit();
     if (this.subClient) await this.subClient.quit();
   }
 }

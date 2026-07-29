@@ -52,7 +52,15 @@ export class AdminAuthService implements OnModuleInit {
         return;
       }
 
-      const passwordHash = await bcrypt.hash(pass, 12);
+      const existing = await this.prisma.superAdmin.findUnique({ where: { email } });
+      if (existing) {
+        const isSamePassword = await bcrypt.compare(pass, existing.passwordHash);
+        if (isSamePassword && existing.isActive) {
+          return;
+        }
+      }
+
+      const passwordHash = await bcrypt.hash(pass, 10);
 
       await this.prisma.superAdmin.upsert({
         where: { email },
@@ -112,7 +120,7 @@ export class AdminAuthService implements OnModuleInit {
     });
 
     if (!admin || !admin.isActive) {
-      await this.prisma.loginAudit.create({
+      this.prisma.loginAudit.create({
         data: {
           email,
           success: false,
@@ -120,13 +128,13 @@ export class AdminAuthService implements OnModuleInit {
           ip,
           userAgent,
         },
-      });
+      }).catch(() => {});
       throw new UnauthorizedException('Invalid admin credentials');
     }
 
     const isMatch = await bcrypt.compare(dto.password, admin.passwordHash);
     if (!isMatch) {
-      await this.prisma.loginAudit.create({
+      this.prisma.loginAudit.create({
         data: {
           adminId: admin.id,
           email,
@@ -135,7 +143,7 @@ export class AdminAuthService implements OnModuleInit {
           ip,
           userAgent,
         },
-      });
+      }).catch(() => {});
       throw new UnauthorizedException('Invalid admin credentials');
     }
 
@@ -144,23 +152,22 @@ export class AdminAuthService implements OnModuleInit {
     const otpHash = this.hashOtp(rawOtp);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
-    // Invalidate old OTPs for this admin
-    await this.prisma.adminOtp.deleteMany({ where: { adminId: admin.id } });
+    // Invalidate old OTPs & store new OTP in a single transaction
+    await this.prisma.$transaction([
+      this.prisma.adminOtp.deleteMany({ where: { adminId: admin.id } }),
+      this.prisma.adminOtp.create({
+        data: {
+          adminId: admin.id,
+          otpHash,
+          expiresAt,
+        },
+      }),
+    ]);
 
-    await this.prisma.adminOtp.create({
-      data: {
-        adminId: admin.id,
-        otpHash,
-        expiresAt,
-      },
-    });
-
-    // Send OTP via Email using Super Admin template
-    try {
-      await this.emailService.sendAdminVerificationOtpEmail(admin.email, admin.name, rawOtp);
-    } catch (emailErr) {
+    // Dispatch OTP email asynchronously (non-blocking)
+    this.emailService.sendAdminVerificationOtpEmail(admin.email, admin.name, rawOtp).catch((emailErr) => {
       this.logger.error(`Failed to send admin OTP email to ${admin.email}`, emailErr);
-    }
+    });
 
     // Issue short-lived pendingToken for OTP step
     const pendingToken = jwt.sign(
@@ -299,9 +306,9 @@ export class AdminAuthService implements OnModuleInit {
     const os = `${ua.os.name || 'Unknown'} ${ua.os.version || ''}`.trim();
     const deviceName = `${ua.device.vendor || ''} ${ua.device.model || ua.os.name || 'Desktop'}`.trim();
 
-    // Create session placeholder to get ID
+    // Use fast SHA-256 for high-entropy random refresh tokens
     const rawRefreshToken = crypto.randomBytes(64).toString('hex');
-    const refreshHash = await bcrypt.hash(rawRefreshToken, 10);
+    const refreshHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
     const session = await this.prisma.superAdminSession.create({
@@ -331,32 +338,34 @@ export class AdminAuthService implements OnModuleInit {
       { expiresIn: '30d' },
     );
 
-    // Audit Log
-    await this.prisma.loginAudit.create({
-      data: {
-        adminId: admin.id,
-        email: admin.email,
-        success: true,
-        ip,
-        userAgent,
-        deviceName,
-        browser,
-        os,
-      },
-    });
+    // Audit Log (non-blocking)
+    this.prisma.loginAudit
+      .create({
+        data: {
+          adminId: admin.id,
+          email: admin.email,
+          success: true,
+          ip,
+          userAgent,
+          deviceName,
+          browser,
+          os,
+        },
+      })
+      .catch(() => {});
 
-    // Send New Login Alert Email
-    try {
-      await this.emailService.sendNewLoginEmail(
+    // Send New Login Alert Email (non-blocking)
+    this.emailService
+      .sendNewLoginEmail(
         admin.email,
         admin.name,
         deviceName,
         ip,
         new Date().toISOString(),
-      );
-    } catch (err) {
-      this.logger.warn('Failed to send login alert email', err);
-    }
+      )
+      .catch((err) => {
+        this.logger.warn('Failed to send login alert email', err);
+      });
 
     return {
       accessToken,
@@ -394,30 +403,43 @@ export class AdminAuthService implements OnModuleInit {
       throw new ForbiddenException('Super Admin account disabled');
     }
 
-    // Verify token key
-    const isMatch = await bcrypt.compare(payload.tokenKey, session.refreshHash);
+    // Verify token key (SHA-256 with timingSafeEqual, fallback to bcrypt for legacy sessions)
+    let isMatch = false;
+    if (session.refreshHash.startsWith('$2')) {
+      isMatch = await bcrypt.compare(payload.tokenKey, session.refreshHash);
+    } else {
+      const computedHash = crypto.createHash('sha256').update(payload.tokenKey).digest('hex');
+      const hashBuf = Buffer.from(computedHash, 'utf8');
+      const storedBuf = Buffer.from(session.refreshHash, 'utf8');
+      isMatch = hashBuf.length === storedBuf.length && crypto.timingSafeEqual(hashBuf, storedBuf);
+    }
+
     if (!isMatch) {
       // Refresh Token Reuse Detected! Revoke session family for security
-      await this.prisma.superAdminSession.updateMany({
-        where: { adminId: session.adminId },
-        data: { revoked: true, revokedReason: 'REUSE_DETECTED' },
-      });
+      this.prisma.superAdminSession
+        .updateMany({
+          where: { adminId: session.adminId },
+          data: { revoked: true, revokedReason: 'REUSE_DETECTED' },
+        })
+        .catch(() => {});
 
-      await this.prisma.securityEvent.create({
-        data: {
-          type: 'TOKEN_REUSE',
-          adminId: session.adminId,
-          ip,
-          metadata: { sessionId: session.id, userAgent },
-        },
-      });
+      this.prisma.securityEvent
+        .create({
+          data: {
+            type: 'TOKEN_REUSE',
+            adminId: session.adminId,
+            ip,
+            metadata: { sessionId: session.id, userAgent },
+          },
+        })
+        .catch(() => {});
 
       throw new UnauthorizedException('Security alert: Token reuse detected. Sessions revoked.');
     }
 
-    // Rotate refresh token
+    // Rotate refresh token with SHA-256
     const newRawRefreshToken = crypto.randomBytes(64).toString('hex');
-    const newRefreshHash = await bcrypt.hash(newRawRefreshToken, 10);
+    const newRefreshHash = crypto.createHash('sha256').update(newRawRefreshToken).digest('hex');
 
     await this.prisma.superAdminSession.update({
       where: { id: session.id },
