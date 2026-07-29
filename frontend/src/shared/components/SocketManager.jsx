@@ -228,71 +228,85 @@ export default function SocketManager() {
         );
       };
 
-      const isConvTargetingUser = (c) => {
-        if (!c) return false;
-        if (matchesUser(c.targetUser)) return true;
-        if (matchesUser(c.otherUser)) return true;
-        if (matchesUser(c.user)) return true;
-        if (isSameId(c.userId, userId)) return true;
-        if (isSameId(c.targetUserId, userId)) return true;
-        if (isSameId(c.otherUserId, userId)) return true;
-        if (Array.isArray(c.participants) && c.participants.some(p => isSameId(p.userId, userId) || matchesUser(p.user))) return true;
-        if (Array.isArray(c.members) && c.members.some(m => isSameId(m.userId, userId) || matchesUser(m.user))) return true;
-        return false;
-      };
-
       queryClient.setQueryData(['conversations'], (old) => {
         if (!Array.isArray(old)) return old;
         return old.map((c) => {
-          if (!isConvTargetingUser(c)) return c;
+          let convModified = false;
 
-          const updatedTargetUser = c.targetUser
-            ? { ...c.targetUser, isOnline, lastActive: lastActive || c.targetUser.lastActive }
-            : { id: userId, isOnline, lastActive };
+          let updatedTargetUser = c.targetUser;
+          if (c.targetUser && matchesUser(c.targetUser)) {
+            updatedTargetUser = { ...c.targetUser, isOnline, lastActive: lastActive || c.targetUser.lastActive };
+            convModified = true;
+          }
 
-          const updatedOtherUser = c.otherUser
-            ? { ...c.otherUser, isOnline, lastActive: lastActive || c.otherUser.lastActive }
-            : null;
+          let updatedOtherUser = c.otherUser;
+          if (c.otherUser && matchesUser(c.otherUser)) {
+            updatedOtherUser = { ...c.otherUser, isOnline, lastActive: lastActive || c.otherUser.lastActive };
+            convModified = true;
+          }
 
-          const updatedUser = c.user
-            ? { ...c.user, isOnline, lastActive: lastActive || c.user.lastActive }
-            : null;
+          let updatedUser = c.user;
+          if (c.user && matchesUser(c.user)) {
+            updatedUser = { ...c.user, isOnline, lastActive: lastActive || c.user.lastActive };
+            convModified = true;
+          }
 
-          const updatedParticipants = Array.isArray(c.participants)
-            ? c.participants.map(p => {
-                if (isSameId(p.userId, userId) || matchesUser(p.user)) {
-                  return {
-                    ...p,
-                    isOnline,
-                    user: p.user ? { ...p.user, isOnline, lastActive: lastActive || p.user?.lastActive } : p.user
-                  };
-                }
-                return p;
-              })
-            : c.participants;
+          let updatedParticipants = c.participants;
+          if (Array.isArray(c.participants)) {
+            let pModified = false;
+            const newParts = c.participants.map((p) => {
+              if (isSameId(p.userId, userId) || matchesUser(p.user) || isSameId(p.id, userId)) {
+                pModified = true;
+                return {
+                  ...p,
+                  isOnline,
+                  user: p.user ? { ...p.user, isOnline, lastActive: lastActive || p.user?.lastActive } : p.user
+                };
+              }
+              return p;
+            });
+            if (pModified) {
+              updatedParticipants = newParts;
+              convModified = true;
+            }
+          }
 
-          const updatedMembers = Array.isArray(c.members)
-            ? c.members.map(m => {
-                if (isSameId(m.userId, userId) || matchesUser(m.user)) {
-                  return {
-                    ...m,
-                    isOnline,
-                    user: m.user ? { ...m.user, isOnline, lastActive: lastActive || m.user?.lastActive } : m.user
-                  };
-                }
-                return m;
-              })
-            : c.members;
+          let updatedMembers = c.members;
+          if (Array.isArray(c.members)) {
+            let mModified = false;
+            const newMems = c.members.map((m) => {
+              if (isSameId(m.userId, userId) || matchesUser(m.user) || isSameId(m.id, userId)) {
+                mModified = true;
+                return {
+                  ...m,
+                  isOnline,
+                  user: m.user ? { ...m.user, isOnline, lastActive: lastActive || m.user?.lastActive } : m.user
+                };
+              }
+              return m;
+            });
+            if (mModified) {
+              updatedMembers = newMems;
+              convModified = true;
+            }
+          }
+
+          if (!convModified) return c;
+
+          const isDmTargetMatch =
+            (c.targetUser && matchesUser(c.targetUser)) ||
+            (c.otherUser && matchesUser(c.otherUser)) ||
+            (!c.isGroup && isSameId(c.userId, userId)) ||
+            (!c.isGroup && isSameId(c.targetUserId, userId));
 
           return {
             ...c,
-            online: isOnline,
-            isOnline: isOnline,
-            targetUser: updatedTargetUser,
+            ...(isDmTargetMatch ? { online: isOnline, isOnline } : {}),
+            ...(updatedTargetUser ? { targetUser: updatedTargetUser } : {}),
             ...(updatedOtherUser ? { otherUser: updatedOtherUser } : {}),
             ...(updatedUser ? { user: updatedUser } : {}),
-            ...(updatedParticipants ? { participants: updatedParticipants } : {}),
-            ...(updatedMembers ? { members: updatedMembers } : {}),
+            participants: updatedParticipants,
+            members: updatedMembers,
           };
         });
       });
