@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ErrorState } from '@shared/components/ui/StateViews';
 import Avatar from '@shared/components/avatar/Avatar';
 import MessageBubble from './MessageBubble';
 import { timeAgo } from '@shared/utils/time';
 import styles from './ChatMessageList.module.css';
+import { getMsgTimestamp, compareMessages } from '../utils/cacheUtils';
 
 
 const getRelativeDateString = (date) => {
@@ -99,7 +100,6 @@ export default function ChatMessageList({
   onOpenMediaModal,
   onReply,
   onReplyTo,
-  onRetryMessage,
   onUnsend,
   isTyping,
   replyingTo,
@@ -204,24 +204,7 @@ export default function ChatMessageList({
       return true;
     });
 
-    const getMsgTime = (m) => {
-      const d = m.createdAt || m.timestamp;
-      if (d) {
-        const t = new Date(d).getTime();
-        if (!isNaN(t)) return t;
-      }
-      return Date.now();
-    };
-
-    // Avoid defensive array copy and sort overhead if messages are already ordered by timestamp
-    let isSorted = true;
-    for (let k = 0; k < filteredMessages.length - 1; k++) {
-      if (getMsgTime(filteredMessages[k]) > getMsgTime(filteredMessages[k + 1])) {
-        isSorted = false;
-        break;
-      }
-    }
-    const sortedMessages = isSorted ? filteredMessages : [...filteredMessages].sort((a, b) => getMsgTime(a) - getMsgTime(b));
+    const sortedMessages = [...filteredMessages].sort(compareMessages);
 
     let lastDateGroup = null;
     sortedMessages.forEach((msg, i) => {
@@ -271,32 +254,59 @@ export default function ChatMessageList({
     overscan: 8,
   });
 
+  const totalSize = rowVirtualizer.getTotalSize();
+  const hasScrolledInitialRef = useRef(false);
+
+  useEffect(() => {
+    hasScrolledInitialRef.current = false;
+  }, [conversation?.id, conversation?.publicId, conversation?.internalId]);
+
+  const scrollToBottom = useCallback(() => {
+    if (bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight + 10000;
+      prevScrollHeightRef.current = bodyRef.current.scrollHeight;
+    }
+    if (itemsToRender.length > 0) {
+      try {
+        rowVirtualizer.scrollToIndex(itemsToRender.length - 1, { align: 'end' });
+      } catch (_) {}
+    }
+  }, [itemsToRender.length, rowVirtualizer]);
+
   useLayoutEffect(() => {
     if (!bodyRef.current || !messages) return;
 
-    const currentConvId = conversation?.id;
-    const isNewConv = prevConvIdRef.current !== currentConvId;
+    const currentConvId = conversation?.id || conversation?.publicId;
     const currentCount = messages.length;
-    const prevCount = prevMessagesCountRef.current;
     const firstMsgId = messages[0]?.id;
     const prevFirstMsgId = prevFirstMsgIdRef.current;
+    const prevCount = prevMessagesCountRef.current;
 
-    // SCENARIO 1: Conversation switch or initial chat load
-    if (isNewConv || (currentCount > 0 && prevCount === 0)) {
+    // SCENARIO 1: First time messages are available for this conversation load
+    if (!hasScrolledInitialRef.current && currentCount > 0) {
+      hasScrolledInitialRef.current = true;
       prevConvIdRef.current = currentConvId;
       prevFirstMsgIdRef.current = firstMsgId;
       prevMessagesCountRef.current = currentCount;
-      
-      requestAnimationFrame(() => {
-        if (bodyRef.current) {
-          bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-          prevScrollHeightRef.current = bodyRef.current.scrollHeight;
-        }
-      });
-      return;
+
+      scrollToBottom();
+
+      const raf1 = requestAnimationFrame(() => scrollToBottom());
+      const raf2 = requestAnimationFrame(() => requestAnimationFrame(() => scrollToBottom()));
+      const t1 = setTimeout(scrollToBottom, 40);
+      const t2 = setTimeout(scrollToBottom, 120);
+      const t3 = setTimeout(scrollToBottom, 300);
+
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
     }
 
-    const isPrepend = firstMsgId !== prevFirstMsgId && currentCount > prevCount;
+    const isPrepend = firstMsgId && prevFirstMsgId && firstMsgId !== prevFirstMsgId && currentCount > prevCount;
 
     // SCENARIO 2: Prepend (Loading older history)
     if (isPrepend) {
@@ -312,14 +322,13 @@ export default function ChatMessageList({
       // SCENARIO 3: Append (New message sent or received)
       const lastMsg = messages[messages.length - 1];
       const isFromMe = lastMsg?.from === 'me' || String(lastMsg?.senderId) === String(currentUser?.id);
-      const isNearBottom = (bodyRef.current.scrollHeight - bodyRef.current.scrollTop - bodyRef.current.clientHeight) < 150;
+      const isNearBottom = (bodyRef.current.scrollHeight - bodyRef.current.scrollTop - bodyRef.current.clientHeight) < 180;
 
       if (isFromMe || isNearBottom) {
+        scrollToBottom();
         requestAnimationFrame(() => {
-          if (bodyRef.current) {
-            bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-            prevScrollHeightRef.current = bodyRef.current.scrollHeight;
-          }
+          scrollToBottom();
+          setTimeout(scrollToBottom, 50);
         });
       }
     }
@@ -329,7 +338,21 @@ export default function ChatMessageList({
     if (bodyRef.current) {
       prevScrollHeightRef.current = bodyRef.current.scrollHeight;
     }
-  }, [messages, conversation?.id, currentUser?.id, replyingTo]);
+  }, [messages, conversation?.id, conversation?.publicId, currentUser?.id, replyingTo, scrollToBottom]);
+
+  // Adjust scroll as virtualizer measures elements on initial load
+  useLayoutEffect(() => {
+    if (bodyRef.current && totalSize > 0) {
+      if (!hasScrolledInitialRef.current) {
+        bodyRef.current.scrollTop = bodyRef.current.scrollHeight + 10000;
+      } else {
+        const isNearBottom = (bodyRef.current.scrollHeight - bodyRef.current.scrollTop - bodyRef.current.clientHeight) < 180;
+        if (isNearBottom) {
+          bodyRef.current.scrollTop = bodyRef.current.scrollHeight + 10000;
+        }
+      }
+    }
+  }, [totalSize]);
 
   const handleScroll = () => {
     if (!bodyRef.current) return;
@@ -427,7 +450,6 @@ export default function ChatMessageList({
                   <MessageBubble
                     index={item.index}
                     isLatestMessage={item.isLatestMessage}
-                    onRetry={onRetryMessage}
                     onUnsend={onUnsend}
                     msg={item.msg}
                     conversation={conversation}

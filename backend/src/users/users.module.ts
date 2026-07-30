@@ -7,12 +7,14 @@ import { BlocksService } from './blocks.service';
 import { RedisModule } from '../redis/redis.module';
 import { BullModule } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
+import { PresenceModule } from '../presence/presence.module';
 
 @Module({
   imports: [
     PrismaModule,
     NotificationsModule,
     RedisModule,
+    PresenceModule,
     BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE }),
   ],
   controllers: [UsersController],

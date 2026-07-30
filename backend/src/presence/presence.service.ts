@@ -23,8 +23,24 @@ export class PresenceService {
     }
   }
 
+  private statusChangeListeners: Array<(userId: string, status: 'online' | 'offline', lastSeen: string) => void> = [];
+
   registerSocketValidator(validator: (socketId: string) => boolean) {
     this.socketValidator = validator;
+  }
+
+  onStatusChange(listener: (userId: string, status: 'online' | 'offline', lastSeen: string) => void) {
+    this.statusChangeListeners.push(listener);
+  }
+
+  private notifyStatusChange(userId: string, status: 'online' | 'offline', lastSeen: string) {
+    this.statusChangeListeners.forEach(listener => {
+      try {
+        listener(userId, status, lastSeen);
+      } catch (err) {
+        this.logger.error(`Error in status change listener for ${userId}`, err);
+      }
+    });
   }
 
   private cleanPresence(presence: UserPresence | null): UserPresence | null {
@@ -54,42 +70,52 @@ export class PresenceService {
       this.disconnectTimers.delete(userId);
     }
     try {
+      const now = new Date().toISOString();
       if (this.redis) {
         const key = this.getPresenceKey(userId);
         const data = await this.redis.get(key);
         let presence: UserPresence | null = data ? JSON.parse(data) : null;
         
         presence = this.cleanPresence(presence);
+        const previousStatus = presence?.status || 'offline';
 
         if (!presence) {
-          presence = { lastSeen: new Date().toISOString(), status: 'online', socketIds: [] };
+          presence = { lastSeen: now, status: 'online', socketIds: [] };
         }
         
         if (!presence.socketIds.includes(socketId)) {
           presence.socketIds.push(socketId);
         }
         
-        presence.lastSeen = new Date().toISOString();
+        presence.lastSeen = now;
         presence.status = 'online';
         
-        if (presence.socketIds.length === 1) {
+        await this.redis.set(key, JSON.stringify(presence), 'EX', 90);
+
+        if (previousStatus !== 'online') {
           this.logger.log(`Online user=${userId}`);
+          this.notifyStatusChange(userId, 'online', now);
         }
-        
-        await this.redis.set(key, JSON.stringify(presence), 'EX', 60);
       } else {
         let presence = this.memoryPresence.get(userId) || null;
         presence = this.cleanPresence(presence);
+        const previousStatus = presence?.status || 'offline';
+
         if (!presence) {
-          presence = { lastSeen: new Date().toISOString(), status: 'online', socketIds: [] };
+          presence = { lastSeen: now, status: 'online', socketIds: [] };
         }
 
         if (!presence.socketIds.includes(socketId)) {
           presence.socketIds.push(socketId);
         }
-        presence.lastSeen = new Date().toISOString();
+        presence.lastSeen = now;
         presence.status = 'online';
         this.memoryPresence.set(userId, presence);
+
+        if (previousStatus !== 'online') {
+          this.logger.log(`Online user=${userId}`);
+          this.notifyStatusChange(userId, 'online', now);
+        }
       }
     } catch (err) {
       this.logger.error(`Failed to set online presence for ${userId}`, err);
@@ -109,10 +135,32 @@ export class PresenceService {
           if (presence) {
             presence.lastSeen = new Date().toISOString();
             if (presence.socketIds.length === 0) {
-              presence.status = 'offline';
-              this.logger.log(`Offline user=${userId}`);
+              if (this.disconnectTimers.has(userId)) {
+                clearTimeout(this.disconnectTimers.get(userId));
+              }
+              const timer = setTimeout(async () => {
+                this.disconnectTimers.delete(userId);
+                try {
+                  const currentData = await this.redis?.get(key);
+                  let currPresence: UserPresence | null = currentData ? JSON.parse(currentData) : null;
+                  currPresence = this.cleanPresence(currPresence);
+                  if (!currPresence || currPresence.socketIds.length === 0) {
+                    const now = new Date().toISOString();
+                    const updatedPresence: UserPresence = {
+                      lastSeen: now,
+                      status: 'offline',
+                      socketIds: []
+                    };
+                    await this.redis?.set(key, JSON.stringify(updatedPresence), 'EX', 90);
+                    this.logger.log(`Offline user=${userId}`);
+                    this.notifyStatusChange(userId, 'offline', now);
+                  }
+                } catch (e) {}
+              }, 2000);
+              this.disconnectTimers.set(userId, timer);
+            } else {
+              await this.redis.set(key, JSON.stringify(presence), 'EX', 90);
             }
-            await this.redis.set(key, JSON.stringify(presence), 'EX', 60);
           }
         }
       } else {
@@ -123,9 +171,29 @@ export class PresenceService {
           if (presence) {
             presence.lastSeen = new Date().toISOString();
             if (presence.socketIds.length === 0) {
-              presence.status = 'offline';
+              if (this.disconnectTimers.has(userId)) {
+                clearTimeout(this.disconnectTimers.get(userId));
+              }
+              const timer = setTimeout(() => {
+                this.disconnectTimers.delete(userId);
+                let currPresence = this.memoryPresence.get(userId) || null;
+                currPresence = this.cleanPresence(currPresence);
+                if (!currPresence || currPresence.socketIds.length === 0) {
+                  const now = new Date().toISOString();
+                  const updatedPresence: UserPresence = {
+                    lastSeen: now,
+                    status: 'offline',
+                    socketIds: []
+                  };
+                  this.memoryPresence.set(userId, updatedPresence);
+                  this.logger.log(`Offline user=${userId}`);
+                  this.notifyStatusChange(userId, 'offline', now);
+                }
+              }, 2000);
+              this.disconnectTimers.set(userId, timer);
+            } else {
+              this.memoryPresence.set(userId, presence);
             }
-            this.memoryPresence.set(userId, presence);
           }
         }
       }

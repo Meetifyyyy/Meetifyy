@@ -5,9 +5,9 @@ import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
 import { E2EEManager } from '@shared/lib/signal/E2EEManager';
 import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
 import { useData } from '@shared/hooks/useData';
-import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, STATUS_RANK } from '../utils/cacheUtils';
-import { queuePendingMessage, removePendingMessage } from '../utils/offlineSync';
-import { idbGetMessages, idbSaveMessages, idbPatchMessage } from '../utils/idbMessages';
+import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, STATUS_RANK } from '../utils/cacheUtils';
+
+import { idbGetMessages, idbSaveMessages, idbPatchMessage, migrateHistoricalFailedMessages } from '../utils/idbMessages';
 
 
 export function useChatManager(activeChatId, type = 'messages', currentUserParam) {
@@ -16,6 +16,11 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
   const { conversations = [], currentUser: dataUser } = useData() || {};
   const currentUser = currentUserParam || dataUser;
   const e2ee = E2EEManager.getInstance();
+
+  // Run historical failed messages migration on startup
+  useEffect(() => {
+    migrateHistoricalFailedMessages().catch(console.warn);
+  }, []);
 
   const isNearBottomRef = useRef(true);
 
@@ -35,10 +40,14 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     let cancelled = false;
     const targetChatId = activeChatId;
 
+    const matchedConv = conversations?.find((c) => matchesConversationId(c, targetChatId));
+    const aliases = getConversationAliases(matchedConv);
+    const candidateIds = Array.from(new Set([targetChatId, ...aliases].filter(Boolean)));
+
     const currentData = queryClient.getQueryData(['messages', targetChatId]);
     if (!currentData || !currentData.pages || currentData.pages.length === 0) {
       setIdbLoaded(false);
-      idbGetMessages(targetChatId).then(messages => {
+      idbGetMessages(candidateIds).then(messages => {
         if (cancelled) return;
         if (messages && messages.length > 0) {
           const latestData = queryClient.getQueryData(['messages', targetChatId]);
@@ -76,7 +85,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     return () => {
       cancelled = true;
     };
-  }, [activeChatId, queryClient]);
+  }, [activeChatId, conversations, queryClient]);
 
   const {
     data: historyPages,
@@ -90,7 +99,12 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       if (!activeChatId) return null;
       const res = await getApi().getHistory(activeChatId, undefined, pageParam);
       if (res && res.messages) {
-        idbSaveMessages(activeChatId, res.messages).catch(console.warn);
+        const normalizedMsgs = res.messages.map(m => ({
+          ...m,
+          status: m.status || 'sent',
+        }));
+        res.messages = normalizedMsgs;
+        idbSaveMessages(activeChatId, normalizedMsgs).catch(console.warn);
       }
       return res;
     },
@@ -176,13 +190,15 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     // (which temporarily share clientId=tempId=id) are correctly collapsed once
     // the server ACK arrives with a real UUID.
     const seen = new Set();
-    return flat.filter(m => {
+    const deduped = flat.filter(m => {
       if (!m) return false;
       const key = m.id || m.clientId || m.tempId;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+
+    return deduped.sort(compareMessages);
   }, [historyPages]);
 
   const lastMarkedReadRef = useRef(null);
@@ -202,10 +218,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       const newPages = oldData.pages.map((page) => {
         if (!page.messages) return page;
         const newMessages = page.messages.map((msg) => {
-          const isMyMsg =
-            msg.from === 'me' ||
-            String(msg.senderId) === String(currentUser?.id) ||
-            msg.senderId === 'me';
+          const isMyMsg = checkIsMe(msg, currentUser);
           // Skip optimistic ('sending') and failed messages — they have no
           // real server timestamp and a failed message must never become 'read'.
           if (isMyMsg && msg.status !== 'read' && msg.status !== 'sending' && msg.status !== 'failed') {
@@ -419,80 +432,75 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       inviteData: explicitInviteData,
     };
 
+    let sendHandled = false;
+
+    const handleSuccess = (serverMsg) => {
+      if (sendHandled) return;
+      sendHandled = true;
+      updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
+        const finalStatus = (existing?.status === 'read' || existing?.status === 'seen') ? existing.status : 'sent';
+        const updated = {
+          ...existing,
+          ...(serverMsg || {}),
+          id: serverMsg?.id || existing?.id || clientId,
+          clientId,
+          tempId: clientId,
+          status: finalStatus,
+        };
+        idbPatchMessage(targetConvId, updated.id, updated).catch(console.warn);
+        return updated;
+      });
+      if (activeChatId && activeChatId !== targetConvId) {
+        updateMessageInCache(queryClient, activeChatId, clientId, { status: 'sent' });
+      }
+    };
+
+    const handleFailure = () => {
+      if (sendHandled) return;
+      sendHandled = true;
+      updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed' });
+      if (activeChatId && activeChatId !== targetConvId) {
+        updateMessageInCache(queryClient, activeChatId, clientId, { status: 'failed' });
+      }
+      idbPatchMessage(targetConvId, clientId, { status: 'failed' }).catch(console.warn);
+    };
+
     if (socket?.connected) {
-      socket.emit('message:send', payload, (response) => {
-        if (response?.status === 'ok') {
-          if (response.message) {
-            // Merge server data but NEVER downgrade status.
-            // If the seen event already arrived and flipped to 'read', keep it.
-            updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
-              const currentStatus = existing?.status;
-              const existingRank = STATUS_RANK[currentStatus] ?? -1;
-              const incomingRank = STATUS_RANK['sent'] ?? 1;
-              const finalStatus = existingRank > incomingRank ? currentStatus : 'sent';
-              idbPatchMessage(targetConvId, response.message.id || clientId, { ...response.message, clientId, tempId: clientId, status: finalStatus });
-              return {
-                ...response.message,
-                id: response.message.id || clientId,
-                clientId,
-                tempId: clientId,
-                status: finalStatus,
-              };
-            });
-
-            // Back-apply seen status if the seen event arrived before this ACK
-            const seenEvent = lastSeenEventRef.current;
-            if (seenEvent && seenEvent.conversationId === targetConvId) {
-              applySeenToCache(seenEvent.lastReadAt);
+      let ackReceived = false;
+      const timeoutTimer = setTimeout(async () => {
+        if (!ackReceived && !sendHandled) {
+          try {
+            const res = await getApi().sendMessage(targetConvId, payload);
+            if (res) {
+              handleSuccess(res);
+            } else {
+              handleFailure();
             }
-          } else {
-            updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
-              const currentStatus = existing?.status;
-              const existingRank = STATUS_RANK[currentStatus] ?? -1;
-              const finalStatus = existingRank > 1 ? currentStatus : 'sent';
-              idbPatchMessage(targetConvId, clientId, { status: finalStatus });
-              return { status: finalStatus };
-            });
-
-            // Back-apply seen status if the seen event arrived before this ACK
-            const seenEvent = lastSeenEventRef.current;
-            if (seenEvent && seenEvent.conversationId === targetConvId) {
-              applySeenToCache(seenEvent.lastReadAt);
-            }
+          } catch (e) {
+            handleFailure();
           }
-          removePendingMessage(clientId);
+        }
+      }, 5000);
+
+      socket.emit('message:send', payload, (response) => {
+        ackReceived = true;
+        clearTimeout(timeoutTimer);
+        if (response?.status === 'ok') {
+          handleSuccess(response.message);
         } else {
-          updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed' });
-          idbPatchMessage(targetConvId, clientId, { status: 'failed' });
-          queuePendingMessage({ ...payload, tempId: clientId, clientId });
+          handleFailure();
         }
       });
     } else {
       try {
         const res = await getApi().sendMessage(targetConvId, payload);
-        updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
-          const currentStatus = existing?.status;
-          const existingRank = STATUS_RANK[currentStatus] ?? -1;
-          const finalStatus = existingRank > 1 ? currentStatus : 'sent';
-          idbPatchMessage(targetConvId, res?.id || clientId, { ...res, clientId, tempId: clientId, status: finalStatus });
-          return {
-            ...res,
-            id: res?.id || clientId,
-            clientId,
-            tempId: clientId,
-            status: finalStatus,
-          };
-        });
-        // Back-apply seen status if the seen event arrived before this HTTP response
-        const seenEvent = lastSeenEventRef.current;
-        if (seenEvent && seenEvent.conversationId === targetConvId) {
-          applySeenToCache(seenEvent.lastReadAt);
+        if (res) {
+          handleSuccess(res);
+        } else {
+          handleFailure();
         }
-        removePendingMessage(clientId);
       } catch (err) {
-        updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed' });
-        idbPatchMessage(targetConvId, clientId, { status: 'failed' });
-        queuePendingMessage({ ...payload, tempId: clientId, clientId });
+        handleFailure();
       }
     }
   }, [activeChatId, currentUser, queryClient, socket, applySeenToCache]);
@@ -540,10 +548,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       const convId = payload?.conversationId || msg?.conversationId;
       if (!isMatch(convId, msg) || !msg) return;
 
-      const isMyMsg =
-        msg.from === 'me' ||
-        String(msg.senderId) === String(currentUser?.id) ||
-        msg.senderId === 'me';
+      const isMyMsg = checkIsMe(msg, currentUser);
 
       // Only write to conversation-level cache keys — never to participant user-ID
       // keys that happened to be in allCandidateIds (already stripped there).

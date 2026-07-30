@@ -9,6 +9,7 @@ import { LruCache } from '../common/utils/lru-cache.util';
 import { MessagingCoreService } from './core/messaging-core.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
+import { checkPresenceVisibility } from '../users/privacy.helper';
 
 @Injectable()
 export class MessagesService extends MessagingCoreService implements OnModuleInit, OnModuleDestroy {
@@ -736,7 +737,20 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       where: { conversationId: { in: dmConvIds }, userId: { not: userId }, leftAt: null, deletedAt: null },
       select: {
         conversationId: true,
-        user: { select: { id: true, username: true, displayName: true, avatar: true } }
+        user: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            settings: {
+              select: {
+                showOnlineStatus: true,
+                whoCanSeeOnline: true
+              }
+            }
+          }
+        }
       }
     }) : [];
 
@@ -772,7 +786,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       }
     }
 
-    const result = (participants as any[]).map((p: any) => {
+    const result = await Promise.all((participants as any[]).map(async (p: any) => {
       const conv = p.conversation;
       const otherUser = targetUserByConvId.get(conv.id);
       const isGroupConv = conv.type === 'GROUP' || conv.type === 'ACTIVITY' || (conv as any).isGroup;
@@ -782,13 +796,21 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       const hasStarted = ['IN_PROGRESS', 'STARTED', 'COMPLETED', 'ENDED', 'CLOSED', 'CANCELLED'].includes(actStatus) || (!!actStartDate && new Date(actStartDate) <= new Date());
 
       const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
-      let canSeeOnline = Boolean(otherUser && userPresence?.isOnline);
+      let canSeeOnline = false;
       let blockStatus = { isBlocked: false, isBlockedByMe: false, isBlockedByThem: false };
 
       if (otherUser) {
         const isBlocked = blockedSet.has(otherUser.id);
         blockStatus = { isBlocked, isBlockedByMe: isBlocked, isBlockedByThem: false };
-        if (isBlocked) canSeeOnline = false;
+        if (!isBlocked && userPresence?.isOnline) {
+          canSeeOnline = await checkPresenceVisibility(
+            otherUser.id,
+            userId,
+            otherUser.settings?.whoCanSeeOnline || 'everyone',
+            otherUser.settings?.showOnlineStatus !== false,
+            this.prisma
+          );
+        }
       }
 
       const pubId = (conv as any).publicId || conv.id;
@@ -852,7 +874,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
           lastActive: userPresence?.lastActive || null
         } : null
       };
-    });
+    }));
 
     if (this.redis) {
       this.redis.setex(cacheKey, 60, JSON.stringify(result)).catch(() => {});

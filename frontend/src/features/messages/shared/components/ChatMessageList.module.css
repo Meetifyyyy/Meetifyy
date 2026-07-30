@@ -246,16 +246,50 @@
 
 .msgStatusLabelFailed {
   color: #ef4444;
+  font-weight: 500;
 }
 
 .msgRetryButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   background: transparent;
   border: none;
-  color: var(--color-primary, #6366f1);
+  color: #ef4444;
   font-weight: 600;
   cursor: pointer;
   text-decoration: underline;
   margin-left: 4px;
+  padding: 0 4px;
+}
+
+.msgRetryButton:hover {
+  color: #dc2626;
+}
+
+.msgResendIconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  cursor: pointer;
+  padding: 0;
+  margin-right: 6px;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.msgResendIconButton:hover {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
+  transform: scale(1.08);
 }
 
 .msgDateSeparator {

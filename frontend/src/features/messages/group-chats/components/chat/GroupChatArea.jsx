@@ -9,7 +9,6 @@ const GroupSettingsModal = lazy(() => import('../modals/GroupSettingsModal'));
 export default function GroupChatArea({
   conversation,
   onSendMessage,
-  onRetryMessage,
   onReactMessage,
   onLeaveGroup,
   onEndGroup,
@@ -54,7 +53,6 @@ export default function GroupChatArea({
       onLoadMore={onLoadMore}
       onMarkSeen={onMarkSeen}
       onSendMessage={onSendMessage}
-      onRetryMessage={onRetryMessage}
       onBack={onBack}
       emptyIcon="👥"
       emptyLabel="Select a conversation"

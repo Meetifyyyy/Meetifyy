@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, Logger, OnModuleInit
 import { PrismaService } from '../prisma/prisma.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
+import { PresenceService } from '../presence/presence.service';
 import Redis from 'ioredis';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class CommunitiesService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly domainEventService: DomainEventService,
     private readonly redisService: RedisService,
+    private readonly presenceService: PresenceService,
   ) {
     this.redis = this.redisService.getClient();
   }
@@ -293,9 +295,21 @@ export class CommunitiesService implements OnModuleInit {
     }
 
     if (community.members) {
+      const memberUserIds = community.members.map((m: any) => m.userId).filter(Boolean);
+      const presenceMap = await this.presenceService.getPresenceMany(memberUserIds);
+
       community.members.forEach((m: any) => {
         if (community.ownerId && m.userId === community.ownerId) {
           m.role = 'OWNER';
+        }
+        const pres = presenceMap.get(m.userId);
+        const isOnline = pres?.status === 'online';
+        m.isOnline = isOnline;
+        m.online = isOnline;
+        if (m.user) {
+          m.user.isOnline = isOnline;
+          m.user.online = isOnline;
+          m.user.lastActive = pres?.lastSeen || null;
         }
       });
     }

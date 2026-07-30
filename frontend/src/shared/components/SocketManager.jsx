@@ -365,6 +365,52 @@ export default function SocketManager() {
         return old;
       });
 
+      queryClient.setQueriesData({ queryKey: ['followers'] }, (old) => {
+        if (!old) return old;
+        if (Array.isArray(old)) {
+          return old.map(u => matchesUser(u) || matchesUser(u.user) ? { ...u, isOnline, online: isOnline, user: u.user ? { ...u.user, isOnline, online: isOnline } : u.user } : u);
+        }
+        return old;
+      });
+
+      queryClient.setQueriesData({ queryKey: ['following'] }, (old) => {
+        if (!old) return old;
+        if (Array.isArray(old)) {
+          return old.map(u => matchesUser(u) || matchesUser(u.user) ? { ...u, isOnline, online: isOnline, user: u.user ? { ...u.user, isOnline, online: isOnline } : u.user } : u);
+        }
+        return old;
+      });
+
+      queryClient.setQueriesData({ queryKey: ['search'] }, (old) => {
+        if (!old) return old;
+        if (Array.isArray(old)) {
+          return old.map(u => matchesUser(u) ? { ...u, isOnline, online: isOnline } : u);
+        }
+        if (Array.isArray(old.users)) {
+          return {
+            ...old,
+            users: old.users.map(u => matchesUser(u) ? { ...u, isOnline, online: isOnline } : u)
+          };
+        }
+        return old;
+      });
+
+      queryClient.setQueriesData({ queryKey: ['community-members'] }, (old) => {
+        if (!old) return old;
+        if (Array.isArray(old)) {
+          return old.map(m => matchesUser(m) || matchesUser(m.user) ? { ...m, isOnline, online: isOnline, user: m.user ? { ...m.user, isOnline, online: isOnline } : m.user } : m);
+        }
+        return old;
+      });
+
+      queryClient.setQueriesData({ queryKey: ['activity-members'] }, (old) => {
+        if (!old) return old;
+        if (Array.isArray(old)) {
+          return old.map(m => matchesUser(m) || matchesUser(m.user) ? { ...m, isOnline, online: isOnline, user: m.user ? { ...m.user, isOnline, online: isOnline } : m.user } : m);
+        }
+        return old;
+      });
+
       queryClient.setQueriesData({ queryKey: ['messages'] }, (oldData) => {
         if (!oldData) return oldData;
         if (oldData.pages) {

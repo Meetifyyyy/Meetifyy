@@ -10,6 +10,7 @@ import { RealtimeModule } from '../realtime/realtime.module';
 import { RedisModule } from '../redis/redis.module';
 import { BullModule } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
+import { PresenceModule } from '../presence/presence.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
     NotificationsModule,
     UsersModule,
     RedisModule,
+    PresenceModule,
     BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE }),
     forwardRef(() => RealtimeModule),
   ],

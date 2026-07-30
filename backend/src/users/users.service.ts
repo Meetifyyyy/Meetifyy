@@ -5,6 +5,8 @@ import { NotificationFactory } from '../notifications/notification.factory';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from './blocks.service';
+import { PresenceService } from '../presence/presence.service';
+import { checkPresenceVisibility } from './privacy.helper';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { NOTIFICATIONS_QUEUE, FollowNotifJob } from '../notifications/notifications.processor';
@@ -68,11 +70,12 @@ export class UsersService {
     private readonly domainEventService: DomainEventService,
     private readonly redisService: RedisService,
     private readonly blocksService: BlocksService,
+    private readonly presenceService: PresenceService,
     @InjectQueue(NOTIFICATIONS_QUEUE) private readonly notifQueue: Queue,
   ) {}
 
   async getAllUsers(limit: number, offset: number) {
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       take: limit,
       skip: offset,
       select: {
@@ -86,6 +89,20 @@ export class UsersService {
         graduationYear: true,
       },
       orderBy: { createdAt: 'desc' }
+    });
+
+    const userIds = users.map(u => u.id);
+    const presenceMap = await this.presenceService.getPresenceMany(userIds);
+
+    return users.map(u => {
+      const pres = presenceMap.get(u.id);
+      const isOnline = pres?.status === 'online';
+      return {
+        ...u,
+        isOnline,
+        online: isOnline,
+        lastActive: pres?.lastSeen || null,
+      };
     });
   }
 
@@ -105,7 +122,7 @@ export class UsersService {
       excludeUserId = userIdOrCollegeId;
     }
 
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       where: {
         collegeId,
         ...(excludeUserId ? { id: { not: excludeUserId } } : {})
@@ -125,6 +142,20 @@ export class UsersService {
       },
       orderBy: { createdAt: 'desc' }
     });
+
+    const userIds = users.map(u => u.id);
+    const presenceMap = await this.presenceService.getPresenceMany(userIds);
+
+    return users.map(u => {
+      const pres = presenceMap.get(u.id);
+      const isOnline = pres?.status === 'online';
+      return {
+        ...u,
+        isOnline,
+        online: isOnline,
+        lastActive: pres?.lastSeen || null,
+      };
+    });
   }
 
   async getUserById(id: string) {
@@ -142,7 +173,14 @@ export class UsersService {
       }
     });
     if (!user) throw new NotFoundException('User not found');
-    return user;
+    const pres = await this.presenceService.getPresence(id);
+    const isOnline = pres?.status === 'online';
+    return {
+      ...user,
+      isOnline,
+      online: isOnline,
+      lastActive: pres?.lastSeen || null,
+    };
   }
 
   async getProfileByUsername(username: string, currentUserId?: string) {
@@ -225,6 +263,16 @@ export class UsersService {
     const isFollowing = !!row.isFollowing;
     const isFollowedBy = !!row.isFollowedBy;
 
+    const presence = await this.presenceService.getPresence(row.id);
+    const canSeeOnline = await checkPresenceVisibility(
+      row.id,
+      currentUserId || '',
+      settings?.whoCanSeeOnline || 'everyone',
+      settings?.showOnlineStatus !== false,
+      this.prisma
+    );
+    const isOnline = canSeeOnline ? (presence?.status === 'online') : false;
+
     return {
       id: row.id,
       username: row.username,
@@ -243,6 +291,9 @@ export class UsersService {
       createdAt: row.createdAt,
       settings,
       isPrivate: row.privateProfile || false,
+      isOnline,
+      online: isOnline,
+      lastActive: presence?.lastSeen || null,
       stats: {
         followers: Number(row.followersCount || 0),
         following: Number(row.followingCount || 0),
@@ -448,15 +499,25 @@ export class UsersService {
       LIMIT ${limit} OFFSET ${offset};
     `;
 
-    return rows.map(r => ({
-      id: r.id,
-      username: r.username,
-      displayName: r.displayName,
-      avatar: r.avatar,
-      bio: r.bio,
-      role: r.role,
-      isFollowing: !!r.isFollowing,
-    }));
+    const userIds = rows.map(r => r.id);
+    const presenceMap = await this.presenceService.getPresenceMany(userIds);
+
+    return rows.map(r => {
+      const pres = presenceMap.get(r.id);
+      const isOnline = pres?.status === 'online';
+      return {
+        id: r.id,
+        username: r.username,
+        displayName: r.displayName,
+        avatar: r.avatar,
+        bio: r.bio,
+        role: r.role,
+        isFollowing: !!r.isFollowing,
+        isOnline,
+        online: isOnline,
+        lastActive: pres?.lastSeen || null,
+      };
+    });
   }
 
   async getFollowing(username: string, currentUserId?: string, limit = 20, offset = 0) {
@@ -489,15 +550,25 @@ export class UsersService {
       LIMIT ${limit} OFFSET ${offset};
     `;
 
-    return rows.map(r => ({
-      id: r.id,
-      username: r.username,
-      displayName: r.displayName,
-      avatar: r.avatar,
-      bio: r.bio,
-      role: r.role,
-      isFollowing: !!r.isFollowing,
-    }));
+    const userIds = rows.map(r => r.id);
+    const presenceMap = await this.presenceService.getPresenceMany(userIds);
+
+    return rows.map(r => {
+      const pres = presenceMap.get(r.id);
+      const isOnline = pres?.status === 'online';
+      return {
+        id: r.id,
+        username: r.username,
+        displayName: r.displayName,
+        avatar: r.avatar,
+        bio: r.bio,
+        role: r.role,
+        isFollowing: !!r.isFollowing,
+        isOnline,
+        online: isOnline,
+        lastActive: pres?.lastSeen || null,
+      };
+    });
   }
 
   async updateProfile(userId: string, data: any, userEmail?: string) {
@@ -672,11 +743,15 @@ export class UsersService {
       payload.whoCanSeeOnline = data.whoCanSeeOnline;
     }
 
-    return this.prisma.userSettings.upsert({
+    const updated = await this.prisma.userSettings.upsert({
       where: { userId },
       create: { userId, ...payload },
       update: { ...payload }
     });
+
+    this.domainEventService.emit('user.settings_updated', { userId, settings: updated }, [userId]);
+
+    return updated;
   }
 
   async blockUser(blockerId: string, blockedId: string) {

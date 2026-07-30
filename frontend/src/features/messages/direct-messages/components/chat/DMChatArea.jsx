@@ -5,7 +5,6 @@ import DMChatHeader from './DMChatHeader';
 export default function DMChatArea({
   conversation,
   onSendMessage,
-  onRetryMessage,
   onReactMessage,
   onClearChat,
   onTogglePin,
@@ -33,7 +32,6 @@ export default function DMChatArea({
       onLoadMore={onLoadMore}
       onMarkSeen={onMarkSeen}
       onSendMessage={onSendMessage}
-      onRetryMessage={onRetryMessage}
       onBack={onBack}
       emptyIcon="💬"
       emptyLabel="Select a conversation"
