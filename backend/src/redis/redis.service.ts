@@ -32,8 +32,14 @@ export class RedisService implements OnModuleDestroy {
           connectTimeout: 5000,
           tls: isTls ? { rejectUnauthorized: false } : undefined,
           retryStrategy(times: number) {
-            if (times > 5) return 2000;
-            return Math.min(times * 200, 1000);
+            if (times > 5) return null;
+            return Math.min(times * 1000, 5000);
+          },
+          reconnectOnError(err: Error) {
+            if (err.message && err.message.includes('max number of clients reached')) {
+              return false;
+            }
+            return true;
           },
         };
 
@@ -43,8 +49,23 @@ export class RedisService implements OnModuleDestroy {
         this.client.on('connect', () => this.logger.log('Shared Redis connection established'));
         this.subClient.on('connect', () => this.logger.log('Redis Subscriber connection established'));
 
-        this.client.on('error', (err) => this.logger.warn(`Shared Redis issue: ${err.message || err}`));
-        this.subClient.on('error', (err) => this.logger.warn(`Redis Subscriber issue: ${err.message || err}`));
+        const handleRedisError = (label: string) => {
+          let hasWarnedMaxClients = false;
+          return (err: any) => {
+            const msg = err?.message || String(err);
+            if (msg.includes('max number of clients reached')) {
+              if (!hasWarnedMaxClients) {
+                hasWarnedMaxClients = true;
+                this.logger.warn(`${label}: Cloud connection limit reached. Using in-memory fallback.`);
+              }
+              return;
+            }
+            this.logger.warn(`${label}: ${msg}`);
+          };
+        };
+
+        this.client.on('error', handleRedisError('Shared Redis'));
+        this.subClient.on('error', handleRedisError('Redis Subscriber'));
       } catch (e) {
         this.logger.error('Failed to parse REDIS_URL', e);
       }

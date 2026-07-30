@@ -30,6 +30,9 @@ export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu 
       const rawFallback = conv.lastMessageText || conv.preview || conv.lastMsg || '';
       return rawFallback.replace(/^You:\s*@/, '@');
     }
+    if (lastMsgObj.state === 'UNSENT' || lastMsgObj.isUnsent || lastMsgObj.text === 'This message was unsent' || lastMsgObj.payload?.text === 'This message was unsent') {
+      return 'This message was unsent';
+    }
     let text = lastMsgObj.text || lastMsgObj.payload?.text || '';
     if (!text && lastMsgObj.mediaUrl) {
       return lastMsgObj.mediaType === 'audio' ? '🎤 Voice message' : lastMsgObj.mediaType === 'video' ? '📹 Video' : '📷 Photo';

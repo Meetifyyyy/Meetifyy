@@ -139,17 +139,39 @@ import { DomainValidatorModule } from './common/services/domain-validator.module
         }
 
         let sharedProducerClient: Redis | null = null;
+        let sharedSubscriberClient: Redis | null = null;
 
         return {
           connection,
           createClient: (type: 'client' | 'subscriber' | 'bclient', opts?: any) => {
+            const clientOpts = {
+              ...connection,
+              ...(opts || {}),
+              retryStrategy(times: number) {
+                if (times > 5) return null;
+                return Math.min(times * 1000, 5000);
+              },
+              reconnectOnError(err: Error) {
+                if (err.message && err.message.includes('max number of clients reached')) {
+                  return false;
+                }
+                return true;
+              },
+            };
+
             if (type === 'client') {
               if (!sharedProducerClient) {
-                sharedProducerClient = new Redis({ ...connection, ...(opts || {}) });
+                sharedProducerClient = new Redis(clientOpts as any);
               }
               return sharedProducerClient;
             }
-            return new Redis({ ...connection, ...(opts || {}) });
+            if (type === 'subscriber') {
+              if (!sharedSubscriberClient) {
+                sharedSubscriberClient = new Redis(clientOpts as any);
+              }
+              return sharedSubscriberClient;
+            }
+            return new Redis(clientOpts as any);
           },
           defaultJobOptions: {
             removeOnComplete: true,

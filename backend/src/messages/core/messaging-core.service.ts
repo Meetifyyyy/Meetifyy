@@ -20,7 +20,7 @@ export class MessagingCoreService {
     protected prisma: PrismaService,
     protected presenceService: PresenceService,
     protected domainEventService: DomainEventService,
-  ) {}
+  ) { }
 
   async resolveConversationId(identifier: string, currentUserId?: string): Promise<string> {
     if (!identifier) return identifier;
@@ -126,12 +126,28 @@ export class MessagingCoreService {
 
     const type = payload.mediaUrl || payload.mediaType ? ('MEDIA' as const) : ('CHAT' as const);
 
+    let validatedReplyToId: string | null = null;
+    if (payload.replyToId) {
+      const replyTarget = await this.prisma.message.findFirst({
+        where: {
+          OR: [
+            { id: payload.replyToId },
+            { clientMessageId: payload.replyToId },
+            { payload: { path: ['tempId'], equals: payload.replyToId } },
+            { payload: { path: ['clientId'], equals: payload.replyToId } }
+          ]
+        },
+        select: { id: true }
+      });
+      validatedReplyToId = replyTarget ? replyTarget.id : null;
+    }
+
     const message: any = await this.prisma.message.create({
       data: {
         conversationId: realConvId,
         senderId,
         type,
-        replyToId: payload.replyToId || null,
+        replyToId: validatedReplyToId,
         payload: {
           text: payload.text || '',
           mediaUrl: payload.mediaUrl || null,
@@ -192,6 +208,8 @@ export class MessagingCoreService {
     });
     const pubId = convRecord?.publicId || conversationId;
 
+    const isUnsent = message.state === 'UNSENT';
+
     return {
       id: message.id,
       conversationId: pubId,
@@ -203,14 +221,16 @@ export class MessagingCoreService {
       createdAt: message.createdAt,
       timestamp: message.createdAt,
       time: new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      type: message.type.toLowerCase(),
-      payload: msgPayload,
-      text: msgPayload.text || '',
-      mediaUrl: msgPayload.mediaUrl || null,
-      mediaType: msgPayload.mediaType || null,
-      mentions: msgPayload.mentions || [],
-      inviteData: msgPayload.inviteData || null,
-      replyTo: replyToObj,
+      type: message.type ? message.type.toLowerCase() : 'chat',
+      state: message.state || 'SENT',
+      isUnsent,
+      payload: isUnsent ? { text: 'This message was unsent' } : msgPayload,
+      text: isUnsent ? 'This message was unsent' : (msgPayload.text || ''),
+      mediaUrl: isUnsent ? null : (msgPayload.mediaUrl || null),
+      mediaType: isUnsent ? null : (msgPayload.mediaType || null),
+      mentions: isUnsent ? [] : (msgPayload.mentions || []),
+      inviteData: isUnsent ? null : (msgPayload.inviteData || null),
+      replyTo: isUnsent ? null : replyToObj,
       status: 'sent'
     };
   }
@@ -269,42 +289,60 @@ export class MessagingCoreService {
       whereCondition.createdAt = { ...(whereCondition.createdAt || {}), gt: clearedAt };
     }
 
+    const orConditions: any[] = [];
+
     if (deviceId) {
-      whereCondition.OR = [
-        { targets: { some: { deviceId } } },
-        { targets: { none: {} } }
-      ];
+      orConditions.push({
+        OR: [
+          { targets: { some: { deviceId } } },
+          { targets: { none: {} } }
+        ]
+      });
     }
 
     if (beforeCursor) {
       let cursorDate: Date | null = null;
       let cursorId: string | null = null;
 
-      if (beforeCursor.startsWith('sys_created_')) {
-        const actId = beforeCursor.replace(/^sys_created_/, '');
-        const activity = await this.prisma.crewActivity.findUnique({ where: { id: actId }, select: { createdAt: true } });
-        if (activity?.createdAt) cursorDate = activity.createdAt;
-      } else if (beforeCursor.startsWith('sys_started_')) {
-        const actId = beforeCursor.replace(/^sys_started_/, '');
-        const activity = await this.prisma.crewActivity.findUnique({ where: { id: actId }, select: { startDate: true } });
-        if (activity?.startDate) cursorDate = activity.startDate;
-      } else {
-        const cursorMessage = await this.prisma.message.findUnique({
-          where: { id: beforeCursor },
-          select: { id: true, createdAt: true }
-        });
-        if (cursorMessage) {
-          cursorDate = cursorMessage.createdAt;
-          cursorId = cursorMessage.id;
+      // Fast path: timestamp|id cursor — pure index seek, no DB lookup
+      if (beforeCursor.includes('|')) {
+        const [dateStr, idPart] = beforeCursor.split('|');
+        const parsed = new Date(dateStr);
+        if (!isNaN(parsed.getTime())) {
+          cursorDate = parsed;
+          cursorId = idPart || null;
+        }
+      }
+
+      if (!cursorDate) {
+        if (beforeCursor.startsWith('sys_created_')) {
+          const actId = beforeCursor.replace(/^sys_created_/, '');
+          const activity = await this.prisma.crewActivity.findUnique({ where: { id: actId }, select: { createdAt: true } });
+          if (activity?.createdAt) cursorDate = activity.createdAt;
+        } else if (beforeCursor.startsWith('sys_started_')) {
+          const actId = beforeCursor.replace(/^sys_started_/, '');
+          const activity = await this.prisma.crewActivity.findUnique({ where: { id: actId }, select: { startDate: true } });
+          if (activity?.startDate) cursorDate = activity.startDate;
+        } else {
+          const cursorMessage = await this.prisma.message.findUnique({
+            where: { id: beforeCursor },
+            select: { id: true, createdAt: true }
+          });
+          if (cursorMessage) {
+            cursorDate = cursorMessage.createdAt;
+            cursorId = cursorMessage.id;
+          }
         }
       }
 
       if (cursorDate) {
         if (cursorId) {
-          whereCondition.OR = [
-            { createdAt: { lt: cursorDate } },
-            { createdAt: cursorDate, id: { lt: cursorId } }
-          ];
+          orConditions.push({
+            OR: [
+              { createdAt: { lt: cursorDate } },
+              { createdAt: cursorDate, id: { lt: cursorId } }
+            ]
+          });
         } else {
           whereCondition.createdAt = {
             ...(typeof whereCondition.createdAt === 'object' ? whereCondition.createdAt : {}),
@@ -312,6 +350,10 @@ export class MessagingCoreService {
           };
         }
       }
+    }
+
+    if (orConditions.length > 0) {
+      whereCondition.AND = [...(whereCondition.AND || []), ...orConditions];
     }
 
     const messages: any[] = await this.prisma.message.findMany({
@@ -341,7 +383,13 @@ export class MessagingCoreService {
     messages.reverse();
     const realDbMessages = messages.filter(m => !m.id.startsWith('sys_'));
     const oldestRealMessage = realDbMessages[0];
-    const nextCursor = hasMore && oldestRealMessage ? oldestRealMessage.id : null;
+    // Use timestamp|id cursor so the server can seek with a pure index scan
+    // (no findUnique DB lookup per page). Matches MessagesService format.
+    const nextCursor = hasMore && oldestRealMessage
+      ? (oldestRealMessage.createdAt
+        ? `${new Date(oldestRealMessage.createdAt).toISOString()}|${oldestRealMessage.id}`
+        : oldestRealMessage.id)
+      : null;
     const otherParticipants = participants.filter(p => currentUserId && p.userId !== currentUserId);
     const otherReadTimestamps = otherParticipants
       .filter(p => p.user?.settings?.readReceipts !== false && p.lastReadAt != null)
@@ -380,15 +428,16 @@ export class MessagingCoreService {
         time: m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
         type: target0 ? target0.type : (m.type ? m.type.toLowerCase() : 'chat'),
         ciphertext: target0 ? target0.ciphertext : null,
-        payload,
+        payload: isUnsent ? { text: 'This message was unsent' } : payload,
         text: isUnsent ? 'This message was unsent' : (payload.text || ''),
         mediaUrl: isUnsent ? null : (payload.mediaUrl || null),
         mediaType: isUnsent ? null : (payload.mediaType || null),
         mentions: isUnsent ? [] : (payload.mentions || []),
         inviteData: isUnsent ? null : (payload.inviteData || null),
-        replyTo: replyToObj,
+        replyTo: isUnsent ? null : replyToObj,
         status: isRead ? 'read' : 'sent',
-        state: m.state || 'NORMAL'
+        state: m.state || 'SENT',
+        isUnsent
       };
     });
 
@@ -488,7 +537,7 @@ export class MessagingCoreService {
         lastReadAt: now,
         unreadCount: 0,
       }
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Asynchronous domain event emit (non-blocking)
     setImmediate(() => {
@@ -525,7 +574,24 @@ export class MessagingCoreService {
   async unsendMessage(messageId: string, userId: string) {
     const message = await this.prisma.message.findUnique({
       where: { id: messageId },
-      select: { id: true, conversationId: true, senderId: true, createdAt: true, state: true }
+      select: {
+        id: true,
+        conversationId: true,
+        senderId: true,
+        createdAt: true,
+        state: true,
+        conversation: {
+          select: {
+            id: true,
+            publicId: true,
+            lastMessageId: true,
+            participants: {
+              where: { leftAt: null, deletedAt: null },
+              select: { userId: true }
+            }
+          }
+        }
+      }
     });
 
     if (!message) {
@@ -545,15 +611,34 @@ export class MessagingCoreService {
       where: { id: messageId },
       data: {
         state: 'UNSENT',
-        deletedAt: new Date()
+        replyToId: null,
+        payload: {
+          text: 'This message was unsent',
+          mediaUrl: null,
+          mediaType: null,
+          inviteData: null,
+          isForwarded: false
+        }
       }
     });
+
+    if (message.conversation?.lastMessageId === messageId) {
+      await this.prisma.conversation.update({
+        where: { id: message.conversationId },
+        data: { lastMessageText: 'This message was unsent' }
+      }).catch(() => { });
+    }
+
+    const participantIds = message.conversation?.participants?.map(p => p.userId) || [];
+    const publicId = message.conversation?.publicId || message.conversationId;
 
     return {
       success: true,
       id: message.id,
       messageId: message.id,
       conversationId: message.conversationId,
+      publicId,
+      participantIds,
       state: 'UNSENT'
     };
   }
@@ -596,7 +681,7 @@ export class MessagingCoreService {
     const chunkSize = 5;
     for (let i = 0; i < targetConversationIds.length; i += chunkSize) {
       const chunk = targetConversationIds.slice(i, i + chunkSize);
-      
+
       const promises = chunk.map(async (targetId) => {
         const realConvId = await this.resolveConversationId(targetId);
         const isParticipant = await this.prisma.conversationParticipant.findFirst({

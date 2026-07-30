@@ -167,21 +167,27 @@ export class DmController {
     const userId = req.user?.id;
     const result = await this.dmService.unsendMessage(messageId, userId);
     if (result.success && result.conversationId) {
-      const conv = await this.dmService.getConversationById(result.conversationId);
-      const pubId = (conv as any)?.publicId || result.conversationId;
-      const participantIds = await this.dmService.getConversationParticipantIds(result.conversationId);
-      this.domainEventService.emit('message:updated', {
-        id: messageId,
-        conversationId: pubId,
-        publicId: pubId,
-        internalId: result.conversationId,
-        state: 'UNSENT',
-        text: 'This message was unsent',
-        mediaUrl: null,
-        mediaType: null,
-        inviteData: null,
-        replyTo: null
-      }, participantIds);
+      const pubId = (result as any).publicId || result.conversationId;
+      const participantIds = (result as any).participantIds || [];
+      setImmediate(() => {
+        this.domainEventService.emit('message:updated', {
+          id: messageId,
+          conversationId: pubId,
+          publicId: pubId,
+          internalId: result.conversationId,
+          state: 'UNSENT',
+          text: 'This message was unsent',
+          mediaUrl: null,
+          mediaType: null,
+          inviteData: null,
+          replyTo: null
+        }, participantIds);
+        this.domainEventService.emit('conversation:updated', {
+          conversationId: pubId,
+          lastMessageText: 'This message was unsent',
+          updatedAt: new Date().toISOString()
+        }, participantIds);
+      });
     }
     return result;
   }

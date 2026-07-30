@@ -26,7 +26,7 @@ export function useConversations() {
 
   const { data: rawConversations = [], isLoading, error } = useQuery({
     queryKey: MESSAGE_KEYS.conversations,
-    queryFn: () => messagesApi.getConversations(20, 0),
+    queryFn: () => messagesApi.getConversations(50, 0),
     enabled: Boolean(isLoggedIn || currentUser?.id),
     staleTime: 60 * 1000,   // 60s
     gcTime:    5 * 60 * 1000,
@@ -54,6 +54,8 @@ export function useConversations() {
         isBlockedByMe: c.isBlockedByMe || false,
         isBlockedByThem: c.isBlockedByThem || false,
         lastMsg: (() => {
+          if (c.lastMsg) return c.lastMsg;
+          if (c.lastMessageText) return c.lastMessageText;
           if (!c.lastMessage) return '';
           if (c.lastMessage.text) return c.lastMessage.text;
           if (c.lastMessage.mediaUrl) {

@@ -7,6 +7,7 @@ import { PROFILE_KEYS } from './useProfile';
 import { toggleRegistry } from '../utils/mutationRegistry';
 
 import { flushPendingQueue } from '../../features/messages/shared/utils/offlineSync';
+import { updateMessageInCache } from '../../features/messages/shared/utils/cacheUtils';
 
 export function useGlobalSocketSync() {
   const queryClient = useQueryClient();
@@ -42,10 +43,30 @@ export function useGlobalSocketSync() {
         }
       }
 
-      // Flush queued offline messages automatically
-      flushPendingQueue(socket, (tempId, serverMsg) => {
-        if (serverMsg?.conversationId) {
-          queryClient.invalidateQueries({ queryKey: ['messages', serverMsg.conversationId] });
+      // Helper to cleanly unshift new messages into the cache without wiping older pages
+      const unshiftMessageToCache = (convId, serverMsg) => {
+        if (!convId || !serverMsg) return;
+        queryClient.setQueryData(['messages', convId], (oldData) => {
+          if (!oldData || !oldData.pages || oldData.pages.length === 0) return oldData;
+          const newPages = [...oldData.pages];
+          const firstPage = { ...newPages[0] };
+          const msgs = firstPage.messages || [];
+          
+          // Only unshift if it doesn't already exist in the page
+          const exists = msgs.some(m => String(m.id) === String(serverMsg.id) || (m.clientId && String(m.clientId) === String(serverMsg.clientId)));
+          if (!exists) {
+            firstPage.messages = [serverMsg, ...msgs];
+            newPages[0] = firstPage;
+            return { ...oldData, pages: newPages };
+          }
+          return oldData;
+        });
+      };
+
+      // Flush queued offline messages automatically on reconnect.
+      flushPendingQueue(socket, (key, serverMsg, status) => {
+        if (status === 'ok' && serverMsg?.conversationId) {
+          updateMessageInCache(queryClient, serverMsg.conversationId, serverMsg.id || serverMsg.clientId, serverMsg);
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
         }
       });
@@ -57,7 +78,16 @@ export function useGlobalSocketSync() {
           res.messages.forEach(msg => {
             const convId = msg.conversationId || msg.publicId || msg.internalId;
             if (convId) {
-              queryClient.invalidateQueries({ queryKey: ['messages', convId] });
+              // Try patching first
+              let updated = false;
+              updateMessageInCache(queryClient, convId, msg.id, (existing) => {
+                updated = true;
+                return msg;
+              });
+              // If not found in cache, unshift to top of page 0
+              if (!updated) {
+                unshiftMessageToCache(convId, msg);
+              }
             }
           });
           queryClient.invalidateQueries({ queryKey: ['conversations'] });

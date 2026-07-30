@@ -8,7 +8,7 @@ import Avatar from './avatar/Avatar';
 import { parseConversationRoute } from '../utils/conversationUrl';
 import { messagesApi } from '../api/apiClient';
 import { useGlobalSocketSync } from '../hooks/useGlobalSocketSync';
-import { appendMessageToCache, matchesConversationId, getConversationAliases } from '../../features/messages/shared/utils/cacheUtils';
+import { appendMessageToCache, matchesConversationId, getConversationAliases, updateConversationPreview } from '../../features/messages/shared/utils/cacheUtils';
 
 export default function SocketManager() {
   const { session, isLoggedIn } = useAuth();
@@ -443,24 +443,74 @@ export default function SocketManager() {
     };
 
     const handleMessageUpdated = (payload) => {
-      if (!payload || !payload.id) return;
+      if (!payload || (!payload.id && !payload.messageId)) return;
+      const msgId = payload.id || payload.messageId;
       const keys = [payload.conversationId, payload.publicId, payload.internalId].filter(Boolean);
       const uniqueKeys = [...new Set(keys)];
-      uniqueKeys.forEach(convKey => {
+
+      const targetKeys = new Set(
+        [msgId, payload.tempId, payload.clientId].filter(Boolean).map(String)
+      );
+
+      uniqueKeys.forEach((convKey) => {
         queryClient.setQueryData(['messages', convKey], (old) => {
-          if (!old || !old.messages) return old;
-          if (payload.state === 'UNSENT' || payload.deleted || payload.deletedAt) {
+          if (!old) return old;
+
+          const updateList = (msgList) => {
+            if (!Array.isArray(msgList)) return msgList;
+            return msgList.map((m) => {
+              const isMatch =
+                targetKeys.has(String(m.id)) ||
+                (m.tempId && targetKeys.has(String(m.tempId))) ||
+                (m.clientId && targetKeys.has(String(m.clientId)));
+
+              if (isMatch) {
+                const isUnsent = payload.state === 'UNSENT' || payload.isUnsent;
+                return {
+                  ...m,
+                  ...payload,
+                  state: payload.state || 'UNSENT',
+                  isUnsent,
+                  text: isUnsent ? 'This message was unsent' : (payload.text || ''),
+                  payload: isUnsent ? { text: 'This message was unsent' } : (payload.payload || { text: payload.text }),
+                  mediaUrl: isUnsent ? null : (payload.mediaUrl || null),
+                  mediaType: isUnsent ? null : (payload.mediaType || null),
+                  inviteData: isUnsent ? null : (payload.inviteData || null),
+                  replyTo: isUnsent ? null : (payload.replyTo || null),
+                  decryptedText: null,
+                  isDecrypting: false,
+                  decryptError: false,
+                };
+              }
+              return m;
+            });
+          };
+
+          if (old.pages) {
             return {
               ...old,
-              messages: old.messages.filter(m => m.id !== payload.id)
+              pages: old.pages.map((page) => ({
+                ...page,
+                messages: updateList(page.messages || []),
+              })),
             };
           }
-          return {
-            ...old,
-            messages: old.messages.map(m => m.id === payload.id ? { ...m, ...payload } : m)
-          };
+
+          if (old.messages) {
+            return {
+              ...old,
+              messages: updateList(old.messages),
+            };
+          }
+
+          return old;
         });
       });
+
+      const targetConvId = payload.conversationId || payload.publicId || payload.internalId;
+      if (targetConvId) {
+        updateConversationPreview(queryClient, targetConvId, payload.text || 'This message was unsent');
+      }
     };
 
     const handleGlobalConversationSeen = (payload) => {
