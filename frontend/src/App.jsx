@@ -29,7 +29,21 @@ function lazyWithRetry(componentImport) {
     } catch (error) {
       if (!pageHasAlreadyBeenReloaded) {
         window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'true');
-        window.location.reload();
+        try {
+          if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map(r => r.unregister()));
+          }
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+          }
+        } catch {
+          // ignore
+        }
+        const url = new URL(window.location.href);
+        url.searchParams.set('_v', Date.now().toString());
+        window.location.replace(url.toString());
       }
       throw error;
     }
