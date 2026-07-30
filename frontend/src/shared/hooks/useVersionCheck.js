@@ -9,9 +9,11 @@ export function useVersionCheck() {
   const currentVersionRef = useRef(null);
 
   useEffect(() => {
+    if (import.meta.env.DEV) return;
+
     let active = true;
 
-    const forceHardRefresh = async () => {
+    const forceHardRefresh = async (newVersion) => {
       try {
         if ('serviceWorker' in navigator) {
           const registrations = await navigator.serviceWorker.getRegistrations();
@@ -24,6 +26,10 @@ export function useVersionCheck() {
         }
       } catch {
         // Silently ignore cache wipe errors
+      }
+
+      if (newVersion) {
+        window.sessionStorage.setItem('app_installed_version', String(newVersion));
       }
 
       const url = new URL(window.location.href);
@@ -43,18 +49,22 @@ export function useVersionCheck() {
         if (!res.ok) return;
         const data = await res.json();
         const serverVersion = Number(data.version);
+        if (!serverVersion || isNaN(serverVersion)) return;
 
-        const localBuildTime = typeof __APP_BUILD_TIME__ !== 'undefined' ? Number(__APP_BUILD_TIME__) : null;
-
-        if (localBuildTime && serverVersion > localBuildTime) {
-          await forceHardRefresh();
-          return;
-        }
+        const installedVersionStr = window.sessionStorage.getItem('app_installed_version');
+        const installedVersion = installedVersionStr ? Number(installedVersionStr) : null;
 
         if (currentVersionRef.current === null) {
           currentVersionRef.current = serverVersion;
+          if (!installedVersion) {
+            window.sessionStorage.setItem('app_installed_version', String(serverVersion));
+          } else if (serverVersion > installedVersion) {
+            await forceHardRefresh(serverVersion);
+            return;
+          }
         } else if (active && serverVersion > currentVersionRef.current) {
-          await forceHardRefresh();
+          currentVersionRef.current = serverVersion;
+          await forceHardRefresh(serverVersion);
         }
       } catch {
         // Silently ignore network interruptions
@@ -62,7 +72,7 @@ export function useVersionCheck() {
     };
 
     checkVersion();
-    const interval = setInterval(checkVersion, 15000);
+    const interval = setInterval(checkVersion, 30000);
     const handleFocus = () => checkVersion();
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') checkVersion();
