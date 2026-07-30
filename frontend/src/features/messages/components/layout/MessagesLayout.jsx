@@ -108,14 +108,23 @@ export default function MessagesLayout() {
 
   const activeConv = useMemo(() => {
     if (!baseConv) return null;
+    const initialPage = rawPages?.[0];
     const latestPage = rawPages?.[rawPages.length - 1];
+
+    // Fallback name/avatar inference from history or message sender if conversation list entry is missing
+    const otherMsg = (allMessages || []).find(m => m.from === 'them' || (m.senderId && String(m.senderId) !== String(currentUser?.id)));
+    const inferredName = baseConv.name || initialPage?.name || otherMsg?.senderName || 'Chat';
+    const inferredAvatar = baseConv.avatar || initialPage?.avatar || otherMsg?.senderAvatar || null;
+
     return {
       ...baseConv,
+      name: inferredName,
+      avatar: inferredAvatar,
       messages: allMessages,
-      participants: latestPage?.participants || baseConv.participants || baseConv.members || [],
+      participants: initialPage?.participants || baseConv.participants || baseConv.members || [],
       nextCursor: latestPage?.nextCursor || null,
     };
-  }, [baseConv, allMessages, rawPages]);
+  }, [baseConv, allMessages, rawPages, currentUser?.id]);
 
   // URL sync
   useEffect(() => {

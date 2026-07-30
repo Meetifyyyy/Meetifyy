@@ -28,21 +28,27 @@ export class MessagesController {
     const userId = req.user?.id;
     const result = await this.messagesService.unsendMessage(messageId, userId);
     if (result.success && result.conversationId) {
-      const conv = await this.messagesService.getConversationById(result.conversationId);
-      const pubId = (conv as any)?.publicId || result.conversationId;
-      const participantIds = await this.messagesService.getConversationParticipantIds(result.conversationId);
-      this.domainEventService.emit('message:updated', {
-        id: messageId,
-        conversationId: pubId,
-        publicId: pubId,
-        internalId: result.conversationId,
-        state: 'UNSENT',
-        text: 'This message was unsent',
-        mediaUrl: null,
-        mediaType: null,
-        inviteData: null,
-        replyTo: null
-      }, participantIds);
+      const pubId = (result as any).publicId || result.conversationId;
+      const participantIds = (result as any).participantIds || [];
+      setImmediate(() => {
+        this.domainEventService.emit('message:updated', {
+          id: messageId,
+          conversationId: pubId,
+          publicId: pubId,
+          internalId: result.conversationId,
+          state: 'UNSENT',
+          text: 'This message was unsent',
+          mediaUrl: null,
+          mediaType: null,
+          inviteData: null,
+          replyTo: null
+        }, participantIds);
+        this.domainEventService.emit('conversation:updated', {
+          conversationId: pubId,
+          lastMessageText: 'This message was unsent',
+          updatedAt: new Date().toISOString()
+        }, participantIds);
+      });
     }
     return result;
   }
@@ -179,8 +185,10 @@ export class MessagesController {
       }
     }
     
-    // Emit to sender
-    this.domainEventService.emit('message:new', message, [userId]);
+    // NOTE: No sender re-emit here. The sender's cache is updated from the HTTP
+    // response returned below. Re-emitting 'message:new' to the sender's own
+    // socket room would race with the response and could overwrite a 'failed'
+    // status or create a duplicate optimistic entry.
 
     return message;
   }

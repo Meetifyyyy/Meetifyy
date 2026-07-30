@@ -3,8 +3,24 @@ import { createPortal } from 'react-dom';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import styles from './ConfirmModal.module.css';
 
-export default function ConfirmModal({ title, desc, visible, onCancel, onConfirm, cancelText = 'Cancel', confirmText = 'Confirm' }) {
+export default function ConfirmModal({
+  title,
+  desc,
+  description,
+  visible = true,
+  onCancel,
+  onConfirm,
+  cancelText = 'Cancel',
+  cancelLabel,
+  confirmText = 'Confirm',
+  confirmLabel,
+  isDestructive = false,
+}) {
   const overlayRef = useRef(null);
+  const actualDesc = desc || description;
+  const actualConfirmText = confirmLabel || confirmText;
+  const actualCancelText = cancelLabel || cancelText;
+
   useOverlayBack(visible, onCancel);
 
   useEffect(() => {
@@ -36,10 +52,10 @@ export default function ConfirmModal({ title, desc, visible, onCancel, onConfirm
           </svg>
         </div>
         <div className={styles.confirmTitle}>{title}</div>
-        <div className={styles.confirmDesc}>{desc}</div>
+        {actualDesc && <div className={styles.confirmDesc}>{actualDesc}</div>}
         <div className={styles.confirmActions}>
-          <button className={`${styles.confirmBtn} ${styles.confirmBtnCancel}`} onClick={handleClose}>{cancelText}</button>
-          <button className={`${styles.confirmBtn} ${styles.confirmBtnLeave}`} onClick={handleConfirm}>{confirmText}</button>
+          <button className={`${styles.confirmBtn} ${styles.confirmBtnCancel}`} onClick={handleClose}>{actualCancelText}</button>
+          <button className={`${styles.confirmBtn} ${isDestructive ? styles.confirmBtnLeave : styles.confirmBtnLeave}`} onClick={handleConfirm}>{actualConfirmText}</button>
         </div>
       </div>
     </div>,

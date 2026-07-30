@@ -43,10 +43,15 @@ export async function flushPendingQueue(socket, onAck) {
       socket.emit('message:send', msg, (ack) => {
         if (ack?.status === 'ok') {
           removePendingMessage(key);
-          if (onAck) onAck(key, ack.message);
+          if (onAck) onAck(key, ack.message, 'ok');
+        } else {
+          // Keep the message in the queue but notify the caller so the UI
+          // can mark it 'failed' instead of leaving it stuck at 'sending'.
+          if (onAck) onAck(key, null, 'failed');
         }
         resolve();
       });
     });
   }
 }
+

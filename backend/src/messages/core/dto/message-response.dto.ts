@@ -20,5 +20,6 @@ export interface MessageResponseDto {
   replyTo?: any;
   status: string;
   state?: string;
+  isUnsent?: boolean;
   ciphertext?: string | null;
 }

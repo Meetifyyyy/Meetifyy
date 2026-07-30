@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useCallback, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { messagesApi, dmApi, groupApi } from '@shared/api/apiClient';
 import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
 import { E2EEManager } from '@shared/lib/signal/E2EEManager';
 import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
 import { useData } from '@shared/hooks/useData';
-import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases } from '../utils/cacheUtils';
+import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, STATUS_RANK } from '../utils/cacheUtils';
 import { queuePendingMessage, removePendingMessage } from '../utils/offlineSync';
 import { idbGetMessages, idbSaveMessages, idbPatchMessage } from '../utils/idbMessages';
 
@@ -27,6 +27,57 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     }
   };
 
+  const [idbLoaded, setIdbLoaded] = useState(false);
+
+  // Pre-seed from IDB with page-chunking so page 0 refetches preserve older historical pages
+  useEffect(() => {
+    if (!activeChatId) return;
+    let cancelled = false;
+    const targetChatId = activeChatId;
+
+    const currentData = queryClient.getQueryData(['messages', targetChatId]);
+    if (!currentData || !currentData.pages || currentData.pages.length === 0) {
+      setIdbLoaded(false);
+      idbGetMessages(targetChatId).then(messages => {
+        if (cancelled) return;
+        if (messages && messages.length > 0) {
+          const latestData = queryClient.getQueryData(['messages', targetChatId]);
+          if (!latestData || !latestData.pages || latestData.pages.length === 0) {
+            const PAGE_SIZE = 50;
+            const pages = [];
+            const pageParams = [];
+            
+            // messages is sorted ascending (oldest first, newest last)
+            const total = messages.length;
+            for (let end = total; end > 0; end -= PAGE_SIZE) {
+              const start = Math.max(0, end - PAGE_SIZE);
+              const pageMsgs = messages.slice(start, end);
+              const oldestInPage = pageMsgs[0];
+              const nextCursor = start > 0 && oldestInPage
+                ? (oldestInPage.createdAt ? `${new Date(oldestInPage.createdAt).toISOString()}|${oldestInPage.id}` : oldestInPage.id)
+                : undefined;
+
+              pages.push({ messages: pageMsgs, nextCursor });
+              pageParams.push(pages.length === 1 ? undefined : nextCursor);
+            }
+
+            queryClient.setQueryData(['messages', targetChatId], {
+              pages,
+              pageParams
+            });
+          }
+        }
+        setIdbLoaded(true);
+      });
+    } else {
+      setIdbLoaded(true);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChatId, queryClient]);
+
   const {
     data: historyPages,
     isLoading,
@@ -45,38 +96,11 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     },
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
-    enabled: !!activeChatId && !String(activeChatId).startsWith('temp_') && !String(activeChatId).startsWith('c_temp_'),
-    staleTime: 1000 * 30,
-    gcTime: 1000 * 60 * 2, // Purge decrypted RAM cache aggressively after 2 minutes
+    enabled: !!activeChatId && idbLoaded && !String(activeChatId).startsWith('temp_') && !String(activeChatId).startsWith('c_temp_'),
+    staleTime: 1000 * 60 * 5, // 5 minutes fresh time (prevents aggressive refetch on mount/reconnect that truncates older IDB pages)
+    gcTime: 1000 * 60 * 10,  // Keep memory cache for 10 minutes
     placeholderData: undefined, // Override global (prev) => prev to prevent stale chat UI leak
   });
-
-  // Pre-seed from IDB for instant rendering (with cancellation check for rapid chat switches)
-  useEffect(() => {
-    if (!activeChatId) return;
-    let cancelled = false;
-    const targetChatId = activeChatId;
-
-    const currentData = queryClient.getQueryData(['messages', targetChatId]);
-    if (!currentData || !currentData.pages || currentData.pages.length === 0) {
-      idbGetMessages(targetChatId).then(messages => {
-        if (cancelled) return;
-        if (messages && messages.length > 0) {
-          const latestData = queryClient.getQueryData(['messages', targetChatId]);
-          if (!latestData || !latestData.pages || latestData.pages.length === 0) {
-            queryClient.setQueryData(['messages', targetChatId], {
-              pages: [{ messages, nextCursor: null }],
-              pageParams: [undefined]
-            });
-          }
-        }
-      });
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeChatId, queryClient]);
 
   // Decrypt E2EE messages on the fly (optimistic/background)
   useEffect(() => {
@@ -89,6 +113,9 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       let pageModified = false;
 
       decMsgs.forEach((msg) => {
+        if (msg.state === 'UNSENT' || msg.isUnsent || msg.text === 'This message was unsent' || msg.payload?.text === 'This message was unsent') {
+          return;
+        }
         const textVal = msg.text || msg.payload?.text || '';
         const isE2EEPayload = msg.type === 'e2ee' || msg.isE2EE || (typeof textVal === 'string' && textVal.startsWith('{"type":') && textVal.includes('"body":'));
         
@@ -144,11 +171,14 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     if (!historyPages?.pages) return [];
     const reversedPages = [...historyPages.pages].reverse();
     const flat = reversedPages.flatMap(page => page?.messages || []);
-    
+
+    // Prefer the permanent server ID as the dedup key so that optimistic messages
+    // (which temporarily share clientId=tempId=id) are correctly collapsed once
+    // the server ACK arrives with a real UUID.
     const seen = new Set();
     return flat.filter(m => {
       if (!m) return false;
-      const key = m.id || m.tempId;
+      const key = m.id || m.clientId || m.tempId;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -157,6 +187,42 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
 
   const lastMarkedReadRef = useRef(null);
   const markReadDebounceRef = useRef(null);
+  // Tracks the most-recent seen event so a late-arriving socket ACK can
+  // back-apply 'read' status without waiting for the next seen broadcast.
+  const lastSeenEventRef = useRef(null);
+
+  // Shared helper: apply a seen/read timestamp to the current conversation's
+  // message cache. Extracted at hook scope so sendMessageOptimistically can
+  // call it after a slow ACK without a stale closure on the socket effect.
+  const applySeenToCache = useCallback((lastReadAt) => {
+    const lastReadTime = new Date(lastReadAt).getTime();
+    queryClient.setQueryData(['messages', activeChatId], (oldData) => {
+      if (!oldData?.pages) return oldData;
+      let hasChanges = false;
+      const newPages = oldData.pages.map((page) => {
+        if (!page.messages) return page;
+        const newMessages = page.messages.map((msg) => {
+          const isMyMsg =
+            msg.from === 'me' ||
+            String(msg.senderId) === String(currentUser?.id) ||
+            msg.senderId === 'me';
+          // Skip optimistic ('sending') and failed messages — they have no
+          // real server timestamp and a failed message must never become 'read'.
+          if (isMyMsg && msg.status !== 'read' && msg.status !== 'sending' && msg.status !== 'failed') {
+            const msgTime = new Date(msg.createdAt).getTime();
+            if (!isNaN(msgTime) && msgTime <= lastReadTime) {
+              hasChanges = true;
+              idbPatchMessage(activeChatId, msg.id || msg.tempId, { status: 'read' });
+              return { ...msg, status: 'read' };
+            }
+          }
+          return msg;
+        });
+        return { ...page, messages: newMessages };
+      });
+      return hasChanges ? { ...oldData, pages: newPages } : oldData;
+    });
+  }, [activeChatId, currentUser?.id, queryClient]);
 
   const clearActiveChatUnread = useCallback((force = false) => {
     if (!activeChatId) return;
@@ -361,9 +427,8 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
             // If the seen event already arrived and flipped to 'read', keep it.
             updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
               const currentStatus = existing?.status;
-              const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
-              const incomingRank = STATUS_RANK['sent'] ?? 1;
               const existingRank = STATUS_RANK[currentStatus] ?? -1;
+              const incomingRank = STATUS_RANK['sent'] ?? 1;
               const finalStatus = existingRank > incomingRank ? currentStatus : 'sent';
               idbPatchMessage(targetConvId, response.message.id || clientId, { ...response.message, clientId, tempId: clientId, status: finalStatus });
               return {
@@ -374,15 +439,26 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
                 status: finalStatus,
               };
             });
+
+            // Back-apply seen status if the seen event arrived before this ACK
+            const seenEvent = lastSeenEventRef.current;
+            if (seenEvent && seenEvent.conversationId === targetConvId) {
+              applySeenToCache(seenEvent.lastReadAt);
+            }
           } else {
             updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
               const currentStatus = existing?.status;
-              const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
               const existingRank = STATUS_RANK[currentStatus] ?? -1;
               const finalStatus = existingRank > 1 ? currentStatus : 'sent';
               idbPatchMessage(targetConvId, clientId, { status: finalStatus });
               return { status: finalStatus };
             });
+
+            // Back-apply seen status if the seen event arrived before this ACK
+            const seenEvent = lastSeenEventRef.current;
+            if (seenEvent && seenEvent.conversationId === targetConvId) {
+              applySeenToCache(seenEvent.lastReadAt);
+            }
           }
           removePendingMessage(clientId);
         } else {
@@ -396,7 +472,6 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         const res = await getApi().sendMessage(targetConvId, payload);
         updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
           const currentStatus = existing?.status;
-          const STATUS_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
           const existingRank = STATUS_RANK[currentStatus] ?? -1;
           const finalStatus = existingRank > 1 ? currentStatus : 'sent';
           idbPatchMessage(targetConvId, res?.id || clientId, { ...res, clientId, tempId: clientId, status: finalStatus });
@@ -408,6 +483,11 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
             status: finalStatus,
           };
         });
+        // Back-apply seen status if the seen event arrived before this HTTP response
+        const seenEvent = lastSeenEventRef.current;
+        if (seenEvent && seenEvent.conversationId === targetConvId) {
+          applySeenToCache(seenEvent.lastReadAt);
+        }
         removePendingMessage(clientId);
       } catch (err) {
         updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed' });
@@ -415,7 +495,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         queuePendingMessage({ ...payload, tempId: clientId, clientId });
       }
     }
-  }, [activeChatId, currentUser, queryClient, socket]);
+  }, [activeChatId, currentUser, queryClient, socket, applySeenToCache]);
 
   const conversationsRef = useRef(conversations);
   useEffect(() => {
@@ -433,12 +513,21 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       new Set([activeChatId, ...aliases].filter(Boolean))
     );
 
-    socket.emit('conversation:join_rooms', { conversationIds: allCandidateIds });
-    markSeenIfEligible(isNearBottomRef.current);
+    const joinRooms = () => {
+      socket.emit('conversation:join_rooms', { conversationIds: allCandidateIds });
+      markSeenIfEligible(isNearBottomRef.current);
+    };
 
+    joinRooms();
+    socket.on('connect', joinRooms);
+
+    // isMatch only tests conversation-level identifiers (not participant user-IDs).
+    // Participant IDs were removed from allCandidateIds / getConversationAliases so
+    // messages never leak into unrelated conversations sharing those participants.
     const isMatch = (receivedId, msgObj) => {
       if (receivedId && allCandidateIds.some((id) => String(id) === String(receivedId))) return true;
       if (msgObj) {
+        // Only check the canonical conversation fields — never userId-level fields
         const keys = [msgObj.conversationId, msgObj.publicId, msgObj.internalId].filter(Boolean);
         return keys.some((k) => allCandidateIds.some((id) => String(id) === String(k)));
       }
@@ -456,7 +545,8 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         String(msg.senderId) === String(currentUser?.id) ||
         msg.senderId === 'me';
 
-      // Instant cache append across all aliases (activeChatId + convId + publicId + internalId)
+      // Only write to conversation-level cache keys — never to participant user-ID
+      // keys that happened to be in allCandidateIds (already stripped there).
       const keysToUpdate = Array.from(
         new Set(
           [
@@ -465,7 +555,6 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
             msg.conversationId,
             msg.publicId,
             msg.internalId,
-            ...allCandidateIds,
           ].filter(Boolean)
         )
       );
@@ -506,7 +595,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
           if (!page.messages) return page;
           const newMessages = page.messages.map((msg) => {
             if (
-              (msg.id === targetId || msg.tempId === targetId) &&
+              (msg.id === targetId || msg.tempId === targetId || msg.clientId === targetId) &&
               msg.status !== 'read' &&
               msg.status !== 'seen'
             ) {
@@ -524,7 +613,8 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
 
     // Seen ACK: mark all my confirmed sent messages as read.
     // NEVER runs on 'sending' — those haven't been confirmed by the server yet.
-    // NEVER uses a time buffer — only messages strictly before lastReadAt are marked.
+    // applySeenToCache is defined at hook scope (not here) so the socket ACK
+    // callbacks in sendMessageOptimistically can also call it without a stale closure.
     const handleConversationSeen = (data) => {
       const isTargetMatch = isMatch(data?.conversationId) || isMatch(data?.realConvId);
       const isRecipientReader =
@@ -532,48 +622,58 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
 
       if (!isTargetMatch || !isRecipientReader || !data?.lastReadAt) return;
 
-      const lastReadTime = new Date(data.lastReadAt).getTime();
+      // Store for late-ACK back-application
+      lastSeenEventRef.current = { conversationId: activeChatId, lastReadAt: data.lastReadAt };
+      applySeenToCache(data.lastReadAt);
+    };
 
-      queryClient.setQueryData(['messages', activeChatId], (oldData) => {
-        if (!oldData?.pages) return oldData;
-        let hasChanges = false;
-        const newPages = oldData.pages.map((page) => {
-          if (!page.messages) return page;
-          const newMessages = page.messages.map((msg) => {
-            const isMyMsg =
-              msg.from === 'me' ||
-              String(msg.senderId) === String(currentUser?.id) ||
-              msg.senderId === 'me';
-            // Skip optimistic (not yet ACK'd) messages — they have no real server timestamp
-            if (isMyMsg && msg.status !== 'read' && msg.status !== 'sending') {
-              const msgTime = new Date(msg.createdAt).getTime();
-              // Strictly before lastReadAt — no buffer to prevent race conditions
-              if (!isNaN(msgTime) && msgTime <= lastReadTime) {
-                hasChanges = true;
-                idbPatchMessage(activeChatId, msg.id || msg.tempId, { status: 'read' });
-                return { ...msg, status: 'read' };
-              }
-            }
-            return msg;
-          });
-          return { ...page, messages: newMessages };
-        });
-        return hasChanges ? { ...oldData, pages: newPages } : oldData;
+    // Message update (unsend, edit, etc.) broadcast handler
+    const handleMessageUpdated = (payload) => {
+      const msgId = payload?.id || payload?.messageId;
+      const convId = payload?.conversationId || payload?.publicId || payload?.internalId;
+      if (!msgId || !isMatch(convId, payload)) return;
+
+      const isUnsent = payload.state === 'UNSENT' || payload.isUnsent;
+
+      const patch = {
+        state: payload.state || 'UNSENT',
+        isUnsent,
+        text: isUnsent ? 'This message was unsent' : (payload.text || ''),
+        payload: isUnsent ? { text: 'This message was unsent' } : (payload.payload || { text: payload.text }),
+        mediaUrl: isUnsent ? null : (payload.mediaUrl || null),
+        mediaType: isUnsent ? null : (payload.mediaType || null),
+        inviteData: isUnsent ? null : (payload.inviteData || null),
+        replyTo: isUnsent ? null : (payload.replyTo || null),
+      };
+
+      // Update cache and IDB across all candidate conversation keys (activeChatId, publicId, internalId)
+      allCandidateIds.forEach((key) => {
+        updateMessageInCache(queryClient, key, msgId, patch);
+        idbPatchMessage(key, msgId, patch).catch(console.warn);
       });
+
+      if (isUnsent) {
+        allCandidateIds.forEach((key) => {
+          updateConversationPreview(queryClient, key, 'This message was unsent');
+        });
+      }
     };
 
     socket.on('message:new', handleIncomingNewMessage);
     socket.on('message:delivered', handleMessageDelivered);
+    socket.on('message:updated', handleMessageUpdated);
     socket.on('messages:seen', handleConversationSeen);
     socket.on('conversation:seen', handleConversationSeen);
 
     return () => {
+      socket.off('connect', joinRooms);
       socket.off('message:new', handleIncomingNewMessage);
       socket.off('message:delivered', handleMessageDelivered);
+      socket.off('message:updated', handleMessageUpdated);
       socket.off('messages:seen', handleConversationSeen);
       socket.off('conversation:seen', handleConversationSeen);
     };
-  }, [socket, activeChatId, queryClient, currentUser, markSeenIfEligible]);
+  }, [socket, activeChatId, queryClient, currentUser, markSeenIfEligible, applySeenToCache]);
 
   return {
     messages: allMessages,

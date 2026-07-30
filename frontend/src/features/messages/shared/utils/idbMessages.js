@@ -43,6 +43,23 @@ function openMessagesDB() {
  */
 function sanitizeMessageForStorage(msg) {
   const safeMsg = { ...msg };
+  const isUnsent = safeMsg.state === 'UNSENT' || safeMsg.isUnsent || safeMsg.text === 'This message was unsent' || safeMsg.payload?.text === 'This message was unsent';
+
+  if (isUnsent) {
+    safeMsg.state = 'UNSENT';
+    safeMsg.isUnsent = true;
+    safeMsg.text = 'This message was unsent';
+    safeMsg.payload = { text: 'This message was unsent' };
+    safeMsg.mediaUrl = null;
+    safeMsg.mediaType = null;
+    safeMsg.inviteData = null;
+    safeMsg.replyTo = null;
+    delete safeMsg.decryptedText;
+    delete safeMsg.isDecrypting;
+    delete safeMsg.decryptError;
+    return safeMsg;
+  }
+
   // STRICT SECURITY INVARIANT: Strip decrypted text
   if (safeMsg.type === 'e2ee' || safeMsg.isE2EE) {
     delete safeMsg.decryptedText;
@@ -108,10 +125,32 @@ export async function idbGetMessages(conversationId) {
       request.onerror = () => rej(request.error);
     });
     
+    // Sanitize and reconcile unsent state for older messages stored in IDB
+    const sanitized = (rawMessages || []).map((msg) => {
+      const isUnsent = msg.state === 'UNSENT' || msg.isUnsent || msg.text === 'This message was unsent' || msg.payload?.text === 'This message was unsent';
+      if (isUnsent) {
+        return {
+          ...msg,
+          state: 'UNSENT',
+          isUnsent: true,
+          text: 'This message was unsent',
+          payload: { text: 'This message was unsent' },
+          mediaUrl: null,
+          mediaType: null,
+          inviteData: null,
+          replyTo: null,
+          decryptedText: null,
+          isDecrypting: false,
+          decryptError: false,
+        };
+      }
+      return msg;
+    });
+
     // Sort ascending by createdAt
-    return rawMessages.sort((a, b) => {
-      const timeA = new Date(a.createdAt || 0).getTime();
-      const timeB = new Date(b.createdAt || 0).getTime();
+    return sanitized.sort((a, b) => {
+      const timeA = new Date(a.createdAt || Date.now()).getTime();
+      const timeB = new Date(b.createdAt || Date.now()).getTime();
       return timeA - timeB;
     });
   } catch (err) {

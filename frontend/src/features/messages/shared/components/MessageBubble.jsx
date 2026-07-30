@@ -328,6 +328,7 @@ const MessageBubble = memo(function MessageBubble({
   requestToJoinGroup
 }) {
   const navigate = useNavigate();
+  const { getUserById } = useData();
   const longPressTimer = useRef(null);
   const touchHandled = useRef(false);
   const replyHandler = onReplyTo || onReply;
@@ -444,6 +445,25 @@ const MessageBubble = memo(function MessageBubble({
       <div className={styles.systemMessageContainer}>
         <div className={styles.systemMessageText}>
           <SystemMessageContent text={text} navigate={navigate} />
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.state === 'UNSENT' || msg.isUnsent || msg.text === 'This message was unsent' || msg.payload?.text === 'This message was unsent') {
+    const isMe = msg.from === 'me' || String(msg.senderId) === String(currentUser?.id) || msg.senderId === 'me';
+    const timeText = getDisplayClockTime(msg);
+    return (
+      <div className={`${styles.msgBubbleContainer} ${isMe ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}>
+        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+          <div className={`${styles.msgBubble} ${isMe ? styles.msgBubbleMe : styles.msgBubbleThem}`} style={{ opacity: 0.85, fontStyle: 'italic' }}>
+            <div className={styles.msgTextTimeWrap}>
+              <span className={styles.msgText} style={{ color: isMe ? 'rgba(255, 255, 255, 0.9)' : 'var(--color-text-muted, #64748b)' }}>
+                This message was unsent
+              </span>
+              <div className={styles.msgTimeLabel} style={{ opacity: 0.7 }}>{timeText}</div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -640,8 +660,6 @@ const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  const { getUserById } = useData();
-
   const handleSenderProfileClick = (e) => {
     e.stopPropagation();
     const senderId = msg.senderId || msg.sender?.id || (msg.from !== 'me' ? msg.from : null);
@@ -705,15 +723,12 @@ const MessageBubble = memo(function MessageBubble({
           
           {innerContent}
 
-          {isMe && isLatestMessage && (
+          {isMe && (
             <div className={`${styles.msgStatusLabel} ${msg.status === 'failed' ? styles.msgStatusLabelFailed : ''}`}>
-              {msg.status === 'sending' && <span>Sending</span>}
-              {(msg.status === 'sent' || msg.status === 'delivered') && <span>Sent</span>}
-              {(!msg.status && msg.status !== 'sending' && msg.status !== 'read' && msg.status !== 'seen' && msg.status !== 'failed') && <span>Sent</span>}
-              {(msg.status === 'read' || msg.status === 'seen') && <span>Seen</span>}
+              {/* Failed status is always shown — never hidden even if not the latest message */}
               {msg.status === 'failed' && (
-                <span>
-                  Failed to send
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <span>Not delivered</span>
                   {onRetry && (
                     <button
                       type="button"
@@ -725,6 +740,14 @@ const MessageBubble = memo(function MessageBubble({
                   )}
                 </span>
               )}
+              {/* Normal delivery status: only shown on the latest message */}
+              {msg.status !== 'failed' && isLatestMessage && (() => {
+                const s = msg.status;
+                if (s === 'sending') return <span>Sending…</span>;
+                if (s === 'read' || s === 'seen') return <span>Seen</span>;
+                // 'sent', 'delivered', or any unrecognised status → show 'Sent'
+                return <span>Sent</span>;
+              })()}
             </div>
           )}
         </div>

@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/hooks/useData';
 import { useTypingIndicator } from './useTypingIndicator';
-import { removeMessageFromCache } from '../utils/cacheUtils';
+import { removeMessageFromCache, updateMessageInCache, updateConversationPreview } from '../utils/cacheUtils';
 import { messagesApi } from '@shared/api/apiClient';
 import { toast } from 'sonner';
 
@@ -43,26 +43,56 @@ export function useChatAreaState(conversation) {
 
   const handleUnsend = useCallback(async () => {
     if (!unsendConfirmMsg) return;
+    const targetMsgId = unsendConfirmMsg.id;
+    const convIds = Array.from(
+      new Set([conversation?.id, conversation?.publicId, conversation?.internalId].filter(Boolean))
+    );
+    setUnsendConfirmMsg(null);
+
+    const unsentPatch = {
+      state: 'UNSENT',
+      isUnsent: true,
+      text: 'This message was unsent',
+      payload: { text: 'This message was unsent' },
+      mediaUrl: null,
+      mediaType: null,
+      inviteData: null,
+      replyTo: null,
+      decryptedText: null,
+      isDecrypting: false,
+      decryptError: false,
+    };
+
+    // Instant Optimistic Cache Update (<1ms UX feedback) across all candidate conversation keys
+    convIds.forEach((cId) => {
+      updateMessageInCache(queryClient, cId, targetMsgId, unsentPatch);
+      updateConversationPreview(queryClient, cId, 'This message was unsent');
+    });
+
     try {
-      await messagesApi.unsendMessage(unsendConfirmMsg.id);
-      // Remove from cache immediately so UI updates without refresh
-      removeMessageFromCache(queryClient, conversation?.id, unsendConfirmMsg.id);
+      await messagesApi.unsendMessage(targetMsgId);
     } catch {
       toast.error('Could not unsend');
-    } finally {
-      setUnsendConfirmMsg(null);
+      convIds.forEach((cId) => {
+        queryClient.invalidateQueries({ queryKey: ['messages', cId] });
+      });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
     }
-  }, [unsendConfirmMsg, queryClient, conversation?.id]);
+  }, [unsendConfirmMsg, queryClient, conversation]);
 
   const handleDeleteForMe = useCallback(async (msg) => {
     try {
       await messagesApi.deleteMessageForMe(msg.id);
-      // Properly remove from the paged cache structure
-      removeMessageFromCache(queryClient, conversation?.id, msg.id);
+      const convIds = Array.from(
+        new Set([conversation?.id, conversation?.publicId, conversation?.internalId].filter(Boolean))
+      );
+      convIds.forEach((cId) => {
+        removeMessageFromCache(queryClient, cId, msg.id);
+      });
     } catch {
       toast.error('Could not delete');
     }
-  }, [queryClient, conversation?.id]);
+  }, [queryClient, conversation]);
 
   const openContextMenu = useCallback((e, msg) => {
     setContextMenuState({ msg, x: e.clientX, y: e.clientY });

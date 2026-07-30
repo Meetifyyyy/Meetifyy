@@ -108,7 +108,7 @@ export default function ChatAreaLayout({
           <div className={styles.loadingState}>Loading messages…</div>
         ) : (
           <ChatMessageList
-            key={conversation?.id || conversation?.publicId || 'chat-list'}
+            key={conversation?.internalId || conversation?.publicId || conversation?.id || 'chat-list'}
             messages={messages}
             conversation={conversation}
             currentUser={currentUser}
@@ -156,8 +156,9 @@ export default function ChatAreaLayout({
       {unsendConfirmMsg && (
         <ConfirmModal
           title="Unsend message?"
-          description="This will remove the message for everyone."
-          confirmLabel="Unsend"
+          desc="This will remove the message for everyone."
+          confirmText="Unsend"
+          visible={Boolean(unsendConfirmMsg)}
           onConfirm={handleUnsend}
           onCancel={() => setUnsendConfirmMsg(null)}
           isDestructive

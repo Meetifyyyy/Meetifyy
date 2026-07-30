@@ -117,12 +117,15 @@ export default function ChatMessageList({
   const prevConvIdRef = useRef(conversation?.id);
   const prevMessagesCountRef = useRef(messages?.length || 0);
   const prevFirstMsgIdRef = useRef(messages?.[0]?.id);
+  const prevScrollHeightRef = useRef(0);
 
   // Post-render evaluation: mark seen with debouncing to prevent excessive API calls
   useEffect(() => {
     if (!isLoading && !error && messages && messages.length > 0 && onMarkSeen) {
       const timer = setTimeout(() => {
-        const isNearBottom = bodyRef.current ? bodyRef.current.scrollTop < 150 : true;
+        const isNearBottom = bodyRef.current
+          ? (bodyRef.current.scrollHeight - bodyRef.current.scrollTop - bodyRef.current.clientHeight) < 150
+          : true;
         onMarkSeen(isNearBottom);
       }, 200);
       return () => clearTimeout(timer);
@@ -160,17 +163,17 @@ export default function ChatMessageList({
       return items;
     }
 
-    if (conversation?.isInstantMatch) {
-      items.push({
-        type: 'instant_match_banner',
-        id: 'item_instant_match_banner'
-      });
-    }
-
     if (hasMore) {
       items.push({
         type: 'load_more',
         id: 'item_load_more'
+      });
+    }
+
+    if (conversation?.isInstantMatch) {
+      items.push({
+        type: 'instant_match_banner',
+        id: 'item_instant_match_banner'
       });
     }
 
@@ -193,7 +196,7 @@ export default function ChatMessageList({
       } else {
         lastSystemText = null;
       }
-      const keyId = msg.clientId || msg.tempId || msg.id || `temp_idx_${idx}`;
+      const keyId = msg.id || msg.clientId || msg.tempId || `temp_idx_${idx}`;
       if (seenMsgIds.has(keyId)) {
         return false;
       }
@@ -207,7 +210,7 @@ export default function ChatMessageList({
         const t = new Date(d).getTime();
         if (!isNaN(t)) return t;
       }
-      return 0;
+      return Date.now();
     };
 
     // Avoid defensive array copy and sort overhead if messages are already ordered by timestamp
@@ -223,7 +226,7 @@ export default function ChatMessageList({
     let lastDateGroup = null;
     sortedMessages.forEach((msg, i) => {
       const dateGroup = getMessageDateGroupMemoized(msg);
-      const stableKey = msg.clientId || msg.tempId || msg.id || `idx_${i}`;
+      const stableKey = msg.id || msg.clientId || msg.tempId || `idx_${i}`;
       if (dateGroup !== lastDateGroup) {
         items.push({
           type: 'date_separator',
@@ -248,8 +251,7 @@ export default function ChatMessageList({
       });
     }
 
-    // REVERSE the array for Inverted Architecture
-    return items.reverse();
+    return items;
   }, [messages, conversation?.groupUpdatesActive, conversation?.isInstantMatch, hasMore, isTyping]);
 
   const rowVirtualizer = useVirtualizer({
@@ -285,54 +287,57 @@ export default function ChatMessageList({
       prevFirstMsgIdRef.current = firstMsgId;
       prevMessagesCountRef.current = currentCount;
       
-      // In inverted layout, scrollTop 0 is visually the bottom.
-      bodyRef.current.scrollTop = 0;
+      requestAnimationFrame(() => {
+        if (bodyRef.current) {
+          bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+          prevScrollHeightRef.current = bodyRef.current.scrollHeight;
+        }
+      });
       return;
     }
 
     const isPrepend = firstMsgId !== prevFirstMsgId && currentCount > prevCount;
 
     // SCENARIO 2: Prepend (Loading older history)
-    // Thanks to inverted architecture, we do absolutely nothing. 
-    
-    // SCENARIO 3: Append (New message sent or received)
-    if (!isPrepend && currentCount > prevCount) {
+    if (isPrepend) {
+      requestAnimationFrame(() => {
+        if (bodyRef.current) {
+          const newScrollHeight = bodyRef.current.scrollHeight;
+          const diff = newScrollHeight - prevScrollHeightRef.current;
+          bodyRef.current.scrollTop += diff;
+          prevScrollHeightRef.current = newScrollHeight;
+        }
+      });
+    } else if (currentCount > prevCount) {
+      // SCENARIO 3: Append (New message sent or received)
       const lastMsg = messages[messages.length - 1];
       const isFromMe = lastMsg?.from === 'me' || String(lastMsg?.senderId) === String(currentUser?.id);
-      const isNearBottom = bodyRef.current.scrollTop < 150;
+      const isNearBottom = (bodyRef.current.scrollHeight - bodyRef.current.scrollTop - bodyRef.current.clientHeight) < 150;
 
       if (isFromMe || isNearBottom) {
-        bodyRef.current.scrollTop = 0;
+        requestAnimationFrame(() => {
+          if (bodyRef.current) {
+            bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+            prevScrollHeightRef.current = bodyRef.current.scrollHeight;
+          }
+        });
       }
     }
 
     prevFirstMsgIdRef.current = firstMsgId;
     prevMessagesCountRef.current = currentCount;
+    if (bodyRef.current) {
+      prevScrollHeightRef.current = bodyRef.current.scrollHeight;
+    }
   }, [messages, conversation?.id, currentUser?.id, replyingTo]);
-
-  // Fix inverted scroll wheel on PC/Windows
-  useEffect(() => {
-    const el = bodyRef.current;
-    if (!el) return;
-
-    const handleWheel = (e) => {
-      if (e.deltaY !== 0) {
-        e.preventDefault();
-        el.scrollTop -= e.deltaY;
-      }
-    };
-    
-    el.addEventListener('wheel', handleWheel, { passive: false });
-    return () => el.removeEventListener('wheel', handleWheel);
-  }, []);
 
   const handleScroll = () => {
     if (!bodyRef.current) return;
     
     if (!hasMore || isLoadingMore || isLoading) return;
     
-    // In inverted layout, scrolling "up" towards older messages means scrollTop approaches max scroll
-    const isNearTop = bodyRef.current.scrollHeight - bodyRef.current.scrollTop - bodyRef.current.clientHeight < 350;
+    // Scrolling up towards older messages
+    const isNearTop = bodyRef.current.scrollTop < 350;
     
     if (isNearTop) {
       if (onLoadMore) onLoadMore();
@@ -377,8 +382,7 @@ export default function ChatMessageList({
                   left: 0,
                   width: '100%',
                   paddingBottom: '0.5rem',
-                  // CRITICAL: Combine TanStack translateY with inverted scaleY
-                  transform: `translateY(${virtualItem.start}px) scaleY(-1)`,
+                  transform: `translateY(${virtualItem.start}px)`,
                 }}
               >
                 {item.type === 'load_more' && (
@@ -469,17 +473,17 @@ export default function ChatMessageList({
       )}
 
       {!isLoading && !error && itemsToRender.length === 0 && (
-        <div className={`${styles.msgEmptyState} ${styles.msgInvertedItem}`}>No messages in this chat.</div>
+        <div className={styles.msgEmptyState}>No messages in this chat.</div>
       )}
 
       {isLoading && (
-        <div className={styles.msgInvertedItem} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '2rem', flex: 1 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '2rem', flex: 1 }}>
           <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '3px', borderTopColor: 'var(--color-primary)' }}></div>
         </div>
       )}
 
       {!isLoading && error && (
-        <div className={styles.msgInvertedItem}>
+        <div>
           <ErrorState onRetry={retry} />
         </div>
       )}
