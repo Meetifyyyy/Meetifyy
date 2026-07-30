@@ -43,6 +43,39 @@
   display: block;
 }
 
+.imgHidden {
+  opacity: 0;
+}
+
+.imgVisible {
+  opacity: 1;
+  transition: opacity 0.25s ease;
+}
+
+.avatarSkeleton {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    var(--color-border-light, #e2e8f0) 25%,
+    var(--color-bg-secondary, #f8fafc) 50%,
+    var(--color-border-light, #e2e8f0) 75%
+  );
+  background-size: 200% 100%;
+  animation: avatarShimmer 1.5s infinite linear;
+  z-index: 1;
+}
+
+@keyframes avatarShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 .avatarIcon {
   width: 60%;
   height: 60%;

@@ -9,6 +9,7 @@ import styles from '../SignupFlow.module.css';
 import defaultAvatarImg from '../../../../assets/images/default_avatar.webp';
 
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import { normalizeDicebearUrl } from '@shared/api/apiClient';
 
 const presetAvatars = [
   'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix',
@@ -28,8 +29,8 @@ export default function Step5Avatar() {
   const [isUploading, setIsUploading] = useState(false);
 
   const getProcessedAvatarUrl = (url) => {
-    if (!url || !url.startsWith('https://api.dicebear.com/')) return url;
-    return url.split('&backgroundColor=')[0];
+    if (!url || !url.includes('api.dicebear.com/')) return url;
+    return normalizeDicebearUrl(url);
   };
 
   const handleFileChange = async (e) => {

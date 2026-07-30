@@ -7,6 +7,7 @@ export class PrismaService extends PrismaClient<
   'query'
 > implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('DATABASE');
+  private keepAliveTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     super({
@@ -41,7 +42,7 @@ export class PrismaService extends PrismaClient<
           if (isConnError && retries > 0) {
             retries--;
             this.logger.warn(`Database transient connection issue (${error.code || 'network'}). Retrying... (${retries} attempts remaining)`);
-            await new Promise((res) => setTimeout(res, 300));
+            await new Promise((res) => setTimeout(res, 200));
             continue;
           }
           throw error;
@@ -67,6 +68,13 @@ export class PrismaService extends PrismaClient<
       // Warm up connection pool on boot to prevent first-query cold start delays
       await this.$queryRawUnsafe('SELECT 1').catch(() => {});
       this.logger.log('Connected and pool warmed up');
+
+      // 25-second keepalive ping to prevent PgBouncer transaction pooler idle connection drops (P1001)
+      this.keepAliveTimer = setInterval(async () => {
+        try {
+          await this.$queryRawUnsafe('SELECT 1');
+        } catch {}
+      }, 25000);
     } catch (error) {
       this.logger.error('Could not connect to database on startup.');
       this.logger.debug(error);
@@ -74,6 +82,10 @@ export class PrismaService extends PrismaClient<
   }
 
   async onModuleDestroy() {
+    if (this.keepAliveTimer) {
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
+    }
     await this.$disconnect();
   }
 }

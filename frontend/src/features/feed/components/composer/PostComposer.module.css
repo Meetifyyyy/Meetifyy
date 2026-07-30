@@ -11,12 +11,12 @@
   flex-direction: column;
   align-items: stretch;
   gap: 0;
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.2s ease;
+  box-shadow: none;
+  transition: border-color 0.2s ease;
 }
 
 .postComposer:focus-within {
-  box-shadow: var(--shadow-md);
+  box-shadow: none;
   border-color: var(--color-border);
 }
 

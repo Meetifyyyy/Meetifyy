@@ -120,11 +120,9 @@
   gap: 12px;
 }
 
-.avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  object-fit: cover;
+.avatarWrapper {
+  position: relative;
+  flex-shrink: 0;
 }
 
 .contactName {

@@ -151,6 +151,44 @@ export function useCampusActivities() {
 }
 
 /**
+ * Saved/bookmarked activities.
+ */
+export function useSavedActivitiesQuery() {
+  const { isLoggedIn } = useAuth();
+  const query = useQuery({
+    queryKey: CREW_KEYS.bookmarks,
+    queryFn: () => activitiesApi.getBookmarks(),
+    enabled: isLoggedIn,
+    staleTime: 2 * 60 * 1000,
+    select: (data) => data?.activities ?? data ?? [],
+  });
+
+  return {
+    savedActivitiesData: query.data || [],
+    isLoading: query.isLoading,
+  };
+}
+
+/**
+ * User's joined & created activities (both ongoing and past).
+ */
+export function useMyActivitiesQuery() {
+  const { isLoggedIn } = useAuth();
+  const query = useQuery({
+    queryKey: ['activities', 'me'],
+    queryFn: () => activitiesApi.getMyActivities(),
+    enabled: isLoggedIn,
+    staleTime: 2 * 60 * 1000,
+    select: (data) => data?.activities ?? data ?? [],
+  });
+
+  return {
+    myActivitiesData: query.data || [],
+    isLoading: query.isLoading,
+  };
+}
+
+/**
  * Single activity by ID.
  */
 export function useActivityById(id) {

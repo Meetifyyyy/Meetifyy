@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import styles from './ConfirmModal.module.css';
 
-export default function ConfirmModal({ title, desc, visible, onCancel, onConfirm, confirmText = 'Confirm' }) {
+export default function ConfirmModal({ title, desc, visible, onCancel, onConfirm, cancelText = 'Cancel', confirmText = 'Confirm' }) {
   const overlayRef = useRef(null);
   useOverlayBack(visible, onCancel);
 
@@ -38,7 +38,7 @@ export default function ConfirmModal({ title, desc, visible, onCancel, onConfirm
         <div className={styles.confirmTitle}>{title}</div>
         <div className={styles.confirmDesc}>{desc}</div>
         <div className={styles.confirmActions}>
-          <button className={`${styles.confirmBtn} ${styles.confirmBtnCancel}`} onClick={handleClose}>Cancel</button>
+          <button className={`${styles.confirmBtn} ${styles.confirmBtnCancel}`} onClick={handleClose}>{cancelText}</button>
           <button className={`${styles.confirmBtn} ${styles.confirmBtnLeave}`} onClick={handleConfirm}>{confirmText}</button>
         </div>
       </div>

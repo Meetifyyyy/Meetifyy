@@ -587,6 +587,13 @@
   gap: 0.25rem;
 }
 
+.emptyCommunities {
+  padding: 0.5rem 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
 .communityItem {
   display: flex;
   align-items: center;

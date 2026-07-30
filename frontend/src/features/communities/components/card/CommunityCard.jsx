@@ -1,5 +1,5 @@
 import { useState, useEffect, memo } from 'react';
-
+import styles from './CommunityCard.module.css';
 import { useQueryClient } from '@tanstack/react-query';
 import { isImageUrl } from '@shared/utils/avatar';
 import { useData } from '@shared/hooks/useData';
@@ -12,8 +12,14 @@ function CommunityCard({ comm, onClick }) {
   const queryClient = useQueryClient();
   const [imgError, setImgError] = useState(false);
   
-  // Real check: is currentUser in comm.members?
-  const isJoined = comm.isMember !== undefined ? comm.isMember : (comm.members?.some(m => m.userId === currentUser?.id) || currentUser?.communities?.includes(comm.name));
+  // Real check: is currentUser in comm.members or owner?
+  const isJoined = (comm.ownerId && currentUser?.id && comm.ownerId === currentUser.id) ||
+    comm.userRole === 'OWNER' ||
+    comm.userRole === 'MODERATOR' ||
+    comm.userRole === 'MEMBER' ||
+    (comm.isJoined !== undefined ? Boolean(comm.isJoined) : (comm.isMember !== undefined ? Boolean(comm.isMember) : false)) ||
+    (comm.members?.some(m => (m.userId || m.id || m.user?.id) === currentUser?.id)) ||
+    currentUser?.communities?.includes(comm.name);
   const entityKey = `joinCommunity:${comm.id}`;
   const displayJoined = toggleRegistry.getLatestIntent(entityKey, isJoined);
 
@@ -50,7 +56,13 @@ function CommunityCard({ comm, onClick }) {
         </button>
       </div>
       <h3 className={styles.cardTitle}>{comm.name}</h3>
-      <p className={styles.cardDesc}>{comm.description || comm.desc}</p>
+      <p className={styles.cardDesc}>
+        {comm.description && comm.description !== comm.name
+          ? comm.description
+          : (comm.desc && comm.desc !== comm.name
+            ? comm.desc
+            : `${comm.memberCount || comm.membersCount || comm.members || 1} ${(comm.memberCount || comm.membersCount || comm.members || 1) === 1 ? 'member' : 'members'}`)}
+      </p>
     </div>
   );
 }

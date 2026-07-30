@@ -72,18 +72,20 @@
 .userItem {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.35rem 0;
-  border-radius: var(--radius-md);
+  gap: 0.85rem;
+  padding: 0.4rem 0;
 }
 
 .userAvatar {  composes: ui-avatar from global;
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   background: var(--color-bg-alt);
   color: var(--color-text-muted);
   font-weight: 700;
   font-size: 1rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  overflow: hidden;
 }
 
 .avatarImg {
@@ -95,16 +97,27 @@
 .userInfo {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.userNameRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
 }
 
 .userName {
+  font-family: var(--font-family-sans);
   font-weight: 600;
   color: var(--color-text-main);
-  font-size: 0.9rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
+  font-size: 0.92rem;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .userName:hover {
@@ -112,22 +125,51 @@
 }
 
 .userRole {
+  font-family: var(--font-family-sans);
   color: var(--color-text-muted);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  line-height: 1.2;
 }
 
 .userUsername {
+  font-family: var(--font-family-sans);
   color: var(--color-text-muted);
-  font-size: 0.75rem;
-  margin-top: 0.1rem;
-  opacity: 0.75;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  opacity: 0.8;
 }
 
 .userBadge {
-  font-size: 0.75rem;
-  background: rgba(var(--color-primary-rgb), 0.15);
-  color: var(--color-primary);
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
+  font-family: var(--font-family-sans);
+  font-size: 0.7rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 100px;
   font-weight: 600;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 85vh !important;
+    max-height: 85vh !important;
+    border-radius: 24px 24px 0 0 !important;
+    margin: 0 !important;
+    animation: slideUpMobile 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+@keyframes slideUpMobile {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }

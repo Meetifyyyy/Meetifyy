@@ -144,6 +144,37 @@ export function useGlobalSocketSync() {
           break;
         }
 
+        case 'community.created':
+        case 'community.updated':
+        case 'community.deleted':
+        case 'community.memberJoined':
+        case 'community.memberLeft':
+        case 'community.roleUpdated': {
+          const commId = event.data?.communityId || event.communityId;
+          queryClient.invalidateQueries({ queryKey: ['communities'] });
+          queryClient.invalidateQueries({ queryKey: ['campus-communities'] });
+          queryClient.invalidateQueries({ queryKey: ['feed'] });
+          queryClient.invalidateQueries({ queryKey: ['posts'] });
+          if (commId) {
+            queryClient.setQueryData(['community', commId], null);
+            queryClient.invalidateQueries({ queryKey: ['community', commId] });
+            queryClient.invalidateQueries({ queryKey: ['community-posts', commId] });
+          }
+          break;
+        }
+
+        case 'post.created':
+        case 'post.deleted': {
+          const commId = event.data?.communityId || event.communityId;
+          queryClient.invalidateQueries({ queryKey: ['posts'] });
+          queryClient.invalidateQueries({ queryKey: ['feed'] });
+          if (commId) {
+            queryClient.invalidateQueries({ queryKey: ['community', commId] });
+            queryClient.invalidateQueries({ queryKey: ['community-posts', commId] });
+          }
+          break;
+        }
+
         case 'invitation:new':
         case 'invitation:updated': {
           queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
@@ -158,6 +189,14 @@ export function useGlobalSocketSync() {
       }
     };
 
+    const handleCommunityCountEvent = (data) => {
+      const commId = data?.communityId;
+      queryClient.invalidateQueries({ queryKey: ['communities'] });
+      if (commId) {
+        queryClient.invalidateQueries({ queryKey: ['community', commId] });
+      }
+    };
+
     const handleDirectInvitationEvent = () => {
       queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
@@ -166,11 +205,15 @@ export function useGlobalSocketSync() {
     };
 
     socket.on('domainEvent', handleDomainEvent);
+    socket.on('community:memberCount', handleCommunityCountEvent);
+    socket.on('community:updated', handleCommunityCountEvent);
     socket.on('invitation:new', handleDirectInvitationEvent);
     socket.on('invitation:updated', handleDirectInvitationEvent);
 
     return () => {
       socket.off('domainEvent', handleDomainEvent);
+      socket.off('community:memberCount', handleCommunityCountEvent);
+      socket.off('community:updated', handleCommunityCountEvent);
       socket.off('invitation:new', handleDirectInvitationEvent);
       socket.off('invitation:updated', handleDirectInvitationEvent);
     };

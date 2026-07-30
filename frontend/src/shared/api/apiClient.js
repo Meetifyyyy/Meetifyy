@@ -56,10 +56,41 @@ export const getBackendUrl = () => {
   return 'http://127.0.0.1:4000';
 };
 
+const PASTEL_BG_COLORS = ['b6e3f4', 'c084fc', 'fde047', '86efac', 'fca5a5', 'fdba74', 'a5f3fc', 'f472b6'];
+
+export const getPastelBgColor = (seed = '') => {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+    hash |= 0;
+  }
+  return PASTEL_BG_COLORS[Math.abs(hash) % PASTEL_BG_COLORS.length];
+};
+
+export const normalizeDicebearUrl = (url) => {
+  if (!url || typeof url !== 'string') return url;
+  if (!url.includes('api.dicebear.com/')) return url;
+
+  const bg = 'b6e3f4';
+
+  let cleanUrl = url;
+  if (cleanUrl.includes('backgroundColor=')) {
+    cleanUrl = cleanUrl.replace(/backgroundColor=[^&]+/g, `backgroundColor=${bg}`);
+  } else {
+    const joinChar = cleanUrl.includes('?') ? '&' : '?';
+    cleanUrl = `${cleanUrl}${joinChar}backgroundColor=${bg}`;
+  }
+  return cleanUrl;
+};
+
 export const getMediaUrl = (pathOrUrl) => {
   if (!pathOrUrl || typeof pathOrUrl !== 'string') return '';
 
   let finalUrl = pathOrUrl;
+
+  if (finalUrl.includes('api.dicebear.com/')) {
+    finalUrl = normalizeDicebearUrl(finalUrl);
+  }
 
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
     const host = window.location.hostname;
@@ -326,9 +357,10 @@ export const postsApi = {
    * @param {number} limit - Number of posts per page (default 10)
    * @param {string|undefined} cursor - ID of last seen post for pagination
    */
-  getFeed: (limit = 10, cursor) => {
+  getFeed: (limit = 10, cursor, communityId) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (cursor) params.set('cursor', cursor);
+    if (communityId) params.set('communityId', communityId);
     return apiClient.get(`/api/posts/feed?${params.toString()}`);
   },
 
@@ -386,16 +418,32 @@ export const linkPreviewApi = {
   },
 };
 
+// Maps DB field names → frontend field names used throughout the UI.
+// avatarKey → avatar, coverKey → coverImage.
+const normalizeCommunity = (c) => {
+  if (!c) return c;
+  return {
+    ...c,
+    avatar: c.avatar ?? c.avatarKey ?? null,
+    coverImage: c.coverImage ?? c.coverKey ?? null,
+  };
+};
+
 export const communitiesApi = {
-  getAll: () => apiClient.get('/api/communities'),
-  getCampusCommunities: () => apiClient.get('/api/communities/campus'),
-  getById: (id) => apiClient.get(`/api/communities/${id}`),
-  create: (data) => apiClient.post('/api/communities', data),
+  getAll: () => apiClient.get('/api/communities').then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list)),
+  getCampusCommunities: () => apiClient.get('/api/communities/campus').then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list)),
+  getById: (id) => apiClient.get(`/api/communities/${id}`).then(normalizeCommunity),
+  create: (data) => apiClient.post('/api/communities', data).then(normalizeCommunity),
   join: (id, { signal } = {}) => apiClient.post(`/api/communities/${id}/join`, undefined, { signal }),
   leave: (id, { signal } = {}) => apiClient.post(`/api/communities/${id}/leave`, undefined, { signal }),
   delete: (id) => apiClient.delete(`/api/communities/${id}`),
-  updateGroupInfo: (id, data) => apiClient.patch(`/api/communities/${id}`, data),
+  updateGroupInfo: (id, data) => apiClient.patch(`/api/communities/${id}`, data).then(normalizeCommunity),
   removeGroupMember: (id, memberId) => apiClient.delete(`/api/communities/${id}/members/${memberId}`),
+  getPendingRequests: (id) => apiClient.get(`/api/communities/${id}/requests`),
+  getJoinRequests: (id) => apiClient.get(`/api/communities/${id}/requests`),
+  acceptJoinRequest: (id, requestId) => apiClient.post(`/api/communities/${id}/requests/${requestId}/accept`),
+  approveJoinRequest: (id, requestId) => apiClient.post(`/api/communities/${id}/requests/${requestId}/accept`),
+  declineJoinRequest: (id, requestId) => apiClient.post(`/api/communities/${id}/requests/${requestId}/decline`),
 };
 
 export const activitiesApi = {
@@ -409,6 +457,7 @@ export const activitiesApi = {
     if (cursor) params.set('cursor', cursor);
     return apiClient.get(`/api/activities/campus?${params.toString()}`);
   },
+  getMyActivities: () => apiClient.get('/api/activities/me'),
   getById: (id) => apiClient.get(`/api/activities/${id}`),
   create: (data) => apiClient.post('/api/activities', data),
   join: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/join`, undefined, { signal }),
@@ -426,6 +475,11 @@ export const activitiesApi = {
   bookmark: (id) => apiClient.post(`/api/activities/${id}/bookmark`),
   unbookmark: (id) => apiClient.delete(`/api/activities/${id}/bookmark`),
   getBookmarks: (limit = 20, cursor) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.append('cursor', cursor);
+    return apiClient.get(`/api/activities/bookmarks?${params.toString()}`);
+  },
+  getSavedActivities: (limit = 20, cursor) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (cursor) params.append('cursor', cursor);
     return apiClient.get(`/api/activities/bookmarks?${params.toString()}`);

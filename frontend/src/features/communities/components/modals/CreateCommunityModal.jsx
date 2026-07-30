@@ -213,43 +213,48 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
   const getCroppedAvatarFile = () => {
     return new Promise((resolve) => {
       if (!avatarPreview) {
-        resolve(null);
+        resolve(avatarFile || null);
         return;
       }
 
       const img = new Image();
       img.src = avatarPreview;
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 256;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(null);
-          return;
-        }
-
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, 256, 256);
-
-        const scaleFactor = 256 / 150;
-        const targetW = baseDimensions.w * cropState.zoom * scaleFactor;
-        const targetH = baseDimensions.h * cropState.zoom * scaleFactor;
-        const targetX = 128 + cropState.x * scaleFactor - targetW / 2;
-        const targetY = 128 + cropState.y * scaleFactor - targetH / 2;
-
-        ctx.drawImage(img, targetX, targetY, targetW, targetH);
-        canvas.toBlob((blob) => {
-          if (!blob) {
-            resolve(null);
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 256;
+          canvas.height = 256;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(avatarFile || null);
             return;
           }
-          const file = new File([blob], 'community-avatar.jpg', { type: 'image/jpeg' });
-          resolve(file);
-        }, 'image/jpeg', 0.9);
+
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, 256, 256);
+
+          const scaleFactor = 256 / 150;
+          const targetW = baseDimensions.w * cropState.zoom * scaleFactor;
+          const targetH = baseDimensions.h * cropState.zoom * scaleFactor;
+          const targetX = 128 + cropState.x * scaleFactor - targetW / 2;
+          const targetY = 128 + cropState.y * scaleFactor - targetH / 2;
+
+          ctx.drawImage(img, targetX, targetY, targetW, targetH);
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              resolve(avatarFile || null);
+              return;
+            }
+            const file = new File([blob], 'community-avatar.jpg', { type: 'image/jpeg' });
+            resolve(file);
+          }, 'image/jpeg', 0.9);
+        } catch (e) {
+          console.warn('Canvas cropping fallback:', e);
+          resolve(avatarFile || null);
+        }
       };
       img.onerror = () => {
-        resolve(null);
+        resolve(avatarFile || null);
       };
     });
   };
@@ -275,7 +280,9 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
 
       const id = await addCommunity({
         name: name.trim(),
+        description: desc.trim(),
         desc: desc.trim(),
+        avatarKey: finalAvatar,
         avatar: finalAvatar,
         color: gradient,
         categoryLabel: `${selectedCat.icon} ${selectedCat.label}`,
@@ -285,7 +292,6 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
         isCampusCommunity: isCampusCommunity || privacy === 'campus'
       });
 
-      showToast('Community created!');
       onCreated(id);
     } catch (err) {
       showToast('Failed to create community');
@@ -419,13 +425,11 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
                 {!avatarPreview ? (
                   <div className={styles.avatarSection}>
                     <div
-                      className={styles.avatarCropperContainer}
+                      className={styles.letterAvatar}
                       style={{ background: gradient, cursor: 'pointer' }}
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      <span className={styles.letterAvatar} style={{ background: 'transparent' }}>
-                        {name.trim() ? name.trim().charAt(0).toUpperCase() : '?'}
-                      </span>
+                      {name.trim() ? name.trim().charAt(0).toUpperCase() : '?'}
                     </div>
                     <button type="button" className={styles.uploadTriggerButton} onClick={() => fileInputRef.current?.click()}>
                       <svg className={styles.uploadTriggerIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -546,39 +550,50 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
 
         {/* Footer Navigation */}
         <div className={styles.footer}>
-          {step > 1 ? (
-            <button type="button" onClick={() => setStep(step - 1)} className={styles.buttonBack}>
-              Back
-            </button>
-          ) : (
-            <div style={{ width: '80px' }} />
-          )}
-
-          <div className={styles.dotsProgress}>
-            {[1, 2, 3, 4].map((s) => (
-              <div key={s} className={`${styles.dot} ${step === s ? styles.dotActive : ''}`} />
-            ))}
+          <div className={styles.footerLeft}>
+            {step > 1 && (
+              <button type="button" onClick={() => setStep(step - 1)} className={styles.buttonBack}>
+                Back
+              </button>
+            )}
           </div>
 
-          {step < 4 ? (
-            <button
-              type="button"
-              onClick={handleContinue}
-              disabled={step === 1 ? !isCategoryValid : !isStep2Valid}
-              className={styles.buttonContinue}
-            >
-              Continue
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-              className={styles.buttonCreate}
-            >
-              {isSubmitting ? 'Creating...' : 'Create Community'}
-            </button>
-          )}
+          <div className={styles.footerCenter}>
+            <div className={styles.dotsProgress}>
+              {[1, 2, 3, 4].map((s) => (
+                <div key={s} className={`${styles.dot} ${step === s ? styles.dotActive : ''}`} />
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.footerRight}>
+            {step < 4 ? (
+              <button
+                type="button"
+                onClick={handleContinue}
+                disabled={step === 1 ? !isCategoryValid : !isStep2Valid}
+                className={styles.buttonContinue}
+              >
+                Continue
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className={styles.buttonCreate}
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: 'currentColor', borderTopColor: 'transparent' }} />
+                    Creating...
+                  </>
+                ) : (
+                  'Create'
+                )}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>,

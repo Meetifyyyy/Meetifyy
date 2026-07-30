@@ -40,7 +40,17 @@ export class PostsService {
     };
   }
 
-  async createPost(authorId: string, text: string, mediaKey?: string, communityId?: string) {
+  async createPost(authorId: string, text: string, mediaKey?: string, communityId?: string, poll?: any, mentions?: any[]) {
+    if (communityId) {
+      const comm = await this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: { id: true, deletedAt: true },
+      });
+      if (!comm || comm.deletedAt) {
+        throw new NotFoundException('Community not found or has been deleted');
+      }
+    }
+
     const post = await this.prisma.post.create({
       data: {
         authorId,
@@ -60,10 +70,26 @@ export class PostsService {
           },
         },
         media: true,
+        community: {
+          select: {
+            id: true,
+            name: true,
+            deletedAt: true,
+          },
+        },
       },
     });
+
+    if (poll && Array.isArray(poll.options) && poll.options.length > 0) {
+      await this.prisma.pollOption.createMany({
+        data: poll.options.map((opt: string) => ({
+          postId: post.id,
+          text: opt,
+        })),
+      });
+    }
     
-    this.domainEventService.emit('post.created', { postId: post.id, authorId });
+    this.domainEventService.emit('post.created', { postId: post.id, authorId, communityId: post.communityId || undefined, post });
     return post;
   }
 
@@ -78,12 +104,36 @@ export class PostsService {
       this.prisma.postBookmark.deleteMany({ where: { postId } }),
     ]);
 
-    this.domainEventService.emit('post.deleted', { postId });
+    this.domainEventService.emit('post.deleted', { postId, communityId: post.communityId || undefined });
 
     return { success: true };
   }
 
   async getFeed(userId: string, limit = 10, cursor?: string, communityId?: string) {
+    if (communityId) {
+      const community = await this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: { id: true, isPrivate: true, isCampusCommunity: true, collegeId: true, ownerId: true }
+      });
+      if (community) {
+        if (community.isCampusCommunity && community.collegeId) {
+          const user = userId ? await this.prisma.user.findUnique({ where: { id: userId }, select: { collegeId: true } }) : null;
+          if (!user || user.collegeId !== community.collegeId) {
+            return { posts: [], nextCursor: undefined };
+          }
+        }
+        if (community.isPrivate) {
+          const isOwner = userId && community.ownerId === userId;
+          const isMember = userId ? await this.prisma.communityMember.findUnique({
+            where: { userId_communityId: { userId, communityId } }
+          }) : null;
+          if (!isOwner && !isMember) {
+            return { posts: [], nextCursor: undefined };
+          }
+        }
+      }
+    }
+
     const excludedUserIds = userId ? await this.blocksService.getExcludedUserIds(userId) : [];
     let cursorDate: Date | undefined = undefined;
     if (cursor) {
@@ -139,8 +189,23 @@ export class PostsService {
         ELSE false END AS "isBookmarked"
       FROM "Post" p
       JOIN "User" u ON p."authorId" = u.id
+      LEFT JOIN "Community" c ON p."communityId" = c.id
       WHERE p."deletedAt" IS NULL
-        ${communityId ? Prisma.sql`AND p."communityId" = ${communityId}` : Prisma.empty}
+        AND (p."communityId" IS NULL OR c."deletedAt" IS NULL)
+        ${
+          communityId
+            ? Prisma.sql`AND p."communityId" = ${communityId}`
+            : userId
+            ? Prisma.sql`AND (
+                p."communityId" IS NULL 
+                OR EXISTS (
+                  SELECT 1 FROM "CommunityMember" cm 
+                  WHERE cm."communityId" = p."communityId" 
+                  AND cm."userId" = ${userId}
+                )
+              )`
+            : Prisma.sql`AND p."communityId" IS NULL`
+        }
         ${cursorDate ? Prisma.sql`AND p."createdAt" < ${cursorDate}` : Prisma.empty}
         ${excludedUserIds.length > 0 ? Prisma.sql`AND p."authorId" NOT IN (${Prisma.join(excludedUserIds)})` : Prisma.empty}
       ORDER BY p."createdAt" DESC
@@ -216,6 +281,7 @@ export class PostsService {
       where: {
         deletedAt: null,
         authorId: targetAuthor.id,
+        communityId: null, // STRICTLY ONLY PROFILE POSTS — NO COMMUNITY POSTS
         ...(cursorDate ? { createdAt: { lt: cursorDate } } : {})
       },
       orderBy: { createdAt: 'desc' },
@@ -553,6 +619,7 @@ export class PostsService {
         where: { id: postId, deletedAt: null },
         include: {
           author: { select: { id: true, username: true, displayName: true, avatar: true } },
+          community: { select: { id: true, name: true, deletedAt: true } },
         },
       }),
       this.prisma.media.findMany({
@@ -572,7 +639,14 @@ export class PostsService {
       userId ? this.prisma.postBookmark.findUnique({ where: { userId_postId: { userId, postId } } }) : Promise.resolve(null),
     ]);
 
-    if (!post || (excludedUserIds.length > 0 && excludedUserIds.includes(post.authorId))) throw new NotFoundException('Post not found');
+    if (
+      !post || 
+      post.deletedAt || 
+      (post.community && post.community.deletedAt) || 
+      (excludedUserIds.length > 0 && excludedUserIds.includes(post.authorId))
+    ) {
+      throw new NotFoundException('Post not found');
+    }
 
     // Only fetch likes for non-deleted comments
     const liveComments = rawComments.filter(c => !c.isDeleted);

@@ -248,3 +248,36 @@
     flex-shrink: 0 !important;
   }
 }
+
+.activityCalendarBadge {
+  position: absolute;
+  bottom: -4px;
+  right: -8px;
+  width: 23px;
+  height: 24px;
+  border-radius: 6px;
+  background: #000000 !important;
+  color: #ffffff !important;
+  border: 3px solid var(--color-bg-white, #ffffff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4;
+  box-sizing: border-box;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.15s ease;
+}
+
+.activityCalendarBadge svg {
+  stroke: #ffffff !important;
+  color: #ffffff !important;
+}
+
+:global([data-theme="dark"]) .activityCalendarBadge {
+  background: #ffffff !important;
+  color: #000000 !important;
+}
+
+:global([data-theme="dark"]) .activityCalendarBadge svg {
+  stroke: #000000 !important;
+  color: #000000 !important;
+}

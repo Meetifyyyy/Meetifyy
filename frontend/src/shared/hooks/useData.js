@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, activitiesApi, usersApi, messagesApi, postsApi, groupApi, dmApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
@@ -11,7 +11,7 @@ import { E2EEManager } from '../lib/signal/E2EEManager';
 // Feature-scoped hooks — useData delegates to these instead of declaring its own queries.
 // This makes useData a thin compatibility adapter while the real caching logic lives in
 // the feature hooks with proper staleTime, IndexedDB hydration, and invalidation policies.
-import { useCommunities, useCampusCommunities } from './useCommunities';
+import { useCommunities } from './useCommunities';
 import { useActivitiesList, useCampusActivities } from './useCrew';
 import { useConversations } from './useMessages';
 import { useCampusUsers } from './useProfile';
@@ -26,13 +26,20 @@ export function useData() {
   const { currentUser } = useAuth();
   const { mutate: deleteCommentMutate } = useDeleteComment();
   const savedActivities = useSavedActivitiesStore((state) => state.savedActivities);
-  const toggleSaveActivity = useSavedActivitiesStore((state) => state.toggleSaveActivity);
+  const storeToggleSave = useSavedActivitiesStore((state) => state.toggleSaveActivity);
+  const toggleSaveActivity = useCallback(async (id) => {
+    await storeToggleSave(id);
+    queryClient.invalidateQueries({ queryKey: ['activities', 'bookmarks'] });
+  }, [storeToggleSave, queryClient]);
 
   const deleteComment = (postId, commentId) => deleteCommentMutate({ commentId, postId });
 
   // ── Delegated queries (no longer declared here) ──────────────────────────
   const { communities: rawCommunities, isLoading: isCommunitiesLoading } = useCommunities();
-  const { campusCommunities } = useCampusCommunities();
+  // campusCommunities intentionally not fetched here — useData is mounted globally by the Sidebar
+  // and firing GET /communities/campus on every page was causing duplicate requests.
+  // Call useCampusCommunities() directly in the Campus page / feature that needs it.
+  const campusCommunities = [];
   // Activities: flat list from infinite query cache
   const rawActivities = useActivitiesList();
   const { campusActivities: rawCampusActivities } = useCampusActivities();
@@ -812,6 +819,52 @@ export function useData() {
     return res?.id || null;
   };
 
+  const addPost = async (text, poll, communityId, media, mentions) => {
+    try {
+      const mediaKey = media?.url || (typeof media === 'string' ? media : undefined);
+      const newPost = await postsApi.createPost({
+        text,
+        communityId,
+        mediaKey,
+        mentions,
+        poll: poll || undefined,
+      });
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+      queryClient.invalidateQueries({ queryKey: ['feed'] });
+      queryClient.invalidateQueries({ queryKey: ['communities'] });
+      if (communityId) {
+        queryClient.invalidateQueries({ queryKey: ['community', communityId] });
+        queryClient.invalidateQueries({ queryKey: ['community-posts', communityId] });
+        queryClient.setQueryData(['community-posts', communityId], (old = []) => {
+          if (!newPost) return old;
+          const list = Array.isArray(old) ? old : (old?.posts || []);
+          if (list.some(p => p.id === newPost.id)) return old;
+          return [newPost, ...list];
+        });
+      }
+      return newPost;
+    } catch (err) {
+      showToast(err?.message || 'Failed to create post');
+      throw err;
+    }
+  };
+
+  const updateCommunity = async (id, data) => {
+    try {
+      const updated = await communitiesApi.updateGroupInfo(id, data);
+      // Seed the cache immediately so the UI reflects the change before the re-fetch lands
+      if (updated?.id) {
+        queryClient.setQueryData(['community', id], updated);
+      }
+      queryClient.invalidateQueries({ queryKey: ['communities'] });
+      queryClient.invalidateQueries({ queryKey: ['community', id] });
+      return updated;
+    } catch (err) {
+      showToast(err?.message || 'Failed to update community');
+      throw err;
+    }
+  };
+
   return {
     currentUser,
     communities: communitiesWithLookup,
@@ -828,6 +881,8 @@ export function useData() {
     joinCommunity: joinCommMutation.mutate,
     createCampusGroup,
     addCommunity,
+    addPost,
+    updateCommunity,
     sendDirectMessage,
     reactToMessage,
     startConversation,

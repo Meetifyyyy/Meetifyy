@@ -44,7 +44,7 @@ const CampusSolid = () => (
 
 import { useUnreadCounts } from '@features/messages/hooks/useUnreadCounts';
 
-export default function BottomNav() {
+export default function BottomNav({ hidden }) {
   const { smartNavigate: navigate } = useSmartNavigation();
   const location = useLocation();
   const { total: unreadMessagesCount } = useUnreadCounts();
@@ -65,10 +65,10 @@ export default function BottomNav() {
 
   const isChatOpen = location.pathname.startsWith('/messages/') && location.pathname !== '/messages/';
   const isPostOpen = location.pathname.startsWith('/post/');
-  if (isChatOpen || isPostOpen) return null;
+  const isHidden = hidden || isChatOpen || isPostOpen;
 
   return (
-    <div className={styles.bottomNav}>
+    <div className={`${styles.bottomNav} ${isHidden ? styles.hiddenNav : ''}`}>
       <button 
         className={`${styles.bottomNavItem}${isHomeActive ? ` ${styles.active}` : ''}`}
         onClick={() => handleTabClick('/home')}

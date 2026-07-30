@@ -20,16 +20,35 @@ import { useActivityById } from '@shared/hooks/useCrew';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 /* ── Helpers ───────────────────────────────────────────────── */
+const DEFAULT_COVERS = [
+  'https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=800&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?q=80&w=800&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?q=80&w=800&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1528605248644-14dd04022da1?q=80&w=800&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1551818255-e6e10975bc17?q=80&w=800&auto=format&fit=crop',
+];
+
+function getDefaultCover(idOrTitle = '') {
+  let hash = 0;
+  for (let i = 0; i < idOrTitle.length; i++) {
+    hash = (hash << 5) - hash + idOrTitle.charCodeAt(i);
+    hash |= 0;
+  }
+  const idx = Math.abs(hash) % DEFAULT_COVERS.length;
+  return DEFAULT_COVERS[idx];
+}
+
 function formatDateTime(activity) {
   if (!activity) return '';
-  const startRaw = activity.startDate || activity.date;
+  const startRaw = activity.startDate || activity.date || activity.createdAt;
   if (!startRaw) return '';
   
   const startD = new Date(startRaw);
   if (isNaN(startD.getTime())) return '';
 
   const endRaw = activity.endDate;
-  const endD = endRaw ? new Date(endRaw) : null;
+  const endD = endRaw ? new Date(endRaw) : new Date(startD.getTime() + 60 * 60 * 1000);
 
   const startDateFormatted = startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const startTimeStr = activity.time || startD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -82,25 +101,54 @@ export default function ActivityDetailPage() {
     const baseAct = rawActivity || location.state?.activity;
     if (!baseAct) return null;
 
-    const startD = baseAct.startDate ? new Date(baseAct.startDate) : null;
+    const hostUser = baseAct.creator || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user;
+    const hostId = baseAct.creatorId || hostUser?.id;
+    const hostName = hostUser?.displayName || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.displayName || 'Host';
+    const hostUsername = hostUser?.username || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.username || 'host';
+    const hostAvatar = hostUser?.avatar || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.avatar || '';
+
+    // Members with status MEMBER
+    const memberObjs = baseAct.members?.filter(m => m.status === 'MEMBER').map(m => m.user).filter(Boolean) || [];
+    
+    // Ensure host is included in _membersData if missing
+    const allMembersData = [...memberObjs];
+    if (hostUser && !allMembersData.some(u => u.id === hostUser.id)) {
+      allMembersData.unshift(hostUser);
+    } else if (!allMembersData.some(u => u.id === hostId)) {
+      allMembersData.unshift({
+        id: hostId,
+        displayName: hostName,
+        username: hostUsername,
+        avatar: hostAvatar,
+      });
+    }
+
+    const participantIds = Array.from(new Set([
+      ...(baseAct.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || []),
+      ...(hostId ? [hostId] : [])
+    ]));
+
+    const startRaw = baseAct.startDate || baseAct.date || baseAct.createdAt;
+    const startD = startRaw ? new Date(startRaw) : null;
     const endD = baseAct.endDate ? new Date(baseAct.endDate) : null;
+
     return {
       ...baseAct,
-      date: baseAct.startDate || null,
+      date: startRaw || null,
       endDate: baseAct.endDate || null,
       dateFormatted: startD ? startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null,
       dateLabel: startD ? startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null,
       time: startD ? startD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null,
       endTime: endD ? endD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null,
-      hostId: baseAct.creatorId,
-      hostName: baseAct.creator?.displayName || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.displayName || 'Host',
-      hostUsername: baseAct.creator?.username || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.username || 'host',
-      hostAvatar: baseAct.creator?.avatar || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.avatar || '',
-      participants: baseAct.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
+      hostId,
+      hostName,
+      hostUsername,
+      hostAvatar,
+      participants: participantIds,
       pendingRequests: baseAct.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
-      slotsFilled: baseAct.members?.filter(m => m.status === 'MEMBER').length || 1,
+      slotsFilled: participantIds.length,
       slotsNeeded: baseAct.maxMembers || 999,
-      _membersData: baseAct.members?.map(m => m.user) || []
+      _membersData: allMembersData
     };
   }, [rawActivity, location.state]);
 
@@ -140,36 +188,45 @@ export default function ActivityDetailPage() {
     const coverImage = activity?.coverImage;
     if (!coverImage) return;
 
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.src = coverImage;
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = 10;
-        canvas.height = 10;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        ctx.drawImage(img, 0, 0, 10, 10);
-        const data = ctx.getImageData(0, 0, 10, 10).data;
+    let active = true;
+    const timer = setTimeout(() => {
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.src = coverImage;
+      img.onload = () => {
+        if (!active) return;
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 10;
+          canvas.height = 10;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          ctx.drawImage(img, 0, 0, 10, 10);
+          const data = ctx.getImageData(0, 0, 10, 10).data;
 
-        let r = 0, g = 0, b = 0, count = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          r += data[i];
-          g += data[i+1];
-          b += data[i+2];
-          count++;
-        }
-        r = Math.round(r / count);
-        g = Math.round(g / count);
-        b = Math.round(b / count);
+          let r = 0, g = 0, b = 0, count = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            r += data[i];
+            g += data[i+1];
+            b += data[i+2];
+            count++;
+          }
+          r = Math.round(r / count);
+          g = Math.round(g / count);
+          b = Math.round(b / count);
 
-        if (containerRef.current) {
-          containerRef.current.style.setProperty('--extracted-rgb', `${r}, ${g}, ${b}`);
+          if (containerRef.current) {
+            containerRef.current.style.setProperty('--extracted-rgb', `${r}, ${g}, ${b}`);
+          }
+        } catch (e) {
+          console.warn('Failed to extract dominant color from cover image:', e);
         }
-      } catch (e) {
-        console.warn('Failed to extract dominant color from cover image:', e);
-      }
+      };
+    }, 50);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
     };
   }, [activity?.coverImage]);
 
@@ -184,11 +241,8 @@ export default function ActivityDetailPage() {
   const [showHeaderTitle, setShowHeaderTitle] = useState(false);
 
   const handleScroll = (e) => {
-    if (e.target.scrollTop > 50) {
-      setShowHeaderTitle(true);
-    } else {
-      setShowHeaderTitle(false);
-    }
+    const scrolled = e.target.scrollTop > 50;
+    setShowHeaderTitle(prev => prev !== scrolled ? scrolled : prev);
   };
 
   const [comments, setComments] = useState([
@@ -303,13 +357,21 @@ export default function ActivityDetailPage() {
     setComment('');
   };
 
+  const coverImgUrl = activity?.coverImage || getDefaultCover(title || cleanId);
+
   return (
     <div ref={containerRef} data-theme="dark" className={styles.root}>
       {/* Ambient Blurred Background */}
       <div className={styles.ambientBg}>
-        {activity.coverImage && (
-          <img src={activity.coverImage} alt="" className={styles.ambientImg} />
-        )}
+        <img 
+          src={coverImgUrl} 
+          alt="" 
+          className={styles.ambientImg} 
+          onError={(e) => {
+            e.target.onerror = null;
+            e.target.src = DEFAULT_COVERS[0];
+          }}
+        />
       </div>
 
       <div className={styles.glass}>
@@ -369,9 +431,15 @@ export default function ActivityDetailPage() {
             <div className={styles.imgCol}>
               <h1 className={styles.mainTitle}>{title?.length > 30 ? title.slice(0, 30) + '...' : title}</h1>
               <div className={styles.imgSquare}>
-                {activity.coverImage && (
-                  <img src={activity.coverImage} alt={title} className={styles.coverImg} />
-                )}
+                <img 
+                  src={coverImgUrl} 
+                  alt={title || 'Activity'} 
+                  className={styles.coverImg} 
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = DEFAULT_COVERS[0];
+                  }}
+                />
               </div>
             </div>
 
@@ -380,8 +448,8 @@ export default function ActivityDetailPage() {
               <div className={styles.leftInfoBlock} style={{ marginTop: 0, marginBottom: '2rem' }}>
                 <div className={styles.calendarBox}>
                   <CalendarIcon
-                    date={activity.startDate || activity.date}
-                    dateLabel={activity.dateLabel}
+                    date={activity?.startDate || activity?.date || activity?.createdAt}
+                    dateLabel={activity?.dateLabel}
                     variant="glass"
                     style={{ width: '32px', height: '32px', borderRadius: '6px', boxShadow: 'none' }}
                     className={styles.noRings}
@@ -507,8 +575,8 @@ export default function ActivityDetailPage() {
               Already started!
             </button>
           ) : isHost ? (
-            <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
-              <button className={`${styles.joinBtn} ${styles.joinedBtn}`} disabled style={{ flex: 1, cursor: 'default' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+              <button className={`${styles.joinBtn} ${styles.joinedBtn}`} disabled style={{ flex: 1, cursor: 'default', padding: '0.8rem 1rem', minWidth: 0 }}>
                 Hosted by you
               </button>
               {!hasStarted && (
@@ -520,11 +588,13 @@ export default function ActivityDetailPage() {
                     flex: 1,
                     background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
                     color: '#fff',
-                    border: 'none'
+                    border: 'none',
+                    padding: '0.8rem 1rem',
+                    minWidth: 0
                   }}
                 >
-                  <UserPlus size={16} style={{ marginRight: '0.4rem' }} />
-                  Invite Friends
+                  <UserPlus size={16} style={{ marginRight: '0.4rem', flexShrink: 0 }} />
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Invite Friends</span>
                 </button>
               )}
             </div>

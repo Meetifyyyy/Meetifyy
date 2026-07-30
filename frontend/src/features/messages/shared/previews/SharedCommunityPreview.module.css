@@ -1,94 +1,73 @@
 .card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
   background: var(--color-bg-white, #ffffff);
   border: 1px solid var(--color-border, #e4e4e7);
   border-radius: 12px;
-  padding: 14px;
-  display: flex;
-  flex-direction: row;
-  gap: 14px;
-  width: 100%;
-  max-width: 414px;
-  min-width: 252px;
-  margin-top: 8px;
   cursor: pointer;
   color: var(--color-text-main, #18181b);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
-  position: relative;
-  overflow: hidden;
-  border-left: 5px solid #10b981;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+  min-width: 180px;
+  max-width: 280px;
+  margin-top: 4px;
 }
 
-.left {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
+.card:hover {
+  background: var(--color-bg-soft, #f4f4f5);
+  border-color: var(--color-border-hover, #d4d4d8);
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  margin-bottom: 4px;
-}
-
-.badge {
-  font-size: 0.61rem;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 10px;
-  text-transform: uppercase;
-}
-
-.info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.avatarWrapper {
+  flex-shrink: 0;
 }
 
 .avatar {
-  width: 43px;
-  height: 43px;
-  object-fit: cover;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatarFallback {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 1rem;
+  font-family: var(--font-family-display, sans-serif);
 }
 
 .details {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
 }
 
 .name {
+  font-family: var(--font-family-display, sans-serif);
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   color: var(--color-text-main, #18181b);
-  line-height: 1.2;
-}
-
-.bio {
-  font-size: 0.74rem;
-  color: var(--color-text-light, #a1a1aa);
-  line-height: 1.4;
-  margin: 4px 0 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  line-height: 1.25;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.stats {
-  display: flex;
-  gap: 16px;
-  margin-top: auto;
-  padding-top: 8px;
-}
-
-.stat {
-  font-size: 0.67rem;
+.membersCount {
+  font-family: var(--font-family-sans, sans-serif);
+  font-size: 0.75rem;
   color: var(--color-text-muted, #71717a);
-}
-
-.stat strong {
-  color: var(--color-text-main, #18181b);
-  font-weight: 700;
+  font-weight: 500;
+  line-height: 1.2;
 }

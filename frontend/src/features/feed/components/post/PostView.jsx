@@ -37,19 +37,17 @@ export default function PostView({ post, onBack }) {
   const { currentUser } = useData();
   const { mutate: addComment } = useAddComment();
 
-  const { data: fetchedPost, isLoading: isFetchingPost } = useQuery({
+  const { data: fetchedPost, isLoading: isFetchingPost, isError: isPostError } = useQuery({
     queryKey: ['post', post?.id],
     queryFn: () => postsApi.getPostById(post.id),
     enabled: !!post?.id,
     staleTime: 30_000,
   });
 
-
-  const livePost = fetchedPost || post;
-  
+  const livePost = isPostError ? null : (fetchedPost || post);
   const commentsLoading = isFetchingPost && !fetchedPost;
 
-  if (!livePost) return null;
+  if (!livePost || isPostError) return null;
 
   // Handles adding a reply to the main post
   const handleMainReplySubmit = (e) => {

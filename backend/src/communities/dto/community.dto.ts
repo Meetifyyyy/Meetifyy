@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsString, IsOptional, MaxLength, IsBoolean } from 'class-validator';
 
 export class CreateCommunityDto {
   @IsString()
@@ -13,6 +13,22 @@ export class CreateCommunityDto {
   @IsString()
   @IsOptional()
   avatarKey?: string;
+
+  @IsString()
+  @IsOptional()
+  coverKey?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isCampusCommunity?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  isPrivate?: boolean;
+
+  @IsString()
+  @IsOptional()
+  privacy?: string;
 }
 
 export class UpdateCommunityDto {
@@ -29,4 +45,26 @@ export class UpdateCommunityDto {
   @IsString()
   @IsOptional()
   avatarKey?: string;
+
+  @IsString()
+  @IsOptional()
+  coverKey?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isCampusCommunity?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  isPrivate?: boolean;
+
+  @IsString()
+  @IsOptional()
+  privacy?: string;
+}
+
+export class UpdateMemberRoleDto {
+  @IsString()
+  @MaxLength(20)
+  role: 'MODERATOR' | 'MEMBER';
 }

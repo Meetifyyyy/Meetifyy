@@ -1,12 +1,12 @@
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { useState, useRef, useEffect, useMemo } from 'react';
-
+import { UserX, Ban, Flag } from 'lucide-react';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import styles from './CommunityMembersModal.module.css';
 import { useData } from '@shared/hooks/useData';
-import { usersApi, communitiesApi } from '@shared/api/apiClient';
+import { usersApi, communitiesApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { sortGroupMembers } from '@shared/utils/memberSort';
@@ -25,16 +25,36 @@ function MemberActionMenu({ member, communityId, isCurrentUser, isAdmin, onRemov
   const [open, setOpen] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
-  const ref = useRef(null);
+  const [coords, setCoords] = useState(null);
+  const btnRef = useRef(null);
+
+  const toggleOpen = (e) => {
+    e.stopPropagation();
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUp = spaceBelow < 180;
+
+      setCoords({
+        right: window.innerWidth - rect.right,
+        top: openUp ? 'auto' : rect.bottom + 4,
+        bottom: openUp ? window.innerHeight - rect.top + 4 : 'auto'
+      });
+    }
+    setOpen(!open);
+  };
 
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (btnRef.current && btnRef.current.contains(e.target)) return;
+      const menuEl = document.getElementById(`member-menu-${member.id}`);
+      if (menuEl && menuEl.contains(e.target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+  }, [open, member.id]);
 
   if (isCurrentUser) return null;
 
@@ -60,33 +80,114 @@ function MemberActionMenu({ member, communityId, isCurrentUser, isAdmin, onRemov
   };
 
   return (
-    <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
+    <div style={{ flexShrink: 0 }}>
       <button
-        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        ref={btnRef}
+        onClick={toggleOpen}
         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.3rem 0.4rem', borderRadius: '6px', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center' }}
         title="Actions"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
       </button>
 
-      {open && (
-        <div style={{ position: 'absolute', right: 0, top: '100%', background: 'var(--color-bg-white)', border: '1px solid var(--color-border)', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 100, minWidth: '160px', overflow: 'hidden' }}>
+      {open && coords && createPortal(
+        <div
+          id={`member-menu-${member.id}`}
+          style={{
+            position: 'fixed',
+            right: `${coords.right}px`,
+            top: coords.top !== 'auto' ? `${coords.top}px` : 'auto',
+            bottom: coords.bottom !== 'auto' ? `${coords.bottom}px` : 'auto',
+            background: 'var(--color-bg-white)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-lg, 12px)',
+            boxShadow: 'var(--shadow-lg, 0 10px 25px rgba(0, 0, 0, 0.15))',
+            zIndex: 100000,
+            width: '180px',
+            padding: '0.35rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.15rem',
+            overflow: 'hidden'
+          }}
+        >
           {isAdmin && (
-            <button onClick={handleRemove} style={{ width: '100%', textAlign: 'left', padding: '0.7rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--color-danger, #ef4444)', fontWeight: 500 }}>
-              Remove from community
+            <button 
+              onClick={handleRemove} 
+              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg-soft)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              style={{ 
+                width: '100%', 
+                textAlign: 'left', 
+                padding: '0.6rem 0.75rem', 
+                background: 'transparent', 
+                border: 'none', 
+                cursor: 'pointer', 
+                fontSize: '0.85rem', 
+                color: 'var(--color-danger, #ef4444)', 
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.6rem',
+                borderRadius: 'var(--radius-md, 8px)',
+                transition: 'background 0.15s ease'
+              }}
+            >
+              <UserX size={16} color="var(--color-danger, #ef4444)" />
+              <span>Remove</span>
             </button>
           )}
-          <button onClick={handleBlock} style={{ width: '100%', textAlign: 'left', padding: '0.7rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--color-text-main)', fontWeight: 500 }}>
-            Block
+          <button 
+            onClick={handleBlock} 
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg-soft)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            style={{ 
+              width: '100%', 
+              textAlign: 'left', 
+              padding: '0.6rem 0.75rem', 
+              background: 'transparent', 
+              border: 'none', 
+              cursor: 'pointer', 
+              fontSize: '0.85rem', 
+              color: 'var(--color-text-main)', 
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.6rem',
+              borderRadius: 'var(--radius-md, 8px)',
+              transition: 'background 0.15s ease'
+            }}
+          >
+            <Ban size={16} color="var(--color-text-muted)" />
+            <span>Block</span>
           </button>
           <button
             onClick={() => { setOpen(false); if (!hasReported) setShowReportModal(true); }}
             disabled={hasReported}
-            style={{ width: '100%', textAlign: 'left', padding: '0.7rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: hasReported ? 'var(--color-text-muted)' : 'var(--color-text-main)', fontWeight: 500 }}
+            onMouseEnter={(e) => !hasReported && (e.currentTarget.style.background = 'var(--color-bg-soft)')}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            style={{ 
+              width: '100%', 
+              textAlign: 'left', 
+              padding: '0.6rem 0.75rem', 
+              background: 'transparent', 
+              border: 'none', 
+              cursor: hasReported ? 'default' : 'pointer', 
+              fontSize: '0.85rem', 
+              color: hasReported ? 'var(--color-text-muted)' : 'var(--color-text-main)', 
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.6rem',
+              borderRadius: 'var(--radius-md, 8px)',
+              transition: 'background 0.15s ease'
+            }}
           >
-            {hasReported ? 'Already Reported' : 'Report'}
+            <Flag size={16} color="var(--color-text-muted)" />
+            <span>{hasReported ? 'Reported' : 'Report'}</span>
           </button>
-        </div>
+        </div>,
+        document.body
       )}
 
       <ReportModal
@@ -103,14 +204,18 @@ function MemberActionMenu({ member, communityId, isCurrentUser, isAdmin, onRemov
   );
 }
 
-export default function CommunityMembersModal({ members: initialMembers, title, onClose, communityId, isAdmin }) {
+export default function CommunityMembersModal({ members: initialMembers, title, onClose, communityId, isAdmin, ownerId }) {
   const navigate = useNavigate();
   const { users, currentUser } = useData();
   const [members, setMembers] = useState(initialMembers || []);
 
+  useEffect(() => {
+    if (initialMembers) setMembers(initialMembers);
+  }, [initialMembers]);
+
   const sortedMembers = useMemo(() => {
-    return sortGroupMembers(members, { users });
-  }, [members, users]);
+    return sortGroupMembers(members, { ownerId, users });
+  }, [members, ownerId, users]);
 
   const handleNameClick = (e, memberName) => {
     e.stopPropagation();
@@ -152,32 +257,43 @@ export default function CommunityMembersModal({ members: initialMembers, title, 
                 Object.values(users).find(u => u.displayName === member.name);
               const username = member.username || matchedUser?.username;
               const isSelf = currentUser?.id === member.id || currentUser?.username === username;
+
+              const roleUpper = String(member.role || '').toUpperCase();
+              const isOwner = member.admin || roleUpper === 'OWNER' || roleUpper === 'CREATOR' || (ownerId && String(member.id) === String(ownerId));
+              const isMod = roleUpper === 'MODERATOR';
+
               return (
-                <div key={i} className={styles.userItem} style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
+                <div key={i} className={styles.userItem}>
                   <div className={styles.userAvatar}>
-                    {isImageUrl(member.avatar) ? (
-                      <img src={member.avatar} alt="avatar" className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                    {isImageUrl(member.avatar || matchedUser?.avatar) ? (
+                      <img src={getMediaUrl(member.avatar || matchedUser?.avatar)} alt="avatar" className={styles.avatarImg} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     ) : (
                       <DefaultAvatar style={{ width: '100%', height: '100%' }} />
                     )}
                   </div>
-                  <div className={styles.userInfo} style={{ flex: 1, minWidth: 0 }}>
-                    <div className={styles.userName} onClick={(e) => handleNameClick(e, member.name)}>
-                      {member.name}
-                      {member.admin && (
+                  <div className={styles.userInfo}>
+                    <div className={styles.userNameRow}>
+                      <span className={styles.userName} onClick={(e) => handleNameClick(e, member.name)}>
+                        {member.name}
+                      </span>
+                      {isOwner ? (
                         <span className={styles.userBadge} style={{ background: 'rgba(236, 72, 153, 0.1)', color: '#EC4899' }}>
                           Owner
                         </span>
-                      )}
+                      ) : isMod ? (
+                        <span className={styles.userBadge} style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3B82F6' }}>
+                          Moderator
+                        </span>
+                      ) : null}
                     </div>
                     {username && (
                       <div className={styles.userUsername}>@{username}</div>
                     )}
-                    <div className={styles.userRole}>
-                      {(!member.role || member.role === 'Creator') ? '' : member.role}
-                      {member.branch ? ` • ${member.branch}` : ''}
-                      {member.year ? ` • ${member.year}` : ''}
-                    </div>
+                    {(member.branch || member.year) && (
+                      <div className={styles.userRole}>
+                        {[member.branch, member.year].filter(Boolean).join(' • ')}
+                      </div>
+                    )}
                   </div>
                   <MemberActionMenu
                     member={member}

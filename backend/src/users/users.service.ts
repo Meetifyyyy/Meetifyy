@@ -170,7 +170,7 @@ export class UsersService {
         s."whoCanSeeOnline",
         (SELECT COUNT(*)::int FROM "Follow" f WHERE f."followingId" = u."id") AS "followersCount",
         (SELECT COUNT(*)::int FROM "Follow" f WHERE f."followerId" = u."id") AS "followingCount",
-        (SELECT COUNT(*)::int FROM "Post" p WHERE p."authorId" = u."id" AND p."deletedAt" IS NULL) AS "postsCount",
+        (SELECT COUNT(*)::int FROM "Post" p WHERE p."authorId" = u."id" AND p."deletedAt" IS NULL AND p."communityId" IS NULL) AS "postsCount",
         CASE 
           WHEN ${currentUserId ? currentUserId : ''}::text != '' AND ${currentUserId ? currentUserId : ''}::text != u."id" THEN
             EXISTS(

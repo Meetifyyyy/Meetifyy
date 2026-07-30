@@ -115,6 +115,14 @@ export function useCommunityById(id) {
     queryFn: () => communitiesApi.getById(id),
     enabled: !!id,
     staleTime: 5 * 60 * 1000,
+    retry: (failureCount, error) => {
+      const status = error?.response?.status;
+      const msg = error?.response?.data?.message || error?.message;
+      if (status === 404 || msg === 'COMMUNITY_DELETED' || msg === 'COMMUNITY_NOT_FOUND') {
+        return false;
+      }
+      return failureCount < 2;
+    },
     placeholderData: (prev) => prev,
   });
 }

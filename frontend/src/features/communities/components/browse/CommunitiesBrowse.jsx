@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { communitiesApi } from '@shared/api/apiClient';
+import { PlusIcon } from '@heroicons/react/24/outline';
+import { useCommunities } from '@shared/hooks/useCommunities';
 import { categoriesList } from '@constants/communityCategories';
 
 import { useDebounce } from '@shared/hooks/useDebounce';
@@ -27,12 +27,9 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
     }
   }, [location.state?.category]);
 
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['communities'],
-    queryFn: communitiesApi.getAll,
-  });
-
-  const allComms = data || [];
+  const { rawCommunities, isLoading, isError, refetch } = useCommunities();
+  const error = isError;
+  const allComms = rawCommunities || [];
 
   const filtered = allComms.filter((c) => {
     if (activeCategory === 'all') return true;
@@ -162,13 +159,21 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
 
           {!isLoading && !error && remaining && remaining.length === 0 && (
             <EmptyState 
-              title="No communities found"
-              message="We couldn't find any communities matching your search or filters."
+              title="No communities here yet"
               icon={
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem', opacity: 0.5 }}>
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem', lineHeight: 1 }}>
+                  🌐
+                </div>
+              }
+              action={
+                <button
+                  type="button"
+                  className={styles.emptyCreateBtn}
+                  onClick={() => setShowCreate(true)}
+                >
+                  <PlusIcon className={styles.btnIcon} />
+                  <span>Create a Community</span>
+                </button>
               }
             />
           )}

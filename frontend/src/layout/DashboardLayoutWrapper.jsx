@@ -27,7 +27,8 @@ export default function DashboardLayoutWrapper() {
   );
   const hideBottomNav = matches.some(match =>
     match.pathname.startsWith('/saved') ||
-    match.pathname.startsWith('/settings')
+    match.pathname.startsWith('/settings') ||
+    match.pathname.startsWith('/communities/')
   );
 
   useEffect(() => {
@@ -53,7 +54,7 @@ export default function DashboardLayoutWrapper() {
         <Sidebar onCommunityClick={handleCommunityClick} />
         <Outlet />
       </DashboardLayout>
-      {!hideBottomNav && <BottomNav />}
+      <BottomNav hidden={hideBottomNav} />
       <InstantMatchFAB />
       <InstantMatchSheet />
       <MatchPopup />

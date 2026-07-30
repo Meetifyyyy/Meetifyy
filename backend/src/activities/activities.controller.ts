@@ -34,6 +34,12 @@ export class ActivitiesController {
     return this.activitiesService.getCampusActivities(user?.id, parsedLimit, cursor);
   }
 
+  @Get('me')
+  @CacheControl('private, max-age=30, stale-while-revalidate=120')
+  async getMyActivities(@CurrentUser() user: any) {
+    return this.activitiesService.getMyActivities(user.id);
+  }
+
   @Get('bookmarks')
   @CacheControl('private, max-age=30, stale-while-revalidate=120')
   async getSavedActivities(

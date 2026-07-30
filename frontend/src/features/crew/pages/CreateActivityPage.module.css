@@ -15,6 +15,9 @@
   box-sizing: border-box;
   border-radius: 22px;
   overflow: hidden;
+  background: #0b0d14 !important;
+  color: #ffffff !important;
+  color-scheme: dark !important;
 }
 
 .root * {
@@ -44,7 +47,7 @@
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  background-color: transparent;
+  background-color: #0b0d14;
 }
 
 .ambientBg::after {
@@ -52,9 +55,9 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 15% 25%, rgba(var(--extracted-rgb, 37, 99, 235), 0.15) 0%, transparent 60%),
-    radial-gradient(circle at 85% 75%, rgba(var(--extracted-rgb, 124, 58, 237), 0.1) 0%, transparent 60%),
-    linear-gradient(135deg, rgba(15, 17, 23, 0.25) 0%, rgba(10, 11, 15, 0.4) 100%);
+    radial-gradient(circle at 15% 25%, rgba(var(--extracted-rgb, 37, 99, 235), 0.25) 0%, transparent 60%),
+    radial-gradient(circle at 85% 75%, rgba(var(--extracted-rgb, 124, 58, 237), 0.2) 0%, transparent 60%),
+    linear-gradient(135deg, rgba(11, 13, 20, 0.85) 0%, rgba(8, 9, 14, 0.95) 100%);
   z-index: 1;
 }
 
@@ -64,10 +67,12 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(5px) saturate(1.5) brightness(1.1);
+  filter: blur(6px);
   opacity: 1;
-  transform: scale(1.03);
-  transition: opacity 0.5s ease, filter 0.5s ease;
+  transform: translate3d(0, 0, 0) scale(1.03);
+  will-change: transform;
+  backface-visibility: hidden;
+  transition: opacity 0.3s ease;
 }
 
 
@@ -422,9 +427,9 @@
 }
 
 .fieldInput::placeholder {
-  color: #ffffff;
+  color: rgba(255, 255, 255, 0.45);
   opacity: 1;
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .fieldInput:hover {
@@ -460,9 +465,9 @@
 }
 
 .fieldTextarea::placeholder {
-  color: #ffffff;
+  color: rgba(255, 255, 255, 0.45);
   opacity: 1;
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .fieldTextarea:hover {
@@ -506,24 +511,25 @@
 }
 
 .fieldBtn svg:first-child {
-  color: var(--color-icon-base);
+  color: rgba(255, 255, 255, 0.7);
   flex-shrink: 0;
 }
 
 .fieldBtn svg:last-child {
-  color: var(--color-text-muted);
+  color: rgba(255, 255, 255, 0.5);
   flex-shrink: 0;
 }
 
 .fieldBtnLabel {
   font-weight: 500;
   white-space: nowrap;
+  color: #ffffff;
 }
 
 .fieldBtnValue {
   margin-left: auto;
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.85rem;
   text-align: right;
   line-height: 1.3;
 }
@@ -557,7 +563,7 @@
 }
 
 .locIcon {
-  color: var(--color-icon-base);
+  color: rgba(255, 255, 255, 0.7);
   flex-shrink: 0;
 }
 
@@ -573,53 +579,67 @@
 }
 
 .locInput::placeholder {
-  color: #ffffff;
+  color: rgba(255, 255, 255, 0.45);
   opacity: 1;
-  font-weight: 500;
+  font-weight: 400;
 }
 
-/* ── Bottom row: Reminder + Capacity ── */
-.bottomRow {
-  margin-top: 1rem;
-  display: flex;
-  gap: 0.5rem;
-  align-items: flex-start;
-}
-
-.reminderWrap {
-  position: relative;
-  margin-top: 1rem;
-}
-
-.pillBtn {
+/* ── Reminder & Option rows ── */
+.reminderRow {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  background: rgba(var(--color-bg-white-rgb, 255, 255, 255), 0.15);
-  border: none;
-  border-radius: var(--radius-full);
-  padding: 0.5rem 0.9rem;
+  justify-content: space-between;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
   cursor: pointer;
-  color: var(--color-text-main);
+  color: #ffffff;
   font-family: var(--font-family-sans);
-  font-size: 0.8rem;
+  font-size: 0.95rem;
   font-weight: 500;
-  white-space: nowrap;
-  transition: background var(--transition-fast);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-.pillBtn:hover {
-  background: rgba(var(--color-bg-white-rgb, 255, 255, 255), 0.25);
+.reminderRow:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.15);
 }
 
-.pillBtn svg {
-  color: var(--color-icon-base);
+.rowLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #ffffff;
+}
+
+.rowIcon {
+  color: rgba(255, 255, 255, 0.7);
   flex-shrink: 0;
 }
 
-.flip {
-  transform: rotate(180deg);
-  transition: transform var(--transition-fast);
+.rowTitle {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.rowRight {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.88rem;
+}
+
+.selectIcon {
+  color: rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
 }
 
 /* Reminder dropdown */
@@ -627,7 +647,7 @@
   position: absolute;
   right: 0;
   bottom: calc(100% + 8px);
-  background: #1e1e1e;
+  background: #181b24;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 16px;
   padding: 0.4rem;
@@ -635,18 +655,6 @@
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
   z-index: 50;
   animation: popUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes popUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .reminderOpt {
@@ -657,12 +665,17 @@
   border: none;
   padding: 0.65rem 0.85rem;
   border-radius: 10px;
-  color: var(--color-text-main);
+  color: #ffffff;
   font-family: var(--font-family-sans);
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
+}
+
+.reminderOpt:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateX(3px);
 }
 
 .reminderOpt:hover {

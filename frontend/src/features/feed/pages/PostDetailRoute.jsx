@@ -23,8 +23,6 @@ export default function PostDetailRoute() {
     navigate(location.state?.from ?? '/home', { replace: true });
   };
 
-  const initialPost = location.state?.post || null;
-
   const { data: fetchedPost, isLoading, isError, error } = useQuery({
     queryKey: ['post', id],
     queryFn: () => postsApi.getPostById(id),
@@ -32,7 +30,7 @@ export default function PostDetailRoute() {
     retry: false,
   });
 
-  const post = fetchedPost || initialPost;
+  const post = isError ? null : fetchedPost;
 
   const author = post?.author || (post?.authorId ? getUserById(post.authorId) : null) || {
     displayName: 'Unknown User',
@@ -51,7 +49,7 @@ export default function PostDetailRoute() {
     );
   };
 
-  if (isLoading && !post) {
+  if (isLoading) {
     return (
       <>
         <main className="centre centre--post">
@@ -109,36 +107,50 @@ export default function PostDetailRoute() {
   if (isError || !post) {
     const errorMsg = error?.response?.data?.message || 'This post may have been removed or deleted.';
     return (
-      <main className="centre">
-        <EmptyState 
-          title="Post not found" 
-          message={errorMsg}
-          icon={
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-light)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem' }}>
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
-          }
-        />
-        <div style={{ textAlign: 'center' }}>
-          <button
-            onClick={() => goBack('/home')}
-            style={{
-              marginTop: '0.5rem',
-              padding: '0.6rem 1.5rem',
-              background: 'var(--color-primary)',
-              color: 'white',
-              border: 'none',
-              borderRadius: 'var(--radius-full)',
-              cursor: 'pointer',
-              fontFamily: 'var(--font-family-sans)',
-              fontWeight: 600,
-              fontSize: '0.9rem'
-            }}
-          >
-            Back to home
-          </button>
+      <main className="centre centre--post" style={{ gridColumn: '2 / -1', maxWidth: '780px', margin: '0 auto', width: '100%' }}>
+        <div className={postViewStyles.postViewContainer} style={{ minHeight: 'calc(100vh - 120px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ padding: '3rem 2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', maxWidth: '440px' }}>
+            <div style={{
+              width: '72px',
+              height: '72px',
+              borderRadius: '50%',
+              background: 'rgba(239, 68, 68, 0.08)',
+              color: '#ef4444',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '1.5rem'
+            }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+            </div>
+            <h2 style={{ fontFamily: 'var(--font-family-display)', fontSize: '1.5rem', fontWeight: 700, margin: '0 0 0.6rem 0', color: 'var(--color-text-main)' }}>
+              Post not found
+            </h2>
+            <p style={{ fontFamily: 'var(--font-family-sans)', fontSize: '0.95rem', color: 'var(--color-text-muted)', margin: '0 0 2rem 0', maxWidth: '380px', lineHeight: 1.5 }}>
+              {errorMsg}
+            </p>
+            <button
+              onClick={() => goBack('/home')}
+              style={{
+                padding: '0.8rem 1.8rem',
+                background: 'var(--color-primary)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '100px',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-family-sans)',
+                fontWeight: 600,
+                fontSize: '0.95rem',
+                boxShadow: 'var(--shadow-sm)'
+              }}
+            >
+              Back to Home Feed
+            </button>
+          </div>
         </div>
       </main>
     );

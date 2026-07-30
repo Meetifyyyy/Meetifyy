@@ -378,6 +378,12 @@
 .communityAvatar img {  border-radius: 50%;
 }
 
+.emptyCommunities {
+  padding: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
 .exploreMore {
   display: flex;
   align-items: center;
