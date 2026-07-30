@@ -9,6 +9,7 @@ import { RedisService } from '../redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { BlocksService } from './blocks.service';
+import { PresenceService } from '../presence/presence.service';
 
 describe('Follow / Unfollow High Concurrency Stress Test', () => {
   let service: UsersService;
@@ -29,7 +30,6 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
       }),
       count: jest.fn().mockResolvedValue(42),
     },
-    // $executeRaw returns 1 (row inserted) for every follow call
     $executeRaw: jest.fn().mockImplementation(async () => {
       await new Promise((resolve) => setTimeout(resolve, Math.random() * 5));
       return 1;
@@ -53,7 +53,6 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
     emit: jest.fn().mockResolvedValue(undefined),
   };
 
-  // Real in-process lock from RedisService (no Redis) so the mutex is actually tested
   const mockRedisService = {
     withLock: jest.fn(async (key: string, ttlMs: number, fn: () => Promise<any>) => fn()),
   };
@@ -70,6 +69,7 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: RedisService, useValue: mockRedisService },
         { provide: BlocksService, useValue: { isBlocked: jest.fn().mockResolvedValue(false) } },
+        { provide: PresenceService, useValue: { getPresence: jest.fn(), getPresenceMany: jest.fn().mockResolvedValue(new Map()) } },
         { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();

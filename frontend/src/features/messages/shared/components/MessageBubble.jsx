@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { Reply, MoreVertical, Image as ImageIcon, CalendarDays } from 'lucide-react';
+import { Reply, MoreVertical, Image as ImageIcon, CalendarDays, AlertCircle } from 'lucide-react';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import Avatar from '@shared/components/avatar/Avatar';
 import { isImageUrl } from '@shared/utils/avatar';
@@ -17,6 +17,7 @@ import VoiceMessagePlayer from './VoiceMessagePlayer';
 import styles from './ChatMessageList.module.css';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
 import { useData } from '@shared/hooks/useData';
+import { checkIsMe, getMsgTimestamp } from '../utils/cacheUtils';
 
 function MessageHoverActions({ msg, isMe, onReplyTo, onContextMenu }) {
   const handleReply = (e) => {
@@ -309,10 +310,12 @@ const formatToClockTime = (dateInput) => {
 };
 
 const getDisplayClockTime = (msg) => {
-  if (msg.createdAt) return formatToClockTime(msg.createdAt);
-  if (msg.timestamp) return formatToClockTime(msg.timestamp);
+  if (msg?.createdAt) return formatToClockTime(msg.createdAt);
+  if (msg?.timestamp) return formatToClockTime(msg.timestamp);
   return formatToClockTime(new Date());
 };
+
+
 
 const MessageBubble = memo(function MessageBubble({ 
   msg, 
@@ -323,7 +326,6 @@ const MessageBubble = memo(function MessageBubble({
   onContextMenu,
   onReplyTo,
   onReply,
-  onRetry,
   conversations,
   requestToJoinGroup
 }) {
@@ -451,17 +453,17 @@ const MessageBubble = memo(function MessageBubble({
   }
 
   if (msg.state === 'UNSENT' || msg.isUnsent || msg.text === 'This message was unsent' || msg.payload?.text === 'This message was unsent') {
-    const isMe = msg.from === 'me' || String(msg.senderId) === String(currentUser?.id) || msg.senderId === 'me';
+    const isMe = checkIsMe(msg, currentUser);
     const timeText = getDisplayClockTime(msg);
     return (
       <div className={`${styles.msgBubbleContainer} ${isMe ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
-          <div className={`${styles.msgBubble} ${isMe ? styles.msgBubbleMe : styles.msgBubbleThem}`} style={{ opacity: 0.85, fontStyle: 'italic' }}>
+          <div className={`${styles.msgBubble} ${isMe ? styles.msgBubbleMe : styles.msgBubbleThem}`}>
             <div className={styles.msgTextTimeWrap}>
-              <span className={styles.msgText} style={{ color: isMe ? 'rgba(255, 255, 255, 0.9)' : 'var(--color-text-muted, #64748b)' }}>
+              <span className={styles.msgText} style={{ fontStyle: 'italic', color: isMe ? 'rgba(255, 255, 255, 0.65)' : '#94a3b8' }}>
                 This message was unsent
               </span>
-              <div className={styles.msgTimeLabel} style={{ opacity: 0.7 }}>{timeText}</div>
+              <div className={styles.msgTimeLabel} style={{ color: isMe ? 'rgba(255, 255, 255, 0.55)' : '#94a3b8' }}>{timeText}</div>
             </div>
           </div>
         </div>
@@ -470,8 +472,25 @@ const MessageBubble = memo(function MessageBubble({
   }
 
   const isGroup = conversation?.isGroup || conversation?.type === 'GROUP' || conversation?.type === 'ACTIVITY';
-  const showSenderAvatar = isGroup && msg.from !== 'me';
-  const isMe = msg.from === 'me';
+  const isMe = checkIsMe(msg, currentUser);
+  const showSenderAvatar = isGroup && !isMe;
+
+  const isRealServerMsg = Boolean(msg?.id && !String(msg.id).startsWith('temp_') && !String(msg.id).startsWith('c_temp_') && !msg?.isOptimistic);
+  const isConfirmedSent = msg?.status === 'sent' || msg?.status === 'delivered' || msg?.status === 'read' || msg?.status === 'seen';
+
+  const sendTimeMs = getMsgTimestamp(msg);
+  const msgAge = sendTimeMs > 0 ? (Date.now() - sendTimeMs) : Infinity;
+  const isStaleSending = !isRealServerMsg && !isConfirmedSent && msg?.status === 'sending' && (isNaN(msgAge) || msgAge > 5000 || msgAge < 0);
+
+  const isFailedMsg = isMe && !isRealServerMsg && !isConfirmedSent && (
+    msg.status === 'failed' || 
+    msg.status === 'FAILED' || 
+    msg.isFailed || 
+    msg.status === 'error' || 
+    msg.deliveryStatus === 'failed' || 
+    msg.state === 'FAILED' ||
+    isStaleSending
+  );
   
   const inviteData = msg.inviteData || msg.payload?.inviteData;
   const activityData = msg.payload?.activity || msg.payload?.inviteData?.activity;
@@ -724,24 +743,16 @@ const MessageBubble = memo(function MessageBubble({
           {innerContent}
 
           {isMe && (
-            <div className={`${styles.msgStatusLabel} ${msg.status === 'failed' ? styles.msgStatusLabelFailed : ''}`}>
+            <div className={`${styles.msgStatusLabel} ${isFailedMsg ? styles.msgStatusLabelFailed : ''}`}>
               {/* Failed status is always shown — never hidden even if not the latest message */}
-              {msg.status === 'failed' && (
+              {isFailedMsg && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <AlertCircle size={13} style={{ color: '#ef4444' }} />
                   <span>Not delivered</span>
-                  {onRetry && (
-                    <button
-                      type="button"
-                      className={styles.msgRetryButton}
-                      onClick={(e) => { e.stopPropagation(); onRetry(msg); }}
-                    >
-                      Retry
-                    </button>
-                  )}
                 </span>
               )}
               {/* Normal delivery status: only shown on the latest message */}
-              {msg.status !== 'failed' && isLatestMessage && (() => {
+              {!isFailedMsg && isLatestMessage && (() => {
                 const s = msg.status;
                 if (s === 'sending') return <span>Sending…</span>;
                 if (s === 'read' || s === 'seen') return <span>Seen</span>;

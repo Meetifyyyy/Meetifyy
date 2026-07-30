@@ -1,3 +1,5 @@
+import { compareMessages } from './cacheUtils';
+
 /**
  * Specialized IndexedDB wrapper for E2EE encrypted messages.
  * STRICTLY ENSURES no decrypted plaintext is ever persisted to disk.
@@ -38,12 +40,50 @@ function openMessagesDB() {
   });
 }
 
+export async function migrateHistoricalFailedMessages() {
+  try {
+    const db = await openMessagesDB();
+    const tx = db.transaction([STORES.MESSAGES], 'readwrite');
+    const store = tx.objectStore(STORES.MESSAGES);
+    const getAllReq = store.getAll();
+    getAllReq.onsuccess = () => {
+      const items = getAllReq.result || [];
+      const now = Date.now();
+      for (const item of items) {
+        if (!item) continue;
+        const isFailed = item.status === 'failed' || item.status === 'FAILED' || item.isFailed || item.deliveryStatus === 'failed';
+        const sendTime = new Date(item.createdAt || item.storedAt || item.sendingAt || now).getTime();
+        const isStaleSending = item.status === 'sending' && !isNaN(sendTime) && (now - sendTime > 5000);
+
+        if (isFailed || isStaleSending) {
+          const updated = {
+            ...item,
+            status: 'failed',
+            isFailed: false,
+            deliveryStatus: 'failed',
+            retryCount: 0,
+            pendingRetry: false,
+          };
+          delete updated.retryAt;
+          delete updated.nextRetry;
+          store.put(updated);
+        }
+      }
+    };
+  } catch (e) {
+    console.warn('Historical failed messages migration error:', e);
+  }
+}
+
 /**
  * Strips decrypted fields before storing.
  */
 function sanitizeMessageForStorage(msg) {
   const safeMsg = { ...msg };
-  const isUnsent = safeMsg.state === 'UNSENT' || safeMsg.isUnsent || safeMsg.text === 'This message was unsent' || safeMsg.payload?.text === 'This message was unsent';
+  const isExplicitUnsent = safeMsg.state === 'UNSENT' || safeMsg.isUnsent === true || safeMsg.text === 'This message was unsent';
+  const isResetting = safeMsg.status === 'sending' || safeMsg.state === 'SENT' || (typeof safeMsg.text === 'string' && safeMsg.text !== 'This message was unsent' && safeMsg.text !== '');
+
+  const isUnsent = isExplicitUnsent && !isResetting;
 
   if (isUnsent) {
     safeMsg.state = 'UNSENT';
@@ -58,6 +98,9 @@ function sanitizeMessageForStorage(msg) {
     delete safeMsg.isDecrypting;
     delete safeMsg.decryptError;
     return safeMsg;
+  } else if (isResetting && (safeMsg.state === 'UNSENT' || safeMsg.isUnsent)) {
+    safeMsg.state = 'SENT';
+    safeMsg.isUnsent = false;
   }
 
   // STRICT SECURITY INVARIANT: Strip decrypted text
@@ -88,6 +131,13 @@ export async function idbSaveMessages(conversationId, messages) {
       // Use tempId if real id doesn't exist (optimistic UI)
       const id = msg.id || msg.tempId;
       if (!id) continue;
+
+      const tempKey = msg.clientId || msg.tempId;
+      if (tempKey && tempKey !== id) {
+        try {
+          store.delete(tempKey);
+        } catch (_) {}
+      }
       
       const safeMsg = sanitizeMessageForStorage({
         ...msg,
@@ -108,8 +158,8 @@ export async function idbSaveMessages(conversationId, messages) {
 }
 
 /**
- * Retrieve messages for a conversation, sorted by createdAt ascending.
- * Fetches the entire conversation history available in cache.
+ * Retrieve messages for a conversation (accepts single ID or candidate aliases array),
+ * sorted strictly by compareMessages ascending.
  */
 export async function idbGetMessages(conversationId) {
   try {
@@ -118,15 +168,35 @@ export async function idbGetMessages(conversationId) {
     const store = tx.objectStore(STORES.MESSAGES);
     const index = store.index('conversationId');
     
-    const request = index.getAll(IDBKeyRange.only(conversationId));
-    
-    const rawMessages = await new Promise((res, rej) => {
-      request.onsuccess = () => res(request.result);
-      request.onerror = () => rej(request.error);
+    const candidateIds = Array.isArray(conversationId)
+      ? conversationId.filter(Boolean)
+      : [conversationId].filter(Boolean);
+
+    const fetches = candidateIds.map(cid => {
+      return new Promise((res) => {
+        const request = index.getAll(IDBKeyRange.only(cid));
+        request.onsuccess = () => res(request.result || []);
+        request.onerror = () => res([]);
+      });
     });
-    
-    // Sanitize and reconcile unsent state for older messages stored in IDB
-    const sanitized = (rawMessages || []).map((msg) => {
+
+    const resultsArray = await Promise.all(fetches);
+    const combined = resultsArray.flat();
+
+    // Deduplicate by permanent message ID or client/temp ID
+    const seen = new Set();
+    const deduped = [];
+    for (const msg of combined) {
+      if (!msg) continue;
+      const key = msg.id || msg.clientId || msg.tempId;
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        deduped.push(msg);
+      }
+    }
+
+    // Sanitize and reconcile unsent & historical failed states for messages stored in IDB
+    const sanitized = deduped.map((msg) => {
       const isUnsent = msg.state === 'UNSENT' || msg.isUnsent || msg.text === 'This message was unsent' || msg.payload?.text === 'This message was unsent';
       if (isUnsent) {
         return {
@@ -144,15 +214,31 @@ export async function idbGetMessages(conversationId) {
           decryptError: false,
         };
       }
+
+      // Reconcile all historical and active failed/stale-sending messages to normalized status: 'failed'
+      const isTempMsg = !msg.id || String(msg.id).startsWith('temp_') || String(msg.id).startsWith('c_temp_');
+      const isFailedState = msg.status === 'failed' || msg.status === 'FAILED' || msg.isFailed || msg.deliveryStatus === 'failed';
+      const sendTime = new Date(msg.createdAt || msg.storedAt || msg.sendingAt || Date.now()).getTime();
+      const isStaleSending = isTempMsg && msg.status === 'sending' && !isNaN(sendTime) && (Date.now() - sendTime > 5000);
+
+      if (isFailedState || isStaleSending) {
+        const cleanMsg = {
+          ...msg,
+          status: 'failed',
+          isFailed: false,
+          deliveryStatus: 'failed',
+          retryCount: 0,
+        };
+        delete cleanMsg.retryAt;
+        delete cleanMsg.nextRetry;
+        return cleanMsg;
+      }
+
       return msg;
     });
 
-    // Sort ascending by createdAt
-    return sanitized.sort((a, b) => {
-      const timeA = new Date(a.createdAt || Date.now()).getTime();
-      const timeB = new Date(b.createdAt || Date.now()).getTime();
-      return timeA - timeB;
-    });
+    // Deterministic sort using unified compareMessages
+    return sanitized.sort(compareMessages);
   } catch (err) {
     console.warn('IDB Get failed:', err);
     return [];
@@ -243,27 +329,43 @@ export async function trimMessageCache(maxMessages = 5000) {
   }
 }
 
-/**
- * Patch an existing message in IDB without replacing the whole object.
- */
 export async function idbPatchMessage(conversationId, messageId, patch) {
-  if (!messageId) return;
+  if (!messageId && !patch?.id && !patch?.clientId && !patch?.tempId) return;
   try {
     const db = await openMessagesDB();
     const tx = db.transaction(STORES.MESSAGES, 'readwrite');
     const store = tx.objectStore(STORES.MESSAGES);
     
-    const request = store.get(messageId);
-    request.onsuccess = () => {
-      if (request.result) {
-        const updated = sanitizeMessageForStorage({
-          ...request.result,
-          ...patch,
-          storedAt: Date.now()
-        });
-        store.put(updated);
+    const keysToSearch = [messageId, patch?.clientId, patch?.tempId, patch?.id].filter(Boolean);
+    let existingRecord = null;
+    let foundKey = null;
+
+    for (const key of keysToSearch) {
+      const rec = await new Promise((res) => {
+        const req = store.get(key);
+        req.onsuccess = () => res(req.result);
+        req.onerror = () => res(null);
+      });
+      if (rec) {
+        existingRecord = rec;
+        foundKey = key;
+        break;
       }
-    };
+    }
+
+    const updated = sanitizeMessageForStorage({
+      ...(existingRecord || {}),
+      ...patch,
+      storedAt: Date.now()
+    });
+
+    if (foundKey && updated.id && foundKey !== updated.id) {
+      store.delete(foundKey);
+    }
+
+    if (updated.id) {
+      store.put(updated);
+    }
     
     await new Promise((res, rej) => {
       tx.oncomplete = res;
@@ -271,5 +373,21 @@ export async function idbPatchMessage(conversationId, messageId, patch) {
     });
   } catch (err) {
     console.warn('IDB Patch failed:', err);
+  }
+}
+
+export async function idbDeleteMessage(messageId) {
+  if (!messageId) return;
+  try {
+    const db = await openMessagesDB();
+    const tx = db.transaction(STORES.MESSAGES, 'readwrite');
+    const store = tx.objectStore(STORES.MESSAGES);
+    store.delete(messageId);
+    await new Promise((res, rej) => {
+      tx.oncomplete = res;
+      tx.onerror = () => rej(tx.error);
+    });
+  } catch (err) {
+    console.warn('IDB Delete failed:', err);
   }
 }

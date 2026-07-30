@@ -60,6 +60,27 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       const s = this.server?.sockets?.sockets?.get(socketId);
       return Boolean(s && s.connected);
     });
+
+    this.presenceService.onStatusChange(async (userId, status, lastSeen) => {
+      const presencePayload = { userId, status, lastActive: lastSeen };
+      // Broadcast to personal room (updates current user and multi-tab/device clients)
+      this.server.to(userId).emit('presence:update', presencePayload);
+
+      try {
+        const userConvs = await this.prisma.conversationParticipant.findMany({
+          where: { userId, deletedAt: null, leftAt: null },
+          select: { conversationId: true }
+        });
+        userConvs.forEach(p => {
+          if (p.conversationId) {
+            this.server.to(`conv_${p.conversationId}`).emit('presence:update', presencePayload);
+          }
+        });
+      } catch (err) {
+        this.logger.error(`Failed to broadcast presence update for user=${userId}`, err);
+      }
+    });
+
     this.setupDomainEventSubscriber();
   }
 
@@ -93,6 +114,26 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   }
 
   private handleDomainEvent(payload: any) {
+    if (payload.type === 'user.settings_updated') {
+      const uId = payload.targetUserId || payload.data?.userId;
+      if (uId) {
+        this.userPresenceSettingsCache.delete(uId);
+        const settings = payload.data?.settings;
+        if (settings?.showOnlineStatus === false || settings?.whoCanSeeOnline === 'nobody') {
+          const offlinePayload = { userId: uId, status: 'offline', lastActive: new Date().toISOString() };
+          this.prisma.conversationParticipant.findMany({
+            where: { userId: uId, deletedAt: null, leftAt: null },
+            select: { conversationId: true }
+          }).then(userConvs => {
+            userConvs.forEach(c => {
+              if (c.conversationId) this.server.to(`conv_${c.conversationId}`).emit('presence:update', offlinePayload);
+            });
+            this.server.to(uId).emit('presence:update', offlinePayload);
+          }).catch(() => {});
+        }
+      }
+    }
+
     const isLegacyEvent = payload.type?.includes(':');
     let targets: string[] = [];
 
@@ -221,23 +262,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
     await this.presenceService.setOnline(userId, client.id);
 
-    // Scoped presence broadcast: only emit to users who share a conversation room
-    // with the connecting user. Avoids O(n) fan-out to all connected clients.
-    const rooms = Array.from(client.rooms || []);
-    const presencePayload = { userId, status: 'online', lastActive: new Date().toISOString() };
-    let broadcastToAny = false;
-    rooms.forEach(room => {
-      if (room.startsWith('conv_')) {
-        this.server.to(room).emit('presence:update', presencePayload);
-        broadcastToAny = true;
-      }
-    });
-    // Fallback: if the user hasn't joined any conversation rooms yet (first connect),
-    // emit to their personal room so their own tabs see the change
-    if (!broadcastToAny) {
-      this.server.to(userId).emit('presence:update', presencePayload);
-    }
-
     this.logger.log(`Connected user=${userId} socket=${client.id}`);
   }
 
@@ -262,14 +286,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       });
 
       await this.presenceService.setOffline(userId, client.id);
-      const presence = await this.presenceService.getPresence(userId);
-      if (!presence || presence.status === 'offline') {
-        const offlinePayload = { userId, status: 'offline', lastActive: presence?.lastSeen || new Date().toISOString() };
-        userConvIds.forEach(cId => {
-          this.server.to(`conv_${cId}`).emit('presence:update', offlinePayload);
-        });
-        this.server.to(userId).emit('presence:update', offlinePayload);
-      }
     }
     if (deviceId) {
       this.connectedDevices.delete(deviceId);
@@ -328,7 +344,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     return {
       userId: targetUserId,
       status: canSeeOnline ? (presence?.status || 'offline') : 'offline',
-      lastActive: presence?.lastSeen || null
+      lastActive: presence?.lastSeen || null,
+      lastSeen: presence?.lastSeen || null
     };
   }
 
@@ -492,11 +509,48 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @MessageBody() data: { userIds: string[] }
   ) {
     if (!data?.userIds || !Array.isArray(data.userIds)) return { status: 'error' };
+    const viewerId = (client as any).userId;
     const presenceMap = await this.presenceService.getPresenceMany(data.userIds);
-    const result: Record<string, any> = {};
-    presenceMap.forEach((val, key) => {
-      result[key] = { status: val.status, lastSeen: val.lastSeen };
+
+    const targetUsers = await this.prisma.user.findMany({
+      where: { id: { in: data.userIds } },
+      select: {
+        id: true,
+        settings: {
+          select: {
+            showOnlineStatus: true,
+            whoCanSeeOnline: true
+          }
+        }
+      }
     });
+
+    const userMap = new Map<string, any>();
+    targetUsers.forEach(u => userMap.set(u.id, u));
+
+    const result: Record<string, any> = {};
+    for (const uId of data.userIds) {
+      const val = presenceMap.get(uId);
+      const targetUser = userMap.get(uId);
+
+      let canSeeOnline = true;
+      if (targetUser) {
+        canSeeOnline = await checkPresenceVisibility(
+          uId,
+          viewerId,
+          targetUser.settings?.whoCanSeeOnline || 'everyone',
+          targetUser.settings?.showOnlineStatus !== false,
+          this.prisma
+        );
+      }
+
+      result[uId] = {
+        status: canSeeOnline ? (val?.status || 'offline') : 'offline',
+        lastActive: val?.lastSeen || null,
+        lastSeen: val?.lastSeen || null
+      };
+    }
+
     return { status: 'ok', presence: result };
   }
 

@@ -188,7 +188,6 @@ export default function SettingsRoute() {
 
   // Presence settings
   const [showOnlineStatus, setShowOnlineStatus] = useState(settingsObj.showOnlineStatus ?? true);
-  const [whoCanSeeOnline, setWhoCanSeeOnline] = useState(settingsObj.whoCanSeeOnline || 'everyone');
   const [readReceipts, setReadReceipts] = useState(settingsObj.readReceipts ?? true);
 
 
@@ -227,7 +226,6 @@ export default function SettingsRoute() {
             setPushNotifs(s.pushNotifs ?? false);
             setPrivateProfile(s.privateProfile ?? false);
             setShowOnlineStatus(s.showOnlineStatus ?? true);
-            setWhoCanSeeOnline(s.whoCanSeeOnline || 'everyone');
             setReadReceipts(s.readReceipts ?? true);
           }
         }
@@ -318,7 +316,6 @@ export default function SettingsRoute() {
             ...(currentUser?.settings || {}),
             privateProfile,
             showOnlineStatus,
-            whoCanSeeOnline,
             readReceipts,
           }
         });
@@ -327,7 +324,6 @@ export default function SettingsRoute() {
       updateSettings({
         privateProfile,
         showOnlineStatus,
-        whoCanSeeOnline,
         readReceipts,
       }).catch(err => console.error('Failed to update privacy settings:', err));
     } else if (activePanel === 'notifications') {
@@ -806,26 +802,6 @@ export default function SettingsRoute() {
               </label>
             </div>
             
-            <div className={styles.nestedDivider} />
-
-            <div className={`${styles.selectRow} ${!showOnlineStatus ? styles.disabledRow : ''}`}>
-              <div className={styles.toggleInfo}>
-                <span className={styles.rowLabel}>Who Can See My Online Status</span>
-                <span className={styles.toggleDesc}>Manage visibility rules for your online state</span>
-              </div>
-              <CustomSelect 
-                value={whoCanSeeOnline}
-                onChange={setWhoCanSeeOnline}
-                options={[
-                  { value: 'everyone', label: 'Everyone' },
-                  { value: 'following', label: 'People I Follow' },
-                  { value: 'mutual', label: 'Mutual Connections' },
-                  { value: 'nobody', label: 'Nobody' }
-                ]}
-                disabled={!showOnlineStatus}
-              />
-            </div>
-
             <div className={styles.nestedDivider} />
 
             <div className={styles.toggleRow}>

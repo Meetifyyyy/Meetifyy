@@ -24,7 +24,6 @@ export default function ChatAreaLayout({
   onLoadMore,
   onMarkSeen,
   onSendMessage,
-  onRetryMessage,
   onBack,
 
   typingUsers,
@@ -120,7 +119,6 @@ export default function ChatAreaLayout({
             onLoadMore={onLoadMore}
             onContextMenu={openContextMenu}
             onReplyTo={setReplyingTo}
-            onRetry={onRetryMessage}
             onOpenMediaModal={(url, type) => openViewer([{ url, type: type || 'image' }], 0)}
             conversations={conversations}
             onMarkSeen={onMarkSeen}

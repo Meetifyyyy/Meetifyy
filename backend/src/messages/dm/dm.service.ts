@@ -5,6 +5,8 @@ import { PresenceService } from '../../presence/presence.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { generatePublicId } from '../../common/utils/public-id.util';
 
+import { checkPresenceVisibility } from '../../users/privacy.helper';
+
 @Injectable()
 export class DmService extends MessagingCoreService {
   constructor(
@@ -144,23 +146,33 @@ export class DmService extends MessagingCoreService {
       }));
     }
 
-    const userIdsToFetchPresence = participants
-      .map(p => {
-        const otherP = p.conversation.participants.find(pt => pt.userId !== userId);
-        return otherP?.user;
-      })
-      .filter((u): u is any => !!u && u.settings?.showOnlineStatus !== false)
-      .map(u => u.id);
+    const otherUsersMap = new Map<string, any>();
+    participants.forEach(p => {
+      const otherP = p.conversation.participants.find(pt => pt.userId !== userId);
+      if (otherP?.user) {
+        otherUsersMap.set(otherP.user.id, otherP.user);
+      }
+    });
 
+    const userIdsToFetchPresence = Array.from(otherUsersMap.keys());
     const presenceMap = new Map<string, { isOnline: boolean; lastActive: string | null }>();
     if (userIdsToFetchPresence.length > 0) {
       const batchPresence = await this.presenceService.getPresenceMany(userIdsToFetchPresence);
-      batchPresence.forEach((presence, uId) => {
+      await Promise.all(userIdsToFetchPresence.map(async (uId) => {
+        const presence = batchPresence.get(uId);
+        const u = otherUsersMap.get(uId);
+        const canSee = await checkPresenceVisibility(
+          uId,
+          userId,
+          u?.settings?.whoCanSeeOnline || 'everyone',
+          u?.settings?.showOnlineStatus !== false,
+          this.prisma
+        );
         presenceMap.set(uId, {
-          isOnline: presence?.status === 'online',
+          isOnline: canSee ? (presence?.status === 'online') : false,
           lastActive: presence?.lastSeen || null
         });
-      });
+      }));
     }
 
     const userBlocks = await this.prisma.block.findMany({
