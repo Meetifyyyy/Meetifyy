@@ -1,9 +1,8 @@
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
-import { isImageUrl } from '@shared/utils/avatar';
 import { useQuery } from '@tanstack/react-query';
 import { messagesApi } from '@shared/api/apiClient';
+import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
 import styles from './ShareActivityModal.module.css';
 
 export default function ShareActivityModal({ isOpen, onClose, activity }) {
@@ -96,11 +95,7 @@ export default function ShareActivityModal({ isOpen, onClose, activity }) {
               return (
                 <div key={conv.id} className={styles.listItem}>
                   <div className={styles.contactInfo}>
-                    {isImageUrl(conv.avatar) ? (
-                      <img src={conv.avatar} alt={conv.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-                    ) : (
-                      <DefaultAvatar size={40} className={styles.avatar} />
-                    )}
+                    <ShareModalAvatar conv={conv} size="48px" />
                     <span className={styles.contactName}>{conv.name}</span>
                   </div>
                   <button 

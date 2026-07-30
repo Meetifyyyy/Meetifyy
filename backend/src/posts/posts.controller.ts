@@ -51,7 +51,7 @@ export class PostsController {
     @CurrentUser() user: { id: string },
     @Body() dto: CreatePostDto,
   ) {
-    return this.postsService.createPost(user.id, dto.text, dto.mediaKey, dto.communityId);
+    return this.postsService.createPost(user.id, dto.text, dto.mediaKey, dto.communityId, dto.poll, dto.mentions);
   }
 
   @Delete(':id')

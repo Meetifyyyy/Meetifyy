@@ -90,78 +90,198 @@ export class ActivitiesService implements OnModuleInit {
     }
   }
 
-  async getAllActivities(userId?: string, limit = 20, cursor?: string) {
-    const cacheKey = `activities:feed:${userId || 'anon'}:${limit}:${cursor || 'none'}`;
+  private async resolveCursorDate(cursor?: string): Promise<Date | undefined> {
+    if (!cursor) return undefined;
+
+    // 1. Dual tokenized cursor: ISO_DATE|ID
+    if (cursor.includes('|')) {
+      const datePart = cursor.split('|')[0];
+      const parsed = new Date(datePart);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+
+    // 2. ISO date string
+    const parsed = new Date(cursor);
+    if (!isNaN(parsed.getTime()) && (cursor.includes('T') || cursor.includes('-') || !isNaN(Number(cursor)))) {
+      return parsed;
+    }
+
+    // 3. Fallback for legacy plain ID cursor: Check Redis first
+    const cacheKey = `activity:created_at:${cursor}`;
     if (this.redis) {
       try {
         const cached = await this.redis.get(cacheKey);
-        if (cached) return JSON.parse(cached);
+        if (cached) return new Date(cached);
       } catch {}
     }
 
-    let parsedCursorDate: Date | undefined = undefined;
-    if (cursor) {
-      const parsed = new Date(cursor);
-      if (!isNaN(parsed.getTime()) && (cursor.includes('T') || cursor.includes('-'))) {
-        parsedCursorDate = parsed;
-      }
-    }
-
-    const [user, excludedUserIds, cursorDate, joinedMemberships] = await Promise.all([
-      userId ? this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }) : Promise.resolve(null),
-      userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([]),
-      cursor && !parsedCursorDate
-        ? this.prisma.crewActivity.findUnique({ where: { id: cursor }, select: { createdAt: true } }).then(r => r?.createdAt)
-        : Promise.resolve(parsedCursorDate),
-      userId ? this.prisma.crewActivityMember.findMany({ where: { userId }, select: { activityId: true, status: true } }) : Promise.resolve([]),
-    ]);
-
-    const joinedActivityIds = joinedMemberships.map(m => m.activityId);
-    const membershipMap = new Map(joinedMemberships.map(m => [m.activityId, m.status]));
-
-    const whereClause: any = {
-      deletedAt: null,
-      status: 'OPEN',
-      visibility: { in: ['PUBLIC', 'COLLEGE_ONLY'] },
-      ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
-      ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
-    };
-
-    const activities = await this.prisma.crewActivity.findMany({
-      where: whereClause,
-      take: limit + 1,
-      include: {
-        _count: { select: { members: true } },
-        members: {
-          take: 5,
-          include: { 
-            user: {
-              select: {
-                id: true,
-                username: true,
-                displayName: true,
-                avatar: true
-              }
-            }
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
+    // 4. DB lookup for legacy cursor ID (cached for 1h)
+    const record = await this.prisma.crewActivity.findUnique({
+      where: { id: cursor },
+      select: { createdAt: true },
     });
 
-    let nextCursor: string | undefined = undefined;
-    if (activities.length > limit) {
-      const next = activities.pop();
-      nextCursor = next?.id;
+    if (record?.createdAt) {
+      if (this.redis) {
+        this.redis.setex(cacheKey, 3600, record.createdAt.toISOString()).catch(() => {});
+      }
+      return record.createdAt;
     }
+
+    return undefined;
+  }
+
+  async getAllActivities(userId?: string, limit = 20, cursor?: string) {
+    const startTime = performance.now();
+    
+    // Tier 1: Check user-specific cache (Instant HIT)
+    const userCacheKey = `activities:feed:${userId || 'anon'}:${limit}:${cursor || 'none'}`;
+    let tCache = 0;
+    if (this.redis) {
+      const redisStart = performance.now();
+      try {
+        const cached = await this.redis.get(userCacheKey);
+        tCache = performance.now() - redisStart;
+        if (cached) {
+          const totalMs = performance.now() - startTime;
+          this.logger.log(`[STAGE_TIMINGS] GET /api/activities (HIT) - Total: ${totalMs.toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms`);
+          return JSON.parse(cached);
+        }
+      } catch {}
+    }
+
+    const preFetchStart = performance.now();
+    const [excludedUserIds, cursorDate] = await Promise.all([
+      userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([]),
+      this.resolveCursorDate(cursor),
+    ]);
+    const tPreFetch = performance.now() - preFetchStart;
+
+    // Tier 2: Check shared base feed cache across all users when no user blocks
+    const baseCacheKey = `activities:feed:base:${limit}:${cursorDate ? cursorDate.toISOString() : 'none'}`;
+    let baseFeed: { activities: any[]; nextCursor: string | undefined } | null = null;
+
+    if (excludedUserIds.length === 0 && this.redis) {
+      try {
+        const cachedBase = await this.redis.get(baseCacheKey);
+        if (cachedBase) {
+          baseFeed = JSON.parse(cachedBase);
+        }
+      } catch {}
+    }
+
+    const dbStart = performance.now();
+    let activities: any[];
+    let nextCursor: string | undefined = undefined;
+
+    if (baseFeed) {
+      activities = baseFeed.activities;
+      nextCursor = baseFeed.nextCursor;
+    } else {
+      await this.autoExpireActivities();
+      const now = new Date();
+      const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+
+      const whereClause: any = {
+        deletedAt: null,
+        status: 'OPEN',
+        visibility: { in: ['PUBLIC', 'COLLEGE_ONLY'] },
+        OR: [
+          { endDate: { gt: now } },
+          {
+            endDate: null,
+            startDate: { gt: threeHoursAgo }
+          }
+        ],
+        ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
+        ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
+      };
+
+      const fetchedActivities = await this.prisma.crewActivity.findMany({
+        where: whereClause,
+        take: limit + 1,
+        select: {
+          id: true,
+          creatorId: true,
+          title: true,
+          description: true,
+          location: true,
+          maxMembers: true,
+          createdAt: true,
+          coverImage: true,
+          coverMediaId: true,
+          createActivityGroup: true,
+          deletedAt: true,
+          endDate: true,
+          latitude: true,
+          longitude: true,
+          startDate: true,
+          status: true,
+          updatedAt: true,
+          hostCollege: true,
+          collegeId: true,
+          participationType: true,
+          shareToCampus: true,
+          visibility: true,
+          _count: { select: { members: true } },
+          members: {
+            take: 5,
+            select: {
+              userId: true,
+              activityId: true,
+              joinedAt: true,
+              status: true,
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  displayName: true,
+                  avatar: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (fetchedActivities.length > limit) {
+        const next = fetchedActivities.pop();
+        if (next?.createdAt && next?.id) {
+          nextCursor = `${next.createdAt.toISOString()}|${next.id}`;
+        }
+      }
+      activities = fetchedActivities;
+
+      if (excludedUserIds.length === 0 && this.redis) {
+        this.redis.setex(baseCacheKey, 60, JSON.stringify({ activities, nextCursor })).catch(() => {});
+      }
+    }
+    const tMainDb = performance.now() - dbStart;
 
     if (activities.length === 0) {
       const emptyRes = { activities: [], nextCursor: undefined };
       if (this.redis) {
-        this.redis.setex(cacheKey, 60, JSON.stringify(emptyRes)).catch(() => {});
+        this.redis.setex(userCacheKey, 60, JSON.stringify(emptyRes)).catch(() => {});
       }
+      const totalMs = performance.now() - startTime;
+      this.logger.log(`[STAGE_TIMINGS] GET /api/activities (EMPTY) - Total: ${totalMs.toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms | PreFetch: ${tPreFetch.toFixed(2)}ms | MainDB: ${tMainDb.toFixed(2)}ms`);
       return emptyRes;
     }
+
+    // Scoped membership query: fetch ONLY for the activities returned on this page
+    const memberStart = performance.now();
+    const activityIds = activities.map(a => a.id);
+    const joinedMemberships = userId && activityIds.length > 0
+      ? await this.prisma.crewActivityMember.findMany({
+          where: { userId, activityId: { in: activityIds } },
+          select: { activityId: true, status: true },
+        })
+      : [];
+    const tMemberDb = performance.now() - memberStart;
+
+    const logicStart = performance.now();
+    const membershipMap = new Map(joinedMemberships.map(m => [m.activityId, m.status]));
 
     const response = {
       activities: activities.map(a => {
@@ -176,8 +296,14 @@ export class ActivitiesService implements OnModuleInit {
     };
 
     if (this.redis) {
-      this.redis.setex(cacheKey, 60, JSON.stringify(response)).catch(() => {});
+      this.redis.setex(userCacheKey, 60, JSON.stringify(response)).catch(() => {});
     }
+    const tLogic = performance.now() - logicStart;
+
+    const totalMs = performance.now() - startTime;
+    this.logger.log(
+      `[STAGE_TIMINGS] GET /api/activities - Total: ${totalMs.toFixed(2)}ms | RedisLookup: ${tCache.toFixed(2)}ms | PreFetch: ${tPreFetch.toFixed(2)}ms | BaseCache: ${baseFeed ? 'HIT' : 'MISS'} | MainDB: ${tMainDb.toFixed(2)}ms | MemberDB: ${tMemberDb.toFixed(2)}ms | Logic: ${tLogic.toFixed(2)}ms`
+    );
 
     return response;
   }
@@ -205,11 +331,22 @@ export class ActivitiesService implements OnModuleInit {
     const joinedActivityIds = joinedMemberships.map(m => m.activityId);
     const membershipMap = new Map(joinedMemberships.map(m => [m.activityId, m.status]));
 
+    await this.autoExpireActivities();
+    const now = new Date();
+    const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+
     const whereClause: any = {
       deletedAt: null,
       collegeId: user.collegeId,
       status: 'OPEN',
       visibility: { in: ['PUBLIC', 'COLLEGE_ONLY'] },
+      OR: [
+        { endDate: { gt: now } },
+        {
+          endDate: null,
+          startDate: { gt: threeHoursAgo }
+        }
+      ],
       ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
       ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
     };
@@ -840,6 +977,47 @@ export class ActivitiesService implements OnModuleInit {
       orderBy: { createdAt: 'desc' }
     });
     return bookmarks.map(b => b.activityId);
+  }
+
+  async getMyActivities(userId: string) {
+    const memberships = await this.prisma.crewActivityMember.findMany({
+      where: { userId, status: 'MEMBER' },
+      select: { activityId: true }
+    });
+    const memberActivityIds = memberships.map(m => m.activityId);
+
+    const activities = await this.prisma.crewActivity.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          { creatorId: userId },
+          { id: { in: memberActivityIds } }
+        ]
+      },
+      include: {
+        _count: { select: { members: true } },
+        members: {
+          take: 5,
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                displayName: true,
+                avatar: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    return activities.map(a => ({
+      ...a,
+      isJoined: true,
+      myStatus: 'MEMBER'
+    }));
   }
 
   async getSavedActivities(userId: string, limit = 20, cursor?: string) {

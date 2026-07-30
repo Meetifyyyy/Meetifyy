@@ -1,33 +1,9 @@
 import { forwardRef, useState, useEffect } from 'react';
 import { UsersIcon } from '@heroicons/react/24/solid';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
-import { getMediaUrl } from '@shared/api/apiClient';
+import { getMediaUrl, normalizeDicebearUrl } from '@shared/api/apiClient';
 import defaultAvatarImg from '../../../assets/images/default_avatar.webp';
 import styles from './Avatar.module.css';
-
-const isImageUrl = (str) => {
-  if (!str || typeof str !== 'string') return false;
-  const s = str.trim().toLowerCase();
-  return (
-    s.startsWith('/') ||
-    s.startsWith('http://') ||
-    s.startsWith('https://') ||
-    s.startsWith('data:') ||
-    s.startsWith('blob:') ||
-    s.startsWith('src/') ||
-    s.startsWith('assets/') ||
-    s.includes('default_avatar') ||
-    s.endsWith('.webp') ||
-    s.endsWith('.png') ||
-    s.endsWith('.jpg') ||
-    s.endsWith('.jpeg') ||
-    s.endsWith('.svg') ||
-    s.endsWith('.gif')
-  );
-};
-
-// Used only when showInitials=true (campus / directory pages)
-const INITIALS_BG = 'linear-gradient(135deg, #6366f1 0%, #3b82f6 100%)';
 
 export function getProcessedAvatarUrl(src) {
   if (!src) return defaultAvatarImg;
@@ -42,8 +18,8 @@ export function getProcessedAvatarUrl(src) {
   if (clean.includes('default_avatar') || clean.includes('api.dicebear.com/7.x/initials')) {
     return defaultAvatarImg;
   }
-  if (clean.startsWith('https://api.dicebear.com/')) {
-    return clean.split('&backgroundColor=')[0].split('?backgroundColor=')[0];
+  if (clean.includes('api.dicebear.com/')) {
+    return normalizeDicebearUrl(clean);
   }
   // Convert /api/media/ relative paths to absolute backend URL so they work on Vercel
   if (clean.startsWith('/api/media/') || (!clean.startsWith('http') && !clean.startsWith('data:') && !clean.startsWith('blob:') && !clean.startsWith('/'))) {
@@ -51,6 +27,8 @@ export function getProcessedAvatarUrl(src) {
   }
   return clean;
 }
+
+const loadedAvatarCache = new Set();
 
 const Avatar = forwardRef(({
   src,
@@ -112,11 +90,28 @@ const Avatar = forwardRef(({
     if (onClick) onClick(e);
   };
   
+  const isPreloaded = loadedAvatarCache.has(displaySrc) || displaySrc === defaultAvatarImg;
+  const [imgLoading, setImgLoading] = useState(!isPreloaded);
+
+  useEffect(() => {
+    if (loadedAvatarCache.has(displaySrc) || displaySrc === defaultAvatarImg) {
+      setImgLoading(false);
+    } else {
+      setImgLoading(true);
+    }
+  }, [displaySrc]);
+
+  const handleLoad = () => {
+    if (displaySrc) loadedAvatarCache.add(displaySrc);
+    setImgLoading(false);
+  };
+
   const handleError = () => {
     if (initialProcessedSrc && initialProcessedSrc !== defaultAvatarImg) {
       mediaCache.invalidate(initialProcessedSrc);
     }
     setImgSrc(defaultAvatarImg);
+    setImgLoading(false);
   };
 
   const isDefaultGroupAvatar = isGroup && (!imgSrc || imgSrc === defaultAvatarImg || !initialProcessedSrc || initialProcessedSrc === defaultAvatarImg);
@@ -137,16 +132,17 @@ const Avatar = forwardRef(({
           {children}
         </div>
       ) : (
-        <div
-          className={styles.avatarClip}
-          style={{ background: 'transparent' }}
-        >
+        <div className={styles.avatarClip}>
+          {imgLoading && (
+            <div className={styles.avatarSkeleton} />
+          )}
           <img
             src={displaySrc}
             alt={name || 'Avatar'}
             loading="lazy"
             decoding="async"
-            className={styles.avatarImg}
+            className={`${styles.avatarImg} ${imgLoading ? styles.imgHidden : styles.imgVisible}`}
+            onLoad={handleLoad}
             onError={handleError}
           />
           {children}

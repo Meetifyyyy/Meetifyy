@@ -242,8 +242,8 @@
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: #18181b;
-  color: #ffffff;
+  background: #000000 !important;
+  color: #ffffff !important;
   border: 3px solid var(--badge-border, var(--color-bg-white, #ffffff));
   display: flex;
   align-items: center;
@@ -252,18 +252,28 @@
   transition: color 0.2s ease, background 0.2s ease, border-color 0.15s ease;
 }
 
+.activityCalendarBadge svg {
+  stroke: #ffffff !important;
+  color: #ffffff !important;
+}
+
 /* Started = green tint */
 .activityCalendarBadge:has(svg[fill="currentColor"]) {
-  color: #10b981;
+  color: #10b981 !important;
 }
 
 :global([data-theme="dark"]) .activityCalendarBadge {
-  background: #ffffff;
-  color: #18181b;
+  background: #ffffff !important;
+  color: #000000 !important;
+}
+
+:global([data-theme="dark"]) .activityCalendarBadge svg {
+  stroke: #000000 !important;
+  color: #000000 !important;
 }
 
 :global([data-theme="dark"]) .activityCalendarBadge:has(svg[fill="currentColor"]) {
-  color: #10b981;
+  color: #10b981 !important;
 }
 
 /* Old stale classes — unused */

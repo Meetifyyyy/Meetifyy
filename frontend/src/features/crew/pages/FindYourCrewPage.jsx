@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
-import { useActivities, useCampusActivities } from '@shared/hooks/useCrew';
+import { useActivities, useCampusActivities, useSavedActivitiesQuery, useMyActivitiesQuery } from '@shared/hooks/useCrew';
 import { useDebounce } from '@shared/hooks/useDebounce';
 import { prefetchActivity } from '@shared/hooks/prefetch';
 import PageLayout from '@layout/PageLayout';
@@ -27,6 +27,8 @@ export default function FindYourCrewPage() {
     fetchNextPage,
   } = useActivities();
   const { campusActivities: rawCampusActivities } = useCampusActivities();
+  const { savedActivitiesData } = useSavedActivitiesQuery();
+  const { myActivitiesData } = useMyActivitiesQuery();
 
   const mapActivity = (a) => ({
     ...a,
@@ -45,18 +47,23 @@ export default function FindYourCrewPage() {
 
   const allCombinedActivities = useMemo(() => {
     const map = new Map();
-    [...(rawActivities || []), ...(rawCampusActivities || [])].forEach(a => {
+    [...(rawActivities || []), ...(rawCampusActivities || []), ...(savedActivitiesData || []), ...(myActivitiesData || [])].forEach(a => {
       if (a && a.id) map.set(a.id, a);
     });
     return Array.from(map.values()).map(mapActivity);
-  }, [rawActivities, rawCampusActivities]);
+  }, [rawActivities, rawCampusActivities, savedActivitiesData, myActivitiesData]);
 
   const savedActivities = useSavedActivitiesStore(state => state.savedActivities);
+  const fetchSavedActivityIds = useSavedActivitiesStore(state => state.fetchSavedActivityIds);
   const navigate = useNavigate();
   const location = useLocation();
   const [selectedTab, setSelectedTab] = useState(location.state?.selectedTab || 'For You');
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 200);
+
+  useEffect(() => {
+    fetchSavedActivityIds();
+  }, [fetchSavedActivityIds]);
 
   // IntersectionObserver sentinel — triggers fetchNextPage instead of visibleCount++
   const sentinelRef = useRef(null);
@@ -114,15 +121,27 @@ export default function FindYourCrewPage() {
 
     // Saved tab: show ALL activities saved by the user (whether ended or not, campus or global)
     if (selectedTab === 'Saved') {
-      const savedList = allCombinedActivities.filter(a => savedActivities?.includes(a.id));
+      const map = new Map();
+      (savedActivitiesData || []).forEach(a => { if (a && a.id) map.set(a.id, a); });
+      allCombinedActivities.forEach(a => {
+        if (a && a.id && (savedActivities?.includes(a.id) || a.isBookmarked)) {
+          map.set(a.id, a);
+        }
+      });
+      const savedList = Array.from(map.values()).map(mapActivity);
       return filterActivities(savedList, { search: debouncedSearchQuery });
     }
 
     // "My Activities" — show ALL activities the user is part of (created or joined), regardless of college visibility.
     if (selectedTab === 'My Activities') {
-      const mine = crewActivities.filter(a =>
-        a.participants?.includes(currentUser?.id) || a.creatorId === currentUser?.id || a.hostId === currentUser?.id
-      ).sort((a, b) => new Date(a.startDate || a.date || 0) - new Date(b.startDate || b.date || 0));
+      const mine = allCombinedActivities.filter(a =>
+        a.participants?.includes(currentUser?.id) ||
+        a.isJoined ||
+        a.myStatus === 'MEMBER' ||
+        a.creatorId === currentUser?.id ||
+        a.hostId === currentUser?.id ||
+        a.members?.some(m => (m.userId || m.id || m.user?.id) === currentUser?.id)
+      ).sort((a, b) => new Date(a.startDate || a.date || a.createdAt || 0) - new Date(b.startDate || b.date || b.createdAt || 0));
       return filterActivities(mine, { search: debouncedSearchQuery });
     }
 
@@ -157,7 +176,7 @@ export default function FindYourCrewPage() {
       let hasEnded = a.status === 'ENDED' || a.status === 'CANCELLED';
       let hasStarted = false;
 
-      const startRaw = a.startDate || a.date;
+      const startRaw = a.startDate || a.date || a.createdAt;
       const endRaw = a.endDate;
 
       if (startRaw) {
@@ -320,12 +339,11 @@ export default function FindYourCrewPage() {
                     )}
                     
                     {selectedTab !== 'My Activities' && hasNextPage && (
-                      <div ref={sentinelRef} style={{ height: '20px', width: '100%', margin: '1rem 0' }} />
+                      <div ref={sentinelRef} style={{ height: '1px', width: '100%' }} />
                     )}
                     {isFetchingNextPage && (
-                      <div className={styles.list}>
-                        <CrewCardSkeleton />
-                        <CrewCardSkeleton />
+                      <div className={styles.paginationSpinnerWrapper}>
+                        <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '2.5px', borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }} />
                       </div>
                     )}
                   </section>

@@ -3,7 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import styles from './SharedCommunityPreview.module.css';
 
-export function SharedCommunityPreview({ community, currentUserId }) {
+function formatCount(n) {
+  if (!n) return '0';
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return n.toLocaleString();
+}
+
+export function SharedCommunityPreview({ community }) {
   const navigate = useNavigate();
 
   if (!community) return null;
@@ -16,33 +23,30 @@ export function SharedCommunityPreview({ community, currentUserId }) {
     }
   };
 
+  const membersCount = community.membersCount ?? (Array.isArray(community.members) ? community.members.length : 0);
+
   return (
     <div className={styles.card} onClick={handleClick}>
-      <div className={styles.left}>
-        <div className={styles.header}>
-          <span className={styles.badge} style={{ background: 'var(--color-primary, #6366f1)', color: 'white' }}>Community</span>
-        </div>
-        
-        <div className={styles.info}>
-          {isImageUrl(community.avatar) ? (
-            <img src={community.avatar} alt={community.name} className={styles.avatar} style={{ borderRadius: '50%', objectFit: 'cover' }} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-          ) : (
-            <div className={styles.avatar} style={{ background: community.color || 'var(--color-primary, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: '1.08rem', borderRadius: '50%' }}>
-              {community.name?.charAt(0).toUpperCase() || 'C'}
-            </div>
-          )}
-          <div className={styles.details}>
-            <div className={styles.name}>{community.name}</div>
+      <div className={styles.avatarWrapper}>
+        {isImageUrl(community.avatar) ? (
+          <img
+            src={community.avatar}
+            alt={community.name || ''}
+            className={styles.avatar}
+            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}
+          />
+        ) : (
+          <div
+            className={styles.avatarFallback}
+            style={{ background: community.color || 'var(--color-primary, #2563eb)' }}
+          >
+            {community.name?.charAt(0).toUpperCase() || 'C'}
           </div>
-        </div>
-
-        {community.description && (
-          <p className={styles.bio}>{community.description}</p>
         )}
-
-        <div className={styles.stats}>
-          <span className={styles.stat}><strong>{community.membersCount?.toLocaleString() || 0}</strong> Members</span>
-        </div>
+      </div>
+      <div className={styles.details}>
+        <div className={styles.name}>{community.name}</div>
+        <div className={styles.membersCount}>{formatCount(membersCount)} Members</div>
       </div>
     </div>
   );

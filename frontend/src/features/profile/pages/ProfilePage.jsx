@@ -64,6 +64,8 @@ INTERESTS_BY_CATEGORY.forEach(category => {
 });
 
 
+import CoverImage from '@shared/components/ui/CoverImage';
+
 export function getCoverStyle(cover, fallback) {
   if (!cover || typeof cover !== 'string' || !cover.trim()) {
     return { backgroundImage: `url("${fallback}")` };
@@ -319,9 +321,10 @@ export default function ProfilePage() {
           {/* Profile card */}
           <div className={s.profileCard}>
             <div className={s.coverWrap}>
-              <div
+              <CoverImage
+                cover={effectiveUser.cover}
+                fallback={defaultCover}
                 className={s.coverPhoto}
-                style={getCoverStyle(effectiveUser.cover, defaultCover)}
               />
               {/* Own profile — edit cover button */}
               {isOwnProfile && (

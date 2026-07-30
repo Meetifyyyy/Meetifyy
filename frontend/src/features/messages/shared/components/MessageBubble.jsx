@@ -566,6 +566,45 @@ const MessageBubble = memo(function MessageBubble({
         </div>
       </div>
     );
+  } else if (communityData) {
+    // Shared Community Card Message
+    innerContent = (
+      <div className={styles.msgImageCardContainer}>
+        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+          <SharedCommunityPreview community={communityData} />
+          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+        </div>
+        <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
+          {timeText}
+        </div>
+      </div>
+    );
+  } else if (postData) {
+    // Shared Post Card Message
+    innerContent = (
+      <div className={styles.msgImageCardContainer}>
+        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+          <SharedPostPreview post={postData} />
+          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+        </div>
+        <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
+          {timeText}
+        </div>
+      </div>
+    );
+  } else if (profileData) {
+    // Shared Profile Card Message
+    innerContent = (
+      <div className={styles.msgImageCardContainer}>
+        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+          <SharedProfilePreview profile={profileData} />
+          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+        </div>
+        <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
+          {timeText}
+        </div>
+      </div>
+    );
   } else {
     // 5. Standard Text Bubble (or Image + Text Caption)
     innerContent = (
@@ -589,18 +628,10 @@ const MessageBubble = memo(function MessageBubble({
             />
           )}
 
-          {postData ? (
-            <SharedPostPreview post={postData} />
-          ) : profileData ? (
-            <SharedProfilePreview profile={profileData} />
-          ) : communityData ? (
-            <SharedCommunityPreview community={communityData} />
-          ) : (
-            <div className={styles.msgTextTimeWrap}>
-              {hasText && <RichText content={messageText} className={styles.msgText} />}
-              <div className={styles.msgTimeLabel}>{timeText}</div>
-            </div>
-          )}
+          <div className={styles.msgTextTimeWrap}>
+            {hasText && <RichText content={messageText} className={styles.msgText} />}
+            <div className={styles.msgTimeLabel}>{timeText}</div>
+          </div>
         </div>
         {!mediaError && (
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />

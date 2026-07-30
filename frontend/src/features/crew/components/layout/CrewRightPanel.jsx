@@ -19,7 +19,7 @@ function getStartsInLabel(act, nowTime = Date.now()) {
   if (act.startsInLabel && !act.date && !act.startDate) return act.startsInLabel;
 
   try {
-    const rawDate = act.startDate || act.date;
+    const rawDate = act.startDate || act.date || act.createdAt;
     if (rawDate) {
       const targetDate = new Date(rawDate);
       if (isNaN(targetDate.getTime())) return 'Starts soon';
@@ -186,8 +186,8 @@ export default function CrewRightPanel({ onCreateActivity, onViewAll }) {
                 key={activity.id} 
                 className={styles.eventItem}
                 onClick={() => {
-                  const chatId = String(activity.id).startsWith('act_') ? activity.id : `act_${activity.id}`;
-                  navigate(`/messages/${chatId}`, { state: { from: location.pathname } });
+                  const cleanId = String(activity.id).replace(/^(act_)+/, '');
+                  navigate(`/crew/${cleanId}`, { state: { from: location.pathname } });
                 }}
                 style={{ cursor: 'pointer' }}
               >

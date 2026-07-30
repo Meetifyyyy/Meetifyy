@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/hooks/useData';
+import { useCampusCommunities } from '@shared/hooks/useCommunities';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
@@ -15,7 +16,8 @@ import ActivityTemplatesRow from '../components/ActivityTemplatesRow';
 export default function CampusPage() {
   const navigate = useNavigate();
   const { currentUser, collegeName: authCollegeName } = useAuth();
-  const { campusCrewActivities, campusUsers, campusCommunities, createCampusGroup } = useData();
+  const { campusCrewActivities, campusUsers, createCampusGroup } = useData();
+  const { campusCommunities } = useCampusCommunities();
 
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
@@ -70,7 +72,6 @@ export default function CampusPage() {
   }, [campusUsers, userCollegeId, currentUser]);
 
   const handleCreateGroup = async (id) => {
-    showToast('Community created successfully! 🚀');
     navigate(`/communities/${id}`, { state: { from: '/campus' } });
   };
 

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { usersApi, activitiesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
-import Avatar from '../avatar/Avatar';
+import ShareModalAvatar from '../avatar/ShareModalAvatar';
 import styles from './InviteFriendsModal.module.css';
 import { Search, X, Check, UserCheck, Clock, AlertCircle } from 'lucide-react';
 
@@ -152,10 +152,9 @@ export default function InviteFriendsModal({
                 >
                   <div className={styles.userInfo}>
                     <div className={styles.userAvatar}>
-                      <Avatar
-                        src={friend.avatar}
-                        name={friend.displayName || friend.username}
-                        size="40px"
+                      <ShareModalAvatar
+                        conv={friend}
+                        size="48px"
                       />
                     </div>
                     <div className={styles.userDetails}>

@@ -1,14 +1,15 @@
-export function EmptyState({ title = 'Nothing to see here', message, icon }) {
+export function EmptyState({ title = 'Nothing to see here', message, icon, action }) {
   return (
-    <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--color-text-muted)', width: '100%' }}>
+    <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--color-text-muted)', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       {icon ? icon : (
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem', opacity: 0.5 }}>
           <circle cx="12" cy="12" r="10" />
           <line x1="8" y1="12" x2="16" y2="12" />
         </svg>
       )}
-      <h3 style={{ fontSize: '1.1rem', color: 'var(--color-text-main)', marginBottom: '0.5rem' }}>{title}</h3>
+      <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: message ? '0.5rem' : 0 }}>{title}</h3>
       {message && <p style={{ fontSize: '0.9rem' }}>{message}</p>}
+      {action && <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'center' }}>{action}</div>}
     </div>
   );
 }

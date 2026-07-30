@@ -726,6 +726,13 @@ export default function SocketManager() {
       }
     };
 
+    const handleCommunityUpdate = (data) => {
+      queryClient.invalidateQueries({ queryKey: ['communities'] });
+      if (data?.communityId) {
+        queryClient.invalidateQueries({ queryKey: ['community', data.communityId] });
+      }
+    };
+
     socket.on('notification:new', handleNewNotification);
     socket.on('notification:count', handleNotificationCount);
     socket.on('presence:update', handlePresenceUpdate);
@@ -734,6 +741,8 @@ export default function SocketManager() {
     socket.on('message:updated', handleMessageUpdated);
     socket.on('group:member_added', handleGroupMemberChange);
     socket.on('group:member_removed', handleGroupMemberChange);
+    socket.on('community:memberCount', handleCommunityUpdate);
+    socket.on('community:updated', handleCommunityUpdate);
 
     return () => {
       socket.off('notification:new', handleNewNotification);
@@ -744,6 +753,8 @@ export default function SocketManager() {
       socket.off('message:updated', handleMessageUpdated);
       socket.off('group:member_added', handleGroupMemberChange);
       socket.off('group:member_removed', handleGroupMemberChange);
+      socket.off('community:memberCount', handleCommunityUpdate);
+      socket.off('community:updated', handleCommunityUpdate);
     };
   }, [socket, queryClient, navigate, session?.user?.id]);
 

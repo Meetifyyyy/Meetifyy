@@ -96,6 +96,14 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     const isLegacyEvent = payload.type?.includes(':');
     let targets: string[] = [];
 
+    const commId = payload.communityId || payload.data?.communityId;
+    if (commId) {
+      this.server.to(`community_${commId}`).emit('community:memberCount', payload.data || payload);
+      this.server.to(`community_${commId}`).emit('community:updated', payload.data || payload);
+      this.server.to(`community_${commId}`).emit('domainEvent', payload);
+      this.server.emit('community:updated', payload.data || payload);
+    }
+
     if (Array.isArray(payload.targetUserIds) && payload.targetUserIds.length > 0) {
       targets = payload.targetUserIds;
     } else if (payload.targetUserId) {
@@ -116,8 +124,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
           this.server.to(targetId).emit('domainEvent', payload);
         }
       }
-    } else {
-      this.logger.warn(`Domain event '${payload.type}' has no valid targetUserIds/room \u2014 dropped safely`);
+    } else if (!commId) {
+      this.logger.warn(`Domain event '${payload.type}' has no valid targetUserIds/room — dropped safely`);
     }
   }
 
@@ -655,6 +663,26 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       });
     } catch (err) {
       this.logger.error('Failed to verify room join authorization', err);
+    }
+  }
+
+  @SubscribeMessage('community:join_room')
+  handleJoinCommunityRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { communityId: string }
+  ) {
+    if (data?.communityId) {
+      client.join(`community_${data.communityId}`);
+    }
+  }
+
+  @SubscribeMessage('community:leave_room')
+  handleLeaveCommunityRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { communityId: string }
+  ) {
+    if (data?.communityId) {
+      client.leave(`community_${data.communityId}`);
     }
   }
 

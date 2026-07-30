@@ -99,8 +99,8 @@ export default function GroupChatHeader({
           <Avatar src={conversation.avatar || conversation.icon || conversation.coverImage || conversation.avatarUrl} name={conversation.name} size="38px" isGroup />
           {isActivityChat && (
             isEnded ? (
-              <span className={styles.activityCalendarBadge} title="Activity ended" style={{ position: 'absolute', bottom: '-4px', right: '-8px', width: '23px', height: '24px', borderRadius: '6px', background: '#18181b', color: '#ffffff', border: '3px solid var(--color-bg-white, #ffffff)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4, boxSizing: 'border-box' }}>
-                <CalendarDays size={13} strokeWidth={2} />
+              <span className={styles.activityCalendarBadge} title="Activity ended">
+                <CalendarDays size={13} strokeWidth={2.2} />
               </span>
             ) : (
               <div style={{ position: 'absolute', bottom: '-4px', right: '-8px', zIndex: 4 }} title="Activity date">

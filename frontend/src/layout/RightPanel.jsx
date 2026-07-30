@@ -252,7 +252,7 @@ function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
   if (act.startsInLabel && !act.date && !act.startDate) return act.startsInLabel;
 
   try {
-    const rawDate = act.startDate || act.date;
+    const rawDate = act.startDate || act.date || act.createdAt;
     if (rawDate) {
       const targetDate = new Date(rawDate);
       if (isNaN(targetDate.getTime())) return 'Starts soon';

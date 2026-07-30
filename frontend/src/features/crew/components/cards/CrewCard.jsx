@@ -12,22 +12,41 @@ import { useData } from '@shared/hooks/useData';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 
 /* ── Helpers ───────────────────────────────────────────────── */
+const DEFAULT_COVERS = [
+  'https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=800&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?q=80&w=800&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?q=80&w=800&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1528605248644-14dd04022da1?q=80&w=800&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1551818255-e6e10975bc17?q=80&w=800&auto=format&fit=crop',
+];
+
+function getDefaultCover(idOrTitle = '') {
+  let hash = 0;
+  for (let i = 0; i < idOrTitle.length; i++) {
+    hash = (hash << 5) - hash + idOrTitle.charCodeAt(i);
+    hash |= 0;
+  }
+  const idx = Math.abs(hash) % DEFAULT_COVERS.length;
+  return DEFAULT_COVERS[idx];
+}
+
 function formatDateTime(activity) {
   if (!activity) return '';
-  const startRaw = activity.startDate || activity.date;
+  const startRaw = activity.startDate || activity.date || activity.createdAt;
   if (!startRaw) return '';
   
   const startD = new Date(startRaw);
   if (isNaN(startD.getTime())) return '';
 
   const endRaw = activity.endDate;
-  const endD = endRaw ? new Date(endRaw) : null;
+  const endD = endRaw ? new Date(endRaw) : new Date(startD.getTime() + 60 * 60 * 1000);
 
-  const startDateFormatted = startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const startDateFormatted = startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   const startTimeStr = activity.time || startD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
   if (endD && !isNaN(endD.getTime())) {
-    const endDateFormatted = endD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const endDateFormatted = endD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const endTimeStr = activity.endTime || endD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
     if (startDateFormatted === endDateFormatted) {
@@ -80,6 +99,7 @@ export default function CrewCard({ activity, onClick }) {
   };
 
   const filled = Math.min(slotsFilled, slotsNeeded);
+  const coverImgUrl = activity.coverImage || getDefaultCover(title || activity.id);
 
   return (
     <div 
@@ -92,15 +112,19 @@ export default function CrewCard({ activity, onClick }) {
       
       {/* Left Column: Cover Image & Calendar Badge */}
       <div className={styles.coverCol}>
-        {activity.coverImage ? (
-          <img src={activity.coverImage} alt={title} className={styles.coverImg} />
-        ) : (
-          <div className={styles.coverPlaceholder} />
-        )}
+        <img 
+          src={coverImgUrl} 
+          alt={title || 'Activity'} 
+          className={styles.coverImg} 
+          onError={(e) => {
+            e.target.onerror = null;
+            e.target.src = DEFAULT_COVERS[0];
+          }}
+        />
         
-        {(activity.startDate || activity.date || activity.dateLabel) && (
+        {(activity.startDate || activity.date || activity.dateLabel || activity.createdAt) && (
           <div className={styles.calendarBadge}>
-            <CalendarIcon date={activity.startDate || activity.date} dateLabel={activity.dateLabel} style={{ border: '3.5px solid var(--color-bg-white, #ffffff)', boxShadow: 'none' }} />
+            <CalendarIcon date={activity.startDate || activity.date || activity.createdAt} dateLabel={activity.dateLabel} style={{ border: '3.5px solid var(--color-bg-white, #ffffff)', boxShadow: 'none' }} />
           </div>
         )}
       </div>

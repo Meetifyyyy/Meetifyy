@@ -200,6 +200,7 @@ model User {
   deletedMessages          DeletedMessage[]
   invitationsSent          ActivityInvitation[]      @relation("ActivityInvitationsSent")
   invitationsReceived      ActivityInvitation[]      @relation("ActivityInvitationsReceived")
+  communityJoinRequests    CommunityJoinRequest[]
 
   avatarMedia Media? @relation("UserAvatar", fields: [avatarMediaId], references: [id])
   coverMedia  Media? @relation("UserCover", fields: [coverMediaId], references: [id])
@@ -312,13 +313,15 @@ model Community {
   college       College?          @relation("CommunityCollege", fields: [collegeId], references: [id])
   members       CommunityMember[]
   posts         Post[]
+  joinRequests  CommunityJoinRequest[]
 
   avatarMedia Media? @relation("CommunityAvatar", fields: [avatarMediaId], references: [id])
   coverMedia  Media? @relation("CommunityCover", fields: [coverMediaId], references: [id])
 
   @@index([ownerId])
   @@index([deletedAt, memberCount(sort: Desc)])
-  @@index([collegeId, isCampusCommunity, deletedAt])
+  @@index([deletedAt, isCampusCommunity, memberCount(sort: Desc)])
+  @@index([collegeId, isCampusCommunity, deletedAt, memberCount(sort: Desc)])
 }
 
 model CommunityMember {
@@ -332,6 +335,7 @@ model CommunityMember {
   @@id([userId, communityId])
   @@index([userId])
   @@index([communityId])
+  @@index([communityId, role])
 }
 
 model Follow {
@@ -538,6 +542,7 @@ model CrewActivity {
   @@index([status, createdAt(sort: Desc)])         // getAllActivities ORDER BY
   @@index([collegeId, status, createdAt(sort: Desc)]) // getCampusActivities filter
   @@index([visibility, status, createdAt(sort: Desc)])
+  @@index([deletedAt, status, visibility, createdAt(sort: Desc)])
   @@index([status, deletedAt, endDate, startDate])
 }
 
@@ -781,9 +786,9 @@ enum MessageType {
 }
 
 enum CommunityRole {
-  MEMBER
+  OWNER
   MODERATOR
-  ADMIN
+  MEMBER
 }
 
 enum CrewActivityStatus {
@@ -1232,4 +1237,29 @@ enum ActivityInvitationStatus {
   CANCELLED
   EXPIRED
 }
+
+model CommunityJoinRequest {
+  id          String                 @id @default(uuid())
+  communityId String
+  userId      String
+  status      CommunityRequestStatus @default(PENDING)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, userId])
+  @@index([communityId, status])
+  @@index([userId])
+}
+
+enum CommunityRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+
+
 

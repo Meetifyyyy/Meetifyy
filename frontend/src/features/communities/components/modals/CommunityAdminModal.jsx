@@ -1,13 +1,16 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useData } from '@shared/hooks/useData';
+import { communitiesApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import MediaCropper from '@shared/components/media/MediaCropper';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import defaultCommunityCover from '@assets/images/default_community_cover.webp';
+import styles from './CommunityAdminModal.module.css';
 
-export default function CommunityAdminModal({ community, onClose }) {
+export default function CommunityAdminModal({ community, onClose, onDeleteCommunity }) {
   const { updateCommunity, kickMember } = useData();
   const [activeTab, setActiveTab] = useState('details');
   const avatarInputRef = useRef(null);
@@ -16,43 +19,85 @@ export default function CommunityAdminModal({ community, onClose }) {
   const [cropFile, setCropFile] = useState(null);
   const [cropType, setCropType] = useState(null); // 'avatar' or 'cover'
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadingType, setUploadingType] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteCommunity = async () => {
+    setIsDeleting(true);
+    try {
+      await communitiesApi.delete(community.id);
+      showToast('Community deleted.');
+      onClose();
+      if (onDeleteCommunity) {
+        onDeleteCommunity();
+      }
+    } catch (err) {
+      showToast(err?.message || 'Could not delete community.');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
 
   // Details State
-  const [name, setName] = useState(community.name || '');
-  const [desc, setDesc] = useState(community.desc || '');
-  const [avatar, setAvatar] = useState(community.avatar || '');
-  const [coverImage, setCoverImage] = useState(community.coverImage || '');
-  const [interests, setInterests] = useState(community.interests ? community.interests.join(', ') : '');
-  const [rules, setRules] = useState(community.rules ? community.rules.join('\n') : '');
-  
-  // Settings State
-  const [privacy, setPrivacy] = useState(community.privacy || 'public');
-  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
-  const [allowMemberPosts, setAllowMemberPosts] = useState(community.allowMemberPosts !== false);
+  const [name, setName] = useState(community?.name || '');
+  const [desc, setDesc] = useState(community?.description || community?.desc || '');
+  const [avatar, setAvatar] = useState(community?.avatar || community?.avatarKey || '');
+  const [coverImage, setCoverImage] = useState(community?.coverImage || community?.coverKey || community?.cover || '');
+  const [interests, setInterests] = useState(community?.interests ? (Array.isArray(community.interests) ? community.interests.join(', ') : community.interests) : '');
+  const [rules, setRules] = useState(community?.rules ? (Array.isArray(community.rules) ? community.rules.join('\n') : community.rules) : '');
   
   const [isSaving, setIsSaving] = useState(false);
 
+  useEffect(() => {
+    if (community) {
+      setName(community.name || '');
+      setDesc(community.description || community.desc || '');
+      setAvatar(community.avatar || community.avatarKey || '');
+      setCoverImage(community.coverImage || community.coverKey || community.cover || '');
+      setInterests(community.interests ? (Array.isArray(community.interests) ? community.interests.join(', ') : community.interests) : '');
+      setRules(community.rules ? (Array.isArray(community.rules) ? community.rules.join('\n') : community.rules) : '');
+    }
+  }, [community]);
+
   const handleSaveDetails = async (e) => {
-    e.preventDefault();
-    if (!name.trim() || !desc.trim()) {
-      showToast('Name and Description are required');
+    if (e) e.preventDefault();
+    const finalName = name.trim();
+    if (!finalName) {
+      showToast('Community name is required');
       return;
     }
     setIsSaving(true);
 
-    const parsedInterests = interests.split(',').map(i => i.trim()).filter(i => i);
-    const parsedRules = rules.split('\n').map(g => g.trim()).filter(g => g);
+    const parsedInterests = typeof interests === 'string'
+      ? interests.split(',').map(i => i.trim()).filter(Boolean)
+      : (Array.isArray(interests) ? interests : []);
 
-    await updateCommunity(community.id, {
-      name,
-      desc,
-      avatar,
-      coverImage,
-      interests: parsedInterests,
-      rules: parsedRules
-    });
-    setIsSaving(false);
-    showToast('Community details updated!');
+    const parsedRules = typeof rules === 'string'
+      ? rules.split('\n').map(g => g.trim()).filter(Boolean)
+      : (Array.isArray(rules) ? rules : []);
+
+    try {
+      await updateCommunity(community.id, {
+        name: finalName,
+        description: desc,
+        desc: desc,
+        avatar,
+        avatarKey: avatar,
+        coverImage,
+        coverKey: coverImage,
+        interests: parsedInterests,
+        rules: parsedRules
+      });
+      showToast('Community updated successfully!');
+      onClose();
+    } catch (err) {
+      console.error(err);
+      showToast(err?.message || 'Failed to update community');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleKick = async (memberId) => {
@@ -63,25 +108,27 @@ export default function CommunityAdminModal({ community, onClose }) {
   };
 
   const handleCropComplete = async (croppedFile) => {
+    const currentType = cropType;
     setCropFile(null);
     setIsUploading(true);
+    setUploadingType(currentType);
     try {
-      const folder = cropType === 'avatar' ? 'community-icons' : 'community-covers';
+      const folder = currentType === 'avatar' ? 'community-icons' : 'community-covers';
       const { publicUrl } = await processAndUploadImage(croppedFile, folder, {
-        maxWidthOrHeight: cropType === 'avatar' ? 512 : 1920
+        maxWidthOrHeight: currentType === 'avatar' ? 512 : 1920
       });
       
-      if (cropType === 'avatar') {
+      if (currentType === 'avatar') {
         setAvatar(publicUrl);
       } else {
         setCoverImage(publicUrl);
       }
-      showToast(`${cropType === 'avatar' ? 'Avatar' : 'Cover'} uploaded successfully!`);
     } catch (e) {
       console.error(e);
       showToast('Upload failed');
     } finally {
       setIsUploading(false);
+      setUploadingType(null);
       setCropType(null);
     }
   };
@@ -98,18 +145,54 @@ export default function CommunityAdminModal({ community, onClose }) {
     boxSizing: 'border-box'
   };
 
+  const [requests, setRequests] = useState([]);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'requests') {
+      setIsLoadingRequests(true);
+      communitiesApi.getJoinRequests(community.id)
+        .then((data) => setRequests(Array.isArray(data) ? data : []))
+        .catch(() => setRequests([]))
+        .finally(() => setIsLoadingRequests(false));
+    }
+  }, [activeTab, community.id]);
+
+  const handleApproveRequest = async (requestId) => {
+    try {
+      await communitiesApi.approveJoinRequest(community.id, requestId);
+      setRequests((prev) => prev.filter((r) => r.id !== requestId));
+      showToast('Join request approved');
+    } catch {
+      showToast('Failed to approve request');
+    }
+  };
+
+  const handleDeclineRequest = async (requestId) => {
+    try {
+      await communitiesApi.declineJoinRequest(community.id, requestId);
+      setRequests(prev => prev.filter(r => r.id !== requestId));
+      showToast('Join request declined');
+    } catch {
+      showToast('Failed to decline request');
+    }
+  };
+
+  const isPrivate = community?.isPrivate || community?.privacy === 'private';
+  const availableTabs = isPrivate ? ['details', 'appearance', 'requests', 'danger zone'] : ['details', 'appearance', 'danger zone'];
+
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
-      <div className="no-scrollbar" style={{ background: 'var(--color-bg-white)', width: '100%', maxWidth: '600px', borderRadius: 'var(--radius-xl)', padding: '2rem', boxShadow: 'var(--shadow-premium)', display: 'flex', flexDirection: 'column', gap: '1.5rem', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+    <div className={styles.overlay} onClick={onClose}>
+      <div className={`${styles.modal} no-scrollbar`} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ margin: 0, fontSize: '1.4rem', color: 'var(--color-text-main)', fontFamily: 'var(--font-family-display)' }}>Admin Settings</h2>
+          <h2 style={{ margin: 0, fontSize: '1.4rem', color: 'var(--color-text-main)', fontFamily: 'var(--font-family-display)' }}>Community Settings</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
 
         <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--color-border)' }}>
-          {['details', 'appearance', 'settings'].map(tab => (
+          {availableTabs.map(tab => (
             <button 
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -119,12 +202,24 @@ export default function CommunityAdminModal({ community, onClose }) {
                 padding: '0.5rem 0',
                 cursor: 'pointer',
                 fontWeight: activeTab === tab ? 600 : 400,
-                color: activeTab === tab ? 'var(--color-primary)' : 'var(--color-text-muted)',
-                borderBottom: activeTab === tab ? '2px solid var(--color-primary)' : '2px solid transparent',
-                textTransform: 'capitalize'
+                color: activeTab === tab ? (tab === 'danger zone' ? 'var(--color-danger, #ef4444)' : 'var(--color-primary)') : 'var(--color-text-muted)',
+                borderBottom: activeTab === tab ? `2px solid ${tab === 'danger zone' ? 'var(--color-danger, #ef4444)' : 'var(--color-primary)'}` : '2px solid transparent',
+                textTransform: 'capitalize',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem'
               }}
             >
-              {tab}
+              {tab === 'requests' ? (
+                <>
+                  Join Requests
+                  {requests.length > 0 && (
+                    <span style={{ background: 'var(--color-primary)', color: 'white', fontSize: '0.72rem', padding: '0.1rem 0.45rem', borderRadius: '10px', fontWeight: 700 }}>
+                      {requests.length}
+                    </span>
+                  )}
+                </>
+              ) : tab === 'danger zone' ? 'Danger Zone' : tab}
             </button>
           ))}
         </div>
@@ -179,7 +274,14 @@ export default function CommunityAdminModal({ community, onClose }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
               <button type="button" onClick={onClose} style={{ padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-bg-soft)', color: 'var(--color-text-main)', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button type="submit" disabled={isSaving} style={{ padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 600, cursor: 'pointer', opacity: isSaving ? 0.7 : 1 }}>{isSaving ? 'Saving...' : 'Save Changes'}</button>
+              <button type="submit" disabled={isSaving} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 600, cursor: isSaving ? 'not-allowed' : 'pointer', opacity: isSaving ? 0.7 : 1 }}>
+                {isSaving ? (
+                  <>
+                    <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: 'white', borderTopColor: 'transparent' }} />
+                    Saving...
+                  </>
+                ) : 'Save Changes'}
+              </button>
             </div>
           </form>
         )}
@@ -189,11 +291,16 @@ export default function CommunityAdminModal({ community, onClose }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <label style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text-main)' }}>Avatar Image</label>
               <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--color-bg-alt)', overflow: 'hidden', border: '2px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ position: 'relative', width: '80px', height: '80px', borderRadius: '50%', background: isImageUrl(avatar) ? 'var(--color-bg-white)' : (community.color || 'var(--color-primary)'), overflow: 'hidden', border: '2px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {isUploading && uploadingType === 'avatar' && (
+                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: '50%' }}>
+                      <div className="spinner" style={{ width: '22px', height: '22px', borderWidth: '2.5px', borderColor: '#ffffff', borderTopColor: 'transparent' }} />
+                    </div>
+                  )}
                   {isImageUrl(avatar) ? (
-                    <img src={avatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                    <img src={getMediaUrl(avatar)} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                   ) : (
-                    <span style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>
+                    <span style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#FFFFFF' }}>
                       {avatar || (community.name ? community.name.charAt(0).toUpperCase() : 'C')}
                     </span>
                   )}
@@ -201,14 +308,24 @@ export default function CommunityAdminModal({ community, onClose }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
                   <button 
                     type="button"
+                    disabled={isUploading}
                     onClick={() => avatarInputRef.current?.click()}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--color-bg-soft)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, width: 'fit-content' }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--color-bg-soft)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-md)', cursor: isUploading ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 600, width: 'fit-content', opacity: isUploading ? 0.7 : 1 }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 20h9"></path>
-                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-                    </svg>
-                    Change
+                    {isUploading && uploadingType === 'avatar' ? (
+                      <>
+                        <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: 'currentColor', borderTopColor: 'transparent' }} />
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 20h9"></path>
+                          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                        </svg>
+                        Change
+                      </>
+                    )}
                   </button>
                   <input 
                     type="file" 
@@ -230,18 +347,33 @@ export default function CommunityAdminModal({ community, onClose }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <label style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text-main)' }}>Cover Image</label>
               <div style={{ width: '100%', height: '120px', borderRadius: 'var(--radius-lg)', background: 'var(--color-bg-alt)', overflow: 'hidden', border: '1px solid var(--color-border)', position: 'relative' }}>
-                <img src={coverImage || defaultCommunityCover} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                {isUploading && uploadingType === 'cover' && (
+                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: 'var(--radius-lg)' }}>
+                    <div className="spinner" style={{ width: '28px', height: '28px', borderWidth: '3px', borderColor: '#ffffff', borderTopColor: 'transparent' }} />
+                  </div>
+                )}
+                <img src={getMediaUrl(coverImage) || defaultCommunityCover} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.onerror = null; e.target.src = defaultCommunityCover; }} />
               </div>
               <button 
                 type="button"
+                disabled={isUploading}
                 onClick={() => coverInputRef.current?.click()}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--color-bg-soft)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, width: 'fit-content' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--color-bg-soft)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-md)', cursor: isUploading ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 600, width: 'fit-content', opacity: isUploading ? 0.7 : 1 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 20h9"></path>
-                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-                </svg>
-                Change Cover
+                {isUploading && uploadingType === 'cover' ? (
+                  <>
+                    <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: 'currentColor', borderTopColor: 'transparent' }} />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20h9"></path>
+                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                    </svg>
+                    Change Cover
+                  </>
+                )}
               </button>
               <input 
                 type="file" 
@@ -258,17 +390,68 @@ export default function CommunityAdminModal({ community, onClose }) {
               />
             </div>
             
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.5rem' }}>
               <button type="button" onClick={onClose} style={{ padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-bg-soft)', color: 'var(--color-text-main)', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button type="submit" disabled={isSaving || isUploading} style={{ padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 600, cursor: 'pointer', opacity: (isSaving || isUploading) ? 0.7 : 1 }}>{isSaving ? 'Saving...' : 'Save Changes'}</button>
+              <button type="submit" disabled={isSaving || isUploading} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 600, cursor: (isSaving || isUploading) ? 'not-allowed' : 'pointer', opacity: (isSaving || isUploading) ? 0.7 : 1 }}>
+                {isSaving ? (
+                  <>
+                    <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: 'white', borderTopColor: 'transparent' }} />
+                    Saving...
+                  </>
+                ) : 'Save Changes'}
+              </button>
             </div>
           </form>
+        )}
+
+        {activeTab === 'danger zone' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingTop: '0.5rem' }}>
+            <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-danger, #ef4444)' }}>
+              Danger Zone
+            </div>
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+              padding: '1.25rem',
+              borderRadius: 'var(--radius-lg, 16px)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              background: 'rgba(239, 68, 68, 0.04)'
+            }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--color-text-main)', marginBottom: '0.25rem' }}>
+                  Delete Community
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+                  Once deleted, this community, its posts, members, and settings will be permanently removed. This action cannot be undone.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                style={{
+                  padding: '0.7rem 1.25rem',
+                  borderRadius: 'var(--radius-md, 12px)',
+                  border: 'none',
+                  background: 'var(--color-danger, #ef4444)',
+                  color: 'white',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  alignSelf: 'flex-start'
+                }}
+              >
+                Delete Community
+              </button>
+            </div>
+          </div>
         )}
 
         {cropFile && (
           <MediaCropper
             imageFile={cropFile}
-            aspect={cropType === 'avatar' ? 1 : 3}
+            aspect={cropType === 'avatar' ? 1 : 5}
+            cropShape={cropType === 'avatar' ? 'round' : 'rect'}
             onCropComplete={handleCropComplete}
             onCancel={() => {
               setCropFile(null);
@@ -277,146 +460,67 @@ export default function CommunityAdminModal({ community, onClose }) {
           />
         )}
 
+        <ConfirmModal
+          visible={showDeleteConfirm}
+          title="Delete Community?"
+          desc={`Are you sure you want to delete "${community.name}"? This action is permanent and cannot be undone.`}
+          cancelText="No"
+          confirmText={isDeleting ? 'Deleting...' : 'Yes'}
+          onCancel={() => setShowDeleteConfirm(false)}
+          onConfirm={handleDeleteCommunity}
+        />
 
-        {activeTab === 'settings' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>Community Privacy</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-                  {privacy === 'public' 
-                    ? 'Public: Anyone can discover and join your community.' 
-                    : 'Private: Users must request or be invited to join.'}
-                </div>
+
+
+
+        {activeTab === 'requests' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--color-text-main)' }}>
+              Pending Requests ({requests.length})
+            </div>
+            {requests.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+                No pending join requests.
               </div>
-              <div style={{ position: 'relative' }}>
-                <button
-                  type="button"
-                  onClick={() => setIsPrivacyOpen(!isPrivacyOpen)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '0.75rem',
-                    padding: '0.6rem 1.1rem',
-                    borderRadius: 'var(--radius-lg, 12px)',
-                    border: '1px solid var(--color-border-light)',
-                    background: 'var(--color-bg-white)',
-                    color: 'var(--color-text-main)',
-                    fontWeight: 650,
-                    fontSize: '0.95rem',
-                    cursor: 'pointer',
-                    minWidth: '120px',
-                    textAlign: 'left',
-                    fontFamily: 'var(--font-family-display)'
-                  }}
-                >
-                  <span>{privacy === 'public' ? 'Public' : 'Private'}</span>
-                  <svg 
-                    width="12" 
-                    height="12" 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="3" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round"
-                    style={{ transition: 'transform 0.2s', transform: isPrivacyOpen ? 'rotate(180deg)' : 'none' }}
-                  >
-                    <polyline points="6 9 12 15 18 9"></polyline>
-                  </svg>
-                </button>
-
-                {isPrivacyOpen && (
-                  <>
-                    <div 
-                      onClick={() => setIsPrivacyOpen(false)} 
-                      style={{ position: 'fixed', inset: 0, zIndex: 998 }} 
-                    />
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: '110%',
-                        right: 0,
-                        background: 'var(--color-bg-white)',
-                        border: '1px solid var(--color-border-light)',
-                        borderRadius: '12px',
-                        boxShadow: 'var(--shadow-lg)',
-                        overflow: 'hidden',
-                        zIndex: 999,
-                        minWidth: '140px',
-                        padding: '0.25rem'
-                      }}
-                    >
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {requests.map((req) => (
+                  <div key={req.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-soft)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', overflow: 'hidden', background: 'var(--color-bg-alt)', flexShrink: 0 }}>
+                        {req.user?.avatar ? (
+                          <img src={req.user.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                            {req.user?.displayName?.charAt(0) || 'U'}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-main)' }}>{req.user?.displayName || req.user?.username}</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>@{req.user?.username}</div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button
                         type="button"
-                        onClick={async () => {
-                          setPrivacy('public');
-                          setIsPrivacyOpen(false);
-                          await updateCommunity(community.id, { privacy: 'public' });
-                          showToast('Privacy setting updated');
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '0.65rem 1rem',
-                          border: 'none',
-                          background: privacy === 'public' ? 'rgba(99, 102, 241, 0.08)' : 'none',
-                          color: privacy === 'public' ? 'var(--color-primary)' : 'var(--color-text-main)',
-                          fontWeight: 600,
-                          fontSize: '0.9rem',
-                          textAlign: 'left',
-                          cursor: 'pointer',
-                          borderRadius: '8px',
-                          fontFamily: 'var(--font-family-sans)'
-                        }}
+                        onClick={() => handleAcceptRequest(req.id)}
+                        style={{ padding: '0.42rem 0.85rem', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
                       >
-                        Public
+                        Accept
                       </button>
                       <button
                         type="button"
-                        onClick={async () => {
-                          setPrivacy('private');
-                          setIsPrivacyOpen(false);
-                          await updateCommunity(community.id, { privacy: 'private' });
-                          showToast('Privacy setting updated');
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '0.65rem 1rem',
-                          border: 'none',
-                          background: privacy === 'private' ? 'rgba(99, 102, 241, 0.08)' : 'none',
-                          color: privacy === 'private' ? 'var(--color-primary)' : 'var(--color-text-main)',
-                          fontWeight: 600,
-                          fontSize: '0.9rem',
-                          textAlign: 'left',
-                          cursor: 'pointer',
-                          borderRadius: '8px',
-                          fontFamily: 'var(--font-family-sans)'
-                        }}
+                        onClick={() => handleDeclineRequest(req.id)}
+                        style={{ padding: '0.42rem 0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', background: 'var(--color-bg-white)', color: 'var(--color-text-muted)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
                       >
-                        Private
+                        Decline
                       </button>
                     </div>
-                  </>
-                )}
+                  </div>
+                ))}
               </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>Allow Member Posts</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>If disabled, only admins can create new posts in the community.</div>
-              </div>
-              <input 
-                type="checkbox" 
-                checked={allowMemberPosts}
-                onChange={async (e) => {
-                  setAllowMemberPosts(e.target.checked);
-                  await updateCommunity(community.id, { allowMemberPosts: e.target.checked });
-                  showToast('Settings updated');
-                }}
-                style={{ width: '1.2rem', height: '1.2rem' }} 
-              />
-            </div>
+            )}
           </div>
         )}
 

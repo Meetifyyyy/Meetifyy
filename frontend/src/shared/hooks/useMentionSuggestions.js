@@ -5,13 +5,15 @@ import { usersApi, communitiesApi, messagesApi } from '@shared/api/apiClient';
 
 
 
+import { useCommunities } from '@shared/hooks/useCommunities';
+
 export function useMentionSuggestions({ query = '', communityId = null, maxResults = 15 }) {
   const { currentUser } = useAuth();
   const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
   const users = useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
   
-  const { data: communitiesData = [] } = useQuery({ queryKey: ['communities'], queryFn: communitiesApi.getAll });
-  const communities = useMemo(() => communitiesData.reduce((acc, c) => ({ ...acc, [c.id]: c }), {}), [communitiesData]);
+  const { communities: communitiesDataMap } = useCommunities();
+  const communities = communitiesDataMap || {};
 
   const { data: conversations = [] } = useQuery({ queryKey: ['conversations'], queryFn: messagesApi.getConversations });
   const [suggestions, setSuggestions] = useState([]);

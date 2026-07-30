@@ -5,39 +5,26 @@ import { useAuth } from '@shared/context/AuthContext';
 import { communitiesApi } from '@shared/api/apiClient';
 
 import { showToast } from '@shared/utils/toast';
-import Avatar from '@shared/components/avatar/Avatar';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './CampusCommunitiesPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
-import { Plus, Search, ArrowLeft, Users } from 'lucide-react';
+import { Plus, Search, ArrowLeft } from 'lucide-react';
 import CreateCommunityModal from '@features/communities/components/modals/CreateCommunityModal';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useData } from '@shared/hooks/useData';
-import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
+import CommunityCard from '@features/communities/components/card/CommunityCard';
+import CommunityGrid from '@features/communities/components/card/CommunityGrid';
+import { useCampusCommunities } from '@shared/hooks/useCommunities';
 
 export default function CampusCommunitiesPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
-  const queryClient = useQueryClient();
-  const { mutate: toggleJoin } = useJoinCommunity();
-
-  const toggleJoinCampusGroup = (id) => {
-    const isJoined = currentUser?.campusGroups?.map(String).includes(String(id));
-    toggleJoin({ communityId: id, isJoined: !isJoined, currentUser });
-  };
-
-  const { createCampusGroup, requestToJoinGroup, campusCommunities } = useData();
+  const { campusCommunities } = useCampusCommunities();
   
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [selectedCommunity, setSelectedCommunity] = useState(null);
-  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
-
-  const userCollegeId = currentUser?.collegeId;
 
   const collegeCommunities = useMemo(() => {
     let list = campusCommunities;
@@ -57,43 +44,8 @@ export default function CampusCommunitiesPage() {
     return list;
   }, [campusCommunities, searchQuery, selectedCategory]);
 
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href);
-    showToast('Communities link copied! 🔗');
-  };
-
-  const handleToggleCommunity = (grpId) => {
-    toggleJoinCampusGroup(grpId);
-    showToast('Community preference updated! ✨');
-  };
-
   const handleCreateCommunity = async (id) => {
-    showToast('Community created successfully! 🚀');
     navigate(`/communities/${id}`, { state: { from: location.pathname } });
-  };
-
-  const handleCommunityClick = (community) => {
-    const isMember = currentUser?.campusGroups?.map(String).includes(String(community.id));
-    if (isMember) {
-      navigate(`/messages/${community.id}`, { state: { from: location.pathname } });
-    } else {
-      setSelectedCommunity(community);
-      setIsJoinModalOpen(true);
-    }
-  };
-
-  const handleJoinConfirm = () => {
-    if (!selectedCommunity) return;
-    if (selectedCommunity.whoCanJoin === 'Request required') {
-      requestToJoinGroup(selectedCommunity.id, currentUser?.id);
-      showToast('Join request sent successfully! 📨');
-    } else {
-      toggleJoinCampusGroup(selectedCommunity.id);
-      showToast('Joined community successfully! 🎉');
-      navigate(`/messages/${selectedCommunity.id}`, { state: { from: location.pathname } });
-    }
-    setIsJoinModalOpen(false);
-    setSelectedCommunity(null);
   };
 
   return (
@@ -138,32 +90,17 @@ export default function CampusCommunitiesPage() {
         </header>
       </div>
 
-      <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: collegeCommunities.length > 0 ? 'stretch' : 'center', justifyContent: collegeCommunities.length > 0 ? 'flex-start' : 'center', padding: collegeCommunities.length > 0 ? '0 1rem' : '2rem 1rem', textAlign: 'center' }}>
+      <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: collegeCommunities.length > 0 ? 'stretch' : 'center', justifyContent: collegeCommunities.length > 0 ? 'flex-start' : 'center', padding: collegeCommunities.length > 0 ? '0 1rem' : '2rem 1rem' }}>
         {collegeCommunities.length > 0 ? (
-          <div className={styles.directoryGrid} style={{ textAlign: 'left' }}>
+          <CommunityGrid>
             {collegeCommunities.map(community => (
-              <div
+              <CommunityCard
                 key={community.id}
-                className={styles.directoryCard}
-                onClick={() => handleCommunityClick(community)}
-              >
-                <Avatar
-                  src={community.avatar || (community.name ? community.name.substring(0, 2).toUpperCase() : 'CO')}
-                  name={community.name}
-                  size="56px"
-                  isGroup={true}
-                />
-                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '500', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {community.name}
-                  </h4>
-                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {community.desc || `${community.members || 1} ${(community.members || 1) === 1 ? 'member' : 'members'}`}
-                  </p>
-                </div>
-              </div>
+                comm={community}
+                onClick={() => navigate(`/communities/${community.id}`, { state: { from: location.pathname } })}
+              />
             ))}
-          </div>
+          </CommunityGrid>
         ) : (
           <>
             <div style={{ fontSize: '4.5rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'center', alignItems: 'center', filter: 'drop-shadow(0 8px 16px rgba(0,0,0,0.2))' }}>🚀</div>
@@ -203,38 +140,6 @@ export default function CampusCommunitiesPage() {
           onCreated={handleCreateCommunity}
           isCampusCommunity={true}
         />
-      )}
-
-      {isJoinModalOpen && selectedCommunity && (
-        <div className={styles.modalOverlay} onClick={() => { setIsJoinModalOpen(false); setSelectedCommunity(null); }}>
-          <div className={styles.joinModal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.joinAvatarWrapper}>
-              <Avatar
-                src={selectedCommunity.avatar || (selectedCommunity.name ? selectedCommunity.name.substring(0, 2).toUpperCase() : 'CO')}
-                name={selectedCommunity.name}
-                size="80px"
-                isGroup={true}
-              />
-            </div>
-            <h3 className={styles.joinGroupName}>{selectedCommunity.name}</h3>
-            <p style={{ fontSize: '0.88rem', color: 'var(--color-text-muted)', marginTop: '-0.75rem', marginBottom: '0.25rem' }}>
-              {selectedCommunity.members || 1} {(selectedCommunity.members || 1) === 1 ? 'member' : 'members'}
-            </p>
-            {selectedCommunity.desc && (
-              <p className={styles.joinGroupDesc}>
-                {selectedCommunity.desc}
-              </p>
-            )}
-            <div className={styles.joinModalButtons}>
-              <button className={styles.joinPrimaryBtn} onClick={handleJoinConfirm}>
-                {selectedCommunity.whoCanJoin === 'Request required' ? 'Request to Join' : 'Join'}
-              </button>
-              <button className={styles.joinCancelBtn} onClick={() => { setIsJoinModalOpen(false); setSelectedCommunity(null); }}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </main>
   );

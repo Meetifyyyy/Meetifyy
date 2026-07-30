@@ -223,13 +223,14 @@
   }
 
   .modal {
-    max-width: 100%;
-    height: 70vh;
-    max-height: 70vh;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-    border-top-left-radius: 24px;
-    border-top-right-radius: 24px;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 85vh !important;
+    max-height: 85vh !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    border-top-left-radius: 24px !important;
+    border-top-right-radius: 24px !important;
     animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     padding-bottom: env(safe-area-inset-bottom, 1rem);
   }

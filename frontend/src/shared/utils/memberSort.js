@@ -22,27 +22,22 @@ export function sortGroupMembers(members, options = {}) {
     const objB = typeof b === 'object' && b !== null ? b : (users[idB] || Object.values(users).find(u => u?.id === idB) || {});
 
     const getRolePriority = (item, id, obj) => {
+      const roleStr = String(item?.role || obj?.role || '').toUpperCase();
       if (
         (ownerId && String(id) === String(ownerId)) ||
         (hostId && String(id) === String(hostId)) ||
         (creatorId && String(id) === String(creatorId)) ||
-        item?.role === 'OWNER' ||
-        obj?.role === 'OWNER' ||
-        item?.admin === true
+        roleStr === 'OWNER' ||
+        roleStr === 'CREATOR'
       ) {
         return 0;
       }
 
-      const roleStr = String(item?.role || obj?.role || '').toUpperCase();
-      if (roleStr === 'ADMIN' || adminSet.has(String(id))) {
+      if (roleStr === 'MODERATOR' || roleStr === 'ADMIN' || adminSet.has(String(id))) {
         return 1;
       }
 
-      if (roleStr === 'MODERATOR') {
-        return 2;
-      }
-
-      return 3;
+      return 2;
     };
 
     const prioA = getRolePriority(a, idA, objA);

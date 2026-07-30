@@ -2,8 +2,8 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@shared/hooks/useData';
-import { useQueryClient } from '@tanstack/react-query';
-import { communitiesApi } from '@shared/api/apiClient';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { communitiesApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
@@ -16,12 +16,15 @@ import PostComposer from '@features/feed/components/composer/PostComposer';
 import PostSkeleton from '@features/feed/components/skeletons/PostSkeleton';
 import CommunityMembersModal from '../modals/CommunityMembersModal';
 import CommunityAdminModal from '../modals/CommunityAdminModal';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import styles from './CommunityView.module.css';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { useJoinCommunity } from '../../hooks/useJoinCommunity';
+import { useCommunityById } from '@shared/hooks/useCommunities';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import ShareCommunityModal from '../modals/ShareCommunityModal';
 import defaultCommunityCover from '@assets/images/default_community_cover.webp';
+import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 
 function getActivityPhrase(comm) {
@@ -42,6 +45,7 @@ function formatCount(n) {
 
 function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCommunities, onViewMembers, isAdmin, onOpenAdmin, onUpdateCommunity, isMuted, onMuteClick, onTitleClick, onShare }) {
   const navigate = useNavigate();
+  const { currentUser, users } = useData();
   const { openViewer } = useMediaViewer();
   const coverInputRef = useRef(null);
   const avatarInputRef = useRef(null);
@@ -53,8 +57,18 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
   const [cropType, setCropType] = useState(null); // 'avatar' or 'coverImage'
   const [isUploading, setIsUploading] = useState(false);
 
+  const [coverLoading, setCoverLoading] = useState(true);
+  const [coverError, setCoverError] = useState(false);
+  const [avatarLoading, setAvatarLoading] = useState(isImageUrl(comm.avatar));
+
+  useEffect(() => {
+    setCoverLoading(true);
+    setCoverError(false);
+  }, [comm.coverImage]);
+
   useEffect(() => {
     setImgError(false);
+    setAvatarLoading(isImageUrl(comm.avatar));
   }, [comm.avatar]);
 
   useEffect(() => {
@@ -90,8 +104,8 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
       const { publicUrl } = await processAndUploadImage(croppedFile, folder, {
         maxWidthOrHeight: cropType === 'avatar' ? 512 : 1920
       });
-      await onUpdateCommunity(comm.id, { [cropType]: publicUrl });
-      showToast(`${cropType === 'coverImage' ? 'Cover' : 'Icon'} updated!`);
+      const fieldKey = cropType === 'avatar' ? 'avatarKey' : 'coverKey';
+      await onUpdateCommunity(comm.id, { [fieldKey]: publicUrl });
     } catch {
       showToast('Upload failed. Try again.');
     } finally {
@@ -100,13 +114,23 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
     }
   };
 
+  const coverSrc = (!coverError && comm.coverImage) ? comm.coverImage : defaultCommunityCover;
+
   return (
     <div className={styles.heroSection}>
       <div className={styles.heroCover}>
+        {(coverLoading || isUploading) && (
+          <div className={styles.coverSkeleton} />
+        )}
         <img
-          src={comm.coverImage || defaultCommunityCover}
+          src={coverSrc}
           alt=""
-          className={styles.heroCoverImg}
+          className={`${styles.heroCoverImg} ${coverLoading ? styles.imgHidden : styles.imgVisible}`}
+          onLoad={() => setCoverLoading(false)}
+          onError={() => {
+            setCoverError(true);
+            setCoverLoading(false);
+          }}
           draggable={false}
           style={{ cursor: 'default', userSelect: 'none', pointerEvents: 'none' }}
         />
@@ -139,8 +163,20 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
                 style={{ background: (!isImageUrl(comm.avatar) || imgError) ? (comm.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
                 onClick={isAdmin ? () => avatarInputRef.current?.click() : undefined}
               >
+                {avatarLoading && isImageUrl(comm.avatar) && !imgError && (
+                  <div className={styles.avatarSkeleton} />
+                )}
                 {isImageUrl(comm.avatar) && !imgError ? (
-                  <img src={comm.avatar} alt={comm.name} className={styles.heroAvatarImg} onError={() => setImgError(true)} />
+                  <img 
+                    src={comm.avatar} 
+                    alt={comm.name} 
+                    className={`${styles.heroAvatarImg} ${avatarLoading ? styles.imgHidden : styles.imgVisible}`} 
+                    onLoad={() => setAvatarLoading(false)}
+                    onError={() => {
+                      setImgError(true);
+                      setAvatarLoading(false);
+                    }} 
+                  />
                 ) : (
                   <span className={styles.heroLetter}>
                     {comm.avatar || (comm.name ? comm.name.charAt(0).toUpperCase() : '')}
@@ -206,8 +242,8 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
               <button
                 className={`${styles.heroJoinBtn}${joined ? ` ${styles.joined}` : ''}`}
                 onClick={onToggleJoin}
-                disabled={joining}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
+                disabled={joining || comm.isEligibleToJoin === false || comm.hasPendingRequest}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center', opacity: (comm.isEligibleToJoin === false || comm.hasPendingRequest) ? 0.8 : 1 }}
               >
                 {joining ? (
                   <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: joined ? 'currentColor' : 'white', borderTopColor: 'transparent' }} />
@@ -219,7 +255,11 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
                     </svg>
                     Joined
                   </>
-                ) : comm.privacy === 'private' ? (
+                ) : comm.isEligibleToJoin === false ? (
+                  'Ineligible'
+                ) : comm.hasPendingRequest ? (
+                  'Requested'
+                ) : (comm.isPrivate || comm.privacy === 'private') ? (
                   'Request to Join'
                 ) : (
                   'Join Community'
@@ -294,48 +334,72 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
           </div>
           
           <div className={styles.heroBottomRow}>
-            <div 
-              className={styles.memberStackClickable} 
-              onClick={() => {
-                if (onViewMembers) onViewMembers();
-              }} 
-              style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}
-              title="View members"
-            >
-              <div className={styles.memberStack}>
-                {(comm.memberList?.length ? comm.memberList : []).slice(0, 4).map((m, i) => (
-                  <div
-                    key={i}
-                    className={styles.memberAvatar}
-                    style={{ zIndex: 4 - i, background: 'var(--color-bg-alt)', padding: 0, overflow: 'hidden' }}
-                  >
-                    {isImageUrl(m.avatar) ? (
-                      <img
-                        src={m.avatar}
-                        alt={m.name || ''}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: '50%' }}
-                       onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-                    ) : (
-                      <DefaultAvatar style={{ width: '100%', height: '100%', borderRadius: '50%', fontSize: '0.65rem' }} />
+            {(() => {
+              let memberList = Array.isArray(comm.members) && comm.members.length > 0
+                ? comm.members.map(m => m.user ? { id: m.user.id, name: m.user.displayName || m.user.username, username: m.user.username, avatar: m.user.avatar } : m)
+                : (Array.isArray(comm.memberList) ? comm.memberList : []);
+
+              if (memberList.length === 0 && comm.ownerId) {
+                const ownerUser = comm.owner || (currentUser?.id === comm.ownerId ? currentUser : (users && users[comm.ownerId]));
+                memberList = [{
+                  id: comm.ownerId,
+                  name: ownerUser?.displayName || ownerUser?.username || 'Owner',
+                  username: ownerUser?.username || '',
+                  avatar: ownerUser?.avatar || ''
+                }];
+              }
+
+              const totalMembers = Math.max(
+                typeof comm.memberCount === 'number' ? comm.memberCount : 0,
+                memberList.length,
+                1
+              );
+
+              return (
+                <div 
+                  className={styles.memberStackClickable} 
+                  onClick={() => {
+                    if (onViewMembers) onViewMembers();
+                  }} 
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}
+                  title="View members"
+                >
+                  <div className={styles.memberStack}>
+                    {memberList.slice(0, 4).map((m, i) => (
+                      <div
+                        key={i}
+                        className={styles.memberAvatar}
+                        style={{ zIndex: 4 - i, background: 'var(--color-bg-alt)', padding: 0, overflow: 'hidden' }}
+                      >
+                        {isImageUrl(m.avatar) ? (
+                          <img
+                            src={getMediaUrl(m.avatar)}
+                            alt={m.name || ''}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: '50%' }}
+                            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                        ) : (
+                          <DefaultAvatar style={{ width: '100%', height: '100%', borderRadius: '50%', fontSize: '0.65rem' }} />
+                        )}
+                      </div>
+                    ))}
+                    {totalMembers > 4 && (
+                      <div className={styles.memberOverflow}>
+                        +{formatCount(totalMembers - 4)}
+                      </div>
                     )}
                   </div>
-                ))}
-                {comm.members > 4 && (
-                  <div className={styles.memberOverflow}>
-                    +{formatCount(comm.members - 4)}
+                  <div className={styles.heroCounts}>
+                    <span className={styles.heroCount}>
+                      <strong>{formatCount(totalMembers)}</strong> members
+                    </span>
+                    <span className={styles.heroCount}>
+                      <span className={styles.onlineDot} />
+                      <strong>{formatCount(comm.online || 0)}</strong> active now
+                    </span>
                   </div>
-                )}
-              </div>
-              <div className={styles.heroCounts}>
-                <span className={styles.heroCount}>
-                  <strong>{formatCount(Math.max(comm.members || 0, comm.memberList?.length || 0))}</strong> members
-                </span>
-                <span className={styles.heroCount}>
-                  <span className={styles.onlineDot} />
-                  <strong>{formatCount(comm.online)}</strong> active now
-                </span>
-              </div>
-            </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
 
@@ -346,8 +410,20 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
               className={styles.mobileAvatar}
               style={{ background: (!isImageUrl(comm.avatar) || imgError) ? (comm.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
             >
+              {avatarLoading && isImageUrl(comm.avatar) && !imgError && (
+                <div className={styles.avatarSkeleton} />
+              )}
               {isImageUrl(comm.avatar) && !imgError ? (
-                <img src={comm.avatar} alt={comm.name} className={styles.heroAvatarImg} onError={() => setImgError(true)} />
+                <img 
+                  src={comm.avatar} 
+                  alt={comm.name} 
+                  className={`${styles.heroAvatarImg} ${avatarLoading ? styles.imgHidden : styles.imgVisible}`} 
+                  onLoad={() => setAvatarLoading(false)}
+                  onError={() => {
+                    setImgError(true);
+                    setAvatarLoading(false);
+                  }} 
+                />
               ) : (
                 <span className={styles.heroLetter}>
                   {comm.avatar || (comm.name ? comm.name.charAt(0).toUpperCase() : '')}
@@ -365,14 +441,21 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
                 </div>
               </div>
               <div className={styles.mobileHeroSubtext}>
-                {formatCount(Math.max(comm.members || 0, comm.memberList?.length || 0))} members &nbsp; {formatCount(comm.online)} active
+                {(() => {
+                  const totalMembers = typeof comm.memberCount === 'number'
+                    ? comm.memberCount
+                    : (typeof comm.members === 'number'
+                      ? comm.members
+                      : (Array.isArray(comm.members) ? comm.members.length : (comm.memberList?.length || 0)));
+                  return `${formatCount(totalMembers)} members \u00a0 ${formatCount(comm.online || 0)} active`;
+                })()}
               </div>
             </div>
           </div>
 
           <div className={styles.mobileHeroDescWrapper}>
             <p className={styles.mobileHeroDescLine}>
-              {comm.desc}
+              {comm.description || comm.desc}
             </p>
           </div>
 
@@ -421,6 +504,19 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
           </div>
         </div>
       </div>
+
+      {cropFile && (
+        <MediaCropper
+          imageFile={cropFile}
+          aspect={cropType === 'avatar' ? 1 : 5}
+          cropShape={cropType === 'avatar' ? 'round' : 'rect'}
+          onCropComplete={handleCropComplete}
+          onCancel={() => {
+            setCropFile(null);
+            setCropType(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -439,7 +535,7 @@ function AboutCard({ comm }) {
     <div className={styles.aboutCard}>
       <div>
         <h4 className={styles.sectionLabel}>About</h4>
-        <p className={styles.aboutDesc}>{comm.desc}</p>
+        <p className={styles.aboutDesc}>{comm.description || comm.desc}</p>
         <div className={styles.createdDateRow}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={styles.createdDateIcon}>
             <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -545,15 +641,12 @@ function GuidelinesCard() {
 }
 
 
-function useSimulatedFetch(data, delay = 350, deps = []) {
-  const [isLoading, setIsLoading] = useState(true);
+function useSimulatedFetch(data, delay = 0, deps = []) {
+  const [isLoading, setIsLoading] = useState(!data);
 
   useEffect(() => {
     if (data) {
-      const timer = setTimeout(() => {
-        setIsLoading(false);
-      }, delay);
-      return () => clearTimeout(timer);
+      setIsLoading(false);
     } else {
       setIsLoading(true);
     }
@@ -604,6 +697,16 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
       document.body.style.overflow = '';
     };
   }, [showMobileAbout, isMobileAboutClosing]);
+
+  const { socket, isConnected } = useGlobalSocketStore();
+  useEffect(() => {
+    if (!socket || !isConnected || !communityId) return;
+    socket.emit('community:join_room', { communityId });
+    return () => {
+      socket.emit('community:leave_room', { communityId });
+    };
+  }, [socket, isConnected, communityId]);
+
   const [isMuted, setIsMuted] = useState(() => {
     try {
       const muted = JSON.parse(localStorage.getItem('meetify_muted_communities') || '[]');
@@ -633,8 +736,19 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
     localStorage.setItem('meetify_muted_communities', JSON.stringify(mutedList));
   };
   
-  const rawComm = allCommunities[communityId];
-  const { isLoading, data: comm, error, retry } = useSimulatedFetch(rawComm, 350, [communityId]);
+  const { data: apiComm, isLoading: isApiLoading, isError: isApiError, error: apiError, refetch: retry } = useCommunityById(communityId);
+
+  const isDeletedError = isApiError && (
+    apiError?.response?.status === 404 ||
+    apiError?.response?.data?.message === 'COMMUNITY_DELETED' ||
+    apiError?.response?.data?.message === 'COMMUNITY_NOT_FOUND' ||
+    apiError?.message?.includes('COMMUNITY_DELETED') ||
+    apiError?.message?.includes('COMMUNITY_NOT_FOUND')
+  );
+
+  const comm = apiComm;
+  const isLoading = isApiLoading || (!comm && !isDeletedError && !isApiError);
+  const error = isApiError && !isDeletedError;
 
   const [joining, setJoining] = useState(false);
   const [postLimit, setPostLimit] = useState(15);
@@ -645,14 +759,45 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
     return users[currentUser.username]?.communities || currentUser.communities || [];
   }, [users, currentUser, comm]);
 
-  const rawJoined = comm ? userCommunities.includes(comm.name) : false;
+  const rawJoined = useMemo(() => {
+    if (!comm) return false;
+    if (comm.ownerId && currentUser?.id && comm.ownerId === currentUser.id) return true;
+    if (comm.userRole === 'OWNER' || comm.userRole === 'MODERATOR' || comm.userRole === 'MEMBER') return true;
+    if (comm.isJoined !== undefined && comm.isJoined !== null) return Boolean(comm.isJoined);
+    if (Array.isArray(comm.members) && currentUser?.id) {
+      return comm.members.some(m => (m.userId || m.id || m.user?.id) === currentUser.id);
+    }
+    return userCommunities.includes(comm.name);
+  }, [comm, currentUser, userCommunities]);
+
   const entityKey = `joinCommunity:${communityId}`;
   const joined = toggleRegistry.getLatestIntent(entityKey, rawJoined);
+
+  const { data: fetchedPostsData } = useQuery({
+    queryKey: ['community-posts', communityId],
+    queryFn: async () => {
+      const res = await postsApi.getFeed(50, undefined, communityId);
+      return res?.posts || (Array.isArray(res) ? res : []);
+    },
+    enabled: Boolean(communityId),
+    staleTime: 10_000,
+  });
+
   const communityPosts = useMemo(() => {
     if (!comm) return [];
-    return posts.filter(p => p.communityId === comm.id);
-  }, [posts, comm]);
-  const isAdmin = comm ? comm.memberList?.some(m => m.id === currentUser?.id && m.admin) : false;
+    const listFromApi = fetchedPostsData || [];
+    const listFromData = (posts || []).filter(p => p.communityId === comm.id);
+    const combined = [...listFromApi];
+    listFromData.forEach(p => {
+      if (!combined.some(existing => existing.id === p.id)) {
+        combined.unshift(p);
+      }
+    });
+    return combined;
+  }, [comm, fetchedPostsData, posts]);
+  const isOwner = comm ? (comm.ownerId === currentUser?.id || comm.userRole === 'OWNER' || (Array.isArray(comm.members) && comm.members.some(m => (m.userId === currentUser?.id || m.user?.id === currentUser?.id) && m.role === 'OWNER'))) : false;
+  const isMod = comm ? (comm.userRole === 'MODERATOR' || (Array.isArray(comm.members) && comm.members.some(m => (m.userId === currentUser?.id || m.user?.id === currentUser?.id) && m.role === 'MODERATOR'))) : false;
+  const isAdmin = isOwner;
 
   const visibleCommunityPosts = useMemo(() => communityPosts.slice(0, postLimit), [communityPosts, postLimit]);
   const hasMorePosts = communityPosts.length > visibleCommunityPosts.length;
@@ -674,33 +819,104 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
   if (isLoading) {
     return (
       <div className={styles.wrapper}>
-        <div className={styles.mobileHeader}>
-          <button className={styles.backBtn} onClick={onBack}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="19" y1="12" x2="5" y2="12"></line>
-              <polyline points="12 19 5 12 12 5"></polyline>
-            </svg>
-          </button>
-          <Skeleton type="text" width="120px" height="1.5rem" style={{ margin: 0 }} />
-        </div>
         <div className={styles.heroSection}>
-          <Skeleton type="rect" width="100%" height="240px" style={{ borderRadius: 0 }} />
+          <div className={styles.heroCover}>
+            <Skeleton type="rect" width="100%" height="100%" style={{ borderRadius: 0 }} />
+          </div>
+          <div className={styles.heroContent}>
+            {/* DESKTOP HERO SKELETON */}
+            <div className={styles.desktopHeroLayout}>
+              <div className={styles.heroTopRow}>
+                <div className={styles.avatarWrapper}>
+                  <Skeleton type="circle" width="110px" height="110px" />
+                </div>
+                <div className={styles.heroMeta} style={{ marginTop: '1rem', gap: '0.6rem' }}>
+                  <Skeleton type="text" width="220px" height="2rem" style={{ borderRadius: '8px' }} />
+                  <Skeleton type="text" width="160px" height="1rem" style={{ borderRadius: '6px' }} />
+                </div>
+              </div>
+            </div>
+
+            {/* MOBILE HERO SKELETON */}
+            <div className={styles.mobileHeroLayout} style={{ padding: '0.75rem 12px 1rem 12px', gap: '0.75rem' }}>
+              <div className={styles.mobileHeroTopRow}>
+                <Skeleton type="circle" width="56px" height="56px" style={{ flexShrink: 0 }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1 }}>
+                  <Skeleton type="text" width="60%" height="1.2rem" style={{ borderRadius: '6px' }} />
+                  <Skeleton type="text" width="40%" height="0.8rem" style={{ borderRadius: '4px' }} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <Skeleton type="text" width="90%" height="0.85rem" style={{ borderRadius: '4px' }} />
+                <Skeleton type="text" width="65%" height="0.85rem" style={{ borderRadius: '4px' }} />
+              </div>
+            </div>
+          </div>
         </div>
+
         <div className={styles.main}>
           <div className={styles.leftColumn}>
-            <Skeleton type="rect" width="100%" height="140px" style={{ marginBottom: '1.5rem' }} />
+            <Skeleton type="rect" width="100%" height="90px" style={{ borderRadius: '16px', marginBottom: '1.25rem' }} />
             <PostSkeleton />
             <PostSkeleton />
           </div>
-          <div className={`${styles.rightColumn} ${!showMobileDetails ? styles.hiddenOnMobile : ''}`}>
-            <Skeleton type="rect" width="100%" height="400px" />
+          <div className={styles.rightColumn}>
+            <Skeleton type="rect" width="100%" height="280px" style={{ borderRadius: '20px' }} />
           </div>
         </div>
       </div>
     );
   }
 
-  if (error) {
+function DeletedCommunityView({ onBack }) {
+  const navigate = useNavigate();
+
+  return (
+    <div className={styles.deletedContainer}>
+      <div className={styles.deletedCard}>
+        <div className={styles.deletedIconWrap}>
+          <div className={styles.deletedIconBg}>
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+            </svg>
+          </div>
+        </div>
+
+        <h2 className={styles.deletedTitle}>Community Deleted</h2>
+        <p className={styles.deletedSubtitle}>
+          This community has been deleted by its owner or moderators and is no longer accessible.
+        </p>
+
+        <div className={styles.deletedActions}>
+          <button 
+            type="button"
+            className={styles.deletedPrimaryBtn} 
+            onClick={() => navigate('/communities')}
+          >
+            Explore Other Communities
+          </button>
+          <button 
+            type="button"
+            className={styles.deletedSecondaryBtn} 
+            onClick={() => navigate('/home')}
+          >
+            Go to Home Feed
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+  if (error || isDeletedError) {
+    const errorMsg = apiError?.response?.data?.message || apiError?.message || '';
+    const isDeleted = isDeletedError || errorMsg === 'COMMUNITY_DELETED' || errorMsg.includes('COMMUNITY_DELETED') || apiError?.response?.status === 404;
+
+    if (isDeleted) {
+      return <DeletedCommunityView onBack={onBack} />;
+    }
+
     return (
       <div className={styles.wrapper} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <ErrorState onRetry={retry} />
@@ -710,20 +926,24 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
 
   if (!comm) return null;
 
-  const handleToggleJoin = (e) => {
+  const handleToggleJoin = async (e) => {
     if (e) e.stopPropagation();
     const entityKey = `joinCommunity:${communityId}`;
     const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, rawJoined);
 
     // Private communities require admin approval — send a join request instead of directly joining
-    if (!joined && comm.privacy === 'private') {
-      requestToJoinGroup(communityId);
-      showToast('Join request sent — waiting for admin approval.');
+    if (!joined && (comm.isPrivate || comm.privacy === 'private')) {
+      try {
+        const res = await communitiesApi.join(communityId);
+        showToast(res?.message || 'Join request sent — waiting for admin approval.');
+        queryClient.invalidateQueries({ queryKey: ['community', communityId] });
+      } catch (err) {
+        showToast(err?.response?.data?.message || err?.message || 'Failed to submit join request');
+      }
       return;
     }
     toggleJoin({ communityId, isJoined: nextJoined, currentUser });
     if (nextJoined) {
-      showToast(`Welcome to ${comm.name}! 🎉`);
       setTimeout(() => {
         const inputEl = document.querySelector(`.${styles.composerWrap} div[contenteditable="true"]`) || 
                         document.querySelector(`.${styles.composerWrap} textarea`) || 
@@ -801,7 +1021,7 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
                   setShowMobileMenu(false);
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="18" cy="5" r="3" />
                   <circle cx="6" cy="12" r="3" />
                   <circle cx="18" cy="19" r="3" />
@@ -816,7 +1036,7 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
                   setShowMobileMenu(false);
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                   <circle cx="9" cy="7" r="4" />
                   <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
@@ -832,24 +1052,11 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
                       setShowMobileMenu(false);
                     }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="3" />
                       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                     </svg>
                     Settings
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setShowDeleteConfirm(true);
-                      setShowMobileMenu(false);
-                    }}
-                    style={{ color: 'var(--color-danger, #ef4444)' }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                    Delete Community
                   </button>
                 </>
               ) : (
@@ -860,12 +1067,12 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
                   }}
                   disabled={hasReported}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '0.5rem' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10" />
                     <line x1="12" y1="8" x2="12" y2="12" />
                     <line x1="12" y1="16" x2="12.01" y2="16" />
                   </svg>
-                  {hasReported ? 'Already Reported' : 'Report'}
+                  {hasReported ? 'Reported' : 'Report'}
                 </button>
               )}
             </div>
@@ -896,13 +1103,41 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
         <CommunityAdminModal
           community={comm}
           onClose={() => setShowAdminModal(false)}
+          onDeleteCommunity={handleDeleteCommunity}
         />
       )}
 
       {showMembersModal && (
         <CommunityMembersModal
-          members={comm.memberList}
-          title={`${comm.name} Members`}
+          members={(() => {
+            let list = Array.isArray(comm.members) && comm.members.length > 0
+              ? comm.members.map(m => ({
+                  id: m.user?.id || m.userId || m.id,
+                  name: m.user?.displayName || m.user?.username || m.name || m.username || 'Member',
+                  username: m.user?.username || m.username,
+                  avatar: m.user?.avatar || m.avatar,
+                  role: m.role === 'OWNER' || (comm.ownerId && (m.user?.id || m.userId || m.id) === comm.ownerId) ? 'Owner' : (m.role === 'MODERATOR' ? 'Moderator' : 'Member'),
+                  admin: m.role === 'OWNER' || (comm.ownerId && (m.user?.id || m.userId || m.id) === comm.ownerId),
+                }))
+              : (comm.memberList || []);
+
+            if ((!list || list.length === 0) && comm.ownerId) {
+              const ownerUser = comm.owner || (currentUser?.id === comm.ownerId ? currentUser : (users && users[comm.ownerId]));
+              list = [{
+                id: comm.ownerId,
+                name: ownerUser?.displayName || ownerUser?.username || 'Owner',
+                username: ownerUser?.username || '',
+                avatar: ownerUser?.avatar || '',
+                role: 'Owner',
+                admin: true,
+              }];
+            }
+            return list;
+          })()}
+          title="Members"
+          communityId={comm.id}
+          isAdmin={isOwner}
+          ownerId={comm.ownerId}
           onClose={() => setShowMembersModal(false)}
         />
       )}
@@ -915,50 +1150,15 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
         />
       )}
 
-      {cropFile && (
-        <MediaCropper
-          imageFile={cropFile}
-          aspect={cropType === 'avatar' ? 1 : 3}
-          onCropComplete={handleCropComplete}
-          onCancel={() => {
-            setCropFile(null);
-            setCropType(null);
-          }}
-        />
-      )}
-
-      {showDeleteConfirm && createPortal(
-        <div 
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
-          onClick={() => setShowDeleteConfirm(false)}
-        >
-          <div 
-            style={{ background: 'var(--color-bg-white)', borderRadius: '16px', padding: '1.75rem', maxWidth: '360px', width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text-main)' }}>Delete community?</h3>
-            <p style={{ margin: '0 0 1.5rem', fontSize: '0.875rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-              <strong>{comm.name}</strong> and all its posts will be removed. This can't be undone.
-            </p>
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                style={{ flex: 1, padding: '0.7rem', borderRadius: '8px', border: '1.5px solid var(--color-border)', background: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-main)' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteCommunity}
-                disabled={deleting}
-                style={{ flex: 1, padding: '0.7rem', borderRadius: '8px', border: 'none', background: '#ef4444', color: 'white', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', opacity: deleting ? 0.6 : 1 }}
-              >
-                {deleting ? 'Deleting…' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <ConfirmModal
+        visible={showDeleteConfirm}
+        title="Delete Community?"
+        desc={`Are you sure you want to delete "${comm.name}"? This action is permanent and cannot be undone.`}
+        cancelText="No"
+        confirmText={deleting ? 'Deleting...' : 'Yes'}
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDeleteCommunity}
+      />
 
       {showMobileAbout && createPortal(
         <div 
@@ -1031,59 +1231,103 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
             </h2>
           </div>
 
-          {joined && (comm.allowMemberPosts !== false || isAdmin) && (
-            <div className={styles.composerWrap}>
-              <PostComposer onSubmit={(text, poll, media) => addPost(text, poll, comm.id, media)} />
-            </div>
-          )}
-
-          <div className={styles.postsFeed}>
-            {communityPosts.length === 0 ? (
-              <div className={styles.emptyPosts}>
-                <div className={styles.emptyPostsIcon}>
-                  {comm.trending ? '🚀' : '💭'}
+          {comm.canViewPosts === false ? (
+            comm.isEligibleToJoin === false ? (
+              <div className={styles.emptyPosts} style={{ padding: '3rem 1.5rem', background: 'var(--color-bg-white)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', textAlign: 'center', marginTop: '1rem' }}>
+                <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                  </svg>
                 </div>
-                <h3 className={styles.emptyPostsTitle}>
-                  This community is waiting for its first post
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 0.5rem', color: 'var(--color-text-main)' }}>
+                  You're not eligible to join this community.
                 </h3>
-                <p className={styles.emptyPostsDesc}>
-                  Share an update, photo, event, or question to get everyone talking.
+                <p style={{ fontSize: '0.92rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.5, maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' }}>
+                  This community is limited to verified students of {comm.college?.name || 'this college'}.
                 </p>
-                {!joined ? (
-                  <button className={styles.emptyJoinBtn} onClick={handleToggleJoin} disabled={joining} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                    {joining ? (
-                      <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: 'white', borderTopColor: 'transparent' }} />
-                    ) : null}
-                    Join to Post
-                  </button>
-                ) : (
-                  <button className={styles.emptyJoinBtn} onClick={handleCreatePostClick}>
-                    Create Post
-                  </button>
-                )}
               </div>
             ) : (
-              <>
-                {visibleCommunityPosts.map((p, idx) => (
-                  <div key={p.id} className={styles.postWrapper}>
-                    <div className={styles.postMetaRow}>
-                      {p.authorId && users[p.authorId] && comm.memberList?.find(m => m.name === users[p.authorId]?.displayName)?.admin && (
-                        <span className={styles.postAuthorBadge} style={{ background: 'rgba(236, 72, 153, 0.1)', color: '#EC4899', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                          Admin
-                        </span>
-                      )}
+              <div className={styles.emptyPosts} style={{ padding: '3rem 1.5rem', background: 'var(--color-bg-white)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', textAlign: 'center', marginTop: '1rem' }}>
+                <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                </div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 0.5rem', color: 'var(--color-text-main)' }}>
+                  This Community is Private
+                </h3>
+                <p style={{ fontSize: '0.92rem', color: 'var(--color-text-muted)', margin: '0 0 1.25rem', lineHeight: 1.5, maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' }}>
+                  Only approved members can view posts and join this community. Send a request to get access.
+                </p>
+                <button
+                  className={styles.emptyJoinBtn}
+                  onClick={handleToggleJoin}
+                  disabled={joining || comm.hasPendingRequest}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
+                >
+                  {comm.hasPendingRequest ? 'Requested' : 'Request to Join'}
+                </button>
+              </div>
+            )
+          ) : (
+            <>
+              {joined && (comm.allowMemberPosts !== false || isAdmin) && (
+                <div className={styles.composerWrap}>
+                  <PostComposer onSubmit={(text, poll, media, mentions) => addPost(text, poll, communityId, media, mentions)} />
+                </div>
+              )}
+
+              <div className={styles.postsFeed}>
+                {communityPosts.length === 0 ? (
+                  <div className={styles.emptyPosts}>
+                    <div className={styles.emptyPostsIcon}>
+                      {comm.trending ? '🚀' : '💭'}
                     </div>
-                    <Post key={p.id} postData={p} hideCommunityTag={true} onClick={() => onPostClick && onPostClick(p, 'community', comm.id)} />
+                    <h3 className={styles.emptyPostsTitle}>
+                      This community is waiting for its first post
+                    </h3>
+                    <p className={styles.emptyPostsDesc}>
+                      Share an update, photo, event, or question to get everyone talking.
+                    </p>
+                    {!joined ? (
+                      <button className={styles.emptyJoinBtn} onClick={handleToggleJoin} disabled={joining} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                        {joining ? (
+                          <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: 'white', borderTopColor: 'transparent' }} />
+                        ) : null}
+                        Join to Post
+                      </button>
+                    ) : (
+                      <button className={styles.emptyJoinBtn} onClick={handleCreatePostClick}>
+                        Create Post
+                      </button>
+                    )}
                   </div>
-                ))}
-                {hasMorePosts && (
-                  <div ref={loadMorePostsRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
-                    <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '3px' }} />
-                  </div>
+                ) : (
+                  <>
+                    {visibleCommunityPosts.map((p, idx) => (
+                      <div key={p.id} className={styles.postWrapper}>
+                        <div className={styles.postMetaRow}>
+                          {p.authorId && users[p.authorId] && comm.memberList?.find(m => m.name === users[p.authorId]?.displayName)?.admin && (
+                            <span className={styles.postAuthorBadge} style={{ background: 'rgba(236, 72, 153, 0.1)', color: '#EC4899', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                              Admin
+                            </span>
+                          )}
+                        </div>
+                        <Post key={p.id} postData={p} hideCommunityTag={true} onClick={() => onPostClick && onPostClick(p, 'community', comm.id)} />
+                      </div>
+                    ))}
+                    {hasMorePosts && (
+                      <div ref={loadMorePostsRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
+                        <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '3px' }} />
+                      </div>
+                    )}
+                  </>
                 )}
-              </>
-            )}
-          </div>
+              </div>
+            </>
+          )}
         </div>
 
         <div className={`${styles.rightColumn} ${!showMobileDetails ? styles.hiddenOnMobile : ''}`}>

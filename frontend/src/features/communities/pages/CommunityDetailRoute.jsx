@@ -1,12 +1,12 @@
 import { useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 import CommunityView from '../components/view/CommunityView';
-import { useData } from '@shared/hooks/useData';
+import { useCommunities } from '@shared/hooks/useCommunities';
 
 export default function CommunityDetailRoute() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
-  const { communities } = useData();
+  const { communities } = useCommunities();
 
   const comm = communities[id];
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import styles from './ImageSearchModal.module.css';
 import { X, Search, Upload, Loader2 } from 'lucide-react';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import { compressAndCacheDraftImage } from '@shared/utils/draftImageCache';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
@@ -158,8 +159,8 @@ export default function ImageSearchModal({ onClose, onSelect }) {
       }
       if (file.type === 'image/gif') {
         setIsCompressingRemote(true);
-        processAndUploadImage(file, 'covers').then(({ publicUrl }) => {
-          onSelect(publicUrl || URL.createObjectURL(file));
+        compressAndCacheDraftImage(file).then(({ previewUrl }) => {
+          onSelect(previewUrl || URL.createObjectURL(file));
           onClose();
         }).catch(() => {
           onSelect(URL.createObjectURL(file));
@@ -179,10 +180,18 @@ export default function ImageSearchModal({ onClose, onSelect }) {
     return url.includes('.gif') || url.includes('giphy.com') || url.startsWith('data:image/gif');
   };
 
-  const handleSelectItem = (itemUrl) => {
+  const handleSelectItem = async (itemUrl) => {
     if (activeTab === 'gifs' || isGifUrl(itemUrl)) {
-      onSelect(itemUrl);
-      onClose();
+      setIsCompressingRemote(true);
+      try {
+        const { previewUrl } = await compressAndCacheDraftImage(itemUrl);
+        onSelect(previewUrl || itemUrl);
+      } catch (_) {
+        onSelect(itemUrl);
+      } finally {
+        setIsCompressingRemote(false);
+        onClose();
+      }
     } else {
       setCropTarget(itemUrl);
     }
@@ -191,13 +200,13 @@ export default function ImageSearchModal({ onClose, onSelect }) {
   const handleCropComplete = async (croppedFile) => {
     setIsCompressingRemote(true);
     try {
-      const { publicUrl } = await processAndUploadImage(croppedFile, 'covers', { maxWidthOrHeight: 1280 });
-      if (publicUrl) {
-        onSelect(publicUrl);
+      const { previewUrl } = await compressAndCacheDraftImage(croppedFile, { maxWidthOrHeight: 1280 });
+      if (previewUrl) {
+        onSelect(previewUrl);
       }
     } catch (e) {
-      console.error('Failed to upload image:', e);
-      alert('Failed to upload image. Please try again.');
+      console.error('Failed to compress image:', e);
+      alert('Failed to process image. Please try again.');
     } finally {
       setIsCompressingRemote(false);
       setCropTarget(null);

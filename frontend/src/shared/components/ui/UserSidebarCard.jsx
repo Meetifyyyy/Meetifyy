@@ -9,6 +9,7 @@ import { getCollegeName } from '@shared/utils/user';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { dmApi, messagesApi, getMediaUrl } from '@shared/api/apiClient';
+import CoverImage from './CoverImage';
 import defaultCover from '@assets/images/default_cover.webp';
 import s from './UserSidebarCard.module.css';
 
@@ -233,9 +234,10 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
     <div className={s.card}>
       {/* Cover image */}
       <div className={s.coverWrap}>
-        <div 
-          className={s.coverPhoto} 
-          style={getCoverStyle(effectiveUser.cover, defaultCover)}
+        <CoverImage
+          cover={effectiveUser.cover}
+          fallback={defaultCover}
+          className={s.coverPhoto}
         />
       </div>
 

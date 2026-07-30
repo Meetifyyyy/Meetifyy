@@ -1,6 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
+import { useCommunities, useCampusCommunities } from '@shared/hooks/useCommunities';
+import { useData } from '@shared/hooks/useData';
+import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { Sun, Moon } from 'lucide-react';
 
 import useUIStore from '@stores/uiStore';
@@ -38,13 +41,13 @@ const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
     >
       <div 
         className={styles.communityAvatar}
-        style={{ background: (!isImage || imgError) ? (comm.color || 'var(--color-bg-white)') : 'transparent' }}
+        style={{ background: (!isImage || imgError) ? (comm.color || 'var(--color-primary)') : 'transparent' }}
       >
         {isImage && !imgError ? (
           <img src={avatarSrc} alt={comm.name} onError={() => setImgError(true)} />
         ) : (
           <span style={{ color: '#FFFFFF', fontWeight: 700 }}>
-            {comm.avatar || (comm.name ? comm.name.charAt(0).toUpperCase() : '')}
+            {comm.name ? comm.name.charAt(0).toUpperCase() : 'C'}
           </span>
         )}
       </div>
@@ -56,8 +59,8 @@ const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
 export default function Header({ variant = 'dashboard' }) {
   const { initial, logout, currentUser } = useAuth();
   const queryClient = useQueryClient();
-  const { data: communitiesData = [] } = useQuery({ queryKey: ['communities'], queryFn: communitiesApi.getAll });
-  const communities = communitiesData.reduce((acc, c) => ({ ...acc, [c.id]: c }), {});
+  const { communities: communitiesDataMap } = useCommunities();
+  const communities = communitiesDataMap || {};
   
   const searchQuery = useUIStore(state => state.searchQuery);
   const setSearchQuery = useUIStore(state => state.setSearchQuery);
@@ -88,10 +91,39 @@ export default function Header({ variant = 'dashboard' }) {
     navigate('/');
   };
 
+  const { communities: allCommunitiesData } = useData();
+  const { campusCommunities } = useCampusCommunities();
+
   const username = currentUser?.username || '';
-  const joinedCommunityObjects = (currentUser?.communities || []).map(commName => {
-    return Object.values(communities || {}).find(c => c.name === commName) || { name: commName, id: commName.toLowerCase().replace(/\s+/g, ''), avatar: commName.charAt(0) };
-  });
+
+  const joinedCommunityObjects = useMemo(() => {
+    const publicList = Array.isArray(allCommunitiesData) ? allCommunitiesData : Object.values(allCommunitiesData || communities || {});
+    const campusList = Array.isArray(campusCommunities) ? campusCommunities : [];
+    
+    const combined = [...publicList, ...campusList].filter(c => c && typeof c === 'object' && c.name && c.id);
+    const uniqueMap = new Map();
+    combined.forEach(c => uniqueMap.set(c.id, c));
+    const commList = Array.from(uniqueMap.values());
+
+    const userCommunities = currentUser?.communities || [];
+
+    return commList.filter((c) => {
+      const rawJoined = Boolean(
+        (c.ownerId && currentUser?.id && c.ownerId === currentUser.id) ||
+        c.userRole === 'OWNER' ||
+        c.userRole === 'MODERATOR' ||
+        c.userRole === 'MEMBER' ||
+        (c.isJoined !== undefined && Boolean(c.isJoined)) ||
+        (c.isMember !== undefined && Boolean(c.isMember)) ||
+        (Array.isArray(c.members) && currentUser?.id && c.members.some(m => (m.userId || m.id || m.user?.id) === currentUser.id)) ||
+        userCommunities.includes(c.name) ||
+        userCommunities.includes(c.id)
+      );
+
+      const entityKey = `joinCommunity:${c.id}`;
+      return toggleRegistry.getLatestIntent(entityKey, rawJoined);
+    });
+  }, [allCommunitiesData, campusCommunities, communities, currentUser]);
 
   return (
     <header className={`${styles.header} ${activeTab === 'messages' ? styles.headerMessages : ''} ${!isHomePage ? styles.hideOnMobile : ''}`}>
@@ -168,14 +200,20 @@ export default function Header({ variant = 'dashboard' }) {
             
             {isCommunitiesMenuOpen && (
               <div className={styles.communitiesList}>
-                {joinedCommunityObjects.map(comm => (
-                  <DrawerCommunityItem 
-                    key={comm.id} 
-                    comm={comm} 
-                    navigate={navigate} 
-                    onClose={() => setDrawerOpen(false)} 
-                  />
-                ))}
+                {joinedCommunityObjects.length > 0 ? (
+                  joinedCommunityObjects.map(comm => (
+                    <DrawerCommunityItem 
+                      key={comm.id} 
+                      comm={comm} 
+                      navigate={navigate} 
+                      onClose={() => setDrawerOpen(false)} 
+                    />
+                  ))
+                ) : (
+                  <div className={styles.emptyCommunities}>
+                    No communities joined yet
+                  </div>
+                )}
                 
                 <a
                   href="#"

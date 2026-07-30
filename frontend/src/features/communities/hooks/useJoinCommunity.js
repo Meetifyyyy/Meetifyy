@@ -11,7 +11,7 @@ export function useJoinCommunity() {
         if (c.id !== communityId) return c;
         const current = c.memberCount || c.membersCount || 0;
         const newCount = Math.max(0, current + (intent ? 1 : -1));
-        return { ...c, isMember: intent, memberCount: newCount, membersCount: newCount };
+        return { ...c, isMember: intent, isJoined: intent, memberCount: newCount, membersCount: newCount };
       };
       if (Array.isArray(oldData)) return oldData.map(update);
       return oldData;
@@ -25,12 +25,12 @@ export function useJoinCommunity() {
       const current = old.memberCount || old.membersCount || 0;
       const newCount = Math.max(0, current + (intent ? 1 : -1));
       let members = old.members || [];
-      if (intent && currentUser && !members.some(m => (m.userId || m.id) === currentUser.id)) {
-        members = [...members, { userId: currentUser.id, user: currentUser }];
+      if (intent && currentUser && !members.some(m => (m.userId || m.id || m.user?.id) === currentUser.id)) {
+        members = [...members, { userId: currentUser.id, role: 'MEMBER', user: currentUser }];
       } else if (!intent && currentUser) {
-        members = members.filter(m => (m.userId || m.id) !== currentUser.id);
+        members = members.filter(m => (m.userId || m.id || m.user?.id) !== currentUser.id);
       }
-      return { ...old, isMember: intent, memberCount: newCount, membersCount: newCount, members };
+      return { ...old, isMember: intent, isJoined: intent, memberCount: newCount, membersCount: newCount, members };
     });
   }, []);
 
@@ -50,7 +50,7 @@ export function useJoinCommunity() {
     applyOptimistic,
     applyRollback,
     callApi,
-    invalidateKeys: (vars) => [['communities'], ['campusCommunities'], ['community', vars.communityId]],
+    invalidateKeys: (vars) => [['communities'], ['campusCommunities'], ['community', vars.communityId], ['conversations']],
   });
 
   return { mutate, isLoading: false };

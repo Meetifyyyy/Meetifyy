@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import styles from './CreateActivityPage.module.css';
 
 import ImageSearchModal from '@shared/components/modals/ImageSearchModal';
+import { commitDraftImage } from '@shared/utils/draftImageCache';
 
 import { getRelativeDateLabel } from '@shared/utils/time';
 import {
@@ -665,6 +666,7 @@ export default function CreateActivityPage() {
   const location = useLocation();
   const prefill = location.state?.prefill || {};
   const returnTo = location.state?.returnTo || '/crew';
+  const isFromCampus = returnTo.includes('/campus') || !!location.state?.fromCampus || !!prefill.fromCampus;
   const { currentUser, collegeName } = useAuth();
   const queryClient = useQueryClient();
   const today = new Date();
@@ -684,13 +686,13 @@ export default function CreateActivityPage() {
   const [formData, setFormData] = useState({
     title: prefill.title || '',
     description: '',
-    coverImage: prefill.coverImage || getRandomCover(),
+    coverImage: prefill.coverImage || '',
     ...getInitialDates(),
     location: '',
     slotsNeeded: 999,
     reminder: 'None',
     createEventGroup: false,
-    whoCanJoin: 'College',
+    whoCanJoin: prefill.whoCanJoin || (isFromCampus ? 'College' : 'Anyone'),
   });
 
   const set = p => setFormData(prev => ({ ...prev, ...p }));
@@ -699,36 +701,45 @@ export default function CreateActivityPage() {
     const coverImage = formData.coverImage;
     if (!coverImage) return;
 
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.src = coverImage;
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = 10;
-        canvas.height = 10;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        ctx.drawImage(img, 0, 0, 10, 10);
-        const data = ctx.getImageData(0, 0, 10, 10).data;
+    let active = true;
+    const timer = setTimeout(() => {
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.src = coverImage;
+      img.onload = () => {
+        if (!active) return;
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 10;
+          canvas.height = 10;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          ctx.drawImage(img, 0, 0, 10, 10);
+          const data = ctx.getImageData(0, 0, 10, 10).data;
 
-        let r = 0, g = 0, b = 0, count = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          r += data[i];
-          g += data[i+1];
-          b += data[i+2];
-          count++;
-        }
-        r = Math.round(r / count);
-        g = Math.round(g / count);
-        b = Math.round(b / count);
+          let r = 0, g = 0, b = 0, count = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            r += data[i];
+            g += data[i+1];
+            b += data[i+2];
+            count++;
+          }
+          r = Math.round(r / count);
+          g = Math.round(g / count);
+          b = Math.round(b / count);
 
-        if (containerRef.current) {
-          containerRef.current.style.setProperty('--extracted-rgb', `${r}, ${g}, ${b}`);
+          if (containerRef.current) {
+            containerRef.current.style.setProperty('--extracted-rgb', `${r}, ${g}, ${b}`);
+          }
+        } catch (e) {
+          console.warn('Failed to extract dominant color from cover image:', e);
         }
-      } catch (e) {
-        console.warn('Failed to extract dominant color from cover image:', e);
-      }
+      };
+    }, 50);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
     };
   }, [formData.coverImage]);
 
@@ -864,18 +875,28 @@ export default function CreateActivityPage() {
     setShowInviteModal(true);
 
     // ── Background API call ─────────────────────────────────────────────────
-    creationPromiseRef.current = activitiesApi.create({
-      title: formData.title,
-      description: formData.description,
-      location: fd.location,
-      maxMembers: fd.slotsNeeded === 999 ? null : fd.slotsNeeded,
-      coverImage: formData.coverImage,
-      createActivityGroup: fd.createEventGroup,
-      visibility: fd.whoCanJoin === 'College' ? 'COLLEGE_ONLY' : fd.whoCanJoin === 'No one' ? 'PRIVATE' : 'PUBLIC',
-      shareToCampus: fd.whoCanJoin === 'College',
-      startDate: finalStart.toISOString(),
-      endDate: finalEnd.toISOString(),
-    }).then((realActivity) => {
+    creationPromiseRef.current = (async () => {
+      let uploadedCoverUrl = formData.coverImage;
+      if (uploadedCoverUrl) {
+        try {
+          uploadedCoverUrl = await commitDraftImage(uploadedCoverUrl, 'covers');
+        } catch (commitErr) {
+          console.warn('Failed to commit cover image, proceeding with current reference:', commitErr);
+        }
+      }
+      return await activitiesApi.create({
+        title: formData.title,
+        description: formData.description,
+        location: fd.location,
+        maxMembers: fd.slotsNeeded === 999 ? null : fd.slotsNeeded,
+        coverImage: uploadedCoverUrl,
+        createActivityGroup: fd.createEventGroup,
+        visibility: fd.whoCanJoin === 'College' ? 'COLLEGE_ONLY' : fd.whoCanJoin === 'No one' ? 'PRIVATE' : 'PUBLIC',
+        shareToCampus: fd.whoCanJoin === 'College',
+        startDate: finalStart.toISOString(),
+        endDate: finalEnd.toISOString(),
+      });
+    })().then((realActivity) => {
       // Swap optimistic entry with real server data
       queryClient.setQueryData(['activities'], (old) => {
         if (!old?.pages) return old;
@@ -1091,7 +1112,7 @@ export default function CreateActivityPage() {
             </div>
 
             {/* Share to University */}
-            <div style={{ position: 'relative', width: '100%', marginTop: '1.25rem' }} ref={whoCanJoinRef}>
+            <div style={{ position: 'relative', width: '100%' }} ref={whoCanJoinRef}>
               <button 
                 type="button"
                 className={styles.reminderRow} 
@@ -1123,7 +1144,7 @@ export default function CreateActivityPage() {
             </div>
 
             {/* Capacity Card */}
-            <div style={{ width: '100%', marginTop: '1.25rem' }}>
+            <div style={{ width: '100%' }}>
               <button type="button" className={styles.reminderRow} onClick={() => setShowCapacity(true)}>
                 <div className={styles.rowLeft}>
                   <Users size={16} className={styles.rowIcon} />
