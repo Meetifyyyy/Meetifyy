@@ -5,11 +5,13 @@ import styles from './MessageContextMenu.module.css';
 export default function MessageContextMenu({
   msg,
   position,
+  currentUser,
   onClose,
   onReply,
   onCopy,
   onForward,
   onDeleteForMe,
+  onUnsend,
   onUnsendRequest
 }) {
   const menuRef = useRef(null);
@@ -27,7 +29,7 @@ export default function MessageContextMenu({
       icon: Reply,
       visible: (m) => !isTemp(m) && !isUnavailableMedia(m),
       onClick: () => {
-        onReply(msg);
+        onReply?.(msg);
         onClose();
       }
     },
@@ -37,7 +39,7 @@ export default function MessageContextMenu({
       icon: Copy,
       visible: (m) => Boolean(m.text && typeof m.text === 'string' && m.text.trim().length > 0 && m.state !== 'UNSENT'),
       onClick: () => {
-        onCopy(msg);
+        onCopy?.(msg);
         onClose();
       }
     },
@@ -47,7 +49,7 @@ export default function MessageContextMenu({
       icon: Forward,
       visible: (m) => m.state !== 'UNSENT' && !isTemp(m) && !isUnavailableMedia(m),
       onClick: () => {
-        onForward(msg);
+        onForward?.(msg);
         onClose();
       }
     },
@@ -63,7 +65,7 @@ export default function MessageContextMenu({
       danger: true,
       visible: (m) => !isTemp(m),
       onClick: () => {
-        onDeleteForMe(msg);
+        onDeleteForMe?.(msg);
         onClose();
       }
     },
@@ -74,16 +76,19 @@ export default function MessageContextMenu({
       danger: true,
       visible: (m) => {
         if (isTemp(m)) return false;
-        if (m.from !== 'me') return false;
-        if (m.state === 'UNSENT') return false;
+        const isOwn = m.from === 'me' || (currentUser && (m.senderId === currentUser.id || m.userId === currentUser.id || m.fromUserId === currentUser.id || m.sender?.id === currentUser.id));
+        if (!isOwn) return false;
+        if (m.state === 'UNSENT' || m.isUnsent) return false;
         
         const now = new Date().getTime();
-        const msgTime = new Date(m.createdAt).getTime();
+        const msgTime = new Date(m.createdAt || m.timestamp).getTime();
+        if (isNaN(msgTime)) return true;
         const diffMins = (now - msgTime) / (1000 * 60);
         return diffMins <= 10;
       },
       onClick: () => {
-        onUnsendRequest(msg);
+        const handler = onUnsend || onUnsendRequest;
+        handler?.(msg);
         onClose();
       }
     }
