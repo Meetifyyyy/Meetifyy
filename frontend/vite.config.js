@@ -5,11 +5,13 @@ import path from 'path';
 import fs from 'fs';
 import { visualizer } from 'rollup-plugin-visualizer';
 
+const BUILD_TIME = Date.now();
+
 function versionBuildPlugin() {
   return {
     name: 'version-build-plugin',
     buildStart() {
-      const versionData = JSON.stringify({ version: Date.now(), buildTime: new Date().toISOString() });
+      const versionData = JSON.stringify({ version: BUILD_TIME, buildTime: new Date(BUILD_TIME).toISOString() });
       const publicDir = path.resolve(__dirname, 'public');
       if (!fs.existsSync(publicDir)) {
         fs.mkdirSync(publicDir, { recursive: true });
@@ -20,6 +22,9 @@ function versionBuildPlugin() {
 }
 
 export default defineConfig({
+  define: {
+    __APP_BUILD_TIME__: BUILD_TIME
+  },
   plugins: [
     versionBuildPlugin(),
     react(),
@@ -65,8 +70,13 @@ export default defineConfig({
         ]
       },
       workbox: {
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
         maximumFileSizeToCacheInBytes: 10485760, // 10 MiB limit
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,jpg,jpeg,webp}'],
+        globIgnores: ['**/version.json'],
+        navigateFallbackDenylist: [/^\/api\//, /^\/version\.json/],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
