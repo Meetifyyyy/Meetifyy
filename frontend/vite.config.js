@@ -74,8 +74,8 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         maximumFileSizeToCacheInBytes: 10485760, // 10 MiB limit
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,jpg,jpeg,webp}'],
-        globIgnores: ['**/version.json'],
+        globPatterns: ['**/*.{js,css,ico,png,svg,woff,woff2,jpg,jpeg,webp}'],
+        globIgnores: ['**/version.json', '**/index.html', 'index.html'],
         navigateFallbackDenylist: [/^\/api\//, /^\/version\.json/],
         runtimeCaching: [
           {

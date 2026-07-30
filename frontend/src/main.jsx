@@ -41,16 +41,28 @@ if (typeof window !== 'undefined') {
 // Service Worker — register in production, unregister stale SWs in development
 if ('serviceWorker' in navigator) {
   if (import.meta.env.DEV) {
-    // Unregister any existing SW in dev to avoid stale cache interfering
     navigator.serviceWorker.getRegistrations().then((registrations) => {
       for (const registration of registrations) registration.unregister();
     });
   } else {
-    // Register SW in production / staging
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        refreshing = true;
+        window.location.reload();
+      }
+    });
+
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
-        console.warn('SW registration failed:', err);
-      });
+      navigator.serviceWorker
+        .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+        .then((registration) => {
+          registration.update();
+          window.addEventListener('focus', () => registration.update());
+        })
+        .catch((err) => {
+          console.warn('SW registration failed:', err);
+        });
     });
   }
 }
