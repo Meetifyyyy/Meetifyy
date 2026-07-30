@@ -24,6 +24,7 @@ export default function Step2Academic() {
   const [year, setYear] = useState(signupData.year || '');
   const [attempted, setAttempted] = useState(false);
   const [emailStatus, setEmailStatus] = useState(null);
+  const [emailReason, setEmailReason] = useState('');
 
   // ── Email format validation ────────────────────────────────────────────────
   const emailFormatError = useMemo(() => {
@@ -48,6 +49,7 @@ export default function Step2Academic() {
 
     if (!email || emailFormatError) {
       setEmailStatus(null);
+      setEmailReason('');
       return;
     }
 
@@ -59,11 +61,18 @@ export default function Step2Academic() {
           email: email.trim().toLowerCase(),
         });
         if (!active) return;
-        setEmailStatus(res?.available === true ? 'available' : 'taken');
+        if (res?.available === true) {
+          setEmailStatus('available');
+          setEmailReason('');
+        } else {
+          setEmailStatus('taken');
+          setEmailReason(res?.reason || 'This email is already registered. Please sign in.');
+        }
       } catch {
         if (!active) return;
         // Network error — allow the user to continue. Backend catches real conflicts.
         setEmailStatus('network-error');
+        setEmailReason('');
       }
     }, 400);
 
@@ -85,9 +94,8 @@ export default function Step2Academic() {
 
   const showEmailError = (attempted && emailFormatError) || emailStatus === 'taken';
   const activeEmailError =
-    emailStatus === 'taken'
-      ? 'This email is already registered. Please sign in.'
-      : emailFormatError;
+    emailFormatError ||
+    (emailStatus === 'taken' ? (emailReason || 'This email is already registered. Please sign in.') : null);
 
   const majorError = !major.trim() ? 'Major / Course is required.' : null;
   const yearError = useMemo(() => {
@@ -109,14 +117,22 @@ export default function Step2Academic() {
 
     // Final guard: if still unknown (null or network-error), do a blocking check
     let resolvedStatus = emailStatus;
+    let resolvedReason = emailReason;
     if (resolvedStatus === null || resolvedStatus === 'network-error') {
       setEmailStatus('checking');
       try {
         const res = await apiClient.post('/api/auth/check-email', {
           email: email.trim().toLowerCase(),
         });
-        resolvedStatus = res?.available === false ? 'taken' : 'available';
+        if (res?.available === false) {
+          resolvedStatus = 'taken';
+          resolvedReason = res?.reason || 'This email is already registered. Please sign in.';
+        } else {
+          resolvedStatus = 'available';
+          resolvedReason = '';
+        }
         setEmailStatus(resolvedStatus);
+        setEmailReason(resolvedReason);
       } catch {
         // Network still down — proceed, backend will handle conflicts
         resolvedStatus = 'network-error';
