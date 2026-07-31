@@ -40,10 +40,22 @@ async function bootstrap() {
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
 
-  const configuredCorsOrigins = (process.env.CORS_ORIGINS || '')
+  const defaultCorsOrigins = [
+    'https://meetify-web.vercel.app',
+    'https://dev.meetifyy.app',
+    'https://meetifyy.app',
+    'https://www.meetifyy.app',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:5174',
+  ];
+
+  const envCorsOrigins = (process.env.CORS_ORIGINS || '')
     .split(',')
     .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean);
+
+  const configuredCorsOrigins = Array.from(new Set([...defaultCorsOrigins, ...envCorsOrigins]));
 
   // Security Headers
   app.use(helmet({
@@ -56,8 +68,8 @@ async function bootstrap() {
         workerSrc: ["'self'", "blob:", "https://cdn.jsdelivr.net"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
-         imgSrc: ["'self'", "data:", "blob:", "https://images.unsplash.com", "https://media.giphy.com"],
-         connectSrc: ["'self'", ...configuredCorsOrigins],
+         imgSrc: ["'self'", "data:", "blob:", "https://images.unsplash.com", "https://media.giphy.com", "https://*.r2.dev"],
+         connectSrc: ["'self'", "https://*.vercel.app", "https://*.meetifyy.app", "wss://*.railway.app", "wss://*.meetifyy.app", ...configuredCorsOrigins],
       },
     },
     hsts: {
@@ -74,16 +86,27 @@ async function bootstrap() {
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean | string) => void) => {
       if (!origin) return callback(null, true);
       const isDevelopmentOrigin = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/i.test(origin);
-       const isAllowed = isProd
-         ? configuredCorsOrigins.includes(origin)
-         : configuredCorsOrigins.includes(origin) || isDevelopmentOrigin;
+      const isVercelOrigin = /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/i.test(origin);
+      const isMeetifyyOrigin = /^https:\/\/[a-zA-Z0-9-]+\.meetifyy\.app$/i.test(origin);
 
-      // Fix: passing `true` as the second arg still allows the origin.
-      // Reject unknown origins in production by passing an Error instead.
+      const isAllowed =
+        configuredCorsOrigins.includes(origin) ||
+        isDevelopmentOrigin ||
+        isVercelOrigin ||
+        isMeetifyyOrigin ||
+        configuredCorsOrigins.some((allowed) => {
+          if (allowed === '*') return true;
+          if (allowed.includes('*')) {
+            const regexPattern = '^' + allowed.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$';
+            return new RegExp(regexPattern, 'i').test(origin);
+          }
+          return false;
+        });
+
       if (isAllowed) {
         callback(null, origin);
       } else {
-        callback(new Error(`CORS: origin '${origin}' not allowed`));
+        callback(null, false);
       }
     },
     credentials: true,
