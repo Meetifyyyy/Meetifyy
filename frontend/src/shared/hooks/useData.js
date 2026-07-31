@@ -313,10 +313,10 @@ export function useData() {
       if (options?.fileObj) {
         const file = options.fileObj;
         if (file.type.startsWith('image/')) {
-          const { publicUrl } = await processAndUploadImage(file, 'messages');
+          const { publicUrl } = await processAndUploadImage(file, 'chat');
           payload.mediaUrl = publicUrl;
         } else {
-          const { publicUrl } = await uploadFileDirect(file, 'messages');
+          const { publicUrl } = await uploadFileDirect(file, 'chat');
           payload.mediaUrl = publicUrl;
         }
       }

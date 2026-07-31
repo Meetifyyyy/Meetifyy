@@ -48,7 +48,7 @@ export class CloudflareR2Provider implements StorageProvider {
       return { uploadUrl: mockPublicUrl, publicUrl: mockPublicUrl, key };
     }
 
-    const command = new PutObjectCommand({ Bucket: this.bucketName, Key: key, ContentType: contentType });
+    const command = new PutObjectCommand({ Bucket: this.bucketName, Key: key, ContentType: contentType, CacheControl: 'public, max-age=31536000, immutable' });
     const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn });
     const filePublicUrl = this.getPublicUrl(key);
 
@@ -104,7 +104,7 @@ export class CloudflareR2Provider implements StorageProvider {
   async upload(key: string, fileBuffer: Buffer, contentType: string): Promise<string> {
     if (!this.isConfigured || !this.s3) return this.getPublicUrl(key);
     try {
-      await this.s3.send(new PutObjectCommand({ Bucket: this.bucketName, Key: key, Body: fileBuffer, ContentType: contentType }));
+      await this.s3.send(new PutObjectCommand({ Bucket: this.bucketName, Key: key, Body: fileBuffer, ContentType: contentType, CacheControl: 'public, max-age=31536000, immutable' }));
       return this.getPublicUrl(key);
     } catch (e) {
       this.logger.error(`Failed to upload object ${key}`, e);

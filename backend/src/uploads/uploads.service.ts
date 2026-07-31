@@ -212,7 +212,10 @@ export class StorageService {
   }
 
   private normalizeFolder(folder = 'general'): string {
-    if (!/^[a-zA-Z0-9_-]+$/.test(folder)) throw new Error('Invalid upload folder');
+    const allowedFolders = ['avatars', 'profile-covers', 'posts', 'communities', 'chat', 'groups', 'temp', 'general'];
+    if (!allowedFolders.includes(folder)) {
+      throw new BadRequestException(`Invalid upload folder. Allowed: ${allowedFolders.join(', ')}`);
+    }
     return folder;
   }
 
