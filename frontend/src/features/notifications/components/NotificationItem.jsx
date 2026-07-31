@@ -54,13 +54,20 @@ export default function NotificationItem({
 
   const isRead = notif.read === true || !!notif.readAt;
 
+  let avatarSrc;
+  if (actor?.isLive || actor?.hasActor) {
+    avatarSrc = actor.avatarUrl ?? actor.avatar;
+  } else {
+    avatarSrc = actor?.avatarUrl || actor?.avatar || notif.metadata?.actorAvatarUrl || notif.metadata?.actorAvatar;
+  }
+
   return (
     <div
       className={`${styles.item} ${isRead ? '' : styles.unread}`}
       onClick={() => onClick(notif)}
     >
       <div className={styles.avatarWrapper}>
-        <Avatar src={actor?.avatarUrl || actor?.avatar || notif.actor?.avatarUrl || notif.actor?.avatar || notif.metadata?.actorAvatarUrl || notif.metadata?.actorAvatar} name={actorName} size="40px" />
+        <Avatar src={avatarSrc} name={actorName} size="40px" />
       </div>
 
       <div className={styles.content}>

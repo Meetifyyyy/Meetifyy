@@ -29,7 +29,7 @@ export default function GroupChatArea({
 
   const { data: groupDetails } = useQuery({
     queryKey: ['groupDetails', convId],
-    queryFn: () => groupApi.getGroupDetails(convId),
+    queryFn: () => groupApi.getDetails(convId),
     enabled: Boolean(isGroup && convId && conversation?.isMember !== false && conversation?.myMembershipStatus !== 'KICKED'),
     staleTime: 1000 * 15,
   });

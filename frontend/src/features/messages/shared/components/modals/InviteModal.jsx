@@ -102,7 +102,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
   const groupConvId = group?.id || group?.publicId || group?.internalId;
   const { data: modalGroupDetails } = useQuery({
     queryKey: ['groupDetails', groupConvId],
-    queryFn: () => groupApi.getGroupDetails(groupConvId),
+    queryFn: () => groupApi.getDetails(groupConvId),
     enabled: Boolean(isOpen && groupConvId),
     staleTime: 1000 * 10,
   });

@@ -1255,7 +1255,6 @@ export class ActivitiesService implements OnModuleInit {
         status: 'PENDING',
         activity: {
           deletedAt: null,
-          status: 'OPEN',
         },
       },
       include: {
@@ -1299,6 +1298,7 @@ export class ActivitiesService implements OnModuleInit {
       startDate: inv.activity.startDate,
       endDate: inv.activity.endDate,
       status: inv.status,
+      activityStatus: inv.activity.status,
       createdAt: inv.createdAt,
       hostId: inv.inviter.id,
       hostName: inv.inviter.displayName || inv.inviter.username,

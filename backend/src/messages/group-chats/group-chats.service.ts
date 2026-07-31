@@ -90,7 +90,13 @@ export class GroupChatsService extends MessagingCoreService {
             visibility: true,
             allowSharing: true,
             editGroupPermission: true,
-            _count: { select: { participants: true } }
+            _count: { 
+              select: { 
+                participants: { 
+                  where: { leftAt: null, deletedAt: null } 
+                } 
+              } 
+            }
           }
         }
       }

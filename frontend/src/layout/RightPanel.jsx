@@ -178,6 +178,11 @@ export function OnlineFriends() {
 
   const friends = Object.values(users)
     .filter(u => currentUser && u.id !== currentUser.id)
+    .filter(u => {
+      const isFollowing = currentUser?.followingList?.includes(u.username);
+      const isFollowedBy = currentUser?.followersList?.includes(u.username);
+      return isFollowing && isFollowedBy;
+    })
     .map((u) => {
       const canSee = canSeeOnlineStatus(currentUser, u);
       const online = canSee ? !!u.isOnline : false;

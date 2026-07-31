@@ -150,6 +150,13 @@ export class AuthService {
           '[]'::json
         ) AS "followingList",
         COALESCE(
+          (SELECT JSON_AGG(u_fol."username") 
+           FROM "Follow" f 
+           JOIN "User" u_fol ON f."followerId" = u_fol."id" 
+           WHERE f."followingId" = u."id"),
+          '[]'::json
+        ) AS "followersList",
+        COALESCE(
           (SELECT JSON_AGG(pb."postId") 
            FROM "PostBookmark" pb 
            WHERE pb."userId" = u."id"),
@@ -236,6 +243,7 @@ export class AuthService {
         college,
         settings,
         followingList: row.followingList || [],
+        followersList: row.followersList || [],
         meta: {
           postBookmarkIds: row.postBookmarkIds || [],
           activityBookmarkIds: row.activityBookmarkIds || [],
