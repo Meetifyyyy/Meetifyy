@@ -1,5 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActivityVisibility } from '@prisma/client';
 import { BlocksService } from '../users/blocks.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -40,7 +41,10 @@ export class SearchService {
       }
     }
 
-    const excludedUserIds = currentUserId ? await this.blocksService.getExcludedUserIds(currentUserId) : [];
+    const [excludedUserIds, currentUser] = await Promise.all([
+      currentUserId ? this.blocksService.getExcludedUserIds(currentUserId) : Promise.resolve([]),
+      currentUserId ? this.prisma.user.findUnique({ where: { id: currentUserId }, select: { collegeId: true } }) : Promise.resolve(null),
+    ]);
     const searchExcludedUserIds = currentUserId ? [...excludedUserIds, currentUserId] : excludedUserIds;
     const startTime = performance.now();
 
@@ -104,6 +108,17 @@ export class SearchService {
             { title: { contains: searchQuery, mode: 'insensitive' } },
             { description: { contains: searchQuery, mode: 'insensitive' } },
           ],
+          AND: [
+            {
+              OR: [
+                { visibility: ActivityVisibility.PUBLIC },
+                ...(currentUser?.collegeId ? [
+                  { visibility: ActivityVisibility.COLLEGE_ONLY, collegeId: currentUser.collegeId },
+                  { shareToCampus: true, collegeId: currentUser.collegeId }
+                ] : [])
+              ]
+            }
+          ]
         },
         select: {
           id: true, title: true, description: true, location: true, startDate: true, maxMembers: true,

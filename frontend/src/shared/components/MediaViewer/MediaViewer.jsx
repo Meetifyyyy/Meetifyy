@@ -78,6 +78,21 @@ export default function MediaViewer() {
     }
   }, [open]);
 
+  // Close more menu on outside click (capture phase so stopPropagation cannot block it)
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const handleOutsideClick = (e) => {
+      if (e.target.closest(`.${styles.moreMenuWrap}`)) return;
+      setShowMoreMenu(false);
+    };
+    window.addEventListener('click', handleOutsideClick, true);
+    window.addEventListener('pointerdown', handleOutsideClick, true);
+    return () => {
+      window.removeEventListener('click', handleOutsideClick, true);
+      window.removeEventListener('pointerdown', handleOutsideClick, true);
+    };
+  }, [showMoreMenu]);
+
   // ── Keyboard navigation ──
   useEffect(() => {
     if (!open) return;
@@ -244,12 +259,13 @@ export default function MediaViewer() {
       </div>
 
       {/* ── Media stage ── */}
-      <div className={styles.stage}>
+      <div className={styles.stage} onClick={() => setShowMoreMenu(false)}>
         {currentItem?.url && (isVid ? (
           <VideoViewer
             key={currentItem.url}
             src={currentItem.url}
             onControlsChange={setControlsVisible}
+            onStageClick={() => setShowMoreMenu(false)}
           />
         ) : (
           <ImageViewer

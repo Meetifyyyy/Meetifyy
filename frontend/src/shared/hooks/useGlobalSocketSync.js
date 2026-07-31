@@ -205,6 +205,23 @@ export function useGlobalSocketSync() {
           break;
         }
 
+        case 'activity.created':
+        case 'activity.updated':
+        case 'activity.deleted':
+        case 'activity.memberJoined':
+        case 'activity.memberLeft': {
+          const actId = event.data?.id || event.data?.activityId;
+          queryClient.invalidateQueries({ queryKey: ['activities'] });
+          queryClient.invalidateQueries({ queryKey: ['campus-activities'] });
+          queryClient.invalidateQueries({ queryKey: ['saved-activities'] });
+          queryClient.invalidateQueries({ queryKey: ['feed'] });
+          if (actId) {
+            queryClient.invalidateQueries({ queryKey: ['activity', actId] });
+            queryClient.invalidateQueries({ queryKey: ['crew-activity', actId] });
+          }
+          break;
+        }
+
         case 'invitation:new':
         case 'invitation:updated': {
           queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });

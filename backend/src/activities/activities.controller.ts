@@ -136,9 +136,14 @@ export class ActivitiesController {
     return this.activitiesService.declineCrewInvitation(id, user.id);
   }
 
+  @Post(':id/cancel')
+  async cancelCrewActivity(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.activitiesService.cancelCrewActivity(id, user.id);
+  }
+
   @Post(':id/end')
   async endCrewActivity(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.activitiesService.endCrewActivity(id, user.id);
+    return this.activitiesService.cancelCrewActivity(id, user.id);
   }
 
   @Post(':id/invite')

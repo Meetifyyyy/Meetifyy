@@ -1,4 +1,6 @@
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { groupApi } from '@shared/api/apiClient';
 import { useChatAreaState } from '@features/messages/shared/hooks/useChatAreaState';
 import ChatAreaLayout from '@features/messages/shared/components/ChatAreaLayout';
 import GroupChatHeader from './GroupChatHeader';
@@ -22,16 +24,44 @@ export default function GroupChatArea({
   onLoadMore,
   onMarkSeen,
 }) {
-  const state = useChatAreaState(conversation);
+  const convId = conversation?.id || conversation?.publicId || conversation?.internalId;
+  const isGroup = Boolean(conversation?.type === 'GROUP' || conversation?.isGroup || conversation?.activityId);
+
+  const { data: groupDetails } = useQuery({
+    queryKey: ['groupDetails', convId],
+    queryFn: () => groupApi.getGroupDetails(convId),
+    enabled: Boolean(isGroup && convId && conversation?.isMember !== false && conversation?.myMembershipStatus !== 'KICKED'),
+    staleTime: 1000 * 15,
+  });
+
+  const effectiveConv = useMemo(() => {
+    if (!groupDetails) return conversation;
+    return {
+      ...conversation,
+      name: groupDetails.name || conversation?.name,
+      avatar: groupDetails.avatar || groupDetails.avatarKey || conversation?.avatarKey || conversation?.avatar,
+      avatarKey: groupDetails.avatarKey || groupDetails.avatar || conversation?.avatarKey || conversation?.avatar,
+      description: groupDetails.description ?? conversation?.description,
+      ownerId: groupDetails.ownerId || conversation?.ownerId,
+      admins: groupDetails.admins || conversation?.admins || [],
+      members: groupDetails.members || conversation?.members || [],
+      memberDetails: groupDetails.memberDetails || conversation?.memberDetails || [],
+      memberCount: groupDetails.memberCount ?? conversation?.memberCount ?? 0,
+      pendingRequests: groupDetails.pendingRequests || conversation?.pendingRequests || [],
+      isMember: groupDetails.myRole !== undefined ? true : (conversation?.isMember !== false),
+    };
+  }, [conversation, groupDetails]);
+
+  const state = useChatAreaState(effectiveConv);
   const { currentUser } = state;
   const [showSettings, setShowSettings] = useState(false);
 
-  const isBanned = conversation?.myMembershipStatus === 'BANNED';
-  const isKicked = conversation?.myMembershipStatus === 'KICKED';
-  const isPending = conversation?.myMembershipStatus === 'PENDING';
+  const isBanned = effectiveConv?.myMembershipStatus === 'BANNED';
+  const isKicked = effectiveConv?.myMembershipStatus === 'KICKED' || effectiveConv?.isMember === false;
+  const isPending = effectiveConv?.myMembershipStatus === 'PENDING';
   const isAdmin =
-    String(conversation?.ownerId || conversation?.hostId || conversation?.creatorId) ===
-    String(currentUser?.id);
+    String(effectiveConv?.ownerId || effectiveConv?.hostId || effectiveConv?.creatorId) ===
+    String(currentUser?.id) || (effectiveConv?.admins || []).includes(currentUser?.id);
 
   const inputDisabled = isBanned || isKicked || isPending;
   const inputDisabledReason = isBanned
@@ -45,7 +75,7 @@ export default function GroupChatArea({
   return (
     <ChatAreaLayout
       {...state}
-      conversation={conversation}
+      conversation={effectiveConv}
       showChatOnMobile={showChatOnMobile}
       isLoading={isLoading}
       hasMore={hasMore}
@@ -61,12 +91,13 @@ export default function GroupChatArea({
       inputDisabledReason={inputDisabledReason}
       header={
         <GroupChatHeader
-          conversation={conversation}
+          conversation={effectiveConv}
           onBack={onBack}
           onLeaveGroup={onLeaveGroup}
           onEndGroup={onEndGroup}
           onClearChat={onClearChat}
           onTogglePin={onTogglePin}
+          onToggleSearch={() => state.setShowSearch(prev => !prev)}
           onOpenDetails={() => state.setShowDetails(true)}
           onOpenSettings={() => setShowSettings(true)}
           isAdmin={isAdmin}
@@ -76,7 +107,7 @@ export default function GroupChatArea({
         showSettings && (
           <Suspense fallback={null}>
             <GroupSettingsModal
-              conversation={conversation}
+              conversation={effectiveConv}
               onClose={() => setShowSettings(false)}
             />
           </Suspense>

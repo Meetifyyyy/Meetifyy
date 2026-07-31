@@ -1,4 +1,5 @@
 import { Suspense, lazy } from 'react';
+import { Search, X } from 'lucide-react';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { useData } from '@shared/hooks/useData';
 import { showToast } from '@shared/utils/toast';
@@ -42,6 +43,10 @@ export default function ChatAreaLayout({
   setForwardingMsg,
   showDetails,
   setShowDetails,
+  showSearch,
+  setShowSearch,
+  searchQuery,
+  setSearchQuery,
   handleCopyMessage,
   handleUnsend,
   handleDeleteForMe,
@@ -92,6 +97,10 @@ export default function ChatAreaLayout({
           users={users}
           onBack={() => setShowDetails(false)}
           onClose={() => setShowDetails(false)}
+          onSearch={() => {
+            setShowDetails(false);
+            setShowSearch(true);
+          }}
           onLeaveActivity={onLeaveActivity}
         />
       </div>
@@ -102,9 +111,71 @@ export default function ChatAreaLayout({
     <div className={`${styles.chatArea} ${showChatOnMobile ? styles.chatAreaVisible : ''}`}>
       {header}
 
+      {showSearch && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '8px 16px',
+          background: 'var(--color-bg-subtle, #18181b)',
+          borderBottom: '1px solid var(--color-border, #27272a)',
+          zIndex: 5,
+        }}>
+          <Search size={16} style={{ opacity: 0.6, flexShrink: 0 }} />
+          <input
+            type="text"
+            placeholder="Find in chat..."
+            value={searchQuery || ''}
+            onChange={(e) => setSearchQuery?.(e.target.value)}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: 'var(--color-text-main, #ffffff)',
+              fontSize: '0.85rem'
+            }}
+            autoFocus
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery?.('')}
+              style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted, #94a3b8)', cursor: 'pointer', fontSize: '0.8rem', padding: '2px 6px' }}
+            >
+              Clear
+            </button>
+          )}
+          <button
+            onClick={() => { setShowSearch?.(false); setSearchQuery?.(''); }}
+            style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted, #94a3b8)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px' }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
       <div className={styles.chatBody}>
         {isLoading ? (
-          <div className={styles.loadingState}>Loading messages…</div>
+          <div className={styles.messagesSkeleton}>
+            {[
+              { align: 'left', widths: ['55%'] },
+              { align: 'right', widths: ['40%'] },
+              { align: 'right', widths: ['65%'] },
+              { align: 'left', widths: ['48%', '70%'] },
+              { align: 'right', widths: ['35%'] },
+              { align: 'left', widths: ['58%'] },
+              { align: 'right', widths: ['42%', '55%'] },
+            ].map((row, i) => (
+              <div key={i} className={`${styles.skeletonRow} ${row.align === 'right' ? styles.skeletonRight : styles.skeletonLeft}`}>
+                {row.align === 'left' && <div className={styles.skeletonAvatar} />}
+                <div className={styles.skeletonBubbles}>
+                  {row.widths.map((w, j) => (
+                    <div key={j} className={`${styles.skeletonBubble} ${row.align === 'right' ? styles.skeletonBubbleRight : ''}`} style={{ width: w }} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <ChatMessageList
             key={conversation?.internalId || conversation?.publicId || conversation?.id || 'chat-list'}
@@ -112,6 +183,7 @@ export default function ChatAreaLayout({
             conversation={conversation}
             currentUser={currentUser}
             users={users}
+            searchQuery={searchQuery}
             isTyping={isTyping}
             typingUsers={typingUsers}
             hasMore={hasMore}

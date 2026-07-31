@@ -22,6 +22,11 @@ export default function DMChatHeader({
   );
   const isBlocked = conversation.isBlocked || conversation.blocked;
 
+  const isGroupConv = conversation.type === 'GROUP' || conversation.type === 'ACTIVITY' || conversation.isGroup;
+  const avatarSrc = isGroupConv
+    ? (conversation.avatar || conversation.icon || conversation.coverImage || null)
+    : (conversation.avatar || conversation.otherUser?.avatar || conversation.targetUser?.avatar || conversation.icon);
+
   return (
     <div className={styles.msgChatHeader} onClick={onOpenDetails}>
       <button className={styles.msgBackBtn} onClick={(e) => { e.stopPropagation(); onBack(); }} aria-label="Back">
@@ -29,7 +34,7 @@ export default function DMChatHeader({
       </button>
 
       <div className={`${styles.msgChatUser} ${styles.msgChatUserClickable}`}>
-        <Avatar src={conversation.avatar || conversation.otherUser?.avatar || conversation.targetUser?.avatar || conversation.icon} name={conversation.name || 'Chat'} size="38px" isOnline={isOnline} />
+        <Avatar src={avatarSrc} name={conversation.name || 'Chat'} size="38px" isGroup={isGroupConv} isOnline={!isGroupConv && isOnline} />
         <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
           <div className={styles.msgChatName}>
             <span className={styles.msgChatNameText}>{conversation.name || 'Chat'}</span>

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef, OnModuleInit, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef, OnModuleInit, Optional } from '@nestjs/common'; 
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
@@ -185,14 +185,8 @@ export class ActivitiesService implements OnModuleInit {
       const whereClause: any = {
         deletedAt: null,
         status: 'OPEN',
-        visibility: { in: ['PUBLIC', 'COLLEGE_ONLY'] },
-        OR: [
-          { endDate: { gt: now } },
-          {
-            endDate: null,
-            startDate: { gt: threeHoursAgo }
-          }
-        ],
+        startDate: { gt: now },
+        visibility: 'PUBLIC',
         ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
         ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
       };
@@ -339,12 +333,13 @@ export class ActivitiesService implements OnModuleInit {
       deletedAt: null,
       collegeId: user.collegeId,
       status: 'OPEN',
-      visibility: { in: ['PUBLIC', 'COLLEGE_ONLY'] },
-      OR: [
-        { endDate: { gt: now } },
+      startDate: { gt: now },
+      AND: [
         {
-          endDate: null,
-          startDate: { gt: threeHoursAgo }
+          OR: [
+            { visibility: 'COLLEGE_ONLY' },
+            { shareToCampus: true }
+          ]
         }
       ],
       ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
@@ -562,6 +557,7 @@ export class ActivitiesService implements OnModuleInit {
           }
         }).catch(() => {});
       }
+      this.domainEventService.emit('activity.created', { id: createdActivity.id, creatorId, collegeId: user?.collegeId || null });
       this.clearActivityFeedCaches();
     });
 
@@ -709,6 +705,7 @@ export class ActivitiesService implements OnModuleInit {
       }
     }
 
+    this.domainEventService.emit('activity.memberJoined', { activityId, userId });
     this.clearActivityFeedCaches();
     return { success: true };
   }
@@ -801,6 +798,7 @@ export class ActivitiesService implements OnModuleInit {
       }
     }
 
+    this.domainEventService.emit('activity.memberLeft', { activityId, userId });
     this.clearActivityFeedCaches();
     return { success: true };
   }
@@ -829,7 +827,7 @@ export class ActivitiesService implements OnModuleInit {
       create: { userId, activityId, status: 'PENDING' }
     });
 
-
+    this.domainEventService.emit('activity.updated', { id: activityId });
 
     return { success: true, pending: true };
   }
@@ -869,6 +867,8 @@ export class ActivitiesService implements OnModuleInit {
       }).catch(() => {});
     }
 
+    this.domainEventService.emit('activity.memberJoined', { activityId, userId: requesterId });
+    this.clearActivityFeedCaches();
     return { success: true };
   }
 
@@ -882,6 +882,8 @@ export class ActivitiesService implements OnModuleInit {
       where: { userId_activityId: { userId: requesterId, activityId } },
       data: { status: 'DECLINED' }
     });
+    
+    this.domainEventService.emit('activity.updated', { id: activityId });
     return { success: true };
   }
 
@@ -902,45 +904,38 @@ export class ActivitiesService implements OnModuleInit {
       where: { activityId, userId, status: 'PENDING' },
       data: { status: 'DECLINED' }
     });
+    this.domainEventService.emit('activity.updated', { id: activityId });
+    return { success: true };
+  }
+
+  async cancelCrewActivity(activityId: string, currentUserId: string) {
+    const activity = await this.prisma.crewActivity.findUnique({
+      where: { id: activityId, creatorId: currentUserId },
+      select: { id: true }
+    });
+    if (!activity) throw new NotFoundException('Activity not found or you are not creator');
+
+    await Promise.all([
+      this.prisma.crewActivity.update({
+        where: { id: activityId },
+        data: { status: 'CANCELLED' }
+      }),
+      this.prisma.activityInvitation.updateMany({
+        where: { activityId, status: 'PENDING' },
+        data: { status: 'EXPIRED' },
+      })
+    ]);
+
+    setImmediate(() => {
+      this.domainEventService.emit('activity.updated', { id: activityId, status: 'CANCELLED' });
+      this.clearActivityFeedCaches();
+    });
+
     return { success: true };
   }
 
   async endCrewActivity(activityId: string, currentUserId: string) {
-    const activity = await this.prisma.crewActivity.findUnique({
-      where: { id: activityId, creatorId: currentUserId }
-    });
-    if (!activity) throw new NotFoundException('Activity not found or you are not creator');
-
-    const startRaw = activity.startDate || (activity as any).date;
-    const hasStarted = startRaw ? new Date(startRaw) <= new Date() : false;
-
-    await this.prisma.activityInvitation.updateMany({
-      where: { activityId, status: 'PENDING' },
-      data: { status: 'EXPIRED' },
-    });
-
-    if (!hasStarted) {
-      const convId = `act_${activityId}`;
-      await this.prisma.conversation.delete({
-        where: { id: convId }
-      }).catch(() => {});
-
-      await this.prisma.crewActivity.delete({
-        where: { id: activityId }
-      }).catch(async () => {
-        await this.prisma.crewActivity.update({
-          where: { id: activityId },
-          data: { status: 'CANCELLED' }
-        });
-      });
-    } else {
-      await this.prisma.crewActivity.update({
-        where: { id: activityId },
-        data: { status: 'ENDED' }
-      });
-    }
-
-    return { success: true };
+    return this.cancelCrewActivity(activityId, currentUserId);
   }
 
   async bookmarkActivity(activityId: string, userId: string) {

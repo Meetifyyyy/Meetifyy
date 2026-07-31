@@ -160,8 +160,27 @@ export default function ActivityDetailPage() {
   });
 
   const endMutation = useMutation({
-    mutationFn: (actId) => activitiesApi.endCrewActivity(actId),
-    onSuccess: () => queryClient.invalidateQueries(['activities']),
+    mutationFn: (actId) => activitiesApi.cancelCrewActivity(actId),
+    onMutate: async (actId) => {
+      await queryClient.cancelQueries({ queryKey: ['activity', actId] });
+      const previousActivity = queryClient.getQueryData(['activity', actId]);
+      if (previousActivity) {
+        queryClient.setQueryData(['activity', actId], {
+          ...previousActivity,
+          status: 'CANCELLED',
+        });
+      }
+      return { previousActivity };
+    },
+    onError: (err, actId, context) => {
+      if (context?.previousActivity) {
+        queryClient.setQueryData(['activity', actId], context.previousActivity);
+      }
+    },
+    onSettled: (data, err, actId) => {
+      queryClient.invalidateQueries({ queryKey: ['activities'] });
+      if (actId) queryClient.invalidateQueries({ queryKey: ['activity', actId] });
+    },
   });
 
   const requestToJoinActivity = (actId) => requestMutation.mutateAsync(actId);
@@ -285,7 +304,8 @@ export default function ActivityDetailPage() {
   const isFull = spotsLeft <= 0;
   const isHost = !!(currentUser?.id && (activity.hostId === currentUser.id || activity.creatorId === currentUser.id));
   const isRequested = activity.pendingRequests?.includes(currentUser?.id) || hasRequested;
-  let hasEnded = activity.status === 'ENDED' || activity.status === 'CANCELLED';
+  const isCancelled = activity.status === 'CANCELLED';
+  let hasEnded = activity.status === 'ENDED' || isCancelled;
   const hasGroupChat = !!(activity.createEventGroup || activity.createActivityGroup);
 
   let hasStarted = false;
@@ -410,7 +430,7 @@ export default function ActivityDetailPage() {
                 <button
                   className={styles.actionBtn}
                   onClick={handleEndActivity}
-                  title="End Activity"
+                  title="Cancel Activity"
                   style={{ color: '#f87171', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)' }}
                 >
                   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -566,8 +586,12 @@ export default function ActivityDetailPage() {
 
         {/* Sticky Action Bar */}
         <div className={styles.stickyJoinWrap}>
-          {hasEnded ? (
-            <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled>
+          {isCancelled ? (
+            <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.4)', flex: 1 }}>
+              Cancelled
+            </button>
+          ) : hasEnded ? (
+            <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ flex: 1 }}>
               Ended
             </button>
           ) : hasStarted ? (
@@ -640,7 +664,7 @@ export default function ActivityDetailPage() {
 
         {/* Modals */}
         <ShareActivityModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} activity={activity} />
-        <ConfirmModal title="End Activity" desc="Are you sure you want to end this activity? This will also delete the group chat." visible={showEndConfirm} onCancel={() => setShowEndConfirm(false)} onConfirm={confirmEndActivity} confirmText="End Activity" />
+        <ConfirmModal title="Cancel Activity" desc="Are you sure you want to cancel this activity?" visible={showEndConfirm} onCancel={() => setShowEndConfirm(false)} onConfirm={confirmEndActivity} confirmText="Cancel Activity" cancelText="Go Back" />
       </div>
     </div>
   );

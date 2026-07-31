@@ -3,10 +3,12 @@ import { timeAgo } from '@shared/utils/time';
 import { Pin, VolumeX, CalendarDays } from 'lucide-react';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import { useAuth } from '@shared/context/AuthContext';
+import { useData } from '@shared/hooks/useData';
 import styles from '../../../shared/components/sidebar/ConversationList.module.css';
 
 export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu }) {
   const { currentUser } = useAuth();
+  const { users = {} } = useData();
   const isActive = Boolean(activeChatId) && (
     String(conv.id) === String(activeChatId) ||
     (Boolean(conv.publicId) && String(conv.publicId) === String(activeChatId))
@@ -49,7 +51,16 @@ export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu 
     }
 
     const isMe = String(lastMsgObj.senderId || lastMsgObj.from) === String(currentUser?.id);
-    const senderName = isMe ? 'You' : lastMsgObj.senderName || 'Member';
+    const rawSenderName =
+      lastMsgObj.senderName ||
+      lastMsgObj.sender?.displayName ||
+      lastMsgObj.sender?.name ||
+      lastMsgObj.sender?.username ||
+      (lastMsgObj.senderId && users[lastMsgObj.senderId]
+        ? users[lastMsgObj.senderId].displayName || users[lastMsgObj.senderId].name || users[lastMsgObj.senderId].username
+        : '');
+
+    const senderName = isMe ? 'You' : (rawSenderName || null);
     if (senderName && text) return `${senderName}: ${text}`;
     return text;
   })();
@@ -61,7 +72,7 @@ export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu 
       onContextMenu={(e) => onContextMenu?.(e, conv.id)}
     >
       <div className={styles.convAvatar}>
-        <Avatar src={conv.avatar || conv.icon || conv.coverImage || conv.avatarUrl} name={conv.name} size="48px" isGroup={true} />
+        <Avatar src={conv.avatarKey || conv.avatar || conv.icon || conv.coverImage || conv.avatarUrl} name={conv.name} size="48px" isGroup={true} />
         {isActivityChat && (
           isEnded ? (
             <span className={styles.activityCalendarBadge} title="Activity ended">

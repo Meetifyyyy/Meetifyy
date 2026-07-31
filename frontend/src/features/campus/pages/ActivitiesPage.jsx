@@ -43,7 +43,17 @@ export default function ActivitiesPage() {
       return false;
     };
 
-    list = list.filter(act => !isActivityEnded(act));
+    const isCampusActivity = (act) => {
+      if (!act) return false;
+      const vis = String(act.visibility || '').toUpperCase();
+      if (vis === 'PRIVATE') return false;
+      if (vis === 'COLLEGE_ONLY' || vis === 'COLLEGE' || act.shareToCampus || act.isCollegeOnly) return true;
+      const join = String(act.whoCanJoin || '').toLowerCase();
+      if (join === 'college' || join === 'school' || join === 'campus') return true;
+      return false;
+    };
+
+    list = list.filter(act => isCampusActivity(act) && !isActivityEnded(act));
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();

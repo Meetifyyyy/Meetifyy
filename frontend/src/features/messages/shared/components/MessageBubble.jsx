@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { Reply, MoreVertical, Image as ImageIcon, CalendarDays, AlertCircle } from 'lucide-react';
+import { Reply, MoreVertical, Image as ImageIcon, CalendarDays, AlertCircle, Play } from 'lucide-react';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import Avatar from '@shared/components/avatar/Avatar';
 import { isImageUrl } from '@shared/utils/avatar';
@@ -111,15 +111,87 @@ function SystemMessageContent({ text, navigate }) {
   return <>{elements}</>;
 }
 
+const loadedImageUrls = new Set();
+
+function getResponsiveMediaLimits(isInline = false) {
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 640;
+  if (vw < 480) {
+    const maxW = Math.min(Math.round(vw * 0.65), isInline ? 210 : 230);
+    const maxH = 240;
+    const minLimit = 100;
+    return { maxW, maxH, minLimit };
+  } else if (vw < 768) {
+    const maxW = Math.min(Math.round(vw * 0.65), isInline ? 240 : 265);
+    const maxH = 265;
+    const minLimit = 120;
+    return { maxW, maxH, minLimit };
+  } else {
+    const maxW = isInline ? 260 : 285;
+    const maxH = isInline ? 260 : 285;
+    const minLimit = 130;
+    return { maxW, maxH, minLimit };
+  }
+}
+
+function calculateMediaDimensions(nw, nh, isInline = false) {
+  if (!nw || !nh) return null;
+  const { maxW, maxH, minLimit } = getResponsiveMediaLimits(isInline);
+  const ratio = nw / nh;
+
+  let targetW, targetH;
+
+  if (nh > nw) {
+    targetH = maxH;
+    targetW = targetH * ratio;
+    if (targetW > maxW) {
+      targetW = maxW;
+      targetH = targetW / ratio;
+    }
+  } else {
+    targetW = maxW;
+    targetH = targetW / ratio;
+    if (targetH > maxH) {
+      targetH = maxH;
+      targetW = targetH * ratio;
+    }
+  }
+
+  targetW = Math.max(minLimit, Math.round(targetW));
+  targetH = Math.max(minLimit, Math.round(targetH));
+
+  return {
+    width: `${targetW}px`,
+    height: `${targetH}px`,
+    maxWidth: `min(${maxW}px, 68vw)`,
+    maxHeight: `${maxH}px`,
+    aspectRatio: `${nw} / ${nh}`,
+    objectFit: 'cover',
+    borderRadius: isInline ? '12px' : '16px',
+    overflow: 'hidden'
+  };
+}
+
 function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false, onErrorChange }) {
-  const [imgSrc, setImgSrc] = useState('');
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(() => Boolean(src && loadedImageUrls.has(src)));
+  const [imgSrc, setImgSrc] = useState(null);
   const [error, setError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [mediaStyle, setMediaStyle] = useState(null);
+  const prevSrcRef = useRef(src);
 
   useEffect(() => {
+    if (src === prevSrcRef.current && retryCount === 0) return;
+    prevSrcRef.current = src;
+
     let isMounted = true;
-    setLoaded(false);
+    const resolvedSync = mediaCache.getSyncUrl(src) || src;
+    const isCached = Boolean(resolvedSync && loadedImageUrls.has(resolvedSync));
+
+    if (!isCached) {
+      setLoaded(false);
+    } else {
+      setLoaded(true);
+    }
     setError(false);
     if (onErrorChange) onErrorChange(false);
 
@@ -129,9 +201,14 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
       return;
     }
 
+    if (resolvedSync) {
+      setImgSrc(resolvedSync);
+    }
+
     if (src.startsWith('blob:') || src.startsWith('data:')) {
       setImgSrc(src);
       setLoaded(true);
+      if (src) loadedImageUrls.add(src);
       return;
     }
 
@@ -141,13 +218,16 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
         if (isMounted) {
           if (resolvedUrl) {
             setImgSrc(resolvedUrl);
-          } else {
+            if (loadedImageUrls.has(resolvedUrl)) {
+              setLoaded(true);
+            }
+          } else if (!resolvedSync) {
             setError(true);
             if (onErrorChange) onErrorChange(true);
           }
         }
       } catch (err) {
-        if (isMounted) {
+        if (isMounted && !resolvedSync) {
           setError(true);
           if (onErrorChange) onErrorChange(true);
         }
@@ -171,6 +251,17 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
     if (onErrorChange) onErrorChange(true);
   };
 
+  const handleImageLoad = (e) => {
+    setLoaded(true);
+    const activeUrl = imgSrc || src;
+    if (activeUrl) loadedImageUrls.add(activeUrl);
+    if (src) loadedImageUrls.add(src);
+
+    if (e?.target?.naturalWidth && e?.target?.naturalHeight) {
+      setMediaStyle(calculateMediaDimensions(e.target.naturalWidth, e.target.naturalHeight, !isStandalone));
+    }
+  };
+
   if (error) {
     return (
       <div className={`${styles.msgMediaErrorCard} ${isStandalone ? styles.msgMediaErrorStandalone : ''}`}>
@@ -184,23 +275,119 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
     );
   }
 
+  const finalSrc = imgSrc || src;
+
   return (
-    <div className={`${styles.msgMediaWrapper} ${isStandalone ? styles.msgMediaWrapperStandalone : ''}`}>
+    <div className={`${styles.msgMediaWrapper} ${isStandalone ? styles.msgMediaWrapperStandalone : ''}`} style={{ background: 'transparent', ...(mediaStyle || {}) }}>
       {!loaded && (
         <div className={`${styles.msgMediaSkeleton} ${isStandalone ? styles.msgMediaSkeletonStandalone : ''}`}>
           <ImageIcon size={22} className={styles.msgMediaSkeletonIcon} />
         </div>
       )}
-      <img
-        src={imgSrc || src}
-        alt={alt || ''}
-        loading="lazy"
-        decoding="async"
-        className={`${className} ${!loaded ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
-        onClick={() => onClick && onClick(imgSrc || src)}
-        onLoad={() => setLoaded(true)}
-        onError={handleError}
+      {finalSrc && (
+        <img
+          src={finalSrc}
+          alt={alt || ''}
+          decoding="async"
+          className={`${className} ${!loaded ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
+          style={{ display: 'block', width: '100%', height: '100%', background: 'transparent', ...(mediaStyle || {}) }}
+          onClick={() => onClick && onClick(finalSrc)}
+          onLoad={handleImageLoad}
+          onError={handleError}
+        />
+      )}
+    </div>
+  );
+}
+
+function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpenMediaModal }) {
+  const videoRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [mediaStyle, setMediaStyle] = useState(null);
+
+  const handlePlayClick = (e) => {
+    e.stopPropagation();
+    if (onOpenMediaModal) {
+      onOpenMediaModal(src, 'video');
+    } else if (videoRef.current) {
+      if (videoRef.current.paused) {
+        videoRef.current.play().catch(() => {});
+        setIsPlaying(true);
+      } else {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      }
+    }
+  };
+
+  const handleLoadedMetadata = (e) => {
+    if (e?.target?.videoWidth && e?.target?.videoHeight) {
+      setMediaStyle(calculateMediaDimensions(e.target.videoWidth, e.target.videoHeight, isInline));
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: mediaStyle?.width || '100%',
+        height: mediaStyle?.height || '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        borderRadius: isInline ? '12px' : '16px',
+        overflow: 'hidden'
+      }}
+      onClick={() => onOpenMediaModal && onOpenMediaModal(src, 'video')}
+    >
+      <video
+        ref={videoRef}
+        src={src}
+        playsInline
+        preload="metadata"
+        onLoadedMetadata={handleLoadedMetadata}
+        style={{
+          display: 'block',
+          width: '100%',
+          height: '100%',
+          borderRadius: isInline ? '12px' : '16px',
+          overflow: 'hidden',
+          marginBottom: isInline && hasText ? '6px' : '0',
+          objectFit: 'cover',
+          pointerEvents: 'none',
+          ...(mediaStyle || {})
+        }}
       />
+      <button
+        type="button"
+        onClick={handlePlayClick}
+        aria-label="Play in media viewer"
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: '52px',
+          height: '52px',
+          borderRadius: '50%',
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          backdropFilter: 'blur(6px)',
+          border: '1.5px solid rgba(255, 255, 255, 0.35)',
+          color: '#ffffff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          zIndex: 3,
+          transition: 'transform 0.15s ease, background-color 0.15s ease',
+          pointerEvents: 'auto',
+          paddingLeft: '3px'
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <Play size={24} fill="white" />
+      </button>
     </div>
   );
 }
@@ -275,10 +462,13 @@ function GroupInviteCard({ msg, currentUser, conversations, navigate, requestToJ
     }
   };
 
+  const groupAvatarSrc = targetConv?.avatarKey || targetConv?.avatar || targetConv?.icon || targetConv?.coverImage || targetConv?.avatarUrl || msg.inviteData?.groupAvatar || msg.inviteData?.avatar || null;
+  const groupName = targetConv?.name || msg.inviteData?.groupName || 'Group';
+
   return (
     <div className={styles.groupInviteCard}>
       <div className={styles.groupInviteHeader}>
-        <Avatar src={msg.inviteData?.groupAvatar} name={msg.inviteData?.groupName} size="48px" isGroup={true} />
+        <Avatar src={groupAvatarSrc} name={groupName} size="48px" isGroup={true} />
         <div className={styles.groupInviteInfo}>
           <h4>{msg.inviteData?.groupName || 'Group'}</h4>
           <p>Group invite from {fromText}</p>
@@ -428,7 +618,7 @@ const MessageBubble = memo(function MessageBubble({
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
     }
-    if (swipeX >= 40 && replyHandler) {
+    if (!isUnsent && swipeX >= 40 && replyHandler) {
       replyHandler(msg);
     }
     setSwipeX(0);
@@ -452,28 +642,12 @@ const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  if (msg.state === 'UNSENT' || msg.isUnsent || msg.text === 'This message was unsent' || msg.payload?.text === 'This message was unsent') {
-    const isMe = checkIsMe(msg, currentUser);
-    const timeText = getDisplayClockTime(msg);
-    return (
-      <div className={`${styles.msgBubbleContainer} ${isMe ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}>
-        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
-          <div className={`${styles.msgBubble} ${isMe ? styles.msgBubbleMe : styles.msgBubbleThem}`}>
-            <div className={styles.msgTextTimeWrap}>
-              <span className={styles.msgText} style={{ fontStyle: 'italic', color: isMe ? 'rgba(255, 255, 255, 0.65)' : '#94a3b8' }}>
-                This message was unsent
-              </span>
-              <div className={styles.msgTimeLabel} style={{ color: isMe ? 'rgba(255, 255, 255, 0.55)' : '#94a3b8' }}>{timeText}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  const isUnsent = msg.state === 'UNSENT' || msg.isUnsent || msg.text === 'This message was unsent' || msg.payload?.text === 'This message was unsent';
   const isGroup = conversation?.isGroup || conversation?.type === 'GROUP' || conversation?.type === 'ACTIVITY';
   const isMe = checkIsMe(msg, currentUser);
   const showSenderAvatar = isGroup && !isMe;
+  const senderName = msg.senderName || msg.sender?.displayName || msg.sender?.name || msg.sender?.username || (msg.senderId && users[msg.senderId] ? (users[msg.senderId].displayName || users[msg.senderId].username || users[msg.senderId].name) : 'Member');
+  const senderAvatar = msg.senderAvatar || msg.sender?.avatar || (msg.senderId && users[msg.senderId] ? users[msg.senderId].avatar : null);
 
   const isRealServerMsg = Boolean(msg?.id && !String(msg.id).startsWith('temp_') && !String(msg.id).startsWith('c_temp_') && !msg?.isOptimistic);
   const isConfirmedSent = msg?.status === 'sent' || msg?.status === 'delivered' || msg?.status === 'read' || msg?.status === 'seen';
@@ -516,13 +690,32 @@ const MessageBubble = memo(function MessageBubble({
         : (rawMediaUrl.startsWith('/') ? rawMediaUrl : `/${rawMediaUrl}`))
     : rawMediaUrl;
   const isAudio = msg.mediaType === 'audio' || msg.type === 'voice' || msg.payload?.mediaType === 'audio';
+  const isVideo =
+    msg.mediaType === 'video' ||
+    msg.type === 'video' ||
+    msg.payload?.mediaType === 'video' ||
+    (typeof mediaUrl === 'string' && (/\.(mp4|webm|mov|mkv|avi|flv)/i.test(mediaUrl) || mediaUrl.startsWith('data:video/')));
   const hasText = !!(messageText && String(messageText).trim().length > 0);
   const timeText = getDisplayClockTime(msg);
 
   let innerContent = null;
 
-  // 1. Profile Share Card Message
-  if (profileData || (inviteData && inviteData.type === 'profileShare')) {
+  // 0. Unsent Message
+  if (isUnsent) {
+    innerContent = (
+      <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+        <div className={`${styles.msgBubble} ${isMe ? styles.msgBubbleMe : styles.msgBubbleThem}`}>
+          <div className={styles.msgTextTimeWrap}>
+            <span className={styles.msgText} style={{ fontStyle: 'italic', opacity: 0.7 }}>
+              This message was unsent
+            </span>
+            <div className={styles.msgTimeLabel} style={{ opacity: 0.6 }}>{timeText}</div>
+          </div>
+        </div>
+        <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={null} onContextMenu={onContextMenu} />
+      </div>
+    );
+  } else if (profileData || (inviteData && inviteData.type === 'profileShare')) {
     const prof = profileData || inviteData?.profile;
     innerContent = (
       <div className={styles.msgImageCardContainer}>
@@ -574,6 +767,21 @@ const MessageBubble = memo(function MessageBubble({
       <div className={styles.msgAudioCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
           <VoiceMessagePlayer src={mediaUrl} audioUrl={mediaUrl} fromMe={isMe} isMe={isMe} />
+          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
+        </div>
+        <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
+          {timeText}
+        </div>
+      </div>
+    );
+  } else if (isVideo && mediaUrl && !hasText && !msg.replyTo) {
+    // 4. Standalone Video Message
+    innerContent = (
+      <div className={styles.msgImageCardContainer}>
+        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
+          <div className={styles.msgImageCard} style={{ overflow: 'hidden', borderRadius: '16px', width: 'fit-content', height: 'fit-content' }}>
+            <VideoPlayerWithOverlay src={mediaUrl} isInline={false} onOpenMediaModal={onOpenMediaModal} />
+          </div>
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
         </div>
         <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
@@ -657,14 +865,18 @@ const MessageBubble = memo(function MessageBubble({
           )}
 
           {mediaUrl && (
-            <ImageWithSkeleton
-              src={mediaUrl}
-              alt=""
-              className={styles.msgMediaImg}
-              onClick={() => !mediaError && onOpenMediaModal && onOpenMediaModal(mediaUrl)}
-              isStandalone={false}
-              onErrorChange={setMediaError}
-            />
+            isVideo ? (
+              <VideoPlayerWithOverlay src={mediaUrl} isInline={true} hasText={hasText} />
+            ) : (
+              <ImageWithSkeleton
+                src={mediaUrl}
+                alt=""
+                className={styles.msgMediaImg}
+                onClick={() => !mediaError && onOpenMediaModal && onOpenMediaModal(mediaUrl)}
+                isStandalone={false}
+                onErrorChange={setMediaError}
+              />
+            )
           )}
 
           <div className={styles.msgTextTimeWrap}>
@@ -729,14 +941,14 @@ const MessageBubble = memo(function MessageBubble({
         }}
       >
         {showSenderAvatar && (
-          <div className={styles.msgAvatar} onClick={handleSenderProfileClick} style={{ cursor: 'pointer' }} title={`View ${msg.senderName || 'profile'}`}>
-            <Avatar src={msg.senderAvatar} name={msg.senderName} size="28px" />
+          <div className={styles.msgAvatar} onClick={handleSenderProfileClick} style={{ cursor: 'pointer' }} title={`View ${senderName}`}>
+            <Avatar src={senderAvatar} name={senderName} size="28px" />
           </div>
         )}
         <div className={styles.msgBubbleContent}>
           {showSenderAvatar && (
-            <span className={styles.msgSenderName} onClick={handleSenderProfileClick} style={{ cursor: 'pointer' }} title={`View ${msg.senderName || 'profile'}`}>
-              {msg.senderName}
+            <span className={styles.msgSenderName} onClick={handleSenderProfileClick} style={{ cursor: 'pointer' }} title={`View ${senderName}`}>
+              {senderName}
             </span>
           )}
           

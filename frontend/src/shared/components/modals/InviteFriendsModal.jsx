@@ -29,11 +29,24 @@ export default function InviteFriendsModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  // Fetch user's following list (friends)
+  // Fetch user's friends & candidate users to invite
   const { data: friendsList = [], isLoading: isLoadingFriends } = useQuery({
     queryKey: ['user-following-friends', currentUser?.username],
-    queryFn: () => usersApi.getFollowing(currentUser?.username, 100, 0),
-    enabled: !!currentUser?.username,
+    queryFn: async () => {
+      const [following, campus, allUsers] = await Promise.all([
+        currentUser?.username ? usersApi.getFollowing(currentUser.username, 100, 0).catch(() => []) : Promise.resolve([]),
+        usersApi.getCampusUsers(100, 0).catch(() => []),
+        usersApi.getAll(100, 0).catch(() => []),
+      ]);
+      const merged = [...(following || []), ...(campus || []), ...(allUsers || [])];
+      const userMap = new Map();
+      merged.forEach(u => {
+        if (u && u.id && String(u.id) !== String(currentUser?.id)) {
+          userMap.set(String(u.id), u);
+        }
+      });
+      return Array.from(userMap.values());
+    },
     staleTime: 30_000,
   });
 

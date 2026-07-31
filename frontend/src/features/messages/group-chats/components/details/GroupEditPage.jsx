@@ -11,6 +11,7 @@ export default function GroupEditPage({
   setEditDesc,
   editAvatar,
   setEditAvatar,
+  isUploadingAvatar,
   isAdmin,
   canEditGroupInfo,
   isGroup,
@@ -44,13 +45,9 @@ export default function GroupEditPage({
           type="button"
           className={styles.saveHeaderBtn}
           onClick={onSave}
-          disabled={
-            editName.trim() === conversation.name && 
-            editDesc.trim() === (conversation.description || '') &&
-            editAvatar === (conversation.avatar || conversation.avatarKey || '')
-          }
+          disabled={isUploadingAvatar || !editName.trim()}
         >
-          Save
+          {isUploadingAvatar ? 'Uploading...' : 'Save'}
         </button>
       </div>
 

@@ -21,8 +21,10 @@ import GroupJoinRequestsPage from './GroupJoinRequestsPage';
 import { useData } from '@shared/hooks/useData';
 import { toast } from 'sonner';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import { commitDraftImage } from '@shared/utils/draftImageCache';
 import { sortGroupMembers } from '@shared/utils/memberSort';
-
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { groupApi } from '@shared/api/apiClient';
 
 export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, onClearChat, onSearch, onLeaveActivity }) {
   const navigate = useNavigate();
@@ -109,10 +111,21 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
     setShowRequestsPage(false);
   }, [conversation.id]);
 
+  const queryClient = useQueryClient();
+
   // Extract shared media from message history (ONLY images and videos, EXCLUDING voice notes/audio)
   const mediaList = useMemo(() => {
     const list = [];
-    const messages = conversation?.messages || [];
+    const keys = [conversation?.id, conversation?.publicId, conversation?.internalId].filter(Boolean);
+    let cachedMessages = [];
+    for (const key of keys) {
+      const qData = queryClient.getQueryData(['messages', key]);
+      if (qData?.pages) {
+        cachedMessages = qData.pages.flatMap(p => p?.messages || []);
+        if (cachedMessages.length > 0) break;
+      }
+    }
+    const messages = cachedMessages.length > 0 ? cachedMessages : (conversation?.messages || []);
 
     messages.forEach(msg => {
       const text = msg.text || msg.payload?.text || '';
@@ -182,7 +195,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
 
   // Determine chat type
   const isEventGroup = !!conversation.isActivityChat || !!conversation.activityId || String(conversation.id).startsWith('act_');
-  const isGroup = !!conversation.isGroup || isEventGroup;
+  const isGroup = conversation.type === 'GROUP' || conversation.type === 'ACTIVITY' || !!conversation.isGroup || isEventGroup;
   const isOneOnOne = !isGroup;
 
   // Fetch related activity if event group
@@ -202,22 +215,50 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         return new Date(startRaw) <= new Date();
       })()
     : false;
-  const isOwner = conversation.ownerId === currentUser?.id || conversation.hostId === currentUser?.id || isHost;
-  const isAdmin = isOwner || (conversation.admins || []).includes(currentUser?.id);
+
+  const { data: groupDetails } = useQuery({
+    queryKey: ['groupDetails', conversation?.id || conversation?.publicId],
+    queryFn: async () => {
+      const idToFetch = conversation.id || conversation.publicId;
+      if (!idToFetch) return null;
+      return await groupApi.getDetails(idToFetch);
+    },
+    enabled: Boolean(isGroup && (conversation?.id || conversation?.publicId)),
+    staleTime: 1000 * 60 * 5, // 5 mins
+  });
+
+  const memberMap = useMemo(() => {
+    if (!groupDetails?.memberDetails) return {};
+    return groupDetails.memberDetails.reduce((acc, m) => {
+      acc[m.userId] = m;
+      return acc;
+    }, {});
+  }, [groupDetails]);
+
+  // Derived Values
+
+  const myRole = isGroup
+    ? (memberMap[currentUser?.id]?.role || (conversation.ownerId === currentUser?.id || conversation.hostId === currentUser?.id ? 'OWNER' : ((conversation.admins || []).includes(currentUser?.id) ? 'ADMIN' : (conversation.isMember !== false ? 'MEMBER' : null))))
+    : null;
+  const isOwner = isGroup
+    ? (myRole === 'OWNER' || conversation.ownerId === currentUser?.id || conversation.hostId === currentUser?.id)
+    : (conversation.hostId === currentUser?.id);
+  const isAdmin = isGroup
+    ? (isOwner || myRole === 'ADMIN' || (conversation.admins || []).includes(currentUser?.id))
+    : isOwner;
+  const isMember = isGroup ? (conversation.isMember !== false && Boolean(memberMap[currentUser?.id] || conversation.isMember || isOwner || isAdmin)) : true;
+  const isClosed = conversation.status === 'Closed';
   const canEditGroupInfo = isAdmin || (editGroupPermission || '').toUpperCase() === 'EVERYONE';
-  const rawParticipants = conversation.members || conversation.participants || (activity ? activity.participants : []) || [];
+  const rawParticipants = isGroup ? (groupDetails?.memberDetails || []) : (conversation.members || conversation.participants || (activity ? activity.participants : []) || []);
   const sortedParticipants = useMemo(() => {
     return sortGroupMembers(rawParticipants, {
-      ownerId: conversation.ownerId,
+      ownerId: isGroup ? groupDetails?.ownerId : conversation.ownerId,
       hostId: conversation.hostId || (activity ? activity.hostId : null),
-      admins: conversation.admins,
+      admins: isGroup ? groupDetails?.admins : conversation.admins,
       users
     });
-  }, [rawParticipants, conversation.ownerId, conversation.hostId, activity, conversation.admins, users]);
+  }, [rawParticipants, isGroup, groupDetails?.ownerId, groupDetails?.admins, conversation.ownerId, conversation.hostId, activity, conversation.admins, users]);
   const memberIds = sortedParticipants.map(p => p?.userId || p?.id || (typeof p === 'string' ? p : ''));
-
-  const isClosed = conversation.status === 'Closed';
-  const isMember = isGroup ? (isOwner || memberIds.map(String).includes(String(currentUser?.id))) : true;
 
   // Formatted date for group creation
   const formattedDate = conversation.createdAt 
@@ -233,15 +274,30 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
 
 
 
-  const handleFileChange = async (e) => {
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+
+  const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
-      try {
-        const { publicUrl } = await processAndUploadImage(file, 'group-icons', { maxWidthOrHeight: 512 });
-        setEditAvatar(publicUrl);
-      } catch {
-        toast.error('Failed to upload avatar.');
-      }
+      const originalAvatar = conversation.avatarKey || conversation.avatar || '';
+      const tempUrl = URL.createObjectURL(file);
+      setEditAvatar(tempUrl);
+      
+      // Optimistically update the cache without waiting
+      updateGroupInfo(conversation.id, undefined, tempUrl, undefined, originalAvatar);
+
+      // Perform heavy compression and upload in the background
+      (async () => {
+        try {
+          const { publicUrl } = await processAndUploadImage(file, 'avatars', { maxWidthOrHeight: 512 });
+          setEditAvatar(publicUrl);
+          await updateGroupInfo(conversation.id, undefined, publicUrl, undefined, originalAvatar);
+        } catch {
+          showToast('Failed to upload avatar');
+          setEditAvatar(originalAvatar);
+          updateGroupInfo(conversation.id, undefined, originalAvatar, undefined);
+        }
+      })();
     }
     e.target.value = '';
   };
@@ -367,6 +423,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         setEditDesc={setEditDesc}
         editAvatar={editAvatar}
         setEditAvatar={setEditAvatar}
+        isUploadingAvatar={isUploadingAvatar}
         isAdmin={isAdmin}
         canEditGroupInfo={canEditGroupInfo}
         isGroup={isGroup}
@@ -380,32 +437,56 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
           setEditAvatar(conversation.avatar || '');
           setShowEditGroupPage(false);
         }}
-        onSave={() => {
-          if (editName.trim()) {
-            const nameChanged = editName.trim() !== conversation.name;
-            const descChanged = editDesc.trim() !== (conversation.description || '');
-            const avatarChanged = editAvatar !== (conversation.avatar || '');
+        onSave={async () => {
+          const trimmedName = editName.trim();
+          if (!trimmedName) return;
 
+          const nameChanged = trimmedName !== conversation.name;
+          const descChanged = editDesc.trim() !== (conversation.description || '');
+          const originalAvatar = conversation.avatar || conversation.avatarKey || '';
+          
+          const isBlob = typeof editAvatar === 'string' && editAvatar.startsWith('blob:');
+          const avatarChanged = editAvatar && (isBlob || editAvatar !== originalAvatar);
+
+          if (!nameChanged && !descChanged && !avatarChanged) {
+            setShowEditGroupPage(false);
+            return;
+          }
+
+          setIsUploadingAvatar(true);
+          let finalAvatarUrl = isBlob ? undefined : (editAvatar || undefined);
+
+          try {
+            if (isBlob) {
+              const uploadedUrl = await commitDraftImage(editAvatar, 'avatars');
+              if (uploadedUrl) {
+                finalAvatarUrl = uploadedUrl;
+              }
+            }
+
+            await updateGroupInfo(
+              conversation.id,
+              nameChanged ? trimmedName : undefined,
+              finalAvatarUrl,
+              descChanged ? editDesc.trim() : undefined
+            );
             const changes = [];
             if (nameChanged) changes.push('group name');
             if (avatarChanged) changes.push('avatar');
             if (descChanged) changes.push('description');
 
             if (changes.length > 0) {
-              let toastMsg = '';
-              if (changes.length === 1) {
-                toastMsg = `Updated ${changes[0]}`;
-              } else if (changes.length === 2) {
-                toastMsg = `Updated ${changes[0]} and ${changes[1]}`;
-              } else {
-                toastMsg = 'Updated group info';
-              }
+              const toastMsg = changes.length === 1 
+                ? `Updated ${changes[0]}` 
+                : (changes.length === 2 ? `Updated ${changes[0]} and ${changes[1]}` : 'Updated group info');
               showToast(toastMsg);
             }
-
-            updateGroupInfo(conversation.id, editName.trim(), editAvatar, editDesc.trim());
+          } catch (err) {
+            showToast('Failed to update group info');
+          } finally {
+            setIsUploadingAvatar(false);
+            setShowEditGroupPage(false);
           }
-          setShowEditGroupPage(false);
         }}
         handleAvatarClick={handleAvatarClick}
         handleFileChange={handleFileChange}
@@ -503,7 +584,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         <div className={styles.avatarSection}>
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <Avatar
-              src={conversation.avatar || conversation.avatarKey || (isEventGroup ? (activity?.coverImage || conversation.coverImage || conversation.icon) : (targetUser?.avatar || conversation.otherUser?.avatar || conversation.targetUser?.avatar))}
+              src={isGroup ? (groupDetails?.avatar || groupDetails?.avatarKey || conversation.avatarKey || conversation.avatar || (isEventGroup ? (activity?.coverImage || conversation.coverImage || conversation.icon) : null)) : (conversation.avatar || targetUser?.avatar || conversation.otherUser?.avatar || conversation.targetUser?.avatar)}
               name={conversation.name || targetUser?.displayName}
               size="120px"
               isGroup={isGroup}
@@ -595,7 +676,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             </button>
           )}
 
-          {isGroup && !isClosed && (() => {
+          {isGroup && !isClosed && isMember && (() => {
             const isApprovalRequired = (
               whoCanJoin === 'APPROVAL' || 
               whoCanJoin === 'Request required' || 
@@ -939,7 +1020,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                       className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
                       onClick={handleEndActivity}
                     >
-                      End Activity
+                      Cancel Activity
                     </button>
                   ) : (
                     <button 
@@ -972,7 +1053,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
           confirmType === 'endGroup' ? 'End Group?' :
           confirmType === 'leaveGroup'
             ? (isEventGroup ? (activityHasStarted ? 'Leave Group' : 'Leave Activity') : 'Leave Group')
-            : confirmType === 'endActivity' ? 'End Activity' :
+            : confirmType === 'endActivity' ? 'Cancel Activity' :
           confirmType === 'changeOwner' ? 'Change Group Owner?' :
           'Remove Member'
         }
@@ -984,7 +1065,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                     ? 'You can still view the chat history, but you won\'t be able to send or receive new messages.'
                     : 'You will be removed from this activity and the group chat will be removed from your inbox.')
                 : 'Are you sure you want to leave this group?')
-            : confirmType === 'endActivity' ? 'Are you sure you want to end this activity? This will remove all members and delete the group.' :
+            : confirmType === 'endActivity' ? 'Are you sure you want to cancel this activity?' :
           confirmType === 'changeOwner' ? `Ownership of this group will be transferred to ${(Object.values(users).find(u => u.id === targetUserId)?.displayName || Object.values(users).find(u => u.id === targetUserId)?.name || 'This member')}.` :
           'Are you sure you want to remove this member from the group?'
         }
@@ -994,7 +1075,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         confirmText={
           confirmType === 'endGroup' ? 'End Group' :
           confirmType === 'leaveGroup' ? (isEventGroup && !activityHasStarted ? 'Leave Activity' : 'Leave') :
-          confirmType === 'endActivity' ? 'End Activity' :
+          confirmType === 'endActivity' ? 'Cancel Activity' :
           confirmType === 'changeOwner' ? 'Change Owner' :
           'Remove'
         }
@@ -1003,7 +1084,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       <InviteModal 
         isOpen={showInviteModal} 
         onClose={() => setShowInviteModal(false)} 
-        group={conversation} 
+        group={{ ...conversation, ...groupDetails }} 
       />
 
       <SafetyNumberModal

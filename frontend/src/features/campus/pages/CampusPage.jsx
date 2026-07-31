@@ -59,8 +59,18 @@ export default function CampusPage() {
       return false;
     };
 
+    const isCampusActivity = (act) => {
+      if (!act) return false;
+      const vis = String(act.visibility || '').toUpperCase();
+      if (vis === 'PRIVATE') return false;
+      if (vis === 'COLLEGE_ONLY' || vis === 'COLLEGE' || act.shareToCampus || act.isCollegeOnly) return true;
+      const join = String(act.whoCanJoin || '').toLowerCase();
+      if (join === 'college' || join === 'school' || join === 'campus') return true;
+      return false;
+    };
+
     return campusCrewActivities
-      .filter(act => !isActivityEnded(act))
+      .filter(act => isCampusActivity(act) && !isActivityEnded(act))
       .sort((a, b) => new Date(a.startDate || a.date) - new Date(b.startDate || b.date))
       .slice(0, 2);
   }, [campusCrewActivities]);

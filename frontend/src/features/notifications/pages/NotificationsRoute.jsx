@@ -216,6 +216,8 @@ export default function NotificationsRoute() {
     const oneDay = 24 * 60 * 60 * 1000;
 
     loadedNotifications.forEach(notif => {
+      if (notif.type === 'ACTIVITY_INVITE') return;
+
       // For MVP, created_at comes as string from backend, parse to ms
       const createdAtMs = new Date(notif.createdAt).getTime();
       const diff = now - createdAtMs;

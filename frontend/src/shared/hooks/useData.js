@@ -160,8 +160,30 @@ export function useData() {
   const users = useMemo(() => {
     const map = {};
     (rawUsers || []).forEach(u => { if (u?.id) map[u.id] = u; });
+    (rawCampusUsers || []).forEach(u => { if (u?.id) map[u.id] = u; });
+    (processedConversations || []).forEach(c => {
+      if (c.targetUser?.id) map[c.targetUser.id] = c.targetUser;
+      if (c.otherUser?.id) map[c.otherUser.id] = c.otherUser;
+      if (Array.isArray(c.participants)) {
+        c.participants.forEach(p => {
+          if (p?.id && (p?.username || p?.displayName || p?.name)) map[p.id] = p;
+          else if (p?.user?.id) map[p.user.id] = p.user;
+        });
+      }
+      if (Array.isArray(c.members)) {
+        c.members.forEach(m => {
+          if (m?.id && (m?.username || m?.displayName || m?.name)) map[m.id] = m;
+          else if (m?.user?.id) map[m.user.id] = m.user;
+        });
+      }
+      if (Array.isArray(c.memberDetails)) {
+        c.memberDetails.forEach(m => {
+          if (m?.userId) map[m.userId] = { id: m.userId, displayName: m.displayName, username: m.username, avatar: m.avatar };
+        });
+      }
+    });
     return map;
-  }, [rawUsers]);
+  }, [rawUsers, rawCampusUsers, processedConversations]);
 
   const campusUsers = useMemo(() => {
     const map = {};
@@ -366,7 +388,7 @@ export function useData() {
 
     const existingConv = (conversations || []).find(c => {
       if (c.isGroup || c.isActivityChat || String(c.id).startsWith('act_') || String(c.id).startsWith('c_')) return false;
-      const otherId = c.otherUser?.id || c.targetUser?.id || c.userId || c.participants?.find(p => {
+      const otherId = c.targetUser?.id || c.otherUser?.id || c.userId || c.participants?.find(p => {
         const pId = typeof p === 'string' ? p : (p.id || p.userId || p.user?.id);
         return String(pId) !== String(currentUser?.id);
       })?.userId;
@@ -377,95 +399,48 @@ export function useData() {
       return existingConv.publicId || existingConv.id;
     }
 
-    const tempId = `temp_dm_${Date.now()}`;
-    const tempConv = {
-      id: tempId,
-      publicId: tempId,
-      name: name || targetUserObj?.displayName || targetUserObj?.username || 'New Message',
-      type: 'DM',
-      isGroup: false,
-      status: 'creating',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      participants: targetUserObj ? [{ userId: currentUser?.id, user: currentUser }, { userId: targetUserObj.id, user: targetUserObj }] : [],
-      lastMessage: null,
-      unreadCount: 0
-    };
-
-    queryClient.setQueryData(['conversations'], (old) => {
-      const list = Array.isArray(old) ? old : [];
-      return [tempConv, ...list];
-    });
-
-    messagesApi.startConversation(cleanIds, name).then((res) => {
-      const realId = res?.id || res?.publicId;
-      if (realId) {
-        queryClient.setQueryData(['conversations'], (old) => {
-          if (!Array.isArray(old)) return old;
-          return old.map(c => c.id === tempId ? { ...c, ...res, id: realId, publicId: realId, status: 'active' } : c);
-        });
-      }
-    }).catch(err => {
-      console.error('Failed to start conversation:', err);
-      queryClient.setQueryData(['conversations'], (old) => 
-        Array.isArray(old) ? old.filter(c => c.id !== tempId) : old
-      );
-      showToast('Failed to start conversation. Please try again.');
-    });
-
-    return tempId;
+    return `draft_${targetUserId}`;
   };
 
-  const createGroupConversation = (groupName, userIds) => {
-    const tempId = `c_temp_${Date.now()}`;
+  const createGroupConversation = async (groupName, userIds) => {
     const cleanIds = normalizeUserIds(userIds);
 
-    const tempGroup = {
-      id: tempId,
-      publicId: tempId,
-      name: groupName,
-      type: 'GROUP',
-      isGroup: true,
-      status: 'creating',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      participants: [{ userId: currentUser?.id, role: 'OWNER' }],
-      lastMessage: null,
-      unreadCount: 0
-    };
+    try {
+      const res = await groupApi.createGroup(groupName, cleanIds);
+      const realId = res?.publicId || res?.id;
+      if (!realId) throw new Error('No conversation ID returned');
 
-    queryClient.setQueryData(['conversations'], (old) => {
-      const list = Array.isArray(old) ? old : [];
-      return [tempGroup, ...list];
-    });
+      // Inject the real group into the conversation list immediately.
+      // The socket will also send conversation:updated to all members,
+      // but we pre-populate here so the UI is instant for the creator.
+      const newConv = {
+        ...res,
+        id: realId,
+        publicId: realId,
+        internalId: res.internalId || realId,
+        isGroup: true,
+        type: 'GROUP',
+        unread: 0,
+        unreadCount: 0,
+        timestamp: Date.now(),
+        updatedAt: res.updatedAt || new Date().toISOString(),
+      };
 
-    (async () => {
-      try {
-        let res;
-        try {
-          res = await groupApi.createGroup(groupName, cleanIds);
-        } catch (e) {
-          res = await messagesApi.startConversation(cleanIds, groupName);
-        }
-        const realId = res?.id || res?.publicId || res?.internalId;
-        if (realId) {
-          const finalId = String(realId).startsWith('c_') ? realId : `c_${realId}`;
-          queryClient.setQueryData(['conversations'], (old) => {
-            if (!Array.isArray(old)) return old;
-            return old.map(c => c.id === tempId ? { ...c, ...res, id: finalId, publicId: finalId, status: 'active' } : c);
-          });
-        }
-      } catch (err) {
-        console.error('Failed to create group:', err);
-        queryClient.setQueryData(['conversations'], (old) => 
-          Array.isArray(old) ? old.filter(c => c.id !== tempId) : old
-        );
-        showToast('Failed to create group. Please try again.');
-      }
-    })();
+      queryClient.setQueryData(['conversations'], (old) => {
+        const list = Array.isArray(old) ? old : [];
+        // Remove any stale entry with same ID before injecting
+        const filtered = list.filter(c => c.id !== realId && c.publicId !== realId);
+        return [newConv, ...filtered];
+      });
 
-    return tempId;
+      return realId;
+    } catch (err) {
+      console.error('Failed to create group:', err);
+      showToast('Failed to create group. Please try again.');
+      return null;
+    }
   };
+
 
   const togglePinConversation = async (convId, currentPinned) => {
     let isPinnedNow = currentPinned;
@@ -550,40 +525,82 @@ export function useData() {
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
     queryClient.invalidateQueries({ queryKey: ['users'] });
   };
-  const updateGroupInfo = async (convId, name, avatarKey, description) => {
+  const updateGroupInfo = async (convId, name, avatarKey, description, rollbackAvatarKey = undefined) => {
+    const isBlob = typeof avatarKey === 'string' && avatarKey.startsWith('blob:');
+    const updateObj = {
+      ...(name !== undefined ? { name } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(avatarKey !== undefined ? { avatar: avatarKey, avatarKey } : {})
+    };
+
+    let previousState = rollbackAvatarKey !== undefined 
+      ? { avatar: rollbackAvatarKey, avatarKey: rollbackAvatarKey }
+      : null;
+
     queryClient.setQueryData(['conversations'], (old) => {
       if (!Array.isArray(old)) return old;
       return old.map(c => {
         if (String(c.id) === String(convId) || String(c.publicId) === String(convId) || String(c.internalId) === String(convId)) {
-          return {
-            ...c,
-            ...(name !== undefined ? { name } : {}),
-            ...(description !== undefined ? { description } : {}),
-            ...(avatarKey !== undefined ? { avatar: avatarKey, avatarKey } : {})
-          };
+          if (!previousState) previousState = { avatar: c.avatarKey || c.avatar, avatarKey: c.avatarKey || c.avatar };
+          return { ...c, ...updateObj };
         }
         return c;
       });
     });
-    if (String(convId).startsWith('c_')) {
-      const actualId = convId.replace('c_', '');
-      return communitiesApi.updateGroupInfo(actualId, { name, description, avatarKey }).then(() => {
-        queryClient.invalidateQueries({ queryKey: ['communities'] });
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
-        queryClient.invalidateQueries({ queryKey: ['group-chats'] });
-      });
+
+    queryClient.setQueriesData({ queryKey: ['groupDetails'] }, (old) => {
+      if (!old) return old;
+      const match = String(old.id) === String(convId) || String(old.publicId) === String(convId) || String(old.internalId) === String(convId);
+      if (match) {
+        if (!previousState) previousState = { avatar: old.avatarKey || old.avatar, avatarKey: old.avatarKey || old.avatar };
+        return { ...old, ...updateObj };
+      }
+      return old;
+    });
+
+    const apiPayload = {
+      ...(name !== undefined ? { name } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(!isBlob && avatarKey !== undefined ? { avatarKey } : {})
+    };
+
+    if (Object.keys(apiPayload).length === 0) return;
+
+    try {
+      if (String(convId).startsWith('c_')) {
+        const actualId = convId.replace('c_', '');
+        return await communitiesApi.updateGroupInfo(actualId, apiPayload);
+      }
+      return await groupApi.updateGroupInfo(convId, apiPayload);
+    } catch (err) {
+      if (avatarKey !== undefined && previousState) {
+        queryClient.setQueryData(['conversations'], (old) => {
+          if (!Array.isArray(old)) return old;
+          return old.map(c => {
+            if (String(c.id) === String(convId) || String(c.publicId) === String(convId) || String(c.internalId) === String(convId)) {
+              return { ...c, avatar: previousState.avatar, avatarKey: previousState.avatarKey };
+            }
+            return c;
+          });
+        });
+        queryClient.setQueriesData({ queryKey: ['groupDetails'] }, (old) => {
+          if (!old) return old;
+          const match = String(old.id) === String(convId) || String(old.publicId) === String(convId) || String(old.internalId) === String(convId);
+          if (match) {
+            return { ...old, avatar: previousState.avatar, avatarKey: previousState.avatarKey };
+          }
+          return old;
+        });
+      }
+      throw err;
     }
-    await groupApi.updateGroupInfo(convId, { name, description, avatarKey });
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    queryClient.invalidateQueries({ queryKey: ['group-chats'] });
-    queryClient.invalidateQueries({ queryKey: ['crew-activities'] });
   };
 
   const removeGroupMember = async (convId, memberId) => {
     queryClient.setQueryData(['conversations'], (old) => {
       if (!Array.isArray(old)) return old;
       return old.map(c => {
-        if (c.id === convId) {
+        if (c.id === convId || c.publicId === convId || c.internalId === convId) {
           const currentMembers = c.members || [];
           const currentAdmins = c.admins || [];
           return {
@@ -601,10 +618,14 @@ export function useData() {
       return communitiesApi.removeGroupMember(actualId, memberId).then(() => {
         queryClient.invalidateQueries({ queryKey: ['communities'] });
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
       });
     }
     await groupApi.removeMember(convId, memberId);
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    queryClient.invalidateQueries({ queryKey: ['group-chats'] });
+    queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+    queryClient.invalidateQueries({ queryKey: ['groupDetails', convId] });
   };
 
   const addGroupMember = async (convId, targetUserId) => {
@@ -639,38 +660,42 @@ export function useData() {
         queryClient.invalidateQueries({ queryKey: ['communities'] });
       });
   };
-  const endCrewActivity = (id) => activitiesApi.endCrewActivity(id).then(() => queryClient.invalidateQueries({ queryKey: ['activities'] }));
+  const cancelCrewActivity = (id) => activitiesApi.cancelCrewActivity(id).then(() => queryClient.invalidateQueries({ queryKey: ['activities'] }));
+  const endCrewActivity = cancelCrewActivity;
 
   const updateGroupSettings = async (convId, data) => {
     queryClient.setQueryData(['conversations'], (old) => {
       if (!Array.isArray(old)) return old;
-      return old.map(c => c.id === convId ? { ...c, ...data } : c);
+      return old.map(c => (String(c.id) === String(convId) || String(c.publicId) === String(convId) || String(c.internalId) === String(convId)) ? { ...c, ...data } : c);
+    });
+    queryClient.setQueriesData({ queryKey: ['groupDetails'] }, (old) => {
+      if (!old) return old;
+      const match = String(old.id) === String(convId) || String(old.publicId) === String(convId) || String(old.internalId) === String(convId);
+      return match ? { ...old, ...data } : old;
     });
     if (String(convId).startsWith('c_')) {
       const actualId = String(convId).replace('c_', '');
-      return communitiesApi.updateGroupInfo(actualId, data).then(() => {
-        queryClient.invalidateQueries({ queryKey: ['communities'] });
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      });
+      return communitiesApi.updateGroupInfo(actualId, data);
     }
     await groupApi.updateSettings(convId, data);
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
 
   const updateGroupEditPermission = async (convId, permission) => {
+    const updateObj = { editGroupPermission: permission };
     queryClient.setQueryData(['conversations'], (old) => {
       if (!Array.isArray(old)) return old;
-      return old.map(c => c.id === convId ? { ...c, editGroupPermission: permission } : c);
+      return old.map(c => (String(c.id) === String(convId) || String(c.publicId) === String(convId) || String(c.internalId) === String(convId)) ? { ...c, ...updateObj } : c);
+    });
+    queryClient.setQueriesData({ queryKey: ['groupDetails'] }, (old) => {
+      if (!old) return old;
+      const match = String(old.id) === String(convId) || String(old.publicId) === String(convId) || String(old.internalId) === String(convId);
+      return match ? { ...old, ...updateObj } : old;
     });
     if (String(convId).startsWith('c_')) {
       const actualId = String(convId).replace('c_', '');
-      return communitiesApi.updateGroupInfo(actualId, { editGroupPermission: permission }).then(() => {
-        queryClient.invalidateQueries({ queryKey: ['communities'] });
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      });
+      return communitiesApi.updateGroupInfo(actualId, updateObj);
     }
     await groupApi.updatePermissions(convId, permission);
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
 
   const changeGroupOwner = async (convId, targetUserId) => {
@@ -895,6 +920,7 @@ export function useData() {
     leaveCrewActivity,
     requestToJoinActivity,
     requestToJoinGroup,
+    cancelCrewActivity,
     endCrewActivity,
     updateGroupSettings,
     updateGroupEditPermission,

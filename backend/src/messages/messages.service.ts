@@ -680,9 +680,14 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       } catch {}
     }
 
-    const [allParticipants, excludedUserIds] = await Promise.all([
+    const [participants, excludedUserIds] = await Promise.all([
       this.prisma.conversationParticipant.findMany({
         where: { userId, deletedAt: null },
+        orderBy: {
+          conversation: { updatedAt: 'desc' }
+        },
+        skip: offset,
+        take: limit,
         select: {
           isMuted: true,
           isPinned: true,
@@ -722,14 +727,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       }),
       this.blocksService ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([])
     ]);
-
-    (allParticipants as any[]).sort((a: any, b: any) => {
-      const timeA = new Date(a.conversation.lastMessageAt || a.conversation.updatedAt || a.conversation.createdAt).getTime();
-      const timeB = new Date(b.conversation.lastMessageAt || b.conversation.updatedAt || b.conversation.createdAt).getTime();
-      return timeB - timeA;
-    });
-
-    const participants = allParticipants.slice(offset, offset + limit);
     const blockedSet = new Set(excludedUserIds);
 
     const dmConvIds = (participants as any[]).filter((p: any) => p.conversation.type === 'DM').map((p: any) => p.conversation.id);
@@ -1143,17 +1140,20 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
   async updateGroupInfo(conversationId: string, userId: string, data: { name?: string; description?: string; avatarKey?: string; avatar?: string }) {
     const realConvId = await this.resolveConversationId(conversationId);
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } }
-    });
+
+    const [participant, conversation] = await Promise.all([
+      this.prisma.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId, conversationId: realConvId } }
+      }),
+      this.prisma.conversation.findUnique({
+        where: { id: realConvId },
+        select: { editGroupPermission: true, activityId: true }
+      })
+    ]);
+
     if (!participant) {
       throw new ForbiddenException('Not a member of this conversation');
     }
-
-    const conversation = await this.prisma.conversation.findUnique({
-      where: { id: realConvId },
-      select: { editGroupPermission: true }
-    });
 
     const perm = (conversation?.editGroupPermission || '').toUpperCase();
     const isAllowed = participant.role === 'OWNER' || participant.role === 'ADMIN' || perm === 'EVERYONE' || perm === 'ALL_MEMBERS' || perm === 'ALL';
@@ -1166,21 +1166,28 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       avatarVal = undefined;
     }
 
-    const updated = await this.prisma.conversation.update({
-      where: { id: realConvId },
-      data: {
-        ...(data.name !== undefined ? { name: data.name } : {}),
-        ...(data.description !== undefined ? { description: data.description } : {}),
-        ...(avatarVal !== undefined ? { avatarKey: avatarVal } : {}),
-      }
-    });
+    const [updated, participantRows] = await Promise.all([
+      this.prisma.conversation.update({
+        where: { id: realConvId },
+        data: {
+          ...(data.name !== undefined ? { name: data.name } : {}),
+          ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(avatarVal !== undefined ? { avatarKey: avatarVal } : {}),
+        }
+      }),
+      this.prisma.conversationParticipant.findMany({
+        where: { conversationId: realConvId, leftAt: null, deletedAt: null },
+        select: { userId: true }
+      }),
+      conversation?.activityId && avatarVal !== undefined
+        ? this.prisma.crewActivity.update({
+            where: { id: conversation.activityId },
+            data: { coverImage: avatarVal }
+          }).catch(() => {})
+        : Promise.resolve(null)
+    ]);
 
-    if (updated.activityId && avatarVal !== undefined) {
-      await this.prisma.crewActivity.update({
-        where: { id: updated.activityId },
-        data: { coverImage: avatarVal }
-      }).catch(() => {});
-    }
+    this.invalidateUserConversationsCache(participantRows.map(p => p.userId));
 
     return updated;
   }

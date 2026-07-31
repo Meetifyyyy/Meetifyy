@@ -610,6 +610,15 @@ export default function ImageViewer({ src, onToggleControls, preloadNext, preloa
             </svg>
             <span>Media unavailable</span>
           </div>
+        ) : (typeof src === 'string' && (/\.(mp4|webm|mov|mkv|avi|flv)/i.test(src) || src.startsWith('data:video/'))) ? (
+          <video
+            src={src}
+            controls
+            autoPlay
+            playsInline
+            style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: '12px', outline: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          />
         ) : (
           <img
             ref={imgRef}

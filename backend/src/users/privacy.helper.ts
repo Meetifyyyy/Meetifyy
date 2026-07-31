@@ -51,3 +51,45 @@ export async function checkPresenceVisibility(
 
   return true;
 }
+
+export async function checkPresenceVisibilityBatch(
+  targetUserId: string,
+  viewerUserIds: string[],
+  rule: 'everyone' | 'following' | 'mutual' | 'nobody' | string,
+  isEnabled: boolean,
+  prisma: PrismaService
+): Promise<string[]> {
+  if (!isEnabled || !targetUserId || rule === 'nobody' || viewerUserIds.length === 0) return [];
+  if (rule === 'everyone' || !rule) return viewerUserIds;
+
+  if (rule === 'following') {
+    const follows = await prisma.follow.findMany({
+      where: {
+        followerId: targetUserId,
+        followingId: { in: viewerUserIds }
+      },
+      select: { followingId: true }
+    });
+    return follows.map(f => f.followingId);
+  }
+
+  if (rule === 'mutual') {
+    const targetFollows = await prisma.follow.findMany({
+      where: { followerId: targetUserId, followingId: { in: viewerUserIds } },
+      select: { followingId: true }
+    });
+    const targetFollowsSet = new Set(targetFollows.map(f => f.followingId));
+
+    if (targetFollowsSet.size === 0) return [];
+
+    const viewerFollows = await prisma.follow.findMany({
+      where: { followerId: { in: viewerUserIds }, followingId: targetUserId },
+      select: { followerId: true }
+    });
+    const viewerFollowsSet = new Set(viewerFollows.map(f => f.followerId));
+
+    return viewerUserIds.filter(vId => targetFollowsSet.has(vId) && viewerFollowsSet.has(vId));
+  }
+
+  return viewerUserIds;
+}
