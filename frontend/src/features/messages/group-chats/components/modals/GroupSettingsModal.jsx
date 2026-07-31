@@ -33,11 +33,20 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
     ? new Date(conversation.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
     : 'Unknown date';
 
-  const handleSaveInfo = () => {
-    const newName = editName.trim();
-    const newDesc = editDesc.trim();
-    if (newName !== conversation.name || newDesc !== (conversation.description || '')) {
-      updateGroupInfo(conversation.id, newName || conversation.name, undefined, newDesc);
+  const handleSaveInfo = async () => {
+    const trimmedName = editName.trim();
+    if (trimmedName) {
+      const nameChanged = trimmedName !== conversation.name;
+      const descChanged = editDesc.trim() !== (conversation.description || '');
+
+      if (nameChanged || descChanged) {
+        await updateGroupInfo(
+          conversation.id,
+          nameChanged ? trimmedName : undefined,
+          undefined, // avatar is handled separately
+          descChanged ? editDesc.trim() : undefined
+        );
+      }
     }
   };
 
@@ -48,7 +57,7 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = async (e) => {
+  const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
       const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -57,12 +66,22 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
         e.target.value = '';
         return;
       }
-      try {
-        const { publicUrl } = await processAndUploadImage(file, 'avatars', { maxWidthOrHeight: 512 });
-        updateGroupInfo(conversation.id, undefined, publicUrl, undefined);
-      } catch {
-        alert('Failed to upload group icon.');
-      }
+      const originalAvatar = conversation.avatarKey || conversation.avatar || '';
+      const tempUrl = URL.createObjectURL(file);
+      
+      // Optimistic update
+      updateGroupInfo(conversation.id, undefined, tempUrl, undefined, originalAvatar);
+      
+      // Background upload
+      (async () => {
+        try {
+          const { publicUrl } = await processAndUploadImage(file, 'avatars', { maxWidthOrHeight: 512 });
+          await updateGroupInfo(conversation.id, undefined, publicUrl, undefined, originalAvatar);
+        } catch {
+          alert('Failed to upload group icon.');
+          updateGroupInfo(conversation.id, undefined, originalAvatar, undefined);
+        }
+      })();
     }
     // Clear input so same file can be selected again
     e.target.value = '';
@@ -103,7 +122,7 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
           <div className={styles.body}>
             <div className={styles.avatarSection}>
               <Avatar
-                src={conversation.avatar}
+                src={conversation.avatarKey || conversation.avatar || conversation.icon || conversation.coverImage}
                 name={conversation.name}
                 size="100px"
                 isGroup={true}

@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useQuery } from '@tanstack/react-query';
+import { usersApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
@@ -66,7 +68,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
         groupId: group.id,
         conversationId: group.id,
         groupName: group.name || 'Group',
-        groupAvatar: group.avatar || group.avatarKey || null,
+        groupAvatar: group.avatar || group.avatarKey || group.icon || group.coverImage || group.avatarUrl || null,
         description: group.description || '',
         whoCanJoin: group.whoCanJoin || 'ANYONE',
         memberCount: group.memberCount || group.members?.length || 1,
@@ -96,50 +98,88 @@ export default function InviteModal({ isOpen, onClose, group }) {
     }
   };
 
+  // Fetch fresh group details when modal is open to get exact current member list
+  const groupConvId = group?.id || group?.publicId || group?.internalId;
+  const { data: modalGroupDetails } = useQuery({
+    queryKey: ['groupDetails', groupConvId],
+    queryFn: () => groupApi.getGroupDetails(groupConvId),
+    enabled: Boolean(isOpen && groupConvId),
+    staleTime: 1000 * 10,
+  });
+
   // Current group members & current user
   const currentMemberIds = useMemo(() => {
     const ids = new Set();
     if (currentUser?.id) ids.add(String(currentUser.id));
 
-    if (group?.members && Array.isArray(group.members)) {
-      group.members.forEach(m => {
-        const id = typeof m === 'string' ? m : (m.id || m.userId || m.user?.id);
-        if (id) ids.add(String(id));
-      });
-    }
-    if (group?.participants && Array.isArray(group.participants)) {
-      group.participants.forEach(p => {
-        const id = typeof p === 'string' ? p : (p.id || p.userId || p.user?.id);
-        if (id) ids.add(String(id));
-      });
-    }
+    const addId = (val) => {
+      if (!val) return;
+      const id = typeof val === 'string' ? val : (val.id || val.userId || val.user?.id);
+      if (id) ids.add(String(id));
+    };
 
-    const conv = (conversations || []).find(c => c.id === group?.id);
+    if (group?.ownerId) ids.add(String(group.ownerId));
+    if (group?.hostId) ids.add(String(group.hostId));
+    if (modalGroupDetails?.ownerId) ids.add(String(modalGroupDetails.ownerId));
+
+    if (Array.isArray(group?.admins)) group.admins.forEach(addId);
+    if (Array.isArray(group?.members)) group.members.forEach(addId);
+    if (Array.isArray(group?.participants)) group.participants.forEach(addId);
+    if (Array.isArray(group?.memberDetails)) group.memberDetails.forEach(addId);
+
+    if (Array.isArray(modalGroupDetails?.admins)) modalGroupDetails.admins.forEach(addId);
+    if (Array.isArray(modalGroupDetails?.members)) modalGroupDetails.members.forEach(addId);
+    if (Array.isArray(modalGroupDetails?.memberDetails)) modalGroupDetails.memberDetails.forEach(addId);
+
+    const conv = (conversations || []).find(
+      c => String(c.id) === String(groupConvId) || String(c.publicId) === String(groupConvId) || String(c.internalId) === String(groupConvId)
+    );
     if (conv) {
-      const list = conv.members || conv.participants || [];
-      list.forEach(m => {
-        const id = typeof m === 'string' ? m : (m.id || m.userId || m.user?.id);
-        if (id) ids.add(String(id));
-      });
+      if (conv.ownerId) ids.add(String(conv.ownerId));
+      if (Array.isArray(conv.admins)) conv.admins.forEach(addId);
+      if (Array.isArray(conv.members)) conv.members.forEach(addId);
+      if (Array.isArray(conv.participants)) conv.participants.forEach(addId);
     }
 
     return ids;
-  }, [conversations, group, currentUser?.id]);
+  }, [conversations, group, modalGroupDetails, currentUser?.id, groupConvId]);
 
-  // All users except current user and current group members
+  // Fetch all registered users for invitation
+  const { data: fetchedUsers = [] } = useQuery({
+    queryKey: ['all-users-for-invite'],
+    queryFn: async () => {
+      const [allList, campusList] = await Promise.all([
+        usersApi.getAll(100, 0).catch(() => []),
+        usersApi.getCampusUsers(100, 0).catch(() => []),
+      ]);
+      const merged = [...(allList || []), ...(campusList || [])];
+      const userMap = new Map();
+      merged.forEach(u => { if (u && u.id) userMap.set(String(u.id), u); });
+      return Array.from(userMap.values());
+    },
+    enabled: Boolean(isOpen),
+    staleTime: 30_000,
+  });
+
+  const combinedUsers = useMemo(() => {
+    const map = new Map();
+    (Object.values(users || {})).forEach(u => { if (u?.id) map.set(String(u.id), u); });
+    (fetchedUsers || []).forEach(u => { if (u?.id) map.set(String(u.id), u); });
+    return Array.from(map.values());
+  }, [users, fetchedUsers]);
+
+  // All users except current logged-in user (do not exclude existing members)
   const filteredUsers = useMemo(() => {
-    const allUsers = Object.values(users || {});
     const term = searchTerm.toLowerCase().trim();
-    return allUsers
-      .filter(u => String(u.id) !== String(currentUser?.id) && u.username !== currentUser?.username)
-      .filter(u => !currentMemberIds.has(String(u.id)))
+    return combinedUsers
+      .filter(u => u && u.id && String(u.id) !== String(currentUser?.id) && u.username !== currentUser?.username)
       .filter(u =>
         !term ||
         u.name?.toLowerCase().includes(term) ||
         u.displayName?.toLowerCase().includes(term) ||
         u.username?.toLowerCase().includes(term)
       );
-  }, [users, searchTerm, currentMemberIds, currentUser]);
+  }, [combinedUsers, searchTerm, currentUser]);
 
   if (!isOpen) return null;
 
@@ -211,7 +251,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
             })
           ) : (
             <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-light)' }}>
-              {searchTerm ? 'No matching users.' : 'Everyone is already in the group.'}
+              {searchTerm ? 'No matching users.' : 'No users found.'}
             </div>
           )}
         </div>

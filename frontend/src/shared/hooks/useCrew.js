@@ -61,7 +61,7 @@ export function useActivities() {
   }, []);
 
   const activities = useMemo(
-    () => query.data?.pages?.flatMap((p) => p?.activities ?? p ?? []) ?? [],
+    () => query.data?.pages?.flatMap((p) => (Array.isArray(p?.activities) ? p.activities : (Array.isArray(p) ? p : []))) ?? [],
     [query.data]
   );
 
@@ -84,7 +84,7 @@ export function useActivitiesList() {
   const { isLoggedIn } = useAuth();
   const cached = queryClient.getQueryData(CREW_KEYS.all);
   const flat = useMemo(
-    () => cached?.pages?.flatMap((p) => p?.activities ?? p ?? []) ?? [],
+    () => cached?.pages?.flatMap((p) => (Array.isArray(p?.activities) ? p.activities : (Array.isArray(p) ? p : []))) ?? [],
     [cached]
   );
 
@@ -94,7 +94,7 @@ export function useActivitiesList() {
     queryFn: () => activitiesApi.getAll(20),
     enabled: Boolean(isLoggedIn) && flat.length === 0,
     staleTime: 2 * 60 * 1000,
-    select: (data) => data?.activities ?? data ?? [],
+    select: (data) => (Array.isArray(data?.activities) ? data.activities : (Array.isArray(data) ? data : [])),
   });
 
   return flat.length > 0 ? flat : (query.data ?? []);
@@ -137,7 +137,7 @@ export function useCampusActivities() {
   }, []);
 
   const activities = useMemo(
-    () => query.data?.pages?.flatMap((p) => p?.activities ?? p ?? []) ?? [],
+    () => query.data?.pages?.flatMap((p) => (Array.isArray(p?.activities) ? p.activities : (Array.isArray(p) ? p : []))) ?? [],
     [query.data]
   );
 
@@ -160,7 +160,7 @@ export function useSavedActivitiesQuery() {
     queryFn: () => activitiesApi.getBookmarks(),
     enabled: isLoggedIn,
     staleTime: 2 * 60 * 1000,
-    select: (data) => data?.activities ?? data ?? [],
+    select: (data) => (Array.isArray(data?.activities) ? data.activities : (Array.isArray(data) ? data : [])),
   });
 
   return {
@@ -179,7 +179,7 @@ export function useMyActivitiesQuery() {
     queryFn: () => activitiesApi.getMyActivities(),
     enabled: isLoggedIn,
     staleTime: 2 * 60 * 1000,
-    select: (data) => data?.activities ?? data ?? [],
+    select: (data) => (Array.isArray(data?.activities) ? data.activities : (Array.isArray(data) ? data : [])),
   });
 
   return {
@@ -203,8 +203,8 @@ export function useActivityById(id) {
     // Try to seed from the list cache to avoid a spinner
     placeholderData: () => {
       const listCache = queryClient.getQueryData(CREW_KEYS.all);
-      const all = listCache?.pages?.flatMap((p) => p?.activities ?? p ?? []) ?? [];
-      return all.find((a) => a.id === cleanId || a.id === id);
+      const all = listCache?.pages?.flatMap((p) => (Array.isArray(p?.activities) ? p.activities : (Array.isArray(p) ? p : []))) ?? [];
+      return all.find((a) => a && (a.id === cleanId || a.id === id));
     },
   });
 }

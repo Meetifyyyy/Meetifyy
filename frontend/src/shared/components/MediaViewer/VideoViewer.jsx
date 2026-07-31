@@ -84,7 +84,7 @@ function SeekRipple({ direction, visible }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function VideoViewer({ src, onControlsChange }) {
+export default function VideoViewer({ src, onControlsChange, onStageClick }) {
   const wrapRef       = useRef(null);
   const videoRef      = useRef(null);
   const progressRef   = useRef(null);
@@ -145,9 +145,12 @@ export default function VideoViewer({ src, onControlsChange }) {
   const showControls = useCallback(() => {
     setCtrlVisible(true);
     clearTimeout(hideTimerRef.current);
-    hideTimerRef.current = setTimeout(() => {
-      setCtrlVisible(false);
-    }, HIDE_DELAY_MS);
+    const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    if (!isTouchDevice) {
+      hideTimerRef.current = setTimeout(() => {
+        setCtrlVisible(false);
+      }, HIDE_DELAY_MS);
+    }
   }, []);
 
   const keepControls = useCallback(() => {
@@ -339,6 +342,8 @@ export default function VideoViewer({ src, onControlsChange }) {
   }, [stopProgressLoop]);
   // ─── Playback actions ─────────────────────────────────────────────────────
   const togglePlay = useCallback(() => {
+    setShowSpeedMenu(false);
+    onStageClick?.();
     const v = videoRef.current;
     if (!v) return;
     if (v.ended) {
@@ -355,7 +360,7 @@ export default function VideoViewer({ src, onControlsChange }) {
     } else {
       v.pause();
     }
-  }, []);
+  }, [onStageClick]);
 
   const seekBy = useCallback((delta) => {
     const v = videoRef.current;
@@ -461,6 +466,21 @@ export default function VideoViewer({ src, onControlsChange }) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [togglePlay, seekBy, adjustVolume, toggleMute, toggleFullscreen, showControls]);
+
+  // Close speed menu on outside click (capture phase so stopPropagation cannot block it)
+  useEffect(() => {
+    if (!showSpeedMenu) return;
+    const handleOutsideClick = (e) => {
+      if (e.target.closest(`.${styles.videoSpeedWrap}`)) return;
+      setShowSpeedMenu(false);
+    };
+    window.addEventListener('click', handleOutsideClick, true);
+    window.addEventListener('pointerdown', handleOutsideClick, true);
+    return () => {
+      window.removeEventListener('click', handleOutsideClick, true);
+      window.removeEventListener('pointerdown', handleOutsideClick, true);
+    };
+  }, [showSpeedMenu]);
 
 
 
@@ -582,49 +602,73 @@ export default function VideoViewer({ src, onControlsChange }) {
 
   const handleWrapTouch = useCallback((e) => {
     if (e.target.closest('[data-controls]')) return;
-    // Prevent synthetic click; mobile touch is handled entirely here
-    e.preventDefault();
-    handleActivity();
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+    onStageClick?.();
 
-    const now   = Date.now();
-    const touch = e.touches[0];
-    const prev  = lastTapRef.current;
+    const isVideoElement = videoRef.current && (e.target === videoRef.current || videoRef.current.contains(e.target));
 
-    if (now - prev.time < DOUBLE_TAP_MS && Math.abs(touch.clientX - prev.x) < 30) {
-      // Double-tap → seek ±10s, cancel pending single-tap
-      clearTimeout(clickTimerRef.current);
-      const isLeft = touch.clientX < window.innerWidth / 2;
-      seekBy(isLeft ? -10 : 10);
-      triggerRipple(isLeft ? 'left' : 'right');
-      lastTapRef.current = { time: 0, x: 0 };
+    if (isVideoElement) {
+      const now   = Date.now();
+      const touch = e.touches[0];
+      const prev  = lastTapRef.current;
+
+      if (now - prev.time < DOUBLE_TAP_MS && Math.abs(touch.clientX - prev.x) < 30) {
+        // Double-tap → seek ±10s
+        clearTimeout(clickTimerRef.current);
+        const isLeft = touch.clientX < window.innerWidth / 2;
+        seekBy(isLeft ? -10 : 10);
+        triggerRipple(isLeft ? 'left' : 'right');
+        lastTapRef.current = { time: 0, x: 0 };
+      } else {
+        // First tap → schedule play/pause after double-tap window
+        lastTapRef.current = { time: now, x: touch.clientX };
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = setTimeout(() => {
+          const v = videoRef.current;
+          const willPlay = v ? (v.paused || v.ended) : !playing;
+          togglePlay();
+          triggerTapFeedback(willPlay ? 'play' : 'pause');
+        }, DOUBLE_TAP_MS + 20);
+      }
     } else {
-      // First tap → schedule play/pause after double-tap window
-      lastTapRef.current = { time: now, x: touch.clientX };
+      // Touch outside video area (backdrop/stage) → toggle controls visibility
+      setCtrlVisible((prev) => {
+        const next = !prev;
+        if (onControlsChange) onControlsChange(next);
+        return next;
+      });
+    }
+  }, [seekBy, triggerRipple, togglePlay, triggerTapFeedback, playing, onControlsChange, onStageClick]);
+
+  // ─── Click handler on wrap — distinguishes video area vs backdrop area ──
+  const handleWrapClick = useCallback((e) => {
+    // If clicking on controls, let them handle it
+    if (e.target.closest('[data-controls]')) return;
+    e.stopPropagation();
+    onStageClick?.();
+
+    const isVideoElement = videoRef.current && (e.target === videoRef.current || videoRef.current.contains(e.target));
+
+    if (isVideoElement) {
+      // Tapping/clicking directly on the video area → Play / Pause
       clearTimeout(clickTimerRef.current);
       clickTimerRef.current = setTimeout(() => {
         const v = videoRef.current;
         const willPlay = v ? (v.paused || v.ended) : !playing;
         togglePlay();
         triggerTapFeedback(willPlay ? 'play' : 'pause');
-      }, DOUBLE_TAP_MS + 20);
+      }, 250);
+    } else {
+      // Tapping/clicking outside the video area (backdrop/stage) → Toggle Controls Visibility
+      setCtrlVisible((prev) => {
+        const next = !prev;
+        if (onControlsChange) onControlsChange(next);
+        return next;
+      });
     }
-  }, [handleActivity, seekBy, triggerRipple, togglePlay, triggerTapFeedback, playing]);
-
-  // ─── Click/Click handler on wrap (desktop) — fires for clicks on video OR wrap ──
-  const handleWrapClick = useCallback((e) => {
-    // If clicking on controls, let them handle it
-    if (e.target.closest('[data-controls]')) return;
-    // Don't let this bubble to the overlay's close handler
-    e.stopPropagation();
-    handleActivity();
-    clearTimeout(clickTimerRef.current);
-    clickTimerRef.current = setTimeout(() => {
-      const v = videoRef.current;
-      const willPlay = v ? (v.paused || v.ended) : !playing;
-      togglePlay();
-      triggerTapFeedback(willPlay ? 'play' : 'pause');
-    }, 250);
-  }, [togglePlay, handleActivity, triggerTapFeedback, playing]);
+  }, [togglePlay, triggerTapFeedback, playing, onControlsChange, onStageClick]);
 
   // ─── Double-click on wrap → fullscreen ─────────────────────────────────────
   const handleWrapDoubleClick = useCallback((e) => {
@@ -716,6 +760,23 @@ export default function VideoViewer({ src, onControlsChange }) {
             </svg>
           )}
         </div>
+      )}
+
+      {/* ── Center replay button on video end ── */}
+      {ended && (
+        <button
+          className={styles.centerReplayBtn}
+          onClick={(e) => {
+            e.stopPropagation();
+            togglePlay();
+          }}
+          aria-label="Replay video"
+          title="Replay"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
+            <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+          </svg>
+        </button>
       )}
 
       {/* ── Controls overlay ─────────────────────────────────────────────── */}

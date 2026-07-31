@@ -76,7 +76,7 @@ export class MessagingCoreService {
       if (currentUserId && identifier !== currentUserId) {
         const dm = await this.prisma.conversation.findFirst({
           where: {
-            type: 'DIRECT' as any,
+            type: 'DM',
             AND: [
               { participants: { some: { userId: currentUserId } } },
               { participants: { some: { userId: identifier } } }

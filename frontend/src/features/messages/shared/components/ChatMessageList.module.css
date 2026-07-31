@@ -43,7 +43,7 @@
 
 .msgBubbleWrapper {
   position: relative;
-  max-width: 82%;
+  max-width: min(90%, 680px);
   display: flex;
   align-items: flex-end;
   gap: 0.5rem;
@@ -53,13 +53,13 @@
 
 @media (min-width: 768px) {
   .msgBubbleWrapper {
-    max-width: 70%;
+    max-width: min(85%, 680px);
   }
 }
 
 @media (min-width: 1024px) {
   .msgBubbleWrapper {
-    max-width: 60%;
+    max-width: min(80%, 680px);
   }
 }
 
@@ -67,6 +67,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  max-width: 100%;
   backface-visibility: hidden;
 }
 
@@ -91,6 +92,7 @@
 }
 
 .msgBubble {
+  width: fit-content;
   max-width: 100%;
   padding: 0.6rem 0.9rem;
   border-radius: 14px;
@@ -142,20 +144,22 @@
 }
 
 .msgTextTimeWrap {
-  display: flex;
+  display: inline-flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
   min-width: 0;
+  max-width: 100%;
+  width: fit-content;
 }
 
 .msgImageCardContainer,
 .msgAudioCardContainer {
   display: flex;
   flex-direction: column;
-  margin: 4px 0 6px 0;
-  gap: 4px;
+  margin: 2px 0;
+  gap: 2px;
 }
 
 .msgBubbleContainerMe .msgImageCardContainer,
@@ -179,16 +183,14 @@
 
 .msgMediaImgStandalone {
   display: block;
-  max-width: min(210px, 55vw);
-  max-height: 230px;
-  min-width: 90px;
-  min-height: 90px;
+  max-width: min(285px, 68vw);
+  max-height: 285px;
   width: auto;
   height: auto;
-  object-fit: cover;
+  object-fit: contain;
   cursor: pointer;
   transition: opacity 0.15s ease;
-  border-radius: 16px;
+  border-radius: 14px;
 }
 
 .msgMediaImgStandalone:hover {
@@ -371,41 +373,55 @@
   }
 }
 
-/* Image Attachment & Loading Skeleton Styling */
 .msgMediaWrapper {
   position: relative;
-  display: block;
-  width: 100%;
-  max-width: min(260px, 100%);
+  display: inline-block;
+  width: fit-content;
+  height: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 14px;
+  background-color: transparent;
+  flex-shrink: 0;
+  vertical-align: middle;
 }
 
 .msgMediaWrapperStandalone {
-  max-width: min(210px, 55vw);
+  display: inline-block;
+  width: fit-content;
+  height: fit-content;
+  max-width: 100%;
+  border-radius: 14px;
+  background-color: transparent;
+}
+
+[data-theme='dark'] .msgMediaWrapper,
+[data-theme='dark'] .msgMediaWrapperStandalone {
+  background-color: transparent;
 }
 
 .msgMediaSkeleton {
-  position: relative;
-  overflow: hidden;
-  width: 260px;
-  max-width: 100%;
-  height: 180px;
-  border-radius: 12px;
-  background-color: var(--color-bg-subtle, #e2e8f0);
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background-color: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-sizing: border-box;
+  transition: opacity 0.18s ease;
 }
 
+
 [data-theme='dark'] .msgMediaSkeleton {
-  background-color: #27272a;
+  /* no-op — wrapper handles dark bg */
 }
 
 .msgMediaSkeletonStandalone {
-  width: 220px;
-  max-width: 100%;
-  height: 180px;
-  border-radius: 16px;
+  /* inherited from .msgMediaSkeleton + wrapper's border-radius */
+  width: 100%;
+  height: 100%;
 }
 
 .msgMediaSkeleton::after {
@@ -462,17 +478,30 @@
 }
 
 .msgMediaImgHidden {
+  display: block;
+  max-width: 100%;
+  max-height: 340px;
+  width: auto;
+  height: auto;
   opacity: 0;
-  position: absolute;
-  top: 0;
-  left: 0;
   pointer-events: none;
+  border-radius: inherit;
+  transition: opacity 0.2s ease;
 }
 
 .msgMediaImgVisible {
+  display: block;
+  max-width: 100%;
+  max-height: 340px;
+  width: auto;
+  height: auto;
   opacity: 1;
+  pointer-events: auto;
+  border-radius: inherit;
   transition: opacity 0.2s ease;
 }
+
+
 
 .msgMediaErrorCard {
   display: flex;
@@ -501,26 +530,19 @@
 .msgMediaImg {
   display: block;
   width: 100%;
+  height: 100%;
   max-width: 100%;
-  max-height: 260px;
-  min-width: 100px;
-  min-height: 100px;
-  height: auto;
   object-fit: cover;
   cursor: pointer;
   transition: opacity 0.15s ease;
   border-radius: 12px;
-  margin-bottom: 4px;
 }
 
 .msgMediaImgStandalone {
   display: block;
   width: 100%;
-  max-width: min(210px, 55vw);
-  max-height: 230px;
-  min-width: 90px;
-  min-height: 90px;
-  height: auto;
+  height: 100%;
+  max-width: 100%;
   object-fit: cover;
   cursor: pointer;
   transition: opacity 0.15s ease;

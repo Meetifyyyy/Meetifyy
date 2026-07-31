@@ -16,7 +16,7 @@ import { MessagesService } from '../messages/messages.service';
 import { PresenceService } from '../presence/presence.service';
 import { InstantMatchService, setRealtimeGatewayRef, MatchFoundPayload, QueueStats } from '../instant-match/instant-match.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { checkPresenceVisibility } from '../users/privacy.helper';
+import { checkPresenceVisibility, checkPresenceVisibilityBatch } from '../users/privacy.helper';
 import { RedisService } from '../redis/redis.service';
 
 @WebSocketGateway({
@@ -62,11 +62,31 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     });
 
     this.presenceService.onStatusChange(async (userId, status, lastSeen) => {
-      const presencePayload = { userId, status, lastActive: lastSeen };
-      // Broadcast to personal room (updates current user and multi-tab/device clients)
+      await this.broadcastPresenceUpdate(userId, status, lastSeen);
+    });
+
+    this.setupDomainEventSubscriber();
+  }
+
+  private async broadcastPresenceUpdate(userId: string, status: string, lastSeen: string) {
+    const presencePayload = { userId, status, lastActive: lastSeen };
+    
+    try {
+      const targetUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } } }
+      });
+      const rule = targetUser?.settings?.whoCanSeeOnline || 'everyone';
+      const isEnabled = targetUser?.settings?.showOnlineStatus !== false;
+
+      // Always broadcast to the user's personal room (for multi-device sync)
       this.server.to(userId).emit('presence:update', presencePayload);
 
-      try {
+      if (!isEnabled || rule === 'nobody') {
+        return; // Already emitted to self
+      }
+
+      if (rule === 'everyone') {
         const userConvs = await this.prisma.conversationParticipant.findMany({
           where: { userId, deletedAt: null, leftAt: null },
           select: { conversationId: true }
@@ -76,12 +96,29 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
             this.server.to(`conv_${p.conversationId}`).emit('presence:update', presencePayload);
           }
         });
-      } catch (err) {
-        this.logger.error(`Failed to broadcast presence update for user=${userId}`, err);
+        return;
       }
-    });
 
-    this.setupDomainEventSubscriber();
+      // Restrictive rules: following or mutual
+      // Find all unique users in shared conversations
+      const sharedConvs = await this.prisma.conversationParticipant.findMany({
+        where: { 
+          conversation: { participants: { some: { userId: userId, deletedAt: null, leftAt: null } } }, 
+          deletedAt: null, leftAt: null 
+        },
+        select: { userId: true }
+      });
+      const uniqueViewerIds = [...new Set(sharedConvs.map(p => p.userId).filter(id => id !== userId))];
+
+      if (uniqueViewerIds.length > 0) {
+        const allowedViewerIds = await checkPresenceVisibilityBatch(userId, uniqueViewerIds, rule, isEnabled, this.prisma);
+        if (allowedViewerIds.length > 0) {
+          this.server.to(allowedViewerIds).emit('presence:update', presencePayload);
+        }
+      }
+    } catch (err) {
+      this.logger.error(`Failed to broadcast presence update for user=${userId}`, err);
+    }
   }
 
   private setupDomainEventSubscriber() {
@@ -118,18 +155,51 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       const uId = payload.targetUserId || payload.data?.userId;
       if (uId) {
         this.userPresenceSettingsCache.delete(uId);
-        const settings = payload.data?.settings;
-        if (settings?.showOnlineStatus === false || settings?.whoCanSeeOnline === 'nobody') {
-          const offlinePayload = { userId: uId, status: 'offline', lastActive: new Date().toISOString() };
-          this.prisma.conversationParticipant.findMany({
-            where: { userId: uId, deletedAt: null, leftAt: null },
-            select: { conversationId: true }
-          }).then(userConvs => {
-            userConvs.forEach(c => {
-              if (c.conversationId) this.server.to(`conv_${c.conversationId}`).emit('presence:update', offlinePayload);
-            });
-            this.server.to(uId).emit('presence:update', offlinePayload);
-          }).catch(() => {});
+        
+        // Always force broadcast offline to all group rooms so clients immediately hide the status
+        const offlinePayload = { userId: uId, status: 'offline', lastActive: new Date().toISOString() };
+        this.prisma.conversationParticipant.findMany({
+          where: { userId: uId, deletedAt: null, leftAt: null },
+          select: { conversationId: true }
+        }).then(userConvs => {
+          userConvs.forEach(c => {
+            if (c.conversationId) this.server.to(`conv_${c.conversationId}`).emit('presence:update', offlinePayload);
+          });
+        }).catch(() => {});
+
+        // Re-evaluate and broadcast true status based on new rules
+        this.presenceService.getPresence(uId).then(presence => {
+          const status = presence?.status || 'offline';
+          const lastSeen = presence?.lastSeen || new Date().toISOString();
+          this.broadcastPresenceUpdate(uId, status, lastSeen);
+        }).catch(() => {});
+      }
+    }
+
+    if (payload.type === 'group:member_added') {
+      const convId = payload.data?.conversationId || payload.conversationId;
+      const targetUser = payload.data?.userId || payload.userId;
+      if (convId && targetUser) {
+        const userSockets = this.server.sockets.adapter.rooms.get(targetUser);
+        if (userSockets) {
+          userSockets.forEach(socketId => {
+            const socket = this.server.sockets.sockets.get(socketId);
+            if (socket) socket.join(`conv_${convId}`);
+          });
+        }
+      }
+    }
+
+    if (payload.type === 'group:member_removed') {
+      const convId = payload.data?.conversationId || payload.conversationId;
+      const targetUser = payload.data?.targetUserId || payload.targetUserId || payload.data?.userId;
+      if (convId && targetUser) {
+        const userSockets = this.server.sockets.adapter.rooms.get(targetUser);
+        if (userSockets) {
+          userSockets.forEach(socketId => {
+            const socket = this.server.sockets.sockets.get(socketId);
+            if (socket) socket.leave(`conv_${convId}`);
+          });
         }
       }
     }
@@ -512,21 +582,33 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     const viewerId = (client as any).userId;
     const presenceMap = await this.presenceService.getPresenceMany(data.userIds);
 
-    const targetUsers = await this.prisma.user.findMany({
-      where: { id: { in: data.userIds } },
-      select: {
-        id: true,
-        settings: {
-          select: {
-            showOnlineStatus: true,
-            whoCanSeeOnline: true
-          }
-        }
-      }
+    const now = Date.now();
+    const uncachedUserIds = data.userIds.filter(id => {
+      const cached = this.userPresenceSettingsCache.get(id);
+      return !cached || (now - cached.cachedAt >= this.PRESENCE_SETTINGS_TTL_MS);
     });
 
+    if (uncachedUserIds.length > 0) {
+      const targetUsers = await this.prisma.user.findMany({
+        where: { id: { in: uncachedUserIds } },
+        select: {
+          id: true,
+          settings: {
+            select: {
+              showOnlineStatus: true,
+              whoCanSeeOnline: true
+            }
+          }
+        }
+      });
+      targetUsers.forEach(u => this.userPresenceSettingsCache.set(u.id, { settings: u, cachedAt: now }));
+    }
+
     const userMap = new Map<string, any>();
-    targetUsers.forEach(u => userMap.set(u.id, u));
+    data.userIds.forEach(uId => {
+      const cached = this.userPresenceSettingsCache.get(uId);
+      if (cached) userMap.set(uId, cached.settings);
+    });
 
     const result: Record<string, any> = {};
     for (const uId of data.userIds) {

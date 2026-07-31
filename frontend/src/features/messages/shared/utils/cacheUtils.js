@@ -318,20 +318,30 @@ export function updateConversationPreview(queryClient, conversationId, previewTe
     if (!old) return old;
 
     let list = Array.isArray(old) ? [...old] : (old.conversations ? [...old.conversations] : null);
-
     if (!list) return old;
 
+    const numericTimestamp = new Date(timestamp).getTime();
     const idx = list.findIndex((c) => matchesConversationId(c, conversationId));
     if (idx !== -1) {
+      const textVal = typeof previewText === 'string' ? previewText : (previewText?.text || '');
+      const prevMsgObj = list[idx].lastMessage || {};
+      const newMsgObj = {
+        ...prevMsgObj,
+        text: textVal,
+        createdAt: timestamp
+      };
+
       const targetConv = {
         ...list[idx],
-        lastMsg: previewText || list[idx].lastMsg || list[idx].lastMessageText,
-        lastMessageText: previewText || list[idx].lastMessageText,
+        lastMsg: textVal || list[idx].lastMsg || '',
+        lastMessageText: textVal || list[idx].lastMessageText || '',
+        lastMessage: newMsgObj,
         updatedAt: timestamp,
+        timestamp: numericTimestamp,
         unreadCount: Math.max(0, (list[idx].unreadCount || 0) + unreadIncrement),
         unread: Math.max(0, (list[idx].unread || 0) + unreadIncrement),
       };
-      // Move conversation to top of list
+
       list.splice(idx, 1);
       list.unshift(targetConv);
     }

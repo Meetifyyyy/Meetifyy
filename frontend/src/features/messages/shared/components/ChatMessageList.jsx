@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ErrorState } from '@shared/components/ui/StateViews';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -249,16 +249,21 @@ export default function ChatMessageList({
       if (item?.type === 'date_separator') return 36;
       if (item?.msg?.mediaUrl) return 240;
       if (item?.msg?.type === 'system' || item?.msg?.type === 'SYSTEM') return 40;
-      return 68;
+      const textLen = (item?.msg?.text || item?.msg?.payload?.text || '').length;
+      if (textLen > 180) return 140;
+      if (textLen > 80) return 96;
+      return 76;
     },
     overscan: 8,
   });
 
   const totalSize = rowVirtualizer.getTotalSize();
   const hasScrolledInitialRef = useRef(false);
+  const [isInitialReady, setIsInitialReady] = useState(false);
 
   useEffect(() => {
     hasScrolledInitialRef.current = false;
+    setIsInitialReady(false);
   }, [conversation?.id, conversation?.publicId, conversation?.internalId]);
 
   const scrollToBottom = useCallback(() => {
@@ -290,6 +295,7 @@ export default function ChatMessageList({
       prevMessagesCountRef.current = currentCount;
 
       scrollToBottom();
+      setIsInitialReady(true);
 
       const raf1 = requestAnimationFrame(() => scrollToBottom());
       const raf2 = requestAnimationFrame(() => requestAnimationFrame(() => scrollToBottom()));
@@ -340,16 +346,29 @@ export default function ChatMessageList({
     }
   }, [messages, conversation?.id, conversation?.publicId, currentUser?.id, replyingTo, scrollToBottom]);
 
-  // Adjust scroll as virtualizer measures elements on initial load
+  // Lock scroll position to bottom during virtualizer measurement & image layout changes
   useLayoutEffect(() => {
-    if (bodyRef.current && totalSize > 0) {
-      if (!hasScrolledInitialRef.current) {
+    if (!bodyRef.current || !virtualInnerRef.current) return;
+    const body = bodyRef.current;
+    const target = virtualInnerRef.current;
+
+    const observer = new ResizeObserver(() => {
+      if (!hasScrolledInitialRef.current) return;
+      const isNearBottom = (body.scrollHeight - body.scrollTop - body.clientHeight) < 180;
+      if (isNearBottom) {
+        body.scrollTop = body.scrollHeight + 10000;
+      }
+    });
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [conversation?.id, conversation?.publicId]);
+
+  useEffect(() => {
+    if (bodyRef.current && hasScrolledInitialRef.current) {
+      const isNearBottom = (bodyRef.current.scrollHeight - bodyRef.current.scrollTop - bodyRef.current.clientHeight) < 180;
+      if (isNearBottom) {
         bodyRef.current.scrollTop = bodyRef.current.scrollHeight + 10000;
-      } else {
-        const isNearBottom = (bodyRef.current.scrollHeight - bodyRef.current.scrollTop - bodyRef.current.clientHeight) < 180;
-        if (isNearBottom) {
-          bodyRef.current.scrollTop = bodyRef.current.scrollHeight + 10000;
-        }
       }
     }
   }, [totalSize]);
@@ -370,12 +389,14 @@ export default function ChatMessageList({
   // Trigger load when load_more virtual item comes into view
   useEffect(() => {
     if (hasMore && !isLoadingMore && !isLoading) {
-      const hasLoadMoreVisible = rowVirtualizer.getVirtualItems().some(v => itemsToRender[v.index]?.type === 'load_more');
-      if (hasLoadMoreVisible) {
-        if (onLoadMore) onLoadMore();
+      const virtualItems = rowVirtualizer.getVirtualItems();
+      const hasLoadMoreVisible = virtualItems.some(v => itemsToRender[v.index]?.type === 'load_more');
+      if (hasLoadMoreVisible && onLoadMore) {
+        onLoadMore();
       }
     }
-  }, [rowVirtualizer.getVirtualItems(), hasMore, isLoadingMore, isLoading, onLoadMore, itemsToRender]);
+  }, [hasMore, isLoadingMore, isLoading, onLoadMore, itemsToRender]);
+
 
   return (
     <div className={styles.msgChatBody} ref={bodyRef} onScroll={handleScroll}>

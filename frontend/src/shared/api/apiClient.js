@@ -35,13 +35,22 @@ export const getBackendUrl = () => {
 
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
     const host = window.location.hostname;
+    const protocol = window.location.protocol;
     const isLocalHost = host === 'localhost' || host === '127.0.0.1';
+    const isLocalIp = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|.+\.local$)/.test(host) || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
 
     // If accessing frontend via local network IP (e.g. 192.168.x.x:5173 on phone),
     // point API requests to host:4000 instead of loopback 127.0.0.1:4000
-    if (!isLocalHost) {
+    if (!isLocalHost && isLocalIp) {
       if (!rawEnv || rawEnv.includes('localhost') || rawEnv.includes('127.0.0.1')) {
-        return `${window.location.protocol}//${host}:4000`;
+        return `${protocol}//${host}:4000`;
+      }
+    }
+
+    // On HTTPS public hosts (e.g. Vercel), upgrade http:// backend URLs to https:// to prevent Mixed Content blocking
+    if (rawEnv && protocol === 'https:' && !isLocalHost && !isLocalIp) {
+      if (rawEnv.startsWith('http://') && !rawEnv.includes('localhost') && !rawEnv.includes('127.0.0.1')) {
+        return rawEnv.replace(/^http:\/\//i, 'https://');
       }
     }
   }
@@ -324,6 +333,11 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
 
   const text = await res.text();
   if (!text) return null;
+
+  if (text.trim().startsWith('<')) {
+    throw new Error('API server returned HTML instead of JSON. Please check backend connection and VITE_API_URL setting.');
+  }
+
   // Globally sanitize dicebear initials avatars from backend responses
   const sanitizedText = text.replace(/https:\/\/api\.dicebear\.com\/7\.x\/initials\/[^"'\\]+/g, '');
   return JSON.parse(sanitizedText);
@@ -465,8 +479,8 @@ export const activitiesApi = {
   requestToJoinActivity: (id) => apiClient.post(`/api/activities/${id}/request`),
   acceptJoinRequest: (id, userId) => apiClient.post(`/api/activities/${id}/requests/${userId}/accept`),
   rejectJoinRequest: (id, userId) => apiClient.post(`/api/activities/${id}/requests/${userId}/reject`),
-  declineCrewInvitation: (id) => apiClient.post(`/api/activities/${id}/decline`),
-  endCrewActivity: (id) => apiClient.post(`/api/activities/${id}/end`),
+  cancelCrewActivity: (id) => apiClient.post(`/api/activities/${id}/cancel`),
+  endCrewActivity: (id) => apiClient.post(`/api/activities/${id}/cancel`),
   inviteFriends: (id, userIds) => apiClient.post(`/api/activities/${id}/invite`, { userIds }),
   getPendingInvitations: () => apiClient.get('/api/activities/invitations/me'),
   acceptInvitation: (invitationId) => apiClient.post(`/api/activities/invitations/${invitationId}/accept`),
@@ -526,6 +540,7 @@ export const usersApi = {
 
 export const dmApi = {
   getConversations: (limit, offset) => apiClient.get(`/api/dm?limit=${limit || 20}&offset=${offset || 0}`),
+  lookupDM: (targetUserId) => apiClient.get(`/api/dm/lookup/${targetUserId}`),
   startDM: (targetUserId) => apiClient.post('/api/dm', { targetUserId }),
   startInstantMatch: (targetUserId, activity) => apiClient.post('/api/dm/instant-match', { targetUserId, activity }),
   getHistory: (conversationId, deviceId, beforeCursor, limit) => {
@@ -550,6 +565,7 @@ export const dmApi = {
 
 export const groupApi = {
   getConversations: (limit, offset) => apiClient.get(`/api/group-chats?limit=${limit || 20}&offset=${offset || 0}`),
+  getDetails: (conversationId) => apiClient.get(`/api/group-chats/${conversationId}/details`),
   createGroup: (name, userIds) => apiClient.post('/api/group-chats', { name, userIds }),
   getHistory: (conversationId, deviceId, beforeCursor, limit) => {
     const params = new URLSearchParams();

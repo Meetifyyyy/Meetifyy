@@ -196,10 +196,9 @@ export class DmService extends MessagingCoreService {
       const lastMsgInfo = lastMsgMap.get(conv.id);
 
       // DM Visibility Lifecycle (PENDING vs ACTIVE):
-      // If conversation has 0 messages and current user is NOT the creator/owner (User B recipient),
-      // do NOT show this conversation in User B's list until the first message is sent!
-      const isCreator = conv.ownerId === userId;
-      if (!lastMsgInfo && !isCreator && !conv.isInstantMatch) {
+      // A conversation with 0 messages MUST NOT appear in the conversation list for ANY user
+      // until the first message is sent (unless it is an instant match).
+      if (!lastMsgInfo && !conv.isInstantMatch) {
         return null;
       }
 
@@ -269,6 +268,23 @@ export class DmService extends MessagingCoreService {
     return results.filter(Boolean);
   }
 
+  async lookupExistingDM(currentUserId: string, targetUserId: string) {
+    if (!targetUserId || targetUserId === currentUserId) return null;
+    const existing = await this.prisma.conversation.findFirst({
+      where: {
+        type: 'DM',
+        AND: [
+          { participants: { some: { userId: currentUserId } } },
+          { participants: { some: { userId: targetUserId } } }
+        ]
+      },
+      select: { id: true, publicId: true }
+    });
+    if (!existing) return null;
+    const pubId = existing.publicId || existing.id;
+    return { id: pubId, publicId: pubId };
+  }
+
   async startDM(currentUserId: string, targetUserId: string) {
     if (!targetUserId || targetUserId === currentUserId) {
       throw new ForbiddenException('Cannot start a DM with yourself');
@@ -286,37 +302,44 @@ export class DmService extends MessagingCoreService {
       throw new ForbiddenException('Cannot start a conversation with a blocked user');
     }
 
-    const existing = await this.prisma.conversation.findFirst({
-      where: {
-        type: 'DM',
-        AND: [
-          { participants: { some: { userId: currentUserId, deletedAt: null } } },
-          { participants: { some: { userId: targetUserId, deletedAt: null } } }
-        ]
-      }
-    });
-
-    if (existing) {
-      const pubId = (existing as any).publicId || existing.id;
-      return { id: pubId, publicId: pubId };
-    }
-
-    const newPubId = generatePublicId();
-    const conv = await this.prisma.conversation.create({
-      data: {
-        publicId: newPubId,
-        type: 'DM',
-        ownerId: currentUserId,
-        participants: {
-          create: [
-            { userId: currentUserId, role: 'OWNER' },
-            { userId: targetUserId, role: 'MEMBER' }
+    return await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.conversation.findFirst({
+        where: {
+          type: 'DM',
+          AND: [
+            { participants: { some: { userId: currentUserId } } },
+            { participants: { some: { userId: targetUserId } } }
           ]
         }
-      }
-    });
+      });
 
-    return { id: newPubId, publicId: newPubId };
+      if (existing) {
+        await tx.conversationParticipant.updateMany({
+          where: { conversationId: existing.id, userId: currentUserId },
+          data: { deletedAt: null }
+        }).catch(() => {});
+
+        const pubId = (existing as any).publicId || existing.id;
+        return { id: pubId, publicId: pubId };
+      }
+
+      const newPubId = generatePublicId();
+      const conv = await tx.conversation.create({
+        data: {
+          publicId: newPubId,
+          type: 'DM',
+          ownerId: currentUserId,
+          participants: {
+            create: [
+              { userId: currentUserId, role: 'OWNER' },
+              { userId: targetUserId, role: 'MEMBER' }
+            ]
+          }
+        }
+      });
+
+      return { id: newPubId, publicId: newPubId };
+    });
   }
 
   async createInstantMatchDM(userAId: string, userBId: string, activity: string) {

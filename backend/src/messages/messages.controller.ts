@@ -322,17 +322,23 @@ export class MessagesController {
     if (result) {
       const pubId = (result as any).publicId || result.id;
       const pIds = await this.messagesService.getConversationParticipantIds(result.id);
+      const avatarVal = (result as any).avatarKey || (result as any).avatar || null;
       this.domainEventService.emit('conversation:updated', {
+        conversationId: pubId,
         id: pubId,
         publicId: pubId,
         internalId: result.id,
         name: result.name,
-        avatar: (result as any).avatarKey || (result as any).avatar || null,
+        avatar: avatarVal,
+        avatarKey: avatarVal,
         description: result.description
       }, pIds);
     }
 
-    return result;
+    return {
+      ...result,
+      avatar: (result as any).avatarKey || (result as any).avatar || null,
+    };
   }
 
   @Post(':id/members')

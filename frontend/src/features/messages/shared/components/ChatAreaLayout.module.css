@@ -37,6 +37,80 @@
   font-size: 0.875rem;
 }
 
+/* ── Message loading skeleton ─── */
+
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.messagesSkeleton {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 16px;
+  overflow: hidden;
+}
+
+.skeletonRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.skeletonLeft  { justify-content: flex-start; }
+.skeletonRight { justify-content: flex-end; }
+
+.skeletonAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: linear-gradient(90deg, var(--color-bg-subtle, #f0f0f0) 25%, var(--color-bg-hover, #e8e8e8) 50%, var(--color-bg-subtle, #f0f0f0) 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.skeletonBubbles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 72%;
+}
+
+.skeletonBubble {
+  height: 36px;
+  border-radius: 18px;
+  border-bottom-left-radius: 4px;
+  background: linear-gradient(90deg, var(--color-bg-subtle, #f0f0f0) 25%, var(--color-bg-hover, #e8e8e8) 50%, var(--color-bg-subtle, #f0f0f0) 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.skeletonBubbleRight {
+  border-radius: 18px;
+  border-bottom-right-radius: 4px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--color-primary, #6366f1) 20%, transparent) 25%, color-mix(in srgb, var(--color-primary, #6366f1) 30%, transparent) 50%, color-mix(in srgb, var(--color-primary, #6366f1) 20%, transparent) 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+[data-theme='dark'] .skeletonAvatar,
+[data-theme='dark'] .skeletonBubble {
+  background: linear-gradient(90deg, #27272a 25%, #3f3f46 50%, #27272a 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+[data-theme='dark'] .skeletonBubbleRight {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--color-primary, #6366f1) 30%, #1e1e2e) 25%, color-mix(in srgb, var(--color-primary, #6366f1) 40%, #1e1e2e) 50%, color-mix(in srgb, var(--color-primary, #6366f1) 30%, #1e1e2e) 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+
 .emptyState {
   display: flex;
   flex-direction: column;

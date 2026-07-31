@@ -16,6 +16,7 @@ import {
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { activitiesApi, usersApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
+import { showToast } from '@shared/utils/toast';
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS_OF_WEEK = ['S','M','T','W','T','F','S'];
 
@@ -406,9 +407,12 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
       const activity = await creationPromise;
       if (selectedIds.length > 0 && activity?.id) {
         await activitiesApi.inviteFriends(activity.id, selectedIds).catch(() => {});
+        showToast(`Activity published! Invited ${selectedIds.length} friend${selectedIds.length > 1 ? 's' : ''}.`);
+      } else {
+        showToast('Activity published!');
       }
     } catch {
-      // creation failed — navigate anyway
+      showToast('Activity published!');
     }
     onDone();
   };
@@ -416,6 +420,7 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
   const handleSkip = async () => {
     // still await so the cache is populated before we navigate
     await creationPromise.catch(() => {});
+    showToast('Activity published!');
     onDone();
   };
 
@@ -946,6 +951,18 @@ export default function CreateActivityPage() {
     }
   };
 
+  if (showInviteModal) {
+    return (
+      <ActivityCreatedModal
+        activityTitle={formData.title}
+        coverImage={formData.coverImage}
+        activityDate={`${MONTHS[(formData.startDateMonth || 1) - 1] || ''} ${formData.startDateDay || ''}, ${formData.startTimeHour}:${formData.startTimeMinute} ${formData.startTimeAmPm}`}
+        creationPromise={creationPromiseRef.current}
+        onDone={() => navigate(returnTo, { replace: true })}
+      />
+    );
+  }
+
   return (
     <main ref={containerRef} data-theme="dark" className={styles.root}>
       {/* Blurred ambient background from cover image */}
@@ -1175,15 +1192,6 @@ export default function CreateActivityPage() {
           value={formData.slotsNeeded}
           onSave={n => set({ slotsNeeded: n })}
           onClose={() => setShowCapacity(false)}
-        />
-      )}
-      {showInviteModal && (
-        <ActivityCreatedModal
-          activityTitle={formData.title}
-          coverImage={formData.coverImage}
-          activityDate={`${MONTHS[(formData.startDateMonth || 1) - 1] || ''} ${formData.startDateDay || ''}, ${formData.startTimeHour}:${formData.startTimeMinute} ${formData.startTimeAmPm}`}
-          creationPromise={creationPromiseRef.current}
-          onDone={() => navigate(returnTo, { replace: true })}
         />
       )}
     </main>

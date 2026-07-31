@@ -24,6 +24,13 @@ export class DmController {
     return this.dmService.getUserDMConversations(userId, limitNum, offsetNum);
   }
 
+  @Get('lookup/:targetUserId')
+  @UseGuards(JwtGuard)
+  async lookupExistingDM(@Req() req: any, @Param('targetUserId') targetUserId: string) {
+    const userId = req.user?.id;
+    return this.dmService.lookupExistingDM(userId, targetUserId);
+  }
+
   @Post()
   @UseGuards(JwtGuard)
   async startDM(

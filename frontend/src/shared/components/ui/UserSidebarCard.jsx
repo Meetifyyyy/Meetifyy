@@ -209,18 +209,21 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
       }
     }
 
-    // 2. Fallback API call
+    // 2. Fast backend lookup for existing conversation
     try {
-      const res = await dmApi.startDM(effectiveUser.id);
-      if (res?.id || res?.publicId) {
-        navigate(`/messages/${res.publicId || res.id}`, { state: { from: location.pathname } });
-      } else {
-        const legacyRes = await messagesApi.startConversation([effectiveUser.id, currentUser.id]);
-        if (legacyRes?.id) navigate(`/messages/${legacyRes.id}`, { state: { from: location.pathname } });
+      const lookup = await dmApi.lookupDM(effectiveUser.id);
+      if (lookup?.id || lookup?.publicId) {
+        navigate(`/messages/${lookup.publicId || lookup.id}`, { state: { from: location.pathname } });
+        return;
       }
-    } catch (e) {
-      console.error('Start DM failed', e);
+    } catch {
+      // ignore lookup error
     }
+
+    // 3. Instant lazy draft navigation (0ms DB insertion)
+    navigate(`/messages/new?user=${effectiveUser.id}`, {
+      state: { from: location.pathname, targetUser: effectiveUser }
+    });
   };
 
   if (isLoading && !profile && !initialUser) {

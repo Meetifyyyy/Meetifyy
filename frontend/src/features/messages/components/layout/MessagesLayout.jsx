@@ -48,8 +48,13 @@ export default function MessagesLayout() {
   } = useData();
 
   const routeChatId = param2 || param1 || null;
-  const [activeChatId, setActiveChatId] = useState(routeChatId);
-  const [showChatOnMobile, setShowChatOnMobile] = useState(!!routeChatId);
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const draftUserId = searchParams.get('user') || location.state?.targetUser?.id;
+  const isDraftRoute = routeChatId === 'new' || (routeChatId && String(routeChatId).startsWith('draft_'));
+
+  const routeChatIdCalculated = isDraftRoute ? (draftUserId ? `draft_${draftUserId}` : 'new') : routeChatId;
+  const [activeChatId, setActiveChatId] = useState(routeChatIdCalculated);
+  const [showChatOnMobile, setShowChatOnMobile] = useState(!!routeChatIdCalculated);
 
   const handleBack = () => {
     const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
@@ -80,14 +85,14 @@ export default function MessagesLayout() {
   const [contextMenu, setContextMenu] = useState(null);
 
   useEffect(() => {
-    if (routeChatId) {
-      setActiveChatId(routeChatId);
+    if (routeChatIdCalculated) {
+      setActiveChatId(routeChatIdCalculated);
       setShowChatOnMobile(true);
     } else {
       setActiveChatId(null);
       setShowChatOnMobile(false);
     }
-  }, [routeChatId]);
+  }, [routeChatIdCalculated]);
 
   const { 
     messages: allMessages,
@@ -103,18 +108,41 @@ export default function MessagesLayout() {
   // Find active conversation and merge history messages
   const baseConv = useMemo(() => {
     if (!activeChatId) return null;
-    return conversations.find((c) => matchesConversationId(c, activeChatId)) || { id: activeChatId };
-  }, [conversations, activeChatId]);
+    const found = conversations.find((c) => matchesConversationId(c, activeChatId));
+    if (found) return found;
+
+    if (String(activeChatId).startsWith('draft_') || isDraftRoute || draftUserId) {
+      const targetId = draftUserId || (String(activeChatId).startsWith('draft_') ? activeChatId.replace('draft_', '') : null);
+      const targetUser = location.state?.targetUser || null;
+      return {
+        id: activeChatId,
+        publicId: activeChatId,
+        type: 'DM',
+        isDraft: true,
+        targetUserId: targetId,
+        targetUser,
+        name: targetUser?.displayName || targetUser?.username || 'New Message',
+        avatar: targetUser?.avatar || null,
+        participants: targetUser ? [{ userId: currentUser?.id, user: currentUser }, { userId: targetUser.id, user: targetUser }] : [],
+      };
+    }
+
+    return { id: activeChatId };
+  }, [conversations, activeChatId, isDraftRoute, draftUserId, location.state?.targetUser, currentUser]);
 
   const activeConv = useMemo(() => {
     if (!baseConv) return null;
     const initialPage = rawPages?.[0];
     const latestPage = rawPages?.[rawPages.length - 1];
 
-    // Fallback name/avatar inference from history or message sender if conversation list entry is missing
+    const isGroupConv = baseConv.type === 'GROUP' || baseConv.type === 'ACTIVITY' || !!baseConv.isGroup || !!baseConv.isActivityChat || !!baseConv.activityId;
+
     const otherMsg = (allMessages || []).find(m => m.from === 'them' || (m.senderId && String(m.senderId) !== String(currentUser?.id)));
     const inferredName = baseConv.name || initialPage?.name || otherMsg?.senderName || 'Chat';
-    const inferredAvatar = baseConv.avatar || initialPage?.avatar || otherMsg?.senderAvatar || null;
+
+    const inferredAvatar = isGroupConv
+      ? (baseConv.avatarKey || baseConv.avatar || null)
+      : (baseConv.avatar || initialPage?.avatar || otherMsg?.senderAvatar || null);
 
     return {
       ...baseConv,
@@ -128,12 +156,36 @@ export default function MessagesLayout() {
 
   // URL sync
   useEffect(() => {
-    if (!activeChatId || !activeConv) return;
+    if (!activeChatId || !activeConv || activeConv.isDraft) return;
     const targetPath = correctConversationUrl(activeConv, currentUser?.id, location.pathname);
     if (location.pathname !== targetPath && targetPath !== location.pathname) {
       navigate(targetPath, { replace: true, state: location.state });
     }
   }, [activeChatId, activeConv, currentUser?.id, location.pathname, navigate]);
+
+  const handleSendMessage = async (...args) => {
+    if (activeConv?.isDraft) {
+      const targetId = activeConv.targetUserId || activeConv.targetUser?.id;
+      if (targetId) {
+        try {
+          const { dmApi } = await import('@shared/api/apiClient');
+          const res = await dmApi.startDM(targetId);
+          const realId = res?.publicId || res?.id;
+          if (realId) {
+            setActiveChatId(realId);
+            queryClient.invalidateQueries({ queryKey: ['conversations'] });
+            await sendMessageOptimistically(realId, ...args);
+            const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
+            navigate(`${basePath}/${realId}`, { replace: true, state: location.state });
+            return;
+          }
+        } catch (err) {
+          console.error('Failed to create conversation on send:', err);
+        }
+      }
+    }
+    return sendMessageOptimistically(...args);
+  };
 
   const totalUnread = useMemo(() => {
     return (conversations || []).reduce((sum, c) => sum + (c.unread || 0), 0);
@@ -141,10 +193,11 @@ export default function MessagesLayout() {
 
   const filteredConvs = useMemo(() => {
     return (conversations || [])
+      .filter(c => !c.isDraft && !String(c.id).startsWith('draft_'))
       .filter(c => {
-        if (activeFilter === 'Unread') return (c.unread || 0) > 0;
-        if (activeFilter === 'DMs') return !c.isGroup && !c.isActivityChat && !String(c.id).startsWith('act_') && !String(c.id).startsWith('c_');
-        if (activeFilter === 'Groups') return c.isGroup || c.isActivityChat || String(c.id).startsWith('act_') || String(c.id).startsWith('c_');
+        if (activeFilter === 'Unread') return (c.unread || 0) > 0 || (c.unreadCount || 0) > 0;
+        if (activeFilter === 'DMs') return c.type !== 'GROUP' && c.type !== 'ACTIVITY' && !c.isGroup && !c.isActivityChat && !String(c.id).startsWith('act_') && !String(c.id).startsWith('c_');
+        if (activeFilter === 'Groups') return c.type === 'GROUP' || c.type === 'ACTIVITY' || c.isGroup || c.isActivityChat || String(c.id).startsWith('act_') || String(c.id).startsWith('c_');
         return true;
       })
       .filter(c => {
@@ -169,20 +222,32 @@ export default function MessagesLayout() {
   };
 
   const handleStartChat = (targetUser) => {
-    const newConvId = startConversation(targetUser);
+    setIsModalOpen(false);
+    if (!targetUser?.id) return;
+    const existing = (conversations || []).find(c => {
+      if (c.isGroup || c.isActivityChat || String(c.id).startsWith('act_') || String(c.id).startsWith('c_')) return false;
+      const otherId = c.targetUser?.id || c.otherUser?.id || c.userId || c.participants?.find(p => String(p.userId || p.id) !== String(currentUser?.id))?.userId;
+      return String(otherId) === String(targetUser.id);
+    });
+    if (existing?.publicId || existing?.id) {
+      handleSelectChat(existing.publicId || existing.id);
+    } else {
+      const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
+      navigate(`${basePath}/new?user=${targetUser.id}`, { state: { targetUser } });
+    }
+  };
+
+  const handleCreateGroup = async (groupName, userIds) => {
+    const newConvId = await createGroupConversation(groupName, userIds);
     setIsModalOpen(false);
     if (newConvId) handleSelectChat(newConvId);
   };
 
-  const handleCreateGroup = (groupName, userIds) => {
-    const newConvId = createGroupConversation(groupName, userIds);
-    setIsModalOpen(false);
-    if (newConvId) handleSelectChat(newConvId);
-  };
 
   // Activity group chats are rendered as normal group chats
   const getConvType = (c) => {
-    if (c.isGroup || c.isActivityChat || String(c.id).startsWith('act_') || String(c.id).startsWith('c_') || c.isCampusGroup || c.activityId) return 'group';
+    if (!c) return 'dm';
+    if (c.type === 'GROUP' || c.type === 'ACTIVITY' || c.isGroup || c.isActivityChat || String(c.id).startsWith('act_') || String(c.id).startsWith('c_') || c.isCampusGroup || c.activityId) return 'group';
     return 'dm';
   };
 
@@ -313,14 +378,14 @@ export default function MessagesLayout() {
             <DMChatArea
               key={activeKey}
               conversation={activeConv}
-              onSendMessage={sendMessageOptimistically}
+              onSendMessage={handleSendMessage}
               onReactMessage={reactToMessage}
               onClearChat={clearChat}
               onTogglePin={togglePinConversation}
               onBlockUser={toggleBlockUser}
               onBack={handleBack}
               showChatOnMobile={showChatOnMobile}
-              isLoading={isConversationsLoading || (isMessagesLoading && allMessages.length === 0)}
+              isLoading={activeConv?.isDraft ? false : (isConversationsLoading || (isMessagesLoading && allMessages.length === 0))}
               {...paginationProps}
             />
           );

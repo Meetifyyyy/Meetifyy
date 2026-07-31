@@ -52,7 +52,7 @@ const Avatar = forwardRef(({
   useEffect(() => {
     let isMounted = true;
     
-    if (!initialProcessedSrc || initialProcessedSrc === defaultAvatarImg) {
+    if (!initialProcessedSrc || initialProcessedSrc === defaultAvatarImg || (typeof initialProcessedSrc === 'string' && initialProcessedSrc.includes('default_avatar'))) {
       setImgSrc(defaultAvatarImg);
       return;
     }
@@ -90,11 +90,13 @@ const Avatar = forwardRef(({
     if (onClick) onClick(e);
   };
   
-  const isPreloaded = loadedAvatarCache.has(displaySrc) || displaySrc === defaultAvatarImg;
-  const [imgLoading, setImgLoading] = useState(!isPreloaded);
+  const isBlobOrPreloaded = loadedAvatarCache.has(displaySrc) || 
+    displaySrc === defaultAvatarImg || 
+    (typeof displaySrc === 'string' && (displaySrc.startsWith('blob:') || displaySrc.startsWith('data:')));
+  const [imgLoading, setImgLoading] = useState(!isBlobOrPreloaded);
 
   useEffect(() => {
-    if (loadedAvatarCache.has(displaySrc) || displaySrc === defaultAvatarImg) {
+    if (loadedAvatarCache.has(displaySrc) || displaySrc === defaultAvatarImg || (typeof displaySrc === 'string' && (displaySrc.startsWith('blob:') || displaySrc.startsWith('data:')))) {
       setImgLoading(false);
     } else {
       setImgLoading(true);
@@ -114,7 +116,12 @@ const Avatar = forwardRef(({
     setImgLoading(false);
   };
 
-  const isDefaultGroupAvatar = isGroup && (!imgSrc || imgSrc === defaultAvatarImg || !initialProcessedSrc || initialProcessedSrc === defaultAvatarImg);
+  // Show the default group icon (UsersIcon) when the group has no custom avatar uploaded
+  const isDefaultGroupAvatar = isGroup && (
+    !src ||
+    initialProcessedSrc === defaultAvatarImg ||
+    imgSrc === defaultAvatarImg
+  );
 
   return (
     <div

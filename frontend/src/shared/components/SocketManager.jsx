@@ -441,16 +441,127 @@ export default function SocketManager() {
       });
     };
 
-    const handleGroupMemberChange = () => {
+    const handleGroupMemberChange = (payload) => {
+      if (!payload) return;
+      const convId = payload.conversationId || payload.id || payload.publicId || payload.data?.conversationId;
+      const targetUserId = payload.targetUserId || payload.userId || payload.data?.targetUserId || payload.data?.userId;
+      const isMe = String(targetUserId) === String(session?.user?.id);
+      const isRemoved = payload.eventType === 'remove' || payload.type === 'group:member_removed' || Boolean(payload.removedBy);
+
+      const convs = queryClient.getQueryData(['conversations']) || [];
+      const matchConv = convs.find(c => c.id === convId || c.publicId === convId || c.internalId === convId);
+      const isCurrentMember = matchConv ? (matchConv.isMember !== false && matchConv.myMembershipStatus !== 'KICKED') : true;
+
+      if (isCurrentMember) {
+        queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+        if (convId) {
+          queryClient.invalidateQueries({ queryKey: ['groupDetails', convId] });
+        }
+      }
+
+      queryClient.setQueryData(['conversations'], (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map((c) => {
+          const match = c.id === convId || c.publicId === convId || c.internalId === convId;
+          if (match) {
+            const count = c.memberCount || c.membersCount || 0;
+            if (isMe) {
+              return {
+                ...c,
+                isMember: !isRemoved,
+                myMembershipStatus: isRemoved ? 'KICKED' : 'MEMBER',
+                leftAt: isRemoved ? new Date().toISOString() : null,
+                memberCount: isRemoved ? Math.max(0, count - 1) : count + 1,
+                membersCount: isRemoved ? Math.max(0, count - 1) : count + 1,
+              };
+            } else {
+              // If current user is already removed from this group, freeze their member list & count
+              if (c.isMember === false || c.myMembershipStatus === 'KICKED') {
+                return c;
+              }
+              const newCount = isRemoved ? Math.max(0, count - 1) : count + 1;
+              return {
+                ...c,
+                memberCount: newCount,
+                membersCount: newCount,
+              };
+            }
+          }
+          return c;
+        });
+      });
+
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['group-chats'] });
     };
 
     const handleConversationUpdated = (payload) => {
       if (!payload) return;
       const convId = payload.conversationId || payload.id || payload.publicId;
 
+      if (convId) {
+        queryClient.setQueriesData({ queryKey: ['groupDetails'] }, (old) => {
+          if (!old) return old;
+          const match =
+            String(old.id) === String(convId) ||
+            String(old.publicId) === String(convId) ||
+            String(old.internalId) === String(convId) ||
+            (payload.internalId && String(old.id) === String(payload.internalId)) ||
+            (payload.publicId && String(old.publicId) === String(payload.publicId));
+
+          const incomingAvatar = payload.avatarKey !== undefined ? payload.avatarKey : payload.avatar;
+          if (match) {
+            return {
+              ...old,
+              ...(payload.name !== undefined ? { name: payload.name } : {}),
+              ...(incomingAvatar !== undefined ? { avatar: incomingAvatar, avatarKey: incomingAvatar } : {}),
+              ...(payload.description !== undefined ? { description: payload.description } : {}),
+              ...(payload.whoCanJoin !== undefined ? { whoCanJoin: payload.whoCanJoin } : {}),
+              ...(payload.visibility !== undefined ? { visibility: payload.visibility } : {}),
+              ...(payload.allowSharing !== undefined ? { allowSharing: payload.allowSharing } : {}),
+              ...(payload.editGroupPermission !== undefined ? { editGroupPermission: payload.editGroupPermission } : {}),
+              ...(payload.ownerId ? { ownerId: payload.ownerId } : {}),
+            };
+          }
+          return old;
+        });
+      }
+
       queryClient.setQueryData(['conversations'], (old) => {
         if (!Array.isArray(old)) return old;
+
+        // If this is a brand-new group broadcast (isNewGroup flag from backend)
+        // and the conversation isn't in the list yet, inject it directly.
+        if (payload.isNewGroup) {
+          const alreadyExists = old.some(
+            c => c.id === convId || c.publicId === convId || c.internalId === convId
+          );
+          if (!alreadyExists && convId) {
+            const newConv = {
+              id: payload.publicId || convId,
+              publicId: payload.publicId || convId,
+              internalId: payload.internalId || convId,
+              name: payload.name || 'Group',
+              type: payload.type || 'GROUP',
+              isGroup: true,
+              ownerId: payload.ownerId || null,
+              status: payload.status || 'ACTIVE',
+              avatar: payload.avatar || null,
+              avatarKey: payload.avatar || null,
+              createdAt: payload.createdAt || new Date().toISOString(),
+              updatedAt: payload.updatedAt || new Date().toISOString(),
+              lastMessage: null,
+              unread: 0,
+              unreadCount: 0,
+              timestamp: payload.createdAt ? new Date(payload.createdAt).getTime() : Date.now(),
+              pinned: false,
+              muted: false,
+              isMember: true,
+              memberCount: payload.memberCount || 1,
+            };
+            return [newConv, ...old];
+          }
+        }
 
         const exists = old.some(c => c.id === convId || c.publicId === convId || c.internalId === convId);
         if (!exists) {
@@ -466,27 +577,29 @@ export default function SocketManager() {
         const routeInfo = isMessagesRoute ? parseConversationRoute(param1, param2) : { publicId: null };
         const viewedId = routeInfo.publicId;
 
+        const incomingAvatar = payload.avatarKey !== undefined ? payload.avatarKey : payload.avatar;
         return old.map((c) => {
           if (c.id === convId || c.publicId === convId || c.internalId === convId) {
-            const isViewing = isMessagesRoute && viewedId && (
-              viewedId === c.id || viewedId === c.publicId || viewedId === c.internalId
-            );
-
             const lastMsg = payload.lastMessage;
             return {
               ...c,
               ...(payload.name ? { name: payload.name } : {}),
-              ...(payload.avatar !== undefined ? { avatar: payload.avatar, avatarKey: payload.avatar } : {}),
+              ...(incomingAvatar !== undefined ? { avatar: incomingAvatar, avatarKey: incomingAvatar } : {}),
               ...(payload.description !== undefined ? { description: payload.description } : {}),
+              ...(payload.whoCanJoin !== undefined ? { whoCanJoin: payload.whoCanJoin } : {}),
+              ...(payload.visibility !== undefined ? { visibility: payload.visibility } : {}),
+              ...(payload.allowSharing !== undefined ? { allowSharing: payload.allowSharing } : {}),
+              ...(payload.editGroupPermission !== undefined ? { editGroupPermission: payload.editGroupPermission } : {}),
               ...(lastMsg ? { lastMessage: lastMsg, updatedAt: lastMsg.createdAt } : {}),
               ...(payload.ownerId ? { ownerId: payload.ownerId } : {}),
-              // Do NOT touch unreadCount here — it's managed by the message:new flow in useChatManager
+              // Do NOT touch unreadCount here — it's managed by the message:new flow
             };
           }
           return c;
         });
       });
     };
+
 
     const handleMessageUpdated = (payload) => {
       if (!payload || (!payload.id && !payload.messageId)) return;
@@ -835,8 +948,9 @@ export default function SocketManager() {
     socket.on('conversation:updated', handleConversationUpdated);
     socket.on('message:new', handleGlobalMessageNew);
     socket.on('message:updated', handleMessageUpdated);
-    socket.on('group:member_added', handleGroupMemberChange);
-    socket.on('group:member_removed', handleGroupMemberChange);
+    socket.on('group:member_added', (data) => handleGroupMemberChange({ ...(data || {}), eventType: 'add' }));
+    socket.on('group:member_removed', (data) => handleGroupMemberChange({ ...(data || {}), eventType: 'remove' }));
+    socket.on('group:role_changed', (data) => handleGroupMemberChange({ ...(data || {}), eventType: 'role_change' }));
     socket.on('community:memberCount', handleCommunityUpdate);
     socket.on('community:updated', handleCommunityUpdate);
 
@@ -849,6 +963,7 @@ export default function SocketManager() {
       socket.off('message:updated', handleMessageUpdated);
       socket.off('group:member_added', handleGroupMemberChange);
       socket.off('group:member_removed', handleGroupMemberChange);
+      socket.off('group:role_changed', handleGroupMemberChange);
       socket.off('community:memberCount', handleCommunityUpdate);
       socket.off('community:updated', handleCommunityUpdate);
     };

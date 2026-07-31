@@ -38,13 +38,31 @@ export class GroupChatsController {
     const targetUserIds = Array.isArray(userIds) ? userIds : [];
     const res = await this.groupChatsService.createGroup(targetUserIds, userId, name);
 
-    if (targetUserIds.length > 0) {
-      const others = targetUserIds.filter(tId => tId && tId !== userId);
-      if (others.length > 0) {
-        this.domainEventService.emit('group:member_added', { conversationId: res.id, userId }, others);
-        this.domainEventService.emit('conversation:updated', { conversationId: res.id }, others);
-      }
+    // Notify all participants (including creator) so their conversation list
+    // updates via socket without relying on fragile optimistic temp-entry patching.
+    const allParticipants = [...new Set([userId, ...targetUserIds.filter(id => id && id !== userId)])];
+    const others = allParticipants.filter(id => id !== userId);
+
+    if (others.length > 0) {
+      this.domainEventService.emit('group:member_added', { conversationId: res.id, userId }, others);
     }
+    // Emit full conversation payload to ALL participants so each client can
+    // inject the real group into their conversation list immediately.
+    this.domainEventService.emit('conversation:updated', {
+      conversationId: res.id,
+      publicId: res.publicId,
+      internalId: res.internalId,
+      name: res.name,
+      type: res.type,
+      isGroup: true,
+      ownerId: res.ownerId,
+      status: res.status,
+      createdAt: res.createdAt,
+      updatedAt: res.updatedAt,
+      avatar: null,
+      isNewGroup: true,
+    }, allParticipants);
+
     return res;
   }
 
@@ -62,6 +80,13 @@ export class GroupChatsController {
     return this.groupChatsService.getConversationHistory(conversationId, userId, deviceId, beforeCursor, limitNum);
   }
 
+  @Get(':id/details')
+  @UseGuards(JwtGuard)
+  async getGroupDetails(@Req() req: any, @Param('id') conversationId: string) {
+    const userId = req.user?.id;
+    return this.groupChatsService.getGroupDetails(conversationId, userId);
+  }
+
   @Post(':id/messages')
   @UseGuards(JwtGuard)
   async sendMessage(
@@ -73,13 +98,7 @@ export class GroupChatsController {
     const message = await this.groupChatsService.sendMessage(userId, conversationId, body);
     const conv = await this.groupChatsService.getConversationById(conversationId);
 
-    const participantIds = await this.groupChatsService.getConversationParticipantIds(conversationId);
-    const otherParticipantIds = participantIds.filter(pId => pId !== userId);
-    const unblockedParticipantIds = [];
-    for (const pId of otherParticipantIds) {
-      const hasBlockedSender = await this.groupChatsService.isUserBlockedBy(userId, pId);
-      if (!hasBlockedSender) unblockedParticipantIds.push(pId);
-    }
+    const { recipientIds: unblockedParticipantIds, unmutedRecipientIds } = await this.groupChatsService.getBatchUnblockedAndUnmutedParticipants(conversationId, userId);
 
     this.domainEventService.emit('message:new', message, unblockedParticipantIds);
     this.domainEventService.emit('conversation:updated', {
@@ -93,18 +112,15 @@ export class GroupChatsController {
       }
     }, unblockedParticipantIds);
 
-    for (const pId of unblockedParticipantIds) {
-      const isMuted = await this.groupChatsService.isUserConversationMuted(conversationId, pId);
-      if (!isMuted) {
-        this.notificationsService.createNotification(
-          this.notificationFactory.createMessage(
-            { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
-            conv || { id: conversationId, name: message.senderName },
-            pId,
-            message.text
-          )
-        ).catch(() => {});
-      }
+    for (const pId of unmutedRecipientIds) {
+      this.notificationsService.createNotification(
+        this.notificationFactory.createMessage(
+          { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
+          conv || { id: conversationId, name: message.senderName },
+          pId,
+          message.text
+        )
+      ).catch(() => {});
     }
 
     this.domainEventService.emit('message:new', message, [userId]);
@@ -181,21 +197,44 @@ export class GroupChatsController {
     else if (body.name || body.avatarKey || body.avatar || body.description) text = `${actorHandle} updated group details`;
 
     setImmediate(async () => {
+      let systemMsg = null;
       if (text) {
-        await this.groupChatsService.createSystemMessage(conversationId, userId, text).catch(() => {});
+        systemMsg = await this.groupChatsService.createSystemMessage(conversationId, userId, text).catch(() => null);
+        if (systemMsg) {
+          this.domainEventService.emit('message:new', systemMsg, participantIds);
+        }
       }
       const pubId = (updated as any).publicId || updated.id;
-      this.domainEventService.emit('conversation:updated', {
+      const avatarVal = (updated as any).avatarKey !== undefined 
+        ? (updated as any).avatarKey 
+        : ((updated as any).avatar !== undefined ? (updated as any).avatar : (convBefore?.avatarKey || null));
+      
+      const payload: any = {
+        conversationId: pubId,
         id: pubId,
         publicId: pubId,
         internalId: updated.id,
         name: updated.name,
-        avatar: (updated as any).avatarKey || (updated as any).avatar || null,
+        avatar: avatarVal,
+        avatarKey: avatarVal,
         description: updated.description
-      }, participantIds);
+      };
+
+      if (systemMsg) {
+        payload.lastMessage = {
+          text: systemMsg.text,
+          createdAt: systemMsg.createdAt,
+          senderId: userId
+        };
+      }
+
+      this.domainEventService.emit('conversation:updated', payload, participantIds);
     });
 
-    return updated;
+    return {
+      ...updated,
+      avatar: (updated as any).avatarKey || (updated as any).avatar || null,
+    };
   }
 
   @Post(':id/members')
@@ -283,14 +322,45 @@ export class GroupChatsController {
   @UseGuards(JwtGuard)
   async updateSettings(@Req() req: any, @Param('id') conversationId: string, @Body() body: any) {
     const userId = req.user?.id;
-    return this.groupChatsService.updateGroupSettings(conversationId, userId, body);
+    const result = await this.groupChatsService.updateGroupSettings(conversationId, userId, body);
+
+    setImmediate(() => {
+      try {
+        const { updatedConv, participantIds } = result;
+        if (participantIds && participantIds.length > 0) {
+          this.domainEventService.emit('conversation:updated', {
+            conversationId: updatedConv?.publicId || updatedConv?.id || conversationId,
+            whoCanJoin: updatedConv?.whoCanJoin,
+            visibility: updatedConv?.visibility,
+            allowSharing: updatedConv?.allowSharing,
+            editGroupPermission: updatedConv?.editGroupPermission,
+          }, participantIds);
+        }
+      } catch {}
+    });
+
+    return { success: true, conversationId: result.conversationId };
   }
 
   @Patch(':id/permissions')
   @UseGuards(JwtGuard)
   async updatePermissions(@Req() req: any, @Param('id') conversationId: string, @Body('permission') permission: string) {
     const userId = req.user?.id;
-    return this.groupChatsService.updateGroupEditPermission(conversationId, userId, permission);
+    const result = await this.groupChatsService.updateGroupEditPermission(conversationId, userId, permission);
+
+    setImmediate(() => {
+      try {
+        const { updatedConv, participantIds } = result;
+        if (participantIds && participantIds.length > 0) {
+          this.domainEventService.emit('conversation:updated', {
+            conversationId: updatedConv?.publicId || updatedConv?.id || conversationId,
+            editGroupPermission: permission,
+          }, participantIds);
+        }
+      } catch {}
+    });
+
+    return { success: true };
   }
 
   @Post(':id/owner')
@@ -307,6 +377,16 @@ export class GroupChatsController {
         conversationId,
         ownerId: targetUserId
       }, participantIds);
+      this.domainEventService.emit('group:role_changed', {
+        conversationId,
+        targetUserId,
+        newRole: 'OWNER'
+      }, participantIds);
+      this.domainEventService.emit('group:role_changed', {
+        conversationId,
+        targetUserId: userId,
+        newRole: 'ADMIN' // Former owner becomes admin usually, or member. We can just force a refetch on the frontend.
+      }, participantIds);
     }
 
     await this.broadcastSystemMessage(conversationId, userId, `${actorHandle} transferred group ownership to ${targetHandle}`);
@@ -320,6 +400,14 @@ export class GroupChatsController {
     const targetHandle = await this.groupChatsService.getUserHandle(targetUserId);
     const result = await this.groupChatsService.promoteToAdmin(conversationId, userId, targetUserId);
     const actorHandle = await this.groupChatsService.getUserHandle(userId);
+    const participantIds = await this.groupChatsService.getConversationParticipantIds(conversationId);
+    if (participantIds.length > 0) {
+      this.domainEventService.emit('group:role_changed', {
+        conversationId,
+        targetUserId,
+        newRole: 'ADMIN'
+      }, participantIds);
+    }
     await this.broadcastSystemMessage(conversationId, userId, `${actorHandle} promoted ${targetHandle} to Admin`);
     return result;
   }
@@ -331,6 +419,14 @@ export class GroupChatsController {
     const targetHandle = await this.groupChatsService.getUserHandle(targetUserId);
     const result = await this.groupChatsService.demoteFromAdmin(conversationId, userId, targetUserId);
     const actorHandle = await this.groupChatsService.getUserHandle(userId);
+    const participantIds = await this.groupChatsService.getConversationParticipantIds(conversationId);
+    if (participantIds.length > 0) {
+      this.domainEventService.emit('group:role_changed', {
+        conversationId,
+        targetUserId,
+        newRole: 'MEMBER'
+      }, participantIds);
+    }
     await this.broadcastSystemMessage(conversationId, userId, `${actorHandle} demoted ${targetHandle} to Member`);
     return result;
   }
@@ -427,15 +523,12 @@ export class GroupChatsController {
     if (result.messages && Array.isArray(result.messages)) {
       for (const message of result.messages) {
         const conversationId = message.conversationId;
-        const participantIds = await this.groupChatsService.getConversationParticipantIds(conversationId);
-        const conv = await this.groupChatsService.getConversationById(conversationId);
 
-        const otherParticipantIds = participantIds.filter(pId => pId !== userId);
-        const unblockedParticipantIds = [];
-        for (const pId of otherParticipantIds) {
-          const hasBlockedSender = await this.groupChatsService.isUserBlockedBy(userId, pId);
-          if (!hasBlockedSender) unblockedParticipantIds.push(pId);
-        }
+        // Batch block+mute check — replaces N+1 per-participant loop
+        const [{ recipientIds: unblockedParticipantIds, unmutedRecipientIds }, conv] = await Promise.all([
+          this.groupChatsService.getBatchUnblockedAndUnmutedParticipants(conversationId, userId),
+          this.groupChatsService.getConversationById(conversationId),
+        ]);
 
         this.domainEventService.emit('message:new', message, unblockedParticipantIds);
         this.domainEventService.emit('conversation:updated', {
@@ -449,18 +542,15 @@ export class GroupChatsController {
           }
         }, unblockedParticipantIds);
 
-        for (const pId of unblockedParticipantIds) {
-          const isMuted = await this.groupChatsService.isUserConversationMuted(conversationId, pId);
-          if (!isMuted) {
-            this.notificationsService.createNotification(
-              this.notificationFactory.createMessage(
-                { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
-                conv || { id: conversationId, name: message.senderName },
-                pId,
-                message.text || 'Forwarded a message'
-              )
-            ).catch(() => {});
-          }
+        for (const pId of unmutedRecipientIds) {
+          this.notificationsService.createNotification(
+            this.notificationFactory.createMessage(
+              { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
+              conv || { id: conversationId, name: message.senderName },
+              pId,
+              message.text || 'Forwarded a message'
+            )
+          ).catch(() => {});
         }
         this.domainEventService.emit('message:new', message, [userId]);
       }

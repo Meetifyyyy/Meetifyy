@@ -27,7 +27,7 @@ export default function MessageContextMenu({
       id: 'reply',
       label: 'Reply',
       icon: Reply,
-      visible: (m) => !isTemp(m) && !isUnavailableMedia(m),
+      visible: (m) => !isTemp(m) && !isUnavailableMedia(m) && m.state !== 'UNSENT' && !m.isUnsent && m.text !== 'This message was unsent',
       onClick: () => {
         onReply?.(msg);
         onClose();
@@ -76,15 +76,10 @@ export default function MessageContextMenu({
       danger: true,
       visible: (m) => {
         if (isTemp(m)) return false;
-        const isOwn = m.from === 'me' || (currentUser && (m.senderId === currentUser.id || m.userId === currentUser.id || m.fromUserId === currentUser.id || m.sender?.id === currentUser.id));
+        const isOwn = m.from === 'me' || (currentUser && (String(m.senderId) === String(currentUser.id) || String(m.userId) === String(currentUser.id) || String(m.fromUserId) === String(currentUser.id) || String(m.sender?.id) === String(currentUser.id)));
         if (!isOwn) return false;
-        if (m.state === 'UNSENT' || m.isUnsent) return false;
-        
-        const now = new Date().getTime();
-        const msgTime = new Date(m.createdAt || m.timestamp).getTime();
-        if (isNaN(msgTime)) return true;
-        const diffMins = (now - msgTime) / (1000 * 60);
-        return diffMins <= 10;
+        if (m.state === 'UNSENT' || m.isUnsent || m.text === 'This message was unsent') return false;
+        return true;
       },
       onClick: () => {
         const handler = onUnsend || onUnsendRequest;

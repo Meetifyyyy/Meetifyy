@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { Plus } from 'lucide-react';
 import { useAuth } from '@shared/context/AuthContext';
 import { useActivities, useCampusActivities, useSavedActivitiesQuery, useMyActivitiesQuery } from '@shared/hooks/useCrew';
 import { useDebounce } from '@shared/hooks/useDebounce';
@@ -30,27 +31,30 @@ export default function FindYourCrewPage() {
   const { savedActivitiesData } = useSavedActivitiesQuery();
   const { myActivitiesData } = useMyActivitiesQuery();
 
-  const mapActivity = (a) => ({
-    ...a,
-    hostId: a.creatorId,
-    hostName: a.creator?.displayName || a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
-    hostUsername: a.creator?.username || a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
-    hostAvatar: a.creator?.avatar || a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
-    participants: a.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
-    pendingRequests: a.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
-    slotsFilled: a.members?.filter(m => m.status === 'MEMBER').length || 1,
-    slotsNeeded: a.maxMembers || 999,
-    _membersData: a.members?.map(m => m.user) || [],
-  });
+  const mapActivity = (a) => {
+    if (!a || typeof a !== 'object') return null;
+    return {
+      ...a,
+      hostId: a.creatorId,
+      hostName: a.creator?.displayName || a.members?.find(m => m?.userId === a.creatorId)?.user?.displayName || 'Host',
+      hostUsername: a.creator?.username || a.members?.find(m => m?.userId === a.creatorId)?.user?.username || 'host',
+      hostAvatar: a.creator?.avatar || a.members?.find(m => m?.userId === a.creatorId)?.user?.avatar || '',
+      participants: a.members?.filter(m => m?.status === 'MEMBER').map(m => m?.userId).filter(Boolean) || [],
+      pendingRequests: a.members?.filter(m => m?.status === 'PENDING').map(m => m?.userId).filter(Boolean) || [],
+      slotsFilled: a.members?.filter(m => m?.status === 'MEMBER').length || 1,
+      slotsNeeded: a.maxMembers || 999,
+      _membersData: a.members?.map(m => m?.user).filter(Boolean) || [],
+    };
+  };
 
-  const crewActivities = useMemo(() => rawActivities.map(mapActivity), [rawActivities]);
+  const crewActivities = useMemo(() => (rawActivities || []).map(mapActivity).filter(Boolean), [rawActivities]);
 
   const allCombinedActivities = useMemo(() => {
     const map = new Map();
     [...(rawActivities || []), ...(rawCampusActivities || []), ...(savedActivitiesData || []), ...(myActivitiesData || [])].forEach(a => {
       if (a && a.id) map.set(a.id, a);
     });
-    return Array.from(map.values()).map(mapActivity);
+    return Array.from(map.values()).map(mapActivity).filter(Boolean);
   }, [rawActivities, rawCampusActivities, savedActivitiesData, myActivitiesData]);
 
   const savedActivities = useSavedActivitiesStore(state => state.savedActivities);
@@ -84,42 +88,34 @@ export default function FindYourCrewPage() {
   const filteredActivities = useMemo(() => {
     if (!crewActivities) return [];
 
-    const today = new Date();
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
 
-    // Helper: has activity ended?
-    const isActivityEnded = (a) => {
+    // Helper: has activity started?
+    const isActivityStarted = (a) => {
       if (!a) return false;
       const status = (a.status || '').toUpperCase();
       if (status === 'ENDED' || status === 'CANCELLED' || status === 'CLOSED' || status === 'COMPLETED') return true;
-      if (a.endDate) {
-        if (new Date(a.endDate) < today) return true;
-      }
-      if (a.startDate || a.date) {
-        const activityDate = new Date(a.startDate || a.date);
-        activityDate.setHours(0, 0, 0, 0);
-        if (activityDate < today) return true;
-      }
+      const now = new Date();
+      const startRaw = a.startDate || a.date || a.createdAt;
+      if (startRaw && new Date(startRaw) <= now) return true;
+      if (a.endDate && new Date(a.endDate) <= now) return true;
       return false;
     };
 
-    // Helper: is this activity marked to be visible on college/campus?
-    const isCollegeActivity = (a) => {
+    // Helper: is this activity public ("Anyone")?
+    const isPublicActivity = (a) => {
       if (!a) return false;
-      if (a.shareToCampus === true || a.shareToSchool === true || a.isCollegeOnly === true || a.schoolOnly === true) {
-        return true;
-      }
       const vis = String(a.visibility || '').toUpperCase();
-      if (vis === 'COLLEGE' || vis === 'COLLEGE_ONLY' || vis === 'SCHOOL' || vis === 'CAMPUS') {
-        return true;
-      }
+      if (vis === 'PRIVATE' || vis === 'COLLEGE_ONLY' || vis === 'COLLEGE' || vis === 'SCHOOL' || vis === 'CAMPUS') return false;
+      if (vis === 'PUBLIC') return true;
+      if (a.isCollegeOnly === true) return false;
       const join = String(a.whoCanJoin || '').toLowerCase();
-      if (join === 'college' || join === 'school' || join === 'campus') {
-        return true;
-      }
-      return false;
+      if (join === 'college' || join === 'school' || join === 'campus' || join === 'no one') return false;
+      return true;
     };
 
-    // Saved tab: show ALL activities saved by the user (whether ended or not, campus or global)
+    // Saved tab: show ALL activities saved/bookmarked by the user regardless of visibility or status
     if (selectedTab === 'Saved') {
       const map = new Map();
       (savedActivitiesData || []).forEach(a => { if (a && a.id) map.set(a.id, a); });
@@ -128,28 +124,30 @@ export default function FindYourCrewPage() {
           map.set(a.id, a);
         }
       });
-      const savedList = Array.from(map.values()).map(mapActivity);
+      const savedList = Array.from(map.values()).map(mapActivity).filter(Boolean);
       return filterActivities(savedList, { search: debouncedSearchQuery });
     }
 
-    // "My Activities" — show ALL activities the user is part of (created or joined), regardless of college visibility.
+    // "My Activities" — show ALL activities the user is part of (created or joined), regardless of visibility.
     if (selectedTab === 'My Activities') {
       const mine = allCombinedActivities.filter(a =>
-        a.participants?.includes(currentUser?.id) ||
-        a.isJoined ||
-        a.myStatus === 'MEMBER' ||
-        a.creatorId === currentUser?.id ||
-        a.hostId === currentUser?.id ||
-        a.members?.some(m => (m.userId || m.id || m.user?.id) === currentUser?.id)
+        a && (
+          a.participants?.includes(currentUser?.id) ||
+          a.isJoined ||
+          a.myStatus === 'MEMBER' ||
+          a.creatorId === currentUser?.id ||
+          a.hostId === currentUser?.id ||
+          a.members?.some(m => (m.userId || m.id || m.user?.id) === currentUser?.id)
+        )
       ).sort((a, b) => new Date(a.startDate || a.date || a.createdAt || 0) - new Date(b.startDate || b.date || b.createdAt || 0));
       return filterActivities(mine, { search: debouncedSearchQuery });
     }
 
-    // All other tabs: exclude college-only activities (they live on Campus page)
-    let activities = crewActivities.filter(a => !isCollegeActivity(a));
+    // Public tabs ("For You", "1 on 1"): ONLY show PUBLIC ("Anyone") activities
+    let activities = crewActivities.filter(a => isPublicActivity(a));
 
-    // Exclude ended/past activities from public-facing tabs
-    activities = activities.filter(a => !isActivityEnded(a));
+    // Exclude started/past activities from public-facing tabs
+    activities = activities.filter(a => !isActivityStarted(a));
 
     if (selectedTab === 'For You') {
       if (!searchQuery) activities = activities.slice(0, 10);
@@ -328,11 +326,35 @@ export default function FindYourCrewPage() {
                           ))
                         ) : (
                           <div className={styles.empty}>
-                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
-                              <circle cx="11" cy="11" r="8" />
-                              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                            </svg>
-                            <p>No activities match your search.</p>
+                            <div className={styles.emptyEmoji}>
+                              {searchQuery ? '🔍' : selectedTab === '1 on 1' ? '🤝' : selectedTab === 'Saved' ? '🔖' : '✨'}
+                            </div>
+                            <h3 className={styles.emptyTitle}>
+                              {searchQuery
+                                ? 'No matching activities'
+                                : selectedTab === '1 on 1'
+                                ? 'No 1-on-1 hangouts yet'
+                                : selectedTab === 'Saved'
+                                ? 'No saved activities'
+                                : 'No activities right now'}
+                            </h3>
+                            <p className={styles.emptySubtitle}>
+                              {searchQuery
+                                ? 'Try searching for something else or clear your search query.'
+                                : selectedTab === '1 on 1'
+                                ? 'Create a 2-person activity to connect with someone one-on-one!'
+                                : selectedTab === 'Saved'
+                                ? 'Bookmark activities you like to easily find them here.'
+                                : 'Be the first to spark an activity and gather your crew!'}
+                            </p>
+                            <button
+                              type="button"
+                              className={styles.mobileCreateBtn}
+                              onClick={() => navigate('/crew/create')}
+                            >
+                              <Plus size={18} />
+                              Create Activity
+                            </button>
                           </div>
                         )}
                       </div>

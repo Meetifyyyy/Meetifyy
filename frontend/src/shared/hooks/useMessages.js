@@ -34,7 +34,7 @@ export function useConversations() {
   });
 
   const conversations = useMemo(() => {
-    return (rawConversations || []).map((c) => {
+    const list = (rawConversations || []).map((c) => {
       const pList = c.participants || c.members || [];
       const calculatedIsMember = (!c.type || c.type === 'DIRECT')
         ? true
@@ -43,7 +43,16 @@ export function useConversations() {
             return String(id) === String(currentUser?.id);
           });
       const isMember = c.isMember !== undefined ? c.isMember : calculatedIsMember;
-      const isGroup = c.type === 'GROUP' || c.isGroup;
+      const isGroup = c.type === 'GROUP' || c.type === 'ACTIVITY' || !!c.isGroup || !!c.isActivityChat || Boolean(c.activityId);
+
+      const computedTimestamp = (() => {
+        const times = [
+          c.timestamp,
+          c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).getTime() : 0,
+          c.updatedAt ? new Date(c.updatedAt).getTime() : 0
+        ].filter(Boolean);
+        return times.length > 0 ? Math.max(...times) : 0;
+      })();
 
       return {
         ...c,
@@ -66,19 +75,19 @@ export function useConversations() {
           return '';
         })(),
         lastSenderId: c.lastMessage?.senderId || null,
-        timestamp: c.lastMessage?.createdAt
-          ? new Date(c.lastMessage.createdAt).getTime()
-          : (c.updatedAt ? new Date(c.updatedAt).getTime() : 0),
+        timestamp: computedTimestamp,
         unread: c.unreadCount || c.unread || 0,
         online: isGroup ? false : Boolean(c.targetUser ? c.targetUser.isOnline : (c.isOnline ?? c.online ?? false)),
         isOnline: isGroup ? false : Boolean(c.targetUser ? c.targetUser.isOnline : (c.isOnline ?? c.online ?? false)),
         name: isGroup ? (c.name || 'Group Chat') : (c.name || c.targetUser?.displayName || c.targetUser?.username || 'Chat'),
-        avatar: isGroup ? (c.avatarKey || c.avatar || null) : (c.avatar || c.targetUser?.avatar || null),
+        avatar: isGroup ? (c.avatarKey || c.avatar || (c.activity?.coverImage || null)) : (c.avatar || c.targetUser?.avatar || null),
         username: isGroup ? null : (c.targetUser?.username || null),
         userId: isGroup ? null : (c.targetUser?.id || null),
         targetUser: isGroup ? null : c.targetUser,
       };
     });
+
+    return [...list].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }, [rawConversations, currentUser?.id]);
 
   return {

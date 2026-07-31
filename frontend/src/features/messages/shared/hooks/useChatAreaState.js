@@ -21,6 +21,8 @@ export function useChatAreaState(conversation) {
   const [unsendConfirmMsg, setUnsendConfirmMsg] = useState(null);
   const [forwardingMsg, setForwardingMsg] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { typingUsers, isTyping, typingText, handleKeystroke, stopTypingNow } =
     useTypingIndicator(conversation?.id, currentUser?.id);
@@ -32,6 +34,8 @@ export function useChatAreaState(conversation) {
     setUnsendConfirmMsg(null);
     setForwardingMsg(null);
     setShowDetails(false);
+    setShowSearch(false);
+    setSearchQuery('');
   }, [conversation?.id]);
 
   const handleCopyMessage = useCallback((msg) => {
@@ -81,16 +85,23 @@ export function useChatAreaState(conversation) {
   }, [unsendConfirmMsg, queryClient, conversation]);
 
   const handleDeleteForMe = useCallback(async (msg) => {
+    if (!msg?.id) return;
+    const convIds = Array.from(
+      new Set([conversation?.id, conversation?.publicId, conversation?.internalId].filter(Boolean))
+    );
+
+    // Instant Optimistic Removal (<1ms UX feedback)
+    convIds.forEach((cId) => {
+      removeMessageFromCache(queryClient, cId, msg.id);
+    });
+
     try {
       await messagesApi.deleteMessageForMe(msg.id);
-      const convIds = Array.from(
-        new Set([conversation?.id, conversation?.publicId, conversation?.internalId].filter(Boolean))
-      );
-      convIds.forEach((cId) => {
-        removeMessageFromCache(queryClient, cId, msg.id);
-      });
     } catch {
-      toast.error('Could not delete');
+      toast.error('Could not delete message');
+      convIds.forEach((cId) => {
+        queryClient.invalidateQueries({ queryKey: ['messages', cId] });
+      });
     }
   }, [queryClient, conversation]);
 
@@ -125,6 +136,10 @@ export function useChatAreaState(conversation) {
     setForwardingMsg,
     showDetails,
     setShowDetails,
+    showSearch,
+    setShowSearch,
+    searchQuery,
+    setSearchQuery,
 
     // Handlers
     handleCopyMessage,

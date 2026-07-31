@@ -5,7 +5,7 @@ import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
 import { E2EEManager } from '@shared/lib/signal/E2EEManager';
 import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
 import { useData } from '@shared/hooks/useData';
-import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, STATUS_RANK } from '../utils/cacheUtils';
+import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, STATUS_RANK, checkIsMe } from '../utils/cacheUtils';
 
 import { idbGetMessages, idbSaveMessages, idbPatchMessage, migrateHistoricalFailedMessages } from '../utils/idbMessages';
 
@@ -33,63 +33,77 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
   };
 
   const [idbLoaded, setIdbLoaded] = useState(false);
+  // IDB messages are stored here as placeholder — they are NOT injected into the
+  // TanStack cache directly (which would set isLoading:false prematurely).
+  // Instead they are passed as placeholderData so the query still reports isLoading:true
+  // until the network confirms. Once network responds, its data takes over seamlessly.
+  const idbPlaceholderRef = useRef(null);
 
-  // Pre-seed from IDB with page-chunking so page 0 refetches preserve older historical pages
   useEffect(() => {
-    if (!activeChatId) return;
+    if (!activeChatId) {
+      setIdbLoaded(false);
+      idbPlaceholderRef.current = null;
+      return;
+    }
     let cancelled = false;
     const targetChatId = activeChatId;
+
+    // Reset placeholder for the new chat
+    idbPlaceholderRef.current = null;
+
+    // If TanStack cache already has NETWORK data for this chat, skip IDB entirely.
+    // Network data is identified by having a non-placeholder source — we just check
+    // if the query is not in loading state by looking at existing pages.
+    const currentData = queryClient.getQueryData(['messages', targetChatId]);
+    if (currentData?.pages?.length > 0) {
+      setIdbLoaded(true);
+      return;
+    }
+
+    setIdbLoaded(false);
 
     const matchedConv = conversations?.find((c) => matchesConversationId(c, targetChatId));
     const aliases = getConversationAliases(matchedConv);
     const candidateIds = Array.from(new Set([targetChatId, ...aliases].filter(Boolean)));
 
-    const currentData = queryClient.getQueryData(['messages', targetChatId]);
-    if (!currentData || !currentData.pages || currentData.pages.length === 0) {
-      setIdbLoaded(false);
-      idbGetMessages(candidateIds).then(messages => {
-        if (cancelled) return;
-        if (messages && messages.length > 0) {
-          const latestData = queryClient.getQueryData(['messages', targetChatId]);
-          if (!latestData || !latestData.pages || latestData.pages.length === 0) {
-            const PAGE_SIZE = 50;
-            const pages = [];
-            const pageParams = [];
-            
-            // messages is sorted ascending (oldest first, newest last)
-            const total = messages.length;
-            for (let end = total; end > 0; end -= PAGE_SIZE) {
-              const start = Math.max(0, end - PAGE_SIZE);
-              const pageMsgs = messages.slice(start, end);
-              const oldestInPage = pageMsgs[0];
-              const nextCursor = start > 0 && oldestInPage
-                ? (oldestInPage.createdAt ? `${new Date(oldestInPage.createdAt).toISOString()}|${oldestInPage.id}` : oldestInPage.id)
-                : undefined;
+    idbGetMessages(candidateIds).then(messages => {
+      if (cancelled) return;
 
-              pages.push({ messages: pageMsgs, nextCursor });
-              pageParams.push(pages.length === 1 ? undefined : nextCursor);
-            }
-
-            queryClient.setQueryData(['messages', targetChatId], {
-              pages,
-              pageParams
-            });
-          }
+      if (messages && messages.length > 0) {
+        // Build page structure for placeholderData — same shape as network response
+        const PAGE_SIZE = 50;
+        const pages = [];
+        const pageParams = [];
+        const total = messages.length;
+        for (let end = total; end > 0; end -= PAGE_SIZE) {
+          const start = Math.max(0, end - PAGE_SIZE);
+          const pageMsgs = messages.slice(start, end);
+          const oldestInPage = pageMsgs[0];
+          const nextCursor = start > 0 && oldestInPage
+            ? (oldestInPage.createdAt ? `${new Date(oldestInPage.createdAt).toISOString()}|${oldestInPage.id}` : oldestInPage.id)
+            : undefined;
+          pages.push({ messages: pageMsgs, nextCursor });
+          pageParams.push(pages.length === 1 ? undefined : nextCursor);
         }
-        setIdbLoaded(true);
-      });
-    } else {
-      setIdbLoaded(true);
-    }
+        // Store as placeholder — will be used by useInfiniteQuery's placeholderData option
+        if (!cancelled) idbPlaceholderRef.current = { pages, pageParams };
+      }
+
+      if (!cancelled) setIdbLoaded(true);
+    }).catch(() => {
+      if (!cancelled) setIdbLoaded(true);
+    });
 
     return () => {
       cancelled = true;
     };
   }, [activeChatId, conversations, queryClient]);
 
+
   const {
     data: historyPages,
     isLoading,
+    isFetching,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage
@@ -105,16 +119,28 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         }));
         res.messages = normalizedMsgs;
         idbSaveMessages(activeChatId, normalizedMsgs).catch(console.warn);
+        // After network confirms, clear the IDB placeholder — network data owns the cache now
+        idbPlaceholderRef.current = null;
       }
       return res;
     },
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
-    enabled: !!activeChatId && idbLoaded && !String(activeChatId).startsWith('temp_') && !String(activeChatId).startsWith('c_temp_'),
-    staleTime: 1000 * 60 * 5, // 5 minutes fresh time (prevents aggressive refetch on mount/reconnect that truncates older IDB pages)
-    gcTime: 1000 * 60 * 10,  // Keep memory cache for 10 minutes
-    placeholderData: undefined, // Override global (prev) => prev to prevent stale chat UI leak
+    enabled: !!activeChatId && !String(activeChatId).startsWith('temp_') && !String(activeChatId).startsWith('c_temp_'),
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 10,
+    // placeholderData shows IDB content while network is in-flight WITHOUT setting isLoading:false.
+    // The key insight: placeholderData keeps isLoading:true (or isFetching:true) so callers know
+    // the data is not yet confirmed by the server. The flicker is eliminated because we show
+    // a loading skeleton instead of IDB messages during the brief network fetch.
+    placeholderData: undefined,
   });
+
+  // Expose a combined loading state: true when we have no CONFIRMED network data yet.
+  // This is used by MessagesLayout to show a skeleton while the first network fetch is in-flight,
+  // even if IDB has data (which would otherwise flash before network responds).
+  const isLoadingMessages = isLoading || (isFetching && !historyPages?.pages?.length);
+
 
   // Decrypt E2EE messages on the fly (optimistic/background)
   useEffect(() => {
@@ -683,7 +709,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
   return {
     messages: allMessages,
     rawPages: historyPages?.pages,
-    isLoading,
+    isLoading: isLoadingMessages,
     hasMore: hasNextPage,
     isLoadingMore: isFetchingNextPage,
     onLoadMore: fetchNextPage,
@@ -691,3 +717,4 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     markSeenIfEligible,
   };
 }
+

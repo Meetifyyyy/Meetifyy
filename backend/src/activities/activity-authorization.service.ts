@@ -22,7 +22,7 @@ export interface ActivityAuthTarget {
 export interface AuthDecision {
   allowed: boolean;
   reason?: string;
-  code?: 'ALLOWED' | 'NOT_FOUND' | 'BLOCKED' | 'PRIVATE' | 'COLLEGE_RESTRICTED' | 'FULL' | 'NOT_OPEN' | 'PAST_MEMBER';
+  code?: 'ALLOWED' | 'NOT_FOUND' | 'BLOCKED' | 'PRIVATE' | 'COLLEGE_RESTRICTED' | 'FULL' | 'NOT_OPEN' | 'PAST_MEMBER' | 'CANCELLED';
 }
 
 @Injectable()
@@ -115,6 +115,9 @@ export class ActivityAuthorizationService {
     }
 
     // Status check
+    if (activity.status === CrewActivityStatus.CANCELLED || (activity.status as any) === 'CANCELLED') {
+      return { allowed: false, reason: 'This activity has been cancelled', code: 'CANCELLED' };
+    }
     if (activity.status !== CrewActivityStatus.OPEN) {
       return { allowed: false, reason: 'Activity is not open for joining', code: 'NOT_OPEN' };
     }

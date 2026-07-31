@@ -35,7 +35,9 @@ export default function GroupChatHeader({
   );
 
   const isClosed = conversation.status === 'Closed' || conversation.isClosed;
-  const memberCount = conversation.members?.length || conversation.participants?.length || conversation.memberCount || 0;
+  const countFromDetails = conversation.memberDetails?.length || conversation.memberCount || conversation.membersCount;
+  const countFromProps = Array.isArray(conversation.members) && conversation.members.length > 0 ? conversation.members.length : (Array.isArray(conversation.participants) && conversation.participants.length > 0 ? conversation.participants.length : 0);
+  const memberCount = countFromDetails || countFromProps || conversation.memberCount || 0;
   const pendingRequests = conversation.pendingRequests || [];
   const hasPendingRequests = pendingRequests.length > 0;
 
@@ -96,7 +98,7 @@ export default function GroupChatHeader({
 
       <div className={`${styles.msgChatUser} ${styles.msgChatUserClickable}`}>
         <div style={{ position: 'relative', width: '38px', height: '38px', flexShrink: 0 }}>
-          <Avatar src={conversation.avatar || conversation.icon || conversation.coverImage || conversation.avatarUrl} name={conversation.name} size="38px" isGroup />
+          <Avatar src={conversation.avatarKey || conversation.avatar || conversation.icon || conversation.coverImage || conversation.avatarUrl} name={conversation.name} size="38px" isGroup />
           {isActivityChat && (
             isEnded ? (
               <span className={styles.activityCalendarBadge} title="Activity ended">
@@ -127,8 +129,8 @@ export default function GroupChatHeader({
           </div>
           <div className={styles.msgChatStatus}>
             {isActivityChat
-              ? (formattedTiming || 'Activity')
-              : (memberCount > 0 ? `${memberCount} members` : 'Group')}
+              ? (formattedTiming ? `${formattedTiming} • ${memberCount > 0 ? `${memberCount} member${memberCount > 1 ? 's' : ''}` : 'Activity'}` : (memberCount > 0 ? `${memberCount} member${memberCount > 1 ? 's' : ''}` : 'Activity'))
+              : (memberCount > 0 ? `${memberCount} member${memberCount > 1 ? 's' : ''}` : 'Group')}
           </div>
         </div>
       </div>
@@ -155,6 +157,24 @@ export default function GroupChatHeader({
                 </button>
               )}
 
+              {onToggleSearch && (
+                <button 
+                  className={styles.msgDropdownItem} 
+                  onClick={() => { onToggleSearch(); setShowMoreMenu(false); }}
+                >
+                  <Search size={14} />
+                  Find in chat
+                </button>
+              )}
+
+              <button 
+                className={styles.msgDropdownItem} 
+                onClick={() => { setIsMuted(!isMuted); setShowMoreMenu(false); }}
+              >
+                {isMuted ? <BellRing size={14} /> : <BellOff size={14} />}
+                {isMuted ? 'Unmute Alerts' : 'Mute Alerts'}
+              </button>
+
               {onTogglePin && (
                 <button 
                   className={styles.msgDropdownItem} 
@@ -162,6 +182,16 @@ export default function GroupChatHeader({
                 >
                   <Pin size={14} />
                   {conversation.pinned || conversation.isPinned ? 'Unpin Group' : 'Pin Group'}
+                </button>
+              )}
+
+              {!isClosed && (conversation.isMember !== false) && isAdmin && onOpenSettings && (
+                <button 
+                  className={styles.msgDropdownItem} 
+                  onClick={() => { onOpenSettings(); setShowMoreMenu(false); }}
+                >
+                  <Settings size={14} />
+                  Group Settings
                 </button>
               )}
 
@@ -175,54 +205,26 @@ export default function GroupChatHeader({
                 </button>
               )}
 
-              {!isClosed && (
-                <>
-                  {isAdmin && onOpenSettings && (
-                    <button 
-                      className={styles.msgDropdownItem} 
-                      onClick={() => { onOpenSettings(); setShowMoreMenu(false); }}
-                    >
-                      <Settings size={14} />
-                      Group Settings
-                    </button>
-                  )}
-                  {onToggleSearch && (
-                    <button 
-                      className={styles.msgDropdownItem} 
-                      onClick={() => { onToggleSearch(); setShowMoreMenu(false); }}
-                    >
-                      <Search size={14} />
-                      Find in chat
-                    </button>
-                  )}
+              {!isClosed && (conversation.isMember !== false) && (
+                isOwner ? (
                   <button 
                     className={styles.msgDropdownItem} 
-                    onClick={() => { setIsMuted(!isMuted); setShowMoreMenu(false); }}
+                    onClick={() => { if (onEndGroup) onEndGroup(conversation.id); else if (onOpenDetails) onOpenDetails(); setShowMoreMenu(false); }}
                   >
-                    {isMuted ? <BellRing size={14} /> : <BellOff size={14} />}
-                    {isMuted ? 'Unmute Alerts' : 'Mute Alerts'}
+                    <LogOut size={14} />
+                    End Group
                   </button>
-
-                  {isOwner ? (
+                ) : (
+                  onLeaveGroup && (
                     <button 
                       className={styles.msgDropdownItem} 
-                      onClick={() => { if (onEndGroup) onEndGroup(conversation.id); else if (onOpenDetails) onOpenDetails(); setShowMoreMenu(false); }}
+                      onClick={() => { onLeaveGroup(); setShowMoreMenu(false); }}
                     >
                       <LogOut size={14} />
-                      End Group
+                      Leave Group
                     </button>
-                  ) : (
-                    onLeaveGroup && (
-                      <button 
-                        className={styles.msgDropdownItem} 
-                        onClick={() => { onLeaveGroup(); setShowMoreMenu(false); }}
-                      >
-                        <LogOut size={14} />
-                        Leave Group
-                      </button>
-                    )
-                  )}
-                </>
+                  )
+                )
               )}
             </div>
           )}
