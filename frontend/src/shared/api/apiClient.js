@@ -31,7 +31,11 @@ if (supabase) {
 }
 
 export const getBackendUrl = () => {
-  const rawEnv = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+  let rawEnv = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+
+  if (rawEnv.includes('dev-api.meetifyy.app')) {
+    rawEnv = 'https://meetifyy-production.up.railway.app';
+  }
 
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
     const host = window.location.hostname;
@@ -60,6 +64,15 @@ export const getBackendUrl = () => {
       return `https://${rawEnv}`;
     }
     return rawEnv;
+  }
+
+  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+    const host = window.location.hostname;
+    const isLocalHost = host === 'localhost' || host === '127.0.0.1';
+    const isLocalIp = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|.+\.local$)/.test(host) || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+    if (!isLocalHost && !isLocalIp) {
+      return 'https://meetifyy-production.up.railway.app';
+    }
   }
 
   return 'http://127.0.0.1:4000';
