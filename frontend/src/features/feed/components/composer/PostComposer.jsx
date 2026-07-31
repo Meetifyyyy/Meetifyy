@@ -82,7 +82,7 @@ function PostComposer({ onSubmit }) {
         if (media.type === 'video') {
            finalMedia = { type: media.type, url: URL.createObjectURL(media.file) };
         } else {
-           const { publicUrl } = await processAndUploadImage(media.file, 'post-media', { maxWidthOrHeight: 1920 });
+           const { publicUrl } = await processAndUploadImage(media.file, 'posts', { maxWidthOrHeight: 1920 });
            finalMedia = { type: media.type, url: publicUrl };
         }
       }

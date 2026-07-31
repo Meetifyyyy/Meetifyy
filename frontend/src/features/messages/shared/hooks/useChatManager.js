@@ -428,9 +428,9 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         const file = fileObj;
         let uploadRes;
         if (file.type.startsWith('image/')) {
-          uploadRes = await processAndUploadImage(file, 'messages');
+          uploadRes = await processAndUploadImage(file, 'chat');
         } else {
-          uploadRes = await uploadFileDirect(file, 'messages');
+          uploadRes = await uploadFileDirect(file, 'chat');
         }
         if (uploadRes?.publicUrl) {
           finalMediaUrl = uploadRes.publicUrl;

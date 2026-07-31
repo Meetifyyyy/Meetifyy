@@ -272,7 +272,7 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
       if (avatarPreview) {
         const croppedFile = await getCroppedAvatarFile();
         if (croppedFile) {
-          const { publicUrl } = await processAndUploadImage(croppedFile, 'community-icons', { maxWidthOrHeight: 512 });
+          const { publicUrl } = await processAndUploadImage(croppedFile, 'communities', { maxWidthOrHeight: 512 });
           finalAvatar = publicUrl;
           hasCustomAvatar = true;
         }

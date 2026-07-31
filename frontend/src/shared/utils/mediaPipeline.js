@@ -91,6 +91,7 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
       xhr.open('PUT', uploadUrl);
       xhr.withCredentials = uploadUrl.startsWith('/');
       xhr.setRequestHeader('Content-Type', file.type);
+      xhr.setRequestHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
       if (onProgress && xhr.upload) {
         xhr.upload.onprogress = (e) => {
