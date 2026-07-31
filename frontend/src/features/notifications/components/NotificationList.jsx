@@ -33,16 +33,18 @@ export default function NotificationList({
     if (liveUser) {
       return {
         name: liveUser.displayName || liveUser.username || 'Someone',
-        avatar: liveUser.avatar || '',
-        username: liveUser.username || ''
+        avatar: liveUser.avatar,
+        username: liveUser.username || '',
+        isLive: true
       };
     }
 
     if (notif.actor && (notif.actor.displayName || notif.actor.username)) {
       return {
         name: notif.actor.displayName || notif.actor.username,
-        avatar: notif.actor.avatar || '',
-        username: notif.actor.username || ''
+        avatar: notif.actor.avatar,
+        username: notif.actor.username || '',
+        hasActor: true
       };
     }
 

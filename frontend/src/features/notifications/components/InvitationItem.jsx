@@ -10,6 +10,12 @@ export default function InvitationItem({
   onDecline,
   onViewActivity
 }) {
+  const isExpired = 
+    inv.activityStatus === 'ENDED' || 
+    inv.activityStatus === 'COMPLETED' || 
+    inv.activityStatus === 'CANCELLED' || 
+    (inv.startDate && new Date(inv.startDate) < new Date());
+
   return (
     <div 
       className={`${styles.invitationItem} ${!isRead ? styles.unread : ''}`} 
@@ -48,24 +54,30 @@ export default function InvitationItem({
         )}
 
         <div className={styles.invitationActions}>
-          <button 
-            className={styles.acceptBtn}
-            onClick={(e) => {
-              e.stopPropagation();
-              onAccept(inv.id, inv);
-            }}
-          >
-            Accept
-          </button>
-          <button 
-            className={styles.declineBtn}
-            onClick={(e) => {
-              e.stopPropagation();
-              onDecline(inv.id, inv);
-            }}
-          >
-            Decline
-          </button>
+          {isExpired ? (
+            <span className={styles.expiredText}>Expired</span>
+          ) : (
+            <>
+              <button 
+                className={styles.acceptBtn}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAccept(inv.id, inv);
+                }}
+              >
+                Accept
+              </button>
+              <button 
+                className={styles.declineBtn}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDecline(inv.id, inv);
+                }}
+              >
+                Decline
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

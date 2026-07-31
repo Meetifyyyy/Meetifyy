@@ -43,7 +43,13 @@ export class RouteErrorBoundary extends Component {
             {this.state.error?.message || 'An unexpected error occurred.'}
           </p>
           <button
-            onClick={() => this.setState({ hasError: false, error: null })}
+            onClick={() => {
+              if (this.state.error?.message?.includes('Failed to fetch dynamically imported module')) {
+                window.location.reload();
+              } else {
+                this.setState({ hasError: false, error: null });
+              }
+            }}
             style={{
               marginTop: '0.25rem',
               padding: '0.55rem 1.4rem',

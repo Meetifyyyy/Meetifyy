@@ -721,6 +721,13 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
               visibility: true,
               allowSharing: true,
               editGroupPermission: true,
+              _count: {
+                select: {
+                  participants: {
+                    where: { leftAt: null, deletedAt: null }
+                  }
+                }
+              }
             }
           }
         }
@@ -853,7 +860,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         pendingRequests: [],
         admins: [],
         members: [],
-        memberCount: isGroupConv ? ((conv as any).memberCount || 0) : 0,
+        memberCount: isGroupConv ? (conv._count?.participants || (conv as any).memberCount || 0) : 0,
         pinned: p.isPinned || false,
         muted: p.isMuted || false,
         blocked: blockStatus.isBlockedByMe,

@@ -2,7 +2,13 @@ export function canSeeOnlineStatus(currentUser, targetUser) {
   if (!targetUser) return false;
   if (currentUser && targetUser.username === currentUser.username) return true;
 
-  const prefs = targetUser.preferences || {};
+  // RULE: If current user hides their own status, they cannot see others'
+  const currentUserPrefs = currentUser?.settings || currentUser?.preferences || {};
+  if (currentUserPrefs.showOnlineStatus === false) {
+    return false;
+  }
+
+  const prefs = targetUser.settings || targetUser.preferences || {};
   const showOnline = prefs.showOnlineStatus ?? true;
   if (!showOnline) return false;
 

@@ -259,6 +259,7 @@ export default function ChatMessageList({
 
   const totalSize = rowVirtualizer.getTotalSize();
   const hasScrolledInitialRef = useRef(false);
+  const isAtBottomRef = useRef(true);
   const [isInitialReady, setIsInitialReady] = useState(false);
 
   useEffect(() => {
@@ -270,6 +271,7 @@ export default function ChatMessageList({
     if (bodyRef.current) {
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight + 10000;
       prevScrollHeightRef.current = bodyRef.current.scrollHeight;
+      isAtBottomRef.current = true;
     }
     if (itemsToRender.length > 0) {
       try {
@@ -296,54 +298,25 @@ export default function ChatMessageList({
 
       scrollToBottom();
       setIsInitialReady(true);
-
-      const raf1 = requestAnimationFrame(() => scrollToBottom());
-      const raf2 = requestAnimationFrame(() => requestAnimationFrame(() => scrollToBottom()));
-      const t1 = setTimeout(scrollToBottom, 40);
-      const t2 = setTimeout(scrollToBottom, 120);
-      const t3 = setTimeout(scrollToBottom, 300);
-
-      return () => {
-        cancelAnimationFrame(raf1);
-        cancelAnimationFrame(raf2);
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
-      };
+      return;
     }
 
     const isPrepend = firstMsgId && prevFirstMsgId && firstMsgId !== prevFirstMsgId && currentCount > prevCount;
 
-    // SCENARIO 2: Prepend (Loading older history)
-    if (isPrepend) {
-      requestAnimationFrame(() => {
-        if (bodyRef.current) {
-          const newScrollHeight = bodyRef.current.scrollHeight;
-          const diff = newScrollHeight - prevScrollHeightRef.current;
-          bodyRef.current.scrollTop += diff;
-          prevScrollHeightRef.current = newScrollHeight;
-        }
-      });
-    } else if (currentCount > prevCount) {
-      // SCENARIO 3: Append (New message sent or received)
+    // SCENARIO 3: Append (New message sent)
+    if (currentCount > prevCount && !isPrepend) {
       const lastMsg = messages[messages.length - 1];
       const isFromMe = lastMsg?.from === 'me' || String(lastMsg?.senderId) === String(currentUser?.id);
-      const isNearBottom = (bodyRef.current.scrollHeight - bodyRef.current.scrollTop - bodyRef.current.clientHeight) < 180;
 
-      if (isFromMe || isNearBottom) {
+      if (isFromMe) {
         scrollToBottom();
-        requestAnimationFrame(() => {
-          scrollToBottom();
-          setTimeout(scrollToBottom, 50);
-        });
       }
     }
 
     prevFirstMsgIdRef.current = firstMsgId;
     prevMessagesCountRef.current = currentCount;
-    if (bodyRef.current) {
-      prevScrollHeightRef.current = bodyRef.current.scrollHeight;
-    }
+    // prevScrollHeightRef.current will be updated in the totalSize layout effect / ResizeObserver
+
   }, [messages, conversation?.id, conversation?.publicId, currentUser?.id, replyingTo, scrollToBottom]);
 
   // Lock scroll position to bottom during virtualizer measurement & image layout changes
@@ -353,10 +326,17 @@ export default function ChatMessageList({
     const target = virtualInnerRef.current;
 
     const observer = new ResizeObserver(() => {
-      if (!hasScrolledInitialRef.current) return;
-      const isNearBottom = (body.scrollHeight - body.scrollTop - body.clientHeight) < 180;
-      if (isNearBottom) {
-        body.scrollTop = body.scrollHeight + 10000;
+      if (!hasScrolledInitialRef.current || !body) return;
+      const newScrollHeight = body.scrollHeight;
+      const diff = newScrollHeight - prevScrollHeightRef.current;
+      
+      if (diff !== 0) {
+        if (isAtBottomRef.current) {
+          body.scrollTop = newScrollHeight + 10000;
+        } else {
+          body.scrollTop += diff;
+        }
+        prevScrollHeightRef.current = newScrollHeight;
       }
     });
 
@@ -364,18 +344,28 @@ export default function ChatMessageList({
     return () => observer.disconnect();
   }, [conversation?.id, conversation?.publicId]);
 
-  useEffect(() => {
-    if (bodyRef.current && hasScrolledInitialRef.current) {
-      const isNearBottom = (bodyRef.current.scrollHeight - bodyRef.current.scrollTop - bodyRef.current.clientHeight) < 180;
-      if (isNearBottom) {
-        bodyRef.current.scrollTop = bodyRef.current.scrollHeight + 10000;
+  useLayoutEffect(() => {
+    if (!bodyRef.current || !hasScrolledInitialRef.current) return;
+    
+    const newScrollHeight = bodyRef.current.scrollHeight;
+    const diff = newScrollHeight - prevScrollHeightRef.current;
+
+    if (diff !== 0) {
+      if (isAtBottomRef.current) {
+        bodyRef.current.scrollTop = newScrollHeight + 10000;
+      } else {
+        bodyRef.current.scrollTop += diff;
       }
+      prevScrollHeightRef.current = newScrollHeight;
     }
   }, [totalSize]);
 
   const handleScroll = () => {
     if (!bodyRef.current) return;
     
+    const isNearBottom = (bodyRef.current.scrollHeight - bodyRef.current.scrollTop - bodyRef.current.clientHeight) < 180;
+    isAtBottomRef.current = isNearBottom;
+
     if (!hasMore || isLoadingMore || isLoading) return;
     
     // Scrolling up towards older messages

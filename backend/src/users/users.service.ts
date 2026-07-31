@@ -87,6 +87,12 @@ export class UsersService {
         collegeId: true,
         major: true,
         graduationYear: true,
+        settings: {
+          select: {
+            showOnlineStatus: true,
+            whoCanSeeOnline: true
+          }
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -138,7 +144,13 @@ export class UsersService {
         collegeId: true,
         major: true,
         graduationYear: true,
-        college: { select: { name: true } }
+        college: { select: { name: true } },
+        settings: {
+          select: {
+            showOnlineStatus: true,
+            whoCanSeeOnline: true
+          }
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -318,6 +330,12 @@ export class UsersService {
         WHERE "username" = ${cleanUsername} OR "id" = ${cleanUsername}
         LIMIT 1
       ),
+      follower_user AS (
+        SELECT "id", "username", "displayName", "avatar"
+        FROM "User"
+        WHERE "id" = ${followerId}
+        LIMIT 1
+      ),
       block_check AS (
         SELECT 1 FROM "Block" b, target_user tu
         WHERE (b."blockerId" = ${followerId} AND b."blockedId" = tu."id")
@@ -338,12 +356,16 @@ export class UsersService {
         tu."username" AS "targetUsername",
         tu."displayName" AS "targetDisplayName",
         tu."avatar" AS "targetAvatar",
+        fu."username" AS "followerUsername",
+        fu."displayName" AS "followerDisplayName",
+        fu."avatar" AS "followerAvatar",
         EXISTS(SELECT 1 FROM block_check) AS "isBlocked",
         EXISTS(SELECT 1 FROM ins) AS "newlyFollowed",
         ((SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followingId" = tu."id") + CASE WHEN EXISTS(SELECT 1 FROM ins) THEN 1 ELSE 0 END) AS "targetFollowers",
         (SELECT COUNT(*)::int FROM "Follow" f, target_user tu WHERE f."followerId" = tu."id") AS "targetFollowing",
         ((SELECT COUNT(*)::int FROM "Follow" f WHERE f."followerId" = ${followerId}) + CASE WHEN EXISTS(SELECT 1 FROM ins) THEN 1 ELSE 0 END) AS "currentFollowing"
-      FROM target_user tu;
+      FROM target_user tu
+      CROSS JOIN follower_user fu;
     `;
 
     const tDb = performance.now();
@@ -368,9 +390,9 @@ export class UsersService {
         followerId,
         followingId: res.targetId,
         actor: {
-          username: res.targetUsername,
-          displayName: res.targetDisplayName,
-          avatar: res.targetAvatar,
+          username: res.followerUsername,
+          displayName: res.followerDisplayName,
+          avatar: res.followerAvatar,
         },
       };
       this.notifQueue.add('follow-notification', jobData, {

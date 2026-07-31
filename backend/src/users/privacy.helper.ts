@@ -10,6 +10,14 @@ export async function checkPresenceVisibility(
   if (!isEnabled) return false;
   if (!targetUserId) return false;
   if (targetUserId === viewerUserId) return true;
+
+  // RULE: If viewer hides their own online status, they cannot see others'
+  const viewerSettings = await prisma.userSettings.findUnique({
+    where: { userId: viewerUserId },
+    select: { showOnlineStatus: true }
+  });
+  if (viewerSettings && viewerSettings.showOnlineStatus === false) return false;
+
   if (rule === 'nobody') return false;
   if (rule === 'everyone' || !rule) return true;
 
@@ -60,13 +68,27 @@ export async function checkPresenceVisibilityBatch(
   prisma: PrismaService
 ): Promise<string[]> {
   if (!isEnabled || !targetUserId || rule === 'nobody' || viewerUserIds.length === 0) return [];
-  if (rule === 'everyone' || !rule) return viewerUserIds;
+
+  // Filter out viewers who have hidden their own online status
+  const viewerSettings = await prisma.userSettings.findMany({
+    where: { userId: { in: viewerUserIds } },
+    select: { userId: true, showOnlineStatus: true }
+  });
+  
+  const hiddenViewers = new Set(
+    viewerSettings.filter(s => s.showOnlineStatus === false).map(s => s.userId)
+  );
+
+  const eligibleViewers = viewerUserIds.filter(vId => !hiddenViewers.has(vId));
+  if (eligibleViewers.length === 0) return [];
+
+  if (rule === 'everyone' || !rule) return eligibleViewers;
 
   if (rule === 'following') {
     const follows = await prisma.follow.findMany({
       where: {
         followerId: targetUserId,
-        followingId: { in: viewerUserIds }
+        followingId: { in: eligibleViewers }
       },
       select: { followingId: true }
     });
@@ -75,7 +97,7 @@ export async function checkPresenceVisibilityBatch(
 
   if (rule === 'mutual') {
     const targetFollows = await prisma.follow.findMany({
-      where: { followerId: targetUserId, followingId: { in: viewerUserIds } },
+      where: { followerId: targetUserId, followingId: { in: eligibleViewers } },
       select: { followingId: true }
     });
     const targetFollowsSet = new Set(targetFollows.map(f => f.followingId));
@@ -83,13 +105,13 @@ export async function checkPresenceVisibilityBatch(
     if (targetFollowsSet.size === 0) return [];
 
     const viewerFollows = await prisma.follow.findMany({
-      where: { followerId: { in: viewerUserIds }, followingId: targetUserId },
+      where: { followerId: { in: eligibleViewers }, followingId: targetUserId },
       select: { followerId: true }
     });
     const viewerFollowsSet = new Set(viewerFollows.map(f => f.followerId));
 
-    return viewerUserIds.filter(vId => targetFollowsSet.has(vId) && viewerFollowsSet.has(vId));
+    return eligibleViewers.filter(vId => targetFollowsSet.has(vId) && viewerFollowsSet.has(vId));
   }
 
-  return viewerUserIds;
+  return eligibleViewers;
 }

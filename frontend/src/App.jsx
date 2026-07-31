@@ -44,6 +44,8 @@ function lazyWithRetry(componentImport) {
         const url = new URL(window.location.href);
         url.searchParams.set('_v', Date.now().toString());
         window.location.replace(url.toString());
+      } else {
+        window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'false');
       }
       throw error;
     }

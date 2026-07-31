@@ -112,6 +112,7 @@ function SystemMessageContent({ text, navigate }) {
 }
 
 const loadedImageUrls = new Set();
+const cachedMediaStyles = new Map();
 
 function getResponsiveMediaLimits(isInline = false) {
   const vw = typeof window !== 'undefined' ? window.innerWidth : 640;
@@ -176,7 +177,7 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
   const [imgSrc, setImgSrc] = useState(null);
   const [error, setError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  const [mediaStyle, setMediaStyle] = useState(null);
+  const [mediaStyle, setMediaStyle] = useState(() => src ? cachedMediaStyles.get(src) || null : null);
   const prevSrcRef = useRef(src);
 
   useEffect(() => {
@@ -258,7 +259,9 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
     if (src) loadedImageUrls.add(src);
 
     if (e?.target?.naturalWidth && e?.target?.naturalHeight) {
-      setMediaStyle(calculateMediaDimensions(e.target.naturalWidth, e.target.naturalHeight, !isStandalone));
+      const style = calculateMediaDimensions(e.target.naturalWidth, e.target.naturalHeight, !isStandalone);
+      if (src) cachedMediaStyles.set(src, style);
+      setMediaStyle(style);
     }
   };
 
@@ -276,9 +279,10 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
   }
 
   const finalSrc = imgSrc || src;
+  const defaultMediaStyle = { width: isStandalone ? '260px' : '220px', height: isStandalone ? '260px' : '220px' };
 
   return (
-    <div className={`${styles.msgMediaWrapper} ${isStandalone ? styles.msgMediaWrapperStandalone : ''}`} style={{ background: 'transparent', ...(mediaStyle || {}) }}>
+    <div className={`${styles.msgMediaWrapper} ${isStandalone ? styles.msgMediaWrapperStandalone : ''}`} style={{ background: 'transparent', ...(mediaStyle || defaultMediaStyle) }}>
       {!loaded && (
         <div className={`${styles.msgMediaSkeleton} ${isStandalone ? styles.msgMediaSkeletonStandalone : ''}`}>
           <ImageIcon size={22} className={styles.msgMediaSkeletonIcon} />
@@ -303,7 +307,7 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
 function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpenMediaModal }) {
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [mediaStyle, setMediaStyle] = useState(null);
+  const [mediaStyle, setMediaStyle] = useState(() => src ? cachedMediaStyles.get(src) || null : null);
 
   const handlePlayClick = (e) => {
     e.stopPropagation();
@@ -322,7 +326,9 @@ function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpen
 
   const handleLoadedMetadata = (e) => {
     if (e?.target?.videoWidth && e?.target?.videoHeight) {
-      setMediaStyle(calculateMediaDimensions(e.target.videoWidth, e.target.videoHeight, isInline));
+      const style = calculateMediaDimensions(e.target.videoWidth, e.target.videoHeight, isInline);
+      if (src) cachedMediaStyles.set(src, style);
+      setMediaStyle(style);
     }
   };
 
@@ -330,8 +336,8 @@ function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpen
     <div
       style={{
         position: 'relative',
-        width: mediaStyle?.width || '100%',
-        height: mediaStyle?.height || '100%',
+        width: mediaStyle?.width || (isInline ? '220px' : '260px'),
+        height: mediaStyle?.height || (isInline ? '220px' : '260px'),
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -341,12 +347,18 @@ function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpen
       }}
       onClick={() => onOpenMediaModal && onOpenMediaModal(src, 'video')}
     >
+      {!mediaStyle && (
+        <div className={`${styles.msgMediaSkeleton} ${!isInline ? styles.msgMediaSkeletonStandalone : ''}`}>
+          <Play size={22} className={styles.msgMediaSkeletonIcon} />
+        </div>
+      )}
       <video
         ref={videoRef}
         src={src}
         playsInline
         preload="metadata"
         onLoadedMetadata={handleLoadedMetadata}
+        className={`${!mediaStyle ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
         style={{
           display: 'block',
           width: '100%',
@@ -359,9 +371,10 @@ function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpen
           ...(mediaStyle || {})
         }}
       />
-      <button
-        type="button"
-        onClick={handlePlayClick}
+      {mediaStyle && (
+        <button
+          type="button"
+          onClick={handlePlayClick}
         aria-label="Play in media viewer"
         style={{
           position: 'absolute',
@@ -388,6 +401,7 @@ function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpen
       >
         <Play size={24} fill="white" />
       </button>
+      )}
     </div>
   );
 }

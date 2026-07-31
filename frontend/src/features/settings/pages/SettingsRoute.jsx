@@ -321,6 +321,9 @@ export default function SettingsRoute() {
         });
       }
       queryClient.invalidateQueries({ queryKey: ['profile'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['campusUsers'] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
       updateSettings({
         privateProfile,
         showOnlineStatus,
