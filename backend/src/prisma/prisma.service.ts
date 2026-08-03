@@ -3,8 +3,8 @@ import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient<
-  { log: [{ emit: 'event', level: 'query' }, { emit: 'stdout', level: 'error' }, { emit: 'stdout', level: 'warn' }] },
-  'query'
+  { log: [{ emit: 'event', level: 'query' }, { emit: 'event', level: 'error' }, { emit: 'event', level: 'warn' }] },
+  'query' | 'error' | 'warn'
 > implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('DATABASE');
   private keepAliveTimer: NodeJS.Timeout | null = null;
@@ -13,8 +13,8 @@ export class PrismaService extends PrismaClient<
     super({
       log: [
         { emit: 'event', level: 'query' },
-        { emit: 'stdout', level: 'error' },
-        { emit: 'stdout', level: 'warn' },
+        { emit: 'event', level: 'error' },
+        { emit: 'event', level: 'warn' },
       ],
     });
 
@@ -61,6 +61,21 @@ export class PrismaService extends PrismaClient<
       } else if (isDev) {
         this.logger.debug(`Query (${e.duration}ms) - ${e.query}`);
       }
+    });
+
+    // @ts-ignore
+    this.$on('error', (e: any) => {
+      // Ignore noisy raw logs for P1001 transient connection drops,
+      // as our $use middleware already handles them gracefully with retries.
+      if (e.message && (e.message.includes('P1001') || e.message.includes("Can't reach database server"))) {
+        return;
+      }
+      this.logger.error(e.message || e);
+    });
+
+    // @ts-ignore
+    this.$on('warn', (e: any) => {
+      this.logger.warn(e.message || e);
     });
 
     try {

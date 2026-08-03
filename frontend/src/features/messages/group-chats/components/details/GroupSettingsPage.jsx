@@ -28,6 +28,8 @@ export default function GroupSettingsPage({
   handleEndActivity,
   handleEndGroup
 }) {
+  const isCancelled = (conversation?.activity?.status || conversation?.status || '').toUpperCase() === 'CANCELLED';
+
   return (
     <div className={sharedStyles.container}>
       {/* Header */}
@@ -268,7 +270,11 @@ export default function GroupSettingsPage({
                   className={styles.settingRow}
                   onClick={handleLeaveGroup}
                 >
-                  <span className={styles.settingLabel} style={{ color: '#ef4444', fontWeight: '600' }}>Leave Group</span>
+                  <span className={styles.settingLabel} style={{ color: '#ef4444', fontWeight: '600' }}>
+                    {isEventGroup
+                      ? (activityHasStarted || isCancelled ? 'Leave Group' : 'Leave Activity')
+                      : 'Leave Group'}
+                  </span>
                 </button>
               )}
 
@@ -277,14 +283,16 @@ export default function GroupSettingsPage({
                   type="button" 
                   className={styles.settingRow}
                   onClick={() => {
-                    if (isEventGroup) {
+                    if (isEventGroup && !activityHasStarted && !isCancelled) {
                       handleEndActivity();
                     } else {
                       handleEndGroup();
                     }
                   }}
                 >
-                  <span className={styles.settingLabel} style={{ color: '#ef4444', fontWeight: '600' }}>End Group</span>
+                  <span className={styles.settingLabel} style={{ color: '#ef4444', fontWeight: '600' }}>
+                    {isEventGroup && !activityHasStarted && !isCancelled ? 'Cancel Activity' : 'End Group'}
+                  </span>
                 </button>
               )}
             </div>

@@ -923,12 +923,24 @@ export class ActivitiesService implements OnModuleInit {
       this.prisma.activityInvitation.updateMany({
         where: { activityId, status: 'PENDING' },
         data: { status: 'EXPIRED' },
+      }),
+      this.prisma.conversation.updateMany({
+        where: { activityId },
+        data: { status: 'Closed' }
       })
     ]);
 
-    setImmediate(() => {
+    setImmediate(async () => {
       this.domainEventService.emit('activity.updated', { id: activityId, status: 'CANCELLED' });
       this.clearActivityFeedCaches();
+      try {
+        const convs = await this.prisma.conversation.findMany({ where: { activityId }, select: { id: true } });
+        for (const conv of convs) {
+          this.domainEventService.emit('conversation:updated', { conversationId: conv.id });
+        }
+      } catch (e) {
+        // ignore
+      }
     });
 
     return { success: true };
