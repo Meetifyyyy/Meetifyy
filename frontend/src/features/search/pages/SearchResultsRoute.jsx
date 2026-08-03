@@ -175,13 +175,14 @@ export default function SearchResultsRoute() {
   const formatDateTime = (activity) => {
     if (!activity) return '';
     const startRaw = activity.startDate || activity.date || activity.createdAt;
+    const endRaw = activity.endDate || activity.createdAt;
+    
     if (!startRaw) return '';
     
     const startD = new Date(startRaw);
     if (isNaN(startD.getTime())) return '';
 
-    const endRaw = activity.endDate;
-    const endD = endRaw ? new Date(endRaw) : null;
+    const endD = endRaw ? new Date(endRaw) : startD;
 
     const startDateFormatted = startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const startTimeStr = activity.time || startD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -191,6 +192,9 @@ export default function SearchResultsRoute() {
       const endTimeStr = activity.endTime || endD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
       if (startDateFormatted === endDateFormatted) {
+        if (startTimeStr === endTimeStr) {
+          return `${startDateFormatted} • ${startTimeStr}`;
+        }
         return `${startDateFormatted} • ${startTimeStr} – ${endTimeStr}`;
       } else {
         return `${startDateFormatted} • ${startTimeStr} → ${endDateFormatted} • ${endTimeStr}`;

@@ -27,7 +27,12 @@ function lazyWithRetry(componentImport) {
       window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'false');
       return component;
     } catch (error) {
-      if (!pageHasAlreadyBeenReloaded) {
+      const isChunkError =
+        error?.name === 'ChunkLoadError' ||
+        error?.message?.includes('Failed to fetch dynamically imported module') ||
+        error?.message?.includes('Importing a module script failed');
+
+      if (isChunkError && !pageHasAlreadyBeenReloaded) {
         window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'true');
         try {
           if ('serviceWorker' in navigator) {
@@ -41,12 +46,11 @@ function lazyWithRetry(componentImport) {
         } catch {
           // ignore
         }
-        const url = new URL(window.location.href);
-        url.searchParams.set('_v', Date.now().toString());
-        window.location.replace(url.toString());
-      } else {
-        window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'false');
+        window.location.reload();
+        return new Promise(() => {}); // Hold until reload finishes
       }
+
+      window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'false');
       throw error;
     }
   });

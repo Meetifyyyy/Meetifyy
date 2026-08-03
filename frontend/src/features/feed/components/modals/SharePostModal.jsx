@@ -47,10 +47,22 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
       // Extract poll data reliably
       let pollData = post?.poll || null;
       if (!pollData && Array.isArray(post?.pollOptions) && post.pollOptions.length > 0) {
+        const getOptText = (o) => {
+          if (!o) return '';
+          if (typeof o === 'string') return o;
+          if (typeof o.text === 'string') return o.text;
+          if (typeof o.text === 'object' && o.text !== null) return getOptText(o.text);
+          return String(o.label || o.title || '');
+        };
+        const getOptVotes = (o) => {
+          if (!o || typeof o !== 'object') return 0;
+          const count = o.voteCount !== undefined ? o.voteCount : (o.votes !== undefined ? o.votes : (o._count?.votes || 0));
+          return Number(count) || 0;
+        };
         const options = post.pollOptions.map(opt => ({
-          id: opt.id,
-          text: opt.text,
-          votes: Number(opt.voteCount ?? opt.votes ?? opt._count?.votes ?? 0)
+          id: typeof opt === 'object' ? opt?.id : undefined,
+          text: getOptText(opt),
+          votes: getOptVotes(opt)
         }));
         pollData = {
           question: post?.text || 'Poll',

@@ -361,9 +361,9 @@
 }
 
 .activityCoverThumb {
-  width: 84px;
-  height: 84px;
-  border-radius: 14px;
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
   overflow: hidden;
   flex-shrink: 0;
   background: var(--color-bg-subtle, #f1f5f9);
