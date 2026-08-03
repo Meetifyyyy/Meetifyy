@@ -417,7 +417,7 @@ export default function ActivityDetailPage() {
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
               </svg>
             </button>
-            {isHost && !hasStarted && (
+            {isHost && !hasStarted && !isCancelled && !hasEnded && (
               <>
                 <button
                   className={styles.actionBtn}
@@ -515,7 +515,7 @@ export default function ActivityDetailPage() {
               <div className={styles.attendeesSection}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
                   <h3 className={styles.attendeesTitle} style={{ margin: 0 }}>Attendees ({activity.participants?.length || 0})</h3>
-                  {isHost && !hasStarted && (
+                  {isHost && !hasStarted && !isCancelled && !hasEnded && (
                     <button
                       type="button"
                       onClick={() => setShowInviteModal(true)}

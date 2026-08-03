@@ -162,6 +162,7 @@ export function SharedPostPreview({ post, isLoading = false }) {
             <span>Poll: {pollData.question || 'Question'}</span>
           </div>
           <div className={styles.pollOptionsList}>
+            {pollData.options.slice(0, 4).map((opt, idx) => {
               const optText = getOptionText(opt);
               const votes = typeof opt === 'object' ? (opt.votes || 0) : 0;
               const total = pollData.totalVotes || 0;

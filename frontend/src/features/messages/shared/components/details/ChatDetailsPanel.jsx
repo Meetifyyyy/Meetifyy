@@ -204,7 +204,8 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
     : null;
 
   const actStatus = (activity?.status || conversation.activity?.status || conversation.status || '').toUpperCase();
-  const isEnded = actStatus === 'ENDED' || actStatus === 'CLOSED' || actStatus === 'COMPLETED' || actStatus === 'CANCELLED';
+  const isCancelled = actStatus === 'CANCELLED';
+  const isEnded = actStatus === 'ENDED' || actStatus === 'CLOSED' || actStatus === 'COMPLETED' || isCancelled;
   const actDate = conversation.startDate || conversation.date || activity?.startDate || activity?.date || conversation.activity?.startDate;
 
   const isHost = activity ? activity.creatorId === currentUser?.id || activity.hostId === currentUser?.id : false;
@@ -1015,7 +1016,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             {!isClosed && isMember && (
               <div className={styles.actionSection}>
                 {isOwner ? (
-                  isEventGroup && !activityHasStarted ? (
+                  isEventGroup && !activityHasStarted && !isCancelled ? (
                     <button 
                       className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
                       onClick={handleEndActivity}
@@ -1035,7 +1036,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                     className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
                     onClick={isEventGroup && onLeaveActivity ? onLeaveActivity : handleLeaveGroup}
                   >
-                    {isEventGroup ? (activityHasStarted ? 'Leave Group' : 'Leave Activity') : 'Leave Group'}
+                    {isEventGroup ? (activityHasStarted || isCancelled ? 'Leave Group' : 'Leave Activity') : 'Leave Group'}
                   </button>
                 )}
               </div>
@@ -1052,7 +1053,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         title={
           confirmType === 'endGroup' ? 'End Group?' :
           confirmType === 'leaveGroup'
-            ? (isEventGroup ? (activityHasStarted ? 'Leave Group' : 'Leave Activity') : 'Leave Group')
+            ? (isEventGroup ? (activityHasStarted || isCancelled ? 'Leave Group' : 'Leave Activity') : 'Leave Group')
             : confirmType === 'endActivity' ? 'Cancel Activity' :
           confirmType === 'changeOwner' ? 'Change Group Owner?' :
           'Remove Member'
@@ -1061,7 +1062,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
           confirmType === 'endGroup' ? 'This group will be closed permanently. Previous chats and media will remain accessible.' :
           confirmType === 'leaveGroup'
             ? (isEventGroup
-                ? (activityHasStarted
+                ? (activityHasStarted || isCancelled
                     ? 'You can still view the chat history, but you won\'t be able to send or receive new messages.'
                     : 'You will be removed from this activity and the group chat will be removed from your inbox.')
                 : 'Are you sure you want to leave this group?')
@@ -1074,7 +1075,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         onConfirm={handleConfirmAction}
         confirmText={
           confirmType === 'endGroup' ? 'End Group' :
-          confirmType === 'leaveGroup' ? (isEventGroup && !activityHasStarted ? 'Leave Activity' : 'Leave') :
+          confirmType === 'leaveGroup' ? (isEventGroup && !activityHasStarted && !isCancelled ? 'Leave Activity' : 'Leave') :
           confirmType === 'endActivity' ? 'Cancel Activity' :
           confirmType === 'changeOwner' ? 'Change Owner' :
           'Remove'
