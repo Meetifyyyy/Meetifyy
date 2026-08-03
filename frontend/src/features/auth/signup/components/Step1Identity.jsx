@@ -47,6 +47,7 @@ export default function Step1Identity() {
     if (/\d/.test(name)) return 'Names cannot contain numbers.';
     if (/[!@#$%^&*(),.?":{}|<>]/.test(name)) return 'Names cannot contain special characters.';
     if (name.trim().length < 2) return 'Please enter a valid name.';
+    if (name.trim().length > 30) return 'Name cannot exceed 30 characters.';
     return null;
   }, [name]);
 
@@ -56,6 +57,7 @@ export default function Step1Identity() {
     if (username.includes(' ')) return 'Usernames cannot contain spaces.';
     if (/[^a-z0-9_.]/.test(username)) return 'Use lowercase letters, numbers, _ or .';
     if (username.length < 3) return 'At least 3 characters.';
+    if (username.length > 30) return 'Username cannot exceed 30 characters.';
     return null;
   }, [username]);
 
@@ -148,7 +150,8 @@ export default function Step1Identity() {
               className={`${styles.largeInput} ${attempted && nameError ? styles.inputError : ''}`}
               placeholder=" "
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              maxLength={30}
+              onChange={(e) => setName(e.target.value.slice(0, 30))}
             />
             <label htmlFor="name" className={styles.floatingLabel}>Full Name</label>
           </div>
@@ -166,8 +169,9 @@ export default function Step1Identity() {
               className={`${styles.largeInput} ${showError ? styles.inputError : ''}`}
               placeholder=" "
               value={username}
+              maxLength={30}
               onChange={(e) => {
-                const val = e.target.value.toLowerCase();
+                const val = e.target.value.toLowerCase().slice(0, 30);
                 if (val !== '' && /[^a-z0-9_.]/.test(val)) return;
                 setUsername(val);
               }}

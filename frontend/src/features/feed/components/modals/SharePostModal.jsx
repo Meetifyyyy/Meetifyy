@@ -9,6 +9,7 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
+  const [sendingTo, setSendingTo] = useState(new Set());
   
   const { conversations, sendDirectMessage } = useData();
 
@@ -21,23 +22,74 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
   };
 
   const handleSend = async (convId) => {
-    await sendDirectMessage(convId, { 
-      text: '',
-      inviteData: { 
-        type: 'postShare', 
-        post: { 
-          id: post?.id, 
-          text: post?.text, 
-          authorName: author?.displayName || 'Someone',
-          authorAvatar: author?.avatar,
-          time: post?.time,
-          createdAt: post?.createdAt,
-          pollQuestion: post?.poll?.question,
-          image: post?.media ? (typeof post.media === 'string' ? post.media : post.media.url) : null
-        } 
+    if (sendingTo.has(convId) || sentTo.has(convId)) return;
+    setSendingTo(prev => new Set(prev).add(convId));
+
+    try {
+      // Extract media items array and primary image
+      let mediaList = [];
+      if (Array.isArray(post?.media) && post.media.length > 0) {
+        mediaList = post.media.map(m => {
+          if (typeof m === 'string') return { url: m, type: 'image' };
+          const url = m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null);
+          return { ...m, url };
+        }).filter(m => m.url);
+      } else if (Array.isArray(post?.images) && post.images.length > 0) {
+        mediaList = post.images.map(img => ({ url: typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null)), type: 'image' })).filter(m => m.url);
+      } else if (post?.mediaUrl) {
+        mediaList = [{ url: post.mediaUrl, type: post.mediaType || 'image' }];
+      } else if (post?.image) {
+        mediaList = [{ url: typeof post.image === 'string' ? post.image : (post.image.url || (post.image.objectKey ? `/api/media/${post.image.objectKey}` : null)), type: 'image' }].filter(m => m.url);
       }
-    });
-    setSentTo(prev => new Set(prev).add(convId));
+
+      const primaryImage = mediaList.length > 0 ? mediaList[0].url : null;
+
+      // Extract poll data reliably
+      let pollData = post?.poll || null;
+      if (!pollData && Array.isArray(post?.pollOptions) && post.pollOptions.length > 0) {
+        const options = post.pollOptions.map(opt => ({
+          id: opt.id,
+          text: opt.text,
+          votes: Number(opt.voteCount ?? opt.votes ?? opt._count?.votes ?? 0)
+        }));
+        pollData = {
+          question: post?.text || 'Poll',
+          options,
+          totalVotes: options.reduce((acc, o) => acc + o.votes, 0)
+        };
+      }
+
+      await sendDirectMessage(convId, { 
+        text: '',
+        inviteData: { 
+          type: 'postShare', 
+          post: { 
+            id: post?.id, 
+            text: post?.text || '', 
+            authorName: author?.displayName || author?.username || post?.authorName || 'Someone',
+            authorUsername: author?.username || post?.authorUsername || post?.username || null,
+            authorAvatar: author?.avatar || post?.authorAvatar || null,
+            time: post?.time || null,
+            createdAt: post?.createdAt || null,
+            media: mediaList,
+            image: primaryImage,
+            mediaUrl: primaryImage,
+            poll: pollData,
+            pollQuestion: pollData?.question || post?.pollQuestion || null,
+            pollOptions: pollData?.options || post?.pollOptions || null
+          } 
+        }
+      });
+      setSentTo(prev => new Set(prev).add(convId));
+    } catch (err) {
+      console.error('Failed to share post:', err);
+    } finally {
+      setSendingTo(prev => {
+        const next = new Set(prev);
+        next.delete(convId);
+        return next;
+      });
+    }
   };
 
   // Filter conversations
@@ -87,6 +139,7 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
           {filteredConversations.length > 0 ? (
             filteredConversations.map(conv => {
               const isSent = sentTo.has(conv.id);
+              const isSending = sendingTo.has(conv.id);
               return (
                 <div key={conv.id} className={styles.listItem}>
                   <div className={styles.contactInfo}>
@@ -96,9 +149,9 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
                   <button 
                     className={styles.sendBtn}
                     onClick={() => handleSend(conv.id)}
-                    disabled={isSent}
+                    disabled={isSent || isSending}
                   >
-                    {isSent ? 'Sent' : 'Send'}
+                    {isSent ? 'Sent' : (isSending ? 'Sending...' : 'Send')}
                   </button>
                 </div>
               );

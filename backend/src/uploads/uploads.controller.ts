@@ -153,17 +153,7 @@ export class UploadsController {
     return result;
   }
 
-  /**
-   * GET /api/media/:folder/:filename
-   * Serves file directly if stored locally, or redirects to cloud storage provider URL
-   */
-  @Get(':folder/:filename')
-  getMedia(
-    @Param('folder') folder: string,
-    @Param('filename') filename: string,
-    @Res() res: Response,
-  ) {
-    const key = `${folder}/${filename}`;
+  private async handleGetMedia(key: string, folder: string | undefined, res: Response) {
     if (!this.storageService.isSafeStorageKey(key)) {
       return res.status(400).json({ error: 'Invalid media key' });
     }
@@ -182,7 +172,7 @@ export class UploadsController {
     }
 
     try {
-      const url = this.storageService.getPublicUrl(key);
+      const url = await this.storageService.getResolvedPublicUrl(key);
       if (url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('/api/media/')) {
         return res.redirect(url);
       }
@@ -190,6 +180,43 @@ export class UploadsController {
       // Fallback below
     }
 
+    if (folder === 'avatars' || folder === 'avatar' || folder === 'users' || key.includes('avatar')) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.send(`
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+          <circle cx="50" cy="50" r="50" fill="#e2e8f0"/>
+          <path d="M50 42 a 16 16 0 1 0 0 -32 a 16 16 0 1 0 0 32 Z M50 50 c -22 0 -36 14 -36 28 v 12 h 72 v -12 c 0 -14 -14 -28 -36 -28 Z" fill="#94a3b8"/>
+        </svg>
+      `.trim());
+    }
+
     return res.status(404).json({ error: 'Media file not found' });
+  }
+
+  /**
+   * GET /api/media/:folder/:filename
+   * Serves file directly if stored locally, or redirects to cloud storage provider URL
+   */
+  @Get(':folder/:filename')
+  async getMedia(
+    @Param('folder') folder: string,
+    @Param('filename') filename: string,
+    @Res() res: Response,
+  ) {
+    const key = `${folder}/${filename}`;
+    return this.handleGetMedia(key, folder, res);
+  }
+
+  /**
+   * GET /api/media/:filename
+   * Fallback for files stored without a folder prefix
+   */
+  @Get(':filename')
+  async getMediaNoFolder(
+    @Param('filename') filename: string,
+    @Res() res: Response,
+  ) {
+    return this.handleGetMedia(filename, undefined, res);
   }
 }

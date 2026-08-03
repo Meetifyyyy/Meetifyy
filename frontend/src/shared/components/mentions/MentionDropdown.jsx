@@ -31,6 +31,7 @@ function DropdownContent({ suggestions, selectedIndex, onSelect, position, conta
     >
       {suggestions.map((user, idx) => {
         const isSelected = idx === selectedIndex;
+        const processedAvatar = getProcessedAvatarUrl(user.avatar);
         return (
           <button
             key={user.id || user.username}
@@ -39,11 +40,7 @@ function DropdownContent({ suggestions, selectedIndex, onSelect, position, conta
             onClick={() => onSelect(user)}
           >
             <div className={styles.avatar}>
-              {isImageUrl(user.avatar) ? (
-                <img src={user.avatar} alt={user.displayName} className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-              ) : (
-                <span>{user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}</span>
-              )}
+              <img src={processedAvatar} alt={user.displayName} className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
             </div>
 
             <div className={styles.info}>

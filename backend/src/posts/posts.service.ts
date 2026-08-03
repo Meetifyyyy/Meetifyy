@@ -26,8 +26,34 @@ export class PostsService {
     const likeCount = post.likeCount ?? 0;
     const commentCount = post.commentCount ?? 0;
 
+    const media = Array.isArray(post.media)
+      ? post.media.map((m: any) => ({
+          ...m,
+          url: m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null)
+        }))
+      : [];
+
+    const pollOptions = post.pollOptions || [];
+    let poll = post.poll || null;
+    if (!poll && pollOptions.length > 0) {
+      const options = pollOptions.map((opt: any) => ({
+        id: opt.id,
+        text: opt.text,
+        votes: Number(opt.voteCount ?? opt._count?.votes ?? 0)
+      }));
+      const totalVotes = options.reduce((sum: number, o: any) => sum + o.votes, 0);
+      poll = {
+        question: post.text,
+        options,
+        totalVotes,
+      };
+    }
+
     return {
       ...post,
+      media,
+      pollOptions,
+      poll,
       likeCount,
       likesCount: likeCount,
       commentCount,
@@ -80,6 +106,7 @@ export class PostsService {
       },
     });
 
+    let createdPollOptions: any[] = [];
     if (poll && Array.isArray(poll.options) && poll.options.length > 0) {
       await this.prisma.pollOption.createMany({
         data: poll.options.map((opt: string) => ({
@@ -87,10 +114,29 @@ export class PostsService {
           text: opt,
         })),
       });
+      createdPollOptions = await this.prisma.pollOption.findMany({
+        where: { postId: post.id },
+      });
     }
+
+    const formattedMedia = (post.media || []).map((m: any) => ({
+      ...m,
+      url: m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null),
+    }));
+
+    const formattedPost = {
+      ...post,
+      media: formattedMedia,
+      pollOptions: createdPollOptions,
+      poll: createdPollOptions.length > 0 ? {
+        question: post.text,
+        options: createdPollOptions.map(o => ({ id: o.id, text: o.text, votes: 0 })),
+        totalVotes: 0,
+      } : null,
+    };
     
-    this.domainEventService.emit('post.created', { postId: post.id, authorId, communityId: post.communityId || undefined, post });
-    return post;
+    this.domainEventService.emit('post.created', { postId: post.id, authorId, communityId: post.communityId || undefined, post: formattedPost });
+    return formattedPost;
   }
 
   async deletePost(postId: string, userId: string) {
@@ -181,6 +227,20 @@ export class PostsService {
           ),
           '[]'::json
         ) AS media,
+        COALESCE(
+          (
+            SELECT JSON_AGG(
+              JSON_BUILD_OBJECT(
+                'id', po.id,
+                'text', po.text,
+                'voteCount', (SELECT COUNT(*)::int FROM "PollVote" pv WHERE pv."optionId" = po.id)
+              )
+            )
+            FROM "PollOption" po 
+            WHERE po."postId" = p.id
+          ),
+          '[]'::json
+        ) AS "pollOptions",
         CASE WHEN ${userId ? userId : ''}::text != '' THEN
           EXISTS(SELECT 1 FROM "PostLike" pl WHERE pl."userId" = ${userId || ''} AND pl."postId" = p.id)
         ELSE false END AS "isLiked",
@@ -228,6 +288,27 @@ export class PostsService {
       const likeCount = Number(post.likeCount ?? 0);
       const commentCount = Number(post.commentCount ?? 0);
 
+      const media = (post.media || []).map((m: any) => ({
+        ...m,
+        url: m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null),
+      }));
+
+      const pollOptions = post.pollOptions || [];
+      let poll = null;
+      if (pollOptions.length > 0) {
+        const options = pollOptions.map((opt: any) => ({
+          id: opt.id,
+          text: opt.text,
+          votes: Number(opt.voteCount || 0),
+        }));
+        const totalVotes = options.reduce((sum: number, o: any) => sum + o.votes, 0);
+        poll = {
+          question: post.text,
+          options,
+          totalVotes,
+        };
+      }
+
       return {
         id: post.id,
         authorId: post.authorId,
@@ -240,7 +321,9 @@ export class PostsService {
         createdAt: post.createdAt,
         updatedAt: post.updatedAt,
         author: post.author,
-        media: post.media || [],
+        media,
+        pollOptions,
+        poll,
         hasLiked: isLiked,
         isLiked: isLiked,
         isLikedByMe: isLiked,
@@ -303,6 +386,13 @@ export class PostsService {
             mimeType: true,
             type: true,
           },
+        },
+        pollOptions: {
+          include: {
+            _count: {
+              select: { votes: true }
+            }
+          }
         },
       },
     });
@@ -620,6 +710,7 @@ export class PostsService {
         include: {
           author: { select: { id: true, username: true, displayName: true, avatar: true } },
           community: { select: { id: true, name: true, deletedAt: true } },
+          pollOptions: { include: { _count: { select: { votes: true } } } },
         },
       }),
       this.prisma.media.findMany({
@@ -694,9 +785,32 @@ export class PostsService {
       };
     });
 
+    const formattedMedia = (media || []).map((m: any) => ({
+      ...m,
+      url: m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null)
+    }));
+
+    const pollOptions = (post as any).pollOptions || [];
+    let poll = (post as any).poll || null;
+    if (!poll && pollOptions.length > 0) {
+      const options = pollOptions.map((opt: any) => ({
+        id: opt.id,
+        text: opt.text,
+        votes: Number(opt._count?.votes || 0)
+      }));
+      const totalVotes = options.reduce((sum: number, o: any) => sum + o.votes, 0);
+      poll = {
+        question: post.text,
+        options,
+        totalVotes,
+      };
+    }
+
     return {
       ...post,
-      media,
+      media: formattedMedia,
+      pollOptions,
+      poll,
       comments: shapedComments,
       likeCount: post.likeCount,
       likesCount: post.likeCount,
@@ -762,7 +876,8 @@ export class PostsService {
         post: {
           include: {
             author: { select: { id: true, username: true, displayName: true, avatar: true } },
-            media: true
+            media: true,
+            pollOptions: { include: { _count: { select: { votes: true } } } },
           }
         }
       }

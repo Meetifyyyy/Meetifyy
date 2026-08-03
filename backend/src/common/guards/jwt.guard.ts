@@ -77,7 +77,7 @@ export class JwtGuard implements CanActivate {
           const userPayload = {
             id: userId,
             email: payload.email || `${userId}@meetifyy.user`,
-            user_metadata: payload.user_metadata || {},
+            user_metadata: payload.user_metadata || payload.raw_user_meta_data || {},
             token,
           };
 

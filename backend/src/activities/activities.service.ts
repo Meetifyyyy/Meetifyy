@@ -1120,7 +1120,18 @@ export class ActivitiesService implements OnModuleInit {
   async inviteFriends(activityId: string, inviterId: string, inviteeIds: string[]) {
     const activity = await this.prisma.crewActivity.findUnique({
       where: { id: activityId },
-      include: { members: { select: { userId: true } } },
+      select: {
+        id: true,
+        creatorId: true,
+        status: true,
+        deletedAt: true,
+        title: true,
+        location: true,
+        coverImage: true,
+        startDate: true,
+        endDate: true,
+        members: { select: { userId: true } },
+      },
     });
 
     if (!activity || activity.deletedAt) {
@@ -1197,25 +1208,20 @@ export class ActivitiesService implements OnModuleInit {
     }
 
     if (inviteesToProcess.length > 0) {
-      const createdInvitations = await Promise.all(
-        inviteesToProcess.map(inviteeId =>
-          this.prisma.activityInvitation.upsert({
-            where: { activityId_inviteeId: { activityId, inviteeId } },
-            update: {
-              inviterId,
-              status: 'PENDING',
-              createdAt: new Date(),
-              respondedAt: null,
-            },
-            create: {
-              activityId,
-              inviterId,
-              inviteeId,
-              status: 'PENDING',
-            },
-          })
-        )
-      );
+      await this.prisma.activityInvitation.createMany({
+        data: inviteesToProcess.map(inviteeId => ({
+          activityId,
+          inviterId,
+          inviteeId,
+          status: 'PENDING',
+        })),
+        skipDuplicates: true,
+      });
+
+      const createdInvitations = await this.prisma.activityInvitation.findMany({
+        where: { activityId, inviteeId: { in: inviteesToProcess } },
+        select: { id: true, inviteeId: true },
+      });
 
       for (const inv of createdInvitations) {
         results.push({ inviteeId: inv.inviteeId, status: 'INVITED', invitationId: inv.id });
@@ -1379,7 +1385,11 @@ export class ActivitiesService implements OnModuleInit {
   async getInvitationStatuses(activityId: string, hostId: string) {
     const activity = await this.prisma.crewActivity.findUnique({
       where: { id: activityId },
-      include: { members: true, invitations: true },
+      select: {
+        id: true,
+        members: { select: { userId: true } },
+        invitations: { select: { inviteeId: true, status: true, respondedAt: true } },
+      },
     });
 
     if (!activity) {

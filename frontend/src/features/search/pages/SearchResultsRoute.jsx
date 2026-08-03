@@ -1,446 +1,505 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Users, Activity, UsersRound, MapPin, Clock, UsersIcon, ThumbsUp, MessageCircle, UserPlus, UserCheck } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import { usersApi } from '@shared/api/apiClient';
-import FollowButton from '@shared/components/ui/FollowButton';
+import { Search, Activity, Clock, X, RefreshCw, AlertCircle, Heart, MessageSquare, MapPin, Calendar, Users, Lock, Globe, ArrowLeft } from 'lucide-react';
 import { useGlobalSearch } from '@features/search/hooks/useGlobalSearch';
-import { toggleRegistry } from '@shared/utils/mutationRegistry';
-
-import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { PostResult, CommunityResult, CollegeResult, CrewResult } from '../components/SearchResultCards';
-import GlobalSearch from '../components/GlobalSearch';
-import { isImageUrl } from '@shared/utils/avatar';
+import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
-import Avatar from '@shared/components/avatar/Avatar';
+import { isImageUrl } from '@shared/utils/avatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import PageLayout from '@layout/PageLayout';
-import PageHeader from '@layout/PageHeader';
-import ActivityJoinedModal from '@features/crew/components/modals/ActivityJoinedModal';
-import styles from './SearchResultsRoute.module.css';
+import FollowButton from '@shared/components/ui/FollowButton';
 import { useData } from '@shared/hooks/useData';
-import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
+import { searchApi } from '@shared/api/apiClient';
+import styles from './SearchResultsRoute.module.css';
 
-// Compact horizontal activity row
-function ActivityRow({ activity, onClick }) {
-  const { joinCrewActivity, requestToJoinActivity, currentUser, users } = useData();
-  const navigate = useNavigate();
-  const [showJoinedModal, setShowJoinedModal] = useState(false);
-  const isJoined = activity.participants?.includes(currentUser?.id);
-  const hasRequested = activity.pendingRequests?.includes(currentUser?.id);
-  const isApproval = activity.participationType === 'approval';
-
-  const eventImage = activity.coverImage || activity.image || activity.hostAvatar;
-
-  const goingCount = Math.max(
-    activity.participants?.length || 0,
-    activity.slotsFilled || 0,
-    1
-  );
-
-  const goingAvatars = useMemo(() => {
-    const countToShow = Math.min(3, goingCount);
-    const avatars = [];
-
-    if (activity.participants && users) {
-      activity.participants.forEach(id => {
-        const u = users[id];
-        if (u && isImageUrl(u.avatar) && !avatars.includes(u.avatar)) {
-          avatars.push(u.avatar);
-        }
-      });
-    }
-
-    if (isImageUrl(activity.hostAvatar) && !avatars.includes(activity.hostAvatar)) {
-      avatars.push(activity.hostAvatar);
-    }
-
-    if (avatars.length < countToShow && users) {
-      Object.values(users).forEach(u => {
-        if (isImageUrl(u.avatar) && !avatars.includes(u.avatar) && avatars.length < countToShow) {
-          avatars.push(u.avatar);
-        }
-      });
-    }
-
-    return avatars.slice(0, countToShow);
-  }, [activity.participants, activity.hostAvatar, users, goingCount]);
-
-  return (
-    <div className={styles.activityRow} onClick={onClick}>
-      <div className={styles.activityRowIcon}>
-        {isImageUrl(eventImage) ? (
-          <img src={eventImage} alt={activity.title} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-        ) : (
-          <div className={styles.activityFallbackIcon}>
-            <Activity size={20} color="var(--color-primary)" />
-          </div>
-        )}
-      </div>
-      <div className={styles.activityRowInfo}>
-        <span className={styles.activityRowTitle}>{activity.title}</span>
-        <div className={styles.activityRowMeta}>
-          {activity.dateLabel && (
-            <span className={styles.activityRowMetaItem}>
-              <Clock size={11} />
-              {activity.dateLabel}{activity.time ? ` • ${activity.time}` : ''}
-            </span>
-          )}
-          {activity.location && (
-            <span className={styles.activityRowMetaItemLocation} title={activity.location}>
-              <MapPin size={11} style={{ flexShrink: 0 }} />
-              <span className={styles.locationText}>{activity.location}</span>
-            </span>
-          )}
-          <span className={styles.goingContainer}>
-            <span className={styles.goingAvatars}>
-              {Array.from({ length: Math.min(3, goingCount) }).map((_, idx) => {
-                const avatarUrl = goingAvatars[idx];
-                return (
-                  <span
-                    key={idx}
-                    className={styles.goingAvatarCircle}
-                    style={{ zIndex: 10 - idx }}
-                  >
-                    {isImageUrl(avatarUrl) ? (
-                      <img src={avatarUrl} alt="Going"  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-                    ) : (
-                      <span className={styles.goingAvatarFallback}>
-                        {String.fromCharCode(65 + idx)}
-                      </span>
-                    )}
-                  </span>
-                );
-              })}
-            </span>
-            <span className={styles.goingText}>
-              {goingCount} {activity.status === 'ENDED' || activity.status === 'CANCELLED' ? 'participated' : 'going'}
-            </span>
-          </span>
-        </div>
-      </div>
-      <button
-        className={`${styles.rowActionBtn} ${(isJoined || hasRequested) ? styles.rowActionBtnActive : ''}`}
-        onClick={async (e) => {
-          e.stopPropagation();
-          if (hasRequested) return;
-          if (isJoined) {
-            const chatId = String(activity.id).startsWith('act_') ? activity.id : `act_${activity.id}`;
-            navigate(`/messages/${chatId}`, { state: { from: location.pathname } });
-            return;
-          }
-          if (isApproval) {
-            requestToJoinActivity(activity.id);
-          } else {
-            await joinCrewActivity(activity.id);
-            setHasJoined(true);
-          }
-        }}
-      >
-        {isJoined ? 'Joined' : 'Join'}
-      </button>
-    </div>
-  );
-}
-
-function CommunityRow({ comm, onClick }) {
-  const { currentUser } = useData();
-  const { mutate: toggleJoin } = useJoinCommunity();
-  const rawJoined = currentUser?.communities?.includes(comm.name);
-  const entityKey = `joinCommunity:${comm.id}`;
-  const isJoined = toggleRegistry.getLatestIntent(entityKey, rawJoined);
-
-  return (
-    <div className={styles.communityRow} onClick={onClick}>
-      <div
-        className={styles.communityRowAvatar}
-        style={(!isImageUrl(comm.avatar)) ? (comm.color ? { background: comm.color } : { background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }) : { background: 'var(--color-bg-white)' }}
-      >
-        {isImageUrl(comm.avatar)
-          ? <img src={comm.avatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-          : <span style={{ fontWeight: 700, color: '#FFFFFF' }}>{comm.avatar || comm.name?.charAt(0).toUpperCase()}</span>
-        }
-      </div>
-      <div className={styles.communityRowInfo}>
-        <span className={styles.communityRowName}>{comm.name}</span>
-        <span className={styles.communityRowMembers}>
-          <UsersIcon size={12} />
-          {(comm.members || 0).toLocaleString()} members
-        </span>
-      </div>
-      <button
-        className={`${styles.rowActionBtn} ${isJoined ? styles.rowActionBtnActive : styles.rowActionBtnOutline}`}
-        onClick={(e) => { 
-          e.stopPropagation(); 
-          const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, rawJoined);
-          toggleJoin({ communityId: comm.id, isJoined: nextJoined, currentUser }); 
-        }}
-      >
-        {isJoined ? 'Joined' : 'Join'}
-      </button>
-    </div>
-  );
-}
-
-// PersonRow in search results
-function PersonRow({ user }) {
-  const navigate = useNavigate();
-
-  return (
-    <div className={styles.personRow} onClick={() => navigate(`/profile/${user.username}`, { state: { from: '/search' } })}>
-      <Avatar src={user.avatar} name={user.displayName} size="40px" disableHover />
-      <div className={styles.sidebarItemInfo}>
-        <div className={styles.sidebarItemNameRow}>
-          <span className={styles.sidebarItemName}>{user.displayName}</span>
-          {user.verified && <span className={styles.verifiedBadge}>✓</span>}
-        </div>
-        <span className={styles.sidebarItemHandle}>@{user.username}</span>
-        <span className={styles.sidebarItemDesc}>
-          {user.bio || 'Student • Explorer'}
-        </span>
-      </div>
-      <div style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-        <FollowButton targetUsername={user.username} initialFollowing={user.isFollowing} size="sm" />
-      </div>
-    </div>
-  );
-}
+const QUICK_CHIPS = [
+  { id: 'all', label: '🔥 All' },
+  { id: 'people', label: '👥 People' },
+  { id: 'activities', label: '🏕 Activities' },
+  { id: 'communities', label: '🌍 Communities' },
+  { id: 'posts', label: '📝 Posts' },
+];
 
 export default function SearchResultsRoute() {
-  const [searchParams] = useSearchParams();
-  const q = searchParams.get('q') || '';
+  const { users, crewActivities } = useData();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawQ = searchParams.get('q') || '';
   const navigate = useNavigate();
-  const goBack = useSmartBack();
-  const [activeSection, setActiveSection] = useState('all');
   const containerRef = useRef(null);
-  const { communities, users, crewActivities, posts, currentUser } = useData();
+
+  const [inputVal, setInputVal] = useState(rawQ);
+  const [activeChip, setActiveChip] = useState('all');
+
+  const [recentSearches, setRecentSearches] = useState(() => {
+    try {
+      const saved = localStorage.getItem('meetifyy_recent_searches');
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed.filter(s => typeof s === 'string' && s.length >= 2).slice(0, 10) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Load persisted recent searches from backend on boot
+  useEffect(() => {
+    let mounted = true;
+    searchApi.getRecentSearches()
+      .then((serverRecents) => {
+        if (mounted && Array.isArray(serverRecents) && serverRecents.length > 0) {
+          const validRecents = serverRecents.filter(s => typeof s === 'string' && s.length >= 2);
+          setRecentSearches(validRecents);
+          localStorage.setItem('meetifyy_recent_searches', JSON.stringify(validRecents));
+        }
+      })
+      .catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+
+  // Sync URL search params with input value with 200ms debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const trimmed = inputVal.trim();
+      if (trimmed !== rawQ) {
+        if (trimmed) {
+          setSearchParams({ q: trimmed }, { replace: true });
+        } else {
+          setSearchParams({}, { replace: true });
+        }
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [inputVal, rawQ, setSearchParams]);
 
   useEffect(() => {
-    if (containerRef.current) {
-      setTimeout(() => {
-        if (containerRef.current) containerRef.current.scrollTo({ top: 0 });
-      }, 10);
+    setInputVal(rawQ);
+  }, [rawQ]);
+
+  const { results, isSearching, isError, refetch } = useGlobalSearch(inputVal, 30, activeChip);
+
+  const handleSelectSearch = (term) => {
+    const trimmed = term.trim();
+    setInputVal(trimmed);
+    setSearchParams(trimmed ? { q: trimmed } : {}, { replace: true });
+    if (trimmed && trimmed.length >= 2) {
+      addRecentSearch(trimmed);
     }
-  }, [activeSection, q]);
-  
-  const { results, isSearching } = useGlobalSearch(q, 20);
-  
-  const handleNavigate = (path) => navigate(path);
+  };
 
-  const hasResults = 
-    results.posts.length > 0 || results.communities.length > 0 ||
-    results.users.length > 0 || results.colleges.length > 0 || results.crew.length > 0;
+  const addRecentSearch = (term) => {
+    if (!term || typeof term !== 'string') return;
+    const cleanTerm = term.trim();
+    if (cleanTerm.length < 2) return;
+    const updated = [cleanTerm, ...recentSearches.filter(s => typeof s === 'string' && s.length >= 2 && s.toLowerCase() !== cleanTerm.toLowerCase())].slice(0, 10);
+    setRecentSearches(updated);
+    localStorage.setItem('meetifyy_recent_searches', JSON.stringify(updated));
+    searchApi.addRecentSearch(cleanTerm).catch(() => {});
+  };
 
-  const topMatches = useMemo(() => {
-    const sorted = [];
-    if (results.posts.length > 0) sorted.push(...results.posts.slice(0, 2).map(r => ({ ...r, type: 'post' })));
-    if (results.users.length > 0) sorted.push(...results.users.slice(0, 2).map(r => ({ ...r, type: 'user' })));
-    if (results.communities.length > 0) sorted.push(...results.communities.slice(0, 2).map(r => ({ ...r, type: 'community' })));
-    if (results.colleges.length > 0) sorted.push(...results.colleges.slice(0, 2).map(r => ({ ...r, type: 'college' })));
-    if (results.crew.length > 0) sorted.push(...results.crew.slice(0, 2).map(r => ({ ...r, type: 'crew' })));
-    return sorted;
+  const removeRecentSearch = (e, term) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const updated = recentSearches.filter(s => s !== term);
+    setRecentSearches(updated);
+    localStorage.setItem('meetifyy_recent_searches', JSON.stringify(updated));
+    searchApi.removeRecentSearch(term).catch(() => {});
+  };
+
+  const clearAllRecent = (e) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setRecentSearches([]);
+    localStorage.setItem('meetifyy_recent_searches', JSON.stringify([]));
+    searchApi.clearRecentSearches().catch(() => {});
+  };
+
+  // Interleave search & discovery feed evenly across entity categories
+  const activeFeed = useMemo(() => {
+    const uList = (results.users || []).map(r => ({ kind: 'user', data: r.item, id: `su-${r.item.id}` }));
+    const cList = (results.communities || []).map(r => ({ kind: 'community', data: r.item, id: `sc-${r.item.id}` }));
+    const aList = (results.crew || []).map(r => ({ kind: 'activity', data: r.item, id: `sa-${r.item.id}` }));
+    const pList = (results.posts || []).map(r => ({ kind: 'post', data: r.item, id: `sp-${r.item.id}` }));
+
+    const feed = [];
+    const maxItems = Math.max(uList.length, cList.length, aList.length, pList.length);
+
+    for (let i = 0; i < maxItems; i++) {
+      if (uList[i]) feed.push(uList[i]);
+      if (aList[i]) feed.push(aList[i]);
+      if (cList[i]) feed.push(cList[i]);
+      if (pList[i]) feed.push(pList[i]);
+    }
+
+    return feed;
   }, [results]);
 
-  const popularCommunities = useMemo(() => {
-    if (!communities) return [];
-    return communities
-      .filter(c => !c.isUniversity)
-      .sort((a, b) => (b.members || 0) - (a.members || 0))
-      .slice(0, 5);
-  }, [communities]);
+  const filteredFeed = useMemo(() => {
+    if (activeChip === 'all') return activeFeed;
+    if (activeChip === 'people') return activeFeed.filter(item => item.kind === 'user');
+    if (activeChip === 'activities') return activeFeed.filter(item => item.kind === 'activity');
+    if (activeChip === 'communities') return activeFeed.filter(item => item.kind === 'community');
+    if (activeChip === 'posts') return activeFeed.filter(item => item.kind === 'post');
+    return activeFeed;
+  }, [activeFeed, activeChip]);
 
-  const trendingActivities = useMemo(() => {
-    if (!crewActivities) return [];
-    const now = new Date();
-    return crewActivities
-      .filter(a => !a.date || new Date(a.date) > now)
-      .sort((a, b) => (b.slotsFilled || 0) - (a.slotsFilled || 0))
-      .slice(0, 4);
-  }, [crewActivities]);
+  const formatDate = (dateStr) => {
+    if (!dateStr) return null;
+    try {
+      return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    } catch {
+      return null;
+    }
+  };
 
-  const topPosts = useMemo(() => {
-    if (!posts) return [];
-    return [...posts].sort((a, b) => (b.likes || 0) - (a.likes || 0)).slice(0, 3);
-  }, [posts]);
-
-  const sections = [
-    { id: 'all', label: 'All', icon: Search },
-    { id: 'users', label: 'People', icon: Users },
-    { id: 'activities', label: 'Activities', icon: Activity },
-    { id: 'community', label: 'Communities', icon: UsersRound },
+  const DEFAULT_COVERS = [
+    'https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=800&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?q=80&w=800&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?q=80&w=800&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1528605248644-14dd04022da1?q=80&w=800&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1551818255-e6e10975bc17?q=80&w=800&auto=format&fit=crop',
   ];
+
+  const getDefaultCover = (idOrTitle = '') => {
+    let hash = 0;
+    const str = String(idOrTitle || '');
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
+    }
+    const idx = Math.abs(hash) % DEFAULT_COVERS.length;
+    return DEFAULT_COVERS[idx];
+  };
+
+  const formatDateTime = (activity) => {
+    if (!activity) return '';
+    const startRaw = activity.startDate || activity.date || activity.createdAt;
+    if (!startRaw) return '';
+    
+    const startD = new Date(startRaw);
+    if (isNaN(startD.getTime())) return '';
+
+    const endRaw = activity.endDate;
+    const endD = endRaw ? new Date(endRaw) : null;
+
+    const startDateFormatted = startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const startTimeStr = activity.time || startD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+    if (endD && !isNaN(endD.getTime())) {
+      const endDateFormatted = endD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const endTimeStr = activity.endTime || endD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+      if (startDateFormatted === endDateFormatted) {
+        return `${startDateFormatted} • ${startTimeStr} – ${endTimeStr}`;
+      } else {
+        return `${startDateFormatted} • ${startTimeStr} → ${endDateFormatted} • ${endTimeStr}`;
+      }
+    }
+
+    return `${startDateFormatted} • ${startTimeStr}`;
+  };
 
   return (
     <PageLayout containerRef={containerRef}>
-      <PageHeader
-        title="Search"
-        subtitle="Find activities and communities ✨"
-        backPath="/home"
-        searchBar={<GlobalSearch variant="pageHeader" />}
-        tabs={q.trim() ? sections : null}
-        activeTab={activeSection}
-        onTabChange={setActiveSection}
-        tabVariant="underline"
-      />
-
-      {/* Explore page (no search query typed yet) */}
-      {!q.trim() ? (
-        <div className={styles.explorePage}>
-          <div className={styles.exploreColumns}>
-            {/* Left / Main Column */}
-            <div className={styles.exploreMain}>
-              {/* Trending Activities */}
-              {trendingActivities.length > 0 && (
-                <div className={styles.sectionBlock}>
-                  <div className={styles.sectionHeader}>
-                    <h2 className={styles.sectionTitle}>Trending Activities</h2>
-                    <button className={styles.viewAllBtn} onClick={() => navigate('/crew', { replace: true })}>View all</button>
-                  </div>
-                  <div className={styles.rowList}>
-                    {trendingActivities.map(activity => (
-                      <ActivityRow
-                        key={activity.id}
-                        activity={activity}
-                        onClick={() => navigate(`/crew/${activity.id}`, { state: { activity, from: '/search' } })}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Top Posts */}
-              {topPosts.length > 0 && (
-                <div className={styles.sectionBlock}>
-                  <div className={styles.sectionHeader}>
-                    <h2 className={styles.sectionTitle}>Top Posts</h2>
-                    <button className={styles.viewAllBtn} onClick={() => navigate('/home', { replace: true })}>View all</button>
-                  </div>
-                  <div className={styles.topPostsList}>
-                    {topPosts.map((post) => {
-                      const author = users ? Object.values(users).find(u => u.id === post.authorId) : null;
-                      return (
-                        <button key={post.id} className={styles.topPostCard} onClick={() => navigate(`/post/${post.id}`, { state: { post, from: '/search' } })}>
-                          <div className={styles.topPostAvatar}>
-                            <Avatar src={author?.avatar} name={author?.displayName} size="36px" disableHover />
-                          </div>
-                          <div className={styles.topPostInfo}>
-                            <span className={styles.topPostName}>{author?.displayName || 'Someone'}</span>
-                            <p className={styles.topPostText}>{post.text?.substring(0, 80)}{post.text?.length > 80 ? '...' : ''}</p>
-                            <div className={styles.topPostMeta}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><ThumbsUp size={13} /> {post.likes || 0}</span>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><MessageCircle size={13} /> {post.comments || 0}</span>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Right Column / Sidebar */}
-            <div className={styles.exploreSidebar}>
-              {/* Popular Communities */}
-              {popularCommunities.length > 0 && (
-                <div className={styles.sidebarBlock}>
-                  <div className={styles.sectionHeader}>
-                    <h2 className={styles.sectionTitle}>Popular Communities</h2>
-                    <button className={styles.viewAllBtn} onClick={() => navigate('/communities', { replace: true })}>View all</button>
-                  </div>
-                  <div className={styles.rowList}>
-                    {popularCommunities.slice(0, 5).map(c => (
-                      <CommunityRow
-                        key={c.id}
-                        comm={c}
-                        onClick={() => navigate(`/communities/${c.id}`, { state: { from: '/search' } })}
-                      />
-                    ))}
-                  </div>
-                </div>
+      <div className={styles.searchPageContainer}>
+        {/* Sticky Search Header */}
+        <div className={styles.searchHeaderArea} role="search">
+          <div className={styles.topBarRow}>
+            <button
+              className={styles.backBtn}
+              aria-label="Go back"
+              onClick={() => navigate(-1)}
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <div className={styles.searchBarBox}>
+              <Search size={18} className={styles.searchIcon} aria-hidden="true" />
+              <input
+                type="text"
+                className={styles.searchInput}
+                placeholder="Search people, communities, activities, posts..."
+                value={inputVal}
+                aria-label="Search field"
+                onChange={(e) => setInputVal(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && inputVal.trim()) {
+                    addRecentSearch(inputVal);
+                  }
+                }}
+              />
+              {inputVal && (
+                <button
+                  className={styles.clearBtn}
+                  aria-label="Clear search text"
+                  onClick={() => handleSelectSearch('')}
+                >
+                  <X size={16} />
+                </button>
               )}
             </div>
           </div>
-        </div>
-      ) : (
-        /* Search results for active query */
-        <div className={styles.searchResults}>
-          {isSearching ? (
-            <div className={styles.sectionContent}>
-              <div className={styles.resultsContainer}>
-                <div className={styles.list}>
-                  {[1, 2, 3, 4, 5].map(i => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderBottom: '1px solid var(--color-border-light)', width: '100%' }}>
-                      <Skeleton type="circle" width="40px" height="40px" />
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <Skeleton type="text" width="35%" height="1rem" />
-                        <Skeleton type="text" width="60%" height="0.8rem" />
-                      </div>
-                      <Skeleton type="circle" width="32px" height="32px" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : !hasResults ? (
-            <div className={styles.emptyCard}>
-              <div className={styles.emptyBadge}>
-                <Search size={26} color="var(--color-primary)" />
-              </div>
-              <h3 className={styles.emptyTitle}>No results found</h3>
-              <p className={styles.emptySubtitle}>We couldn't find matching activities or communities for "{q}".</p>
-              <div className={styles.emptyActions}>
-                <button className={styles.emptyBtnPrimary} onClick={() => navigate('/crew', { replace: true })}>
-                  Explore Activities
+
+          {/* Quick Filter Chips — shown only when user has typed search query */}
+          {inputVal.trim().length > 0 && (
+            <div className={styles.chipsBar} role="tablist" aria-label="Search entity filters">
+              {QUICK_CHIPS.map((chip) => (
+                <button
+                  key={chip.id}
+                  role="tab"
+                  aria-selected={activeChip === chip.id}
+                  className={`${styles.chipBtn} ${activeChip === chip.id ? styles.chipBtnActive : ''}`}
+                  onClick={() => setActiveChip(chip.id)}
+                >
+                  {chip.label}
                 </button>
-                <button className={styles.emptyBtnSecondary} onClick={() => navigate('/communities', { replace: true })}>
-                  Browse Communities
+              ))}
+            </div>
+          )}
+
+          {/* Recent Searches Bar */}
+          {!inputVal.trim() && recentSearches.length > 0 && (
+            <div className={styles.recentBar}>
+              <div className={styles.recentTitle}>
+                <Clock size={13} />
+                <span>Recent Searches</span>
+              </div>
+              <div className={styles.recentChips}>
+                {recentSearches.map((term) => (
+                  <span key={term} className={styles.recentChipItem} onClick={() => handleSelectSearch(term)}>
+                    {term}
+                    <X size={11} aria-label={`Remove recent search ${term}`} onClick={(e) => removeRecentSearch(e, term)} />
+                  </span>
+                ))}
+                <button className={styles.clearAllBtn} onClick={clearAllRecent}>
+                  Clear all
                 </button>
               </div>
-            </div>
-          ) : (
-            <div className={styles.sectionContent}>
-              {activeSection === 'all' && (
-                <div className={styles.resultsContainer}>
-                  {topMatches.length > 0 ? (
-                    <div className={styles.list}>
-                      {topMatches.map(r => {
-                        if (r.type === 'user') return <PersonRow key={`top-u-${r.item.id}`} user={r.item} />;
-                        if (r.type === 'community') return <CommunityRow key={`top-c-${r.item.id}`} comm={r.item} onClick={() => navigate(`/communities/${r.item.id}`, { state: { from: '/search' } })} />;
-                        if (r.type === 'college') return <CollegeResult key={`top-col-${r.item.id}`} result={r} onClick={handleNavigate} />;
-                        if (r.type === 'post') return <PostResult key={`top-p-${r.item.id}`} result={r} onClick={handleNavigate} />;
-                        if (r.type === 'crew') return <ActivityRow key={`top-cr-${r.item.id}`} activity={r.item} onClick={() => navigate(`/crew/${r.item.id}`, { state: { activity: r.item, from: '/search' } })} />;
-                        return null;
-                      })}
-                    </div>
-                  ) : <div className={styles.sectionEmpty}>No top matches for "{q}"</div>}
-                </div>
-              )}
-              {activeSection === 'users' && (
-                <div className={styles.resultsContainer}>
-                  {results.users.length > 0
-                    ? <div className={styles.list}>{results.users.map(r => <PersonRow key={`u-${r.item.id}`} user={r.item} />)}</div>
-                    : <div className={styles.sectionEmpty}>No people for "{q}"</div>}
-                </div>
-              )}
-              {activeSection === 'activities' && (
-                <div className={styles.resultsContainer}>
-                  {results.crew.length > 0
-                    ? <div className={styles.list}>{results.crew.map(r => <ActivityRow key={`cr-${r.item.id}`} activity={r.item} onClick={() => navigate(`/crew/${r.item.id}`, { state: { activity: r.item, from: '/search' } })} />)}</div>
-                    : <div className={styles.sectionEmpty}>No activities for "{q}"</div>}
-                </div>
-              )}
-              {activeSection === 'community' && (
-                <div className={styles.resultsContainer}>
-                  {results.communities.length > 0
-                    ? <div className={styles.list}>{results.communities.map(r => <CommunityRow key={`c-${r.item.id}`} comm={r.item} onClick={() => navigate(`/communities/${r.item.id}`, { state: { from: '/search' } })} />)}</div>
-                    : <div className={styles.sectionEmpty}>No communities for "{q}"</div>}
-                </div>
-              )}
             </div>
           )}
         </div>
-      )}
+
+        {/* Seamless Mixed Feed Container */}
+        <div className={styles.feedContainer}>
+          {isSearching ? (
+            <div className={styles.feedList}>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className={styles.skeletonRow}>
+                  <Skeleton type="circle" width="44px" height="44px" />
+                  <div className={styles.skeletonCol}>
+                    <Skeleton type="text" width="40%" height="16px" />
+                    <Skeleton type="text" width="65%" height="13px" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : isError ? (
+            <div className={styles.emptyStateContainer}>
+              <AlertCircle size={36} className={styles.emptyIcon} />
+              <h3 className={styles.emptyTitle}>Network Error</h3>
+              <p className={styles.emptySub}>Could not load search results. Check your connection and try again.</p>
+              <button className={styles.resetBtn} onClick={() => refetch()}>
+                <RefreshCw size={14} style={{ marginRight: '6px' }} /> Retry
+              </button>
+            </div>
+          ) : filteredFeed.length === 0 ? (
+            <div className={styles.emptyStateContainer}>
+              <Search size={36} className={styles.emptyIcon} />
+              <h3 className={styles.emptyTitle}>No results found</h3>
+              <p className={styles.emptySub}>Try searching for another keyword or browse popular communities.</p>
+              <button className={styles.resetBtn} onClick={() => handleSelectSearch('')}>
+                Show all items
+              </button>
+            </div>
+          ) : (
+            <div className={styles.feedList}>
+              {filteredFeed.map(({ kind, data, id }) => {
+                if (kind === 'user') {
+                  return (
+                    <div
+                      key={id}
+                      className={styles.feedRow}
+                      onClick={() => {
+                        addRecentSearch(data.username);
+                        navigate(`/profile/${data.username}`);
+                      }}
+                    >
+                      <Avatar src={data.avatar} name={data.displayName} size="44px" disableHover />
+                      <div className={styles.feedInfo}>
+                        <span className={styles.feedName}>{data.displayName}</span>
+                        <span className={styles.feedSub}>@{data.username}</span>
+                      </div>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <FollowButton targetUsername={data.username} initialFollowing={data.isFollowing} size="sm" />
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (kind === 'activity') {
+                  const matchedStoreAct = (crewActivities || []).find(a => String(a.id) === String(data.id));
+                  const activityData = matchedStoreAct || data;
+
+                  const coverUrl = activityData.coverImage || getDefaultCover(activityData.title || activityData.id);
+                  const timeFormatted = formatDateTime(activityData);
+
+                  const seenIds = new Set();
+                  const displayUsers = [];
+
+                  if (activityData.hostAvatar || activityData.hostName || activityData.creator) {
+                    const hId = activityData.hostId || activityData.creatorId || 'host';
+                    const hAv = activityData.hostAvatar || activityData.creator?.avatar;
+                    const hName = activityData.hostName || activityData.creator?.displayName;
+                    if (hAv || hName) {
+                      displayUsers.push({ id: hId, avatar: hAv, displayName: hName });
+                      seenIds.add(hId);
+                    }
+                  }
+
+                  const participantIds = activityData.participants || (activityData.members || []).map(m => m.userId || m.id || m);
+                  const memberObjs = activityData._membersData || activityData.members || [];
+
+                  participantIds.forEach(id => {
+                    const cleanId = typeof id === 'object' ? id.id || id.userId : id;
+                    if (!cleanId || seenIds.has(cleanId)) return;
+                    const uObj = Object.values(users || {}).find(u => u.id === cleanId) || memberObjs.find(m => m?.id === cleanId || m?.userId === cleanId || m?.user?.id === cleanId);
+                    const userRef = uObj?.user || uObj;
+                    if (userRef) {
+                      displayUsers.push({
+                        id: cleanId,
+                        avatar: userRef?.avatar || userRef?.profileImage,
+                        displayName: userRef?.displayName || userRef?.name || userRef?.username
+                      });
+                      seenIds.add(cleanId);
+                    }
+                  });
+
+                  const finalAvatars = displayUsers.slice(0, 5);
+                  const totalCount = participantIds.length || (activityData.members || []).length || activityData.slotsFilled || (displayUsers.length > 0 ? displayUsers.length : 1);
+                  const isPastOrEnded = activityData.status === 'ENDED' || activityData.status === 'CANCELLED' || activityData.status === 'COMPLETED' || (activityData.startDate && new Date(activityData.startDate) < new Date());
+                  const goingLabelText = `${totalCount} ${isPastOrEnded ? 'participated' : 'going'}`;
+
+                  return (
+                    <div
+                      key={id}
+                      className={styles.feedRow}
+                      onClick={() => {
+                        if (activityData.title) addRecentSearch(activityData.title);
+                        navigate(`/crew/${activityData.id}`);
+                      }}
+                    >
+                      <div className={styles.activityCoverThumb}>
+                        <img
+                          src={coverUrl}
+                          alt={activityData.title || 'Activity'}
+                          className={styles.activityCoverImg}
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = DEFAULT_COVERS[0];
+                          }}
+                        />
+                      </div>
+                      <div className={styles.feedInfo}>
+                        <div className={styles.rowHeaderTitle}>
+                          <span className={styles.feedName}>{activityData.title}</span>
+                        </div>
+                        {timeFormatted && (
+                          <div className={styles.activityTimeLabel}>
+                            <Calendar size={13} /> {timeFormatted}
+                          </div>
+                        )}
+                        <div className={styles.activityFooterRow}>
+                          <div className={styles.goingLine}>
+                            <div className={styles.goingAvatarsGroup}>
+                              {finalAvatars.map((u, i) => (
+                                <div key={u.id || i} className={styles.goingAvatarWrap} style={{ zIndex: 5 - i }}>
+                                  {u.avatar && isImageUrl(u.avatar) ? (
+                                    <img
+                                      src={getProcessedAvatarUrl(u.avatar)}
+                                      alt={u.displayName || "Participant"}
+                                      className={styles.goingAvatarImg}
+                                      onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}
+                                    />
+                                  ) : (
+                                    <DefaultAvatar />
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            <span className={styles.goingText}>
+                              {goingLabelText}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (kind === 'community') {
+                  return (
+                    <div
+                      key={id}
+                      className={styles.feedRow}
+                      onClick={() => {
+                        if (data.name) addRecentSearch(data.name);
+                        navigate(`/communities/${data.id}`);
+                      }}
+                    >
+                      <div className={styles.communityIconBox}>
+                        {data.name?.charAt(0).toUpperCase()}
+                      </div>
+                      <div className={styles.feedInfo}>
+                        <div className={styles.rowHeaderTitle}>
+                          <span className={styles.feedName}>{data.name}</span>
+                        </div>
+                        <span className={styles.feedSub}>
+                          {data.description ? `${data.description.substring(0, 60)}... • ` : ''}
+                          {data.memberCount || data.members || 0} members
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (kind === 'post') {
+                  const author = data.author;
+                  return (
+                    <div
+                      key={id}
+                      className={styles.feedRow}
+                      onClick={() => {
+                        navigate(`/post/${data.id}`);
+                      }}
+                    >
+                      <Avatar src={author?.avatar} name={author?.displayName || 'Post'} size="44px" disableHover />
+                      <div className={styles.feedInfo}>
+                        <div className={styles.rowHeaderTitle}>
+                          <span className={styles.feedName}>{author?.displayName || 'Post'}</span>
+                          {author?.username && <span className={styles.feedSubHandle}>@{author.username}</span>}
+                        </div>
+                        <p className={styles.postSnippetText}>
+                          {data.text}
+                        </p>
+                        <div className={styles.metaRow}>
+                          <span className={styles.metaStat}>
+                            <Heart size={12} /> {data.likesCount || data.likeCount || 0}
+                          </span>
+                          <span className={styles.metaStat}>
+                            <MessageSquare size={12} /> {data.commentsCount || data.commentCount || 0}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return null;
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </PageLayout>
   );
 }

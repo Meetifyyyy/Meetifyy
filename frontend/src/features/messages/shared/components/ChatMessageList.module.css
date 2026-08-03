@@ -619,7 +619,7 @@
   min-width: 260px;
   max-width: 320px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease;
 }
 
 [data-theme='dark'] .groupInviteCard {
@@ -629,7 +629,6 @@
 }
 
 .groupInviteCard:hover {
-  transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
 }
 
@@ -704,24 +703,22 @@
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
-  transition: all 0.18s ease;
+  transition: opacity 0.18s ease, box-shadow 0.18s ease;
 }
 
 .groupInviteBtn:hover {
   opacity: 0.95;
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
-  transform: translateY(-1px);
 }
 
 .groupInviteBtn:active {
-  transform: translateY(0);
+  opacity: 0.85;
 }
 
 .groupInviteBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   box-shadow: none;
-  transform: none;
 }
 
 /* Main Bubble Row Layout for Exact Vertical Centering */

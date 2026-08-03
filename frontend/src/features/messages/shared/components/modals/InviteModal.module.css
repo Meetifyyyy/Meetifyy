@@ -23,6 +23,7 @@
   flex-direction: column;
   max-height: 85vh;
   position: relative;
+  margin-bottom: 0;
 }
 
 @media (max-width: 768px) {
@@ -193,6 +194,11 @@
   text-overflow: ellipsis;
 }
 
+.contactHandle {
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #6b7280);
+}
+
 .sendBtn {
   background: var(--color-primary, #3b82f6);
   color: #ffffff;
@@ -261,12 +267,103 @@
 
 @media (min-width: 768px) {
   .modal {
-    border-radius: 24px;
-    margin-bottom: 24px;
+    border-radius: 24px 24px 0 0;
+    margin-bottom: 0;
     max-height: 80vh;
   }
-  
-  .dragHandle {
-    display: none;
-  }
+}
+
+/* Dark Mode Theme Styles */
+[data-theme='dark'] .modal {
+  background: var(--color-bg-card, #1c1c1e);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: none;
+  box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme='dark'] .dragHandle {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+[data-theme='dark'] .title {
+  color: var(--color-text-main, #f4f4f5);
+}
+
+[data-theme='dark'] .closeBtn {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f4f4f5;
+}
+
+[data-theme='dark'] .closeBtn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+[data-theme='dark'] .copyLinkBtn {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #f4f4f5;
+}
+
+[data-theme='dark'] .copyLinkBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+[data-theme='dark'] .linkIconWrapper {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+[data-theme='dark'] .searchInput {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #f4f4f5;
+}
+
+[data-theme='dark'] .searchInput::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+[data-theme='dark'] .searchInput:focus {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--color-primary, #6366f1);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+}
+
+[data-theme='dark'] .searchIcon {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+[data-theme='dark'] .listItem:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme='dark'] .contactName {
+  color: #f4f4f5;
+}
+
+[data-theme='dark'] .contactHandle {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+[data-theme='dark'] .sendBtn:disabled {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.45);
+}
+
+[data-theme='dark'] .sendBtn.sent {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e4e4e7;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme='dark'] .emptyState {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+[data-theme='dark'] .list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme='dark'] .list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }

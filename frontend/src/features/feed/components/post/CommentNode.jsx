@@ -523,11 +523,12 @@ export default function CommentNode({
                   <span className={styles.username}>{author.displayName}</span>
                   {authorCollege && (
                     <img
-                      src={authorCollege.avatar}
+                      src={getProcessedAvatarUrl(authorCollege.avatar)}
                       alt={authorCollege.name}
                       className={styles.commentCollegeIcon}
                       title={authorCollege.name}
-                     onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                      onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}
+                    />
                   )}
                 </button>
                 <div className={styles.commentMeta}>

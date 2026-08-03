@@ -37,9 +37,9 @@ export default function Step3Password() {
     if (isValid) {
       setIsSubmitting(true);
       try {
+        const fullData = { ...signupData, password };
         updateData({ password });
-        const { password: _, ...restSignupData } = signupData;
-        const success = await initiateSignup({ ...restSignupData, password });
+        const success = await initiateSignup(fullData);
         if (success) {
           nextStep();
         }

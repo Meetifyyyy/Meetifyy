@@ -6,22 +6,22 @@ import defaultAvatarImg from '../../../assets/images/default_avatar.webp';
 import styles from './Avatar.module.css';
 
 export function getProcessedAvatarUrl(src) {
-  if (!src) return defaultAvatarImg;
+  if (!src) return '/default_avatar.webp';
   let s = src;
   if (typeof s === 'object') {
-    s = s.avatar || s.avatarUrl || s.url || s.objectKey || s.profileImage || '';
+    s = s.avatar || s.avatarUrl || s.url || s.objectKey || s.profileImage || (s.avatarMedia ? s.avatarMedia.objectKey : '') || '';
   }
   if (typeof s !== 'string' || !s.trim() || s.trim().length <= 2) {
-    return defaultAvatarImg;
+    return '/default_avatar.webp';
   }
   const clean = s.trim();
   if (clean.includes('default_avatar') || clean.includes('api.dicebear.com/7.x/initials')) {
-    return defaultAvatarImg;
+    return '/default_avatar.webp';
   }
   if (clean.includes('api.dicebear.com/')) {
     return normalizeDicebearUrl(clean);
   }
-  // Convert /api/media/ relative paths to absolute backend URL so they work on Vercel
+  // Convert /api/media/ relative paths to absolute backend URL so they work across environments
   if (clean.startsWith('/api/media/') || (!clean.startsWith('http') && !clean.startsWith('data:') && !clean.startsWith('blob:') && !clean.startsWith('/'))) {
     return getMediaUrl(clean);
   }

@@ -295,7 +295,8 @@
   font-size: 0.95rem;
 }
 
-.dropdownItem:hover {
+.dropdownItem:hover,
+.dropdownItemActive {
   background: var(--color-border-light);
 }
 

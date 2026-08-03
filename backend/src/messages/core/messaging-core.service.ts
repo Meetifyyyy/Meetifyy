@@ -22,6 +22,36 @@ export class MessagingCoreService {
     protected domainEventService: DomainEventService,
   ) { }
 
+  async getBatchUnblockedAndUnmutedParticipants(conversationId: string, senderId: string) {
+    const realConvId = await this.resolveConversationId(conversationId);
+    const participants = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId: realConvId, deletedAt: null },
+      select: { userId: true, isMuted: true }
+    });
+
+    const otherIds = participants.map(p => p.userId).filter(id => id !== senderId);
+    if (otherIds.length === 0) {
+      return { recipientIds: [], unmutedRecipientIds: [] };
+    }
+
+    const blocks = await this.prisma.block.findMany({
+      where: {
+        OR: [
+          { blockerId: senderId, blockedId: { in: otherIds } },
+          { blockerId: { in: otherIds }, blockedId: senderId }
+        ]
+      },
+      select: { blockerId: true, blockedId: true }
+    });
+    const blockedUserSet = new Set(blocks.flatMap(b => [b.blockerId, b.blockedId]));
+
+    const unblockedIds = otherIds.filter(id => !blockedUserSet.has(id));
+    const muteMap = new Map(participants.map(p => [p.userId, p.isMuted]));
+    const unmutedIds = unblockedIds.filter(id => !muteMap.get(id));
+
+    return { recipientIds: unblockedIds, unmutedRecipientIds: unmutedIds };
+  }
+
   async resolveConversationId(identifier: string, currentUserId?: string): Promise<string> {
     if (!identifier) return identifier;
     const cleanId = String(identifier).replace(/^(act_)+/, '');
@@ -44,28 +74,26 @@ export class MessagingCoreService {
       }
     };
 
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+
     try {
-      let conv = await this.prisma.conversation.findUnique({
-        where: { id: cleanId },
-        select: { id: true }
-      });
-      if (!conv && identifier !== cleanId) {
+      let conv = null;
+      if (isUuid) {
         conv = await this.prisma.conversation.findUnique({
-          where: { id: identifier },
+          where: { id: cleanId },
           select: { id: true }
         });
-      }
-      if (!conv) {
+      } else {
         conv = await this.prisma.conversation.findUnique({
           where: { publicId: cleanId },
           select: { id: true }
         });
-      }
-      if (!conv) {
-        conv = await this.prisma.conversation.findUnique({
-          where: { activityId: cleanId },
-          select: { id: true }
-        });
+        if (!conv) {
+          conv = await this.prisma.conversation.findUnique({
+            where: { activityId: cleanId },
+            select: { id: true }
+          });
+        }
       }
 
       if (conv?.id) {
@@ -99,29 +127,58 @@ export class MessagingCoreService {
     senderId: string,
     conversationId: string,
     payload: SendMessageDto
-  ): Promise<MessageResponseDto> {
+  ): Promise<MessageResponseDto & { recipientIds: string[]; unmutedRecipientIds: string[]; conversationName: string }> {
     const realConvId = await this.resolveConversationId(conversationId, senderId);
 
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId: senderId, conversationId: realConvId } }
+    // 1. Fetch conversation details & active participants in a single query
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: realConvId },
+      select: {
+        id: true,
+        publicId: true,
+        name: true,
+        participants: {
+          where: { deletedAt: null, leftAt: null },
+          select: { userId: true, isMuted: true }
+        }
+      }
     });
-    if (!participant || (participant as any).leftAt || participant.deletedAt) {
+
+    if (!conv) {
+      throw new ForbiddenException('Conversation not found');
+    }
+
+    const myParticipant = conv.participants.find(p => p.userId === senderId);
+    if (!myParticipant) {
       throw new ForbiddenException('You are no longer a member of this conversation');
     }
 
-    const otherParticipants = await this.prisma.conversationParticipant.findMany({
-      where: { conversationId: realConvId, userId: { not: senderId }, deletedAt: null },
-      select: { userId: true }
-    });
+    const otherParticipants = conv.participants.filter(p => p.userId !== senderId);
+    const otherUserIds = otherParticipants.map(p => p.userId);
 
-    if (otherParticipants.length > 0) {
-      const otherUserIds = otherParticipants.map(p => p.userId);
-      const isBlockedByMe = await this.prisma.block.findFirst({
-        where: { blockerId: senderId, blockedId: { in: otherUserIds } }
+    let recipientIds: string[] = [];
+    let unmutedRecipientIds: string[] = [];
+
+    if (otherUserIds.length > 0) {
+      const blocks = await this.prisma.block.findMany({
+        where: {
+          OR: [
+            { blockerId: senderId, blockedId: { in: otherUserIds } },
+            { blockerId: { in: otherUserIds }, blockedId: senderId }
+          ]
+        },
+        select: { blockerId: true, blockedId: true }
       });
+
+      const blockedUserSet = new Set(blocks.flatMap(b => [b.blockerId, b.blockedId]));
+      const isBlockedByMe = blocks.some(b => b.blockerId === senderId);
       if (isBlockedByMe) {
         throw new ForbiddenException('Unblock this contact to send a message');
       }
+
+      recipientIds = otherUserIds.filter(id => !blockedUserSet.has(id));
+      const muteMap = new Map(conv.participants.map(p => [p.userId, p.isMuted]));
+      unmutedRecipientIds = recipientIds.filter(id => !muteMap.get(id));
     }
 
     const type = payload.mediaUrl || payload.mediaType ? ('MEDIA' as const) : ('CHAT' as const);
@@ -130,67 +187,91 @@ export class MessagingCoreService {
     if (payload.replyToId) {
       const replyTarget = await this.prisma.message.findFirst({
         where: {
-          OR: [
-            { id: payload.replyToId },
-            { clientMessageId: payload.replyToId },
-            { payload: { path: ['tempId'], equals: payload.replyToId } },
-            { payload: { path: ['clientId'], equals: payload.replyToId } }
-          ]
+          id: payload.replyToId,
+          conversationId: realConvId
         },
         select: { id: true }
       });
       validatedReplyToId = replyTarget ? replyTarget.id : null;
     }
 
-    const message: any = await this.prisma.message.create({
-      data: {
-        conversationId: realConvId,
-        senderId,
-        type,
-        replyToId: validatedReplyToId,
-        payload: {
-          text: payload.text || '',
-          mediaUrl: payload.mediaUrl || null,
-          mediaType: payload.mediaType || null,
-          mentions: payload.mentions || [],
-          inviteData: payload.inviteData || null,
-          isForwarded: payload.isForwarded || false,
-          forwardedFromMessageId: payload.forwardedFromMessageId || null,
-        }
-      },
-      include: {
-        sender: {
-          select: { id: true, username: true, displayName: true, avatar: true }
+    let initialInviteData = payload.inviteData || null;
+    if (initialInviteData && (initialInviteData.type === 'group_invite' || initialInviteData.groupId || initialInviteData.conversationId)) {
+      const expiresAt = initialInviteData.expiresAt || new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+      const isExpired = new Date(expiresAt).getTime() <= Date.now();
+      initialInviteData = {
+        ...initialInviteData,
+        expiresAt,
+        isExpired
+      };
+    }
+
+    const now = new Date();
+    const lastMsgText = payload.text ||
+      (initialInviteData?.type === 'postShare' ? 'Shared a post' : null) ||
+      (initialInviteData?.groupName ? `Group invite: ${initialInviteData.groupName}` : null) ||
+      (payload.mediaUrl ? (payload.mediaType === 'image' ? 'Photo' : payload.mediaType === 'video' ? 'Video' : 'Audio') : 'Message');
+
+    // 2. Atomic $transaction for message creation and conversation metadata updates
+    const [message] = await this.prisma.$transaction([
+      this.prisma.message.create({
+        data: {
+          conversationId: realConvId,
+          senderId,
+          type,
+          replyToId: validatedReplyToId,
+          payload: {
+            text: payload.text || '',
+            mediaUrl: payload.mediaUrl || null,
+            mediaType: payload.mediaType || null,
+            mentions: payload.mentions || [],
+            inviteData: initialInviteData,
+            isForwarded: payload.isForwarded || false,
+            forwardedFromMessageId: payload.forwardedFromMessageId || null,
+          }
         },
-        replyTo: {
-          select: {
-            id: true,
-            senderId: true,
-            payload: true,
-            sender: { select: { displayName: true, username: true } }
+        include: {
+          sender: {
+            select: { id: true, username: true, displayName: true, avatar: true }
+          },
+          replyTo: {
+            select: {
+              id: true,
+              senderId: true,
+              payload: true,
+              sender: { select: { displayName: true, username: true } }
+            }
           }
         }
-      }
-    });
+      }),
+      this.prisma.conversation.update({
+        where: { id: realConvId },
+        data: {
+          updatedAt: now,
+          lastMessageText: lastMsgText,
+          lastMessageType: type,
+          lastMessageAt: now,
+          lastMessageSenderId: senderId,
+        }
+      }),
+      ...(otherUserIds.length > 0 ? [
+        this.prisma.conversationParticipant.updateMany({
+          where: { conversationId: realConvId, userId: { not: senderId } },
+          data: { unreadCount: { increment: 1 } }
+        })
+      ] : [])
+    ]);
 
-    await this.prisma.conversation.update({
-      where: { id: realConvId },
-      data: {
-        updatedAt: new Date(),
-        lastMessageId: message.id,
-        lastMessageText: payload.text || (payload.mediaUrl ? (payload.mediaType === 'image' ? 'Photo' : payload.mediaType === 'video' ? 'Video' : 'Audio') : ''),
-        lastMessageType: type,
-        lastMessageAt: message.createdAt,
-        lastMessageSenderId: senderId,
-      }
-    });
-
-    await this.prisma.conversationParticipant.updateMany({
-      where: { conversationId: realConvId, userId: { not: senderId } },
-      data: { unreadCount: { increment: 1 } }
-    });
-
+    const isUnsent = message.state === 'UNSENT';
     const msgPayload = (message.payload as any) || {};
+    let outputInviteData = isUnsent ? null : (msgPayload.inviteData || null);
+    if (outputInviteData && (outputInviteData.type === 'group_invite' || outputInviteData.groupId || outputInviteData.conversationId)) {
+      const createdAtMs = message.createdAt ? new Date(message.createdAt).getTime() : Date.now();
+      const expiresAt = outputInviteData.expiresAt || new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
+      const isExpired = new Date(expiresAt).getTime() <= Date.now();
+      outputInviteData = { ...outputInviteData, expiresAt, isExpired };
+    }
+
     let replyToObj: any = null;
     if (message.replyTo) {
       const rPayload = (message.replyTo.payload as any) || {};
@@ -202,13 +283,7 @@ export class MessagingCoreService {
       };
     }
 
-    const convRecord = await this.prisma.conversation.findUnique({
-      where: { id: realConvId },
-      select: { publicId: true }
-    });
-    const pubId = convRecord?.publicId || conversationId;
-
-    const isUnsent = message.state === 'UNSENT';
+    const pubId = conv.publicId || conversationId;
 
     return {
       id: message.id,
@@ -229,9 +304,12 @@ export class MessagingCoreService {
       mediaUrl: isUnsent ? null : (msgPayload.mediaUrl || null),
       mediaType: isUnsent ? null : (msgPayload.mediaType || null),
       mentions: isUnsent ? [] : (msgPayload.mentions || []),
-      inviteData: isUnsent ? null : (msgPayload.inviteData || null),
+      inviteData: outputInviteData,
       replyTo: isUnsent ? null : replyToObj,
-      status: 'sent'
+      status: 'sent',
+      recipientIds,
+      unmutedRecipientIds,
+      conversationName: conv.name || '',
     };
   }
 
@@ -416,6 +494,14 @@ export class MessagingCoreService {
       const isRead = currentUserId && m.senderId === currentUserId && isAllRead && (minOtherLastReadAt + 5000 >= new Date(m.createdAt).getTime());
       const isUnsent = m.state === 'UNSENT';
 
+      let inviteData = isUnsent ? null : (payload.inviteData || null);
+      if (inviteData && (inviteData.type === 'group_invite' || inviteData.groupId || inviteData.conversationId)) {
+        const createdAtMs = m.createdAt ? new Date(m.createdAt).getTime() : Date.now();
+        const expiresAt = inviteData.expiresAt || new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
+        const isExpired = new Date(expiresAt).getTime() <= Date.now();
+        inviteData = { ...inviteData, expiresAt, isExpired };
+      }
+
       return {
         id: m.id,
         conversationId: m.conversationId,
@@ -433,7 +519,7 @@ export class MessagingCoreService {
         mediaUrl: isUnsent ? null : (payload.mediaUrl || null),
         mediaType: isUnsent ? null : (payload.mediaType || null),
         mentions: isUnsent ? [] : (payload.mentions || []),
-        inviteData: isUnsent ? null : (payload.inviteData || null),
+        inviteData,
         replyTo: isUnsent ? null : replyToObj,
         status: isRead ? 'read' : 'sent',
         state: m.state || 'SENT',

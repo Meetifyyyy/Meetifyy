@@ -44,8 +44,8 @@ export class CloudflareR2Provider implements StorageProvider {
     const key = `${folder}/${randomUUID()}.${ext}`;
 
     if (!this.isConfigured || !this.s3) {
-      const mockPublicUrl = `/mock-upload/${key}`;
-      return { uploadUrl: mockPublicUrl, publicUrl: mockPublicUrl, key };
+      const uploadUrl = `/api/media/direct-upload?key=${encodeURIComponent(key)}`;
+      return { uploadUrl, publicUrl: `/api/media/${key}`, key };
     }
 
     const command = new PutObjectCommand({ Bucket: this.bucketName, Key: key, ContentType: contentType, CacheControl: 'public, max-age=31536000, immutable' });

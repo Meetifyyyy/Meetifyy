@@ -214,6 +214,68 @@ export class AuthService {
         }).catch((err) => this.logger.error(`Failed to auto-link user collegeId: ${err.message}`));
       }
 
+      // Auto-heal legacy / fallback usernames or displayNames starting with user_
+      const isRandomUsername = typeof row.username === 'string' && row.username.startsWith('user_');
+      const isRandomDisplayName = typeof row.displayName === 'string' && row.displayName.startsWith('user_');
+
+      if (isRandomUsername || isRandomDisplayName) {
+        try {
+          let meta = user.user_metadata || {};
+          const { data: { user: adminUser } } = await this.supabaseService.client.auth.admin.getUserById(user.id).catch(() => ({ data: { user: null } }));
+          if (adminUser?.user_metadata) {
+            meta = { ...adminUser.user_metadata, ...meta };
+          }
+
+          let healUsername = row.username;
+          let healDisplayName = row.displayName;
+
+          if (isRandomUsername) {
+            const candidate = meta.username ||
+              (row.email && !row.email.endsWith('@meetifyy.user') ? row.email.split('@')[0] : null) ||
+              (row.collegeEmail ? row.collegeEmail.split('@')[0] : null) ||
+              (user.email && !user.email.endsWith('@meetifyy.user') ? user.email.split('@')[0] : null);
+
+            if (candidate) {
+              let clean = candidate.trim().toLowerCase().replace(/[^a-z0-9_.]/g, '_');
+              if (clean.length >= 3) {
+                clean = clean.slice(0, 30);
+                const existing = await this.prisma.user.findUnique({ where: { username: clean } });
+                if (!existing || existing.id === row.id) {
+                  healUsername = clean;
+                }
+              }
+            }
+          }
+
+          if (isRandomDisplayName || healDisplayName === row.username) {
+            const rawTargetName = meta.displayName ||
+              (meta.firstName ? `${meta.firstName} ${meta.lastName || ''}`.trim() : null) ||
+              (healUsername && !healUsername.startsWith('user_') ? healUsername : null) ||
+              (row.email && !row.email.endsWith('@meetifyy.user') ? row.email.split('@')[0] : null);
+
+            if (rawTargetName && !rawTargetName.startsWith('user_')) {
+              healDisplayName = rawTargetName.replace(/[._]/g, ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ').slice(0, 30);
+            }
+          }
+
+          if (healUsername !== row.username || healDisplayName !== row.displayName) {
+            await this.prisma.user.update({
+              where: { id: row.id },
+              data: {
+                username: healUsername,
+                displayName: healDisplayName,
+              },
+            });
+            row.username = healUsername;
+            row.displayName = healDisplayName;
+            this.syncCache.delete(row.id);
+            this.logger.log(`Auto-healed user handle for userId=${row.id}: username="${healUsername}", displayName="${healDisplayName}"`);
+          }
+        } catch (healErr) {
+          this.logger.warn(`Auto-heal failed for userId=${row.id}: ${healErr.message}`);
+        }
+      }
+
       const result = {
         id: row.id,
         username: row.username,
@@ -271,14 +333,17 @@ export class AuthService {
       );
     }
 
-    // Only call the admin API when BOTH email AND user_metadata are absent from the JWT payload.
-    // The JWT guard already parses email from the token so this path is rarely hit.
+    // Fetch full user metadata from Supabase Admin API if username or user_metadata is missing from payload
     let sbUser = user;
-    if (!sbUser.email && !sbUser.user_metadata && sbUser.id) {
+    if ((!sbUser.user_metadata?.username || !sbUser.email) && sbUser.id) {
       try {
         const { data: { user: adminUser }, error } = await this.supabaseService.client.auth.admin.getUserById(user.id);
         if (!error && adminUser) {
-          sbUser = adminUser;
+          sbUser = {
+            ...sbUser,
+            ...adminUser,
+            user_metadata: { ...(sbUser.user_metadata || {}), ...(adminUser.user_metadata || {}) },
+          };
         }
       } catch (err) {
         // Fallback admin lookup failed; proceed with whatever info we have from JwtGuard
@@ -289,16 +354,18 @@ export class AuthService {
       throw new UnauthorizedException('Could not retrieve Supabase user info');
     }
 
-    let username = sbUser.user_metadata?.username || sbUser.email?.split('@')[0] || `user_${Date.now()}`;
-    // Sanitize: strip any chars that aren't lowercase letters, numbers, underscores, or dots.
-    // Coupling reminder: If this sanitizer is updated, keep the validation regex in users.service.ts in sync.
-    username = username.trim().toLowerCase().replace(/[^a-z0-9_.]/g, '_');
-    // Ensure minimum length
-    if (username.length < 3) username = `user_${Date.now()}`;
-    // Trim to max 30 chars
+    let rawUsername = sbUser.user_metadata?.username || sbUser.email?.split('@')[0] || `user_${user.id.slice(0, 8)}`;
+    let username = rawUsername.trim().toLowerCase().replace(/[^a-z0-9_.]/g, '_');
+    if (username.length < 3) {
+      username = `user_${user.id.slice(0, 8)}`;
+    }
     username = username.slice(0, 30);
 
-    const displayName = sbUser.user_metadata?.displayName || username;
+    const displayName = sbUser.user_metadata?.displayName || (
+      sbUser.user_metadata?.firstName
+        ? `${sbUser.user_metadata.firstName} ${sbUser.user_metadata.lastName || ''}`.trim()
+        : username
+    );
 
     let email = sbUser.email || '';
     const domainValidation = await this.domainValidatorService.validateDomain(email);

@@ -96,9 +96,11 @@ export class GroupChatsController {
   ) {
     const userId = req.user?.id;
     const message = await this.groupChatsService.sendMessage(userId, conversationId, body);
-    const conv = await this.groupChatsService.getConversationById(conversationId);
 
-    const { recipientIds: unblockedParticipantIds, unmutedRecipientIds } = await this.groupChatsService.getBatchUnblockedAndUnmutedParticipants(conversationId, userId);
+    const unblockedParticipantIds = message.recipientIds || [];
+    const unmutedRecipientIds = message.unmutedRecipientIds || [];
+
+    const allParticipantIds = Array.from(new Set([userId, ...unblockedParticipantIds]));
 
     this.domainEventService.emit('message:new', message, unblockedParticipantIds);
     this.domainEventService.emit('conversation:updated', {
@@ -106,22 +108,24 @@ export class GroupChatsController {
       publicId: message.publicId,
       internalId: message.internalId,
       lastMessage: {
-        text: message.text,
+        text: message.text || (message.inviteData ? (message.inviteData.groupName ? `Group invite: ${message.inviteData.groupName}` : 'Group invite') : ''),
         createdAt: message.createdAt,
         senderId: userId
       }
-    }, unblockedParticipantIds);
+    }, allParticipantIds);
 
-    for (const pId of unmutedRecipientIds) {
-      this.notificationsService.createNotification(
-        this.notificationFactory.createMessage(
-          { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
-          conv || { id: conversationId, name: message.senderName },
-          pId,
-          message.text
-        )
-      ).catch(() => {});
-    }
+    setImmediate(() => {
+      for (const pId of unmutedRecipientIds) {
+        this.notificationsService.createNotification(
+          this.notificationFactory.createMessage(
+            { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
+            { id: conversationId, name: message.conversationName || message.senderName },
+            pId,
+            message.text
+          )
+        ).catch(() => {});
+      }
+    });
 
     this.domainEventService.emit('message:new', message, [userId]);
 

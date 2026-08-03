@@ -239,6 +239,14 @@ export default function SettingsRoute() {
 
   const handleSave = async () => {
     if (activePanel === 'profile') {
+      if (displayName && displayName.trim().length > 30) {
+        showToast('Name cannot exceed 30 characters');
+        return;
+      }
+      if (bio && bio.length > 200) {
+        showToast('Description cannot exceed 200 characters');
+        return;
+      }
       if (birthday) {
         const parts = birthday.split('-');
         if (parts.length === 3) {
@@ -571,7 +579,8 @@ export default function SettingsRoute() {
                 className={styles.input}
                 type="text"
                 value={displayName}
-                onChange={e => setDisplayName(e.target.value)}
+                maxLength={30}
+                onChange={e => setDisplayName(e.target.value.slice(0, 30))}
               />
             </div>
             <div className={styles.divider} />
@@ -591,7 +600,8 @@ export default function SettingsRoute() {
                 className={styles.input}
                 type="text"
                 value={bio}
-                onChange={e => setBio(e.target.value)}
+                maxLength={200}
+                onChange={e => setBio(e.target.value.slice(0, 200))}
               />
             </div>
             <div className={styles.divider} />
