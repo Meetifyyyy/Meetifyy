@@ -69,10 +69,22 @@ export function SharedPostPreview({ post, isLoading = false }) {
     }
     const optionsSrc = livePost?.pollOptions || post?.pollOptions;
     if (Array.isArray(optionsSrc) && optionsSrc.length > 0) {
+      const getOptionText = (o) => {
+        if (!o) return '';
+        if (typeof o === 'string') return o;
+        if (typeof o.text === 'string') return o.text;
+        if (typeof o.text === 'object' && o.text !== null) return getOptionText(o.text);
+        return String(o.label || o.title || '');
+      };
+      const getOptionVotes = (o) => {
+        if (!o || typeof o !== 'object') return 0;
+        const count = o.voteCount !== undefined ? o.voteCount : (o.votes !== undefined ? o.votes : (o._count?.votes || 0));
+        return Number(count) || 0;
+      };
       const options = optionsSrc.map(opt => ({
-        id: opt.id,
-        text: typeof opt === 'string' ? opt : opt.text,
-        votes: Number(opt.voteCount ?? opt.votes ?? opt._count?.votes ?? 0)
+        id: typeof opt === 'object' ? opt?.id : undefined,
+        text: getOptionText(opt),
+        votes: getOptionVotes(opt)
       }));
       return {
         question: livePost?.pollQuestion || post?.pollQuestion || 'Poll',
@@ -84,6 +96,14 @@ export function SharedPostPreview({ post, isLoading = false }) {
   };
 
   const pollData = resolvePollData();
+
+  const getOptionText = (o) => {
+    if (!o) return '';
+    if (typeof o === 'string') return o;
+    if (typeof o.text === 'string') return o.text;
+    if (typeof o.text === 'object' && o.text !== null) return getOptionText(o.text);
+    return String(o.label || o.title || '');
+  };
 
   const rawDate = livePost?.createdAt || post.createdAt || post.timestamp || livePost?.timestamp;
   const formatExactDateTime = (ts) => {
@@ -142,8 +162,7 @@ export function SharedPostPreview({ post, isLoading = false }) {
             <span>Poll: {pollData.question || 'Question'}</span>
           </div>
           <div className={styles.pollOptionsList}>
-            {pollData.options.slice(0, 4).map((opt, idx) => {
-              const optText = typeof opt === 'string' ? opt : opt.text;
+              const optText = getOptionText(opt);
               const votes = typeof opt === 'object' ? (opt.votes || 0) : 0;
               const total = pollData.totalVotes || 0;
               const pct = total > 0 ? Math.round((votes / total) * 100) : 0;

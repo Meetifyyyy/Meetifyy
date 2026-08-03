@@ -40,11 +40,16 @@ export class RouteErrorBoundary extends Component {
             Something went wrong on this page.
           </h2>
           <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', maxWidth: '360px', margin: 0, lineHeight: 1.6 }}>
-            {this.state.error?.message || 'An unexpected error occurred.'}
+            {this.state.error?.message?.includes('Failed to fetch dynamically imported module') ||
+             this.state.error?.message?.includes('Importing a module script failed') ||
+             this.state.error?.name === 'ChunkLoadError'
+              ? 'A new version of Meetifyy is available. Please refresh to continue.'
+              : (this.state.error?.message || 'An unexpected error occurred.')}
           </p>
           <button
             onClick={() => {
-              if (this.state.error?.message?.includes('Failed to fetch dynamically imported module')) {
+              const msg = this.state.error?.message || '';
+              if (msg.includes('Failed to fetch dynamically imported module') || msg.includes('Importing a module script failed') || this.state.error?.name === 'ChunkLoadError') {
                 window.location.reload();
               } else {
                 this.setState({ hasError: false, error: null });

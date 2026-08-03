@@ -62,7 +62,14 @@ function PollCard({ poll, postId }) {
     <div className={styles.pollCard}>
       <div className={styles.pollCardOptions}>
         {optionsList.map((opt, i) => {
-          const optText = typeof opt === 'string' ? opt : (opt.text || '');
+          const getOptionText = (o) => {
+            if (!o) return '';
+            if (typeof o === 'string') return o;
+            if (typeof o.text === 'string') return o.text;
+            if (typeof o.text === 'object' && o.text !== null) return getOptionText(o.text);
+            return String(o.label || o.title || '');
+          };
+          const optText = getOptionText(opt);
           const pct = showResults && totalVotes > 0 ? Math.round(((votes[i] || 0) / totalVotes) * 100) : 0;
           const isSelected = selected.includes(i);
 
