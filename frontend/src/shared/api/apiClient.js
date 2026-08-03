@@ -43,12 +43,10 @@ export const getBackendUrl = () => {
     const isLocalHost = host === 'localhost' || host === '127.0.0.1';
     const isLocalIp = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|.+\.local$)/.test(host) || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
 
-    // If accessing frontend via local network IP (e.g. 192.168.x.x:5173 on phone),
-    // point API requests to host:4000 instead of loopback 127.0.0.1:4000
-    if (!isLocalHost && isLocalIp) {
-      if (!rawEnv || rawEnv.includes('localhost') || rawEnv.includes('127.0.0.1')) {
-        return `${protocol}//${host}:4000`;
-      }
+    // In local development or on localhost/local IP, default to local NestJS backend at port 4000
+    // when VITE_API_URL points to remote Railway/dev-api production server
+    if ((isLocalHost || isLocalIp) && (import.meta.env.DEV || !rawEnv || rawEnv.includes('railway.app') || rawEnv.includes('meetifyy.app'))) {
+      return `${protocol}//${host}:4000`;
     }
 
     // On HTTPS public hosts (e.g. Vercel), upgrade http:// backend URLs to https:// to prevent Mixed Content blocking
@@ -64,15 +62,6 @@ export const getBackendUrl = () => {
       return `https://${rawEnv}`;
     }
     return rawEnv;
-  }
-
-  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-    const host = window.location.hostname;
-    const isLocalHost = host === 'localhost' || host === '127.0.0.1';
-    const isLocalIp = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|.+\.local$)/.test(host) || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
-    if (!isLocalHost && !isLocalIp) {
-      return 'https://meetifyy-production.up.railway.app';
-    }
   }
 
   return 'http://127.0.0.1:4000';
@@ -515,6 +504,11 @@ export const activitiesApi = {
 };
 
 export const usersApi = {
+  getConnections: (query = '', limit = 50) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (query) params.set('q', query);
+    return apiClient.get(`/api/users/connections?${params.toString()}`);
+  },
   getAll: (limit = 20, offset = 0) => {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     return apiClient.get(`/api/users?${params.toString()}`);
@@ -696,10 +690,19 @@ export const notificationsApi = {
 };
 
 export const searchApi = {
-  globalSearch: (query, limit = 10) => {
+  globalSearch: (query, limit = 15, type = 'all', signal) => {
     const params = new URLSearchParams({ q: query, limit: String(limit) });
-    return apiClient.get(`/api/search?${params.toString()}`);
-  }
+    if (type && type !== 'all') params.set('type', type);
+    return apiClient.get(`/api/search?${params.toString()}`, { signal });
+  },
+  getSuggestions: (query, signal) => {
+    const params = new URLSearchParams({ q: query });
+    return apiClient.get(`/api/search/suggestions?${params.toString()}`, { signal });
+  },
+  getRecentSearches: () => apiClient.get('/api/search/recent'),
+  addRecentSearch: (term) => apiClient.post('/api/search/recent', { term }),
+  removeRecentSearch: (term) => apiClient.delete(`/api/search/recent?term=${encodeURIComponent(term)}`),
+  clearRecentSearches: () => apiClient.delete('/api/search/recent/clear'),
 };
 
 

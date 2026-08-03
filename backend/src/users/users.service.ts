@@ -198,118 +198,128 @@ export class UsersService {
   async getProfileByUsername(username: string, currentUserId?: string) {
     const cleanUsername = username.trim().toLowerCase();
 
-    const rows: any[] = await this.prisma.$queryRaw`
-      SELECT 
-        u."id",
-        u."username",
-        u."displayName",
-        u."avatar",
-        u."cover",
-        u."bio",
-        u."birthday",
-        u."major",
-        u."graduationYear",
-        u."location",
-        u."interests",
-        u."emailVerified",
-        u."profileCompleted",
-        u."createdAt",
-        c."name" AS "collegeName",
-        s."privateProfile",
-        s."showOnlineStatus",
-        s."whoCanSeeOnline",
-        (SELECT COUNT(*)::int FROM "Follow" f WHERE f."followingId" = u."id") AS "followersCount",
-        (SELECT COUNT(*)::int FROM "Follow" f WHERE f."followerId" = u."id") AS "followingCount",
-        (SELECT COUNT(*)::int FROM "Post" p WHERE p."authorId" = u."id" AND p."deletedAt" IS NULL AND p."communityId" IS NULL) AS "postsCount",
-        CASE 
-          WHEN ${currentUserId ? currentUserId : ''}::text != '' AND ${currentUserId ? currentUserId : ''}::text != u."id" THEN
-            EXISTS(
-              SELECT 1 FROM "Block" b 
-              WHERE (b."blockerId" = ${currentUserId || ''} AND b."blockedId" = u."id") 
-                 OR (b."blockerId" = u."id" AND b."blockedId" = ${currentUserId || ''})
-            )
-          ELSE false 
-        END AS "isBlocked",
-        CASE 
-          WHEN ${currentUserId ? currentUserId : ''}::text != '' AND ${currentUserId ? currentUserId : ''}::text != u."id" THEN
-            EXISTS(
-              SELECT 1 FROM "Follow" f 
-              WHERE f."followerId" = ${currentUserId || ''} AND f."followingId" = u."id"
-            )
-          ELSE false 
-        END AS "isFollowing",
-        CASE 
-          WHEN ${currentUserId ? currentUserId : ''}::text != '' AND ${currentUserId ? currentUserId : ''}::text != u."id" THEN
-            EXISTS(
-              SELECT 1 FROM "Follow" f 
-              WHERE f."followerId" = u."id" AND f."followingId" = ${currentUserId || ''}
-            )
-          ELSE false 
-        END AS "isFollowedBy"
-      FROM "User" u
-      LEFT JOIN "College" c ON u."collegeId" = c."id"
-      LEFT JOIN "UserSettings" s ON s."userId" = u."id"
-      WHERE u."username" = ${cleanUsername} OR u."id" = ${cleanUsername}
-      LIMIT 1;
-    `;
+    // 1. Find user by exact username (case-insensitive), or ID, or email prefix, or handle prefix, or displayName
+    let targetUser = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { username: { equals: cleanUsername, mode: 'insensitive' } },
+          { id: cleanUsername },
+          { email: { equals: cleanUsername, mode: 'insensitive' } },
+          { collegeEmail: { equals: cleanUsername, mode: 'insensitive' } }
+        ],
+      },
+      include: {
+        college: { select: { name: true } },
+        settings: {
+          select: {
+            privateProfile: true,
+            showOnlineStatus: true,
+            whoCanSeeOnline: true,
+          },
+        },
+        _count: {
+          select: {
+            followers: true,
+            following: true,
+            posts: {
+              where: {
+                deletedAt: null,
+                communityId: null,
+              },
+            },
+          },
+        },
+      },
+    });
 
-    if (!rows || rows.length === 0) {
+    if (!targetUser) {
       throw new NotFoundException('User not found');
     }
 
-    const row = rows[0];
+    let isBlocked = false;
+    let isFollowing = false;
+    let isFollowedBy = false;
 
-    if (row.isBlocked) {
+    if (currentUserId && currentUserId !== targetUser.id) {
+      const [blockCount, followRecord, followedByRecord] = await Promise.all([
+        this.prisma.block.count({
+          where: {
+            OR: [
+              { blockerId: currentUserId, blockedId: targetUser.id },
+              { blockerId: targetUser.id, blockedId: currentUserId },
+            ],
+          },
+        }),
+        this.prisma.follow.findUnique({
+          where: {
+            followerId_followingId: {
+              followerId: currentUserId,
+              followingId: targetUser.id,
+            },
+          },
+        }),
+        this.prisma.follow.findUnique({
+          where: {
+            followerId_followingId: {
+              followerId: targetUser.id,
+              followingId: currentUserId,
+            },
+          },
+        }),
+      ]);
+
+      isBlocked = blockCount > 0;
+      isFollowing = !!followRecord;
+      isFollowedBy = !!followedByRecord;
+    }
+
+    if (isBlocked) {
       throw new NotFoundException('User not found');
     }
 
-    const hasSettings = row.privateProfile !== null || row.showOnlineStatus !== null || row.whoCanSeeOnline !== null;
-    const settings = hasSettings
-      ? {
-          privateProfile: !!row.privateProfile,
-          showOnlineStatus: row.showOnlineStatus ?? true,
-          whoCanSeeOnline: row.whoCanSeeOnline ?? 'everyone',
-        }
-      : null;
-
-    const isFollowing = !!row.isFollowing;
-    const isFollowedBy = !!row.isFollowedBy;
-
-    const presence = await this.presenceService.getPresence(row.id);
+    const presence = await this.presenceService.getPresence(targetUser.id);
     const canSeeOnline = await checkPresenceVisibility(
-      row.id,
+      targetUser.id,
       currentUserId || '',
-      settings?.whoCanSeeOnline || 'everyone',
-      settings?.showOnlineStatus !== false,
+      targetUser.settings?.whoCanSeeOnline || 'everyone',
+      targetUser.settings?.showOnlineStatus !== false,
       this.prisma
     );
     const isOnline = canSeeOnline ? (presence?.status === 'online') : false;
 
+    const settings = targetUser.settings
+      ? {
+          privateProfile: !!targetUser.settings.privateProfile,
+          showOnlineStatus: targetUser.settings.showOnlineStatus ?? true,
+          whoCanSeeOnline: targetUser.settings.whoCanSeeOnline ?? 'everyone',
+        }
+      : null;
+
     return {
-      id: row.id,
-      username: row.username,
-      displayName: row.displayName,
-      avatar: row.avatar,
-      cover: row.cover,
-      bio: row.bio,
-      birthday: row.birthday,
-      college: row.collegeName || null,
-      major: row.major,
-      graduationYear: row.graduationYear,
-      location: row.location,
-      interests: row.interests || [],
-      verified: row.emailVerified,
-      profileCompleted: row.profileCompleted,
-      createdAt: row.createdAt,
+      id: targetUser.id,
+      username: targetUser.username,
+      displayName: targetUser.displayName,
+      avatar: targetUser.avatar,
+      cover: targetUser.cover,
+      bio: targetUser.bio,
+      birthday: targetUser.birthday,
+      college: targetUser.college?.name || null,
+      major: targetUser.major,
+      graduationYear: targetUser.graduationYear,
+      location: targetUser.location,
+      interests: targetUser.interests || [],
+      verified: targetUser.emailVerified,
+      profileCompleted: targetUser.profileCompleted,
+      createdAt: targetUser.createdAt,
       settings,
-      isPrivate: row.privateProfile || false,
+      isPrivate: targetUser.settings?.privateProfile || false,
       isOnline,
       online: isOnline,
       lastActive: presence?.lastSeen || null,
       stats: {
-        followers: Number(row.followersCount || 0),
-        following: Number(row.followingCount || 0),
-        posts: Number(row.postsCount || 0),
+        followers: targetUser._count.followers,
+        following: targetUser._count.following,
+        posts: targetUser._count.posts,
       },
       isFollowing,
       isFollowedBy,
@@ -597,10 +607,19 @@ export class UsersService {
     // Only allow updating valid user profile fields
     const { displayName, username, bio, avatar, cover, major, graduationYear, location, profileCompleted, interests, birthday } = data;
     const updateData: any = {};
-    if (displayName !== undefined) updateData.displayName = displayName;
+    if (displayName !== undefined) {
+      const trimmedDisplayName = typeof displayName === 'string' ? displayName.trim() : '';
+      if (trimmedDisplayName.length > 30) {
+        throw new BadRequestException('Name cannot exceed 30 characters');
+      }
+      updateData.displayName = trimmedDisplayName;
+    }
     
     if (username !== undefined) {
-      const trimmedUsername = username.trim().toLowerCase();
+      const trimmedUsername = typeof username === 'string' ? username.trim().toLowerCase() : '';
+      if (trimmedUsername.length > 30) {
+        throw new BadRequestException('Username cannot exceed 30 characters');
+      }
       // Coupling reminder: If this validation regex is updated, keep the sanitizer in auth.service.ts in sync.
       const usernameRegex = /^[a-z0-9_.]{3,30}$/;
       if (!usernameRegex.test(trimmedUsername)) {
@@ -616,7 +635,13 @@ export class UsersService {
       updateData.username = trimmedUsername;
     }
     
-    if (bio !== undefined) updateData.bio = bio;
+    if (bio !== undefined) {
+      const trimmedBio = typeof bio === 'string' ? bio.trim() : '';
+      if (trimmedBio.length > 200) {
+        throw new BadRequestException('Description cannot exceed 200 characters');
+      }
+      updateData.bio = trimmedBio;
+    }
 
     if (birthday !== undefined) {
       if (birthday !== null && birthday !== '') {
@@ -700,12 +725,17 @@ export class UsersService {
     if (profileCompleted !== undefined) updateData.profileCompleted = profileCompleted;
     if (Array.isArray(interests)) updateData.interests = interests.filter(i => typeof i === 'string');
 
-    const fallbackUsername = updateData.username || `user_${Date.now()}`;
-    const fallbackDisplayName = updateData.displayName || fallbackUsername;
     const realEmail = userEmail && !userEmail.endsWith('@meetifyy.user') ? userEmail.trim().toLowerCase() : (data.email || `${userId}@meetifyy.user`);
 
+    const existingUserRecord = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, username: true, displayName: true },
+    });
+
+    const fallbackUsername = updateData.username || existingUserRecord?.username || realEmail.split('@')[0] || `user_${userId.slice(0, 8)}`;
+    const fallbackDisplayName = updateData.displayName || existingUserRecord?.displayName || fallbackUsername;
+
     // Auto-heal email if existing record has fallback
-    const existingUserRecord = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
     if (existingUserRecord && (existingUserRecord.email.endsWith('@meetifyy.user') || !existingUserRecord.email) && realEmail && !realEmail.endsWith('@meetifyy.user')) {
       updateData.email = realEmail;
     }
@@ -795,5 +825,38 @@ export class UsersService {
     // Invalidate cached block lists for both users
     await this.blocksService.invalidateBlockCache(blockerId, blockedId);
     return { success: true, blocked: false };
+  }
+
+  async getConnections(userId: string, query?: string, limit: number = 50) {
+    const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
+    const excludeSet = new Set([...excludedUserIds, userId]);
+
+    const cleanQuery = (query || '').trim().toLowerCase();
+    const whereClause: any = {
+      id: { notIn: Array.from(excludeSet) },
+      accountStatus: 'ACTIVE',
+      ...(cleanQuery
+        ? {
+            OR: [
+              { displayName: { contains: cleanQuery, mode: 'insensitive' } },
+              { username: { contains: cleanQuery, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const users = await this.prisma.user.findMany({
+      where: whereClause,
+      take: limit,
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatar: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return users;
   }
 }

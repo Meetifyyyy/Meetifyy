@@ -2,12 +2,12 @@ import { IsString, IsOptional, MaxLength, IsBoolean } from 'class-validator';
 
 export class CreateCommunityDto {
   @IsString()
-  @MaxLength(100)
+  @MaxLength(30)
   name: string;
 
   @IsString()
   @IsOptional()
-  @MaxLength(500)
+  @MaxLength(200)
   description?: string;
 
   @IsString()
@@ -34,12 +34,12 @@ export class CreateCommunityDto {
 export class UpdateCommunityDto {
   @IsString()
   @IsOptional()
-  @MaxLength(100)
+  @MaxLength(30)
   name?: string;
 
   @IsString()
   @IsOptional()
-  @MaxLength(500)
+  @MaxLength(200)
   description?: string;
 
   @IsString()

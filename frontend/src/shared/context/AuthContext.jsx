@@ -178,10 +178,17 @@ export function AuthProvider({ children }) {
               isNewUser: isNew,
             };
             setCurrentUser(prev => {
-              if (prev && prev.id === sbUser.id && prev.username) {
+              const isFallbackHandle = (str) => !str || typeof str !== 'string' || str.startsWith('user_');
+              if (prev && prev.id === sbUser.id && !isFallbackHandle(prev.username) && !isFallbackHandle(prev.displayName)) {
                 return { ...prev, isNewUser: prev.isNewUser ?? isNew };
               }
-              return optProfile;
+              const validOptUsername = sbUser.user_metadata?.username || (!isFallbackHandle(prev?.username) ? prev.username : '');
+              const validOptDisplayName = sbUser.user_metadata?.displayName || (!isFallbackHandle(prev?.displayName) ? prev.displayName : (sbUser.email?.split('@')[0] || ''));
+              return {
+                ...optProfile,
+                username: validOptUsername,
+                displayName: validOptDisplayName,
+              };
             });
           }
 
@@ -283,14 +290,24 @@ export function AuthProvider({ children }) {
       throw new Error('Password is required.');
     }
 
+    const computedDisplayName = userData.displayName || userData.name || (
+      userData.firstName
+        ? `${userData.firstName} ${userData.lastName || ''}`.trim()
+        : userData.username
+    );
+
     const { data, error } = await supabase.auth.signUp({
       email: userData.email.trim().toLowerCase(),
       password: userData.password,
       options: {
         data: {
-          displayName: userData.name || userData.displayName || userData.username,
+          displayName: computedDisplayName,
           username: userData.username,
           birthday: userData.birthday,
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          major: userData.major || userData.course || userData.branch,
+          year: userData.year,
         }
       }
     });
@@ -352,9 +369,9 @@ export function AuthProvider({ children }) {
       const user = data.user;
       const username = typeof signupData === 'string' ? signupData : (signupData.username || user.user_metadata?.username);
       const payloadObj = typeof signupData === 'object' && signupData !== null ? signupData : { username };
-      const displayName = payloadObj.firstName
+      const displayName = payloadObj.displayName || (payloadObj.firstName
         ? `${payloadObj.firstName} ${payloadObj.lastName || ''}`.trim()
-        : (user.user_metadata?.displayName || username);
+        : (user.user_metadata?.displayName || username));
 
       let profile = {
         id: user.id,

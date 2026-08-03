@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import Avatar from '@shared/components/avatar/Avatar';
 import PostPreviewSkeleton from '@shared/components/skeletons/PostPreviewSkeleton';
-import { Image as ImageIcon, Heart, MessageCircle, FileX } from 'lucide-react';
+import { Image as ImageIcon, BarChart2, FileX } from 'lucide-react';
 import styles from './SharedPostPreview.module.css';
 import { useData } from '@shared/hooks/useData';
 
@@ -29,25 +29,73 @@ export function SharedPostPreview({ post, isLoading = false }) {
   const liveAuthor = authorId ? getUserById(authorId) : null;
   
   const authorName = liveAuthor?.displayName || liveAuthor?.username || post.authorName || 'Someone';
+  const authorUsername = liveAuthor?.username || post.authorUsername || post.username || null;
   const authorAvatar = liveAuthor?.avatar || post.authorAvatar;
   const contentText = livePost?.text || post.text || '';
 
-  let mediaUrl = null;
-  if (livePost?.media) {
-    mediaUrl = typeof livePost.media === 'string' ? livePost.media : (livePost.media.url || livePost.media.objectKey);
-  } else if (post.image) {
-    mediaUrl = post.image;
-  }
+  // Extract media items reliably
+  const resolveMediaList = () => {
+    let list = [];
+    const rawMedia = livePost?.media || post?.media;
+    if (Array.isArray(rawMedia) && rawMedia.length > 0) {
+      list = rawMedia.map(m => {
+        if (typeof m === 'string') return { url: m, type: 'image' };
+        const url = m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null);
+        return { ...m, url };
+      }).filter(m => m.url);
+    } else if (Array.isArray(livePost?.images) || Array.isArray(post?.images)) {
+      const imgs = livePost?.images || post?.images || [];
+      list = imgs.map(img => {
+        const url = typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null));
+        return { url, type: 'image' };
+      }).filter(m => m.url);
+    } else {
+      const singleUrl = post?.image || post?.mediaUrl || (typeof rawMedia === 'string' ? rawMedia : rawMedia?.url);
+      if (singleUrl) {
+        list = [{ url: singleUrl, type: post?.mediaType || 'image' }];
+      }
+    }
+    return list;
+  };
 
-  const hasMedia = Boolean(mediaUrl);
+  const mediaList = resolveMediaList();
+  const primaryMedia = mediaList.length > 0 ? mediaList[0] : null;
 
-  const likesCount = Array.isArray(livePost?.likedBy) 
-    ? livePost.likedBy.length 
-    : (typeof livePost?.likes === 'number' ? livePost.likes : (post.likes || 0));
+  // Extract poll data reliably
+  const resolvePollData = () => {
+    const pollObj = livePost?.poll || post?.poll;
+    if (pollObj && Array.isArray(pollObj.options) && pollObj.options.length > 0) {
+      return pollObj;
+    }
+    const optionsSrc = livePost?.pollOptions || post?.pollOptions;
+    if (Array.isArray(optionsSrc) && optionsSrc.length > 0) {
+      const options = optionsSrc.map(opt => ({
+        id: opt.id,
+        text: typeof opt === 'string' ? opt : opt.text,
+        votes: Number(opt.voteCount ?? opt.votes ?? opt._count?.votes ?? 0)
+      }));
+      return {
+        question: livePost?.pollQuestion || post?.pollQuestion || 'Poll',
+        options,
+        totalVotes: options.reduce((sum, o) => sum + o.votes, 0)
+      };
+    }
+    return null;
+  };
 
-  const commentsCount = Array.isArray(livePost?.comments) 
-    ? livePost.comments.length 
-    : (typeof livePost?.comments === 'number' ? livePost.comments : (post.comments || 0));
+  const pollData = resolvePollData();
+
+  const rawDate = livePost?.createdAt || post.createdAt || post.timestamp || livePost?.timestamp;
+  const formatExactDateTime = (ts) => {
+    if (!ts) return post.time || 'Recent';
+    const date = new Date(ts);
+    if (isNaN(date.getTime())) return post.time || String(ts);
+    const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+    const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+    return `${dateStr} • ${timeStr}`;
+  };
+
+  const exactDateTime = formatExactDateTime(rawDate);
 
   const handleCardClick = (e) => {
     e.preventDefault();
@@ -63,33 +111,56 @@ export function SharedPostPreview({ post, isLoading = false }) {
       aria-label={`Post by ${authorName}`}
     >
       <div className={styles.authorRow}>
-        <Avatar src={authorAvatar} name={authorName} size="22px" />
-        <span className={styles.authorName}>{authorName}</span>
-        <span className={styles.timestamp}>• {post.time || 'Recent'}</span>
+        <Avatar src={authorAvatar} name={authorName} size="32px" />
+        <div className={styles.authorMeta}>
+          <span className={styles.authorName}>{authorName}</span>
+          {authorUsername && (
+            <span className={styles.authorUsername}>@{authorUsername.replace(/^@/, '')}</span>
+          )}
+        </div>
       </div>
 
       {contentText && (
-        <div className={styles.singleLineContent} title={contentText}>
+        <div className={styles.twoLineContent} title={contentText}>
           {contentText}
         </div>
       )}
 
-      {hasMedia && (
-        <div className={styles.attachmentPill}>
-          <ImageIcon size={13} />
-          <span>Attachment</span>
+      {primaryMedia && (
+        <div className={styles.mediaPreviewContainer}>
+          <img src={primaryMedia.url} alt="" className={styles.mediaPreviewImg} loading="lazy" />
+          {mediaList.length > 1 && (
+            <span className={styles.mediaBadge}>+{mediaList.length - 1} more</span>
+          )}
+        </div>
+      )}
+
+      {pollData && (
+        <div className={styles.pollPreviewWidget}>
+          <div className={styles.pollHeader}>
+            <BarChart2 size={15} />
+            <span>Poll: {pollData.question || 'Question'}</span>
+          </div>
+          <div className={styles.pollOptionsList}>
+            {pollData.options.slice(0, 4).map((opt, idx) => {
+              const optText = typeof opt === 'string' ? opt : opt.text;
+              const votes = typeof opt === 'object' ? (opt.votes || 0) : 0;
+              const total = pollData.totalVotes || 0;
+              const pct = total > 0 ? Math.round((votes / total) * 100) : 0;
+              return (
+                <div key={opt.id || idx} className={styles.pollOptionItem}>
+                  {total > 0 && <div className={styles.pollOptionFill} style={{ width: `${pct}%` }} />}
+                  <span className={styles.pollOptionText}>{optText}</span>
+                  {total > 0 && <span className={styles.pollOptionVotes}>{pct}%</span>}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
       <div className={styles.metaRow}>
-        <span className={styles.statItem}>
-          <Heart size={13} />
-          {likesCount}
-        </span>
-        <span className={styles.statItem}>
-          <MessageCircle size={13} />
-          {commentsCount}
-        </span>
+        <span className={styles.timestampText}>{exactDateTime}</span>
       </div>
     </div>
   );

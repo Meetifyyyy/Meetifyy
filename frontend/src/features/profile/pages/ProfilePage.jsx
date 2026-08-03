@@ -175,7 +175,7 @@ export default function ProfilePage() {
     setCropFile(null);
     setSavingCover(true); // Reusing for both to show loading state
     try {
-      const folder = cropType === 'avatar' ? 'avatars' : 'covers';
+      const folder = cropType === 'avatar' ? 'avatars' : 'profile-covers';
       const { publicUrl } = await processAndUploadImage(croppedFile, folder, {
         maxWidthOrHeight: cropType === 'avatar' ? 512 : 1920
       });

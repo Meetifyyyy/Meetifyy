@@ -29,23 +29,12 @@ export default function InviteFriendsModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  // Fetch user's friends & candidate users to invite
+  // Fetch candidate connections to invite using fast single endpoint
   const { data: friendsList = [], isLoading: isLoadingFriends } = useQuery({
-    queryKey: ['user-following-friends', currentUser?.username],
+    queryKey: ['user-connections-candidate', searchQuery],
     queryFn: async () => {
-      const [following, campus, allUsers] = await Promise.all([
-        currentUser?.username ? usersApi.getFollowing(currentUser.username, 100, 0).catch(() => []) : Promise.resolve([]),
-        usersApi.getCampusUsers(100, 0).catch(() => []),
-        usersApi.getAll(100, 0).catch(() => []),
-      ]);
-      const merged = [...(following || []), ...(campus || []), ...(allUsers || [])];
-      const userMap = new Map();
-      merged.forEach(u => {
-        if (u && u.id && String(u.id) !== String(currentUser?.id)) {
-          userMap.set(String(u.id), u);
-        }
-      });
-      return Array.from(userMap.values());
+      const users = await usersApi.getConnections(searchQuery, 50).catch(() => []);
+      return (users || []).filter(u => u && u.id && String(u.id) !== String(currentUser?.id));
     },
     staleTime: 30_000,
   });
@@ -58,16 +47,7 @@ export default function InviteFriendsModal({
     staleTime: 10_000,
   });
 
-  const filteredFriends = useMemo(() => {
-    if (!Array.isArray(friendsList)) return [];
-    if (!searchQuery.trim()) return friendsList;
-    const q = searchQuery.toLowerCase().trim();
-    return friendsList.filter(
-      (u) =>
-        u.displayName?.toLowerCase().includes(q) ||
-        u.username?.toLowerCase().includes(q)
-    );
-  }, [friendsList, searchQuery]);
+  const filteredFriends = friendsList;
 
   const toggleSelect = (userId, disabled) => {
     if (disabled) return;

@@ -115,6 +115,28 @@ export class StorageService {
     return this.storageProvider.getPublicUrl(key);
   }
 
+  async getResolvedPublicUrl(key: string): Promise<string | null> {
+    const media = await this.prisma.media.findUnique({
+      where: { objectKey: key },
+      select: { provider: true, bucket: true, objectKey: true }
+    });
+
+    if (media?.provider === 'supabase') {
+      return this.getSupabasePublicUrl(media.bucket, media.objectKey);
+    }
+    
+    // Default to active provider if no media record found or provider is r2
+    return this.getPublicUrl(key);
+  }
+
+  private getSupabasePublicUrl(bucket: string, key: string): string {
+    const supabaseUrl = this.configService.get<string>('supabase.url');
+    if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
+      return `/mock-public/${key}`;
+    }
+    return `${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${bucket}/${key}`;
+  }
+
   private signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
 
   async getSignedUrls(keys: string[], expiresIn = 3600): Promise<{ [key: string]: string }> {
@@ -149,7 +171,7 @@ export class StorageService {
 
     const media = await this.prisma.media.findMany({
       where: { objectKey: { in: keys } },
-      select: { objectKey: true, ownerId: true, visibility: true },
+      select: { objectKey: true, ownerId: true, visibility: true, provider: true, bucket: true },
     });
 
     const mediaMap = new Map(media.map((m) => [m.objectKey, m]));
@@ -160,7 +182,11 @@ export class StorageService {
       const item = mediaMap.get(key);
       // Public media or unregistered keys return public URL instantly (0ms network overhead)
       if (!item || item.visibility === 'public') {
-        result[key] = this.getPublicUrl(key);
+        if (item?.provider === 'supabase') {
+          result[key] = this.getSupabasePublicUrl(item.bucket, item.objectKey);
+        } else {
+          result[key] = this.getPublicUrl(key);
+        }
       } else if (item.ownerId === userId) {
         keysToSign.push(key);
       }

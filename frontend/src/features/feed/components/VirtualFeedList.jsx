@@ -17,7 +17,7 @@ export default function VirtualFeedList({ posts, communities, onPostClick }) {
       if (!p) return 254;
       let height = 184; // base header + actions + padding + 4px gap
       if (p.mediaUrls?.length > 0 || p.mediaKey || p.mediaUrl) height += 320;
-      if (p.pollOptions?.length > 0) height += 160;
+      if (p.pollOptions?.length > 0 || p.poll?.options?.length > 0) height += 160;
       if (p.text && p.text.length > 200) height += 60;
       return height;
     },

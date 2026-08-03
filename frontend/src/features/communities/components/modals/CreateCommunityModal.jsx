@@ -116,7 +116,7 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
 
   const isDescValid = useMemo(() => {
     const trimmed = desc.trim();
-    return trimmed.length >= 3 && trimmed.length <= 250;
+    return trimmed.length >= 3 && trimmed.length <= 200;
   }, [desc]);
 
   const isStep2Valid = useMemo(() => {
@@ -396,12 +396,12 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
                     value={desc}
                     onChange={(e) => setDesc(e.target.value)}
                     rows={3}
-                    maxLength={250}
+                    maxLength={200}
                     className={styles.textareaInput}
                   />
                   <label className={styles.textareaLabel}>Description</label>
                 </div>
-                <div className={styles.counterRow}>{desc.length}/250</div>
+                <div className={styles.counterRow}>{desc.length}/200</div>
               </div>
             </>
           )}

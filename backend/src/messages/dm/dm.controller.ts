@@ -85,43 +85,38 @@ export class DmController {
   ) {
     const userId = req.user?.id;
     const message = await this.dmService.sendMessage(userId, conversationId, body);
-    const conv = await this.dmService.getConversationById(conversationId);
 
-    const participantIds = await this.dmService.getConversationParticipantIds(conversationId);
-    const otherParticipantIds = participantIds.filter(pId => pId !== userId);
-    const unblockedParticipantIds = [];
-    for (const pId of otherParticipantIds) {
-      const hasBlockedSender = await this.dmService.isUserBlockedBy(userId, pId);
-      if (!hasBlockedSender) unblockedParticipantIds.push(pId);
-    }
+    const unblockedParticipantIds = message.recipientIds || [];
+    const unmutedRecipientIds = message.unmutedRecipientIds || [];
+    const allParticipantIds = Array.from(new Set([userId, ...unblockedParticipantIds]));
 
-    this.domainEventService.emit('message:new', message, unblockedParticipantIds);
-    this.domainEventService.emit('conversation:updated', {
-      conversationId: message.conversationId,
-      publicId: message.publicId,
-      internalId: message.internalId,
-      lastMessage: {
-        text: message.text,
-        createdAt: message.createdAt,
-        senderId: userId
-      }
-    }, unblockedParticipantIds);
+    const previewText = message.text || (message.inviteData ? (message.inviteData.type === 'postShare' ? 'Shared a post' : (message.inviteData.groupName ? `Group invite: ${message.inviteData.groupName}` : 'Group invite')) : '');
 
-    for (const pId of unblockedParticipantIds) {
-      const isMuted = await this.dmService.isUserConversationMuted(conversationId, pId);
-      if (!isMuted) {
+    setImmediate(() => {
+      this.domainEventService.emit('message:new', message, unblockedParticipantIds).catch(() => {});
+      this.domainEventService.emit('conversation:updated', {
+        conversationId: message.conversationId,
+        publicId: message.publicId,
+        internalId: message.internalId,
+        lastMessage: {
+          text: previewText,
+          createdAt: message.createdAt,
+          senderId: userId
+        }
+      }, allParticipantIds).catch(() => {});
+      this.domainEventService.emit('message:new', message, [userId]).catch(() => {});
+
+      for (const pId of unmutedRecipientIds) {
         this.notificationsService.createNotification(
           this.notificationFactory.createMessage(
             { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
-            conv || { id: conversationId, name: message.senderName },
+            { id: conversationId, name: message.conversationName || message.senderName },
             pId,
-            message.text
+            previewText
           )
         ).catch(() => {});
       }
-    }
-
-    this.domainEventService.emit('message:new', message, [userId]);
+    });
 
     return message;
   }

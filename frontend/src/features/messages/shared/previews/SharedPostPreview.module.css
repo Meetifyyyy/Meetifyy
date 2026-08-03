@@ -1,26 +1,51 @@
 .container {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 0;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  padding: 14px 16px;
   cursor: pointer;
   width: 100%;
-  max-width: 280px;
+  min-width: 280px;
+  max-width: 100%;
   color: inherit;
-  box-shadow: none;
+  box-sizing: border-box;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+:global([data-theme='light']) .container {
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.container:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+:global([data-theme='light']) .container:hover {
+  background: rgba(0, 0, 0, 0.07);
+  border-color: rgba(0, 0, 0, 0.28);
 }
 
 .authorRow {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+}
+
+.authorMeta {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  line-height: 1.25;
 }
 
 .authorName {
-  font-size: 0.82rem;
+  font-size: 0.96rem;
   font-weight: 600;
   color: inherit;
   white-space: nowrap;
@@ -28,55 +53,170 @@
   text-overflow: ellipsis;
 }
 
-.timestamp {
-  font-size: 0.72rem;
+.authorUsername {
+  font-size: 0.78rem;
   opacity: 0.7;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.singleLineContent {
-  font-size: 0.84rem;
-  line-height: 1.35;
-  white-space: nowrap;
+.twoLineContent {
+  font-size: 0.94rem;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
   opacity: 0.95;
-  margin: 1px 0;
+  margin: 3px 0;
+  word-break: break-word;
 }
 
-.attachmentPill {
+.silverBox {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 0.74rem;
-  font-weight: 500;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.14);
+  gap: 7px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+  color: #1e293b;
   width: fit-content;
   max-width: 100%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  letter-spacing: 0.01em;
 }
 
 .metaRow {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 0.72rem;
-  opacity: 0.75;
-  margin-top: 1px;
+  gap: 14px;
+  margin-top: 4px;
 }
 
-.statItem {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.timestampText {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  letter-spacing: 0.01em;
 }
 
 .unavailable {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.8rem;
+  gap: 8px;
+  font-size: 0.86rem;
   opacity: 0.75;
+  padding: 12px 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+}
+
+.mediaPreviewContainer {
+  position: relative;
+  width: 100%;
+  max-height: 180px;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 4px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.mediaPreviewImg {
+  width: 100%;
+  height: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  display: block;
+}
+
+.mediaBadge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 12px;
+  backdrop-filter: blur(4px);
+}
+
+.pollPreviewWidget {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 4px;
+}
+
+:global([data-theme='light']) .pollPreviewWidget {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.pollHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.pollOptionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.pollOptionItem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.8rem;
+  overflow: hidden;
+}
+
+:global([data-theme='light']) .pollOptionItem {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.pollOptionFill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: rgba(99, 102, 241, 0.25);
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.pollOptionText {
+  position: relative;
+  z-index: 1;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pollOptionVotes {
+  position: relative;
+  z-index: 1;
+  font-size: 0.75rem;
+  opacity: 0.75;
+  margin-left: 8px;
 }

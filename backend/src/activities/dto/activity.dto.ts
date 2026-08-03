@@ -7,7 +7,7 @@ export class CreateActivityDto {
 
   @IsString()
   @IsOptional()
-  @MaxLength(500)
+  @MaxLength(200)
   description?: string;
 
   @IsString()

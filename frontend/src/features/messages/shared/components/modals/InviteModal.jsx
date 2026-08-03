@@ -19,7 +19,6 @@ export default function InviteModal({ isOpen, onClose, group }) {
   const { currentUser } = useAuth();
   const { users, conversations, startConversation, sendDirectMessage } = useData();
   const modalRef = useRef(null);
-  const lastSendTimeRef = useRef(0);
   const copyLockRef = useRef(false);
 
   useEffect(() => {
@@ -51,14 +50,6 @@ export default function InviteModal({ isOpen, onClose, group }) {
 
   const handleSend = async (user) => {
     if (!group?.id || sentTo.has(user.id) || sendingIds.has(user.id)) return;
-
-    // Rate limiting: 500ms minimum interval between consecutive invites
-    const now = Date.now();
-    if (now - lastSendTimeRef.current < 500) {
-      toast.info('Please wait a moment before sending another invite.');
-      return;
-    }
-    lastSendTimeRef.current = now;
 
     setSendingIds(prev => new Set(prev).add(user.id));
     try {
@@ -144,42 +135,18 @@ export default function InviteModal({ isOpen, onClose, group }) {
     return ids;
   }, [conversations, group, modalGroupDetails, currentUser?.id, groupConvId]);
 
-  // Fetch all registered users for invitation
+  // Fetch registered candidate users for invitation
   const { data: fetchedUsers = [] } = useQuery({
-    queryKey: ['all-users-for-invite'],
+    queryKey: ['all-users-for-invite', searchTerm],
     queryFn: async () => {
-      const [allList, campusList] = await Promise.all([
-        usersApi.getAll(100, 0).catch(() => []),
-        usersApi.getCampusUsers(100, 0).catch(() => []),
-      ]);
-      const merged = [...(allList || []), ...(campusList || [])];
-      const userMap = new Map();
-      merged.forEach(u => { if (u && u.id) userMap.set(String(u.id), u); });
-      return Array.from(userMap.values());
+      const list = await usersApi.getConnections(searchTerm, 50).catch(() => []);
+      return (list || []).filter(u => u && u.id && String(u.id) !== String(currentUser?.id));
     },
     enabled: Boolean(isOpen),
     staleTime: 30_000,
   });
 
-  const combinedUsers = useMemo(() => {
-    const map = new Map();
-    (Object.values(users || {})).forEach(u => { if (u?.id) map.set(String(u.id), u); });
-    (fetchedUsers || []).forEach(u => { if (u?.id) map.set(String(u.id), u); });
-    return Array.from(map.values());
-  }, [users, fetchedUsers]);
-
-  // All users except current logged-in user (do not exclude existing members)
-  const filteredUsers = useMemo(() => {
-    const term = searchTerm.toLowerCase().trim();
-    return combinedUsers
-      .filter(u => u && u.id && String(u.id) !== String(currentUser?.id) && u.username !== currentUser?.username)
-      .filter(u =>
-        !term ||
-        u.name?.toLowerCase().includes(term) ||
-        u.displayName?.toLowerCase().includes(term) ||
-        u.username?.toLowerCase().includes(term)
-      );
-  }, [combinedUsers, searchTerm, currentUser]);
+  const filteredUsers = fetchedUsers;
 
   if (!isOpen) return null;
 
@@ -236,7 +203,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
                     )}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                       <span className={styles.contactName}>{user.displayName || user.name}</span>
-                      <span style={{ fontSize: '0.78rem', opacity: 0.55 }}>@{user.username}</span>
+                      <span className={styles.contactHandle}>@{user.username}</span>
                     </div>
                   </div>
                   <button

@@ -201,6 +201,7 @@ model User {
   invitationsSent          ActivityInvitation[]      @relation("ActivityInvitationsSent")
   invitationsReceived      ActivityInvitation[]      @relation("ActivityInvitationsReceived")
   communityJoinRequests    CommunityJoinRequest[]
+  recentSearches           RecentSearch[]
 
   avatarMedia Media? @relation("UserAvatar", fields: [avatarMediaId], references: [id])
   coverMedia  Media? @relation("UserCover", fields: [coverMediaId], references: [id])
@@ -627,6 +628,8 @@ model PostShare {
 
   @@index([userId])
   @@index([postId])
+  @@index([postId, userId])
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 model Block {
@@ -1226,7 +1229,9 @@ model ActivityInvitation {
 
   @@unique([activityId, inviteeId])
   @@index([activityId, inviteeId])
+  @@index([activityId, inviteeId, status])
   @@index([inviteeId, status])
+  @@index([inviteeId, status, createdAt(sort: Desc)])
   @@index([inviterId])
   @@index([activityId, status])
 }
@@ -1260,6 +1265,20 @@ enum CommunityRequestStatus {
   ACCEPTED
   DECLINED
 }
+
+model RecentSearch {
+  id        String   @id @default(uuid())
+  userId    String
+  term      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, term])
+  @@index([userId, updatedAt(sort: Desc)])
+}
+
 
 
 

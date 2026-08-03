@@ -418,7 +418,8 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     };
 
     appendMessageToCache(queryClient, targetConvId, tempMessage);
-    updateConversationPreview(queryClient, targetConvId, payloadText, tempMessage.createdAt, 0);
+    const previewSnippet = payloadText || (explicitInviteData ? (explicitInviteData.groupName ? `Group invite: ${explicitInviteData.groupName}` : 'Group invite') : mediaType ? (mediaType === 'image' ? 'Photo' : mediaType === 'video' ? 'Video' : 'Audio') : mediaUrl ? 'Media' : '');
+    updateConversationPreview(queryClient, targetConvId, previewSnippet, tempMessage.createdAt, 0);
     idbSaveMessages(targetConvId, [tempMessage]);
 
     let finalMediaUrl = mediaUrl;

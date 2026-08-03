@@ -323,8 +323,19 @@ export function updateConversationPreview(queryClient, conversationId, previewTe
     const numericTimestamp = new Date(timestamp).getTime();
     const idx = list.findIndex((c) => matchesConversationId(c, conversationId));
     if (idx !== -1) {
-      const textVal = typeof previewText === 'string' ? previewText : (previewText?.text || '');
+      let textVal = typeof previewText === 'string' ? previewText : (previewText?.text || '');
       const prevMsgObj = list[idx].lastMessage || {};
+      
+      if (!textVal && (previewText?.inviteData || prevMsgObj?.inviteData)) {
+        const inv = previewText?.inviteData || prevMsgObj?.inviteData;
+        textVal = inv?.groupName ? `Group invite: ${inv.groupName}` : 'Group invite';
+      } else if (!textVal && (previewText?.mediaType || prevMsgObj?.mediaType)) {
+        const mt = previewText?.mediaType || prevMsgObj?.mediaType;
+        textVal = mt === 'image' ? 'Photo' : mt === 'video' ? 'Video' : 'Audio';
+      } else if (!textVal && (previewText?.mediaUrl || prevMsgObj?.mediaUrl)) {
+        textVal = 'Media';
+      }
+
       const newMsgObj = {
         ...prevMsgObj,
         text: textVal,

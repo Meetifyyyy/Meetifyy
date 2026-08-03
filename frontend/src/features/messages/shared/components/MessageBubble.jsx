@@ -425,6 +425,15 @@ function GroupInviteCard({ msg, currentUser, conversations, navigate, requestToJ
   const isJoinedCampus = isCampusGroup && currentUser?.campusGroups?.map(String).includes(String(targetGroupId));
   const alreadyJoined = isMember || isJoinedCampus;
   
+  const isExpired = 
+    Boolean(msg.inviteData?.isExpired || msg.inviteData?.expired || msg.isExpired) ||
+    (msg.inviteData?.expiresAt && new Date(msg.inviteData.expiresAt).getTime() <= Date.now()) ||
+    (msg.expiresAt && new Date(msg.expiresAt).getTime() <= Date.now()) ||
+    targetConv?.status === 'EXPIRED' ||
+    targetConv?.status === 'ENDED' ||
+    targetConv?.status === 'CANCELLED' ||
+    targetConv?.status === 'CLOSED';
+
   const isApprovalRequired = (
     targetConv?.whoCanJoin === 'APPROVAL' ||
     targetConv?.whoCanJoin === 'Request required' ||
@@ -452,7 +461,7 @@ function GroupInviteCard({ msg, currentUser, conversations, navigate, requestToJ
       return;
     }
 
-    if (isSubmitting) return;
+    if (isSubmitting || isExpired) return;
 
     setIsSubmitting(true);
     try {
@@ -479,6 +488,13 @@ function GroupInviteCard({ msg, currentUser, conversations, navigate, requestToJ
   const groupAvatarSrc = targetConv?.avatarKey || targetConv?.avatar || targetConv?.icon || targetConv?.coverImage || targetConv?.avatarUrl || msg.inviteData?.groupAvatar || msg.inviteData?.avatar || null;
   const groupName = targetConv?.name || msg.inviteData?.groupName || 'Group';
 
+  const getButtonText = () => {
+    if (alreadyJoined) return 'View Group';
+    if (isExpired) return 'Expired';
+    if (isRequested) return 'Requested';
+    return 'Join Group';
+  };
+
   return (
     <div className={styles.groupInviteCard}>
       <div className={styles.groupInviteHeader}>
@@ -492,9 +508,9 @@ function GroupInviteCard({ msg, currentUser, conversations, navigate, requestToJ
         <button 
           className={styles.groupInviteBtn}
           onClick={handleJoinGroup}
-          disabled={isSubmitting || (!alreadyJoined && isRequested)}
+          disabled={isSubmitting || (!alreadyJoined && (isRequested || isExpired))}
         >
-          {alreadyJoined ? 'View Group' : (isRequested ? 'Requested' : 'Join Group')}
+          {getButtonText()}
         </button>
       </div>
     </div>

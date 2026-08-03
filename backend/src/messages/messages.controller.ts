@@ -147,16 +147,11 @@ export class MessagesController {
   ) {
     const userId = req.user?.id;
     const message = await this.messagesService.sendMessage(userId, conversationId, body);
-    const conv = await this.messagesService.getConversationById(conversationId);
-    
-    // Broadcast message & update notifications only to non-blocking participants (Instagram block model)
-    const participantIds = await this.messagesService.getConversationParticipantIds(conversationId);
-    const otherParticipantIds = participantIds.filter(pId => pId !== userId);
-    const unblockedParticipantIds = [];
-    for (const pId of otherParticipantIds) {
-      const hasBlockedSender = await this.messagesService.isUserBlockedBy(userId, pId);
-      if (!hasBlockedSender) unblockedParticipantIds.push(pId);
-    }
+
+    const unblockedParticipantIds = message.recipientIds || [];
+    const unmutedRecipientIds = message.unmutedRecipientIds || [];
+
+    const allParticipantIds = Array.from(new Set([userId, ...unblockedParticipantIds]));
 
     // Emit to others
     this.domainEventService.emit('message:new', message, unblockedParticipantIds);
@@ -165,30 +160,24 @@ export class MessagesController {
       publicId: message.publicId,
       internalId: message.internalId,
       lastMessage: {
-        text: message.text,
+        text: message.text || (message.inviteData ? (message.inviteData.groupName ? `Group invite: ${message.inviteData.groupName}` : 'Group invite') : ''),
         createdAt: message.createdAt,
         senderId: userId
       }
-    }, unblockedParticipantIds);
+    }, allParticipantIds);
 
-    for (const pId of unblockedParticipantIds) {
-      const isMuted = await this.messagesService.isUserConversationMuted(conversationId, pId);
-      if (!isMuted) {
+    setImmediate(() => {
+      for (const pId of unmutedRecipientIds) {
         this.notificationsService.createNotification(
           this.notificationFactory.createMessage(
             { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
-            conv || { id: conversationId, name: message.senderName },
+            { id: conversationId, name: message.conversationName || message.senderName },
             pId,
             message.text
           )
         ).catch(() => {});
       }
-    }
-    
-    // NOTE: No sender re-emit here. The sender's cache is updated from the HTTP
-    // response returned below. Re-emitting 'message:new' to the sender's own
-    // socket room would race with the response and could overwrite a 'failed'
-    // status or create a duplicate optimistic entry.
+    });
 
     return message;
   }

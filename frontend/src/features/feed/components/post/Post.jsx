@@ -29,8 +29,10 @@ function PollCard({ poll, postId }) {
   // Derive voted state and votes from the shared DataContext poll object
   const myVotes = poll.selectedUsers?.[currentUser?.id] || [];
   const hasVoted = myVotes.length > 0;
-  const votes = poll.votes || poll.options.map(() => 0);
-  const totalVotes = votes.reduce((a, b) => a + b, 0);
+
+  const optionsList = Array.isArray(poll.options) ? poll.options : [];
+  const votes = poll.votes || optionsList.map(opt => (typeof opt === 'object' ? (opt.votes || 0) : 0));
+  const totalVotes = poll.totalVotes !== undefined && poll.totalVotes !== null ? poll.totalVotes : votes.reduce((a, b) => a + b, 0);
 
   // Local state only for multi-select pre-submission selection
   const [pendingSelection, setPendingSelection] = useState([]);
@@ -59,13 +61,14 @@ function PollCard({ poll, postId }) {
   return (
     <div className={styles.pollCard}>
       <div className={styles.pollCardOptions}>
-        {poll.options.map((opt, i) => {
-          const pct = showResults && totalVotes > 0 ? Math.round((votes[i] / totalVotes) * 100) : 0;
+        {optionsList.map((opt, i) => {
+          const optText = typeof opt === 'string' ? opt : (opt.text || '');
+          const pct = showResults && totalVotes > 0 ? Math.round(((votes[i] || 0) / totalVotes) * 100) : 0;
           const isSelected = selected.includes(i);
 
           return (
             <button
-              key={i}
+              key={typeof opt === 'object' && opt.id ? opt.id : i}
               className={`${styles.pollCardOption}${isSelected ? ` ${styles.selected}` : ''}${showResults ? ` ${styles.voted}` : ''}`}
               onClick={() => handleVote(i)}
               disabled={showResults}
@@ -77,7 +80,7 @@ function PollCard({ poll, postId }) {
                     {isSelected && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12" /></svg>}
                   </span>
                 )}
-                {opt}
+                {optText}
               </span>
               {showResults && <span className={styles.pollOptionPct}>{pct}%</span>}
             </button>
@@ -223,7 +226,7 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
               style={{ background: (!isImageUrl(postCommunity.avatar)) ? (postCommunity.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
             >
               {isImageUrl(postCommunity.avatar) ? (
-                <img src={postCommunity.avatar} alt="" loading="lazy"  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                <img src={getProcessedAvatarUrl(postCommunity.avatar)} alt="" loading="lazy" onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
               ) : (
                 <span>{postCommunity.avatar || postCommunity.name?.charAt(0).toUpperCase()}</span>
               )}
@@ -236,12 +239,13 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
 
             {authorCollege && (
               <img
-                src={authorCollege.avatar}
+                src={getProcessedAvatarUrl(authorCollege.avatar)}
                 alt={authorCollege.name}
                 loading="lazy"
                 className={styles.postCollegeIcon}
                 title={authorCollege.name}
-               onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}
+              />
             )}
           </Link>
           <div className={styles.postTime} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>

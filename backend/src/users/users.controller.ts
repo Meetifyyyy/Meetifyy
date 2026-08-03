@@ -16,6 +16,14 @@ export class UsersController {
     return this.usersService.getAllUsers(limitNum, offsetNum);
   }
 
+  @Get('connections')
+  @UseGuards(JwtGuard)
+  @CacheControl('private, max-age=30, stale-while-revalidate=120')
+  async getConnections(@Req() req: any, @Query('q') query?: string, @Query('limit') limit?: string) {
+    const limitNum = limit ? Math.min(parseInt(limit, 10), 100) : 50;
+    return this.usersService.getConnections(req.user.id, query, limitNum);
+  }
+
   @Get('campus')
   @UseGuards(JwtGuard)
   @CacheControl('private, max-age=600, stale-while-revalidate=1800')

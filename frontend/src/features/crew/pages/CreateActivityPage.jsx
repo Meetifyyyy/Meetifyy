@@ -1048,7 +1048,7 @@ export default function CreateActivityPage() {
               onChange={e => set({ description: e.target.value })}
               placeholder="Add a description"
               rows={4}
-              maxLength={500}
+              maxLength={200}
             />
 
             {/* Date & Time button */}
