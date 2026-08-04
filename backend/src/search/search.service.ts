@@ -127,6 +127,22 @@ export class SearchService {
               likeCount: true,
               commentCount: true,
               author: { select: { id: true, username: true, displayName: true, avatar: true } },
+              media: {
+                select: {
+                  id: true,
+                  objectKey: true,
+                  width: true,
+                  height: true,
+                  mimeType: true,
+                  type: true,
+                },
+              },
+              pollOptions: {
+                include: {
+                  _count: { select: { votes: true } }
+                }
+              },
+              pollVotes: currentUserId ? { where: { userId: currentUserId } } : false,
             },
             take: isDiscovery ? 6 : limit,
             orderBy: { createdAt: 'desc' },
@@ -226,8 +242,44 @@ export class SearchService {
     const posts = rawPosts.map(p => {
       const isLiked = likedSet.has(p.id);
       const isBookmarked = bookmarkedSet.has(p.id);
+
+      const media = (p.media || []).map((m: any) => ({
+        ...m,
+        url: m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null),
+      }));
+
+      const pollOptions = p.pollOptions || [];
+      let poll = null;
+      if (pollOptions.length > 0) {
+        const sortedOptions = [...pollOptions].sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+        const options = sortedOptions.map((opt: any) => ({
+          id: opt.id,
+          text: opt.text,
+          votes: Number(opt._count?.votes || opt.voteCount || 0),
+        }));
+        const totalVotes = options.reduce((sum: number, o: any) => sum + o.votes, 0);
+
+        const userVotedOptionId = (Array.isArray(p.pollVotes) && p.pollVotes.length > 0) ? p.pollVotes[0]?.optionId : null;
+        const userVotedIndex = userVotedOptionId ? options.findIndex((o: any) => o.id === userVotedOptionId) : -1;
+        const myVotes = userVotedIndex >= 0 ? [userVotedIndex] : [];
+        const selectedUsers = currentUserId && myVotes.length > 0 ? { [currentUserId]: myVotes } : {};
+
+        poll = {
+          question: p.text,
+          options,
+          totalVotes,
+          userVotedOptionId: userVotedOptionId || undefined,
+          votedOptionIndex: userVotedIndex >= 0 ? userVotedIndex : undefined,
+          myVotes,
+          selectedUsers,
+        };
+      }
+
       return {
         ...p,
+        media,
+        pollOptions,
+        poll,
         hasLiked: isLiked,
         isLiked,
         isLikedByMe: isLiked,

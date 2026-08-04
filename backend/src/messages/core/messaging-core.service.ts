@@ -316,7 +316,6 @@ export class MessagingCoreService {
   async getConversationHistory(
     conversationId: string,
     currentUserId?: string,
-    deviceId?: string,
     beforeCursor?: string,
     limit: number = 50
   ) {
@@ -369,14 +368,6 @@ export class MessagingCoreService {
 
     const orConditions: any[] = [];
 
-    if (deviceId) {
-      orConditions.push({
-        OR: [
-          { targets: { some: { deviceId } } },
-          { targets: { none: {} } }
-        ]
-      });
-    }
 
     if (beforeCursor) {
       let cursorDate: Date | null = null;
@@ -437,7 +428,6 @@ export class MessagingCoreService {
     const messages: any[] = await this.prisma.message.findMany({
       where: whereCondition,
       include: {
-        targets: deviceId ? { where: { deviceId } } : true,
         sender: {
           select: { id: true, username: true, displayName: true, avatar: true }
         },
@@ -478,7 +468,6 @@ export class MessagingCoreService {
 
     const messagesMapped = messages.map(m => {
       const payload = (m.payload as any) || {};
-      const target0 = m.targets && m.targets.length > 0 ? m.targets[0] : null;
 
       let replyToObj: any = null;
       if (m.replyTo) {
@@ -512,8 +501,7 @@ export class MessagingCoreService {
         createdAt: m.createdAt,
         timestamp: m.createdAt,
         time: m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-        type: target0 ? target0.type : (m.type ? m.type.toLowerCase() : 'chat'),
-        ciphertext: target0 ? target0.ciphertext : null,
+        type: m.type ? m.type.toLowerCase() : 'chat',
         payload: isUnsent ? { text: 'This message was unsent' } : payload,
         text: isUnsent ? 'This message was unsent' : (payload.text || ''),
         mediaUrl: isUnsent ? null : (payload.mediaUrl || null),
@@ -548,7 +536,6 @@ export class MessagingCoreService {
             timestamp: activity.createdAt || new Date(),
             time: activity.createdAt ? new Date(activity.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
             type: 'system',
-            ciphertext: null,
             payload: { text: 'Activity group chat created' },
             text: 'Activity group chat created',
             mediaUrl: null,
@@ -575,7 +562,6 @@ export class MessagingCoreService {
             timestamp: activity.startDate,
             time: new Date(activity.startDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             type: 'system',
-            ciphertext: null,
             payload: { text: 'Activity has started!' },
             text: 'Activity has started!',
             mediaUrl: null,

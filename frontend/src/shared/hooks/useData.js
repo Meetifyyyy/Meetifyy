@@ -6,7 +6,6 @@ import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
 import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline';
 import { useDeleteComment } from '../../features/feed/hooks/useDeleteComment';
 import { showToast } from '../utils/toast';
-import { E2EEManager } from '../lib/signal/E2EEManager';
 
 // Feature-scoped hooks — useData delegates to these instead of declaring its own queries.
 // This makes useData a thin compatibility adapter while the real caching logic lives in
@@ -321,29 +320,6 @@ export function useData() {
         }
       }
 
-      // E2EE Encryption for DMs
-      const isGroup = String(convId).startsWith('c_') || String(convId).startsWith('act_');
-      let e2eeUsed = false;
-      if (!isGroup && payload.text) {
-        try {
-          const convs = queryClient.getQueryData(['conversations']) || [];
-          const conv = convs.find(c => c.id === convId || c.publicId === convId || c.internalId === convId);
-          if (conv && (conv.participants || conv.members)) {
-            const list = conv.participants || conv.members || [];
-            const remoteUser = list.find(p => (p.id || p.userId) !== currentUser?.id);
-            if (remoteUser) {
-              const remoteId = remoteUser.id || remoteUser.userId;
-              const ciphertext = await E2EEManager.getInstance().encryptMessage(remoteId, '1', payload.text);
-              payload.text = typeof ciphertext === 'string' ? ciphertext : JSON.stringify(ciphertext);
-              payload.type = 'e2ee';
-              payload.isE2EE = true;
-              e2eeUsed = true;
-            }
-          }
-        } catch (e) {
-          console.error("E2EE encryption failed, falling back to plaintext", e);
-        }
-      }
 
       let res;
       if (String(convId).startsWith('c_')) {
@@ -355,8 +331,7 @@ export function useData() {
       const confirmedMsg = {
         ...res,
         from: 'me',
-        text: e2eeUsed ? optimisticMessage.text : (res.text || res.payload?.text || payload.text),
-        decryptedText: e2eeUsed ? optimisticMessage.text : (res.decryptedText || null)
+        text: res.text || res.payload?.text || payload.text,
       };
 
       // Replace optimistic message with confirmed server message
@@ -832,10 +807,98 @@ export function useData() {
     }
   };
 
+const updatePollInCache = (oldData, postId, updatedPollOrIndices, currentUserId) => {
+  if (!oldData) return oldData;
+
+  const updatePost = (p) => {
+    if (p.id !== postId || !p.poll) return p;
+
+    let nextPoll = p.poll;
+    if (typeof updatedPollOrIndices === 'object' && updatedPollOrIndices !== null && !Array.isArray(updatedPollOrIndices)) {
+      nextPoll = {
+        ...p.poll,
+        ...updatedPollOrIndices,
+        selectedUsers: {
+          ...(p.poll.selectedUsers || {}),
+          ...(updatedPollOrIndices.selectedUsers || {}),
+          ...(currentUserId && updatedPollOrIndices.myVotes ? { [currentUserId]: updatedPollOrIndices.myVotes } : {})
+        }
+      };
+    } else if (Array.isArray(updatedPollOrIndices)) {
+      const idx = updatedPollOrIndices[0];
+      const currentOptions = p.poll.options || [];
+      const updatedOptions = currentOptions.map((opt, i) => {
+        if (i === idx) {
+          const currentVotes = typeof opt === 'object' ? Number(opt.votes || opt.voteCount || 0) : 0;
+          return typeof opt === 'object' ? { ...opt, votes: currentVotes + 1 } : { text: opt, votes: 1 };
+        }
+        return opt;
+      });
+      const newTotal = (p.poll.totalVotes || 0) + 1;
+      const myVotes = [idx];
+      nextPoll = {
+        ...p.poll,
+        options: updatedOptions,
+        totalVotes: newTotal,
+        votedOptionIndex: idx,
+        myVotes,
+        selectedUsers: {
+          ...(p.poll.selectedUsers || {}),
+          ...(currentUserId ? { [currentUserId]: myVotes } : {})
+        }
+      };
+    }
+
+    return {
+      ...p,
+      poll: nextPoll,
+    };
+  };
+
+  if (oldData.id === postId) return updatePost(oldData);
+  if (Array.isArray(oldData)) return oldData.map(updatePost);
+  if (oldData.posts && Array.isArray(oldData.posts)) return { ...oldData, posts: oldData.posts.map(updatePost) };
+  if (oldData.pages) {
+    return {
+      ...oldData,
+      pages: oldData.pages.map(page => {
+        if (page.posts) return { ...page, posts: page.posts.map(updatePost) };
+        if (page.items) return { ...page, items: page.items.map(updatePost) };
+        return page;
+      })
+    };
+  }
+  return oldData;
+};
+
   const voteInPoll = async (postId, indices) => {
-    await postsApi.voteInPoll(postId, indices);
-    queryClient.invalidateQueries({ queryKey: ['posts'] });
-    queryClient.invalidateQueries({ queryKey: ['feed'] });
+    const applyCacheUpdate = (pollData) => {
+      const updater = (old) => updatePollInCache(old, postId, pollData, currentUser?.id);
+      queryClient.setQueriesData({ queryKey: ['feed'] }, updater);
+      queryClient.setQueriesData({ queryKey: ['posts'] }, updater);
+      queryClient.setQueriesData({ queryKey: ['user-posts'] }, updater);
+      queryClient.setQueriesData({ queryKey: ['bookmarks'] }, updater);
+      queryClient.setQueriesData({ queryKey: ['community-posts'] }, updater);
+      queryClient.setQueryData(['post', postId], updater);
+    };
+
+    applyCacheUpdate(indices);
+
+    try {
+      const res = await postsApi.voteInPoll(postId, indices);
+      if (res?.poll) {
+        applyCacheUpdate(res.poll);
+      }
+      return res;
+    } catch (err) {
+      showToast(err?.response?.data?.message || err?.message || 'Failed to submit vote');
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+      queryClient.invalidateQueries({ queryKey: ['feed'] });
+      queryClient.invalidateQueries({ queryKey: ['user-posts'] });
+      queryClient.invalidateQueries({ queryKey: ['community-posts'] });
+      queryClient.invalidateQueries({ queryKey: ['post', postId] });
+      throw err;
+    }
   };
 
   const start24HrInstantChat = async (candidate, activity) => {

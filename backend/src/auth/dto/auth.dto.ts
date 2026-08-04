@@ -78,6 +78,18 @@ export class TriggerPasswordChangedEmailDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  time?: string;
+
+  @IsOptional()
+  @IsString()
+  device?: string;
+
+  @IsOptional()
+  @IsString()
+  ip?: string;
 }
 
 export class CreateCollegeRequestDto {

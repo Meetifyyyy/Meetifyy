@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { supabase } from '@shared/context/AuthContext';
-import Background from '@shared/components/ui/Background';
 import Toast from '@shared/components/ui/Toast';
 import { motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
@@ -24,8 +23,9 @@ export default function ForgotPasswordPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      showToast('Please enter a valid email address');
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      showToast('Please enter a valid email address.');
       return;
     }
     

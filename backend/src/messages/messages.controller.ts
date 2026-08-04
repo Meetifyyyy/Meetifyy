@@ -128,14 +128,13 @@ export class MessagesController {
   @UseGuards(JwtGuard)
   async getHistory(
     @Req() req: any,
-    @Param('conversationId') conversationId: string, 
-    @Query('deviceId') deviceId?: string,
+    @Param('conversationId') conversationId: string,
     @Query('before') beforeCursor?: string,
     @Query('limit') limit?: string
   ) {
     const userId = req.user?.id;
     const limitNum = limit ? parseInt(limit, 10) : 50;
-    return this.messagesService.getConversationHistory(conversationId, userId, deviceId, beforeCursor, limitNum);
+    return this.messagesService.getConversationHistory(conversationId, userId, beforeCursor, limitNum);
   }
 
   @Post(':id/messages')

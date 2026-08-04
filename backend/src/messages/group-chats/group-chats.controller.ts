@@ -71,13 +71,12 @@ export class GroupChatsController {
   async getHistory(
     @Req() req: any,
     @Param('id') conversationId: string,
-    @Query('deviceId') deviceId?: string,
     @Query('before') beforeCursor?: string,
     @Query('limit') limit?: string
   ) {
     const userId = req.user?.id;
     const limitNum = limit ? parseInt(limit, 10) : 10;
-    return this.groupChatsService.getConversationHistory(conversationId, userId, deviceId, beforeCursor, limitNum);
+    return this.groupChatsService.getConversationHistory(conversationId, userId, beforeCursor, limitNum);
   }
 
   @Get(':id/details')

@@ -1,11 +1,10 @@
 import { compareMessages } from './cacheUtils';
 
 /**
- * Specialized IndexedDB wrapper for E2EE encrypted messages.
- * STRICTLY ENSURES no decrypted plaintext is ever persisted to disk.
+ * IndexedDB wrapper for message caching.
  */
 
-const DB_NAME = 'meetifyy_e2ee_messages';
+const DB_NAME = 'meetifyy_messages';
 const DB_VERSION = 1;
 
 const STORES = {
@@ -94,25 +93,12 @@ function sanitizeMessageForStorage(msg) {
     safeMsg.mediaType = null;
     safeMsg.inviteData = null;
     safeMsg.replyTo = null;
-    delete safeMsg.decryptedText;
-    delete safeMsg.isDecrypting;
-    delete safeMsg.decryptError;
     return safeMsg;
   } else if (isResetting && (safeMsg.state === 'UNSENT' || safeMsg.isUnsent)) {
     safeMsg.state = 'SENT';
     safeMsg.isUnsent = false;
   }
 
-  // STRICT SECURITY INVARIANT: Strip decrypted text
-  if (safeMsg.type === 'e2ee' || safeMsg.isE2EE) {
-    delete safeMsg.decryptedText;
-    delete safeMsg.text; // Ensure plaintext fallback is erased for E2EE
-    if (safeMsg.payload) {
-      delete safeMsg.payload.text;
-    }
-  }
-  delete safeMsg.isDecrypting;
-  delete safeMsg.decryptError;
   return safeMsg;
 }
 
@@ -209,9 +195,6 @@ export async function idbGetMessages(conversationId) {
           mediaType: null,
           inviteData: null,
           replyTo: null,
-          decryptedText: null,
-          isDecrypting: false,
-          decryptError: false,
         };
       }
 
@@ -283,7 +266,7 @@ export async function idbGetSyncMeta(conversationId) {
 /**
  * Clear cache entirely (e.g. on logout)
  */
-export async function idbClearE2EEMessages() {
+export async function idbClearMessages() {
   try {
     const db = await openMessagesDB();
     const tx = db.transaction([STORES.MESSAGES, STORES.SYNC_META], 'readwrite');

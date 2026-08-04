@@ -33,9 +33,21 @@ export class EmailService {
     await this.emailQueue.add('send-reset-password-email', { email, name, resetLink });
   }
 
-  async sendPasswordChangedEmail(email: string, name: string) {
+  async sendPasswordChangedEmail(
+    email: string,
+    name: string,
+    time?: string,
+    device?: string,
+    ip?: string,
+  ) {
     this.logger.log(`Queuing password changed email for ${email}`);
-    await this.emailQueue.add('send-password-changed-email', { email, name });
+    await this.emailQueue.add('send-password-changed-email', {
+      email,
+      name,
+      time,
+      device,
+      ip,
+    });
   }
 
   async sendVerificationOtpEmail(email: string, name: string, otp: string) {

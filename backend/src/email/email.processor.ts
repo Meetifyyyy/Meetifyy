@@ -113,7 +113,10 @@ export class EmailProcessor extends WorkerHost {
       case 'send-password-changed-email':
         subject = 'Your Meetifyy Password Was Changed';
         html = await render(createElement(PasswordChangedEmail, {
-          name: job.data.name
+          name: job.data.name,
+          time: job.data.time,
+          device: job.data.device,
+          ip: job.data.ip,
         }));
         break;
 

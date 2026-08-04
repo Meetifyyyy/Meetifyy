@@ -205,6 +205,47 @@ export function useGlobalSocketSync() {
           break;
         }
 
+        case 'post.pollVoted': {
+          const postId = event.data?.postId || event.postId;
+          const updatedPoll = event.data?.poll || event.poll;
+          if (postId) {
+            const updater = (old) => {
+              if (!old) return old;
+              const updatePost = (p) => {
+                if (p.id !== postId) return p;
+                return {
+                  ...p,
+                  poll: {
+                    ...(p.poll || {}),
+                    ...(updatedPoll || {}),
+                  }
+                };
+              };
+              if (old.id === postId) return updatePost(old);
+              if (Array.isArray(old)) return old.map(updatePost);
+              if (old.posts && Array.isArray(old.posts)) return { ...old, posts: old.posts.map(updatePost) };
+              if (old.pages) {
+                return {
+                  ...old,
+                  pages: old.pages.map(page => {
+                    if (page.posts) return { ...page, posts: page.posts.map(updatePost) };
+                    if (page.items) return { ...page, items: page.items.map(updatePost) };
+                    return page;
+                  })
+                };
+              }
+              return old;
+            };
+            queryClient.setQueriesData({ queryKey: ['feed'] }, updater);
+            queryClient.setQueriesData({ queryKey: ['posts'] }, updater);
+            queryClient.setQueriesData({ queryKey: ['user-posts'] }, updater);
+            queryClient.setQueriesData({ queryKey: ['bookmarks'] }, updater);
+            queryClient.setQueriesData({ queryKey: ['community-posts'] }, updater);
+            queryClient.setQueryData(['post', postId], updater);
+          }
+          break;
+        }
+
         case 'activity.created':
         case 'activity.updated':
         case 'activity.deleted':

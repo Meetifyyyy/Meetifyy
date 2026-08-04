@@ -62,9 +62,6 @@ export function useChatAreaState(conversation) {
       mediaType: null,
       inviteData: null,
       replyTo: null,
-      decryptedText: null,
-      isDecrypting: false,
-      decryptError: false,
     };
 
     // Instant Optimistic Cache Update (<1ms UX feedback) across all candidate conversation keys
