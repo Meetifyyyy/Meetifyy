@@ -29,7 +29,11 @@ export default defineConfig({
     versionBuildPlugin(),
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
+      injectRegister: 'auto',
       includeAssets: ['favicon.png', 'logo-192.png', 'logo-512.png', 'logo-192-maskable.png', 'logo-512-maskable.png'],
       manifest: {
         name: "Meetifyy",
@@ -69,73 +73,11 @@ export default defineConfig({
           }
         ]
       },
-      workbox: {
-        cleanupOutdatedCaches: true,
-        skipWaiting: true,
-        clientsClaim: true,
+      injectManifest: {
         maximumFileSizeToCacheInBytes: 10485760, // 10 MiB limit
-        globPatterns: ['index.html', 'assets/index-*.{js,css}', 'assets/vendor-*.js', 'favicon.png', 'logo-*.png'],
-        globIgnores: ['**/version.json', 'stats.html'],
-        navigateFallbackDenylist: [/^\/api\//, /^\/version\.json/],
-        runtimeCaching: [
-          {
-            urlPattern: /\/assets\/.*\.js$/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'js-chunks-cache',
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24 * 30
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-          {
-            urlPattern: /\/assets\/.*\.css$/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'css-chunks-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'gstatic-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          }
-        ]
-      }
+        globPatterns: ['**/*.{js,css,html,png,webp,svg,woff2}'],
+        globIgnores: ['**/version.json', '**/stats.html'],
+      },
     }),
     visualizer({ open: false, filename: 'stats.html', gzipSize: true, brotliSize: true })
   ],

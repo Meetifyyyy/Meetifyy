@@ -94,9 +94,21 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
             media: mediaList,
             image: primaryImage,
             mediaUrl: primaryImage,
-            poll: pollData,
-            pollQuestion: pollData?.question || post?.pollQuestion || null,
-            pollOptions: pollData?.options || post?.pollOptions || null
+            poll: pollData ? {
+              ...pollData,
+              question: typeof pollData.question === 'string' ? pollData.question : (typeof pollData.question === 'object' ? getOptText(pollData.question) : String(pollData.question || 'Poll')),
+              options: (pollData.options || []).map(opt => ({
+                id: typeof opt === 'object' ? opt?.id : undefined,
+                text: typeof opt === 'object' ? (typeof opt.text === 'string' ? opt.text : getOptText(opt)) : String(opt || ''),
+                votes: typeof opt === 'object' ? (Number(opt.votes ?? opt.voteCount ?? 0) || 0) : 0,
+              })),
+            } : null,
+            pollQuestion: typeof (pollData?.question || post?.pollQuestion) === 'string' ? (pollData?.question || post?.pollQuestion) : null,
+            pollOptions: (pollData?.options || post?.pollOptions || []).map(opt => ({
+              id: typeof opt === 'object' ? opt?.id : undefined,
+              text: typeof opt === 'object' ? (typeof opt.text === 'string' ? opt.text : getOptText(opt)) : String(opt || ''),
+              votes: typeof opt === 'object' ? (Number(opt.votes ?? opt.voteCount ?? 0) || 0) : 0,
+            }))
           } 
         }
       });
