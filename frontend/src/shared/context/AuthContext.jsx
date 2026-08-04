@@ -26,7 +26,7 @@ export function AuthProvider({ children }) {
       try {
         const parsed = JSON.parse(savedUser);
         if (isValidUser(parsed)) {
-            return parsed;
+          return parsed;
         }
       } catch (e) {}
     }
@@ -34,7 +34,10 @@ export function AuthProvider({ children }) {
   });
   
   const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    // If cached user exists in localStorage, render app shell instantly (<0ms delay)
+    return !localStorage.getItem('currentUser');
+  });
 
   const isLoggedIn = !!session;
 

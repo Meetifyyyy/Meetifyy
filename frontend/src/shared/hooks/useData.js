@@ -37,15 +37,23 @@ export function useData() {
   const { communities: rawCommunities, isLoading: isCommunitiesLoading } = useCommunities();
   // campusCommunities intentionally not fetched here — useData is mounted globally by the Sidebar
   // and firing GET /communities/campus on every page was causing duplicate requests.
+  const [isIdleLoaded, setIsIdleLoaded] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsIdleLoaded(true);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Call useCampusCommunities() directly in the Campus page / feature that needs it.
   const campusCommunities = [];
   // Activities: flat list from infinite query cache
   const rawActivities = useActivitiesList();
   const { campusActivities: rawCampusActivities } = useCampusActivities();
   const { conversations: processedConversations, rawConversations, isLoading: isConversationsLoading, error: conversationsError } = useConversations();
-  // Users: small general list (20) for mention lookups; campus limited to 50 not 200
-  const { data: rawUsers = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll(20, 0), enabled: Boolean(currentUser?.id), staleTime: 5 * 60_000 });
-  const { campusUsers: rawCampusUsers } = useCampusUsers(50);
+  // Users: small general list (20) for mention lookups; deferred to idle time
+  const { data: rawUsers = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll(20, 0), enabled: Boolean(currentUser?.id && isIdleLoaded), staleTime: 5 * 60_000 });
+  const { campusUsers: rawCampusUsers } = useCampusUsers(isIdleLoaded ? 50 : 0);
 
   const conversations = useMemo(() => {
     const actList = [...(rawActivities || []), ...(rawCampusActivities || [])];

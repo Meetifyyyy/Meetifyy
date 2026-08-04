@@ -79,8 +79,10 @@ export function useVersionCheck() {
       }
     };
 
-    checkVersion();
-    const interval = setInterval(checkVersion, 15000);
+    const bootTimer = setTimeout(() => {
+      checkVersion();
+    }, 3000);
+    const interval = setInterval(checkVersion, 20000);
     const handleFocus = () => checkVersion();
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') checkVersion();
@@ -97,6 +99,7 @@ export function useVersionCheck() {
 
     return () => {
       active = false;
+      clearTimeout(bootTimer);
       clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('pageshow', handlePageshow);
