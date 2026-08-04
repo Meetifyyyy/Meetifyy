@@ -85,14 +85,22 @@ export function useVersionCheck() {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') checkVersion();
     };
+    const handlePageshow = (e) => {
+      if (e.persisted) checkVersion();
+    };
+    const handleOnline = () => checkVersion();
 
     window.addEventListener('focus', handleFocus);
+    window.addEventListener('pageshow', handlePageshow);
+    window.addEventListener('online', handleOnline);
     document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
       active = false;
       clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pageshow', handlePageshow);
+      window.removeEventListener('online', handleOnline);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
