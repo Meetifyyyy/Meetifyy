@@ -50,9 +50,17 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
         const getOptText = (o) => {
           if (!o) return '';
           if (typeof o === 'string') return o;
-          if (typeof o.text === 'string') return o.text;
-          if (typeof o.text === 'object' && o.text !== null) return getOptText(o.text);
-          return String(o.label || o.title || '');
+          if (typeof o === 'number') return String(o);
+          if (typeof o === 'object') {
+            if (typeof o.text === 'string') return o.text;
+            if (typeof o.label === 'string') return o.label;
+            if (typeof o.title === 'string') return o.title;
+            if (typeof o.question === 'string') return o.question;
+            if (o.text && typeof o.text === 'object') return getOptText(o.text);
+            if (o.label && typeof o.label === 'object') return getOptText(o.label);
+            if (o.title && typeof o.title === 'object') return getOptText(o.title);
+          }
+          return '';
         };
         const getOptVotes = (o) => {
           if (!o || typeof o !== 'object') return 0;

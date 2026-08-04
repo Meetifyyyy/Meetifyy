@@ -81,9 +81,17 @@ export function SharedPostPreview({ post, isLoading = false }) {
       const getOptionText = (o) => {
         if (!o) return '';
         if (typeof o === 'string') return o;
-        if (typeof o.text === 'string') return o.text;
-        if (typeof o.text === 'object' && o.text !== null) return getOptionText(o.text);
-        return String(o.label || o.title || '');
+        if (typeof o === 'number') return String(o);
+        if (typeof o === 'object') {
+          if (typeof o.text === 'string') return o.text;
+          if (typeof o.label === 'string') return o.label;
+          if (typeof o.title === 'string') return o.title;
+          if (typeof o.question === 'string') return o.question;
+          if (o.text && typeof o.text === 'object') return getOptionText(o.text);
+          if (o.label && typeof o.label === 'object') return getOptionText(o.label);
+          if (o.title && typeof o.title === 'object') return getOptionText(o.title);
+        }
+        return '';
       };
       const getOptionVotes = (o) => {
         if (!o || typeof o !== 'object') return 0;
@@ -96,7 +104,7 @@ export function SharedPostPreview({ post, isLoading = false }) {
         votes: getOptionVotes(opt)
       }));
       return {
-        question: livePost?.pollQuestion || post?.pollQuestion || livePost?.text || post?.text || 'Poll',
+        question: getOptionText(livePost?.pollQuestion || post?.pollQuestion || livePost?.text || post?.text || 'Poll'),
         options,
         totalVotes: options.reduce((sum, o) => sum + o.votes, 0)
       };
@@ -109,9 +117,17 @@ export function SharedPostPreview({ post, isLoading = false }) {
   const getOptionText = (o) => {
     if (!o) return '';
     if (typeof o === 'string') return o;
-    if (typeof o.text === 'string') return o.text;
-    if (typeof o.text === 'object' && o.text !== null) return getOptionText(o.text);
-    return String(o.label || o.title || '');
+    if (typeof o === 'number') return String(o);
+    if (typeof o === 'object') {
+      if (typeof o.text === 'string') return o.text;
+      if (typeof o.label === 'string') return o.label;
+      if (typeof o.title === 'string') return o.title;
+      if (typeof o.question === 'string') return o.question;
+      if (o.text && typeof o.text === 'object') return getOptionText(o.text);
+      if (o.label && typeof o.label === 'object') return getOptionText(o.label);
+      if (o.title && typeof o.title === 'object') return getOptionText(o.title);
+    }
+    return '';
   };
 
   const rawDate = livePost?.createdAt || post.createdAt || post.timestamp || livePost?.timestamp;
@@ -168,7 +184,7 @@ export function SharedPostPreview({ post, isLoading = false }) {
         <div className={styles.pollPreviewWidget}>
           <div className={styles.pollHeader}>
             <BarChart2 size={15} />
-            <span>Poll: {pollData.question || 'Question'}</span>
+            <span>Poll: {getOptionText(pollData.question) || (typeof pollData.question === 'string' ? pollData.question : 'Question')}</span>
           </div>
           <div className={styles.pollOptionsList}>
             {pollData.options.slice(0, 4).map((opt, idx) => {
