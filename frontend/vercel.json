@@ -1,6 +1,20 @@
 {
   "outputDirectory": "dist",
   "framework": "vite",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "header",
+          "key": "host",
+          "value": "meetify-web.vercel.app"
+        }
+      ],
+      "destination": "https://dev.meetifyy.app/:path*",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     { "source": "/version.json", "destination": "/version.json" },
     { "source": "/sw.js", "destination": "/sw.js" },
