@@ -45,6 +45,9 @@ if ('serviceWorker' in navigator) {
       for (const registration of registrations) registration.unregister();
     });
   } else {
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload();
+    });
     window.addEventListener('load', () => {
       navigator.serviceWorker
         .register('/sw.js', { scope: '/', updateViaCache: 'none' })

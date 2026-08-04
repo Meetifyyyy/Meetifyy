@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * Polls /version.json every 30s and on window focus.
- * On version mismatch: wipes all caches, service workers, and forces a hard
- * navigation to the current URL with a cache-bust param — no soft reload.
+ * Polls /version.json every 15s and on window focus/visibility.
+ * On version mismatch: wipes all service workers, clears all CacheStorage,
+ * and forces a hard refresh to force all older PWA clients to load the new build.
  */
 export function useVersionCheck() {
   const currentVersionRef = useRef(null);
@@ -29,7 +29,10 @@ export function useVersionCheck() {
       }
 
       if (newVersion) {
-        window.sessionStorage.setItem('app_installed_version', String(newVersion));
+        try {
+          localStorage.setItem('meetifyy_installed_version', String(newVersion));
+          sessionStorage.setItem('app_installed_version', String(newVersion));
+        } catch (_) {}
       }
 
       const url = new URL(window.location.href);
@@ -51,17 +54,22 @@ export function useVersionCheck() {
         const serverVersion = Number(data.version);
         if (!serverVersion || isNaN(serverVersion)) return;
 
-        const installedVersionStr = window.sessionStorage.getItem('app_installed_version');
-        const installedVersion = installedVersionStr ? Number(installedVersionStr) : null;
+        const clientBuildTime = typeof __APP_BUILD_TIME__ !== 'undefined' ? Number(__APP_BUILD_TIME__) : 0;
+        const storedVersionStr = localStorage.getItem('meetifyy_installed_version');
+        const storedVersion = storedVersionStr ? Number(storedVersionStr) : 0;
+
+        // If server version is newer than running JS bundle or stored version
+        const isClientStale = (clientBuildTime > 0 && serverVersion > clientBuildTime) ||
+                              (storedVersion > 0 && serverVersion > storedVersion);
+
+        if (isClientStale) {
+          await forceHardRefresh(serverVersion);
+          return;
+        }
 
         if (currentVersionRef.current === null) {
           currentVersionRef.current = serverVersion;
-          if (!installedVersion) {
-            window.sessionStorage.setItem('app_installed_version', String(serverVersion));
-          } else if (serverVersion > installedVersion) {
-            await forceHardRefresh(serverVersion);
-            return;
-          }
+          localStorage.setItem('meetifyy_installed_version', String(serverVersion));
         } else if (active && serverVersion > currentVersionRef.current) {
           currentVersionRef.current = serverVersion;
           await forceHardRefresh(serverVersion);
@@ -72,7 +80,7 @@ export function useVersionCheck() {
     };
 
     checkVersion();
-    const interval = setInterval(checkVersion, 30000);
+    const interval = setInterval(checkVersion, 15000);
     const handleFocus = () => checkVersion();
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') checkVersion();
