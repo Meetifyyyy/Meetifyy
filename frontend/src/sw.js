@@ -15,6 +15,31 @@ cleanupOutdatedCaches();
 // Inject the Vite-generated precache manifest at build time
 precacheAndRoute(self.__WB_MANIFEST);
 
+// Purge ALL legacy caches on activate — not just Workbox-prefixed ones.
+// The old hand-written SW left behind caches (meetifyy-static-v3, meetifyy-images-v3,
+// meetifyy-api-v3, etc.) that cleanupOutdatedCaches() never touches.
+const CURRENT_CACHES = new Set([
+  'js-chunks-cache',
+  'css-chunks-cache',
+  'google-fonts-cache',
+  'gstatic-fonts-cache',
+  'meetifyy-images-v3',
+  'meetifyy-api-swr',
+  'meetifyy-api-network',
+]);
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((names) =>
+      Promise.all(
+        names
+          .filter((n) => !CURRENT_CACHES.has(n) && !n.startsWith('workbox-precache'))
+          .map((n) => caches.delete(n))
+      )
+    )
+  );
+});
+
 // ─── Navigation Fallback ────────────────────────────────────────────────────
 
 const navigationHandler = createHandlerBoundToURL('/index.html');

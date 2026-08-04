@@ -38,12 +38,35 @@ if (typeof window !== 'undefined') {
   }, true);
 }
 
-// Service Worker — unregister stale SWs in development
-// Production registration is handled by vite-plugin-pwa (registerSW.js)
-if ('serviceWorker' in navigator && import.meta.env.DEV) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (const registration of registrations) registration.unregister();
-  });
+// Service Worker registration
+if ('serviceWorker' in navigator) {
+  if (import.meta.env.DEV) {
+    // Unregister all SWs in development
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      for (const r of regs) r.unregister();
+    });
+  } else {
+    // Reload when a new SW takes control (breaks out of stale cache)
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        refreshing = true;
+        window.location.reload();
+      }
+    });
+
+    // Register with updateViaCache: 'none' to bypass HTTP cache for SW script
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+        .then((reg) => {
+          // Check for updates immediately, then every 60 minutes
+          reg.update();
+          setInterval(() => reg.update(), 60 * 60 * 1000);
+        })
+        .catch(() => {});
+    });
+  }
 }
 
 createRoot(document.getElementById('root')).render(

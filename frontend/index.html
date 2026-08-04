@@ -20,6 +20,33 @@
 </head>
 <body>
   <div id="root"></div>
+  <script>
+    // Cache breaker — runs before React. Nukes stale SWs and caches on version change.
+    // Increment this value on any SW architecture change to force a clean slate.
+    (function(){
+      var SW_VERSION = '2';
+      var key = 'meetifyy_sw_v';
+      try {
+        if (localStorage.getItem(key) !== SW_VERSION) {
+          localStorage.setItem(key, SW_VERSION);
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              regs.forEach(function(r) { r.unregister(); });
+            });
+          }
+          if ('caches' in window) {
+            caches.keys().then(function(names) {
+              names.forEach(function(n) { caches.delete(n); });
+            });
+          }
+          if (performance.navigation && performance.navigation.type !== 1) {
+            location.reload();
+            return;
+          }
+        }
+      } catch(e) {}
+    })();
+  </script>
   <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
