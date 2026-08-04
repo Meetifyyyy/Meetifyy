@@ -2,6 +2,14 @@
   "buildCommand": "npm --prefix frontend run build",
   "outputDirectory": "frontend/dist",
   "framework": "vite",
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "meetify-web.vercel.app" }],
+      "destination": "https://dev.meetifyy.app/$1",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     { "source": "/version.json", "destination": "/version.json" },
     { "source": "/sw.js", "destination": "/sw.js" },
