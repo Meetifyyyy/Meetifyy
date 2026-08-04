@@ -38,28 +38,12 @@ if (typeof window !== 'undefined') {
   }, true);
 }
 
-// Service Worker — register in production, unregister stale SWs in development
-if ('serviceWorker' in navigator) {
-  if (import.meta.env.DEV) {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      for (const registration of registrations) registration.unregister();
-    });
-  } else {
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      window.location.reload();
-    });
-    window.addEventListener('load', () => {
-      navigator.serviceWorker
-        .register('/sw.js', { scope: '/', updateViaCache: 'none' })
-        .then((registration) => {
-          registration.update();
-          window.addEventListener('focus', () => registration.update());
-        })
-        .catch((err) => {
-          console.warn('SW registration failed:', err);
-        });
-    });
-  }
+// Service Worker — unregister stale SWs in development
+// Production registration is handled by vite-plugin-pwa (registerSW.js)
+if ('serviceWorker' in navigator && import.meta.env.DEV) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const registration of registrations) registration.unregister();
+  });
 }
 
 createRoot(document.getElementById('root')).render(

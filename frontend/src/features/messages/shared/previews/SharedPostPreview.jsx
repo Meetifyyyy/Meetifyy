@@ -66,54 +66,6 @@ export function SharedPostPreview({ post, isLoading = false }) {
   const primaryMedia = mediaList.length > 0 ? mediaList[0] : null;
 
   // Extract poll data reliably
-  const resolvePollData = () => {
-    const livePollValid = livePost?.poll && Array.isArray(livePost.poll.options) && livePost.poll.options.length > 0;
-    const postPollValid = post?.poll && Array.isArray(post.poll.options) && post.poll.options.length > 0;
-
-    if (livePollValid) return livePost.poll;
-    if (postPollValid) return post.poll;
-
-    const optionsSrc = (Array.isArray(livePost?.pollOptions) && livePost.pollOptions.length > 0)
-      ? livePost.pollOptions
-      : (Array.isArray(post?.pollOptions) && post.pollOptions.length > 0 ? post.pollOptions : null);
-
-    if (optionsSrc) {
-      const getOptionText = (o) => {
-        if (!o) return '';
-        if (typeof o === 'string') return o;
-        if (typeof o === 'number') return String(o);
-        if (typeof o === 'object') {
-          if (typeof o.text === 'string') return o.text;
-          if (typeof o.label === 'string') return o.label;
-          if (typeof o.title === 'string') return o.title;
-          if (typeof o.question === 'string') return o.question;
-          if (o.text && typeof o.text === 'object') return getOptionText(o.text);
-          if (o.label && typeof o.label === 'object') return getOptionText(o.label);
-          if (o.title && typeof o.title === 'object') return getOptionText(o.title);
-        }
-        return '';
-      };
-      const getOptionVotes = (o) => {
-        if (!o || typeof o !== 'object') return 0;
-        const count = o.voteCount !== undefined ? o.voteCount : (o.votes !== undefined ? o.votes : (o._count?.votes || 0));
-        return Number(count) || 0;
-      };
-      const options = optionsSrc.map(opt => ({
-        id: typeof opt === 'object' ? opt?.id : undefined,
-        text: getOptionText(opt),
-        votes: getOptionVotes(opt)
-      }));
-      return {
-        question: getOptionText(livePost?.pollQuestion || post?.pollQuestion || livePost?.text || post?.text || 'Poll'),
-        options,
-        totalVotes: options.reduce((sum, o) => sum + o.votes, 0)
-      };
-    }
-    return null;
-  };
-
-  const pollData = resolvePollData();
-
   const getOptionText = (o) => {
     if (!o) return '';
     if (typeof o === 'string') return o;
@@ -129,6 +81,41 @@ export function SharedPostPreview({ post, isLoading = false }) {
     }
     return '';
   };
+
+  const getOptionVotes = (o) => {
+    if (!o || typeof o !== 'object') return 0;
+    const count = o.voteCount !== undefined ? o.voteCount : (o.votes !== undefined ? o.votes : (o._count?.votes || 0));
+    return Number(count) || 0;
+  };
+
+  const resolvePollData = () => {
+    const livePollValid = livePost?.poll && Array.isArray(livePost.poll.options) && livePost.poll.options.length > 0;
+    const postPollValid = post?.poll && Array.isArray(post.poll.options) && post.poll.options.length > 0;
+
+    if (livePollValid) return livePost.poll;
+    if (postPollValid) return post.poll;
+
+    const optionsSrc = (Array.isArray(livePost?.pollOptions) && livePost.pollOptions.length > 0)
+      ? livePost.pollOptions
+      : (Array.isArray(post?.pollOptions) && post.pollOptions.length > 0 ? post.pollOptions : null);
+
+    if (optionsSrc) {
+      const options = optionsSrc.map(opt => ({
+        id: typeof opt === 'object' ? opt?.id : undefined,
+        text: getOptionText(opt),
+        votes: getOptionVotes(opt)
+      }));
+      const questionRaw = livePost?.pollQuestion || post?.pollQuestion || livePost?.text || post?.text || 'Poll';
+      return {
+        question: typeof questionRaw === 'string' ? questionRaw : getOptionText(questionRaw),
+        options,
+        totalVotes: options.reduce((sum, o) => sum + o.votes, 0)
+      };
+    }
+    return null;
+  };
+
+  const pollData = resolvePollData();
 
   const rawDate = livePost?.createdAt || post.createdAt || post.timestamp || livePost?.timestamp;
   const formatExactDateTime = (ts) => {
@@ -184,7 +171,7 @@ export function SharedPostPreview({ post, isLoading = false }) {
         <div className={styles.pollPreviewWidget}>
           <div className={styles.pollHeader}>
             <BarChart2 size={15} />
-            <span>Poll: {getOptionText(pollData.question) || (typeof pollData.question === 'string' ? pollData.question : 'Question')}</span>
+            <span>Poll: {typeof pollData.question === 'string' ? pollData.question : getOptionText(pollData.question) || 'Question'}</span>
           </div>
           <div className={styles.pollOptionsList}>
             {pollData.options.slice(0, 4).map((opt, idx) => {
