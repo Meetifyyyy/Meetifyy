@@ -2,6 +2,7 @@ import { lazy, Suspense, useMemo } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
 import { SmartBackTracker } from './shared/hooks/useSmartBack';
 import { useAuth } from './shared/context/AuthContext';
+import { useVersionCheck } from './shared/hooks/useVersionCheck';
 import DashboardLayoutWrapper from './layout/DashboardLayoutWrapper';
 import ErrorBoundary, { RouteErrorBoundary } from './shared/components/ErrorBoundary';
 import SocketManager from './shared/components/SocketManager';
@@ -176,8 +177,6 @@ function NotFound() {
  * Each route element is wrapped individually in <RouteErrorBoundary> so a crash
  * on one page never unmounts the surrounding shell (header, sidebar, bottom nav).
  */
-import { useVersionCheck } from './shared/hooks/useVersionCheck';
-
 export default function App() {
   useVersionCheck();
   // NOTE: This router is created inside the App component using useMemo so that
