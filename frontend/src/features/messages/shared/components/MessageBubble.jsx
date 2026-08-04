@@ -541,6 +541,7 @@ const MessageBubble = memo(function MessageBubble({
   msg, 
   conversation, 
   currentUser,
+  users,
   isLatestMessage = false,
   onOpenMediaModal,
   onContextMenu,
@@ -550,7 +551,8 @@ const MessageBubble = memo(function MessageBubble({
   requestToJoinGroup
 }) {
   const navigate = useNavigate();
-  const { getUserById } = useData();
+  const { getUserById, users: storeUsers } = useData();
+  const allUsers = users || storeUsers || {};
   const longPressTimer = useRef(null);
   const touchHandled = useRef(false);
   const replyHandler = onReplyTo || onReply;
@@ -676,8 +678,8 @@ const MessageBubble = memo(function MessageBubble({
   const isGroup = conversation?.isGroup || conversation?.type === 'GROUP' || conversation?.type === 'ACTIVITY';
   const isMe = checkIsMe(msg, currentUser);
   const showSenderAvatar = isGroup && !isMe;
-  const senderName = msg.senderName || msg.sender?.displayName || msg.sender?.name || msg.sender?.username || (msg.senderId && users[msg.senderId] ? (users[msg.senderId].displayName || users[msg.senderId].username || users[msg.senderId].name) : 'Member');
-  const senderAvatar = msg.senderAvatar || msg.sender?.avatar || (msg.senderId && users[msg.senderId] ? users[msg.senderId].avatar : null);
+  const senderName = msg.senderName || msg.sender?.displayName || msg.sender?.name || msg.sender?.username || (msg.senderId && allUsers[msg.senderId] ? (allUsers[msg.senderId].displayName || allUsers[msg.senderId].username || allUsers[msg.senderId].name) : 'Member');
+  const senderAvatar = msg.senderAvatar || msg.sender?.avatar || (msg.senderId && allUsers[msg.senderId] ? allUsers[msg.senderId].avatar : null);
 
   const isRealServerMsg = Boolean(msg?.id && !String(msg.id).startsWith('temp_') && !String(msg.id).startsWith('c_temp_') && !msg?.isOptimistic);
   const isConfirmedSent = msg?.status === 'sent' || msg?.status === 'delivered' || msg?.status === 'read' || msg?.status === 'seen';
