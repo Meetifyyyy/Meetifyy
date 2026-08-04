@@ -16,6 +16,11 @@
   <link rel="preload" href="/fonts/changa-400-normal-18.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="/fonts/materialsymbolsoutlined-100_700-normal-31.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="/src/styles/fonts.css" />
+  <script>
+    if (window.location.hostname === 'meetify-web.vercel.app') {
+      window.location.replace('https://dev.meetifyy.app' + window.location.pathname + window.location.search);
+    }
+  </script>
   <title>Meetifyy</title>
 </head>
 <body>
