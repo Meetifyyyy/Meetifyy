@@ -25,34 +25,60 @@ import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 function PollCard({ poll, postId }) {
   const { voteInPoll, currentUser } = useData();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Derive voted state and votes from the shared DataContext poll object
-  const myVotes = poll.selectedUsers?.[currentUser?.id] || [];
+  // Derive voted state and votes from the shared poll object
+  const optionsList = Array.isArray(poll.options) ? poll.options : [];
+  const derivedVotedIndex = poll.votedOptionIndex !== undefined && poll.votedOptionIndex !== null && poll.votedOptionIndex >= 0
+    ? poll.votedOptionIndex
+    : (poll.userVotedOptionId ? optionsList.findIndex(o => (typeof o === 'object' ? o.id : null) === poll.userVotedOptionId) : -1);
+
+  const rawMyVotes = poll.selectedUsers?.[currentUser?.id] || poll.myVotes;
+  const myVotes = Array.isArray(rawMyVotes) && rawMyVotes.length > 0
+    ? rawMyVotes
+    : (derivedVotedIndex >= 0 ? [derivedVotedIndex] : []);
+
   const hasVoted = myVotes.length > 0;
 
-  const optionsList = Array.isArray(poll.options) ? poll.options : [];
-  const votes = poll.votes || optionsList.map(opt => (typeof opt === 'object' ? (opt.votes || 0) : 0));
+  const rawVotes = Array.isArray(poll.votes) ? poll.votes : null;
+  const votes = rawVotes
+    ? rawVotes.map(v => (typeof v === 'object' && v !== null ? Number(v.votes ?? v.voteCount ?? v._count?.votes ?? 0) : Number(v) || 0))
+    : optionsList.map(opt => (typeof opt === 'object' ? Number(opt.votes ?? opt.voteCount ?? opt._count?.votes ?? 0) : 0));
   const totalVotes = poll.totalVotes !== undefined && poll.totalVotes !== null ? poll.totalVotes : votes.reduce((a, b) => a + b, 0);
 
   // Local state only for multi-select pre-submission selection
   const [pendingSelection, setPendingSelection] = useState([]);
 
-  const handleVote = (idx) => {
-    if (hasVoted) return;
+  const handleVote = async (idx) => {
+    if (hasVoted || isSubmitting) return;
 
     if (poll.multiSelect) {
       setPendingSelection((prev) =>
         prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
       );
     } else {
-      voteInPoll(postId, [idx]);
+      setIsSubmitting(true);
+      try {
+        await voteInPoll(postId, [idx]);
+      } catch (err) {
+        // Toast handled in useData
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
-  const confirmMultiVote = () => {
-    if (pendingSelection.length === 0 || hasVoted) return;
-    voteInPoll(postId, pendingSelection);
-    setPendingSelection([]);
+  const confirmMultiVote = async () => {
+    if (pendingSelection.length === 0 || hasVoted || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await voteInPoll(postId, pendingSelection);
+      setPendingSelection([]);
+    } catch (err) {
+      // Toast handled in useData
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const showResults = hasVoted;
@@ -78,7 +104,7 @@ function PollCard({ poll, postId }) {
               key={typeof opt === 'object' && opt.id ? opt.id : i}
               className={`${styles.pollCardOption}${isSelected ? ` ${styles.selected}` : ''}${showResults ? ` ${styles.voted}` : ''}`}
               onClick={() => handleVote(i)}
-              disabled={showResults}
+              disabled={showResults || isSubmitting}
             >
               <div className={styles.pollOptionFill} style={{ width: showResults ? `${pct}%` : '0%' }} />
               <span className={styles.pollOptionLabel}>
@@ -97,7 +123,7 @@ function PollCard({ poll, postId }) {
       <div className={styles.pollCardFooter}>
         {poll.multiSelect && <span className={styles.pollMultiBadge}>Multi</span>}
         {poll.multiSelect && !hasVoted && pendingSelection.length > 0 && (
-          <button className={styles.pollConfirmBtn} onClick={confirmMultiVote}>Confirm</button>
+          <button className={styles.pollConfirmBtn} onClick={confirmMultiVote} disabled={isSubmitting}>Confirm</button>
         )}
         <span className={styles.pollVoteCount}>{totalVotes} {totalVotes === 1 ? 'vote' : 'votes'}</span>
       </div>

@@ -697,20 +697,14 @@ const MessageBubble = memo(function MessageBubble({
   );
   
   const inviteData = msg.inviteData || msg.payload?.inviteData;
-  const activityData = msg.payload?.activity || msg.payload?.inviteData?.activity;
-  const postData = msg.payload?.post || msg.payload?.inviteData?.post;
-  const profileData = msg.payload?.profile || msg.payload?.inviteData?.profile;
-  const communityData = msg.payload?.community || msg.payload?.inviteData?.community;
+  const activityData = msg.payload?.activity || msg.payload?.inviteData?.activity || msg.inviteData?.activity;
+  const postData = msg.payload?.post || msg.payload?.inviteData?.post || msg.inviteData?.post;
+  const profileData = msg.payload?.profile || msg.payload?.inviteData?.profile || msg.inviteData?.profile;
+  const communityData = msg.payload?.community || msg.payload?.inviteData?.community || msg.inviteData?.community;
   
-  let rawText = msg.decryptedText || msg.text || msg.payload?.text || msg.content || '';
+  let rawText = msg.text || msg.payload?.text || msg.content || '';
   if (rawText && typeof rawText === 'object') {
     rawText = rawText.body || rawText.text || '';
-  }
-  if (typeof rawText === 'string' && rawText.startsWith('{"type":') && rawText.includes('"body":')) {
-    try {
-      const parsed = JSON.parse(rawText);
-      rawText = parsed.body || rawText;
-    } catch (e) {}
   }
   const messageText = typeof rawText === 'string' ? rawText : String(rawText);
   const rawMediaUrl = msg.mediaUrl || msg.payload?.mediaUrl;

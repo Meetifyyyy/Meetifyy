@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -20,7 +20,7 @@ export class PostsService {
     private readonly redisService: RedisService,
   ) {}
 
-  private formatPost(post: any, likedSet: Set<string>, bookmarkedSet: Set<string>) {
+  private formatPost(post: any, likedSet: Set<string>, bookmarkedSet: Set<string>, currentUserId?: string) {
     const isLiked = likedSet.has(post.id);
     const isBookmarked = bookmarkedSet.has(post.id);
     const likeCount = post.likeCount ?? 0;
@@ -36,16 +36,27 @@ export class PostsService {
     const pollOptions = post.pollOptions || [];
     let poll = post.poll || null;
     if (!poll && pollOptions.length > 0) {
-      const options = pollOptions.map((opt: any) => ({
+      const sortedOptions = [...pollOptions].sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+      const options = sortedOptions.map((opt: any) => ({
         id: opt.id,
         text: opt.text,
         votes: Number(opt.voteCount ?? opt._count?.votes ?? 0)
       }));
       const totalVotes = options.reduce((sum: number, o: any) => sum + o.votes, 0);
+
+      const userVotedOptionId = post.userVotedOptionId || (Array.isArray(post.pollVotes) && post.pollVotes.length > 0 ? post.pollVotes[0]?.optionId : null);
+      const userVotedIndex = userVotedOptionId ? options.findIndex((o: any) => o.id === userVotedOptionId) : -1;
+      const myVotes = userVotedIndex >= 0 ? [userVotedIndex] : [];
+      const selectedUsers = currentUserId && myVotes.length > 0 ? { [currentUserId]: myVotes } : {};
+
       poll = {
         question: post.text,
         options,
         totalVotes,
+        userVotedOptionId: userVotedOptionId || undefined,
+        votedOptionIndex: userVotedIndex >= 0 ? userVotedIndex : undefined,
+        myVotes,
+        selectedUsers,
       };
     }
 
@@ -246,7 +257,10 @@ export class PostsService {
         ELSE false END AS "isLiked",
         CASE WHEN ${userId ? userId : ''}::text != '' THEN
           EXISTS(SELECT 1 FROM "PostBookmark" pb WHERE pb."userId" = ${userId || ''} AND pb."postId" = p.id)
-        ELSE false END AS "isBookmarked"
+        ELSE false END AS "isBookmarked",
+        CASE WHEN ${userId ? userId : ''}::text != '' THEN
+          (SELECT pv."optionId" FROM "PollVote" pv WHERE pv."postId" = p.id AND pv."userId" = ${userId || ''} LIMIT 1)
+        ELSE NULL END AS "userVotedOptionId"
       FROM "Post" p
       JOIN "User" u ON p."authorId" = u.id
       LEFT JOIN "Community" c ON p."communityId" = c.id
@@ -296,16 +310,27 @@ export class PostsService {
       const pollOptions = post.pollOptions || [];
       let poll = null;
       if (pollOptions.length > 0) {
-        const options = pollOptions.map((opt: any) => ({
+        const sortedOptions = [...pollOptions].sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+        const options = sortedOptions.map((opt: any) => ({
           id: opt.id,
           text: opt.text,
           votes: Number(opt.voteCount || 0),
         }));
         const totalVotes = options.reduce((sum: number, o: any) => sum + o.votes, 0);
+
+        const userVotedOptionId = post.userVotedOptionId || null;
+        const userVotedIndex = userVotedOptionId ? options.findIndex((o: any) => o.id === userVotedOptionId) : -1;
+        const myVotes = userVotedIndex >= 0 ? [userVotedIndex] : [];
+        const selectedUsers = userId && myVotes.length > 0 ? { [userId]: myVotes } : {};
+
         poll = {
           question: post.text,
           options,
           totalVotes,
+          userVotedOptionId: userVotedOptionId || undefined,
+          votedOptionIndex: userVotedIndex >= 0 ? userVotedIndex : undefined,
+          myVotes,
+          selectedUsers,
         };
       }
 
@@ -394,6 +419,7 @@ export class PostsService {
             }
           }
         },
+        pollVotes: userId ? { where: { userId } } : false,
       },
     });
 
@@ -423,7 +449,7 @@ export class PostsService {
     const likedSet = new Set(userLikes.map(l => l.postId));
     const bookmarkedSet = new Set(userBookmarks.map(b => b.postId));
 
-    const formattedPosts = posts.map((post) => this.formatPost(post, likedSet, bookmarkedSet));
+    const formattedPosts = posts.map((post) => this.formatPost(post, likedSet, bookmarkedSet, userId));
 
     return {
       posts: formattedPosts,
@@ -711,6 +737,7 @@ export class PostsService {
           author: { select: { id: true, username: true, displayName: true, avatar: true } },
           community: { select: { id: true, name: true, deletedAt: true } },
           pollOptions: { include: { _count: { select: { votes: true } } } },
+          pollVotes: userId ? { where: { userId } } : false,
         },
       }),
       this.prisma.media.findMany({
@@ -793,16 +820,27 @@ export class PostsService {
     const pollOptions = (post as any).pollOptions || [];
     let poll = (post as any).poll || null;
     if (!poll && pollOptions.length > 0) {
-      const options = pollOptions.map((opt: any) => ({
+      const sortedOptions = [...pollOptions].sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+      const options = sortedOptions.map((opt: any) => ({
         id: opt.id,
         text: opt.text,
-        votes: Number(opt._count?.votes || 0)
+        votes: Number(opt._count?.votes || opt.voteCount || 0)
       }));
       const totalVotes = options.reduce((sum: number, o: any) => sum + o.votes, 0);
+
+      const userVotedOptionId = (Array.isArray((post as any).pollVotes) && (post as any).pollVotes.length > 0) ? (post as any).pollVotes[0]?.optionId : null;
+      const userVotedIndex = userVotedOptionId ? options.findIndex((o: any) => o.id === userVotedOptionId) : -1;
+      const myVotes = userVotedIndex >= 0 ? [userVotedIndex] : [];
+      const selectedUsers = userId && myVotes.length > 0 ? { [userId]: myVotes } : {};
+
       poll = {
         question: post.text,
         options,
         totalVotes,
+        userVotedOptionId: userVotedOptionId || undefined,
+        votedOptionIndex: userVotedIndex >= 0 ? userVotedIndex : undefined,
+        myVotes,
+        selectedUsers,
       };
     }
 
@@ -878,6 +916,7 @@ export class PostsService {
             author: { select: { id: true, username: true, displayName: true, avatar: true } },
             media: true,
             pollOptions: { include: { _count: { select: { votes: true } } } },
+            pollVotes: userId ? { where: { userId } } : false,
           }
         }
       }
@@ -905,9 +944,119 @@ export class PostsService {
 
     const formattedPosts = bookmarks.map((b) => {
       if (!b.post || b.post.deletedAt) return null;
-      return this.formatPost(b.post, likedSet, bookmarkedSet);
+      return this.formatPost(b.post, likedSet, bookmarkedSet, userId);
     }).filter(Boolean);
 
     return { posts: formattedPosts, nextCursor };
+  }
+
+  async voteInPoll(postId: string, userId: string, dto: { optionId?: string; indices?: number[]; index?: number }) {
+    const [post, excludedUserIds] = await Promise.all([
+      this.prisma.post.findUnique({
+        where: { id: postId },
+        include: {
+          pollOptions: {
+            include: {
+              _count: { select: { votes: true } }
+            }
+          }
+        }
+      }),
+      this.blocksService.getExcludedUserIds(userId)
+    ]);
+
+    if (!post || post.deletedAt || excludedUserIds.includes(post.authorId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const pollOptions = post.pollOptions || [];
+    if (pollOptions.length === 0) {
+      throw new NotFoundException('Poll not found for this post');
+    }
+
+    // Sort options deterministically to map index reliably
+    const sortedOptions = [...pollOptions].sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+
+    let targetOption: any = null;
+    if (dto.optionId) {
+      targetOption = sortedOptions.find((o: any) => o.id === dto.optionId);
+    } else if (Array.isArray(dto.indices) && dto.indices.length > 0) {
+      const idx = dto.indices[0];
+      targetOption = sortedOptions[idx];
+    } else if (typeof dto.index === 'number') {
+      targetOption = sortedOptions[dto.index];
+    }
+
+    if (!targetOption) {
+      throw new BadRequestException('Invalid poll option selected');
+    }
+
+    const lockKey = `toggle:pollvote:${userId}:${postId}`;
+
+    return this.redisService.withLock(lockKey, 3000, async () => {
+      // Check if user has already voted
+      const existingVote = await this.prisma.pollVote.findUnique({
+        where: { postId_userId: { postId, userId } }
+      });
+
+      if (existingVote) {
+        throw new BadRequestException('You have already voted in this poll');
+      }
+
+      // Execute vote in transaction
+      await this.prisma.$transaction([
+        this.prisma.pollVote.create({
+          data: {
+            postId,
+            optionId: targetOption.id,
+            userId,
+          }
+        }),
+        this.prisma.pollOption.update({
+          where: { id: targetOption.id },
+          data: { voteCount: { increment: 1 } }
+        })
+      ]);
+
+      // Fetch fresh options after vote
+      const updatedOptionsRaw = await this.prisma.pollOption.findMany({
+        where: { postId },
+        include: { _count: { select: { votes: true } } }
+      });
+      const updatedSortedOptions = [...updatedOptionsRaw].sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+
+      const options = updatedSortedOptions.map((opt: any) => ({
+        id: opt.id,
+        text: opt.text,
+        votes: Number(opt.voteCount ?? opt._count?.votes ?? 0),
+      }));
+      const totalVotes = options.reduce((sum: number, o: any) => sum + o.votes, 0);
+      const userVotedIndex = options.findIndex((o: any) => o.id === targetOption.id);
+      const myVotes = userVotedIndex >= 0 ? [userVotedIndex] : [];
+      const selectedUsers = { [userId]: myVotes };
+
+      const updatedPoll = {
+        question: post.text,
+        options,
+        totalVotes,
+        userVotedOptionId: targetOption.id,
+        votedOptionIndex: userVotedIndex,
+        myVotes,
+        selectedUsers,
+      };
+
+      // Real-time broadcast
+      this.domainEventService.emit('post.pollVoted', {
+        postId,
+        userId,
+        poll: updatedPoll,
+      });
+
+      return {
+        success: true,
+        postId,
+        poll: updatedPoll,
+      };
+    });
   }
 }

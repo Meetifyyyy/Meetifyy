@@ -17,7 +17,6 @@ import { AppService } from './app.service';
 import { CommunitiesModule } from './communities/communities.module';
 import { ActivitiesModule } from './activities/activities.module';
 import { UsersModule } from './users/users.module';
-import { KeysModule } from './keys/keys.module';
 import { MessagesModule } from './messages/messages.module';
 import { MessagingCoreModule } from './messages/core/messaging-core.module';
 import { DmModule } from './messages/dm/dm.module';
@@ -98,7 +97,6 @@ import { DomainValidatorModule } from './common/services/domain-validator.module
     CommunitiesModule,
     ActivitiesModule,
     UsersModule,
-    KeysModule,
     MessagesModule,
     MessagingCoreModule,
     DmModule,

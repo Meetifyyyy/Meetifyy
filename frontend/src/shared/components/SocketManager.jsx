@@ -20,8 +20,7 @@ export default function SocketManager() {
 
   useEffect(() => {
     if (isLoggedIn && session?.access_token) {
-      const deviceId = localStorage.getItem('meetifyy_deviceId');
-      connect(session.access_token, deviceId);
+      connect(session.access_token);
     } else {
       disconnect();
     }
@@ -636,9 +635,6 @@ export default function SocketManager() {
                   mediaType: isUnsent ? null : (payload.mediaType || null),
                   inviteData: isUnsent ? null : (payload.inviteData || null),
                   replyTo: isUnsent ? null : (payload.replyTo || null),
-                  decryptedText: null,
-                  isDecrypting: false,
-                  decryptError: false,
                 };
               }
               return m;

@@ -207,14 +207,12 @@ export class AdminUsersService {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
-    await this.prisma.device.deleteMany({ where: { userId: id } });
-
     if (this.supabaseService.isConfigured) {
       try {
         await this.supabaseService.client.auth.admin.signOut(id);
       } catch (e) {}
     }
 
-    return { success: true, message: 'User forced logout from all devices' };
+    return { success: true, message: 'User forced logout' };
   }
 }

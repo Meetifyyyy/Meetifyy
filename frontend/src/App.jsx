@@ -128,8 +128,11 @@ function PublicRoute({ children }) {
 
 function StaticRoute({ children }) {
   const { isLoggedIn, currentUser, loading } = useAuth();
+  const location = useLocation();
   if (loading) return null;
-  if (isLoggedIn && currentUser?.isNewUser) {
+  // Do not redirect to /onboarding from /reset-password — a PASSWORD_RECOVERY
+  // session does not trigger a full sync, so currentUser.isNewUser may be stale.
+  if (isLoggedIn && currentUser?.isNewUser && location.pathname !== '/reset-password') {
     window.location.replace('/onboarding');
     return null;
   }
@@ -228,9 +231,14 @@ export default function App() {
         {
           path: '/reset-password',
           element: (
-            <PublicRoute>
+            // StaticRoute (not PublicRoute) — allows both logged-in and logged-out
+            // users through. PublicRoute would redirect authenticated users to /home
+            // before the Supabase PASSWORD_RECOVERY session can establish, breaking
+            // the reset link for users who were previously signed in on this browser.
+            // The page itself validates the PASSWORD_RECOVERY token.
+            <StaticRoute>
               {withBoundary(<ResetPasswordPage />)}
-            </PublicRoute>
+            </StaticRoute>
           ),
         },
         {

@@ -9,7 +9,6 @@ import styles from './ChatDetailsPanel.module.css';
 import sidebarStyles from '../sidebar/ConversationList.module.css';
 import { Pin, Trash2, LogOut, ChevronRight, User, Search, Ban, UserPlus, UserCheck, Check, X, Image as ImageIcon, CalendarDays, Calendar, CalendarX, ArrowLeft, MoreVertical } from 'lucide-react';
 import InviteModal from '../modals/InviteModal';
-import SafetyNumberModal from '../modals/SafetyNumberModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { showToast } from '@shared/utils/toast';
 
@@ -38,7 +37,6 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   
   // Modal States
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [showSafetyModal, setShowSafetyModal] = useState(false);
   const [reportUserTarget, setReportUserTarget] = useState(null);
   
   // Header Menu States
@@ -766,37 +764,6 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
               </div>
             )}
 
-            {/* End-to-End Encryption Section */}
-            <div className={styles.section} style={{ marginTop: '1rem' }}>
-              <div 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'space-between',
-                  padding: '12px 16px',
-                  backgroundColor: 'var(--bg-secondary)',
-                  borderRadius: '12px',
-                  cursor: 'pointer'
-                }}
-                onClick={() => setShowSafetyModal(true)}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ color: '#10b981' }}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-primary)' }}>End-to-End Encrypted</h3>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                      Click to verify safety numbers
-                    </p>
-                  </div>
-                </div>
-                <ChevronRight size={20} color="var(--text-secondary)" />
-              </div>
-            </div>
 
             {/* Gallery Section */}
             <div className={styles.galleryCard}>
@@ -1086,12 +1053,6 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         isOpen={showInviteModal} 
         onClose={() => setShowInviteModal(false)} 
         group={{ ...conversation, ...groupDetails }} 
-      />
-
-      <SafetyNumberModal
-        isOpen={showSafetyModal}
-        onClose={() => setShowSafetyModal(false)}
-        targetUser={targetUser}
       />
 
       {reportUserTarget && (

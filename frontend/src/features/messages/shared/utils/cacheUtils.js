@@ -206,9 +206,6 @@ export function appendMessageToCache(queryClient, activeChatId, message) {
           updatedMessage.isUnsent = true;
           updatedMessage.text = 'This message was unsent';
           updatedMessage.payload = { text: 'This message was unsent' };
-          updatedMessage.decryptedText = null;
-          updatedMessage.isDecrypting = false;
-          updatedMessage.decryptError = false;
           updatedMessage.mediaUrl = null;
           updatedMessage.mediaType = null;
           updatedMessage.inviteData = null;
@@ -289,9 +286,6 @@ export function updateMessageInCache(queryClient, activeChatId, targetId, patch)
             resMsg.isUnsent = true;
             resMsg.text = 'This message was unsent';
             resMsg.payload = { text: 'This message was unsent' };
-            resMsg.decryptedText = null;
-            resMsg.isDecrypting = false;
-            resMsg.decryptError = false;
             resMsg.mediaUrl = null;
             resMsg.mediaType = null;
             resMsg.inviteData = null;

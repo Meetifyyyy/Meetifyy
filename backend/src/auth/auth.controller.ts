@@ -156,8 +156,59 @@ export class AuthController {
 
   @Post('events/password-changed')
   @UseGuards(JwtGuard)
-  async triggerPasswordChangedEmail(@Body() body: TriggerPasswordChangedEmailDto) {
-    await this.emailService.sendPasswordChangedEmail(body.email, body.name || 'User');
+  async triggerPasswordChangedEmail(
+    @Body() body: TriggerPasswordChangedEmailDto,
+    @Req() req: Request,
+  ) {
+    // Parse device info from User-Agent
+    const rawUA = body.device || req.headers['user-agent'] || '';
+    const parser = new UAParser(rawUA);
+    const uaResult = parser.getResult();
+
+    const browserName = uaResult.browser?.name || 'Unknown Browser';
+    const browserVersion = uaResult.browser?.major || '';
+    const browser = browserVersion ? `${browserName} ${browserVersion}` : browserName;
+
+    const deviceType = uaResult.device?.type;
+    const deviceModel = uaResult.device?.model;
+    const deviceVendor = uaResult.device?.vendor;
+    let device: string;
+    if (deviceModel && deviceVendor) {
+      device = `${deviceVendor} ${deviceModel}`;
+    } else if (deviceType === 'mobile') {
+      device = `Mobile — ${browser}`;
+    } else if (deviceType === 'tablet') {
+      device = `Tablet — ${browser}`;
+    } else {
+      device = `Desktop — ${browser}`;
+    }
+
+    // Derive client IP
+    const ip =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      'Unknown';
+
+    // Format timestamp if not provided by the client
+    const time =
+      body.time ||
+      new Date().toLocaleString('en-US', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+
+    await this.emailService.sendPasswordChangedEmail(
+      body.email,
+      body.name || 'User',
+      time,
+      device,
+      ip,
+    );
     return { success: true };
   }
 

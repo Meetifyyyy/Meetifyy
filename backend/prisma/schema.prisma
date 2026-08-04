@@ -164,7 +164,6 @@ model User {
   crewActivitiesCreated    CrewActivity[]            @relation("ActivityCreator")
   crewActivities           CrewActivityMember[]
   deletedMessages          DeletedMessage[]
-  devices                  Device[]
   following                Follow[]                  @relation("follower")
   followers                Follow[]                  @relation("following")
   matchQueueEntry          MatchQueueEntry?
@@ -416,13 +415,11 @@ model Message {
   editedAt          DateTime?
   payload           Json?
   replyToId         String?
-  senderDeviceId    String?
+  pinnedIn          Conversation[]           @relation("PinnedMessage")
+  deletedByUsers    DeletedMessage[]
   type              MessageType              @default(CHAT)
   state             MessageState             @default(NORMAL)
   attachmentMediaId String?
-  pinnedIn          Conversation[]           @relation("PinnedMessage")
-  deletedByUsers    DeletedMessage[]
-  targets           EncryptedMessageTarget[]
   attachmentMedia   Media?                   @relation("MessageAttachment", fields: [attachmentMediaId], references: [id])
   conversation      Conversation             @relation("ConversationMessages", fields: [conversationId], references: [id], onDelete: Cascade)
   replyTo           Message?                 @relation("MessageReplies", fields: [replyToId], references: [id])
@@ -437,53 +434,6 @@ model Message {
   @@index([conversationId, deletedAt, createdAt(sort: Desc), id(sort: Desc)])
   @@index([senderId])
   @@index([senderId, clientMessageId])
-}
-
-model EncryptedMessageTarget {
-  id         String   @id @default(uuid())
-  messageId  String
-  deviceId   String
-  type       Int
-  ciphertext String
-  createdAt  DateTime @default(now())
-  device     Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-
-  @@index([messageId])
-  @@index([deviceId])
-}
-
-model Device {
-  id               String                   @id @default(uuid())
-  userId           String
-  registrationId   Int
-  identityKey      String
-  signedPreKeyId   Int
-  signedPreKey     String
-  signedPreKeySig  String
-  deviceName       String?
-  platform         String?
-  lastIp           String?
-  lastLoginAt      DateTime                 @default(now())
-  lastActiveAt     DateTime?
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
-  user             User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  receivedMessages EncryptedMessageTarget[]
-  oneTimePreKeys   OneTimePreKey[]
-
-  @@index([userId])
-}
-
-model OneTimePreKey {
-  id       String    @id @default(uuid())
-  deviceId String
-  keyId    Int
-  key      String
-  usedAt   DateTime?
-  device   Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-
-  @@index([deviceId])
 }
 
 model CrewActivity {

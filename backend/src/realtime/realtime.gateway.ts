@@ -32,8 +32,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @WebSocketServer()
   server: Server;
 
-  // We still keep the deviceId map for E2EE device-specific routing
-  private connectedDevices = new Map<string, Socket>();
 
   // In-memory alias cache: conversationId (any form) → { id, publicId }
   // Avoids a Prisma round-trip on every emitToConversation call (e.g. typing events)
@@ -243,7 +241,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   async handleConnection(client: Socket) {
     const token = client.handshake.auth?.token;
-    const deviceId = client.handshake.auth?.deviceId;
 
     if (!token) {
       this.logger.warn(`Client connection rejected: missing token`);
@@ -311,24 +308,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       this.logger.error('Failed to pre-join conversation rooms', err);
     }
 
-    let resolvedDeviceName = 'unknown';
-
-    if (deviceId) {
-      (client as any).deviceId = deviceId;
-      this.connectedDevices.set(deviceId, client);
-
-      try {
-        const deviceRecord = await this.prisma.device.findUnique({
-          where: { id: deviceId },
-          select: { deviceName: true, platform: true }
-        });
-        if (deviceRecord) {
-          resolvedDeviceName = deviceRecord.deviceName || deviceRecord.platform || deviceId;
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
 
     await this.presenceService.setOnline(userId, client.id);
 
@@ -337,7 +316,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   async handleDisconnect(client: Socket) {
     const userId = (client as any).userId;
-    const deviceId = (client as any).deviceId;
     
     if (userId) {
       let userConvIds: string[] = [];
@@ -356,9 +334,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       });
 
       await this.presenceService.setOffline(userId, client.id);
-    }
-    if (deviceId) {
-      this.connectedDevices.delete(deviceId);
     }
     this.logger.log(`Disconnected user=${userId || 'unknown'} socket=${client.id}`);
   }
@@ -417,50 +392,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       lastActive: presence?.lastSeen || null,
       lastSeen: presence?.lastSeen || null
     };
-  }
-
-  // E2EE Chat Message Routing (migrated from chat.gateway.ts)
-  // Re-aliasing to 'sendEncryptedMessage' for backwards compatibility with older client for now
-  @SubscribeMessage('sendEncryptedMessage')
-  async handleEncryptedMessage(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string; targets: Array<{deviceId: string, type: number, ciphertext: string}> }
-  ) {
-    const senderId = (client as any).userId;
-    const senderDeviceId = (client as any).deviceId;
-    this.chatLogger.log(`Message Sent chat=${data.conversationId} targets=${data.targets.length}`);
-
-    try {
-      // 1. Save in Database
-      const message = await this.messagesService.saveEncryptedMessage(
-        senderId,
-        senderDeviceId,
-        data.conversationId,
-        data.targets
-      );
-
-      // 2. Route directly to connected devices
-      for (const target of data.targets) {
-        const targetSocket = this.connectedDevices.get(target.deviceId);
-        if (targetSocket) {
-          targetSocket.emit('receiveEncryptedMessage', {
-            id: message.id,
-            conversationId: data.conversationId,
-            sender: { id: senderId }, 
-            senderDeviceId,
-            type: target.type,
-            ciphertext: target.ciphertext,
-            createdAt: message.createdAt
-          });
-        }
-      }
-      
-      return { status: 'ok', messageId: message.id };
-    } catch (error) {
-      this.chatLogger.error(`Failed to process message chat=${data.conversationId}`);
-      client.emit('messageError', { error: 'Failed to process message' });
-      return { status: 'error', error: 'Failed to process message' };
-    }
   }
 
   @SubscribeMessage('presence:heartbeat')

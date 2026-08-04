@@ -224,7 +224,6 @@ async function request(method, path, body, signal) {
   }
 
   const token = getToken(); // synchronous
-  const deviceId = localStorage.getItem('meetifyy_deviceId');
 
   if (!token && !isPublicPath(path)) {
     throw new Error('Unauthorized: Missing access token');
@@ -237,9 +236,7 @@ async function request(method, path, body, signal) {
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  if (deviceId) {
-    headers['x-device-id'] = deviceId;
-  }
+
   // Send ETag for GET requests — enables 304 Not Modified on unchanged data
   if (method === 'GET') {
     const baseUrl = getBackendUrl();
@@ -305,7 +302,6 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
       _hasSession = false;
       localStorage.removeItem('loggedIn');
       localStorage.removeItem('currentUser');
-      localStorage.removeItem('meetifyy_deviceId');
       localStorage.removeItem('meetifyy_recent_searches');
       localStorage.removeItem('meetify_muted_communities');
       localStorage.removeItem('read_invitations');
@@ -413,7 +409,10 @@ export const postsApi = {
   getPostById: (postId) => apiClient.get(`/api/posts/${postId}`),
   deletePost: (postId) => apiClient.delete(`/api/posts/${postId}`),
 
-  voteInPoll: (postId, indices) => apiClient.post(`/api/posts/${postId}/vote`, { indices }),
+  voteInPoll: (postId, payload) => {
+    const body = Array.isArray(payload) ? { indices: payload } : (typeof payload === 'object' ? payload : { index: payload });
+    return apiClient.post(`/api/posts/${postId}/vote`, body);
+  },
   bookmarkPost: (postId, { signal } = {}) => apiClient.post(`/api/posts/${postId}/bookmark`, undefined, { signal }),
   unbookmarkPost: (postId, { signal } = {}) => apiClient.delete(`/api/posts/${postId}/bookmark`, { signal }),
   getBookmarks: (limit = 10, cursor) => {
@@ -667,14 +666,6 @@ export const uploadsApi = {
     formData.append('folder', folder);
     return apiClient.post('/api/media/upload', formData);
   }
-};
-
-export const keysApi = {
-  register: (payload) => apiClient.post('/api/keys/register', payload),
-  getBundle: (userId) => apiClient.get(`/api/keys/bundle/${userId}`),
-  getStatus: (deviceId) => apiClient.get(deviceId ? `/api/keys/status?deviceId=${encodeURIComponent(deviceId)}` : '/api/keys/status'),
-  replenish: (payload) => apiClient.post('/api/keys/replenish', payload),
-  rotateSpk: (payload) => apiClient.post('/api/keys/rotate-spk', payload),
 };
 
 export const notificationsApi = {

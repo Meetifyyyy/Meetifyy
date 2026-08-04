@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { E2EEManager } from '@shared/lib/signal/E2EEManager';
 import { usersApi, apiClient, postsApi, getBackendUrl } from '@shared/api/apiClient';
 import { useSavedPostsStore } from '../stores/savedPostsStore';
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
@@ -27,7 +26,6 @@ export function AuthProvider({ children }) {
       try {
         const parsed = JSON.parse(savedUser);
         if (isValidUser(parsed)) {
-            setTimeout(() => E2EEManager.getInstance().initialize().catch(console.error), 1000);
             return parsed;
         }
       } catch (e) {}
@@ -45,6 +43,12 @@ export function AuthProvider({ children }) {
   const bookmarksHydratedRef = useRef(false);
   const syncDebounceRef = useRef(null);
   const isLoggingOutRef = useRef(false);
+  // Suppresses the spurious SIGNED_IN that signInWithPassword fires during
+  // the current-password verification step inside changePassword.
+  const isChangingPasswordRef = useRef(false);
+  // Suppresses the SIGNED_OUT that signOut({ scope: 'others' }) may fire
+  // locally on this device during the changePassword session-revocation step.
+  const isRevokingSessionsRef = useRef(false);
 
   const performSync = useCallback(async (supabaseSession, event) => {
     if (syncPromiseRef.current) {
@@ -135,11 +139,16 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, supabaseSession) => {
         if (event === 'SIGNED_OUT') {
+          // signOut({ scope: 'others' }) during a password change can fire a local
+          // SIGNED_OUT event. Block it from clearing this device's session/user.
+          if (isRevokingSessionsRef.current) {
+            setLoading(false);
+            return;
+          }
           isLoggingOutRef.current = false;
           setSession(null);
           setCurrentUser(null);
           localStorage.removeItem('currentUser');
-          localStorage.removeItem('meetifyy_deviceId');
           localStorage.removeItem('meetifyy_recent_searches');
           localStorage.removeItem('meetify_muted_communities');
           localStorage.removeItem('read_invitations');
@@ -156,9 +165,24 @@ export function AuthProvider({ children }) {
           return;
         }
 
+        // USER_UPDATED fires after supabase.auth.updateUser() (e.g., password change).
+        // We only need to refresh the session token — a full DB re-sync is unnecessary.
+        if (event === 'USER_UPDATED') {
+          setSession(supabaseSession);
+          setLoading(false);
+          return;
+        }
+
         if (isLoggingOutRef.current) {
           setSession(null);
           setCurrentUser(null);
+          setLoading(false);
+          return;
+        }
+
+        // Suppress the SIGNED_IN event fired by signInWithPassword during the
+        // current-password verification step inside changePassword.
+        if (isChangingPasswordRef.current) {
           setLoading(false);
           return;
         }
@@ -194,14 +218,11 @@ export function AuthProvider({ children }) {
 
           if (supabaseSession?.user) {
             const now = Date.now();
-            if (now - lastSyncAtRef.current < 5000) {
-              E2EEManager.getInstance().initialize().catch(console.error);
-            } else {
+            if (now - lastSyncAtRef.current >= 5000) {
               if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
               syncDebounceRef.current = setTimeout(() => {
                 performSync(supabaseSession, event);
               }, 200);
-              E2EEManager.getInstance().initialize().catch(console.error);
             }
           }
         }
@@ -550,22 +571,67 @@ export function AuthProvider({ children }) {
     if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
     if (!currentUser?.email) throw new Error('User email not found');
 
-    // 1. Verify current password via reauthenticate to avoid triggering onAuthStateChange SIGNED_IN event
-    const { error: reauthError } = await supabase.auth.reauthenticate({
-      token: currentPassword,
-    });
+    if (currentPassword === newPassword) {
+      throw new Error('New password must be different from current password.');
+    }
 
-    if (reauthError) {
-      throw new Error('Incorrect current password');
+    // 1. Verify current password.
+    //    signInWithPassword fires a SIGNED_IN auth event — the isChangingPasswordRef
+    //    flag tells onAuthStateChange to ignore it so we don't trigger a sync mid-flow.
+    isChangingPasswordRef.current = true;
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: currentUser.email,
+      password: currentPassword,
+    });
+    isChangingPasswordRef.current = false;
+
+    if (signInError) {
+      throw new Error('Incorrect current password.');
     }
 
     // 2. Update to new password
     const { error: updateError } = await supabase.auth.updateUser({
-      password: newPassword
+      password: newPassword,
     });
 
     if (updateError) {
       throw new Error(updateError.message);
+    }
+
+    // 3. Revoke all other active sessions (other devices/tabs).
+    //    scope: 'others' keeps the current session alive so the user stays
+    //    logged in on the device they just changed the password from.
+    //    isRevokingSessionsRef prevents the local SIGNED_OUT event from
+    //    clearing this device's session state.
+    try {
+      isRevokingSessionsRef.current = true;
+      await supabase.auth.signOut({ scope: 'others' });
+    } catch {
+      // Non-fatal — password was still changed successfully
+    } finally {
+      isRevokingSessionsRef.current = false;
+    }
+
+    // 4. Send "Password Changed" security notification email
+    try {
+      await apiClient.post('/api/auth/events/password-changed', {
+        email: currentUser.email,
+        name: currentUser.displayName || 'User',
+        time: new Date().toLocaleString('en-US', {
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          weekday: 'short',
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        }),
+        device: navigator.userAgent,
+      });
+    } catch {
+      // Non-fatal — password was still changed. Email failure should not
+      // surface as a password-change error to the user.
     }
 
     return true;
@@ -576,7 +642,6 @@ export function AuthProvider({ children }) {
     setSession(null);
     setCurrentUser(null);
     localStorage.removeItem('currentUser');
-    localStorage.removeItem('meetifyy_deviceId');
     localStorage.removeItem('meetifyy_recent_searches');
     localStorage.removeItem('meetify_muted_communities');
     localStorage.removeItem('read_invitations');

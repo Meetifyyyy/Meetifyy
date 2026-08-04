@@ -10,6 +10,7 @@ import PageLayout from '@layout/PageLayout';
 import FollowButton from '@shared/components/ui/FollowButton';
 import { useData } from '@shared/hooks/useData';
 import { searchApi } from '@shared/api/apiClient';
+import Post from '@features/feed/components/post/Post';
 import styles from './SearchResultsRoute.module.css';
 
 const QUICK_CHIPS = [
@@ -467,33 +468,9 @@ export default function SearchResultsRoute() {
                 }
 
                 if (kind === 'post') {
-                  const author = data.author;
                   return (
-                    <div
-                      key={id}
-                      className={styles.feedRow}
-                      onClick={() => {
-                        navigate(`/post/${data.id}`);
-                      }}
-                    >
-                      <Avatar src={author?.avatar} name={author?.displayName || 'Post'} size="44px" disableHover />
-                      <div className={styles.feedInfo}>
-                        <div className={styles.rowHeaderTitle}>
-                          <span className={styles.feedName}>{author?.displayName || 'Post'}</span>
-                          {author?.username && <span className={styles.feedSubHandle}>@{author.username}</span>}
-                        </div>
-                        <p className={styles.postSnippetText}>
-                          {data.text}
-                        </p>
-                        <div className={styles.metaRow}>
-                          <span className={styles.metaStat}>
-                            <Heart size={12} /> {data.likesCount || data.likeCount || 0}
-                          </span>
-                          <span className={styles.metaStat}>
-                            <MessageSquare size={12} /> {data.commentsCount || data.commentCount || 0}
-                          </span>
-                        </div>
-                      </div>
+                    <div key={id} style={{ marginBottom: '8px' }}>
+                      <Post postData={data} onClick={() => navigate(`/post/${data.id}`)} />
                     </div>
                   );
                 }

@@ -41,6 +41,19 @@ export class CreateCommentDto {
   mentions?: any[];
 }
 
+export class VotePollDto {
+  @IsString()
+  @IsOptional()
+  optionId?: string;
+
+  @IsArray()
+  @IsOptional()
+  indices?: number[];
+
+  @IsOptional()
+  index?: number;
+}
+
 @Controller('api/posts')
 @UseGuards(JwtGuard)
 export class PostsController {
@@ -179,5 +192,14 @@ export class PostsController {
     @Param('id') id: string,
   ) {
     return this.postsService.unbookmarkPost(id, user.id);
+  }
+
+  @Post(':id/vote')
+  async voteInPoll(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Body() dto: VotePollDto,
+  ) {
+    return this.postsService.voteInPoll(id, user.id, dto);
   }
 }

@@ -159,32 +159,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     return identifier;
   }
 
-  async saveEncryptedMessage(senderId: string, senderDeviceId: string, conversationId: string, targets: any[]) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    let conv = await this.prisma.conversation.findUnique({ where: { id: realConvId } });
-    if (!conv) {
-      throw new NotFoundException('Conversation not found');
-    }
-
-    const message = await this.prisma.message.create({
-      data: {
-        conversationId: realConvId,
-        senderId,
-        senderDeviceId,
-        type: 'CHAT',
-        targets: {
-          create: targets.map(t => ({
-            deviceId: t.deviceId,
-            type: t.type,
-            ciphertext: t.ciphertext
-          }))
-        }
-      },
-      include: { targets: true }
-    });
-
-    return message;
-  }
 
   async sendMessage(
     senderId: string,
@@ -421,7 +395,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     return formatted;
   }
 
-  async getConversationHistory(conversationId: string, currentUserId?: string, deviceId?: string, beforeCursor?: string, limit: number = 50) {
+  async getConversationHistory(conversationId: string, currentUserId?: string, beforeCursor?: string, limit: number = 50) {
     const realConvId = await this.resolveConversationId(conversationId, currentUserId);
     const isActivityGroup = conversationId.startsWith('act_') || realConvId.startsWith('act_');
     const actId = isActivityGroup ? (conversationId || realConvId).replace(/^act_/, '') : null;
@@ -488,14 +462,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
     const orConditions: any[] = [];
 
-    if (deviceId && !isActivityGroup) {
-      orConditions.push({
-        OR: [
-          { targets: { some: { deviceId } } },
-          { targets: { none: {} } }
-        ]
-      });
-    }
     
     // Pagination logic
     if (beforeCursor) {
@@ -552,7 +518,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     const messages: any[] = await this.prisma.message.findMany({
       where: whereCondition,
       include: {
-        targets: (deviceId && !isActivityGroup) ? { where: { deviceId } } : false,
         sender: {
           select: { id: true, username: true, displayName: true, avatar: true }
         },
@@ -589,7 +554,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
     const messagesMapped = messages.map(m => {
       const payload = (m.payload as any) || {};
-      const target0 = m.targets && m.targets.length > 0 ? m.targets[0] : null;
 
       let replyToObj: any = null;
       if (m.replyTo) {
@@ -615,8 +579,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         createdAt: m.createdAt,
         timestamp: m.createdAt,
         time: m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-        type: target0 ? target0.type : (m.type ? m.type.toLowerCase() : 'chat'),
-        ciphertext: target0 ? target0.ciphertext : null,
+        type: m.type ? m.type.toLowerCase() : 'chat',
         payload: isUnsent ? { text: 'This message was unsent' } : payload,
         text: isUnsent ? 'This message was unsent' : (payload.text || ''),
         mediaUrl: isUnsent ? null : (payload.mediaUrl || null),
@@ -644,7 +607,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
           timestamp: activity.createdAt || new Date(),
           time: activity.createdAt ? new Date(activity.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
           type: 'system',
-          ciphertext: null,
           payload: { text: 'Activity group chat created' },
           text: 'Activity group chat created',
           mediaUrl: null,
@@ -671,7 +633,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
           timestamp: activity.startDate,
           time: new Date(activity.startDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           type: 'system',
-          ciphertext: null,
           payload: { text: 'Activity has started!' },
           text: 'Activity has started!',
           mediaUrl: null,

@@ -1,25 +1,71 @@
 import { Component } from 'react';
 
+function isChunkError(error) {
+  return (
+    error?.name === 'ChunkLoadError' ||
+    error?.message?.includes('Failed to fetch dynamically imported module') ||
+    error?.message?.includes('Importing a module script failed') ||
+    error?.message?.includes('dynamically imported module')
+  );
+}
+
+function silentReload() {
+  try {
+    const alreadyReloaded = JSON.parse(
+      window.sessionStorage.getItem('page_reloaded_on_chunk_error') || 'false'
+    );
+    if (!alreadyReloaded) {
+      window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'true');
+      Promise.resolve().then(async () => {
+        try {
+          if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map(r => r.unregister()));
+          }
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+          }
+        } catch { /* ignore */ }
+        window.location.reload();
+      });
+      return true;
+    }
+  } catch { /* ignore */ }
+  return false;
+}
+
 /**
  * RouteErrorBoundary — wraps individual routes.
  * Shows a contained error within the page area only, leaving
  * the shell (header, sidebar) intact.
+ * Chunk-load errors are handled silently with an auto-reload — no flash.
  */
 export class RouteErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, isChunkReloading: false, error: null };
   }
 
   static getDerivedStateFromError(error) {
-    return { hasError: true, error };
+    if (isChunkError(error)) {
+      // Kick off silent reload; render nothing while it happens
+      silentReload();
+      return { hasError: false, isChunkReloading: true, error };
+    }
+    return { hasError: true, isChunkReloading: false, error };
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error('[RouteErrorBoundary]', error, errorInfo);
+    if (!isChunkError(error)) {
+      console.error('[RouteErrorBoundary]', error, errorInfo);
+    }
   }
 
   render() {
+    // Blank screen while the page silently reloads after a chunk error
+    if (this.state.isChunkReloading) return null;
+
     if (this.state.hasError) {
       return (
         <div style={{
@@ -40,21 +86,10 @@ export class RouteErrorBoundary extends Component {
             Something went wrong on this page.
           </h2>
           <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', maxWidth: '360px', margin: 0, lineHeight: 1.6 }}>
-            {this.state.error?.message?.includes('Failed to fetch dynamically imported module') ||
-             this.state.error?.message?.includes('Importing a module script failed') ||
-             this.state.error?.name === 'ChunkLoadError'
-              ? 'A new version of Meetifyy is available. Please refresh to continue.'
-              : (this.state.error?.message || 'An unexpected error occurred.')}
+            {this.state.error?.message || 'An unexpected error occurred.'}
           </p>
           <button
-            onClick={() => {
-              const msg = this.state.error?.message || '';
-              if (msg.includes('Failed to fetch dynamically imported module') || msg.includes('Importing a module script failed') || this.state.error?.name === 'ChunkLoadError') {
-                window.location.reload();
-              } else {
-                this.setState({ hasError: false, error: null });
-              }
-            }}
+            onClick={() => this.setState({ hasError: false, error: null })}
             style={{
               marginTop: '0.25rem',
               padding: '0.55rem 1.4rem',
@@ -81,22 +116,31 @@ export class RouteErrorBoundary extends Component {
 /**
  * RootErrorBoundary — wraps the entire app.
  * Only catches errors that escape all route-level boundaries.
+ * Chunk-load errors are handled silently with an auto-reload — no flash.
  */
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, isChunkReloading: false, error: null };
   }
 
   static getDerivedStateFromError(error) {
-    return { hasError: true, error };
+    if (isChunkError(error)) {
+      silentReload();
+      return { hasError: false, isChunkReloading: true, error };
+    }
+    return { hasError: true, isChunkReloading: false, error };
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error('[RootErrorBoundary]', error, errorInfo);
+    if (!isChunkError(error)) {
+      console.error('[RootErrorBoundary]', error, errorInfo);
+    }
   }
 
   render() {
+    if (this.state.isChunkReloading) return null;
+
     if (this.state.hasError) {
       return (
         <div style={{

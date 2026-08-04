@@ -18,14 +18,16 @@ interface PasswordChangedEmailProps {
   name?: string;
   time?: string;
   device?: string;
+  ip?: string;
   frontendUrl?: string;
   logoUrl?: string;
 }
 
 export const PasswordChangedEmail: React.FC<Readonly<PasswordChangedEmailProps>> = ({
   name = 'User',
-  time = 'Just now',
-  device = 'Chrome on macOS',
+  time = 'Unknown',
+  device = 'Unknown device',
+  ip = 'Unknown',
   frontendUrl = SITE_CONFIG.frontendUrl,
   logoUrl = SITE_CONFIG.logoUrl,
 }) => {
@@ -57,6 +59,7 @@ export const PasswordChangedEmail: React.FC<Readonly<PasswordChangedEmailProps>>
               <Text style={infoTitle}>Change Details</Text>
               <Text style={listItem}>• <strong>Time:</strong> {time}</Text>
               <Text style={listItem}>• <strong>Device:</strong> {device}</Text>
+              <Text style={listItem}>• <strong>IP Address:</strong> {ip}</Text>
             </Section>
             
             <Text style={paragraph}>

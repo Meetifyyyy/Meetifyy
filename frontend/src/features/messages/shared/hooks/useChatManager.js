@@ -2,7 +2,6 @@ import { useEffect, useMemo, useCallback, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { messagesApi, dmApi, groupApi } from '@shared/api/apiClient';
 import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
-import { E2EEManager } from '@shared/lib/signal/E2EEManager';
 import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
 import { useData } from '@shared/hooks/useData';
 import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, STATUS_RANK, checkIsMe } from '../utils/cacheUtils';
@@ -15,7 +14,6 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
   const { socket } = useGlobalSocketStore();
   const { conversations = [], currentUser: dataUser } = useData() || {};
   const currentUser = currentUserParam || dataUser;
-  const e2ee = E2EEManager.getInstance();
 
   // Run historical failed messages migration on startup
   useEffect(() => {
@@ -141,71 +139,6 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
   // even if IDB has data (which would otherwise flash before network responds).
   const isLoadingMessages = isLoading || (isFetching && !historyPages?.pages?.length);
 
-
-  // Decrypt E2EE messages on the fly (optimistic/background)
-  useEffect(() => {
-    if (!historyPages?.pages) return;
-    
-    let modified = false;
-    const newPages = historyPages.pages.map(page => {
-      if (!page?.messages) return page;
-      const decMsgs = [...page.messages];
-      let pageModified = false;
-
-      decMsgs.forEach((msg) => {
-        if (msg.state === 'UNSENT' || msg.isUnsent || msg.text === 'This message was unsent' || msg.payload?.text === 'This message was unsent') {
-          return;
-        }
-        const textVal = msg.text || msg.payload?.text || '';
-        const isE2EEPayload = msg.type === 'e2ee' || msg.isE2EE || (typeof textVal === 'string' && textVal.startsWith('{"type":') && textVal.includes('"body":'));
-        
-        if (isE2EEPayload && textVal && !msg.decryptedText && !msg.isDecrypting && !msg.decryptError) {
-          pageModified = true;
-          modified = true;
-          
-          msg.isDecrypting = true;
-          
-          let cipherObj;
-          try {
-            cipherObj = typeof textVal === 'string' ? JSON.parse(textVal) : textVal;
-          } catch (e) {
-            cipherObj = textVal;
-          }
-
-          const cipherBody = cipherObj.body || cipherObj;
-          const cipherType = cipherObj.type || 3;
-          
-          e2ee.decryptMessage(msg.senderId, msg.deviceId || '1', cipherType, cipherBody)
-            .then(plaintext => {
-              queryClient.setQueryData(['messages', activeChatId], (old) => {
-                if (!old) return old;
-                return {
-                  ...old,
-                  pages: old.pages.map(p => ({
-                    ...p,
-                    messages: (p.messages || []).map(m => m.id === msg.id ? { ...m, decryptedText: plaintext, isDecrypting: false, text: plaintext } : m)
-                  }))
-                };
-              });
-            })
-            .catch(err => {
-              console.error('Decryption error', err);
-              queryClient.setQueryData(['messages', activeChatId], (old) => {
-                if (!old) return old;
-                return {
-                  ...old,
-                  pages: old.pages.map(p => ({
-                    ...p,
-                    messages: (p.messages || []).map(m => m.id === msg.id ? { ...m, decryptError: true, isDecrypting: false, text: '[Encrypted Message]' } : m)
-                  }))
-                };
-              });
-            });
-        }
-      });
-      return pageModified ? { ...page, messages: decMsgs } : page;
-    });
-  }, [historyPages, activeChatId, queryClient, e2ee]);
 
   const allMessages = useMemo(() => {
     if (!historyPages?.pages) return [];

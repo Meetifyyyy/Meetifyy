@@ -36,23 +36,27 @@ export function SharedPostPreview({ post, isLoading = false }) {
   // Extract media items reliably
   const resolveMediaList = () => {
     let list = [];
-    const rawMedia = livePost?.media || post?.media;
+    const rawMedia = (Array.isArray(livePost?.media) && livePost.media.length > 0) ? livePost.media : post?.media;
     if (Array.isArray(rawMedia) && rawMedia.length > 0) {
       list = rawMedia.map(m => {
         if (typeof m === 'string') return { url: m, type: 'image' };
         const url = m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null);
         return { ...m, url };
       }).filter(m => m.url);
-    } else if (Array.isArray(livePost?.images) || Array.isArray(post?.images)) {
-      const imgs = livePost?.images || post?.images || [];
-      list = imgs.map(img => {
-        const url = typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null));
-        return { url, type: 'image' };
-      }).filter(m => m.url);
+    } else if (Array.isArray(livePost?.images) && livePost.images.length > 0) {
+      list = livePost.images.map(img => ({
+        url: typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null)),
+        type: 'image'
+      })).filter(m => m.url);
+    } else if (Array.isArray(post?.images) && post.images.length > 0) {
+      list = post.images.map(img => ({
+        url: typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null)),
+        type: 'image'
+      })).filter(m => m.url);
     } else {
-      const singleUrl = post?.image || post?.mediaUrl || (typeof rawMedia === 'string' ? rawMedia : rawMedia?.url);
+      const singleUrl = post?.image || post?.mediaUrl || livePost?.image || livePost?.mediaUrl || (typeof rawMedia === 'string' ? rawMedia : rawMedia?.url);
       if (singleUrl) {
-        list = [{ url: singleUrl, type: post?.mediaType || 'image' }];
+        list = [{ url: singleUrl, type: post?.mediaType || livePost?.mediaType || 'image' }];
       }
     }
     return list;
@@ -63,12 +67,17 @@ export function SharedPostPreview({ post, isLoading = false }) {
 
   // Extract poll data reliably
   const resolvePollData = () => {
-    const pollObj = livePost?.poll || post?.poll;
-    if (pollObj && Array.isArray(pollObj.options) && pollObj.options.length > 0) {
-      return pollObj;
-    }
-    const optionsSrc = livePost?.pollOptions || post?.pollOptions;
-    if (Array.isArray(optionsSrc) && optionsSrc.length > 0) {
+    const livePollValid = livePost?.poll && Array.isArray(livePost.poll.options) && livePost.poll.options.length > 0;
+    const postPollValid = post?.poll && Array.isArray(post.poll.options) && post.poll.options.length > 0;
+
+    if (livePollValid) return livePost.poll;
+    if (postPollValid) return post.poll;
+
+    const optionsSrc = (Array.isArray(livePost?.pollOptions) && livePost.pollOptions.length > 0)
+      ? livePost.pollOptions
+      : (Array.isArray(post?.pollOptions) && post.pollOptions.length > 0 ? post.pollOptions : null);
+
+    if (optionsSrc) {
       const getOptionText = (o) => {
         if (!o) return '';
         if (typeof o === 'string') return o;
@@ -87,7 +96,7 @@ export function SharedPostPreview({ post, isLoading = false }) {
         votes: getOptionVotes(opt)
       }));
       return {
-        question: livePost?.pollQuestion || post?.pollQuestion || 'Poll',
+        question: livePost?.pollQuestion || post?.pollQuestion || livePost?.text || post?.text || 'Poll',
         options,
         totalVotes: options.reduce((sum, o) => sum + o.votes, 0)
       };

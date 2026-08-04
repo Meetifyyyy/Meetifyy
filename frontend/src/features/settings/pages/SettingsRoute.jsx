@@ -179,6 +179,21 @@ export default function SettingsRoute() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [passwordErrors, setPasswordErrors] = useState({});
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+
+  // Reset security panel state when navigating away/back to avoid stale errors
+  // and accidentally-revealed passwords persisting across panel visits.
+  useEffect(() => {
+    if (activePanel !== 'security') {
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordErrors({});
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
+    }
+  }, [activePanel]);
 
   // Privacy & notifications state
   const settingsObj = currentUser?.settings || currentUser?.preferences || {};
@@ -289,6 +304,8 @@ export default function SettingsRoute() {
         errors.new = 'New password is required';
       } else if (newPassword.length < 8) {
         errors.new = 'Password must be at least 8 characters';
+      } else if (newPassword === currentPassword) {
+        errors.new = 'Must differ from your current password';
       }
       if (confirmPassword !== newPassword) {
         errors.confirm = 'Passwords do not match';
@@ -299,6 +316,7 @@ export default function SettingsRoute() {
         return;
       }
 
+      setIsSavingPassword(true);
       try {
         await changePassword(currentPassword, newPassword);
         setCurrentPassword('');
@@ -308,11 +326,19 @@ export default function SettingsRoute() {
         showToast('Password changed successfully');
         setActivePanel(null);
       } catch (err) {
-        if (err?.message?.includes('Incorrect')) {
-          setPasswordErrors({ current: err.message });
+        // Use structured error code when available (set in AuthContext changePassword)
+        const isWrongPassword =
+          err?.code === 'WRONG_CURRENT_PASSWORD' ||
+          err?.message?.toLowerCase().includes('incorrect');
+        if (isWrongPassword) {
+          setPasswordErrors({ current: 'Current password is incorrect' });
+        } else if (err?.code === 'PASSWORD_REUSE') {
+          setPasswordErrors({ new: 'Must differ from your current password' });
         } else {
           showToast(err?.message || 'Failed to change password');
         }
+      } finally {
+        setIsSavingPassword(false);
       }
     } else if (activePanel === 'privacy') {
       setActivePanel(null);
@@ -781,7 +807,13 @@ export default function SettingsRoute() {
               )}
             </div>
           </div>
-          <button className={styles.saveBtn} onClick={handleSave}>Change Password</button>
+          <button
+            className={styles.saveBtn}
+            onClick={handleSave}
+            disabled={isSavingPassword}
+          >
+            {isSavingPassword ? 'Updating…' : 'Change Password'}
+          </button>
         </div>
       )}
 
