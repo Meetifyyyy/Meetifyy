@@ -33,14 +33,20 @@ export const AdminOtpEmail = ({
         <Container style={container}>
           <Section style={header}>
             <Text style={badge}>SUPER ADMIN SECURITY</Text>
-            <Img
-              src={logoUrl}
-              width="48"
-              height="48"
-              alt="Meetifyy Admin Logo"
-              style={logoImg}
-            />
-            <Heading style={logoText}>Meetifyy Admin</Heading>
+            <a href={SITE_CONFIG.frontendUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+              <Img
+                src={logoUrl}
+                width="48"
+                height="48"
+                alt="Meetifyy Admin Logo"
+                style={logoImg}
+              />
+            </a>
+            <Heading style={logoText}>
+              <a href={SITE_CONFIG.frontendUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                Meetifyy Admin
+              </a>
+            </Heading>
           </Section>
           
           <Section style={content}>

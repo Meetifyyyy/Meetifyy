@@ -44,14 +44,20 @@ export const NewLoginEmail = ({
       <Body style={main}>
         <Container style={container}>
           <Section style={header}>
-            <Img
-              src={logoUrl}
-              width="48"
-              height="48"
-              alt="Meetifyy Logo"
-              style={logoImg}
-            />
-            <Heading style={logoText}>Meetifyy</Heading>
+            <a href={frontendUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+              <Img
+                src={logoUrl}
+                width="48"
+                height="48"
+                alt="Meetifyy Logo"
+                style={logoImg}
+              />
+            </a>
+            <Heading style={logoText}>
+              <a href={frontendUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                Meetifyy
+              </a>
+            </Heading>
           </Section>
           
           <Section style={content}>
