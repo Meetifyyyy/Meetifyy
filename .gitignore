@@ -69,3 +69,11 @@ desktop.ini
 uploads/
 **/uploads/
 
+# Generated diff / audit output files
+diff_unpushed.txt
+diff_unstaged.txt
+output/
+meetifyy-security-remediation-report.md
+
+# Local scripts
+start.bat
