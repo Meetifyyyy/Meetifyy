@@ -35,10 +35,7 @@ export function AuthProvider({ children }) {
   });
   
   const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(() => {
-    // If cached user exists in localStorage, render app shell instantly (<0ms delay)
-    return !localStorage.getItem('currentUser');
-  });
+  const [loading, setLoading] = useState(true);
 
   const isLoggedIn = !!session;
 
@@ -470,7 +467,7 @@ export function AuthProvider({ children }) {
         });
         const syncedUser = response?.user || response;
         if (syncedUser) {
-          profile = { ...profile, ...syncedUser };
+          profile = { ...profile, ...syncedUser, isNewUser: true, profileCompleted: false };
           localStorage.setItem('currentUser', JSON.stringify(profile));
           setCurrentUser(profile);
         }

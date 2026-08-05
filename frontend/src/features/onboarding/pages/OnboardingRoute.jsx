@@ -64,13 +64,11 @@ export default function OnboardingRoute() {
   }, []);
 
   if (!currentUser) {
-    window.location.replace('/login');
-    return <div style={{ minHeight: '100vh', backgroundColor: 'var(--color-bg-main, #121212)' }} />;
+    return <Navigate to="/login" replace />;
   }
 
   if (!currentUser.isNewUser && !isCompleting) {
-    window.location.replace('/home');
-    return <div style={{ minHeight: '100vh', backgroundColor: 'var(--color-bg-main, #121212)' }} />;
+    return <Navigate to="/home" replace />;
   }
 
   const toggleInterest = (id) => {
