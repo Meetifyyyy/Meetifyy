@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { uploadsApi } from '../../../shared/api/apiClient';
+import { uploadFileDirect } from '@shared/utils/mediaPipeline';
 
 export function useVoiceRecorder({ onSend, showToast }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -73,29 +73,29 @@ export function useVoiceRecorder({ onSend, showToast }) {
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
         const audioFile = new File([audioBlob], `voicenote_${Date.now()}.${ext}`, { type: mimeType });
 
-        // Upload voice note directly to Supabase Storage in 'voice' folder
-        const uploadRes = await uploadsApi.uploadMedia(audioFile, 'voice');
-        const publicUrl = uploadRes.publicUrl || uploadRes.url || uploadRes.data?.publicUrl;
+        // Upload voice note directly using unified media pipeline
+        const uploadRes = await uploadFileDirect(audioFile, 'voice');
+        const publicUrl = uploadRes.publicUrl || uploadRes.url;
 
         if (publicUrl) {
-          onSend(publicUrl);
+          onSend(publicUrl, 'audio');
         } else {
           // Fallback to data URL
           const reader = new FileReader();
           reader.onloadend = () => {
-            if (reader.result) onSend(reader.result);
+            if (reader.result) onSend(reader.result, 'audio');
           };
           reader.readAsDataURL(audioBlob);
         }
       } catch (err) {
-        console.error('Failed to upload voice note to Supabase Storage:', err);
+        console.error('Failed to upload voice note:', err);
         // Fallback to data URL on network/storage error
         if (audioChunksRef.current.length > 0) {
           const mimeType = audioChunksRef.current[0]?.type || 'audio/webm';
           const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
           const reader = new FileReader();
           reader.onloadend = () => {
-            if (reader.result) onSend(reader.result);
+            if (reader.result) onSend(reader.result, 'audio');
           };
           reader.readAsDataURL(audioBlob);
         }

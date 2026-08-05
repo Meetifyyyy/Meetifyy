@@ -86,7 +86,7 @@
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
-        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(self), payment=()" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(self), geolocation=(self), payment=()" },
         {
           "key": "Content-Security-Policy",
           "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http: https: https://*.supabase.co https://images.unsplash.com https://media.giphy.com https://media0.giphy.com https://media1.giphy.com https://media2.giphy.com https://media3.giphy.com https://media4.giphy.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.unsplash.com https://api.giphy.com http: https: ws: wss:; media-src 'self' data: blob: http: https: https://*.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
