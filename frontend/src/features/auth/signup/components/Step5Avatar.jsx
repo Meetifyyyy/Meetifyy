@@ -64,7 +64,7 @@ export default function Step5Avatar() {
     // Clear persistence to prevent stale state for future signups
     clearSignupData();
     
-    window.location.replace('/onboarding');
+    navigate('/onboarding', { replace: true });
   };
 
   return (

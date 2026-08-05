@@ -108,19 +108,21 @@ function ProtectedRoute({ children }) {
   if (loading) return null;
   if (!isLoggedIn) return <Navigate to="/" replace state={{ from: location }} />;
   if (currentUser?.isNewUser && location.pathname !== '/onboarding') {
-    window.location.replace('/onboarding');
-    return null;
+    return <Navigate to="/onboarding" replace />;
   }
   return children;
 }
 
 function PublicRoute({ children }) {
   const { isLoggedIn, currentUser, loading } = useAuth();
+  const location = useLocation();
   if (loading) return null;
   if (isLoggedIn) {
     if (currentUser?.isNewUser) {
-      window.location.replace('/onboarding');
-      return null;
+      if (location.pathname === '/signup') {
+        return children;
+      }
+      return <Navigate to="/onboarding" replace />;
     }
     return <Navigate to="/home" replace />;
   }
@@ -134,8 +136,7 @@ function StaticRoute({ children }) {
   // Do not redirect to /onboarding from /reset-password — a PASSWORD_RECOVERY
   // session does not trigger a full sync, so currentUser.isNewUser may be stale.
   if (isLoggedIn && currentUser?.isNewUser && location.pathname !== '/reset-password') {
-    window.location.replace('/onboarding');
-    return null;
+    return <Navigate to="/onboarding" replace />;
   }
   return children;
 }
