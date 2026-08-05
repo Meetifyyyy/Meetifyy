@@ -1,6 +1,4 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { PROFILE_KEYS } from '@shared/hooks/useProfile';
 
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -8,7 +6,6 @@ import FollowButton from '@shared/components/ui/FollowButton';
 import { useNavigate, useLocation } from 'react-router-dom';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import s from './ProfileRightSidebar.module.css';
-import { useQuery } from '@tanstack/react-query';
 import { usersApi, activitiesApi } from '@shared/api/apiClient';
 import { useData } from '@shared/hooks/useData';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
@@ -111,7 +108,6 @@ export default function ProfileRightSidebar({ embedded = false }) {
   
   const navigate = useNavigate();
   const location = useLocation();
-  const queryClient = useQueryClient();
 
   const [nowTime, setNowTime] = useState(Date.now());
 
@@ -218,8 +214,6 @@ export default function ProfileRightSidebar({ embedded = false }) {
               key={u.id} 
               className={s.personItem}
               onClick={() => {
-                // Only pre-seed if query data isn't already populated with full profile
-                queryClient.setQueryData(PROFILE_KEYS.byUsername(u.username), (old) => old?.stats ? old : u);
                 navigate(`/profile/${u.username}`, { state: { from: location.pathname } });
               }}
               style={{ cursor: 'pointer' }}
