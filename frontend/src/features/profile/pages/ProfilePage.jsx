@@ -4,7 +4,7 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { messagesApi, usersApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { PROFILE_KEYS } from '@shared/hooks/useProfile';
+import { useProfile, PROFILE_KEYS } from '@shared/hooks/useProfile';
 
 import { showToast } from '@shared/utils/toast';
 import Post from '@features/feed/components/post/Post';
@@ -206,20 +206,11 @@ export default function ProfilePage() {
 
   // Query Profile Data
   const { 
-    data: profileUser, 
+    profile: profileUser, 
     isLoading: isLoadingProfile,
-    isFetching: isFetchingProfile,
-    error: profileError, 
+    isError: profileError, 
     refetch: refetchProfile 
-  } = useQuery({
-    queryKey: PROFILE_KEYS.byUsername(targetUsername),
-    queryFn: () => usersApi.getByUsername(targetUsername),
-    enabled: !!targetUsername && targetUsername !== 'unknown',
-    // H-1 fix: Increased staleTime to 30s to prevent spamming the backend
-    // on rapid back/forward navigations or tab refocus, while still keeping
-    // profile data reasonably fresh.
-    staleTime: 30000,
-  });
+  } = useProfile(targetUsername);
 
   // Query User Posts
   const {
@@ -232,10 +223,10 @@ export default function ProfilePage() {
     staleTime: 30000,
   });
 
-  // Show skeleton on first load OR while fetching a different profile
-  // (isFetching covers the background-refetch case where cached data exists
-  //  but belongs to a previously visited profile)
-  const showingSkeleton = isLoadingProfile || (isFetchingProfile && !profileUser);
+  // Show skeleton on first load OR while fetching incomplete/different user data
+  const isDataIncomplete = profileUser && !profileUser.stats;
+  const isDifferentUser = profileUser && targetUsername && profileUser.username?.toLowerCase() !== targetUsername.toLowerCase();
+  const showingSkeleton = isLoadingProfile || isDataIncomplete || isDifferentUser;
   if (showingSkeleton) {
     return <ProfilePageSkeleton />;
   }
