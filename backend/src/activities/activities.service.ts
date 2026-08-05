@@ -30,17 +30,35 @@ export class ActivitiesService implements OnModuleInit {
   }
 
 
+  /** Tag-Set name that tracks all live activity feed cache keys. */
+  private static readonly FEED_TAG = 'activities:tag:feed';
+
+  /**
+   * Registers a cache key into the tag-Set so it can be found during invalidation.
+   * Fire-and-forget — a failure here is non-fatal.
+   */
+  private registerFeedCacheKey(key: string): void {
+    if (!this.redis) return;
+    // SADD into the tag Set + cap its lifetime to avoid zombie tags
+    this.redis.sadd(ActivitiesService.FEED_TAG, key).catch(() => {});
+    this.redis.expire(ActivitiesService.FEED_TAG, 120).catch(() => {}); // 2-min safety TTL on the tag set
+  }
+
+  /**
+   * Targeted invalidation: fetches only the keys registered in the tag-Set and
+   * deletes them in one DEL call. No SCAN of the entire keyspace.
+   * Previously: O(total Redis keys) SCAN loop.
+   * Now: O(number of live feed keys) — typically < 200 keys.
+   */
   private async clearActivityFeedCaches() {
     if (!this.redis) return;
     try {
-      let cursor = '0';
-      do {
-        const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', 'activities:*', 'COUNT', 100);
-        cursor = nextCursor;
-        if (keys && keys.length > 0) {
-          await this.redis.del(...keys);
-        }
-      } while (cursor !== '0');
+      const keys = await this.redis.smembers(ActivitiesService.FEED_TAG);
+      if (keys.length > 0) {
+        await this.redis.del(...keys);
+      }
+      // Remove the tag set itself so it is cleanly re-seeded on next cache write
+      await this.redis.del(ActivitiesService.FEED_TAG);
     } catch {}
   }
 
@@ -249,6 +267,7 @@ export class ActivitiesService implements OnModuleInit {
 
       if (excludedUserIds.length === 0 && this.redis) {
         this.redis.setex(baseCacheKey, 60, JSON.stringify({ activities, nextCursor })).catch(() => {});
+        this.registerFeedCacheKey(baseCacheKey);
       }
     }
     const tMainDb = performance.now() - dbStart;
@@ -257,6 +276,7 @@ export class ActivitiesService implements OnModuleInit {
       const emptyRes = { activities: [], nextCursor: undefined };
       if (this.redis) {
         this.redis.setex(userCacheKey, 60, JSON.stringify(emptyRes)).catch(() => {});
+        this.registerFeedCacheKey(userCacheKey);
       }
       const totalMs = performance.now() - startTime;
       this.logger.log(`[STAGE_TIMINGS] GET /api/activities (EMPTY) - Total: ${totalMs.toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms | PreFetch: ${tPreFetch.toFixed(2)}ms | MainDB: ${tMainDb.toFixed(2)}ms`);
@@ -291,6 +311,7 @@ export class ActivitiesService implements OnModuleInit {
 
     if (this.redis) {
       this.redis.setex(userCacheKey, 60, JSON.stringify(response)).catch(() => {});
+      this.registerFeedCacheKey(userCacheKey);
     }
     const tLogic = performance.now() - logicStart;
 
@@ -378,6 +399,7 @@ export class ActivitiesService implements OnModuleInit {
       const emptyRes = { activities: [], nextCursor: undefined };
       if (this.redis) {
         this.redis.setex(cacheKey, 60, JSON.stringify(emptyRes)).catch(() => {});
+        this.registerFeedCacheKey(cacheKey);
       }
       return emptyRes;
     }
@@ -396,6 +418,7 @@ export class ActivitiesService implements OnModuleInit {
 
     if (this.redis) {
       this.redis.setex(cacheKey, 60, JSON.stringify(response)).catch(() => {});
+      this.registerFeedCacheKey(cacheKey);
     }
 
     return response;

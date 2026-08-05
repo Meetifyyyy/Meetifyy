@@ -7,6 +7,8 @@ dist/
 build/
 **/dist/
 **/build/
+output/
+**/output/
 stats.html
 **/stats.html
 *.tsbuildinfo
@@ -44,6 +46,7 @@ GEMINI.md
 .idea/
 skills-lock.json
 REMEDIATION_PLAN.md
+docs/
 
 # Testing
 coverage/
@@ -70,10 +73,21 @@ uploads/
 **/uploads/
 
 # Generated diff / audit output files
-diff_unpushed.txt
-diff_unstaged.txt
+diff_*.txt
+all_files.txt
+git_files.txt
+*files_utf8.txt
+git_untracked.txt
 output/
 meetifyy-security-remediation-report.md
+
+# Temporary dev/debug scripts
+check_*.ts
+test_*.ts
+remove_*.ts
+update_*.ts
+inspect_*.ts
+test_svc.ts
 
 # Local scripts
 start.bat

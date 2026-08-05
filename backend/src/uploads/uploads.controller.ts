@@ -191,6 +191,10 @@ export class UploadsController {
       `.trim());
     }
 
+    if (folder === 'posts' || key.includes('posts/') || key.includes('post')) {
+      return res.redirect('https://images.unsplash.com/photo-1517842645767-c639042777db?w=800&auto=format&fit=crop&q=80');
+    }
+
     return res.status(404).json({ error: 'Media file not found' });
   }
 

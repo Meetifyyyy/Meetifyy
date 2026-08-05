@@ -803,6 +803,11 @@ export class UsersService {
 
     this.domainEventService.emit('user.settings_updated', { userId, settings: updated }, [userId]);
 
+    // C-4 fix: Immediately evict the cached notification preferences so that any
+    // changes to notification opt-in/out take effect on the next notification delivery
+    // rather than waiting up to 5 minutes for the TTL to expire.
+    this.notificationsService.invalidatePrefsCache(userId).catch(() => {});
+
     return updated;
   }
 

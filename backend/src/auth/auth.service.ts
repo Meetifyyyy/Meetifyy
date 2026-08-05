@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { DomainValidatorService } from '../common/services/domain-validator.service';
 import { RedisService } from '../redis/redis.service';
+import { LruCache } from '../common/utils/lru-cache.util';
 
 function validateBirthday(birthdayStr: string) {
   if (!birthdayStr) {
@@ -52,7 +53,13 @@ function validateBirthday(birthdayStr: string) {
   }
 }
 
-const syncCache = new Map<string, { data: any; timestamp: number }>();
+/**
+ * Bounded LRU cache for auth sync results.
+ * Max 10,000 entries (≈ 10K concurrent active users). 60-second TTL per entry.
+ * Automatically evicts the least-recently-used entry when the cap is reached,
+ * preventing unbounded memory growth that the previous plain Map caused.
+ */
+const syncCache = new LruCache<string, { data: any; timestamp: number }>(10000, 60000);
 
 export function clearAuthSyncCache(userId?: string) {
   if (userId) {
@@ -65,7 +72,7 @@ export function clearAuthSyncCache(userId?: string) {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private domainCache = new Map<string, { collegeId: string | null; timestamp: number }>();
+  // syncCache is the module-level bounded LruCache — not a per-instance field.
   private syncCache = syncCache;
   /** Coalesces concurrent syncProfile calls for the same user into one DB round-trip. */
   private syncInflight = new Map<string, Promise<any>>();
@@ -87,8 +94,9 @@ export class AuthService {
     }
 
     const now = Date.now();
+    // LruCache.get() already enforces the 60s TTL internally — returns undefined if stale.
     const cached = this.syncCache.get(user.id);
-    if (cached && now - cached.timestamp < 60000) {
+    if (cached) {
       return cached.data;
     }
 

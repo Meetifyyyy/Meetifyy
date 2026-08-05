@@ -18,8 +18,9 @@ export function useNotifications() {
   const { data: unreadCountData } = useQuery({
     queryKey: ['notifications', 'unreadCount'],
     queryFn: () => notificationsApi.getUnreadCount(),
-    enabled: Boolean(currentUser?.id),
-    staleTime: 1000 * 30, // 30 seconds
+    // M-3 fix: Disabled HTTP polling by setting staleTime to Infinity.
+    // The unread count is already pushed via real-time WebSocket/SW events.
+    staleTime: Infinity,
   });
 
   const markAsReadMutation = useMutation({

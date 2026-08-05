@@ -210,8 +210,8 @@ Update project environment variables:
 
 ### Supabase Dashboard Settings
 1. **Authentication → URL Configuration**:
-   - Set Site URL: `https://meetify-web.vercel.app`
-   - Set Allowed Redirect URLs: `https://meetify-web.vercel.app/**`
+   - Set Site URL: `https://dev.meetifyy.app/reset-password`
+   - Set Allowed Redirect URLs: `https://dev.meetifyy.app/**`, `http://localhost:5173/**`
 2. **Storage → Buckets**:
    - Ensure `meetifyy-dev` bucket privacy is set to **Public**.
 3. **Authentication → Email Settings**:

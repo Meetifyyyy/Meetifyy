@@ -1,6 +1,6 @@
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
-import { StaleWhileRevalidate, CacheFirst, NetworkFirst } from 'workbox-strategies';
+import { StaleWhileRevalidate, CacheFirst, NetworkFirst, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import { createHandlerBoundToURL } from 'workbox-precaching';
@@ -142,7 +142,6 @@ const NETWORK_FIRST_PATHS = [
   '/api/messages',
   '/api/notifications',
   '/api/presence',
-  '/api/auth',
 ];
 
 registerRoute(
@@ -154,6 +153,13 @@ registerRoute(
       new CacheableResponsePlugin({ statuses: [0, 200] }),
     ],
   })
+);
+
+// C-3 fix: Never cache auth endpoints. Force them to network only to prevent
+// sensitive JWTs/sessions from landing in local SW caches on shared devices.
+registerRoute(
+  ({ url }) => url.pathname.startsWith('/api/auth'),
+  new NetworkOnly()
 );
 
 // ─── Background Sync ────────────────────────────────────────────────────────

@@ -75,31 +75,24 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /**
-   * Increments the unread count only if the key already exists in Redis
-   * (avoids seeding a wrong starting value).
-   * Uses a pipeline to combine EXISTS + INCR into one round-trip.
-   * Returns the new count if incremented, or null.
+   * Atomically increments the unread count — but ONLY if the key already exists.
+   * Uses a Lua script (identical approach to decrementUnreadCount) to ensure
+   * the EXISTS check and the INCR happen in a single atomic Redis round-trip,
+   * eliminating the TOCTOU race that the previous EXISTS+INCR pipeline had.
+   * Returns the new count if incremented, or null if the key was absent.
    */
   private async incrementUnreadCount(userId: string): Promise<number | null> {
     if (!this.redis) return null;
     const redisKey = `notifications:unread:${userId}`;
+    // Lua: only increment if the key exists (non-false GET means key present)
+    const luaScript = `
+      local v = redis.call('GET', KEYS[1])
+      if v == false then return nil end
+      return redis.call('INCR', KEYS[1])
+    `;
     try {
-      // Pipeline: EXISTS and INCR in one network round-trip.
-      // If EXISTS returns 0 (key absent), we skip INCR so we don't create a
-      // stale counter — getUnreadCount will seed it from DB on next read.
-      const pipeline = this.redis.pipeline();
-      pipeline.exists(redisKey);
-      pipeline.incr(redisKey);
-      const results = await pipeline.exec();
-      // results[0] = [err, existsResult], results[1] = [err, incrResult]
-      const existsResult = results?.[0]?.[1] as number;
-      const incrResult = results?.[1]?.[1] as number;
-      if (!existsResult) {
-        // Key didn't exist before — the INCR wrongly seeded it to 1. Delete it.
-        await this.redis.del(redisKey);
-        return null;
-      }
-      return incrResult;
+      const result = await (this.redis as any).eval(luaScript, 1, redisKey) as number | null;
+      return result;
     } catch (err) {
       this.logger.error('Failed to increment unread count in Redis', err);
       return null;
@@ -139,6 +132,18 @@ export class NotificationsService implements OnModuleInit {
     } catch (err) {
       this.logger.error('Failed to set unread count to 0 in Redis', err);
     }
+  }
+
+  /**
+   * Invalidates the notification preferences cache for a user.
+   * Must be called by UsersService whenever notification preferences are updated
+   * so the 5-minute cached prefs don't serve stale values.
+   */
+  async invalidatePrefsCache(userId: string): Promise<void> {
+    if (!this.redis) return;
+    try {
+      await this.redis.del(`notif:prefs:${userId}`);
+    } catch { /* non-fatal */ }
   }
 
   async createNotification(dto: CreateNotificationDto) {
