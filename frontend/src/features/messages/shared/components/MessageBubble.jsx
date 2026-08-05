@@ -18,6 +18,7 @@ import styles from './ChatMessageList.module.css';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
 import { useData } from '@shared/hooks/useData';
 import { checkIsMe, getMsgTimestamp } from '../utils/cacheUtils';
+import { getMediaUrl } from '@shared/api/apiClient';
 
 function MessageHoverActions({ msg, isMe, onReplyTo, onContextMenu }) {
   const handleReply = (e) => {
@@ -306,31 +307,40 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
 
 function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpenMediaModal }) {
   const videoRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [mediaStyle, setMediaStyle] = useState(() => src ? cachedMediaStyles.get(src) || null : null);
+  const resolvedSrc = src ? getMediaUrl(src) : '';
+  const [mediaStyle, setMediaStyle] = useState(() => resolvedSrc ? cachedMediaStyles.get(resolvedSrc) || null : null);
 
   const handlePlayClick = (e) => {
     e.stopPropagation();
     if (onOpenMediaModal) {
-      onOpenMediaModal(src, 'video');
+      onOpenMediaModal(resolvedSrc, 'video');
     } else if (videoRef.current) {
       if (videoRef.current.paused) {
         videoRef.current.play().catch(() => {});
-        setIsPlaying(true);
       } else {
         videoRef.current.pause();
-        setIsPlaying(false);
       }
     }
   };
 
   const handleLoadedMetadata = (e) => {
-    if (e?.target?.videoWidth && e?.target?.videoHeight) {
-      const style = calculateMediaDimensions(e.target.videoWidth, e.target.videoHeight, isInline);
-      if (src) cachedMediaStyles.set(src, style);
+    const v = e?.target;
+    if (v?.videoWidth && v?.videoHeight) {
+      const style = calculateMediaDimensions(v.videoWidth, v.videoHeight, isInline);
+      if (resolvedSrc) cachedMediaStyles.set(resolvedSrc, style);
       setMediaStyle(style);
     }
   };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!mediaStyle) {
+        const defaultStyle = { width: isInline ? '220px' : '260px', height: isInline ? '220px' : '260px' };
+        setMediaStyle(defaultStyle);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [mediaStyle, isInline]);
 
   return (
     <div
@@ -343,22 +353,20 @@ function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpen
         justifyContent: 'center',
         cursor: 'pointer',
         borderRadius: isInline ? '12px' : '16px',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        backgroundColor: '#16181c',
       }}
-      onClick={() => onOpenMediaModal && onOpenMediaModal(src, 'video')}
+      onClick={() => onOpenMediaModal && onOpenMediaModal(resolvedSrc, 'video')}
     >
-      {!mediaStyle && (
-        <div className={`${styles.msgMediaSkeleton} ${!isInline ? styles.msgMediaSkeletonStandalone : ''}`}>
-          <Play size={22} className={styles.msgMediaSkeletonIcon} />
-        </div>
-      )}
       <video
         ref={videoRef}
-        src={src}
+        src={resolvedSrc}
         playsInline
         preload="metadata"
         onLoadedMetadata={handleLoadedMetadata}
-        className={`${!mediaStyle ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
+        onLoadedData={handleLoadedMetadata}
+        onCanPlay={handleLoadedMetadata}
+        className={styles.msgMediaImgVisible}
         style={{
           display: 'block',
           width: '100%',
@@ -371,10 +379,9 @@ function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpen
           ...(mediaStyle || {})
         }}
       />
-      {mediaStyle && (
-        <button
-          type="button"
-          onClick={handlePlayClick}
+      <button
+        type="button"
+        onClick={handlePlayClick}
         aria-label="Play in media viewer"
         style={{
           position: 'absolute',
@@ -401,7 +408,6 @@ function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpen
       >
         <Play size={24} fill="white" />
       </button>
-      )}
     </div>
   );
 }
@@ -710,11 +716,7 @@ const MessageBubble = memo(function MessageBubble({
   }
   const messageText = typeof rawText === 'string' ? rawText : String(rawText);
   const rawMediaUrl = msg.mediaUrl || msg.payload?.mediaUrl;
-  const mediaUrl = typeof rawMediaUrl === 'string' && rawMediaUrl.trim()
-    ? (rawMediaUrl.startsWith('http://') || rawMediaUrl.startsWith('https://') || rawMediaUrl.startsWith('blob:') || rawMediaUrl.startsWith('data:')
-        ? rawMediaUrl
-        : (rawMediaUrl.startsWith('/') ? rawMediaUrl : `/${rawMediaUrl}`))
-    : rawMediaUrl;
+  const mediaUrl = rawMediaUrl ? getMediaUrl(rawMediaUrl) : '';
   const isAudio = msg.mediaType === 'audio' || msg.type === 'voice' || msg.payload?.mediaType === 'audio';
   const isVideo =
     msg.mediaType === 'video' ||
