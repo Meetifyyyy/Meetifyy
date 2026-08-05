@@ -129,6 +129,25 @@ export function AuthProvider({ children }) {
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      // ─── Recovery session guard ────────────────────────────────────────
+      // If this tab was opened from a password recovery link, supabase.js
+      // wrote 'sb-pwreset-pending' to sessionStorage BEFORE createClient()
+      // processed the hash. When that flag is present, the current session
+      // is a temporary recovery credential — do NOT set it into global auth
+      // state. Doing so would make isLoggedIn = true for the whole app and
+      // give the recovery session access to all protected routes.
+      // ResetPasswordPage consumes and clears this flag after validation.
+      // ──────────────────────────────────────────────────────────────────
+      let pendingRecovery = false;
+      try { pendingRecovery = sessionStorage.getItem('sb-pwreset-pending') === '1'; } catch {}
+
+      if (pendingRecovery) {
+        // The onAuthStateChange PASSWORD_RECOVERY handler (or INITIAL_SESSION
+        // with recovery flag) will resolve the session on the reset page.
+        setLoading(false);
+        return;
+      }
+
       if (!session) {
         setCurrentUser(null);
         localStorage.removeItem('currentUser');
@@ -138,6 +157,7 @@ export function AuthProvider({ children }) {
       }
       setLoading(false);
     });
+
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, supabaseSession) => {
@@ -163,15 +183,23 @@ export function AuthProvider({ children }) {
         }
 
         if (event === 'PASSWORD_RECOVERY') {
-          setSession(supabaseSession);
+          // ─── SECURITY: Do NOT call setSession() here. ─────────────────────
+          // A PASSWORD_RECOVERY session is a temporary one-time credential
+          // scoped exclusively to the /reset-password page. Broadcasting it
+          // into global auth state (isLoggedIn = true) would silently
+          // authenticate the user into the full app — a critical security bug.
+          //
+          // ResetPasswordPage reads this session independently via
+          // supabase.auth.getSession() and its own onAuthStateChange listener.
+          // ──────────────────────────────────────────────────────────────────
           setLoading(false);
           return;
         }
 
-        // USER_UPDATED fires after supabase.auth.updateUser() (e.g., password change).
-        // We only need to refresh the session token — a full DB re-sync is unnecessary.
+        // USER_UPDATED fires after supabase.auth.updateUser() — e.g. password change
+        // from ResetPasswordPage. At this point the recovery session is about to be
+        // signed out by that page. Don't set it into global state.
         if (event === 'USER_UPDATED') {
-          setSession(supabaseSession);
           setLoading(false);
           return;
         }
@@ -190,8 +218,22 @@ export function AuthProvider({ children }) {
           return;
         }
 
+        // ─── INITIAL_SESSION recovery guard ──────────────────────────────────
+        // If PASSWORD_RECOVERY fired before this listener attached, Supabase
+        // replays it as INITIAL_SESSION. The recovery flag (written in supabase.js)
+        // confirms this is a recovery link tab. Skip ALL auth state updates so
+        // ResetPasswordPage handles this session exclusively.
+        if (event === 'INITIAL_SESSION') {
+          let pendingRecovery = false;
+          try { pendingRecovery = sessionStorage.getItem('sb-pwreset-pending') === '1'; } catch {}
+          if (pendingRecovery) {
+            setLoading(false);
+            return;
+          }
+        }
+
         setSession(supabaseSession);
-        
+
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
           const sbUser = supabaseSession?.user;
           if (sbUser) {
