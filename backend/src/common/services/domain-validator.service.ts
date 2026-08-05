@@ -250,7 +250,7 @@ export class DomainValidatorService implements OnModuleInit {
     if (!info) {
       return {
         isValid: false,
-        reason: `Registration is restricted to approved partner college email domains. Your domain '${domain}' is not approved.`,
+        reason: `Domain '${domain}' is not an approved college email.`,
       };
     }
 
