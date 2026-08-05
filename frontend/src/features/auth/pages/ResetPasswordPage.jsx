@@ -107,7 +107,23 @@ export default function ResetPasswordPage() {
     const markExpired = () => {
       if (!isMounted || sessionConsumedRef.current) return;
       sessionConsumedRef.current = true;
+
+      // ── Destroy any lingering recovery session ────────────────────────
+      // consumeRecoveryFlag() removes the sessionStorage guard that keeps
+      // AuthContext from calling setSession(). After it's gone, any live
+      // recovery session in Supabase's localStorage will be picked up on
+      // the next session check — making isLoggedIn = true and causing
+      // PublicRoute pages (like /forgot-password) to redirect to /home.
+      //
+      // We only sign out when the flag was present (tab was opened from a
+      // recovery email). A regular logged-in user who navigates here
+      // manually (without a recovery link) is NOT signed out.
+      const hadRecoveryFlag = readRecoveryFlag();
       consumeRecoveryFlag();
+      if (hadRecoveryFlag) {
+        supabase.auth.signOut().catch(() => {});
+      }
+
       clearTimeout(timeoutId);
       setUiState('expired');
     };
