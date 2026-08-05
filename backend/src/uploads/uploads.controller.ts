@@ -172,9 +172,12 @@ export class UploadsController {
     }
 
     try {
-      const url = await this.storageService.getResolvedPublicUrl(key);
-      if (url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('/api/media/')) {
-        return res.redirect(url);
+      const existsInStorage = await this.storageService.exists(key);
+      if (existsInStorage) {
+        const url = await this.storageService.getResolvedPublicUrl(key);
+        if (url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('/api/media/')) {
+          return res.redirect(url);
+        }
       }
     } catch (e) {
       // Fallback below

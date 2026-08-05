@@ -22,7 +22,7 @@ export const compressImage = async (file, options = {}) => {
   const { maxWidthOrHeight = 1920, initialQuality = 0.8, fileType = 'image/webp' } = options;
   
   // Skip compression for GIFs to preserve animation
-  if (file.type === 'image/gif') return file;
+  if (!file || file.type === 'image/gif') return file;
 
   const compressionOptions = {
     maxSizeMB: 1, // Target max size (aggressive)
@@ -42,17 +42,18 @@ export const compressImage = async (file, options = {}) => {
         const fallbackCompressed = await imageCompression(file, { ...compressionOptions, useWebWorker: false });
         return fallbackCompressed;
       } catch (fallbackError) {
-        console.error('Fallback image compression failed', fallbackError);
+        console.warn('Fallback image compression failed, using original file:', fallbackError);
       }
+    } else {
+      console.warn('Image compression failed, using original file:', error);
     }
-    console.error('Image compression failed', error);
-    throw new Error('Failed to compress image.');
+    return file;
   }
 };
 
 /**
  * Requests a presigned URL from the backend and uploads the file.
- * Completely provider-agnostic from the frontend's perspective.
+ * Falls back seamlessly to backend pass-through upload (/api/media/upload) if CORS or network issues block direct upload.
  */
 export const uploadFileDirect = async (file, folder = 'general', onProgress = null) => {
   try {
@@ -71,70 +72,92 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
       'audio/webm': 'weba',
       'audio/ogg': 'oga',
     };
-    const ext = mimeToExt[file.type] || file.name.split('.').pop() || 'bin';
-    const baseName = file.name.replace(/\.[^.]+$/, '');
+    const fileName = file.name || 'upload';
+    const ext = mimeToExt[file.type] || fileName.split('.').pop() || 'bin';
+    const baseName = fileName.replace(/\.[^.]+$/, '') || 'file';
     const normalizedName = `${baseName}.${ext}`;
 
-    // 1. Get presigned URL from backend
-    const { uploadUrl, publicUrl, key, mediaId } = await apiClient.post('/api/media/presigned-url', {
-      filename: normalizedName,
-      contentType: file.type,
-      folder,
-      fileSize: file.size,
-    });
+    // 1. Try Direct Upload via Presigned URL
+    try {
+      const { uploadUrl, publicUrl, key, mediaId } = await apiClient.post('/api/media/presigned-url', {
+        filename: normalizedName,
+        contentType: file.type || 'application/octet-stream',
+        folder,
+        fileSize: Number(file.size || 0),
+      });
 
-    if (onProgress) onProgress(20);
+      if (onProgress) onProgress(20);
 
-    // 2. Upload directly to storage provider with XHR for real-time progress tracking
-    await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('PUT', uploadUrl);
-      xhr.withCredentials = uploadUrl.startsWith('/');
-      xhr.setRequestHeader('Content-Type', file.type);
-      xhr.setRequestHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', uploadUrl);
+        xhr.withCredentials = uploadUrl.startsWith('/');
+        if (file.type) {
+          xhr.setRequestHeader('Content-Type', file.type);
+        }
+        xhr.setRequestHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
-      if (onProgress && xhr.upload) {
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable && e.total > 0) {
-            const xhrPercent = Math.round((e.loaded / e.total) * 100);
-            const overallPercent = Math.min(99, 20 + Math.round((xhrPercent * 79) / 100));
-            onProgress(overallPercent);
+        if (onProgress && xhr.upload) {
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && e.total > 0) {
+              const xhrPercent = Math.round((e.loaded / e.total) * 100);
+              const overallPercent = Math.min(99, 20 + Math.round((xhrPercent * 79) / 100));
+              onProgress(overallPercent);
+            }
+          };
+        }
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            if (onProgress) onProgress(100);
+            resolve(xhr.response);
+          } else {
+            let errMsg = `Upload failed with status ${xhr.status}`;
+            try {
+              const errJson = JSON.parse(xhr.responseText);
+              if (errJson.error) errMsg = errJson.error;
+            } catch (e) {
+              // ignore
+            }
+            reject(new Error(errMsg));
           }
         };
+
+        xhr.onerror = () => reject(new Error('Network or CORS error during media upload'));
+        xhr.onabort = () => reject(new Error('Media upload aborted'));
+        xhr.send(file);
+      });
+
+      try {
+        await apiClient.post('/api/media/confirm', { key });
+      } catch (confirmError) {
+        console.warn('Failed to confirm upload with backend, but file is in storage:', confirmError);
       }
 
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          if (onProgress) onProgress(100);
-          resolve(xhr.response);
-        } else {
-          let errMsg = `Upload failed with status ${xhr.status}`;
-          try {
-            const errJson = JSON.parse(xhr.responseText);
-            if (errJson.error) errMsg = errJson.error;
-          } catch (e) {
-            // ignore
+      return { publicUrl, key, mediaId };
+    } catch (directUploadError) {
+      console.warn('Direct presigned upload failed/blocked (e.g. CORS). Retrying with backend pass-through upload:', directUploadError);
+
+      // 2. Fallback: Multipart upload via NestJS backend endpoint (/api/media/upload)
+      const formData = new FormData();
+      formData.append('file', file, normalizedName);
+      formData.append('folder', folder);
+
+      const response = await apiClient.post('/api/media/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          if (onProgress && progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+            onProgress(percent);
           }
-          reject(new Error(errMsg));
-        }
-      };
+        },
+      });
 
-      xhr.onerror = () => reject(new Error('Network error during media upload'));
-      xhr.onabort = () => reject(new Error('Media upload aborted'));
-      xhr.send(file);
-    });
-
-    // 3. Confirm upload with backend to link media record
-    try {
-      await apiClient.post('/api/media/confirm', { key });
-    } catch (confirmError) {
-      console.warn('Failed to confirm upload with backend, but file is in storage:', confirmError);
+      if (onProgress) onProgress(100);
+      return response;
     }
-
-    // 4. Return the generic media details
-    return { publicUrl, key, mediaId };
   } catch (error) {
-    console.error('Direct upload failed:', error);
+    console.error('All media upload methods failed:', error);
     throw error;
   }
 };

@@ -77,8 +77,8 @@ export class StorageService {
   ) {
     const safeFolder = this.normalizeFolder(folder);
     if (typeof contentType !== 'string' || !this.isAllowedMimeType(contentType)) throw new BadRequestException('Unsupported content type');
-    const requestedFileSize = Number(fileSize);
-    if (!Number.isFinite(requestedFileSize) || requestedFileSize < 0 || requestedFileSize > 25 * 1024 * 1024) {
+    const requestedFileSize = Number(fileSize || 0);
+    if (!Number.isFinite(requestedFileSize) || requestedFileSize < 0 || requestedFileSize > 50 * 1024 * 1024) {
       throw new BadRequestException('Invalid file size');
     }
     const { uploadUrl, publicUrl: providerUrl, key } = await this.storageProvider.createSignedUploadUrl(
@@ -109,6 +109,15 @@ export class StorageService {
     const publicUrl = `/api/media/${key}`;
 
     return { uploadUrl, publicUrl, key, mediaId: media.id, media };
+  }
+
+  async exists(key: string): Promise<boolean> {
+    if (!this.isSafeStorageKey(key)) return false;
+    try {
+      return await this.storageProvider.exists(key);
+    } catch {
+      return false;
+    }
   }
 
   getPublicUrl(key: string): string {
