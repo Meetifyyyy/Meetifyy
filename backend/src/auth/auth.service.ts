@@ -189,11 +189,11 @@ export class AuthService {
     if (rows && rows.length > 0) {
       const row = rows[0];
 
-      // Enforce strict domain & active college verification on every login / profile sync
+      // Perform domain lookup for college auto-linking, but DO NOT block existing accounts
+      // if their domain was later deactivated/removed from admin portal.
       const domainCheck = await this.domainValidatorService.validateDomain(row.email);
       if (!domainCheck.isValid) {
-        this.logger.warn(`Access blocked for user ${row.id} (${row.email}): ${domainCheck.reason}`);
-        throw new UnauthorizedException(domainCheck.reason);
+        this.logger.log(`Existing user ${row.id} (${row.email}) logged in with unapproved/removed domain`);
       }
 
       const settings = row.settings_id ? {
@@ -212,7 +212,7 @@ export class AuthService {
       let college = row.college_id ? { id: row.college_id, name: row.college_name } : null;
 
       // If user has no collegeId assigned or domain mapping changed, auto-link to active matching college
-      if (domainCheck.info?.collegeId && row.college_id !== domainCheck.info.collegeId) {
+      if (domainCheck.isValid && domainCheck.info?.collegeId && row.college_id !== domainCheck.info.collegeId) {
         row.college_id = domainCheck.info.collegeId;
         row.college_name = domainCheck.info.collegeName;
         college = { id: domainCheck.info.collegeId, name: domainCheck.info.collegeName };
