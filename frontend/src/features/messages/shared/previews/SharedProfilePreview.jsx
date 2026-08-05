@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
+import { getMediaUrl } from '@shared/api/apiClient';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import ProfilePreviewSkeleton from '@shared/components/skeletons/ProfilePreviewSkeleton';
 import { UserX } from 'lucide-react';
@@ -35,7 +36,8 @@ export function SharedProfilePreview({
 
   const displayName = liveUser?.displayName || profile.name || profile.displayName || 'Someone';
   const username = liveUser?.username || profile.username;
-  const avatar = liveUser?.avatar || profile.avatar;
+  const rawAvatar = liveUser?.avatar || profile.avatar;
+  const avatarSrc = rawAvatar ? getMediaUrl(rawAvatar) : '';
 
   const handleCardClick = (e) => {
     e.preventDefault();
@@ -51,9 +53,9 @@ export function SharedProfilePreview({
       aria-label={`Shared profile of ${displayName}`}
     >
       <div className={styles.avatarContainer}>
-        {isImageUrl(avatar) ? (
+        {isImageUrl(avatarSrc) ? (
           <img 
-            src={avatar} 
+            src={avatarSrc} 
             alt={displayName} 
             className={styles.avatar} 
             onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} 

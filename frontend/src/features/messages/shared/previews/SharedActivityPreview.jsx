@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './SharedActivityPreview.module.css';
 import { useData } from '@shared/hooks/useData';
+import { getMediaUrl } from '@shared/api/apiClient';
 
 export function SharedActivityPreview({ activity: passedActivity }) {
   const navigate = useNavigate();
@@ -24,13 +25,14 @@ export function SharedActivityPreview({ activity: passedActivity }) {
     }
   };
 
-  const coverSrc = activity.image || activity.coverImage;
+  const rawCover = activity.image || activity.coverImage;
+  const coverSrc = rawCover ? getMediaUrl(rawCover) : '/default_activity.webp';
 
   return (
     <div className={styles.activityShareCardNew} onClick={handleClick}>
       <div className={styles.activityShareCoverWrapper}>
         <img 
-          src={coverSrc || '/default_activity.webp'} 
+          src={coverSrc} 
           loading="lazy" 
           className={styles.activityShareCover} 
           alt="Activity cover" 
