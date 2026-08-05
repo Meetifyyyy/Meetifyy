@@ -247,7 +247,7 @@ export class StorageService {
   }
 
   private normalizeFolder(folder = 'general'): string {
-    const allowedFolders = ['avatars', 'profile-covers', 'posts', 'communities', 'chat', 'groups', 'temp', 'general'];
+    const allowedFolders = ['avatars', 'profile-covers', 'posts', 'communities', 'chat', 'groups', 'voice', 'temp', 'general'];
     if (!allowedFolders.includes(folder)) {
       throw new BadRequestException(`Invalid upload folder. Allowed: ${allowedFolders.join(', ')}`);
     }
