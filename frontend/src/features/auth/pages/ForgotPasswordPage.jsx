@@ -41,8 +41,13 @@ export default function ForgotPasswordPage() {
       // clicked for a non-verified/non-existent account, no Prisma user row
       // is ever created. The password reset link will simply fail silently on
       // the Supabase side if the account doesn't exist.
+      const siteUrl = import.meta.env.VITE_SITE_URL || (
+        window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+          ? 'https://dev.meetifyy.app'
+          : window.location.origin
+      );
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: `${siteUrl}/reset-password`,
       });
       
       // Always show "check your email" — even if error, to prevent enumeration.

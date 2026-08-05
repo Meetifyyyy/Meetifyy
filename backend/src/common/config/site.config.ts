@@ -6,7 +6,7 @@
  */
 export const SITE_CONFIG = {
   get frontendUrl(): string {
-    const raw = process.env.FRONTEND_URL || 'https://meetify-web.vercel.app';
+    const raw = process.env.FRONTEND_URL || 'https://dev.meetifyy.app';
     return raw.replace(/\/$/, '');
   },
   get logoUrl(): string {
