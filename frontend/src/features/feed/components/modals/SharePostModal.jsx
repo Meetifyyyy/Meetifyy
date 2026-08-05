@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
 import styles from '@features/crew/components/modals/ShareActivityModal.module.css';
 import { useData } from '@shared/hooks/useData';
+import { getMediaUrl } from '@shared/api/apiClient';
 
 export default function SharePostModal({ isOpen, onClose, post, author }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -30,16 +31,23 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
       let mediaList = [];
       if (Array.isArray(post?.media) && post.media.length > 0) {
         mediaList = post.media.map(m => {
-          if (typeof m === 'string') return { url: m, type: 'image' };
-          const url = m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null);
-          return { ...m, url };
+          if (typeof m === 'string') return { url: getMediaUrl(m), type: 'image' };
+          const rawUrl = m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null) || (m.storageKey ? `/api/media/${m.storageKey}` : null) || (m.path ? `/api/media/${m.path}` : null);
+          return { ...m, url: getMediaUrl(rawUrl) };
         }).filter(m => m.url);
       } else if (Array.isArray(post?.images) && post.images.length > 0) {
-        mediaList = post.images.map(img => ({ url: typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null)), type: 'image' })).filter(m => m.url);
-      } else if (post?.mediaUrl) {
-        mediaList = [{ url: post.mediaUrl, type: post.mediaType || 'image' }];
+        mediaList = post.images.map(img => ({
+          url: getMediaUrl(typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null) || (img.storageKey ? `/api/media/${img.storageKey}` : null))),
+          type: 'image'
+        })).filter(m => m.url);
+      } else if (post?.mediaUrl || post?.mediaKey) {
+        const rawUrl = post.mediaUrl || post.mediaKey;
+        mediaList = [{ url: getMediaUrl(rawUrl), type: post.mediaType || 'image' }];
       } else if (post?.image) {
-        mediaList = [{ url: typeof post.image === 'string' ? post.image : (post.image.url || (post.image.objectKey ? `/api/media/${post.image.objectKey}` : null)), type: 'image' }].filter(m => m.url);
+        const rawUrl = typeof post.image === 'string' ? post.image : (post.image.url || (post.image.objectKey ? `/api/media/${post.image.objectKey}` : null) || (post.image.storageKey ? `/api/media/${post.image.storageKey}` : null));
+        if (rawUrl) {
+          mediaList = [{ url: getMediaUrl(rawUrl), type: 'image' }];
+        }
       }
 
       const primaryImage = mediaList.length > 0 ? mediaList[0].url : null;

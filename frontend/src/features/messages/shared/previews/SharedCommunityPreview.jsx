@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
+import { getMediaUrl } from '@shared/api/apiClient';
 import styles from './SharedCommunityPreview.module.css';
 
 function formatCount(n) {
@@ -24,13 +25,14 @@ export function SharedCommunityPreview({ community }) {
   };
 
   const membersCount = community.membersCount ?? (Array.isArray(community.members) ? community.members.length : 0);
+  const avatarSrc = community.avatar ? getMediaUrl(community.avatar) : '';
 
   return (
     <div className={styles.card} onClick={handleClick}>
       <div className={styles.avatarWrapper}>
-        {isImageUrl(community.avatar) ? (
+        {isImageUrl(avatarSrc) ? (
           <img
-            src={community.avatar}
+            src={avatarSrc}
             alt={community.name || ''}
             className={styles.avatar}
             onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}

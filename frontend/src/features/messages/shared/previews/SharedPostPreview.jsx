@@ -1,13 +1,16 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Avatar from '@shared/components/avatar/Avatar';
 import PostPreviewSkeleton from '@shared/components/skeletons/PostPreviewSkeleton';
 import { Image as ImageIcon, BarChart2, FileX } from 'lucide-react';
 import styles from './SharedPostPreview.module.css';
 import { useData } from '@shared/hooks/useData';
+import { getMediaUrl } from '@shared/api/apiClient';
 
 export function SharedPostPreview({ post, isLoading = false }) {
   const navigate = useNavigate();
   const { getPostById, getUserById } = useData();
+  const [imgError, setImgError] = useState(false);
 
   if (isLoading) {
     return <PostPreviewSkeleton />;
@@ -39,24 +42,27 @@ export function SharedPostPreview({ post, isLoading = false }) {
     const rawMedia = (Array.isArray(livePost?.media) && livePost.media.length > 0) ? livePost.media : post?.media;
     if (Array.isArray(rawMedia) && rawMedia.length > 0) {
       list = rawMedia.map(m => {
-        if (typeof m === 'string') return { url: m, type: 'image' };
-        const url = m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null);
-        return { ...m, url };
+        if (typeof m === 'string') return { url: getMediaUrl(m), type: 'image' };
+        const rawUrl = m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null) || (m.storageKey ? `/api/media/${m.storageKey}` : null) || (m.path ? `/api/media/${m.path}` : null);
+        return { ...m, url: getMediaUrl(rawUrl) };
       }).filter(m => m.url);
     } else if (Array.isArray(livePost?.images) && livePost.images.length > 0) {
       list = livePost.images.map(img => ({
-        url: typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null)),
+        url: getMediaUrl(typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null) || (img.storageKey ? `/api/media/${img.storageKey}` : null))),
         type: 'image'
       })).filter(m => m.url);
     } else if (Array.isArray(post?.images) && post.images.length > 0) {
       list = post.images.map(img => ({
-        url: typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null)),
+        url: getMediaUrl(typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null) || (img.storageKey ? `/api/media/${img.storageKey}` : null))),
         type: 'image'
       })).filter(m => m.url);
     } else {
-      const singleUrl = post?.image || post?.mediaUrl || livePost?.image || livePost?.mediaUrl || (typeof rawMedia === 'string' ? rawMedia : rawMedia?.url);
+      const singleUrl = post?.image || post?.mediaUrl || post?.mediaKey || livePost?.image || livePost?.mediaUrl || livePost?.mediaKey || (typeof rawMedia === 'string' ? rawMedia : (rawMedia?.url || rawMedia?.objectKey || rawMedia?.storageKey || rawMedia?.path));
       if (singleUrl) {
-        list = [{ url: singleUrl, type: post?.mediaType || livePost?.mediaType || 'image' }];
+        const rawUrl = typeof singleUrl === 'string' ? singleUrl : (singleUrl.url || (singleUrl.objectKey ? `/api/media/${singleUrl.objectKey}` : null) || (singleUrl.storageKey ? `/api/media/${singleUrl.storageKey}` : null));
+        if (rawUrl) {
+          list = [{ url: getMediaUrl(rawUrl), type: post?.mediaType || livePost?.mediaType || 'image' }];
+        }
       }
     }
     return list;
@@ -158,9 +164,15 @@ export function SharedPostPreview({ post, isLoading = false }) {
         </div>
       )}
 
-      {primaryMedia && (
+      {primaryMedia && !imgError && (
         <div className={styles.mediaPreviewContainer}>
-          <img src={primaryMedia.url} alt="" className={styles.mediaPreviewImg} loading="lazy" />
+          <img 
+            src={primaryMedia.url} 
+            alt="" 
+            className={styles.mediaPreviewImg} 
+            loading="lazy" 
+            onError={() => setImgError(true)}
+          />
           {mediaList.length > 1 && (
             <span className={styles.mediaBadge}>+{mediaList.length - 1} more</span>
           )}
