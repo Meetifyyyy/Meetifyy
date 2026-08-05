@@ -46,6 +46,16 @@ export class CommunitiesService implements OnModuleInit {
 
   // ── Cache helpers ──────────────────────────────────────────────────────────
 
+  /** Tag-Set name that tracks all live community list cache keys in Redis. */
+  private static readonly LIST_TAG = 'communities:tag:lists';
+
+  /** Register a key into the tag-Set so invalidation can find it without SCAN. */
+  private registerListCacheKey(redisKey: string): void {
+    if (!this.redis) return;
+    this.redis.sadd(CommunitiesService.LIST_TAG, redisKey).catch(() => {});
+    this.redis.expire(CommunitiesService.LIST_TAG, 300).catch(() => {}); // 5-min safety TTL
+  }
+
   private async getCachedList(key: string): Promise<any[] | null> {
     if (this.redis) {
       try {
@@ -62,9 +72,11 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   private async setCachedList(key: string, data: any[], ttlSeconds = 60): Promise<void> {
+    const redisKey = `communities:${key}`;
     if (this.redis) {
       try {
-        await this.redis.set(`communities:${key}`, JSON.stringify(data), 'EX', ttlSeconds);
+        await this.redis.set(redisKey, JSON.stringify(data), 'EX', ttlSeconds);
+        this.registerListCacheKey(redisKey);
         return;
       } catch { /* fallthrough to local */ }
     }
@@ -85,7 +97,9 @@ export class CommunitiesService implements OnModuleInit {
   private async setCachedCommunity(id: string, data: any, ttlSeconds = 60): Promise<void> {
     if (!this.redis) return;
     try {
-      await this.redis.set(`community:${id}`, JSON.stringify(data), 'EX', ttlSeconds);
+      const redisKey = `community:${id}`;
+      await this.redis.set(redisKey, JSON.stringify(data), 'EX', ttlSeconds);
+      this.registerListCacheKey(redisKey);
     } catch { /* ignore */ }
   }
 
@@ -111,41 +125,45 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   /**
-   * Targeted cache invalidation — delete only the keys we know are stale.
-   * Avoids the expensive SCAN + DEL loop that was blowing the entire cache
-   * on every join/leave/create/update and causing sustained cache misses.
+   * Targeted cache invalidation using tag-Set pattern.
+   * Previously used hardcoded page-size keys which missed non-standard limit/offset values.
+   * Now: fetches only the keys that were actually written via setCachedList/setCachedCommunity
+   * and deletes them atomically. No SCAN of the entire keyspace.
    *
-   * @param communityId  The community that changed (invalidates its detail key).
-   * @param collegeId    If provided, also invalidates that college's campus list.
+   * @param communityId  Specific community detail key to invalidate.
+   * @param collegeId    Unused — campus list keys are all registered in the tag-Set.
    */
   private async invalidateCommunityCache(communityId?: string, collegeId?: string): Promise<void> {
-    const keysToDelete: string[] = [
-      // List cache — all paginations of the global list
-      'communities:all:30:0',
-      'communities:all:20:0',
-      'communities:all:50:0',
-    ];
-
-    if (communityId) {
-      keysToDelete.push(`community:${communityId}`);
-    }
-
-    if (collegeId) {
-      // Invalidate first-page campus list for this college (common page sizes)
-      keysToDelete.push(
-        `communities:campus:${collegeId}:30:0`,
-        `communities:campus:${collegeId}:20:0`,
-        `communities:campus:${collegeId}:50:0`,
-      );
-    }
-
     if (this.redis) {
       try {
-        await this.redis.del(...keysToDelete);
+        // Fetch all registered list/detail keys from the tag Set
+        const taggedKeys = await this.redis.smembers(CommunitiesService.LIST_TAG);
+        const toDelete = [...taggedKeys];
+
+        // Also delete the specific detail key if provided (may not be in tag-Set yet)
+        if (communityId) {
+          const detailKey = `community:${communityId}`;
+          if (!toDelete.includes(detailKey)) toDelete.push(detailKey);
+        }
+
+        if (toDelete.length > 0) {
+          await this.redis.del(...toDelete);
+        }
+        // Clean the tag-Set itself so it is re-seeded cleanly
+        await this.redis.del(CommunitiesService.LIST_TAG);
       } catch { /* ignore */ }
     }
-    // Always clear local fallback map regardless of Redis availability
-    this.localFallback.clear();
+    // Targeted local fallback deletion instead of clear-all
+    if (communityId) {
+      this.localFallback.delete(`detail:${communityId}`);
+    }
+    this.localFallback.delete('all:30:0');
+    this.localFallback.delete('all:20:0');
+    this.localFallback.delete('all:50:0');
+    if (collegeId) {
+      this.localFallback.delete(`campus:${collegeId}:30:0`);
+      this.localFallback.delete(`campus:${collegeId}:20:0`);
+    }
   }
 
   async getAllCommunities(userId?: string, limit = 30, offset = 0) {

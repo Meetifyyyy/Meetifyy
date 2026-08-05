@@ -34,15 +34,22 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     if (!this.redis) return;
     try {
       if (userIds && userIds.length > 0) {
+        // H-3 fix: Construct keys directly from known user IDs — no SCAN needed.
+        // The conversation list is paginated with limit/offset; we invalidate page 0
+        // (the most common fetch) plus a few common limits to cover the UI variants.
+        const COMMON_LIMITS = [20, 30, 50];
+        const keysToDelete: string[] = [];
         for (const uId of userIds) {
-          let cursor = '0';
-          do {
-            const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', `user:conversations:${uId}:*`, 'COUNT', 50);
-            cursor = nextCursor;
-            if (keys && keys.length > 0) await this.redis.del(...keys);
-          } while (cursor !== '0');
+          for (const lim of COMMON_LIMITS) {
+            keysToDelete.push(`user:conversations:${uId}:${lim}:0`);
+          }
+        }
+        if (keysToDelete.length > 0) {
+          await this.redis.del(...keysToDelete);
         }
       } else {
+        // Global flush — only called explicitly, not on message send.
+        // Still uses SCAN but is now a deliberate, rare admin action.
         let cursor = '0';
         do {
           const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', 'user:conversations:*', 'COUNT', 100);
@@ -86,7 +93,10 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
     const cacheKey = `${identifier}:${currentUserId || ''}`;
     const cached = this.resolveCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < 86400000) { // 24-hour TTL
+    // H-4 fix: TTL reduced from 24 hours → 5 minutes.
+    // A 24h window meant stale mappings persisted for deleted/merged conversations,
+    // causing ForbiddenException errors for up to a full day after a conversation changed.
+    if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
       return cached.id;
     }
 
@@ -356,7 +366,9 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       conversationName: conversationName || '',
     };
 
-    this.invalidateUserConversationsCache().catch(() => {});
+    // H-3 fix: Pass the affected user IDs to trigger targeted O(1) invalidation
+    // rather than the fallback O(N) global scan.
+    this.invalidateUserConversationsCache([senderId, ...recipientIds]).catch(() => {});
 
     return msgRes;
   }

@@ -5,6 +5,7 @@ import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
 import usePostStore from '../stores/postStore';
 import { showToast } from '@shared/utils/toast';
 import { getCollegeName } from '@shared/utils/user';
+import { idbClearAll } from '@shared/lib/idb';
 
 import { supabase, isSupabaseConfigured } from '@shared/lib/supabase';
 export { supabase, isSupabaseConfigured };
@@ -175,9 +176,12 @@ export function AuthProvider({ children }) {
           localStorage.removeItem('meetifyy_recent_searches');
           localStorage.removeItem('meetify_muted_communities');
           localStorage.removeItem('read_invitations');
+          localStorage.removeItem('meetify_following_list');
+          localStorage.removeItem('meetify_followers_list');
           useSavedPostsStore.getState().clearAll?.();
           useSavedActivitiesStore.getState().clearAll?.();
           usePostStore.getState().clearAll?.();
+          idbClearAll().catch(e => console.error('Failed to clear IDB on sign out', e));
           setLoading(false);
           return;
         }
@@ -691,10 +695,13 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('meetify_muted_communities');
     localStorage.removeItem('read_invitations');
     localStorage.removeItem('meetify_show_community_details');
+    localStorage.removeItem('meetify_following_list');
+    localStorage.removeItem('meetify_followers_list');
     sessionStorage.removeItem('meetifyy_signup_data');
     useSavedPostsStore.getState().clearAll?.();
     useSavedActivitiesStore.getState().clearAll?.();
     usePostStore.getState().clearAll?.();
+    idbClearAll().catch(e => console.error('Failed to clear IDB on logout', e));
 
     if (isSupabaseConfigured) {
       try {

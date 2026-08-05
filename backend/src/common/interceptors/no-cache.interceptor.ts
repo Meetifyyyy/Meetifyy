@@ -80,7 +80,9 @@ export class NoCacheInterceptor implements NestInterceptor {
             response.setHeader('ETag', etag);
 
             if (this.redis) {
-              this.redis.setex(etagKey, 60, etag).catch(() => {});
+              // H-8 fix: Align ETag TTL to the frontend's max gcTime (30 mins = 1800s)
+              // so the ETag check succeeds even if the client hasn't fetched in 15 mins.
+              this.redis.setex(etagKey, 1800, etag).catch(() => {});
             }
 
             if (ifNoneMatch && ifNoneMatch === etag) {

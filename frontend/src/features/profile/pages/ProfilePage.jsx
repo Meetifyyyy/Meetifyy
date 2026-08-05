@@ -215,9 +215,10 @@ export default function ProfilePage() {
     queryKey: PROFILE_KEYS.byUsername(targetUsername),
     queryFn: () => usersApi.getByUsername(targetUsername),
     enabled: !!targetUsername && targetUsername !== 'unknown',
-    // Always refetch on mount — prevents stale data from a previous
-    // profile visit rendering silently while the new fetch runs in background.
-    staleTime: 0,
+    // H-1 fix: Increased staleTime to 30s to prevent spamming the backend
+    // on rapid back/forward navigations or tab refocus, while still keeping
+    // profile data reasonably fresh.
+    staleTime: 30000,
   });
 
   // Query User Posts
@@ -228,7 +229,7 @@ export default function ProfilePage() {
     queryKey: ['user-posts', targetUsername],
     queryFn: () => postsApi.getUserPosts(targetUsername, 20),
     enabled: !!targetUsername && targetUsername !== 'unknown',
-    staleTime: 0,
+    staleTime: 30000,
   });
 
   // Show skeleton on first load OR while fetching a different profile

@@ -18,7 +18,7 @@ function normalizeMedia(mediaInput) {
   }
 
   return rawList.map((item) => {
-    const rawSrc = item.storageKey || item.url || item.path || '';
+    const rawSrc = item.url || item.storageKey || item.path || item.objectKey || '';
 
     const typeStr = (item.type || item.mimeType || '').toLowerCase();
     const isVideo =
@@ -65,6 +65,8 @@ export function MediaGrid({ media, onMediaClick }) {
 
   if (!mediaList.length || !mediaList[0].url) return null;
 
+  const FALLBACK_POST_IMAGE = 'https://images.unsplash.com/photo-1517842645767-c639042777db?w=800&auto=format&fit=crop&q=80';
+
   const handleImageLoad = (index, e) => {
     setLoadedStates((prev) => ({ ...prev, [index]: true }));
     if (index === 0 && e?.target) {
@@ -72,6 +74,14 @@ export function MediaGrid({ media, onMediaClick }) {
       if (naturalWidth && naturalHeight) {
         setSingleAspect(naturalWidth / naturalHeight);
       }
+    }
+  };
+
+  const handleImageError = (index, e) => {
+    setLoadedStates((prev) => ({ ...prev, [index]: true }));
+    if (e?.target) {
+      e.target.onerror = null;
+      e.target.src = FALLBACK_POST_IMAGE;
     }
   };
 
@@ -159,6 +169,7 @@ export function MediaGrid({ media, onMediaClick }) {
             loading="lazy"
             decoding="async"
             onLoad={(e) => handleImageLoad(0, e)}
+            onError={(e) => handleImageError(0, e)}
             ref={(imgEl) => {
               if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[0]) {
                 handleImageLoad(0, { target: imgEl });
@@ -188,6 +199,7 @@ export function MediaGrid({ media, onMediaClick }) {
                 loading="lazy"
                 decoding="async"
                 onLoad={() => handleImageLoad(index)}
+                onError={(e) => handleImageError(index, e)}
                 className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
               />
             </div>
@@ -210,6 +222,7 @@ export function MediaGrid({ media, onMediaClick }) {
               loading="lazy"
               decoding="async"
               onLoad={() => handleImageLoad(0)}
+              onError={(e) => handleImageError(0, e)}
               className={`${styles.gridImage} ${loadedStates[0] ? styles.loaded : styles.loading}`}
             />
           </div>
@@ -225,6 +238,7 @@ export function MediaGrid({ media, onMediaClick }) {
                     loading="lazy"
                     decoding="async"
                     onLoad={() => handleImageLoad(index)}
+                    onError={(e) => handleImageError(index, e)}
                     className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
                   />
                 </div>
@@ -254,6 +268,7 @@ export function MediaGrid({ media, onMediaClick }) {
                 loading="lazy"
                 decoding="async"
                 onLoad={() => handleImageLoad(index)}
+                onError={(e) => handleImageError(index, e)}
                 className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
               />
               {isLast && (

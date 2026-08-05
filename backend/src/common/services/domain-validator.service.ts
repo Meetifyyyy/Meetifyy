@@ -156,6 +156,9 @@ export class DomainValidatorService implements OnModuleInit {
         for (const [dom, info] of newMap.entries()) {
           pipeline.hset('cache:approved_domains', dom, JSON.stringify(info));
         }
+        // C-5 fix: Always set a TTL on the HASH so removed domains don't persist
+        // indefinitely if refreshDomainCache fails before the next scheduled run.
+        pipeline.expire('cache:approved_domains', 300); // 5-minute safety TTL
         await pipeline.exec().catch((err) => {
           this.logger.warn(`Redis sync error for approved domains: ${err.message}`);
         });

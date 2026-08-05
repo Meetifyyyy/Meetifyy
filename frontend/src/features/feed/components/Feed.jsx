@@ -8,9 +8,11 @@ import PostComposer from './composer/PostComposer';
 import PostSkeleton from './skeletons/PostSkeleton';
 import styles from './Feed.module.css';
 import { useData } from '@shared/hooks/useData';
+import { useAuth } from '@shared/context/AuthContext';
 
 function Feed({ onPostClick }) {
   const { communities } = useData();
+  const { currentUser } = useAuth();
   const searchQuery = useUIStore(state => state.searchQuery);
   const queryClient = useQueryClient();
 
@@ -23,7 +25,9 @@ function Feed({ onPostClick }) {
     isError,
     refetch,
   } = useInfiniteQuery({
-    queryKey: ['feed', searchQuery],
+    // M-1 fix: Scope the feed cache to the current user so logging out and logging
+    // in as a different user doesn't temporarily show the previous user's feed.
+    queryKey: ['feed', searchQuery, currentUser?.id],
     queryFn: async ({ pageParam = undefined }) => {
       const limit = 20;
       const res = await postsApi.getFeed(limit, pageParam);

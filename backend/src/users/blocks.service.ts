@@ -2,8 +2,12 @@ import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
-/** TTL for the block-list cache (seconds). Blocks rarely change. */
-const BLOCK_CACHE_TTL = 30;
+/** 
+ * TTL for the block-list cache (seconds). 
+ * H-9 fix: Increased from 30s to 300s. Blocks are invalidated in real-time on change,
+ * so a short TTL only causes unnecessary DB load during passive feed scrolling. 
+ */
+const BLOCK_CACHE_TTL = 300;
 
 @Injectable()
 export class BlocksService {
