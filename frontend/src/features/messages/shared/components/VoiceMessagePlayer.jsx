@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
+import { getMediaUrl } from '@shared/api/apiClient';
 import styles from './VoiceMessagePlayer.module.css';
 
 export default function VoiceMessagePlayer({ src, audioUrl, fromMe, isMe }) {
-  const audioSrc = src || audioUrl;
+  const rawSrc = src || audioUrl;
+  const audioSrc = rawSrc ? getMediaUrl(rawSrc) : '';
   const isFromMe = fromMe ?? isMe;
 
   const audioRef = useRef(null);
