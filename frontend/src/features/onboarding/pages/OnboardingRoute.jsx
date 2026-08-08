@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 
@@ -6,9 +6,34 @@ import { INTERESTS_BY_CATEGORY } from '../constants/interestsData';
 import styles from './OnboardingRoute.module.css';
 import { useData } from '@shared/hooks/useData';
 import { communitiesApi } from '@shared/api/apiClient';
+import { showToast } from '@shared/utils/toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, ArrowLeft } from 'lucide-react';
 import Background from '@shared/components/ui/Background';
+
+// Draft persistence so a mid-onboarding reload doesn't wipe the user's picks.
+const ONB_STEP_KEY = 'meetifyy_onboarding_step';
+const ONB_INTERESTS_KEY = 'meetifyy_onboarding_interests';
+const ONB_COMMUNITIES_KEY = 'meetifyy_onboarding_communities';
+
+const readJSON = (key, fallback) => {
+  try {
+    const v = sessionStorage.getItem(key);
+    return v ? JSON.parse(v) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const clearOnboardingDraft = () => {
+  try {
+    sessionStorage.removeItem(ONB_STEP_KEY);
+    sessionStorage.removeItem(ONB_INTERESTS_KEY);
+    sessionStorage.removeItem(ONB_COMMUNITIES_KEY);
+  } catch {
+    // ignore storage errors
+  }
+};
 
 const FEATURED_INTERESTS = [
   { emoji: "📚", label: "Reading" },
@@ -33,12 +58,33 @@ export default function OnboardingRoute() {
   const { communities } = useData();
   const navigate = useNavigate();
   
-  const [step, setStep] = useState(1);
-  const [selectedInterests, setSelectedInterests] = useState([]);
-  const [selectedCommunities, setSelectedCommunities] = useState([]); // stores community IDs
+  const [step, setStep] = useState(() => (parseInt(sessionStorage.getItem(ONB_STEP_KEY), 10) === 2 ? 2 : 1));
+  const [selectedInterests, setSelectedInterests] = useState(() => {
+    const saved = readJSON(ONB_INTERESTS_KEY, []);
+    return Array.isArray(saved) ? saved : [];
+  });
+  const [selectedCommunities, setSelectedCommunities] = useState(() => {
+    const saved = readJSON(ONB_COMMUNITIES_KEY, []);
+    return Array.isArray(saved) ? saved : [];
+  });
   const [isCompleting, setIsCompleting] = useState(false);
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const [showAll, setShowAll] = useState(false);
+
+  // Guards finishOnboarding against a rapid double-click landing two submits
+  // before isCompleting re-renders (state reads in the closure would be stale).
+  const isFinishingRef = useRef(false);
+
+  // Persist the draft so a reload restores the user's progress.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(ONB_STEP_KEY, String(step));
+      sessionStorage.setItem(ONB_INTERESTS_KEY, JSON.stringify(selectedInterests));
+      sessionStorage.setItem(ONB_COMMUNITIES_KEY, JSON.stringify(selectedCommunities));
+    } catch {
+      // ignore storage errors
+    }
+  }, [step, selectedInterests, selectedCommunities]);
 
   const loadingMessages = [
     'Creating your profile...',
@@ -49,11 +95,16 @@ export default function OnboardingRoute() {
 
 
 
-  // Completely disable browser back navigation while on onboarding
+  // Trap the user inside onboarding (browser-back must not escape to signup/login,
+  // which are invalid states now that the account exists). But make back feel
+  // sensible rather than frozen: if they're on Step 2, browser-back returns them
+  // to Step 1 instead of doing nothing.
   useEffect(() => {
     window.history.pushState(null, '', window.location.href);
 
     const handlePopState = () => {
+      setStep((prev) => (prev > 1 ? prev - 1 : prev));
+      // Re-arm the trap so a subsequent back press is caught again.
       window.history.pushState(null, '', window.location.href);
     };
 
@@ -92,46 +143,64 @@ export default function OnboardingRoute() {
   // Filter communities for step 2 — must be above handleNext so it can be referenced inside
   const suggestedCommunities = communities.filter(c => !c.isUniversity).slice(0, 5);
 
+  // Persists interests + joins selected communities, then routes to /home.
+  // Shared by both completion entry points (Step 1 with no communities to show,
+  // and Step 2's "Let's go") — previously only Step 1 could complete, leaving
+  // Step 2 a dead end.
+  const finishOnboarding = async () => {
+    if (isFinishingRef.current) return; // guard against double submit (ref = no stale read)
+    isFinishingRef.current = true;
+    setIsCompleting(true);
+
+    const interval = setInterval(() => {
+      setLoadingMsgIdx((prev) => (prev < loadingMessages.length - 1 ? prev + 1 : prev));
+    }, 700);
+
+    try {
+      // Join selected communities in parallel — they're independent operations,
+      // so there's no reason to pay for sequential round-trips. Individual
+      // failures are non-fatal and shouldn't block finishing onboarding.
+      if (selectedCommunities.length > 0) {
+        await Promise.all(
+          selectedCommunities.map((commId) =>
+            communitiesApi.join(commId).catch((e) => {
+              console.error(`Failed to join community ${commId}:`, e);
+            })
+          )
+        );
+      }
+
+      const success = await completeOnboarding({ interests: selectedInterests });
+
+      clearInterval(interval);
+
+      if (success) {
+        clearOnboardingDraft();
+        navigate('/home', { replace: true });
+      } else {
+        // Keep the draft so the user's picks survive a retry.
+        setIsCompleting(false);
+        isFinishingRef.current = false;
+        showToast('Failed to save your profile. Please try again.');
+      }
+    } catch (err) {
+      clearInterval(interval);
+      setIsCompleting(false);
+      isFinishingRef.current = false;
+      showToast(err?.message || 'An error occurred while saving your profile.');
+    }
+  };
+
   const handleNext = async () => {
     if (step === 1) {
+      // If we have communities to suggest, go to Step 2; otherwise finish now.
       if (suggestedCommunities.length > 0) {
         setStep(2);
         return;
       }
-      // No communities to show — skip straight to completing
-      setIsCompleting(true);
-
-      const interval = setInterval(() => {
-        setLoadingMsgIdx((prev) => (prev < loadingMessages.length - 1 ? prev + 1 : prev));
-      }, 700);
-
-      try {
-        // Join selected communities via API
-        for (const commId of selectedCommunities) {
-          try {
-            await communitiesApi.join(commId);
-          } catch (e) {
-            console.error(`Failed to join community ${commId}:`, e);
-          }
-        }
-        
-        const success = await completeOnboarding({ 
-          interests: selectedInterests
-        });
-
-        clearInterval(interval);
-
-        if (success) {
-          navigate('/home', { replace: true });
-        } else {
-          setIsCompleting(false);
-          alert("Failed to save onboarding data. Please try again. Ensure your backend is running.");
-        }
-      } catch (err) {
-        clearInterval(interval);
-        setIsCompleting(false);
-        alert(err.message || "An error occurred while saving your profile.");
-      }
+      await finishOnboarding();
+    } else if (step === 2) {
+      await finishOnboarding();
     }
   };
 
@@ -277,6 +346,26 @@ export default function OnboardingRoute() {
 
         {step === 2 && (
           <div className="animate-in" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              aria-label="Back to interests"
+              style={{
+                alignSelf: 'flex-start',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                background: 'none',
+                border: 'none',
+                color: 'var(--color-text-muted)',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                padding: '0.25rem 0.25rem 0.75rem',
+              }}
+            >
+              <ArrowLeft size={18} /> Back
+            </button>
             <h1 className={styles.headline}>Join your first spaces</h1>
             <p className={styles.subheadline}>Based on your interests, we recommend these communities.</p>
             

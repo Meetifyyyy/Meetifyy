@@ -1,10 +1,12 @@
 .page {
   flex: 1;
   min-height: 0;
+  /* Desktop: take up all remaining column height from the flex parent */
+  height: calc(100dvh - 60px); /* viewport minus sticky header */
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-
+  overflow: hidden; /* contain the inner chat scroll to this box */
 }
 
 .messagesLayout {
@@ -22,6 +24,7 @@
   .page {
     padding: 0;
     gap: 0;
+    height: 100dvh;
     overflow: hidden;
   }
 

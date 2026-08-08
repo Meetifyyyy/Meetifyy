@@ -285,63 +285,38 @@ export function AuthProvider({ children }) {
     isLoggingOutRef.current = false;
     if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
+    // Single server-side login call. The backend resolves username→email
+    // internally (the email is never exposed to the client), authenticates via
+    // Supabase, rate-limits brute force, and fires the login-notification email
+    // asynchronously. We only receive the session tokens.
     const BASE_URL = getBackendUrl();
-    let email = usernameOrEmail.trim().toLowerCase();
+    const res = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: usernameOrEmail.trim(), password }),
+    });
 
-    // If it looks like a username (no @), resolve it to an email first
-    if (!email.includes('@')) {
-      const res = await fetch(`${BASE_URL}/api/auth/lookup-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: email }),
-      });
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody?.message || 'No account found with that username.');
-      }
-      const { email: resolvedEmail } = await res.json();
-      email = resolvedEmail;
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody?.message || 'Invalid username/email or password.');
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+    const { session } = await res.json();
+    const accessToken = session?.access_token;
+    const refreshToken = session?.refresh_token;
+    if (!accessToken || !refreshToken) {
+      throw new Error('Login failed. Please try again.');
+    }
+
+    // Install the session into the Supabase client — it takes over persistence
+    // and refresh, and fires SIGNED_IN, which drives profile sync in
+    // onAuthStateChange.
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
     });
     if (error) {
-      throw new Error(error.message);
-    }
-    
-    const user = data.user;
-    const accessToken = data.session?.access_token;
-
-    try {
-      const apiUrl = getBackendUrl();
-      await fetch(`${apiUrl}/api/auth/events/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
-        },
-        body: JSON.stringify({
-          email: user.email,
-          name: user.user_metadata?.displayName || user.email.split('@')[0],
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          userAgent: navigator.userAgent,
-          time: new Date().toLocaleString('en-US', {
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            weekday: 'short',
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: true,
-          }),
-        }),
-      });
-    } catch (e) {
-      console.error('Failed to trigger login email', e);
+      throw new Error(error.message || 'Login failed. Please try again.');
     }
 
     return true;
@@ -485,8 +460,11 @@ export function AuthProvider({ children }) {
       const response = await usersApi.updateProfile({ ...safeData, profileCompleted: true });
       const syncedUser = response?.user || response;
 
+      // Mirror the flag into Supabase user_metadata, but don't block navigation on
+      // it — Prisma's profileCompleted (set above) is the source of truth, and the
+      // local currentUser is updated to isNewUser:false immediately below.
       if (isSupabaseConfigured) {
-        await supabase.auth.updateUser({
+        supabase.auth.updateUser({
           data: { profileCompleted: true }
         }).catch(err => console.error('Failed to update Supabase profileCompleted metadata', err));
       }
@@ -618,7 +596,9 @@ export function AuthProvider({ children }) {
     if (!currentUser?.email) throw new Error('User email not found');
 
     if (currentPassword === newPassword) {
-      throw new Error('New password must be different from current password.');
+      const err = new Error('New password must be different from current password.');
+      err.code = 'PASSWORD_REUSE';
+      throw err;
     }
 
     // 1. Verify current password.
@@ -632,7 +612,9 @@ export function AuthProvider({ children }) {
     isChangingPasswordRef.current = false;
 
     if (signInError) {
-      throw new Error('Incorrect current password.');
+      const err = new Error('Incorrect current password.');
+      err.code = 'WRONG_CURRENT_PASSWORD';
+      throw err;
     }
 
     // 2. Update to new password
@@ -658,27 +640,27 @@ export function AuthProvider({ children }) {
       isRevokingSessionsRef.current = false;
     }
 
-    // 4. Send "Password Changed" security notification email
-    try {
-      await apiClient.post('/api/auth/events/password-changed', {
-        email: currentUser.email,
-        name: currentUser.displayName || 'User',
-        time: new Date().toLocaleString('en-US', {
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          weekday: 'short',
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        }),
-        device: navigator.userAgent,
-      });
-    } catch {
-      // Non-fatal — password was still changed. Email failure should not
-      // surface as a password-change error to the user.
-    }
+    // 4. Send "Password Changed" security notification email.
+    //    Fire-and-forget — the password is already changed, so don't make the
+    //    user wait on an email round-trip before the success UI shows.
+    apiClient.post('/api/auth/events/password-changed', {
+      email: currentUser.email,
+      name: currentUser.displayName || 'User',
+      time: new Date().toLocaleString('en-US', {
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }),
+      device: navigator.userAgent,
+    }).catch(() => {
+      // Non-fatal — password was still changed. Email failure must not surface
+      // as a password-change error to the user.
+    });
 
     return true;
   }, [currentUser, isSupabaseConfigured]);

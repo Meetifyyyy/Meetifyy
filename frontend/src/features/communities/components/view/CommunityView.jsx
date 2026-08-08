@@ -24,7 +24,7 @@ import { useCommunityById } from '@shared/hooks/useCommunities';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import ShareCommunityModal from '../modals/ShareCommunityModal';
 import defaultCommunityCover from '@assets/images/default_community_cover.webp';
-import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
+import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 
 function getActivityPhrase(comm) {
@@ -976,7 +976,7 @@ function DeletedCommunityView({ onBack }) {
     setDeleting(true);
     try {
       await communitiesApi.delete(communityId);
-      queryClient.invalidateQueries(['communities']);
+      queryClient.invalidateQueries({ queryKey: ['communities'] });
       showToast('Community deleted.');
       if (onBack) onBack();
       else navigate('/communities');

@@ -10,6 +10,7 @@ import defaultAvatarImg from '../../../../assets/images/default_avatar.webp';
 
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import { normalizeDicebearUrl } from '@shared/api/apiClient';
+import { showToast } from '@shared/utils/toast';
 
 const presetAvatars = [
   'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix',
@@ -39,7 +40,7 @@ export default function Step5Avatar() {
 
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
-      alert('File too large. Maximum size is 50 MB.');
+      showToast('File too large. Maximum size is 50 MB.');
       e.target.value = '';
       return;
     }
@@ -49,7 +50,7 @@ export default function Step5Avatar() {
       const { publicUrl } = await processAndUploadImage(file, 'avatars', { maxWidthOrHeight: 512 });
       setAvatar(publicUrl);
     } catch {
-      alert('Upload failed. Try again.');
+      showToast('Upload failed. Try again.');
     } finally {
       setIsUploading(false);
       e.target.value = '';
@@ -148,12 +149,21 @@ export default function Step5Avatar() {
           </div>
         </div>
 
-        <button 
+        <button
           onClick={handleFinish}
           className={styles.continueBtn}
+          disabled={isUploading}
           style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}
         >
-          {avatar ? 'Complete Registration' : 'Skip & Finish Setup'} <ArrowRight className={styles.btnIcon} />
+          {isUploading ? (
+            <>
+              <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} /> Uploading...
+            </>
+          ) : (
+            <>
+              {avatar ? 'Complete Registration' : 'Skip & Finish Setup'} <ArrowRight className={styles.btnIcon} />
+            </>
+          )}
         </button>
       </div>
     </AnimatedStep>

@@ -529,7 +529,7 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
             setShowDeleteConfirm(false);
             try {
               await postsApi.deletePost(id);
-              queryClient.invalidateQueries(['feed']);
+              queryClient.invalidateQueries({ queryKey: ['feed'] });
               showToast('Post deleted');
             } catch (err) {
               showToast('Failed to delete post');

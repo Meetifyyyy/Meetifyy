@@ -280,6 +280,7 @@ export default function SettingsRoute() {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
       updateProfile({ displayName, bio, birthday }).catch(err => {
         console.error('Failed to update profile:', err);
+        showToast(err?.message || 'Failed to save profile — please try again.');
       });
     } else if (activePanel === 'academic') {
       setActivePanel(null);
@@ -294,6 +295,7 @@ export default function SettingsRoute() {
         graduationYear: year ? parseInt(year, 10) : null 
       }).catch(err => {
         console.error('Failed to update academic info:', err);
+        showToast(err?.message || 'Failed to save academic details — please try again.');
       });
     } else if (activePanel === 'security') {
       const errors = {};
@@ -362,7 +364,10 @@ export default function SettingsRoute() {
         privateProfile,
         showOnlineStatus,
         readReceipts,
-      }).catch(err => console.error('Failed to update privacy settings:', err));
+      }).catch(err => {
+        console.error('Failed to update privacy settings:', err);
+        showToast(err?.message || 'Failed to save privacy settings — please try again.');
+      });
     } else if (activePanel === 'notifications') {
       setActivePanel(null);
       showToast('Notification preferences saved');
@@ -379,7 +384,10 @@ export default function SettingsRoute() {
       updateSettings({
         emailNotifs,
         pushNotifs,
-      }).catch(err => console.error('Failed to update notification settings:', err));
+      }).catch(err => {
+        console.error('Failed to update notification settings:', err);
+        showToast(err?.message || 'Failed to save notification settings — please try again.');
+      });
     } else if (activePanel === 'interests') {
       setActivePanel(null);
       showToast('Interests saved');
@@ -389,6 +397,7 @@ export default function SettingsRoute() {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
       updateProfile({ interests: selectedInterests }).catch(err => {
         console.error('Failed to update interests:', err);
+        showToast(err?.message || 'Failed to save interests — please try again.');
       });
     }
   };

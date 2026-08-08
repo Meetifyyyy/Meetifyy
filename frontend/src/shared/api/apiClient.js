@@ -200,7 +200,6 @@ async function refreshSessionIfNeeded() {
 }
 
 const PUBLIC_PATHS = [
-  '/api/auth/lookup-email',
   '/api/auth/verify-otp',
   '/api/auth/resend-otp',
   '/api/auth/signup',
@@ -209,7 +208,6 @@ const PUBLIC_PATHS = [
   // These are called during signup before the user has a session
   '/api/auth/check-username',
   '/api/auth/check-email',
-  '/api/auth/verify-reset-email',
 ];
 
 function isPublicPath(path) {

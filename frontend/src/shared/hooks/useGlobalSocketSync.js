@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useGlobalSocketStore } from '../store/useGlobalSocketStore';
+import { useGlobalSocketStore } from '../stores/useGlobalSocketStore';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../hooks/useData';
 import { PROFILE_KEYS } from './useProfile';

@@ -39,10 +39,11 @@ body {
   font-family: var(--font-family-sans);
   background: var(--color-bg-main);
   color: var(--color-text-main);
-  height: 100dvh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* overflow: hidden removed — native window scroll lets iOS momentum + rubber-band physics work.
+     The feed virtualizer uses useWindowVirtualizer which relies on window scroll, not a div scroll. */
   user-select: none;
   -webkit-user-select: none;
 }
@@ -58,15 +59,16 @@ body {
 }
 
 html {
-  overflow: hidden;
+  /* overflow: hidden removed — was killing iOS bounce physics and momentum scroll */
+  overflow-x: hidden;
 }
 
 #root {
-  height: 100%;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   overflow-x: hidden;
+  /* overflow-y: hidden removed — window is the scroll container for the feed virtualizer */
 }
 
 /* Unused global header styling removed to prevent conflicts with Header.module.css */

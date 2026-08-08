@@ -6,6 +6,7 @@ import { useData } from '@shared/hooks/useData';
 import { useChatManager } from '../../shared/hooks/useChatManager';
 import { matchesConversationId } from '../../shared/utils/cacheUtils';
 import { generateConversationUrl, correctConversationUrl } from '@shared/utils/conversationUrl';
+import { showToast } from '@shared/utils/toast';
 import { MessageSquarePlus, Search } from 'lucide-react';
 
 import DMItem from '../../direct-messages/components/sidebar/DMItem';
@@ -181,6 +182,8 @@ export default function MessagesLayout() {
           }
         } catch (err) {
           console.error('Failed to create conversation on send:', err);
+          showToast('Could not send message — please try again.');
+          return;
         }
       }
     }

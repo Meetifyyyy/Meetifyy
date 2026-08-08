@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '@shared/context/AuthContext';
 
 const SignupContext = createContext();
 
@@ -29,6 +30,7 @@ const MAX_SESSION_AGE_MS = 30 * 60 * 1000; // 30 minutes TTL
 export const SignupProvider = ({ children }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
+  const { isLoggedIn } = useAuth();
 
   // Handle fresh signup intent from navigation (e.g. state.fresh = true or ?fresh=true)
   const isFreshIntent = location.state?.fresh === true || searchParams.get('fresh') === 'true';
@@ -102,14 +104,31 @@ export const SignupProvider = ({ children }) => {
     sessionStorage.setItem(TIMESTAMP_KEY, String(Date.now()));
   }, [signupData]);
 
-  // Step safety guards: prevent jumping ahead if prerequisite data is missing on refresh
+  // Navigation guards.
+  //
+  // Once the user is authenticated (OTP verified at step 4 creates a Supabase
+  // session), steps 1–4 are "consumed": re-entering them via browser-back, the
+  // in-app back arrow, or a reload would let the user re-run signUp or replay a
+  // used OTP — all broken states. So the moment we're logged in, the only valid
+  // signup step is the avatar step (5); force it and replace history so back
+  // can't return to a consumed step.
+  //
+  // Pre-auth, keep the original refresh guards that prevent jumping ahead of the
+  // data that's been filled in. Step 1 produces `username`; steps 3–4 need email.
   useEffect(() => {
-    if (currentStep === 2 && !signupData.name && !signupData.username) {
+    if (isLoggedIn) {
+      if (currentStep < 5) {
+        setSearchParams({ step: 5 }, { replace: true });
+      }
+      return;
+    }
+
+    if (currentStep === 2 && !signupData.username) {
       setSearchParams({ step: 1 }, { replace: true });
     } else if ((currentStep === 3 || currentStep === 4) && !signupData.email) {
       setSearchParams({ step: 2 }, { replace: true });
     }
-  }, [currentStep, signupData, setSearchParams]);
+  }, [currentStep, signupData, isLoggedIn, setSearchParams]);
 
   const updateData = (newData) => {
     setSignupData((prev) => ({ ...prev, ...newData }));
