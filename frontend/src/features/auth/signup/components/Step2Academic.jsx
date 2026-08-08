@@ -1,10 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
 import { ArrowRight, AlertCircle, Check, Loader2, X, WifiOff } from 'lucide-react';
 import CustomSelect from './CustomSelect';
 import { MAJORS_LIST } from '../../../campus/data/majors';
 import { apiClient } from '@shared/api/apiClient';
+import { useAvailabilityCheck } from '../hooks/useAvailabilityCheck';
 import styles from '../SignupFlow.module.css';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -23,8 +24,10 @@ export default function Step2Academic() {
   const [major, setMajor] = useState(signupData.course || signupData.branch || '');
   const [year, setYear] = useState(signupData.year || '');
   const [attempted, setAttempted] = useState(false);
-  const [emailStatus, setEmailStatus] = useState(null);
-  const [emailReason, setEmailReason] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Set only when the authoritative on-submit check finds the email taken while
+  // the live check was still pending/unknown.
+  const [hardBlockReason, setHardBlockReason] = useState('');
 
   // ── Email format validation ────────────────────────────────────────────────
   const emailFormatError = useMemo(() => {
@@ -44,43 +47,13 @@ export default function Step2Academic() {
   }, [email]);
 
   // ── Real-time backend email check ─────────────────────────────────────────
-  useEffect(() => {
-    let active = true;
-
-    if (!email || emailFormatError) {
-      setEmailStatus(null);
-      setEmailReason('');
-      return;
-    }
-
-    setEmailStatus('checking');
-
-    const timer = setTimeout(async () => {
-      try {
-        const res = await apiClient.post('/api/auth/check-email', {
-          email: email.trim().toLowerCase(),
-        });
-        if (!active) return;
-        if (res?.available === true) {
-          setEmailStatus('available');
-          setEmailReason('');
-        } else {
-          setEmailStatus('taken');
-          setEmailReason(res?.reason || 'This email is already registered. Please sign in.');
-        }
-      } catch {
-        if (!active) return;
-        // Network error — allow the user to continue. Backend catches real conflicts.
-        setEmailStatus('network-error');
-        setEmailReason('');
-      }
-    }, 400);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [email, emailFormatError]);
+  // Cached + debounced + abortable. 'network-error' is soft (never blocks).
+  const normalizedEmail = email.trim().toLowerCase();
+  const { status: emailStatus, reason: emailReason } = useAvailabilityCheck(normalizedEmail, {
+    endpoint: '/api/auth/check-email',
+    field: 'email',
+    enabled: !emailFormatError,
+  });
 
   const currentYear = new Date().getFullYear();
   const maxPassingYear = currentYear + 6;
@@ -92,10 +65,12 @@ export default function Step2Academic() {
     return list;
   }, [maxPassingYear]);
 
-  const showEmailError = (attempted && emailFormatError) || emailStatus === 'taken';
+  const showEmailError = (attempted && emailFormatError) || emailStatus === 'taken' || !!hardBlockReason;
   const activeEmailError =
     emailFormatError ||
-    (emailStatus === 'taken' ? (emailReason || 'This email is already registered. Please sign in.') : null);
+    (emailStatus === 'taken'
+      ? (emailReason || 'This email is already registered. Please sign in.')
+      : (hardBlockReason || null));
 
   const majorError = !major.trim() ? 'Major / Course is required.' : null;
   const yearError = useMemo(() => {
@@ -112,35 +87,28 @@ export default function Step2Academic() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setAttempted(true);
+    setHardBlockReason('');
 
     if (emailFormatError || majorError || yearError) return;
+    if (emailStatus === 'taken') return;
 
-    // Final guard: if still unknown (null or network-error), do a blocking check
-    let resolvedStatus = emailStatus;
-    let resolvedReason = emailReason;
-    if (resolvedStatus === null || resolvedStatus === 'network-error') {
-      setEmailStatus('checking');
+    // If the live check hasn't confirmed 'available' yet (still debouncing,
+    // unknown, or a transient network error), run one authoritative blocking
+    // check before advancing to the password step.
+    if (emailStatus !== 'available') {
+      setIsSubmitting(true);
       try {
-        const res = await apiClient.post('/api/auth/check-email', {
-          email: email.trim().toLowerCase(),
-        });
+        const res = await apiClient.post('/api/auth/check-email', { email: normalizedEmail });
         if (res?.available === false) {
-          resolvedStatus = 'taken';
-          resolvedReason = res?.reason || 'This email is already registered. Please sign in.';
-        } else {
-          resolvedStatus = 'available';
-          resolvedReason = '';
+          setHardBlockReason(res?.reason || 'This email is already registered. Please sign in.');
+          setIsSubmitting(false);
+          return;
         }
-        setEmailStatus(resolvedStatus);
-        setEmailReason(resolvedReason);
       } catch {
-        // Network still down — proceed, backend will handle conflicts
-        resolvedStatus = 'network-error';
-        setEmailStatus('network-error');
+        // Network still down — proceed; the backend enforces conflicts at signup.
       }
+      setIsSubmitting(false);
     }
-
-    if (resolvedStatus === 'taken') return;
 
     let university = 'University';
     const domain = email.toLowerCase().split('@')[1] || '';
@@ -174,7 +142,10 @@ export default function Step2Academic() {
               className={`${styles.largeInput} ${showEmailError ? styles.inputError : ''}`}
               placeholder=" "
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (hardBlockReason) setHardBlockReason('');
+              }}
               style={{ paddingRight: '2.5rem' }}
             />
             <label htmlFor="email" className={styles.floatingLabel}>College Email</label>
@@ -246,9 +217,9 @@ export default function Step2Academic() {
           type="submit"
           className={styles.continueBtn}
           style={{ width: '100%', justifyContent: 'center', marginTop: '1.5rem' }}
-          disabled={isChecking}
+          disabled={isChecking || isSubmitting}
         >
-          {isChecking ? (
+          {isChecking || isSubmitting ? (
             <>
               <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
               <span>Checking...</span>

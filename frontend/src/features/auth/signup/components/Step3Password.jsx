@@ -19,6 +19,7 @@ export default function Step3Password() {
   const passwordError = useMemo(() => {
     if (!password) return "Password is required.";
     if (password.length < 8) return "Password must be at least 8 characters.";
+    if (password.length > 128) return "Password must be at most 128 characters.";
     return null;
   }, [password]);
 
@@ -66,6 +67,8 @@ export default function Step3Password() {
               className={`${styles.largeInput} ${attempted && passwordError ? styles.inputError : ''}`}
               placeholder=" "
               value={password}
+              maxLength={128}
+              autoComplete="new-password"
               onChange={(e) => setPassword(e.target.value)}
               style={{ paddingRight: '2.75rem' }}
             />
@@ -94,6 +97,8 @@ export default function Step3Password() {
               className={`${styles.largeInput} ${attempted && confirmError ? styles.inputError : ''}`}
               placeholder=" "
               value={confirmPassword}
+              maxLength={128}
+              autoComplete="new-password"
               onChange={(e) => setConfirmPassword(e.target.value)}
             />
             <label htmlFor="confirm-password" className={styles.floatingLabel}>Confirm Password</label>

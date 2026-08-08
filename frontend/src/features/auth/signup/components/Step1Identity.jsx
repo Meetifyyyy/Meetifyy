@@ -1,10 +1,10 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
 import { ArrowRight, Check, AlertCircle, Loader2, X, WifiOff } from 'lucide-react';
 import CustomSelect from './CustomSelect';
 import { validateDOB } from '../../../../shared/utils/dateValidation';
-import { apiClient } from '@shared/api/apiClient';
+import { useAvailabilityCheck } from '../hooks/useAvailabilityCheck';
 import styles from '../SignupFlow.module.css';
 
 // usernameStatus states:
@@ -19,7 +19,6 @@ export default function Step1Identity() {
   
   const [name, setName] = useState(signupData.firstName ? `${signupData.firstName} ${signupData.lastName || ''}`.trim() : '');
   const [username, setUsername] = useState(signupData.username || '');
-  const [usernameStatus, setUsernameStatus] = useState(null);
 
   const initialDob = signupData.birthday || '';
   const initialParts = initialDob ? initialDob.split('-') : ['', '', ''];
@@ -62,38 +61,14 @@ export default function Step1Identity() {
   }, [username]);
 
   // ── Real-time Backend Availability Check ──────────────────────────────────
-  useEffect(() => {
-    let active = true;
-
-    // If format is invalid, no point hitting the backend
-    if (!username || username.trim().length < 3 || usernameFormatError) {
-      setUsernameStatus(null);
-      return;
-    }
-
-    setUsernameStatus('checking');
-
-    const timer = setTimeout(async () => {
-      try {
-        const res = await apiClient.post('/api/auth/check-username', {
-          username: username.trim().toLowerCase(),
-        });
-        if (!active) return;
-        // Backend returns { available: true } or { available: false, reason }
-        setUsernameStatus(res?.available === true ? 'available' : 'taken');
-      } catch (err) {
-        if (!active) return;
-        // Network / server error — don't penalise the user.
-        // The actual signup will catch real conflicts.
-        setUsernameStatus('network-error');
-      }
-    }, 400);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [username, usernameFormatError]);
+  // Cached + debounced + abortable. 'network-error' is treated as a soft state
+  // (the real signup still catches conflicts), so it never blocks the user.
+  const normalizedUsername = username.trim().toLowerCase();
+  const { status: usernameStatus } = useAvailabilityCheck(normalizedUsername, {
+    endpoint: '/api/auth/check-username',
+    field: 'username',
+    enabled: !usernameFormatError && normalizedUsername.length >= 3,
+  });
 
   // ── DOB Validation ────────────────────────────────────────────────────────
   const dobValidation = useMemo(() => validateDOB(year, month, day), [year, month, day]);

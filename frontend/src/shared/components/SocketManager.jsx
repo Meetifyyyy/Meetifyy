@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useGlobalSocketStore } from '../store/useGlobalSocketStore';
+import { useGlobalSocketStore } from '../stores/useGlobalSocketStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -43,35 +43,10 @@ export default function SocketManager() {
       const targetIds = [currentEntityId, pubId, intId].filter(Boolean);
 
       const convs = queryClient.getQueryData(['conversations']) || [];
-      const currentPath = window.location.pathname;
-      const isMessagesRoute = currentPath.startsWith('/messages') || currentPath.startsWith('/inbox');
-      
-      let isViewingEntity = false;
-      if (notification.type?.toUpperCase() === 'MESSAGE' && isMessagesRoute) {
-        const pathParts = currentPath.split('/').filter(Boolean);
-        const param1 = pathParts[1];
-        const param2 = pathParts[2];
-        const routeInfo = parseConversationRoute(param1, param2);
-        const viewedId = routeInfo.publicId;
 
-        if (viewedId) {
-          if (viewedId === currentEntityId || (pubId && viewedId === pubId) || (intId && viewedId === intId)) {
-            isViewingEntity = true;
-          }
-
-          if (!isViewingEntity) {
-            const activeConv = convs.find(c => 
-              c.id === viewedId || c.publicId === viewedId || c.internalId === viewedId
-            );
-            if (activeConv) {
-              const convIds = [activeConv.id, activeConv.publicId, activeConv.internalId].filter(Boolean);
-              if (targetIds.some(tId => convIds.includes(tId))) {
-                isViewingEntity = true;
-              }
-            }
-          }
-        }
-      }
+      // MESSAGE-type notifications return early above, so this can never be true —
+      // "am I already viewing this" is handled entirely by the message:new socket event.
+      const isViewingEntity = false;
 
       const targetConv = convs.find(c => {
         const cIds = [c.id, c.publicId, c.internalId].filter(Boolean);

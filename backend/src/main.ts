@@ -45,9 +45,12 @@ async function bootstrap() {
     'https://dev.meetifyy.app',
     'https://meetifyy.app',
     'https://www.meetifyy.app',
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://localhost:5174',
+    // Localhost origins are only baked in outside production.
+    ...(isProd ? [] : [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:5174',
+    ]),
   ];
 
   const envCorsOrigins = (process.env.CORS_ORIGINS || '')
@@ -85,8 +88,14 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean | string) => void) => {
       if (!origin) return callback(null, true);
-      const isDevelopmentOrigin = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/i.test(origin);
-      const isVercelOrigin = /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/i.test(origin);
+      // Localhost / LAN origins are only trusted outside production — a prod API
+      // must never treat a developer's local machine as a same-trust origin.
+      const isDevelopmentOrigin =
+        !isProd &&
+        /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/i.test(origin);
+      // Scope the Vercel wildcard to this project's deployments/previews
+      // (meetify*) rather than accepting ANY *.vercel.app site.
+      const isVercelOrigin = /^https:\/\/meetify[a-zA-Z0-9-]*\.vercel\.app$/i.test(origin);
       const isMeetifyyOrigin = /^https:\/\/[a-zA-Z0-9-]+\.meetifyy\.app$/i.test(origin);
 
       const isAllowed =

@@ -12,10 +12,15 @@ export class CheckEmailDto {
   email: string;
 }
 
-export class LookupEmailDto {
+export class LoginDto {
+  // Username or email — resolved to an email server-side, never echoed back.
   @IsString()
   @IsNotEmpty()
-  username: string;
+  identifier: string;
+
+  @IsString()
+  @IsNotEmpty()
+  password: string;
 }
 
 export class TriggerWelcomeEmailDto {

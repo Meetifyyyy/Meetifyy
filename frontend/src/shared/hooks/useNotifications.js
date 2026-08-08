@@ -26,24 +26,24 @@ export function useNotifications() {
   const markAsReadMutation = useMutation({
     mutationFn: (id) => notificationsApi.markAsRead(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['notifications']);
-      queryClient.invalidateQueries(['notifications', 'unreadCount']);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unreadCount'] });
     },
   });
 
   const markAllReadMutation = useMutation({
     mutationFn: () => notificationsApi.markAllAsRead(),
     onSuccess: () => {
-      queryClient.invalidateQueries(['notifications']);
-      queryClient.invalidateQueries(['notifications', 'unreadCount']);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unreadCount'] });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id) => notificationsApi.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['notifications']);
-      queryClient.invalidateQueries(['notifications', 'unreadCount']);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unreadCount'] });
     },
   });
 

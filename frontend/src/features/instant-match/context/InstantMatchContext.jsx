@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import { useNavigate } from 'react-router-dom';
 import { useAuth, supabase } from '@shared/context/AuthContext';
 import { getCollegeName } from '@shared/utils/user';
+import { showToast } from '@shared/utils/toast';
 
 import matchSocketClient from '../utils/matchSocketClient';
 import { useData } from '@shared/hooks/useData';
@@ -38,18 +39,25 @@ export function InstantMatchProvider({ children }) {
     activeMatchRef.current = activeMatch;
   }, [activeMatch]);
 
-  // Connect socket client
+  // Tracks whether the local user was the one who declined, so the
+  // match:declined handler can tell "I declined" apart from "I got declined".
+  const selfDeclinedRef = useRef(false);
+  // Always points at the latest startSearch so search:resumed can re-join
+  // the queue without forcing the socket-subscription effect to re-run.
+  const startSearchRef = useRef(null);
+
+  // Connect only when the sheet opens — no second socket running in the background.
   useEffect(() => {
-    if (currentUser?.id) {
-      supabase?.auth.getSession().then(({ data: { session } }) => {
-        matchSocketClient.connect(session?.access_token || null, currentUser);
-      });
-    }
+    if (!sheetOpen || !currentUser?.id) return;
+
+    supabase?.auth.getSession().then(({ data: { session } }) => {
+      matchSocketClient.connect(session?.access_token || null, currentUser);
+    });
 
     return () => {
       matchSocketClient.disconnect();
     };
-  }, [currentUser?.id]);
+  }, [sheetOpen, currentUser?.id]);
 
   // Subscribe to real-time events
   useEffect(() => {
@@ -73,9 +81,9 @@ export function InstantMatchProvider({ children }) {
     matchSocketClient.on('match:accepted', async () => {
       setStatus('chat_redirect');
       setSheetOpen(false);
-      
+
       const currentMatch = activeMatchRef.current;
-      let targetChatId = 'unknown';
+      let targetChatId = null;
       if (currentMatch && currentMatch.candidate) {
         targetChatId = await start24HrInstantChat(currentMatch.candidate, currentMatch.activity);
       }
@@ -86,18 +94,39 @@ export function InstantMatchProvider({ children }) {
         setFormData(initialFormData);
         setStep(1);
         setActiveMatch(null);
-        navigate(`/messages/${targetChatId}`, { state: { from: '/home' } });
+        if (targetChatId) {
+          navigate(`/messages/${targetChatId}`, { state: { from: '/home' } });
+        } else {
+          // Chat creation failed server-side — don't send the user to a broken route.
+          showToast("You're matched! We couldn't open the chat automatically — check your messages.");
+          navigate('/messages', { state: { from: '/home' } });
+        }
       }, 1500);
     });
 
-    matchSocketClient.on('match:declined', ({ reason }) => {
+    matchSocketClient.on('match:declined', ({ reason } = {}) => {
       setActiveMatch(null);
-      // Show decline state/reason before resuming
+      if (reason) showToast(reason);
+
+      if (selfDeclinedRef.current) {
+        // We declined: nothing left to wait on, return to idle.
+        selfDeclinedRef.current = false;
+        setSheetOpen(false);
+        setStatus('idle');
+        setStep(1);
+        setFormData(initialFormData);
+      } else {
+        // The other student declined/was unavailable — a search:resumed
+        // event will follow shortly and put us back into 'searching'.
+        setStatus('idle');
+      }
     });
 
     matchSocketClient.on('search:resumed', () => {
       setStatus('searching');
       setActiveMatch(null);
+      // Backend removed us from the queue when we were matched; rejoin now.
+      startSearchRef.current?.();
     });
 
     return () => {
@@ -166,6 +195,10 @@ export function InstantMatchProvider({ children }) {
     matchSocketClient.joinQueue(request);
   }, [formData, currentUser]);
 
+  useEffect(() => {
+    startSearchRef.current = startSearch;
+  }, [startSearch]);
+
   const cancelSearch = useCallback(() => {
     matchSocketClient.cancelQueue();
     setStatus('idle');
@@ -175,6 +208,7 @@ export function InstantMatchProvider({ children }) {
 
   const respondToMatch = useCallback((action) => {
     if (!activeMatch) return;
+    if (action === 'decline') selfDeclinedRef.current = true;
     matchSocketClient.respondToMatch(activeMatch.matchId, action);
   }, [activeMatch]);
 

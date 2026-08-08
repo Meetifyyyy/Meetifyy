@@ -17,16 +17,19 @@ export default function Step4OTP() {
   const inputsRef = useRef([]);
   const isVerifyingRef = useRef(false);
 
+  // One interval for the component's lifetime. It derives the remaining seconds
+  // from targetTimeRef on every tick, so a resend (which pushes targetTimeRef
+  // forward) resumes the countdown without recreating the interval. Previously
+  // this effect depended on [timer] and tore down/rebuilt the interval every
+  // second.
   useEffect(() => {
-    if (timer <= 0) return;
-    
     const tick = () => {
       const remaining = Math.max(0, Math.ceil((targetTimeRef.current - Date.now()) / 1000));
       setTimer(remaining);
     };
-
+    tick();
     const interval = setInterval(tick, 1000);
-    
+
     const handleVisibilityChange = () => {
       if (!document.hidden) tick();
     };
@@ -36,7 +39,7 @@ export default function Step4OTP() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [timer]);
+  }, []);
 
   const handleResend = async () => {
     if (status === 'verifying') return;
@@ -101,9 +104,11 @@ export default function Step4OTP() {
     try {
       await verifySignupOtp(signupData.email, enteredCode, signupData);
       setStatus('success');
+      // Brief success confirmation, then advance. Kept short so verification
+      // feels instant rather than padded.
       setTimeout(() => {
         nextStep();
-      }, 800);
+      }, 400);
     } catch (err) {
       setStatus('input');
       setError(err.message || 'Incorrect code. Please try again.');

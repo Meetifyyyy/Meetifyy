@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { messagesApi, dmApi, groupApi } from '@shared/api/apiClient';
-import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
+import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
 import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
 import { useData } from '@shared/hooks/useData';
 import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, STATUS_RANK, checkIsMe } from '../utils/cacheUtils';

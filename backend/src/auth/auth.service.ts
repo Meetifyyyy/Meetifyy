@@ -333,7 +333,19 @@ export class AuthService {
     // email_confirmed_at is set by Supabase when the user verifies their OTP.
     // confirmed_at is an alias kept for older Supabase versions.
     // ─────────────────────────────────────────────────────────────────────────
-    const emailConfirmedAt = user.email_confirmed_at || user.confirmed_at;
+    let emailConfirmedAt = user.email_confirmed_at || user.confirmed_at;
+    if (!emailConfirmedAt && this.supabaseService.isConfigured) {
+      // When the API verifies JWTs locally (SUPABASE_JWT_SECRET set), the token
+      // payload doesn't carry email_confirmed_at. Resolve it authoritatively via
+      // the admin API before blocking. This only runs on the new-account path
+      // (no Prisma row yet), so it's off the hot request route.
+      try {
+        const { data } = await this.supabaseService.client.auth.admin.getUserById(user.id);
+        emailConfirmedAt = (data?.user as any)?.email_confirmed_at || (data?.user as any)?.confirmed_at;
+      } catch {
+        // Admin lookup failed — fall through to the block below (fail safe).
+      }
+    }
     if (!emailConfirmedAt) {
       this.logger.warn(`Blocked account creation for unverified session userId=${user.id}`);
       throw new UnauthorizedException(
@@ -389,18 +401,22 @@ export class AuthService {
       this.prisma.user.findUnique({ where: { username } }),
     ]);
 
-    // Resolve email/ID conflicts (especially with mock/seed users)
+    // Resolve email/ID conflicts (especially with mock/seed users).
+    //
+    // SAFETY: Never delete an existing account here. This code runs on the
+    // ordinary login/sync path, and a legitimate user may simply have no posts
+    // yet — the old "delete if 0 posts" heuristic could destroy a real account.
+    // Instead we free up the (unique) email by moving the stale/duplicate record
+    // to a legacy address so the upsert below can claim it. Any actual account
+    // removal belongs in an explicit, audited admin flow, not silent sync.
     if (existingUserByEmail && existingUserByEmail.id !== user.id) {
-      this.logger.warn(`Email conflict resolved email=${email} existingId=${existingUserByEmail.id}`);
-      const relationsCount = await this.prisma.post.count({ where: { authorId: existingUserByEmail.id } });
-      if (relationsCount === 0) {
-        await this.prisma.user.delete({ where: { id: existingUserByEmail.id } }).catch(() => {});
-      } else {
-        await this.prisma.user.update({
-          where: { id: existingUserByEmail.id },
-          data: { email: `legacy_${Date.now()}_${existingUserByEmail.email}` },
-        }).catch(() => {});
-      }
+      this.logger.warn(
+        `Email conflict on sync email=${email} staleId=${existingUserByEmail.id} — renaming stale record`,
+      );
+      await this.prisma.user.update({
+        where: { id: existingUserByEmail.id },
+        data: { email: `legacy_${Date.now()}_${existingUserByEmail.email}` },
+      }).catch((err) => this.logger.error(`Failed to rename conflicting email record: ${err.message}`));
     }
 
     // Resolve username conflict (if another user has the same username but a different email)
@@ -474,15 +490,73 @@ export class AuthService {
     return result;
   }
 
-  async lookupEmailByUsername(username: string): Promise<{ email: string }> {
-    const user = await this.prisma.user.findUnique({
-      where: { username: username.trim().toLowerCase() },
-      select: { email: true },
-    });
-    if (!user) {
-      throw new NotFoundException('No account found with that username.');
+  /**
+   * Server-side login proxy.
+   *
+   * Performance: at most ONE DB query (username→email resolution, skipped when an
+   * email is supplied) plus ONE Supabase auth call. No profile fetch, no extra
+   * reads. Profile hydration happens later via the client's SIGNED_IN → sync.
+   *
+   * Security:
+   *  - The resolved email is never returned to the client (closes the
+   *    username→email disclosure).
+   *  - A missing username and a wrong password return the SAME generic error, so
+   *    neither username nor email existence can be probed.
+   *  - Brute-force throttling is enforced by LoginRateLimitGuard on the route.
+   */
+  async login(
+    identifier: string,
+    password: string,
+  ): Promise<{
+    session: { access_token: string; refresh_token: string; expires_at?: number; expires_in?: number; token_type?: string };
+    user: { id: string; email: string; displayName?: string };
+  }> {
+    if (!this.supabaseService.isConfigured) {
+      throw new UnauthorizedException('Authentication is not configured.');
     }
-    return { email: user.email };
+
+    const raw = (identifier || '').trim();
+    if (!raw || !password) {
+      throw new UnauthorizedException('Invalid username/email or password.');
+    }
+
+    let email = raw.toLowerCase();
+    // Resolve username → email internally. Never reveal whether it exists.
+    if (!raw.includes('@')) {
+      const found = await this.prisma.user.findUnique({
+        where: { username: email },
+        select: { email: true },
+      });
+      if (!found) {
+        throw new UnauthorizedException('Invalid username/email or password.');
+      }
+      email = found.email;
+    }
+
+    const { data, error } = await this.supabaseService.client.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error || !data?.session || !data?.user) {
+      throw new UnauthorizedException('Invalid username/email or password.');
+    }
+
+    const { session, user } = data;
+    return {
+      session: {
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        expires_at: session.expires_at,
+        expires_in: session.expires_in,
+        token_type: session.token_type,
+      },
+      user: {
+        id: user.id,
+        email: user.email || email,
+        displayName: (user.user_metadata as any)?.displayName,
+      },
+    };
   }
 
   async checkUsernameAvailability(username: string): Promise<{ available: boolean; reason?: string }> {
@@ -515,23 +589,28 @@ export class AuthService {
   }
 
   async checkEmailAvailability(email: string): Promise<{ available: boolean; reason?: string }> {
-    const domainValidation = await this.domainValidatorService.validateDomain(email);
-    if (!domainValidation.isValid) {
-      return { available: false, reason: domainValidation.reason };
-    }
-
+    // Cheapest check first — reject malformed input before any DB / domain work.
     const trimmed = (email || '').trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmed)) {
       return { available: false, reason: 'Please enter a valid email address.' };
     }
 
-    // Search Prisma database (case-insensitive for both email & collegeEmail)
+    // Domain gating (approved-college check) — served from an O(1) in-memory cache.
+    const domainValidation = await this.domainValidatorService.validateDomain(trimmed);
+    if (!domainValidation.isValid) {
+      return { available: false, reason: domainValidation.reason };
+    }
+
+    // Existence check. Emails are stored already-lowercased (Supabase normalizes
+    // them and we persist the normalized value), so an exact match lets Postgres
+    // use the unique index on `email` and the index on `collegeEmail` instead of
+    // a case-insensitive sequential scan over the whole User table.
     const existingPrismaUser = await this.prisma.user.findFirst({
       where: {
         OR: [
-          { email: { equals: trimmed, mode: 'insensitive' } },
-          { collegeEmail: { equals: trimmed, mode: 'insensitive' } },
+          { email: trimmed },
+          { collegeEmail: trimmed },
         ],
       },
       select: { id: true },
@@ -541,54 +620,14 @@ export class AuthService {
       return { available: false, reason: 'This email is already registered. Please sign in.' };
     }
 
-    // Also check Supabase auth.users for pending (unverified) signup sessions.
-    // Without this, someone who abandoned a signup can re-attempt with the same email
-    // and see "available" even though Supabase already has the address.
-    // We use the admin API to check — this never leaks info to the end user.
-    if (this.supabaseService.isConfigured) {
-      try {
-        const { data, error } = await this.supabaseService.client.auth.admin.listUsers({
-          page: 1,
-          perPage: 1,
-        });
-        // listUsers doesn't support email filter, so we use getUserByEmail equivalent
-        // via admin API which requires a different approach
-      } catch (_) {
-        // Ignore — Supabase admin lookup failure should not block the signup flow
-      }
-    }
+    // NOTE: A pending (unverified) Supabase signup for this email is surfaced to
+    // the user by supabase.auth.signUp itself (it returns identities=[] and the
+    // frontend shows "a signup is already pending"). We intentionally do not
+    // probe the Supabase admin API here — the previous listUsers call was a
+    // no-op (it fetched one arbitrary user and discarded it) and added latency
+    // for no benefit.
 
     return { available: true };
-  }
-
-  /**
-   * Silently checks whether an email has a fully verified account in Prisma.
-   * Always returns without leaking whether the email exists (returns void on
-   * both found and not-found paths). The caller decides what to do.
-   *
-   * Used by the password reset endpoint to gate reset emails without
-   * exposing user enumeration data through different HTTP status codes.
-   */
-  async checkExistsForReset(email: string): Promise<void> {
-    const trimmed = (email || '').trim().toLowerCase();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmed)) {
-      // Invalid format — still return silently (no 400 that leaks format info)
-      return;
-    }
-
-    // We intentionally do NOT throw NotFoundException here.
-    // The controller always returns the same 200 response regardless.
-    // This prevents user enumeration through timing attacks or status codes.
-    await this.prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: { equals: trimmed, mode: 'insensitive' } },
-          { collegeEmail: { equals: trimmed, mode: 'insensitive' } },
-        ],
-      },
-      select: { id: true },
-    });
   }
 
   /** Returns only the IDs of posts the user has bookmarked — fast select, bundled into auth sync. */

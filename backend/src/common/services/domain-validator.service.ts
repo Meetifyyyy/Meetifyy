@@ -23,6 +23,8 @@ export class DomainValidatorService implements OnModuleInit {
   private domainCache = new Map<string, ApprovedDomainInfo>();
   private lastCacheTime = 0;
   private readonly CACHE_TTL_MS = 60000; // 1 minute safety TTL before background refresh
+  // Coalesces concurrent refreshes so a TTL expiry can't trigger a stampede.
+  private refreshInflight: Promise<void> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -198,9 +200,19 @@ export class DomainValidatorService implements OnModuleInit {
       return { isValid: false, reason: err.message || 'Invalid email format' };
     }
 
-    // Refresh memory cache if TTL expired
+    // Refresh memory cache if TTL expired. Do it in the background and keep
+    // serving the current cache — only block if the cache is completely cold
+    // (e.g. the very first request before onModuleInit finished). This keeps the
+    // ~once-per-minute refresh off the request's critical path.
     if (Date.now() - this.lastCacheTime > this.CACHE_TTL_MS) {
-      await this.refreshDomainCache();
+      const refresh =
+        this.refreshInflight ||
+        (this.refreshInflight = this.refreshDomainCache().finally(() => {
+          this.refreshInflight = null;
+        }));
+      if (this.domainCache.size === 0) {
+        await refresh;
+      }
     }
 
     // Check memory cache first (sub-1ms O(1) lookup)

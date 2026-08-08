@@ -11,6 +11,10 @@ export const supabaseConfig = registerAs('supabase', () => ({
   url: process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
   anonKey: process.env.SUPABASE_ANON_KEY || 'placeholder-anon-key',
   serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-service-role-key',
+  // Optional. When set, the API verifies user JWT signatures locally (HS256) with
+  // zero network calls instead of calling Supabase Auth per token. Find it in the
+  // Supabase dashboard → Project Settings → API → JWT Secret.
+  jwtSecret: process.env.SUPABASE_JWT_SECRET || '',
   bucketName: process.env.SUPABASE_BUCKET_NAME || 'meetifyy-dev',
 }));
 

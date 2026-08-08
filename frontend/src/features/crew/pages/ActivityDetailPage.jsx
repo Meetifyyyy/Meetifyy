@@ -156,7 +156,7 @@ export default function ActivityDetailPage() {
 
   const requestMutation = useMutation({
     mutationFn: (actId) => activitiesApi.requestToJoinActivity(actId),
-    onSuccess: () => queryClient.invalidateQueries(['activities']),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['activities'] }),
   });
 
   const endMutation = useMutation({

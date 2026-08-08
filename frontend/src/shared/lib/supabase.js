@@ -28,6 +28,16 @@ if (typeof window !== 'undefined') {
     if (window.location.hash.includes('type=recovery')) {
       sessionStorage.setItem('sb-pwreset-pending', '1');
     }
+    // If Supabase redirected to the reset page with an error hash (expired /
+    // invalid / already-used link), capture it now — before createClient() clears
+    // the hash — so ResetPasswordPage can show the "expired" state instantly
+    // instead of waiting out the validation timeout.
+    if (
+      window.location.pathname.includes('reset-password') &&
+      (window.location.hash.includes('error=') || window.location.hash.includes('error_code='))
+    ) {
+      sessionStorage.setItem('sb-pwreset-error', '1');
+    }
   } catch {
     // sessionStorage may be blocked in some private-browsing / cross-site
     // environments. This is non-fatal — the onAuthStateChange PASSWORD_RECOVERY

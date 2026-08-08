@@ -23,6 +23,16 @@ const consumeRecoveryFlag = () => {
   try { sessionStorage.removeItem(RECOVERY_FLAG); } catch {}
 };
 
+// Set in supabase.js when the recovery link came back with an error hash
+// (expired / invalid / already used). Lets us skip the validation wait entirely.
+const RECOVERY_ERROR_FLAG = 'sb-pwreset-error';
+const readRecoveryErrorFlag = () => {
+  try { return sessionStorage.getItem(RECOVERY_ERROR_FLAG) === '1'; } catch { return false; }
+};
+const consumeRecoveryErrorFlag = () => {
+  try { sessionStorage.removeItem(RECOVERY_ERROR_FLAG); } catch {}
+};
+
 // ─── UI State Machine ──────────────────────────────────────────────────────────
 // loading   → token validation in progress (spinner; form never shown here)
 // valid     → token confirmed; show New Password + Confirm Password form
@@ -127,6 +137,19 @@ export default function ResetPasswordPage() {
       clearTimeout(timeoutId);
       setUiState('expired');
     };
+
+    // ── Fast path: link arrived with an error hash ────────────────────────
+    // supabase.js captured an expired/invalid/used recovery link before the
+    // hash was cleared. Show the expired state immediately rather than waiting
+    // out the 5-second validation timeout.
+    if (readRecoveryErrorFlag()) {
+      consumeRecoveryErrorFlag();
+      markExpired();
+      return () => {
+        isMounted = false;
+        clearTimeout(timeoutId);
+      };
+    }
 
     // ── Path 1 & 2: event listener ────────────────────────────────────────
     const { data: { subscription } } = supabase.auth.onAuthStateChange(

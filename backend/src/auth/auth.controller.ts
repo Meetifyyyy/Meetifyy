@@ -4,11 +4,13 @@ import { UAParser } from 'ua-parser-js';
 import { AuthService } from './auth.service';
 import { EmailService } from '../email/email.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { AuthRateLimitGuard } from '../common/guards/auth-ratelimit.guard';
+import { LoginRateLimitGuard } from '../common/guards/login-ratelimit.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import {
   CheckUsernameDto,
   CheckEmailDto,
-  LookupEmailDto,
+  LoginDto,
   TriggerWelcomeEmailDto,
   TriggerLoginEmailDto,
   TriggerPasswordChangedEmailDto,
@@ -33,31 +35,66 @@ export class AuthController {
     };
   }
 
-  @Post('lookup-email')
-  async lookupEmail(@Body() body: LookupEmailDto) {
-    return this.authService.lookupEmailByUsername(body.username);
+  /**
+   * Server-side login proxy. Resolves username→email internally (never returned),
+   * authenticates via Supabase, and returns only the session tokens. Brute-force
+   * throttled per client IP by LoginRateLimitGuard. The "new login" notification
+   * email is fired asynchronously and never blocks the response.
+   */
+  @Post('login')
+  @UseGuards(LoginRateLimitGuard)
+  async login(@Body() body: LoginDto, @Req() req: Request) {
+    const result = await this.authService.login(body.identifier, body.password);
+    // Fire-and-forget — do not block login on the notification email.
+    this.sendLoginNotification(result.user.email, result.user.displayName || result.user.email, req)
+      .catch(() => {});
+    return result;
   }
 
-  /**
-   * Used by the forgot-password flow to check if an account exists before
-   * triggering a Supabase reset email.
-   *
-   * Security: Always returns HTTP 200 with the same body regardless of whether
-   * an account exists. This prevents user enumeration — an attacker cannot
-   * determine if an email is registered by observing the response.
-   */
-  @Post('verify-reset-email')
-  async verifyResetEmail(@Body() body: CheckEmailDto) {
-    await this.authService.checkExistsForReset(body.email);
-    return { sent: true };
+  /** Builds device/UA/IP context and queues the new-login email. Never awaited by callers. */
+  private async sendLoginNotification(email: string, name: string, req: Request) {
+    const rawUA = (req.headers['user-agent'] as string) || '';
+    const parser = new UAParser(rawUA);
+    const ua = parser.getResult();
+
+    const browserName = ua.browser?.name || 'Unknown Browser';
+    const browserVersion = ua.browser?.major || '';
+    const browser = browserVersion ? `${browserName} ${browserVersion}` : browserName;
+
+    const osName = ua.os?.name || 'Unknown OS';
+    const osVersion = ua.os?.version || '';
+    const os = osVersion ? `${osName} ${osVersion}` : osName;
+
+    const deviceType = ua.device?.type;
+    const deviceModel = ua.device?.model;
+    const deviceVendor = ua.device?.vendor;
+    let device: string;
+    if (deviceModel && deviceVendor) device = `${deviceVendor} ${deviceModel}`;
+    else if (deviceType === 'mobile') device = 'Mobile Device';
+    else if (deviceType === 'tablet') device = 'Tablet';
+    else device = 'Desktop / Laptop';
+
+    const ip =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      'Unknown';
+
+    const loginTime = new Date().toLocaleString('en-US', {
+      weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+    });
+
+    await this.emailService.sendNewLoginEmail(email, name, device, 'Unknown Location', loginTime, browser, os, ip);
   }
 
   @Post('check-username')
+  @UseGuards(AuthRateLimitGuard)
   async checkUsername(@Body() body: CheckUsernameDto) {
     return this.authService.checkUsernameAvailability(body.username);
   }
 
   @Post('check-email')
+  @UseGuards(AuthRateLimitGuard)
   async checkEmail(@Body() body: CheckEmailDto) {
     return this.authService.checkEmailAvailability(body.email);
   }

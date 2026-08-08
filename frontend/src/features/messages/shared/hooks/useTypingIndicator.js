@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useGlobalSocketStore } from '@shared/store/useGlobalSocketStore';
+import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
 import { useData } from '@shared/hooks/useData';
 
 export function useTypingIndicator(conversationId, currentUserId) {
