@@ -157,11 +157,21 @@ export class PostsService {
 
     await this.prisma.$transaction([
       this.prisma.post.update({ where: { id: postId }, data: { deletedAt: new Date() } }),
-      this.prisma.comment.updateMany({ where: { postId }, data: { deletedAt: new Date() } }),
+      // isDeleted must be set alongside deletedAt — every other read path
+      // (shapeComments, fetchCommentPage) branches on isDeleted, not deletedAt,
+      // to decide whether to scrub/placeholder a comment. Leaving isDeleted
+      // false here would have been a latent inconsistency for any future code
+      // path that reads a comment by id independent of its (now-gone) post.
+      this.prisma.comment.updateMany({ where: { postId }, data: { deletedAt: new Date(), isDeleted: true } }),
       this.prisma.postBookmark.deleteMany({ where: { postId } }),
     ]);
 
-    this.domainEventService.emit('post.deleted', { postId, communityId: post.communityId || undefined });
+    // Community posts already reach every member via the community_<id> room
+    // (handled by the gateway's commId branch). For a personal post there's no
+    // such room, so explicitly target the deleting user's OTHER devices/tabs —
+    // this device already removed the post optimistically with no network
+    // round-trip needed.
+    this.domainEventService.emit('post.deleted', { postId, communityId: post.communityId || undefined }, [userId]);
 
     return { success: true };
   }
@@ -192,14 +202,24 @@ export class PostsService {
     }
 
     const excludedUserIds = userId ? await this.blocksService.getExcludedUserIds(userId) : [];
+    // Compound keyset cursor: "<iso>__<postId>". The trailing post id is a
+    // stable tiebreaker so two posts sharing an exact createdAt (same
+    // millisecond) can never straddle a page boundary — one being skipped or
+    // repeated. Legacy cursors (a bare ISO date, or a bare post id) still parse.
     let cursorDate: Date | undefined = undefined;
+    let cursorId: string | undefined = undefined;
     if (cursor) {
-      const parsed = new Date(cursor);
-      if (!isNaN(parsed.getTime()) && cursor.includes('T')) {
+      const [datePart, idPart] = cursor.split('__');
+      const parsed = new Date(datePart);
+      if (!isNaN(parsed.getTime()) && datePart.includes('T')) {
         cursorDate = parsed;
+        cursorId = idPart || undefined;
       } else {
-        const cursorPost = await this.prisma.post.findUnique({ where: { id: cursor }, select: { createdAt: true } });
-        if (cursorPost) cursorDate = cursorPost.createdAt;
+        const cursorPost = await this.prisma.post.findUnique({ where: { id: cursor }, select: { createdAt: true, id: true } });
+        if (cursorPost) {
+          cursorDate = cursorPost.createdAt;
+          cursorId = cursorPost.id;
+        }
       }
     }
 
@@ -244,7 +264,7 @@ export class PostsService {
               JSON_BUILD_OBJECT(
                 'id', po.id,
                 'text', po.text,
-                'voteCount', (SELECT COUNT(*)::int FROM "PollVote" pv WHERE pv."optionId" = po.id)
+                'voteCount', po."voteCount"
               )
             )
             FROM "PollOption" po 
@@ -280,16 +300,24 @@ export class PostsService {
               )`
             : Prisma.sql`AND p."communityId" IS NULL`
         }
-        ${cursorDate ? Prisma.sql`AND p."createdAt" < ${cursorDate}` : Prisma.empty}
+        ${
+          cursorDate
+            ? cursorId
+              ? Prisma.sql`AND (p."createdAt" < ${cursorDate} OR (p."createdAt" = ${cursorDate} AND p.id < ${cursorId}))`
+              : Prisma.sql`AND p."createdAt" < ${cursorDate}`
+            : Prisma.empty
+        }
         ${excludedUserIds.length > 0 ? Prisma.sql`AND p."authorId" NOT IN (${Prisma.join(excludedUserIds)})` : Prisma.empty}
-      ORDER BY p."createdAt" DESC
+      ORDER BY p."createdAt" DESC, p.id DESC
       LIMIT ${fetchLimit};
     `;
 
     let nextCursor: string | undefined = undefined;
     if (rawPosts.length > limit) {
       const nextItem = rawPosts.pop();
-      nextCursor = nextItem?.createdAt ? new Date(nextItem.createdAt).toISOString() : undefined;
+      nextCursor = nextItem?.createdAt
+        ? `${new Date(nextItem.createdAt).toISOString()}__${nextItem.id}`
+        : undefined;
     }
 
     if (rawPosts.length === 0) {
@@ -373,14 +401,23 @@ export class PostsService {
     const excludedUserIds = userId ? await this.blocksService.getExcludedUserIds(userId) : [];
     if (excludedUserIds.includes(targetAuthor.id)) return { posts: [], nextCursor: undefined };
 
+    // Compound keyset cursor "<iso>__<postId>" — the id tiebreaker keeps posts
+    // with an identical createdAt from straddling a page boundary. Legacy
+    // bare-date / bare-id cursors still parse.
     let cursorDate: Date | undefined = undefined;
+    let cursorId: string | undefined = undefined;
     if (cursor) {
-      const parsed = new Date(cursor);
-      if (!isNaN(parsed.getTime()) && cursor.includes('T')) {
+      const [datePart, idPart] = cursor.split('__');
+      const parsed = new Date(datePart);
+      if (!isNaN(parsed.getTime()) && datePart.includes('T')) {
         cursorDate = parsed;
+        cursorId = idPart || undefined;
       } else {
-        const cursorPost = await this.prisma.post.findUnique({ where: { id: cursor }, select: { createdAt: true } });
-        if (cursorPost) cursorDate = cursorPost.createdAt;
+        const cursorPost = await this.prisma.post.findUnique({ where: { id: cursor }, select: { createdAt: true, id: true } });
+        if (cursorPost) {
+          cursorDate = cursorPost.createdAt;
+          cursorId = cursorPost.id;
+        }
       }
     }
 
@@ -390,9 +427,13 @@ export class PostsService {
         deletedAt: null,
         authorId: targetAuthor.id,
         communityId: null, // STRICTLY ONLY PROFILE POSTS — NO COMMUNITY POSTS
-        ...(cursorDate ? { createdAt: { lt: cursorDate } } : {})
+        ...(cursorDate
+          ? cursorId
+            ? { OR: [{ createdAt: { lt: cursorDate } }, { createdAt: cursorDate, id: { lt: cursorId } }] }
+            : { createdAt: { lt: cursorDate } }
+          : {}),
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       include: {
         author: {
           select: {
@@ -426,7 +467,7 @@ export class PostsService {
     let nextCursor: string | undefined = undefined;
     if (posts.length > limit) {
       const nextItem = posts.pop();
-      nextCursor = nextItem?.createdAt.toISOString();
+      nextCursor = nextItem ? `${nextItem.createdAt.toISOString()}__${nextItem.id}` : undefined;
     }
 
     if (posts.length === 0) {
@@ -516,38 +557,42 @@ export class PostsService {
   }
 
   async unlikePost(postId: string, userId: string) {
-    const [post, existingLike] = await Promise.all([
-      this.prisma.post.findUnique({ where: { id: postId } }),
-      this.prisma.postLike.findUnique({ where: { userId_postId: { userId, postId } } })
-    ]);
+    const post = await this.prisma.post.findUnique({ where: { id: postId } });
     if (!post || post.deletedAt) throw new NotFoundException('Post has been deleted');
 
-    let updatedCount = post.likeCount;
-    if (existingLike) {
-      const [, updated] = await this.prisma.$transaction([
-        this.prisma.postLike.deleteMany({
-          where: { userId, postId },
-        }),
-        this.prisma.post.update({
-          where: { id: postId },
-          data: { likeCount: { decrement: 1 } },
-          select: { likeCount: true },
-        }),
-      ]);
-      updatedCount = updated.likeCount;
-      
-      this.domainEventService.emit('post.unliked', { postId, userId, likeCount: updatedCount }, [post.authorId]);
-    }
+    // Share the SAME lock key as likePost so like/unlike for a given user+post
+    // can never interleave. The decrement is tied to an atomic DELETE — it only
+    // fires when this call actually removed a row, so concurrent/duplicate
+    // unlikes can't double-decrement the counter, and the count is floored at 0.
+    const lockKey = `toggle:like:${userId}:${postId}`;
 
-    return {
-      success: true,
-      postId,
-      hasLiked: false,
-      isLiked: false,
-      isLikedByMe: false,
-      likeCount: Math.max(0, updatedCount),
-      likesCount: Math.max(0, updatedCount),
-    };
+    return this.redisService.withLock(lockKey, 2000, async () => {
+      const deleted = await this.prisma.$executeRaw`
+        DELETE FROM "PostLike" WHERE "userId" = ${userId} AND "postId" = ${postId}
+      `;
+
+      let updatedCount = post.likeCount;
+      if (deleted === 1) {
+        const rows: any[] = await this.prisma.$queryRaw`
+          UPDATE "Post" SET "likeCount" = GREATEST(0, "likeCount" - 1)
+          WHERE id = ${postId}
+          RETURNING "likeCount"
+        `;
+        updatedCount = Number(rows?.[0]?.likeCount ?? Math.max(0, post.likeCount - 1));
+
+        this.domainEventService.emit('post.unliked', { postId, userId, likeCount: updatedCount }, [post.authorId]);
+      }
+
+      return {
+        success: true,
+        postId,
+        hasLiked: false,
+        isLiked: false,
+        isLikedByMe: false,
+        likeCount: Math.max(0, updatedCount),
+        likesCount: Math.max(0, updatedCount),
+      };
+    });
   }
 
   async deleteComment(commentId: string, userId: string) {
@@ -598,64 +643,76 @@ export class PostsService {
     const post = await this.prisma.post.findUnique({ where: { id: comment.postId } });
     if (!post || post.deletedAt) throw new NotFoundException('Post has been deleted');
 
-    const existingLike = await this.prisma.commentLike.findUnique({
-      where: { userId_commentId: { userId, commentId } },
-    });
+    const lockKey = `toggle:commentlike:${userId}:${commentId}`;
 
-    if (!existingLike) {
-      await this.prisma.$transaction([
-        this.prisma.commentLike.create({ data: { userId, commentId } }),
-        this.prisma.comment.update({
+    return this.redisService.withLock(lockKey, 2000, async () => {
+      // Fully atomic: INSERT ... ON CONFLICT DO NOTHING — never throws P2002 on
+      // a concurrent double-like, and the increment only runs when this call
+      // actually inserted the row, so the counter can't be double-incremented.
+      const inserted = await this.prisma.$executeRaw`
+        INSERT INTO "CommentLike" ("userId", "commentId", "createdAt")
+        VALUES (${userId}, ${commentId}, NOW())
+        ON CONFLICT ("userId", "commentId") DO NOTHING
+      `;
+
+      if (inserted === 1) {
+        const updated = await this.prisma.comment.update({
           where: { id: commentId },
           data: { likeCount: { increment: 1 } },
-        }),
-      ]);
-
-      if (comment.authorId !== userId) {
-        this.prisma.user.findUnique({
-          where: { id: userId },
-          select: { id: true, displayName: true, username: true, avatar: true },
-        }).then(actor => {
-          if (actor) {
-            const dto = this.notificationFactory.createCommentLike(actor, comment, comment.authorId);
-            this.notificationsService.createNotification(dto).catch(err => {
-              this.logger.warn('Failed to send comment like notification', err);
-            });
-          }
-        }).catch(err => {
-          this.logger.warn('Failed to fetch actor for comment like notification', err);
+          select: { likeCount: true },
         });
+
+        if (comment.authorId !== userId) {
+          this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, displayName: true, username: true, avatar: true },
+          }).then(actor => {
+            if (actor) {
+              const dto = this.notificationFactory.createCommentLike(actor, comment, comment.authorId);
+              this.notificationsService.createNotification(dto).catch(err => {
+                this.logger.warn('Failed to send comment like notification', err);
+              });
+            }
+          }).catch(err => {
+            this.logger.warn('Failed to fetch actor for comment like notification', err);
+          });
+        }
+
+        // Carry the authoritative likeCount so post-room viewers apply an
+        // absolute value (idempotent) rather than a relative bump.
+        this.domainEventService.emit('comment.liked', { commentId, postId: comment.postId, userId, likeCount: updated.likeCount });
       }
 
-      this.domainEventService.emit('comment.liked', { commentId, postId: comment.postId, userId });
-    }
-
-    return { success: true };
+      return { success: true };
+    });
   }
 
   async unlikeComment(commentId: string, userId: string) {
     const comment = await this.prisma.comment.findUnique({ where: { id: commentId } });
     if (!comment || comment.isDeleted) throw new NotFoundException('Comment has been deleted');
 
-    const existingLike = await this.prisma.commentLike.findUnique({
-      where: { userId_commentId: { userId, commentId } },
+    // Same lock key as likeComment so like/unlike can't interleave; decrement is
+    // tied to an atomic DELETE and floored at 0 (no double-decrement drift).
+    const lockKey = `toggle:commentlike:${userId}:${commentId}`;
+
+    return this.redisService.withLock(lockKey, 2000, async () => {
+      const deleted = await this.prisma.$executeRaw`
+        DELETE FROM "CommentLike" WHERE "userId" = ${userId} AND "commentId" = ${commentId}
+      `;
+
+      if (deleted === 1) {
+        const rows: any[] = await this.prisma.$queryRaw`
+          UPDATE "Comment" SET "likeCount" = GREATEST(0, "likeCount" - 1)
+          WHERE id = ${commentId}
+          RETURNING "likeCount"
+        `;
+        const likeCount = Number(rows?.[0]?.likeCount ?? 0);
+
+        this.domainEventService.emit('comment.unliked', { commentId, postId: comment.postId, userId, likeCount });
+      }
+
+      return { success: true };
     });
-
-    if (existingLike) {
-      await this.prisma.$transaction([
-        this.prisma.commentLike.delete({
-          where: { userId_commentId: { userId, commentId } },
-        }),
-        this.prisma.comment.update({
-          where: { id: commentId },
-          data: { likeCount: { decrement: 1 } },
-        }),
-      ]);
-      
-      this.domainEventService.emit('comment.unliked', { commentId, postId: comment.postId, userId });
-    }
-
-    return { success: true };
   }
 
   async addComment(postId: string, authorId: string, text: string, parentId?: string) {
@@ -676,6 +733,7 @@ export class PostsService {
           text,
           parentId,
         },
+        include: { author: { select: PostsService.COMMENT_AUTHOR_SELECT } },
       });
 
       await tx.post.update({
@@ -686,11 +744,10 @@ export class PostsService {
       return createdComment;
     });
 
-    this.prisma.user.findUnique({
-      where: { id: authorId },
-      select: { id: true, displayName: true, username: true, avatar: true },
-    }).then(actor => {
-      if (!actor) return;
+    // The created row already carries the author, so reuse it for notifications
+    // (one fewer query) and for the realtime payload below.
+    const actor = comment.author;
+    if (actor) {
       // 1. Notify parent comment author if replying to another comment
       if (parentComment && parentComment.authorId && parentComment.authorId !== authorId) {
         const replyDto = this.notificationFactory.createCommentReply(actor, comment, post, parentComment.authorId);
@@ -706,15 +763,26 @@ export class PostsService {
           this.logger.warn('Failed to send comment notification', err);
         });
       }
-    }).catch(err => {
-      this.logger.warn('Failed to fetch actor for comment notification', err);
-    });
-    
-    this.domainEventService.emit('comment.created', { 
-      commentId: comment.id, 
-      postId, 
+    }
+
+    // Emit the fully-shaped comment so anyone viewing the post can insert it
+    // live (deduped by id on the client). Same shape as a live comment from
+    // getPostById so the client tree-builder handles it uniformly.
+    const eventComment = {
+      ...comment,
+      isDeleted: false,
+      likeCount: comment.likeCount ?? 0,
+      likesCount: comment.likeCount ?? 0,
+      hasLiked: false,
+      isLiked: false,
+      isLikedByMe: false,
+    };
+    this.domainEventService.emit('comment.created', {
+      commentId: comment.id,
+      postId,
       authorId,
-      parentId 
+      parentId,
+      comment: eventComment,
     });
 
     return comment;
@@ -727,9 +795,161 @@ export class PostsService {
     });
   }
 
+  // Number of ROOT (top-level) comments returned per comment page. Every root is
+  // returned together with its full descendant subtree, so a page is always a
+  // set of complete threads — the frontend can concatenate pages and rebuild the
+  // tree with no orphaned replies.
+  private static readonly COMMENT_PAGE_ROOTS = 20;
+
+  private static readonly COMMENT_AUTHOR_SELECT = {
+    id: true,
+    username: true,
+    displayName: true,
+    avatar: true,
+  } as const;
+
+  /**
+   * Shape raw comment rows for the client: soft-deleted comments are scrubbed to
+   * a structural placeholder (so the thread hierarchy is preserved without
+   * leaking the original author/text), live comments get the viewer's like flag.
+   */
+  private shapeComments(rawComments: any[], likedCommentIds: Set<string>) {
+    return rawComments.map((c) => {
+      if (c.isDeleted) {
+        return {
+          id: c.id,
+          postId: c.postId,
+          parentId: c.parentId,
+          createdAt: c.createdAt,
+          isDeleted: true,
+          deletedByUser: c.deletedByUser,
+          removedByOwner: c.removedByOwner,
+          text: null,
+          author: null,
+          authorId: null,
+          likeCount: 0,
+          hasLiked: false,
+          isLiked: false,
+          isLikedByMe: false,
+        };
+      }
+      const liked = likedCommentIds.has(c.id);
+      return {
+        ...c,
+        isDeleted: false,
+        hasLiked: liked,
+        isLiked: liked,
+        isLikedByMe: liked,
+      };
+    });
+  }
+
+  /**
+   * Fetch one page of a post's comments as complete threads: a keyset page of
+   * root comments (ordered oldest-first to match the existing UI) plus every
+   * descendant of those roots. Descendants are gathered iteratively level by
+   * level (bounded by real thread depth — a handful of queries), which supports
+   * arbitrary nesting without a recursive CTE. Does NOT validate the post — the
+   * caller is responsible for that.
+   */
+  private async fetchCommentPage(postId: string, userId: string, limit: number, cursorDate?: Date, cursorId?: string) {
+    // Roots are ordered oldest-first with an id tiebreaker so equal-createdAt
+    // roots can't straddle a page boundary (forward keyset: strictly "after"
+    // the cursor).
+    const roots = await this.prisma.comment.findMany({
+      where: {
+        postId,
+        parentId: null,
+        ...(cursorDate
+          ? cursorId
+            ? { OR: [{ createdAt: { gt: cursorDate } }, { createdAt: cursorDate, id: { gt: cursorId } }] }
+            : { createdAt: { gt: cursorDate } }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: limit + 1,
+      include: { author: { select: PostsService.COMMENT_AUTHOR_SELECT } },
+    });
+
+    let nextCursor: string | undefined = undefined;
+    if (roots.length > limit) {
+      const extra = roots.pop();
+      nextCursor = extra ? `${extra.createdAt.toISOString()}__${extra.id}` : undefined;
+    }
+
+    // Breadth-first descendant gathering. `parentId IN frontier` yields disjoint
+    // sets each level (a comment has exactly one parent), so no node is fetched
+    // twice; the depth cap is a defensive guard against pathological data.
+    const all: any[] = [...roots];
+    let frontier = roots.map((r) => r.id);
+    let depth = 0;
+    while (frontier.length > 0 && depth < 40) {
+      const children = await this.prisma.comment.findMany({
+        where: { parentId: { in: frontier } },
+        orderBy: { createdAt: 'asc' },
+        include: { author: { select: PostsService.COMMENT_AUTHOR_SELECT } },
+      });
+      if (children.length === 0) break;
+      all.push(...children);
+      frontier = children.map((c) => c.id);
+      depth += 1;
+    }
+
+    const liveIds = all.filter((c) => !c.isDeleted).map((c) => c.id);
+    const commentLikes = userId && liveIds.length > 0
+      ? await this.prisma.commentLike.findMany({
+          where: { userId, commentId: { in: liveIds } },
+          select: { commentId: true },
+        })
+      : [];
+    const likedSet = new Set(commentLikes.map((l) => l.commentId));
+
+    return { comments: this.shapeComments(all, likedSet), nextCursor };
+  }
+
+  /**
+   * Public paginated comments endpoint — used to load pages beyond the first
+   * (which is embedded in getPostById for instant first paint).
+   */
+  async getComments(postId: string, userId: string, limit = PostsService.COMMENT_PAGE_ROOTS, cursor?: string) {
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId, deletedAt: null },
+      select: { id: true, authorId: true, community: { select: { deletedAt: true } } },
+    });
+    if (!post || (post.community && post.community.deletedAt)) {
+      throw new NotFoundException('Post not found');
+    }
+    if (userId) {
+      const excluded = await this.blocksService.getExcludedUserIds(userId);
+      if (excluded.includes(post.authorId)) throw new NotFoundException('Post not found');
+    }
+
+    // Compound keyset cursor "<iso>__<commentId>" (legacy bare-date / bare-id
+    // cursors still parse).
+    let cursorDate: Date | undefined = undefined;
+    let cursorId: string | undefined = undefined;
+    if (cursor) {
+      const [datePart, idPart] = cursor.split('__');
+      const parsed = new Date(datePart);
+      if (!isNaN(parsed.getTime()) && datePart.includes('T')) {
+        cursorDate = parsed;
+        cursorId = idPart || undefined;
+      } else {
+        const cursorComment = await this.prisma.comment.findUnique({ where: { id: cursor }, select: { createdAt: true, id: true } });
+        if (cursorComment) {
+          cursorDate = cursorComment.createdAt;
+          cursorId = cursorComment.id;
+        }
+      }
+    }
+
+    return this.fetchCommentPage(postId, userId, limit, cursorDate, cursorId);
+  }
+
   async getPostById(postId: string, userId: string) {
-    // Single parallel burst: fetch block exclusions, core post, media, comments, and user likes/bookmarks together
-    const [excludedUserIds, post, media, rawComments, postLike, postBookmark] = await Promise.all([
+    // Single parallel burst: block exclusions, core post, media, first comment
+    // page (roots + their subtrees), and the viewer's like/bookmark state.
+    const [excludedUserIds, post, media, commentPage, postLike, postBookmark] = await Promise.all([
       userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([] as string[]),
       this.prisma.post.findUnique({
         where: { id: postId, deletedAt: null },
@@ -743,74 +963,27 @@ export class PostsService {
       this.prisma.media.findMany({
         where: { postId },
       }),
-      this.prisma.comment.findMany({
-        where: {
-          postId,
-        },
-        take: 50,
-        include: {
-          author: { select: { id: true, username: true, displayName: true, avatar: true } },
-        },
-        orderBy: { createdAt: 'asc' },
-      }),
+      // Root-paginated first page — no longer silently capped at 50 flat rows;
+      // subsequent pages load via getComments(). Each page is a set of complete
+      // threads so the client can concatenate and rebuild the tree safely.
+      this.fetchCommentPage(postId, userId, PostsService.COMMENT_PAGE_ROOTS),
       userId ? this.prisma.postLike.findUnique({ where: { userId_postId: { userId, postId } } }) : Promise.resolve(null),
       userId ? this.prisma.postBookmark.findUnique({ where: { userId_postId: { userId, postId } } }) : Promise.resolve(null),
     ]);
 
     if (
-      !post || 
-      post.deletedAt || 
-      (post.community && post.community.deletedAt) || 
+      !post ||
+      post.deletedAt ||
+      (post.community && post.community.deletedAt) ||
       (excludedUserIds.length > 0 && excludedUserIds.includes(post.authorId))
     ) {
       throw new NotFoundException('Post not found');
     }
 
-    // Only fetch likes for non-deleted comments
-    const liveComments = rawComments.filter(c => !c.isDeleted);
-    const commentIds = liveComments.map(c => c.id);
-
-    // Round-trip 2: fetch comment likes in parallel
-    const commentLikes = userId && commentIds.length > 0
-      ? await this.prisma.commentLike.findMany({
-          where: { userId, commentId: { in: commentIds } },
-          select: { commentId: true },
-        })
-      : [];
-
-    const likedComments = new Set(commentLikes.map(l => l.commentId));
+    const shapedComments = commentPage.comments;
+    const commentsNextCursor = commentPage.nextCursor;
     const isLiked = !!postLike;
     const isBookmarked = !!postBookmark;
-
-    // Shape each comment — scrub private data from soft-deleted placeholders
-    const shapedComments = rawComments.map(c => {
-      if (c.isDeleted) {
-        return {
-          id: c.id,
-          postId: c.postId,
-          parentId: c.parentId,
-          createdAt: c.createdAt,
-          isDeleted: true,
-          deletedByUser: c.deletedByUser,
-          removedByOwner: c.removedByOwner,
-          // All sensitive fields scrubbed
-          text: null,
-          author: null,
-          authorId: null,
-          likeCount: 0,
-          hasLiked: false,
-          isLiked: false,
-          isLikedByMe: false,
-        };
-      }
-      return {
-        ...c,
-        isDeleted: false,
-        hasLiked: likedComments.has(c.id),
-        isLiked: likedComments.has(c.id),
-        isLikedByMe: likedComments.has(c.id),
-      };
-    });
 
     const formattedMedia = (media || []).map((m: any) => ({
       ...m,
@@ -850,6 +1023,7 @@ export class PostsService {
       pollOptions,
       poll,
       comments: shapedComments,
+      commentsNextCursor,
       likeCount: post.likeCount,
       likesCount: post.likeCount,
       commentCount: post.commentCount,
@@ -891,14 +1065,22 @@ export class PostsService {
 
   async getBookmarks(userId: string, limit = 10, cursor?: string) {
     const excludedUserIds = userId ? await this.blocksService.getExcludedUserIds(userId) : [];
+    // Compound keyset cursor "<iso>__<postId>" — postId is unique within a
+    // user's bookmarks, so it's a stable tiebreaker for equal createdAt.
     let cursorDate: Date | undefined = undefined;
+    let cursorPostId: string | undefined = undefined;
     if (cursor) {
-      const parsed = new Date(cursor);
-      if (!isNaN(parsed.getTime()) && cursor.includes('T')) {
+      const [datePart, idPart] = cursor.split('__');
+      const parsed = new Date(datePart);
+      if (!isNaN(parsed.getTime()) && datePart.includes('T')) {
         cursorDate = parsed;
+        cursorPostId = idPart || undefined;
       } else {
-        const cursorBookmark = await this.prisma.postBookmark.findFirst({ where: { userId, postId: cursor }, select: { createdAt: true } });
-        if (cursorBookmark) cursorDate = cursorBookmark.createdAt;
+        const cursorBookmark = await this.prisma.postBookmark.findFirst({ where: { userId, postId: cursor }, select: { createdAt: true, postId: true } });
+        if (cursorBookmark) {
+          cursorDate = cursorBookmark.createdAt;
+          cursorPostId = cursorBookmark.postId;
+        }
       }
     }
 
@@ -906,10 +1088,14 @@ export class PostsService {
       where: {
         userId,
         post: { deletedAt: null, authorId: { notIn: excludedUserIds } },
-        ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
+        ...(cursorDate
+          ? cursorPostId
+            ? { OR: [{ createdAt: { lt: cursorDate } }, { createdAt: cursorDate, postId: { lt: cursorPostId } }] }
+            : { createdAt: { lt: cursorDate } }
+          : {}),
       },
       take: limit + 1,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { postId: 'desc' }],
       include: {
         post: {
           include: {
@@ -925,7 +1111,7 @@ export class PostsService {
     let nextCursor: string | undefined = undefined;
     if (bookmarks.length > limit) {
       const nextItem = bookmarks.pop();
-      nextCursor = nextItem?.createdAt.toISOString();
+      nextCursor = nextItem ? `${nextItem.createdAt.toISOString()}__${nextItem.postId}` : undefined;
     }
 
     if (bookmarks.length === 0) {

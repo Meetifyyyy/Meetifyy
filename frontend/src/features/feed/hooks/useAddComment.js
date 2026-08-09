@@ -80,10 +80,13 @@ export function useAddComment() {
       showToast('Something went wrong. Please try again.');
     },
     onSuccess: (result, variables) => {
-      // The server returns the actual comment with DB ID.
-      // Easiest is to invalidate the post so it fetches the real comments
+      // Refetch only the open post detail so the optimistic temp comment is
+      // swapped for the real server row (with its DB id). The feed's comment
+      // COUNT was already optimistically incremented by exactly 1 — which
+      // matches the backend's unconditional +1 — so we deliberately do NOT
+      // invalidate ['feed'] here; doing so would refetch every loaded feed
+      // page on every comment for a count that's already correct.
       queryClient.invalidateQueries({ queryKey: ['post', variables.postId] });
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
     }
   });
 }

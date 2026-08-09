@@ -193,14 +193,181 @@ export function useGlobalSocketSync() {
           break;
         }
 
-        case 'post.created':
-        case 'post.deleted': {
+        case 'post.created': {
+          // A brand-new post must actually appear, and inserting it surgically
+          // would mean replicating the server's ranking/audience scoping — so
+          // this is the one feed case where a refetch is warranted. It's marked
+          // stale rather than eagerly refetched (refetchType: 'none') so a user
+          // actively reading the feed doesn't get it silently reshuffled under
+          // them — the next natural revisit or a pull-to-refresh picks it up.
           const commId = event.data?.communityId || event.communityId;
-          queryClient.invalidateQueries({ queryKey: ['posts'] });
-          queryClient.invalidateQueries({ queryKey: ['feed'] });
+          queryClient.invalidateQueries({ queryKey: ['posts'], refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['feed'], refetchType: 'none' });
           if (commId) {
             queryClient.invalidateQueries({ queryKey: ['community', commId] });
-            queryClient.invalidateQueries({ queryKey: ['community-posts', commId] });
+            queryClient.invalidateQueries({ queryKey: ['community-posts', commId], refetchType: 'none' });
+          }
+          break;
+        }
+
+        case 'post.deleted': {
+          // Deleting needs no refetch — drop the post from every cached list in
+          // place. Refetching would reload every loaded feed page and cause a
+          // visible scroll jump / flicker. Idempotent: harmless no-op on the
+          // device that already removed it optimistically.
+          const commId = event.data?.communityId || event.communityId;
+          const deletedId = event.data?.postId || event.postId;
+          if (deletedId) {
+            const removePost = (old) => {
+              if (!old) return old;
+              if (Array.isArray(old)) return old.filter((p) => p?.id !== deletedId);
+              if (Array.isArray(old.posts)) return { ...old, posts: old.posts.filter((p) => p?.id !== deletedId) };
+              if (old.pages) {
+                return {
+                  ...old,
+                  pages: old.pages.map((page) => {
+                    if (Array.isArray(page.posts)) return { ...page, posts: page.posts.filter((p) => p?.id !== deletedId) };
+                    if (Array.isArray(page.items)) return { ...page, items: page.items.filter((p) => p?.id !== deletedId) };
+                    return page;
+                  }),
+                };
+              }
+              return old;
+            };
+            queryClient.setQueriesData({ queryKey: ['feed'] }, removePost);
+            queryClient.setQueriesData({ queryKey: ['posts'] }, removePost);
+            queryClient.setQueriesData({ queryKey: ['user-posts'] }, removePost);
+            queryClient.setQueriesData({ queryKey: ['bookmarks'] }, removePost);
+            queryClient.setQueriesData({ queryKey: ['community-posts'] }, removePost);
+            queryClient.removeQueries({ queryKey: ['post', deletedId] });
+          }
+          if (commId) {
+            queryClient.invalidateQueries({ queryKey: ['community', commId] });
+            queryClient.invalidateQueries({ queryKey: ['community-posts', commId], refetchType: 'none' });
+          }
+          break;
+        }
+
+        case 'comment.created': {
+          // A new comment/reply on a post someone is viewing. Insert it into the
+          // open post's comment list (deduped by id). Skip our own (the author
+          // already applied it optimistically, with a temp id that wouldn't
+          // dedupe). Skip replies whose parent isn't loaded yet, so we never
+          // promote a reply to a false root in the tree.
+          const cPostId = event.data?.postId;
+          const newComment = event.data?.comment;
+          if (cPostId && newComment?.id && newComment.authorId !== currentUser.id) {
+            queryClient.setQueryData(['post', cPostId], (old) => {
+              if (!old) return old;
+              const existing = old.comments || [];
+              if (existing.some((c) => c.id === newComment.id)) return old;
+              const parentLoaded = !newComment.parentId || existing.some((c) => c.id === newComment.parentId);
+              if (!parentLoaded) return old;
+              const currentCount = old.commentsCount !== undefined ? old.commentsCount : (old.commentCount || 0);
+              return {
+                ...old,
+                comments: [...existing, newComment],
+                commentCount: currentCount + 1,
+                commentsCount: currentCount + 1,
+              };
+            });
+          }
+          break;
+        }
+
+        case 'comment.deleted': {
+          // Scrub the comment to a placeholder in the open post's detail cache
+          // (idempotent — harmless if this device already applied it
+          // optimistically). Primarily reaches the deleting user's other
+          // devices/tabs today; safe no-op everywhere else.
+          const cPostId = event.data?.postId;
+          const commentId = event.data?.commentId;
+          if (cPostId && commentId) {
+            queryClient.setQueryData(['post', cPostId], (old) => {
+              if (!old || !Array.isArray(old.comments)) return old;
+              let changed = false;
+              const comments = old.comments.map((c) => {
+                if (c.id !== commentId || c.isDeleted) return c;
+                changed = true;
+                return {
+                  id: c.id,
+                  postId: c.postId,
+                  parentId: c.parentId,
+                  createdAt: c.createdAt,
+                  isDeleted: true,
+                  deletedByUser: true,
+                  text: null,
+                  author: null,
+                  authorId: null,
+                  likeCount: 0,
+                  hasLiked: false,
+                  isLiked: false,
+                  isLikedByMe: false,
+                };
+              });
+              return changed ? { ...old, comments } : old;
+            });
+          }
+          break;
+        }
+
+        case 'comment.liked':
+        case 'comment.unliked': {
+          // Absolute like-count patch for a comment (idempotent). Guarded so it
+          // can't fight the viewer's own in-flight optimistic like; isLiked flags
+          // are left untouched (the like belongs to another user).
+          const cPostId = event.data?.postId;
+          const commentId = event.data?.commentId;
+          const likeCount = event.data?.likeCount;
+          const hasPendingLocal = toggleRegistry.latestIntents?.has?.(`likeComment:${commentId}`);
+          if (cPostId && commentId && typeof likeCount === 'number' && !hasPendingLocal) {
+            queryClient.setQueryData(['post', cPostId], (old) => {
+              if (!old || !Array.isArray(old.comments)) return old;
+              return {
+                ...old,
+                comments: old.comments.map((c) => (c.id === commentId ? { ...c, likeCount, likesCount: likeCount } : c)),
+              };
+            });
+          }
+          break;
+        }
+
+        case 'post.liked':
+        case 'post.unliked': {
+          // Realtime like-count sync (delivered to the post author and to
+          // anyone with the post open). Patch the aggregate count in place —
+          // never a refetch. We intentionally do NOT touch isLiked flags: the
+          // like was made by another user, so only the count changes for this
+          // viewer. Guarded by the toggle registry so a stray event can't fight
+          // the viewer's own in-flight optimistic like.
+          const likedPostId = event.data?.postId || event.postId;
+          const likeCount = event.data?.likeCount;
+          const hasPendingLocal = toggleRegistry.latestIntents?.has?.(`likePost:${likedPostId}`);
+          if (likedPostId && typeof likeCount === 'number' && !hasPendingLocal) {
+            const patchCount = (p) => (p && p.id === likedPostId ? { ...p, likeCount, likesCount: likeCount } : p);
+            const updater = (old) => {
+              if (!old) return old;
+              if (old.id === likedPostId) return patchCount(old);
+              if (Array.isArray(old)) return old.map(patchCount);
+              if (Array.isArray(old.posts)) return { ...old, posts: old.posts.map(patchCount) };
+              if (old.pages) {
+                return {
+                  ...old,
+                  pages: old.pages.map((page) => {
+                    if (Array.isArray(page.posts)) return { ...page, posts: page.posts.map(patchCount) };
+                    if (Array.isArray(page.items)) return { ...page, items: page.items.map(patchCount) };
+                    return page;
+                  }),
+                };
+              }
+              return old;
+            };
+            queryClient.setQueriesData({ queryKey: ['feed'] }, updater);
+            queryClient.setQueriesData({ queryKey: ['posts'] }, updater);
+            queryClient.setQueriesData({ queryKey: ['user-posts'] }, updater);
+            queryClient.setQueriesData({ queryKey: ['bookmarks'] }, updater);
+            queryClient.setQueriesData({ queryKey: ['community-posts'] }, updater);
+            queryClient.setQueryData(['post', likedPostId], updater);
           }
           break;
         }
