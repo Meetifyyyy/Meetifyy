@@ -58,6 +58,7 @@ function lazyWithRetry(componentImport) {
 }
 
 import LandingPage from './features/auth/pages/LandingPage';
+import AuthShell from './features/auth/shared/ui/AuthShell';
 const FeedRoute = lazyWithRetry(() => import('./features/feed/pages/FeedRoute'));
 const CommunitiesRoute = lazyWithRetry(() => import('./features/communities/pages/CommunitiesRoute'));
 const CommunityDetailRoute = lazyWithRetry(() => import('./features/communities/pages/CommunityDetailRoute'));
@@ -205,28 +206,27 @@ export default function App() {
           ),
         },
         {
-          path: '/login',
           element: (
             <PublicRoute>
-              {withBoundary(<LoginPage />, null)}
+              <AuthShell>
+                <Outlet />
+              </AuthShell>
             </PublicRoute>
           ),
-        },
-        {
-          path: '/signup',
-          element: (
-            <PublicRoute>
-              {withBoundary(<SignupPage />, null)}
-            </PublicRoute>
-          ),
-        },
-        {
-          path: '/forgot-password',
-          element: (
-            <PublicRoute>
-              {withBoundary(<ForgotPasswordPage />)}
-            </PublicRoute>
-          ),
+          children: [
+            {
+              path: '/login',
+              element: withBoundary(<LoginPage />, null),
+            },
+            {
+              path: '/signup',
+              element: withBoundary(<SignupPage />, null),
+            },
+            {
+              path: '/forgot-password',
+              element: withBoundary(<ForgotPasswordPage />),
+            },
+          ],
         },
         {
           path: '/reset-password',
@@ -237,7 +237,9 @@ export default function App() {
             // the reset link for users who were previously signed in on this browser.
             // The page itself validates the PASSWORD_RECOVERY token.
             <StaticRoute>
-              {withBoundary(<ResetPasswordPage />)}
+              <AuthShell>
+                {withBoundary(<ResetPasswordPage />)}
+              </AuthShell>
             </StaticRoute>
           ),
         },

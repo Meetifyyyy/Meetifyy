@@ -49,6 +49,17 @@
   object-fit: contain;
 }
 
+.wordmarkImg {
+  height: 1.0rem;
+  width: auto;
+  object-fit: contain;
+  user-select: none;
+}
+
+[data-theme="dark"] .wordmarkImg {
+  filter: brightness(0) invert(1);
+}
+
 .brandName {
   font-family: 'Changa One', 'Calistoga', sans-serif;
   font-size: 1.75rem;
@@ -259,6 +270,16 @@
   width: 3.5rem;
   height: 3.5rem;
   object-fit: contain;
+}
+
+.mobileWordmarkImg {
+  height: 1.15rem;
+  width: auto;
+  object-fit: contain;
+}
+
+[data-theme="dark"] .mobileWordmarkImg {
+  filter: brightness(0) invert(1);
 }
 
 .mobileBrandName {

@@ -55,7 +55,6 @@ export default function LoginPage() {
             id="login-user"
             label="Username or Email"
             type="text"
-            autoFocus
             autoComplete="username"
             value={user}
             error={error && !user.trim() ? error : null}
