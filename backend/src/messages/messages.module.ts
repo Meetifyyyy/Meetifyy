@@ -6,6 +6,7 @@ import { RealtimeModule } from '../realtime/realtime.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { MessagingCoreModule } from './core/messaging-core.module';
 import { RedisModule } from '../redis/redis.module';
+import { MentionsModule } from '../mentions/mentions.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { RedisModule } from '../redis/redis.module';
     forwardRef(() => RealtimeModule),
     NotificationsModule,
     MessagingCoreModule,
+    MentionsModule,
   ],
   controllers: [MessagesController],
   providers: [MessagesService],

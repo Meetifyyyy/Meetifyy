@@ -1,9 +1,11 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
+import { MentionSource, NotificationEntityType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PresenceService } from '../../presence/presence.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import { MessageResponseDto } from './dto/message-response.dto';
+import { MentionsService } from '../../mentions/mentions.service';
 
 @Injectable()
 export class MessagingCoreService {
@@ -15,11 +17,16 @@ export class MessagingCoreService {
    */
   private readonly convIdCache = new Map<string, { id: string; expiresAt: number }>();
   private static readonly CONV_CACHE_TTL_MS = 30_000;
+  // Named distinctly from subclasses' own `logger` field (MessagesService
+  // declares `protected readonly logger`) — a private/protected name clash
+  // across the extends chain breaks TS's structural compatibility check.
+  private readonly coreLogger = new Logger('MessagingCoreService');
 
   constructor(
     protected prisma: PrismaService,
     protected presenceService: PresenceService,
     protected domainEventService: DomainEventService,
+    protected mentionsService: MentionsService,
   ) { }
 
   async getBatchUnblockedAndUnmutedParticipants(conversationId: string, senderId: string) {
@@ -155,6 +162,14 @@ export class MessagingCoreService {
 
     const otherParticipants = conv.participants.filter(p => p.userId !== senderId);
     const otherUserIds = otherParticipants.map(p => p.userId);
+    const participantIdSet = new Set(conv.participants.map(p => p.userId));
+
+    // Re-derive the true mention set from the actual message text, then
+    // restrict it to real conversation participants — mentioning someone
+    // outside the conversation must never leak a notification (with message
+    // preview text) to a user who has no access to this thread.
+    const sanitizedMentions = (await this.mentionsService.sanitize(payload.text || '', payload.mentions, senderId))
+      .filter(m => participantIdSet.has(m.userId));
 
     let recipientIds: string[] = [];
     let unmutedRecipientIds: string[] = [];
@@ -224,11 +239,11 @@ export class MessagingCoreService {
             text: payload.text || '',
             mediaUrl: payload.mediaUrl || null,
             mediaType: payload.mediaType || null,
-            mentions: payload.mentions || [],
+            mentions: sanitizedMentions,
             inviteData: initialInviteData,
             isForwarded: payload.isForwarded || false,
             forwardedFromMessageId: payload.forwardedFromMessageId || null,
-          }
+          } as any,
         },
         include: {
           sender: {
@@ -284,6 +299,21 @@ export class MessagingCoreService {
     }
 
     const pubId = conv.publicId || conversationId;
+
+    // Fire-and-forget: must never add latency to message delivery, and a
+    // notification failure must never roll back the already-committed message.
+    if (sanitizedMentions.length > 0 && message.sender && !isUnsent) {
+      this.mentionsService.persistAndNotify({
+        mentions: sanitizedMentions,
+        sourceType: MentionSource.MESSAGE,
+        sourceId: message.id,
+        actor: message.sender,
+        entityType: NotificationEntityType.MESSAGE,
+        entityId: pubId,
+        contextText: payload.text || '',
+        extraMetadata: { conversationId: pubId, internalConversationId: realConvId },
+      }).catch(err => this.coreLogger.warn('Failed to process message mentions', err));
+    }
 
     return {
       id: message.id,

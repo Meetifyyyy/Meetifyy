@@ -158,7 +158,9 @@ export default function NotificationsRoute() {
         break;
 
       case 'MENTION':
-        if (postId) {
+        if (postId && commentId) {
+          navigate(`/post/${postId}#comment-${commentId}`, { state: { from: '/notifications' } });
+        } else if (postId) {
           navigate(`/post/${postId}`, { state: { from: '/notifications' } });
         } else if (notif.metadata?.conversationId || notif.convId) {
           navigate(`/messages/${notif.metadata?.conversationId || notif.convId}`, { state: { from: '/notifications' } });

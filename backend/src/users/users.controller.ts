@@ -24,6 +24,21 @@ export class UsersController {
     return this.usersService.getConnections(req.user.id, query, limitNum);
   }
 
+  // NOTE: must stay registered before the catch-all `:username` route below,
+  // or every request here would be swallowed as a profile lookup for the
+  // literal username "mention-search".
+  @Get('mention-search')
+  @UseGuards(JwtGuard)
+  async searchMentionCandidates(
+    @Req() req: any,
+    @Query('q') query?: string,
+    @Query('communityId') communityId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const limitNum = limit ? Math.min(Math.max(parseInt(limit, 10) || 15, 1), 25) : 15;
+    return this.usersService.getMentionSuggestions(req.user.id, query || '', communityId, limitNum);
+  }
+
   @Get('campus')
   @UseGuards(JwtGuard)
   @CacheControl('private, max-age=600, stale-while-revalidate=1800')

@@ -523,6 +523,12 @@ export const usersApi = {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     return apiClient.get(`/api/users/campus?${params.toString()}`);
   },
+  searchMentions: (query = '', communityId = null, limit = 15) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (query) params.set('q', query);
+    if (communityId) params.set('communityId', communityId);
+    return apiClient.get(`/api/users/mention-search?${params.toString()}`);
+  },
   getByUsername: (username) => apiClient.get(`/api/users/${username}`),
   getFollowers: (username, limit = 50, offset = 0) => {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });

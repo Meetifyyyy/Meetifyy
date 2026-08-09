@@ -4,9 +4,10 @@ import { PostsController } from './posts.controller';
 
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
+import { MentionsModule } from '../mentions/mentions.module';
 
 @Module({
-  imports: [NotificationsModule, UsersModule],
+  imports: [NotificationsModule, UsersModule, MentionsModule],
   providers: [PostsService],
   controllers: [PostsController],
 })

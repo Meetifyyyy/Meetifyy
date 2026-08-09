@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, OnModuleInit, OnModuleDestroy, Logger, Optional } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, MentionSource, NotificationEntityType } from '@prisma/client';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
@@ -11,6 +11,7 @@ import { SendMessageDto } from './core/dto/send-message.dto';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { checkPresenceVisibility } from '../users/privacy.helper';
+import { MentionsService } from '../mentions/mentions.service';
 
 @Injectable()
 export class MessagesService extends MessagingCoreService implements OnModuleInit, OnModuleDestroy {
@@ -23,10 +24,11 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     protected readonly prisma: PrismaService,
     protected readonly presenceService: PresenceService,
     protected readonly domainEventService: DomainEventService,
+    mentionsService: MentionsService,
     @Optional() private readonly redisService?: RedisService,
     @Optional() private readonly blocksService?: BlocksService,
   ) {
-    super(prisma, presenceService, domainEventService);
+    super(prisma, presenceService, domainEventService, mentionsService);
     this.redis = this.redisService?.getClient() ?? null;
   }
 
@@ -225,6 +227,14 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     }
 
     const type = payload.mediaUrl || payload.mediaType ? 'MEDIA' as const : 'CHAT' as const;
+    const participantIdSet = new Set(conv.participants.map(p => p.userId));
+
+    // Re-derive the true mention set from the actual message text, then
+    // restrict it to real conversation participants — mentioning someone
+    // outside the conversation must never leak a notification to a user with
+    // no access to this thread.
+    const sanitizedMentions = (await this.mentionsService.sanitize(payload.text || '', payload.mentions, senderId))
+      .filter(m => participantIdSet.has(m.userId));
 
     // 1. Idempotency Check
     const clientMsgId = (payload as any).clientId || (payload as any).tempId;
@@ -274,13 +284,13 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
             text: payload.text || '',
             mediaUrl: payload.mediaUrl || null,
             mediaType: payload.mediaType || null,
-            mentions: payload.mentions || [],
+            mentions: sanitizedMentions,
             inviteData: payload.inviteData || null,
             isForwarded: payload.isForwarded || false,
             forwardedFromMessageId: payload.forwardedFromMessageId || null,
             tempId: clientMsgId || null,
             clientId: clientMsgId || null,
-          }
+          } as any,
         },
         include: {
           sender: { select: { id: true, username: true, displayName: true, avatar: true } },
@@ -307,6 +317,22 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
       return msg;
     });
+
+    // Fire-and-forget: must never add latency to message delivery, and a
+    // notification failure must never roll back the already-committed message.
+    if (sanitizedMentions.length > 0 && message.sender && message.state !== 'UNSENT') {
+      const pubId = conv.publicId || conversationId;
+      this.mentionsService.persistAndNotify({
+        mentions: sanitizedMentions,
+        sourceType: MentionSource.MESSAGE,
+        sourceId: message.id,
+        actor: message.sender,
+        entityType: NotificationEntityType.MESSAGE,
+        entityId: pubId,
+        contextText: payload.text || '',
+        extraMetadata: { conversationId: pubId, internalConversationId: realConvId },
+      }).catch(err => this.logger.warn('Failed to process message mentions', err));
+    }
 
     return this.formatMessageResponse(message, realConvId, conversationId, senderId, clientMsgId, recipientIds, unmutedRecipientIds, conv.name || undefined);
   }

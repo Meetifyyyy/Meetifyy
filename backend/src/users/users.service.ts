@@ -864,4 +864,121 @@ export class UsersService {
 
     return users;
   }
+
+  // Candidate pool pulled from the DB before scoring — bounded regardless of
+  // how many users match the query, so this never scales with total user count.
+  private static readonly MENTION_CANDIDATE_POOL = 50;
+  private static readonly MENTION_RECENT_CONVERSATIONS = 10;
+
+  /**
+   * Server-side @mention suggestion search. Replaces the old client pattern of
+   * fetching the entire user table into the browser and scoring in JS — here
+   * only a bounded, already-matched candidate pool (<= 50 rows) ever leaves
+   * the DB, and every ranking signal (mutuals, recent chats, community
+   * membership) is computed with indexed, batched queries instead of an
+   * O(users) client-side loop.
+   */
+  async getMentionSuggestions(userId: string, query: string, communityId?: string, limit: number = 15) {
+    const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
+    const excludeSet = new Set([...excludedUserIds, userId]);
+    const cleanQuery = (query || '').trim().toLowerCase();
+
+    const whereClause: any = {
+      id: { notIn: Array.from(excludeSet) },
+      accountStatus: 'ACTIVE',
+      ...(cleanQuery
+        ? {
+            OR: [
+              { username: { contains: cleanQuery, mode: 'insensitive' } },
+              { displayName: { contains: cleanQuery, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const [candidates, followingRows, followerRows, communityMemberRows, recentConvs] = await Promise.all([
+      this.prisma.user.findMany({
+        where: whereClause,
+        take: UsersService.MENTION_CANDIDATE_POOL,
+        select: { id: true, username: true, displayName: true, avatar: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.follow.findMany({ where: { followerId: userId }, select: { followingId: true } }),
+      this.prisma.follow.findMany({ where: { followingId: userId }, select: { followerId: true } }),
+      communityId
+        ? this.prisma.communityMember.findMany({ where: { communityId }, select: { userId: true } })
+        : Promise.resolve([] as { userId: string }[]),
+      this.prisma.conversationParticipant.findMany({
+        where: { userId, deletedAt: null },
+        select: { conversationId: true },
+        orderBy: { conversation: { updatedAt: 'desc' } },
+        take: UsersService.MENTION_RECENT_CONVERSATIONS,
+      }),
+    ]);
+
+    if (candidates.length === 0) return [];
+
+    const followingIds = followingRows.map((f) => f.followingId);
+    const followingSet = new Set(followingIds);
+    const followerSet = new Set(followerRows.map((f) => f.followerId));
+    const communityMemberSet = new Set(communityMemberRows.map((m) => m.userId));
+
+    const recentConvIds = recentConvs.map((c) => c.conversationId);
+    const recentParticipants = recentConvIds.length > 0
+      ? await this.prisma.conversationParticipant.findMany({
+          where: { conversationId: { in: recentConvIds }, userId: { not: userId } },
+          select: { userId: true },
+        })
+      : [];
+    const recentChatUserIdSet = new Set(recentParticipants.map((p) => p.userId));
+
+    // Mutual-connection count per candidate: how many people I follow also
+    // follow that candidate. One batched query for the whole candidate set
+    // instead of an N+1 per-row lookup.
+    const candidateIds = candidates.map((c) => c.id);
+    const mutualRows = followingIds.length > 0 && candidateIds.length > 0
+      ? await this.prisma.follow.findMany({
+          where: { followerId: { in: followingIds }, followingId: { in: candidateIds } },
+          select: { followingId: true },
+        })
+      : [];
+    const mutualCountMap = new Map<string, number>();
+    mutualRows.forEach((m) => mutualCountMap.set(m.followingId, (mutualCountMap.get(m.followingId) || 0) + 1));
+
+    const scored = candidates.map((u) => {
+      const uname = u.username.toLowerCase();
+      const dname = (u.displayName || '').toLowerCase();
+      let score = 0;
+
+      if (cleanQuery && (uname.startsWith(cleanQuery) || dname.startsWith(cleanQuery))) {
+        score += 500;
+      }
+
+      const isFollowing = followingSet.has(u.id);
+      const isFollower = followerSet.has(u.id);
+      if (isFollowing && isFollower) score += 10000;
+      else if (isFollowing || isFollower) score += 7000;
+
+      if (recentChatUserIdSet.has(u.id)) score += 4000;
+      if (communityMemberSet.has(u.id)) score += 2000;
+
+      return {
+        user: {
+          id: u.id,
+          username: u.username,
+          displayName: u.displayName || u.username,
+          avatar: u.avatar,
+          mutualCount: mutualCountMap.get(u.id) || 0,
+        },
+        score,
+      };
+    });
+
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.user.displayName.localeCompare(b.user.displayName);
+    });
+
+    return scored.slice(0, limit).map((s) => s.user);
+  }
 }

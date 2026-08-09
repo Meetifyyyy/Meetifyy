@@ -1,13 +1,28 @@
 import { useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { isImageUrl } from '@shared/utils/avatar';
+import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import styles from './MentionDropdown.module.css';
 
-function DropdownContent({ suggestions, selectedIndex, onSelect, position, containerRef }) {
+function DropdownContent({ suggestions, loading, selectedIndex, onSelect, position, containerRef }) {
   const isUpwards = position?.bottom !== 'auto' && position?.bottom !== undefined;
 
   // Strip the internal `fixed` flag — the CSS always uses position:fixed now
   const { fixed: _fixed, ...stylePos } = position || {};
+
+  if (loading && (!suggestions || suggestions.length === 0)) {
+    return (
+      <div
+        className={`${styles.dropdown} ${isUpwards ? styles.upwards : ''}`}
+        style={stylePos}
+        ref={containerRef}
+      >
+        <div className={styles.loadingRow}>
+          <span className={styles.spinner} />
+          <span>Searching...</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!suggestions || suggestions.length === 0) {
     return (
@@ -26,8 +41,6 @@ function DropdownContent({ suggestions, selectedIndex, onSelect, position, conta
       className={`${styles.dropdown} ${isUpwards ? styles.upwards : ''}`}
       style={stylePos}
       ref={containerRef}
-      onMouseDown={e => e.preventDefault()}
-      onTouchStart={e => e.preventDefault()}
     >
       {suggestions.map((user, idx) => {
         const isSelected = idx === selectedIndex;
@@ -38,6 +51,10 @@ function DropdownContent({ suggestions, selectedIndex, onSelect, position, conta
             type="button"
             className={`${styles.item} ${isSelected ? styles.selected : ''}`}
             onClick={() => onSelect(user)}
+            // Prevent the editor from losing focus/selection on tap without
+            // blocking native touch-scroll on the dropdown's own container
+            // (a `touchstart preventDefault` on the container would).
+            onPointerDown={(e) => e.preventDefault()}
           >
             <div className={styles.avatar}>
               <img src={processedAvatar} alt={user.displayName} className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
@@ -61,7 +78,7 @@ function DropdownContent({ suggestions, selectedIndex, onSelect, position, conta
   );
 }
 
-export default function MentionDropdown({ suggestions, selectedIndex, onSelect, position, onClose }) {
+export default function MentionDropdown({ suggestions, loading, selectedIndex, onSelect, position, onClose }) {
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -76,6 +93,7 @@ export default function MentionDropdown({ suggestions, selectedIndex, onSelect, 
   return ReactDOM.createPortal(
     <DropdownContent
       suggestions={suggestions}
+      loading={loading}
       selectedIndex={selectedIndex}
       onSelect={onSelect}
       position={position}

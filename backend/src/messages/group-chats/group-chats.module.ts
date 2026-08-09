@@ -6,6 +6,7 @@ import { PresenceModule } from '../../presence/presence.module';
 import { RealtimeModule } from '../../realtime/realtime.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 import { MessagingCoreModule } from '../core/messaging-core.module';
+import { MentionsModule } from '../../mentions/mentions.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { MessagingCoreModule } from '../core/messaging-core.module';
     forwardRef(() => RealtimeModule),
     NotificationsModule,
     MessagingCoreModule,
+    MentionsModule,
   ],
   controllers: [GroupChatsController],
   providers: [GroupChatsService],

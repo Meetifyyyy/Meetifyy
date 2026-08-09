@@ -5,6 +5,7 @@ import { PresenceService } from '../../presence/presence.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { RedisService } from '../../redis/redis.service';
 import { generatePublicId } from '../../common/utils/public-id.util';
+import { MentionsService } from '../../mentions/mentions.service';
 
 @Injectable()
 export class GroupChatsService extends MessagingCoreService {
@@ -14,9 +15,10 @@ export class GroupChatsService extends MessagingCoreService {
     prisma: PrismaService,
     presenceService: PresenceService,
     domainEventService: DomainEventService,
+    mentionsService: MentionsService,
     @Optional() private readonly redisService?: RedisService,
   ) {
-    super(prisma, presenceService, domainEventService);
+    super(prisma, presenceService, domainEventService, mentionsService);
     this.redis = this.redisService?.getClient() ?? null;
   }
 
