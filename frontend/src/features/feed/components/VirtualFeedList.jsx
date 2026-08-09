@@ -1,14 +1,16 @@
+import { memo, useCallback } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import Post from './post/Post';
 
-export default function VirtualFeedList({ posts, communities, onPostClick }) {
-  const getCommunityTag = (communityId) => {
-    if (!communityId) return null;
-    if (Array.isArray(communities)) {
-      return communities.find(c => c.id === communityId) || null;
-    }
-    return communities?.[communityId] || null;
-  };
+function VirtualFeedList({ posts, onPostClick }) {
+  // Stable across re-renders (as long as `onPostClick` itself is stable) so
+  // <Post> — wrapped in React.memo — can actually bail out on unrelated
+  // re-renders instead of every visible row re-rendering because it received
+  // a brand-new inline closure every time this list re-renders (e.g. on every
+  // scroll-driven virtualizer update).
+  const handlePostClick = useCallback((post) => {
+    if (onPostClick) onPostClick(post, 'feed');
+  }, [onPostClick]);
 
   const virtualizer = useWindowVirtualizer({
     count: posts.length,
@@ -16,7 +18,7 @@ export default function VirtualFeedList({ posts, communities, onPostClick }) {
       const p = posts[index];
       if (!p) return 254;
       let height = 184; // base header + actions + padding + 4px gap
-      if (p.mediaUrls?.length > 0 || p.mediaKey || p.mediaUrl) height += 320;
+      if (Array.isArray(p.media) && p.media.length > 0) height += 320;
       if (p.pollOptions?.length > 0 || p.poll?.options?.length > 0) height += 160;
       if (p.text && p.text.length > 200) height += 60;
       return height;
@@ -34,7 +36,6 @@ export default function VirtualFeedList({ posts, communities, onPostClick }) {
     >
       {virtualizer.getVirtualItems().map((virtualItem) => {
         const p = posts[virtualItem.index];
-        const cTag = getCommunityTag(p.communityId);
 
         return (
           <div
@@ -50,11 +51,7 @@ export default function VirtualFeedList({ posts, communities, onPostClick }) {
               paddingBottom: '4px',
             }}
           >
-            <Post
-              postData={p}
-              communityTag={cTag}
-              onClick={() => onPostClick && onPostClick(p, 'feed')}
-            />
+            <Post postData={p} onClick={handlePostClick} />
           </div>
         );
       })}
@@ -62,3 +59,4 @@ export default function VirtualFeedList({ posts, communities, onPostClick }) {
   );
 }
 
+export default memo(VirtualFeedList);

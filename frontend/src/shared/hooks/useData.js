@@ -240,9 +240,22 @@ export function useData() {
 
   const getUserByUsername = (username) => rawUsers.find(u => u.username === username) || null;
   const getUserById = (id) => users[id] || null;
+
+  // Query-key prefixes that can ever hold post objects — scanning is scoped to
+  // just these instead of the whole app cache (messages, notifications,
+  // communities, users, activities, ...). This is called on every render of
+  // every visible <Post>, so an unscoped scan was O(everything cached in the
+  // whole app) per post per render — a real jank source in a scrolling feed.
+  const POST_CACHE_PREFIXES = ['post', 'feed', 'posts', 'user-posts', 'bookmarks', 'community-posts'];
   const getPostById = (id) => {
     if (!id) return null;
-    const cachedQueries = queryClient.getQueriesData({});
+    // Fast path: the post's own dedicated cache entry, if present.
+    const direct = queryClient.getQueryData(['post', id]);
+    if (direct && direct.id === id) return direct;
+
+    const cachedQueries = queryClient.getQueriesData({
+      predicate: (query) => POST_CACHE_PREFIXES.includes(query.queryKey[0]),
+    });
     for (const [, data] of cachedQueries) {
       if (!data) continue;
       if (data.id === id) return data;

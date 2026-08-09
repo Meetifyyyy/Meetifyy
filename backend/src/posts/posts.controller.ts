@@ -145,6 +145,17 @@ export class PostsController {
     return this.postsService.unlikePost(id, user.id);
   }
 
+  @Get(':id/comments')
+  async getComments(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    const parsedLimit = limit ? parseInt(limit, 10) : 20;
+    return this.postsService.getComments(id, user.id, parsedLimit, cursor);
+  }
+
   @Post(':id/comments')
   async addComment(
     @CurrentUser() user: { id: string },

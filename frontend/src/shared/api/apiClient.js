@@ -401,6 +401,15 @@ export const postsApi = {
    * @param {{ text: string, parentId?: string }} data
    */
   addComment: (postId, data) => apiClient.post(`/api/posts/${postId}/comments`, data),
+  /**
+   * Load a page of a post's comments (roots + their reply subtrees) beyond the
+   * first page embedded in getPostById. Cursor is the previous page's nextCursor.
+   */
+  getComments: (postId, limit = 20, cursor) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.set('cursor', cursor);
+    return apiClient.get(`/api/posts/${postId}/comments?${params.toString()}`);
+  },
   likeComment: (commentId, { signal } = {}) => apiClient.post(`/api/posts/comments/${commentId}/like`, undefined, { signal }),
   unlikeComment: (commentId, { signal } = {}) => apiClient.post(`/api/posts/comments/${commentId}/unlike`, undefined, { signal }),
   deleteComment: (commentId) => apiClient.delete(`/api/posts/comments/${commentId}`),

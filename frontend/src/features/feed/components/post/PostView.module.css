@@ -53,6 +53,16 @@
   border-bottom: 1px solid var(--color-border-light);
 }
 
+.postSkeleton {
+  width: 100%;
+}
+
+.postSkeletonHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .postViewMain > div {
   background: transparent !important;
   border: none !important;
@@ -135,6 +145,34 @@
   display: flex;
   flex-direction: column;
   padding: 0 1.5rem 1.5rem;
+}
+
+.loadMoreComments {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  margin: 0.75rem auto 0.25rem;
+  padding: 0.5rem 1.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, opacity 0.16s ease;
+}
+
+.loadMoreComments:hover:not(:disabled) {
+  background: rgba(var(--color-primary-rgb), 0.08);
+  border-color: var(--color-primary);
+}
+
+.loadMoreComments:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
 .composerAvatarImg {  composes: ui-avatar-img from global;

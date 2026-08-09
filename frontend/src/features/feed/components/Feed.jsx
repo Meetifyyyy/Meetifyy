@@ -6,12 +6,11 @@ import { EmptyState, ErrorState } from '@shared/components/ui/StateViews';
 import VirtualFeedList from './VirtualFeedList';
 import PostComposer from './composer/PostComposer';
 import PostSkeleton from './skeletons/PostSkeleton';
+import PullToRefresh from './PullToRefresh';
 import styles from './Feed.module.css';
-import { useData } from '@shared/hooks/useData';
 import { useAuth } from '@shared/context/AuthContext';
 
 function Feed({ onPostClick }) {
-  const { communities } = useData();
   const { currentUser } = useAuth();
   const searchQuery = useUIStore(state => state.searchQuery);
   const queryClient = useQueryClient();
@@ -93,54 +92,57 @@ function Feed({ onPostClick }) {
     }
   }, [queryClient]);
 
-  // Find the community tag
-  const getCommunityTag = (communityId) => {
-    if (!communityId) return null;
-    if (Array.isArray(communities)) {
-      return communities.find(c => c.id === communityId) || null;
-    }
-    return communities[communityId] || null;
-  };
+  // Pulling down resets straight to a fresh first page rather than calling the
+  // infinite query's default `refetch()` — that would re-request every page
+  // the user has already scrolled through. A pull-to-refresh gesture means
+  // "start me over at the freshest top," so a full reset (discarding deeper
+  // pages, keyset cursors included) is both the correct semantics AND avoids
+  // the N-pages-at-once request burst.
+  const handlePullToRefresh = useCallback(() => {
+    return queryClient.resetQueries({ queryKey: ['feed', searchQuery, currentUser?.id] });
+  }, [queryClient, searchQuery, currentUser?.id]);
 
   return (
-    <div className={styles.feed}>
-      <PostComposer onSubmit={handleNewPost} />
-      
-      {isLoading && (
-        <>
-          <PostSkeleton />
-          <PostSkeleton />
-          <PostSkeleton />
-        </>
-      )}
+    <PullToRefresh onRefresh={handlePullToRefresh}>
+      <div className={styles.feed}>
+        <PostComposer onSubmit={handleNewPost} />
 
-      {!isLoading && isError && (
-        <ErrorState onRetry={refetch} />
-      )}
+        {isLoading && (
+          <>
+            <PostSkeleton />
+            <PostSkeleton />
+            <PostSkeleton />
+          </>
+        )}
 
-      {!isLoading && !isError && allPosts.length === 0 && !hasNextPage && (
-        <EmptyState 
-          title="It's quiet here..."
-          message="Join communities or follow people to see their updates."
-          icon={
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem', opacity: 0.5 }}>
-              <path d="M12 20h9" />
-              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-            </svg>
-          }
-        />
-      )}
+        {!isLoading && isError && (
+          <ErrorState onRetry={refetch} />
+        )}
 
-      {!isLoading && !isError && allPosts.length > 0 && (
-        <VirtualFeedList posts={allPosts} communities={communities} onPostClick={onPostClick} />
-      )}
+        {!isLoading && !isError && allPosts.length === 0 && !hasNextPage && (
+          <EmptyState
+            title="It's quiet here..."
+            message="Join communities or follow people to see their updates."
+            icon={
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem', opacity: 0.5 }}>
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+            }
+          />
+        )}
 
-      {!isLoading && !isError && hasNextPage && (
-        <div ref={loadMoreRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
-          <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '3px' }} />
-        </div>
-      )}
-    </div>
+        {!isLoading && !isError && allPosts.length > 0 && (
+          <VirtualFeedList posts={allPosts} onPostClick={onPostClick} />
+        )}
+
+        {!isLoading && !isError && hasNextPage && (
+          <div ref={loadMoreRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
+            <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '3px' }} />
+          </div>
+        )}
+      </div>
+    </PullToRefresh>
   );
 }
 

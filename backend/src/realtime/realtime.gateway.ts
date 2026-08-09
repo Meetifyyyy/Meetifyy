@@ -202,6 +202,17 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       }
     }
 
+    // Post-scoped realtime: fan comment/like/poll/deletion activity out to
+    // everyone currently viewing the post (they joined `post_<id>` via
+    // 'post:join'). This is IN ADDITION to any per-user target routing below —
+    // the client handlers are idempotent (absolute counts, id-deduped inserts,
+    // self-actor guards), so a viewer who is also a per-user target harmlessly
+    // applies the same patch twice.
+    const postScopeId = payload.data?.postId || payload.postId;
+    if (postScopeId && RealtimeGateway.POST_ROOM_EVENTS.has(payload.type)) {
+      this.server.to(`post_${postScopeId}`).emit('domainEvent', payload);
+    }
+
     const isLegacyEvent = payload.type?.includes(':');
     let targets: string[] = [];
 
@@ -442,6 +453,41 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     } catch (err: any) {
       return { status: 'error', error: err.message || 'Failed to fetch catchup messages' };
     }
+  }
+
+  // Realtime event types that fan out to a `post_<id>` room (everyone viewing
+  // the post), not just per-user targets. Kept idempotent on the client.
+  private static readonly POST_ROOM_EVENTS = new Set([
+    'comment.created',
+    'comment.deleted',
+    'comment.liked',
+    'comment.unliked',
+    'post.pollVoted',
+    'post.liked',
+    'post.unliked',
+    'post.deleted',
+  ]);
+
+  // A client viewing a post joins its room so it receives live comment/like/poll
+  // activity; it leaves on unmount. Rooms are per-socket and auto-cleaned on
+  // disconnect, so a missed 'post:leave' can't leak.
+  @SubscribeMessage('post:join')
+  handlePostJoin(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { postId?: string }
+  ) {
+    const userId = (client as any).userId;
+    if (!userId || !data?.postId) return;
+    client.join(`post_${data.postId}`);
+  }
+
+  @SubscribeMessage('post:leave')
+  handlePostLeave(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { postId?: string }
+  ) {
+    if (!data?.postId) return;
+    client.leave(`post_${data.postId}`);
   }
 
   @SubscribeMessage('typing:start')

@@ -100,9 +100,13 @@ export function useDeleteComment() {
     },
 
     onSuccess: (_result, { postId }) => {
-      // Let the server state confirm — invalidate after optimistic update settles
+      // Reconcile only the open post's comment tree with authoritative server
+      // state (swaps our placeholder for whatever the server actually stored).
+      // The feed comment COUNT was already decremented optimistically above, so
+      // we deliberately do NOT invalidate ['feed']/['posts'] here — that would
+      // refetch every loaded feed page after a single comment deletion for a
+      // count that's already correct in the common case.
       queryClient.invalidateQueries({ queryKey: ['post', postId] });
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
     },
   });
 }

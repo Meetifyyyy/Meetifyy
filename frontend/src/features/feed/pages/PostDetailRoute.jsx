@@ -3,11 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useData } from '@shared/hooks/useData';
-import { EmptyState } from '@shared/components/ui/StateViews';
 import PostView from '../components/post/PostView';
 import RightPanel, { OnlineFriends } from '@layout/RightPanel';
 import rightPanelStyles from '@layout/RightPanel.module.css';
-import Skeleton from '@shared/components/skeletons/Skeleton';
 import UserSidebarCard, { UserSidebarCardSkeleton } from '@shared/components/ui/UserSidebarCard';
 import postViewStyles from '../components/post/PostView.module.css';
 
@@ -18,19 +16,33 @@ export default function PostDetailRoute() {
   const { id } = useParams();
   const { getUserById, communities } = useData();
 
-
   const handleBack = () => {
     navigate(location.state?.from ?? '/home', { replace: true });
   };
 
-  const { data: fetchedPost, isLoading, isError, error } = useQuery({
+  // A post opened from the feed already carries its full card data via router
+  // state — seed the query with it so this route starts in a "success" state
+  // instead of "pending": the header/back button/post content render on the
+  // very first paint instead of waiting on a round-trip. `initialDataUpdatedAt:
+  // 0` marks that seed stale immediately so the real fetch (bringing comments)
+  // still runs in the background. A cold open (permalink/refresh) has no seed
+  // and simply falls through to the normal loading path, handled inside
+  // PostView (structural shell first, skeleton for the dynamic content).
+  const routePost = location.state?.post;
+  const hasSeed = !!(routePost && routePost.author);
+
+  const { data: fetchedPost, isError, error } = useQuery({
     queryKey: ['post', id],
     queryFn: () => postsApi.getPostById(id),
     enabled: !!id,
     retry: false,
+    initialData: hasSeed ? routePost : undefined,
+    initialDataUpdatedAt: hasSeed ? 0 : undefined,
   });
 
   const post = isError ? null : fetchedPost;
+  const displayPost = post || (routePost || { id });
+  const hasFullData = !!(post && post.author);
 
   const author = post?.author || (post?.authorId ? getUserById(post.authorId) : null) || {
     displayName: 'Unknown User',
@@ -40,71 +52,7 @@ export default function PostDetailRoute() {
     communities: []
   };
 
-  const renderRightPanelSkeleton = () => {
-    return (
-      <RightPanel>
-        <UserSidebarCardSkeleton />
-        <OnlineFriends />
-      </RightPanel>
-    );
-  };
-
-  if (isLoading) {
-    return (
-      <>
-        <main className="centre centre--post">
-          <div className={postViewStyles.postViewContainer}>
-            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', boxSizing: 'border-box' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--color-border-light)' }}>
-                <Skeleton type="circle" width="32px" height="32px" />
-                <Skeleton type="text" width="80px" height="18px" style={{ margin: 0 }} />
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <Skeleton type="circle" width="44px" height="44px" />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
-                  <Skeleton type="text" width="120px" height="14px" style={{ margin: 0 }} />
-                  <Skeleton type="text" width="80px" height="10px" style={{ margin: 0 }} />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <Skeleton type="rect" width="100%" height="14px" style={{ borderRadius: '4px' }} />
-                <Skeleton type="rect" width="95%" height="14px" style={{ borderRadius: '4px' }} />
-                <Skeleton type="rect" width="70%" height="14px" style={{ borderRadius: '4px' }} />
-              </div>
-
-              <div style={{ display: 'flex', gap: '1.5rem', padding: '0.75rem 0', borderTop: '1px solid var(--color-border-light)', borderBottom: '1px solid var(--color-border-light)' }}>
-                <Skeleton type="circle" width="20px" height="20px" />
-                <Skeleton type="circle" width="20px" height="20px" />
-                <Skeleton type="circle" width="20px" height="20px" />
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                <Skeleton type="circle" width="32px" height="32px" />
-                <Skeleton type="rect" width="100%" height="38px" style={{ borderRadius: 'var(--radius-full)' }} />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '0.5rem' }}>
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} style={{ display: 'flex', gap: '0.75rem' }}>
-                    <Skeleton type="circle" width="32px" height="32px" style={{ flexShrink: 0 }} />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
-                      <Skeleton type="text" width="100px" height="12px" style={{ margin: 0 }} />
-                      <Skeleton type="text" width="85%" height="10px" style={{ margin: 0 }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </main>
-        {renderRightPanelSkeleton()}
-      </>
-    );
-  }
-
-  if (isError || !post) {
+  if (isError) {
     const errorMsg = error?.response?.data?.message || 'This post may have been removed or deleted.';
     return (
       <main className="centre centre--post" style={{ gridColumn: '2 / -1', maxWidth: '780px', margin: '0 auto', width: '100%' }}>
@@ -205,9 +153,14 @@ export default function PostDetailRoute() {
   return (
     <>
       <main className="centre centre--post">
-        <PostView post={post} onBack={handleBack} />
+        <PostView post={displayPost} onBack={handleBack} />
       </main>
-      {renderRightPanel()}
+      {hasFullData ? renderRightPanel() : (
+        <RightPanel>
+          <UserSidebarCardSkeleton />
+          <OnlineFriends />
+        </RightPanel>
+      )}
     </>
   );
 }

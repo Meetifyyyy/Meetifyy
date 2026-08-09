@@ -1,7 +1,5 @@
 import { useState, useEffect, memo } from 'react';
 import { Link } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
-import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
@@ -9,8 +7,6 @@ import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import RichText from '@shared/components/mentions/RichText';
 import { useData } from '@shared/hooks/useData';
-import { postsApi } from '@shared/api/apiClient';
-import usePostStore from '@shared/stores/postStore';
 import { timeAgo } from '@shared/utils/time';
 import styles from './Post.module.css';
 import SharePostModal from '../modals/SharePostModal';
@@ -21,6 +17,7 @@ import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import MediaGrid from './MediaGrid';
 import { useLikePost } from '../../hooks/useLikePost';
 import { useSavePost } from '../../hooks/useSavePost';
+import { useDeletePost } from '../../hooks/useDeletePost';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 function PollCard({ poll, postId }) {
@@ -167,9 +164,8 @@ const processMentions = (text) => {
     .replace(/\n{3,}/g, '\n\n');
 };
 
-function Post({ postData, communityTag, onClick, isDetailed = false, hideCommunityTag = false }) {
+function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityTag = false }) {
   const { getUserById, getPostById, communities, currentUser } = useData();
-  const queryClient = useQueryClient();
   const { openViewer } = useMediaViewer();
   const [showMenu, setShowMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -179,24 +175,15 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
   const [hasReported, setHasReported] = useState(false);
 
   const livePost = postData ? (getPostById(postData.id) || postData) : null;
-  if (!livePost) return null;
+  const id = livePost?.id;
 
+  // All hooks are declared unconditionally, before the `!livePost` early
+  // return below — calling hooks after a conditional return would violate
+  // the rules of hooks the moment `postData` ever transitions to/from null
+  // across renders (e.g. right as the post it belongs to gets deleted).
   const { mutate: toggleLike, isLoading: isLiking } = useLikePost();
   const { mutate: toggleSave, isLoading: isSaving } = useSavePost();
-
-  const { id, authorId, time, text, mentions, poll, likeCount, commentCount, hasLiked, isLiked, isLikedByMe: rawIsLiked, isBookmarked: rawIsBookmarked, hasBookmarked } = livePost;
-  
-  const rawIsLikedByMe = hasLiked !== undefined ? !!hasLiked : (isLiked !== undefined ? !!isLiked : (rawIsLiked !== undefined ? !!rawIsLiked : (livePost.likedBy ? livePost.likedBy.includes(currentUser?.id) : false)));
-  const isLikedByMe = toggleRegistry.getLatestIntent(`likePost:${id}`, rawIsLikedByMe);
-  
-  const likes = likeCount !== undefined ? likeCount : (livePost.likesCount !== undefined ? livePost.likesCount : (livePost.likes || 0));
-  const comments = commentCount !== undefined ? commentCount : (livePost.commentsCount !== undefined ? livePost.commentsCount : (livePost.comments || 0));
-  
-  const rawIsSaved = hasBookmarked !== undefined ? !!hasBookmarked : !!rawIsBookmarked;
-  const isSaved = toggleRegistry.getLatestIntent(`savePost:${id}`, rawIsSaved);
-
-  const author = livePost.author || getUserById(authorId) || { displayName: 'User', username: 'user', avatar: null };
-  const authorCollege = author.collegeId ? communities[author.collegeId] : null;
+  const { mutate: deletePost } = useDeletePost();
 
   useEffect(() => {
     if (!showMenu) return;
@@ -215,6 +202,22 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
     return () => window.removeEventListener('close-all-post-menus', handleCloseOthers);
   }, [id]);
 
+  if (!livePost) return null;
+
+  const { authorId, time, text, mentions, poll, likeCount, commentCount, hasLiked, isLiked, isLikedByMe: rawIsLiked, isBookmarked: rawIsBookmarked, hasBookmarked } = livePost;
+
+  const rawIsLikedByMe = hasLiked !== undefined ? !!hasLiked : (isLiked !== undefined ? !!isLiked : (rawIsLiked !== undefined ? !!rawIsLiked : (livePost.likedBy ? livePost.likedBy.includes(currentUser?.id) : false)));
+  const isLikedByMe = toggleRegistry.getLatestIntent(`likePost:${id}`, rawIsLikedByMe);
+
+  const likes = likeCount !== undefined ? likeCount : (livePost.likesCount !== undefined ? livePost.likesCount : (livePost.likes || 0));
+  const comments = commentCount !== undefined ? commentCount : (livePost.commentsCount !== undefined ? livePost.commentsCount : (livePost.comments || 0));
+
+  const rawIsSaved = hasBookmarked !== undefined ? !!hasBookmarked : !!rawIsBookmarked;
+  const isSaved = toggleRegistry.getLatestIntent(`savePost:${id}`, rawIsSaved);
+
+  const author = livePost.author || getUserById(authorId) || { displayName: 'User', username: 'user', avatar: null };
+  const authorCollege = author.collegeId ? communities[author.collegeId] : null;
+
   const formatExactDate = (timestamp) => {
     if (!timestamp) return '';
     const date = new Date(timestamp);
@@ -225,9 +228,9 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
 
   const exactTimeStr = livePost.createdAt ? formatExactDate(livePost.createdAt) : time;
 
-  const handleCardClick = (e) => {
+  const handleCardClick = () => {
     if (isDetailed) return;
-    if (onClick) onClick(e);
+    if (onClick) onClick(livePost);
   };
 
   const toggleLikeHandler = (e) => {
@@ -485,7 +488,7 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
           </svg>
           <span className={styles.postActionCount}>{likes}</span>
         </button>
-        <button className={styles.postActionBtn} onClick={(e) => { e.stopPropagation(); if(onClick) onClick(); }}>
+        <button className={styles.postActionBtn} onClick={(e) => { e.stopPropagation(); if (onClick) onClick(livePost); }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
           </svg>
@@ -525,15 +528,16 @@ function Post({ postData, communityTag, onClick, isDetailed = false, hideCommuni
           desc="Are you sure you want to delete this post? This action is permanent and cannot be undone."
           visible={showDeleteConfirm}
           onCancel={() => setShowDeleteConfirm(false)}
-          onConfirm={async () => {
+          onConfirm={() => {
             setShowDeleteConfirm(false);
-            try {
-              await postsApi.deletePost(id);
-              queryClient.invalidateQueries({ queryKey: ['feed'] });
-              showToast('Post deleted');
-            } catch (err) {
-              showToast('Failed to delete post');
-            }
+            // Fire-and-forget: useDeletePost removes the post from every cache
+            // synchronously (before the network call even starts), so this is
+            // instant regardless of the request's latency. A failure rolls the
+            // cache back and toasts — handled entirely inside the hook.
+            deletePost({ postId: id });
+            // Viewing this exact post's detail page — it's gone, so leave it
+            // rather than showing a ghost of now-deleted content.
+            if (isDetailed && onDeleted) onDeleted();
           }}
           confirmText="Delete"
         />
