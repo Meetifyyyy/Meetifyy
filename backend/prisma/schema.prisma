@@ -204,6 +204,7 @@ model Post {
   authorId     String
   communityId  String?
   text         String         @db.VarChar(2000)
+  mentions     Json?
   likeCount    Int            @default(0)
   commentCount Int            @default(0)
   createdAt    DateTime       @default(now())
@@ -245,6 +246,7 @@ model Comment {
   postId         String
   authorId       String
   text           String        @db.VarChar(500)
+  mentions       Json?
   parentId       String?
   likeCount      Int           @default(0)
   createdAt      DateTime      @default(now())
@@ -612,10 +614,13 @@ model Mention {
   userId     String
   sourceType MentionSource
   sourceId   String
+  actorId    String?
   createdAt  DateTime      @default(now())
   user       User          @relation("MentionedUser", fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, sourceType, sourceId])
   @@index([userId])
+  @@index([userId, createdAt(sort: Desc)])
   @@index([sourceType, sourceId])
 }
 
@@ -1112,6 +1117,7 @@ enum MuteTargetType {
 enum MentionSource {
   POST
   COMMENT
+  MESSAGE
 }
 
 enum ReportTargetType {

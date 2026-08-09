@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PresenceService } from '../../presence/presence.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { generatePublicId } from '../../common/utils/public-id.util';
+import { MentionsService } from '../../mentions/mentions.service';
 
 import { checkPresenceVisibility } from '../../users/privacy.helper';
 
@@ -13,8 +14,9 @@ export class DmService extends MessagingCoreService {
     prisma: PrismaService,
     presenceService: PresenceService,
     domainEventService: DomainEventService,
+    mentionsService: MentionsService,
   ) {
-    super(prisma, presenceService, domainEventService);
+    super(prisma, presenceService, domainEventService, mentionsService);
   }
 
   async getUserDMConversations(userId: string, limit: number = 20, offset: number = 0) {

@@ -100,26 +100,24 @@ export default function RichText({ content = '', mentions = [], className = '', 
             );
           }
 
-          // Check if user still exists (or treat structured mention as valid if user ID is known)
-          if (isValidUser(m.username) || users[m.username] || users[m.userId]) {
-            elements.push(
-              <span
-                key={`mention-${idx}-${m.start}`}
-                className={styles.mentionLink}
-                onClick={(e) => handleMentionClick(e, m.username)}
-                title={`Go to @${m.username}'s profile`}
-              >
-                {content.slice(m.start, m.end)}
-              </span>
-            );
-          } else {
-            // Deleted account gracefully shown as plain text
-            elements.push(
-              <span key={`deleted-${idx}-${m.start}`} className={styles.plainText}>
-                {content.slice(m.start, m.end)}
-              </span>
-            );
-          }
+          // Structured mentions come from the server, which already
+          // validated userId/username against a live account before storing
+          // them (see backend MentionsService.sanitize) — trust it directly
+          // rather than gating on whatever happens to be warm in the local
+          // `users` cache. That cache reflects "users this client has
+          // fetched so far", not "users that exist", so requiring it here
+          // made a real mention render as a dead link on a cold profile/DM
+          // load and made it depend on which page the viewer opened first.
+          elements.push(
+            <span
+              key={`mention-${idx}-${m.start}`}
+              className={styles.mentionLink}
+              onClick={(e) => handleMentionClick(e, m.username)}
+              title={`Go to @${m.username}'s profile`}
+            >
+              {content.slice(m.start, m.end)}
+            </span>
+          );
 
           cursor = m.end;
         }

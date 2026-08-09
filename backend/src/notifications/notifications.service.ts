@@ -344,7 +344,11 @@ export class NotificationsService implements OnModuleInit {
       }
 
       this.domainEventService.emit('notification:new', populatedNotif, [dto.recipientId]);
-      if ((dto.type as any) !== 'MESSAGE') {
+      // Must mirror getNotifications()/getUnreadCount()'s type filter — MESSAGE
+      // and JOIN_REQUEST have their own dedicated unread surfaces, so counting
+      // them into the bell badge here would show a count the notifications
+      // list can never clear.
+      if ((dto.type as any) !== 'MESSAGE' && dto.type !== NotificationType.JOIN_REQUEST) {
         const newCount = await this.incrementUnreadCount(dto.recipientId);
         // Pass newCount to avoid a Redis re-read inside emitUnreadCount
         await this.emitUnreadCount(dto.recipientId, newCount ?? undefined);
@@ -415,7 +419,16 @@ export class NotificationsService implements OnModuleInit {
     }
 
     const count = await this.prisma.notification.count({
-      where: { recipientId: userId, readAt: null, deletedAt: null, type: { not: 'MESSAGE' } },
+      where: {
+        recipientId: userId,
+        readAt: null,
+        deletedAt: null,
+        // Must mirror getNotifications()'s type filter exactly — MESSAGE and
+        // JOIN_REQUEST are surfaced through their own dedicated flows (the
+        // live chat unread badge and the invitations tab), so counting them
+        // here would show a bell badge the notifications list can never clear.
+        type: { notIn: [NotificationType.MESSAGE, NotificationType.JOIN_REQUEST] },
+      },
     });
 
     if (this.redis) {

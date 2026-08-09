@@ -3,7 +3,9 @@ import { Request, Response } from 'express';
 import { PostsService } from './posts.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { IsString, IsOptional, MaxLength, IsArray, IsObject } from 'class-validator';
+import { IsString, IsOptional, MaxLength, IsArray, IsObject, ValidateNested, ArrayMaxSize } from 'class-validator';
+import { Type } from 'class-transformer';
+import { MentionDto } from '../common/dto/mention.dto';
 
 export class CreatePostDto {
   @IsString()
@@ -19,8 +21,11 @@ export class CreatePostDto {
   communityId?: string;
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => MentionDto)
   @IsOptional()
-  mentions?: any[];
+  mentions?: MentionDto[];
 
   @IsObject()
   @IsOptional()
@@ -37,8 +42,11 @@ export class CreateCommentDto {
   parentId?: string;
 
   @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => MentionDto)
   @IsOptional()
-  mentions?: any[];
+  mentions?: MentionDto[];
 }
 
 export class VotePollDto {
@@ -162,7 +170,7 @@ export class PostsController {
     @Param('id') id: string,
     @Body() dto: CreateCommentDto,
   ) {
-    return this.postsService.addComment(id, user.id, dto.text, dto.parentId);
+    return this.postsService.addComment(id, user.id, dto.text, dto.parentId, dto.mentions);
   }
 
   @Post('comments/:commentId/like')

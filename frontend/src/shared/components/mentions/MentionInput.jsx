@@ -473,6 +473,7 @@ export default function MentionInput({
       {mentionActive && (
         <MentionDropdown
           suggestions={suggestions}
+          loading={loading}
           selectedIndex={selectedIndex}
           onSelect={handleSelectSuggestion}
           position={dropdownPos}

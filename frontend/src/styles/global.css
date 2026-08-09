@@ -59,15 +59,28 @@ body {
 }
 
 html {
-  /* overflow: hidden removed — was killing iOS bounce physics and momentum scroll */
-  overflow-x: hidden;
+  /* overflow: hidden removed — was killing iOS bounce physics and momentum scroll.
+     `clip` (not `hidden`) on this axis only: per the CSS Overflow spec, setting
+     overflow-x to any non-`visible` keyword while overflow-y is left at its
+     `visible` initial value silently promotes overflow-y to `auto` too — which
+     turns this element into a second, independent scroll container. Since
+     `header`/`aside` descendants are `position: sticky`, they stick to their
+     *nearest* scroll container — which became this one instead of the window,
+     and this element's own scrollTop never moves (nothing constrains its
+     height, so it just grows to fit content), so every sticky element drifted
+     away with the content instead of staying put. `clip` suppresses the
+     horizontal overflow without being a scrolling overflow value, so it
+     doesn't trigger that promotion, and overflow-y stays genuinely `visible` —
+     restoring the window as the one true scroll container app-wide. */
+  overflow-x: clip;
 }
 
 #root {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  overflow-x: hidden;
+  /* See the `html` rule above for why this must be `clip`, not `hidden`. */
+  overflow-x: clip;
   /* overflow-y: hidden removed — window is the scroll container for the feed virtualizer */
 }
 
@@ -324,9 +337,19 @@ nav a.active {
   justify-content: flex-start;
   gap: 1rem;
   padding: 0 0rem;
-  overflow-y: auto;
-  overflow-x: hidden;
-  height: 100%;
+  /* `visible`/`auto` here, not `hidden`/an active scroll box: the app scrolls
+     via the window (useWindowVirtualizer for the feed/notifications lists
+     needs real window scroll to measure correctly), and `.centre`'s old
+     `overflow-y: auto; height: 100%` never actually produced a usable
+     scrollbar (its box just grows to content height, so scrollHeight ===
+     clientHeight always) — it was a dead scroll container that only served
+     to break `position: sticky` for anything nested inside it (e.g.
+     ProfilePage's own right sidebar), the same class of bug `overflow-x:
+     clip` on `html`/`#root` above fixes at the root level. `.centre--messages`
+     below opts back into a real bounded/clipped box, which it genuinely needs. */
+  overflow-y: visible;
+  overflow-x: clip;
+  height: auto;
   max-width: 760px;
   margin: 0 auto;
   width: 100%;
@@ -348,9 +371,18 @@ nav a.active {
   max-width: none !important;
 }
 
+/* Messages needs a real, viewport-anchored height (not the ambient
+   min-height/auto chain the rest of the app relies on for window scroll) so
+   the conversation-list and chat panes can bound their own internal scroll —
+   without one fixed anchor, flex:1/min-height:0 down the tree has nothing to
+   distribute and the whole page grows instead of just the message list.
+   60px matches Header.module.css's fixed .header height. */
 .centre--messages {
   padding: 0 !important;
   max-width: none !important;
+  height: calc(100dvh - 60px) !important;
+  max-height: calc(100dvh - 60px) !important;
+  overflow: hidden !important;
 }
 
 @media (max-width: 1024px) {
@@ -367,7 +399,15 @@ nav a.active {
     flex: 1 !important;
     min-height: 0 !important;
     height: auto !important;
-    overflow-y: auto !important;
+    /* `visible`, not `auto`: with height:auto this box never actually gets a
+       usable internal scrollbar (it just grows to content height, so the
+       window scrolls it) — `overflow-y: auto` here only served to break
+       `position: sticky` for anything nested inside it on mobile (e.g.
+       CommunityView's `.mobileAboutHeader`, SavedPage/SearchResults/Settings'
+       sticky top bars). See the base `.centre` rule above for the full
+       explanation; `.centre--messages` right below still opts into a real
+       clipped box via its own `overflow: hidden`. */
+    overflow-y: visible !important;
     padding-bottom: 70px !important;
     max-width: none !important;
     margin: 0 !important;
@@ -376,8 +416,12 @@ nav a.active {
   .centre--messages {
     padding-bottom: 0 !important;
     overflow: hidden !important;
-    height: 100% !important;
-    max-height: 100% !important;
+    /* 56px mobile header + 60px BottomNav (BottomNav.module.css .bottomNav)
+       — reserved unconditionally so the fixed nav can never overlap the chat
+       input, whether or not it's actually hidden for the open-thread case
+       (see DashboardLayoutWrapper's isMessageThreadOpen). */
+    height: calc(100dvh - 56px - 60px) !important;
+    max-height: calc(100dvh - 56px - 60px) !important;
   }
 
   .centre--post {

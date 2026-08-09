@@ -18,6 +18,7 @@ import { InstantMatchService, setRealtimeGatewayRef, MatchFoundPayload, QueueSta
 import { PrismaService } from '../prisma/prisma.service';
 import { checkPresenceVisibility, checkPresenceVisibilityBatch } from '../users/privacy.helper';
 import { RedisService } from '../redis/redis.service';
+import { MentionDto } from '../common/dto/mention.dto';
 
 @WebSocketGateway({
   cors: {
@@ -416,7 +417,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('message:send')
   async handleSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { tempId?: string; clientId?: string; conversationId: string; text?: string; mediaUrl?: string; mediaType?: string; mentions?: string[]; replyToId?: string; inviteData?: any }
+    @MessageBody() data: { tempId?: string; clientId?: string; conversationId: string; text?: string; mediaUrl?: string; mediaType?: string; mentions?: MentionDto[]; replyToId?: string; inviteData?: any }
   ) {
     const senderId = (client as any).userId;
     if (!senderId) return { status: 'error', error: 'Unauthenticated' };

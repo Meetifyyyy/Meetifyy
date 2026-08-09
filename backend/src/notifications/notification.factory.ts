@@ -111,7 +111,14 @@ export class NotificationFactory {
     };
   }
 
-  createMention(actor: any, targetUserId: string, entityType: NotificationEntityType, entityId: string, contextText: string): CreateNotificationDto {
+  createMention(
+    actor: any,
+    targetUserId: string,
+    entityType: NotificationEntityType,
+    entityId: string,
+    contextText: string,
+    extraMetadata?: Record<string, any>,
+  ): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
     const actorUsername = actor?.username || '';
     return {
@@ -127,8 +134,8 @@ export class NotificationFactory {
         actorName,
         actorUsername,
         actorAvatar: actor?.avatar || null,
-        postId: entityType === NotificationEntityType.POST ? entityId : null,
         contextText: contextText ? contextText.substring(0, 40) : '',
+        ...extraMetadata,
       },
     };
   }

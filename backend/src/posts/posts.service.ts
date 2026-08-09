@@ -1,11 +1,13 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, MentionSource, NotificationEntityType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
+import { MentionsService } from '../mentions/mentions.service';
+import { MentionDto } from '../common/dto/mention.dto';
 
 @Injectable()
 export class PostsService {
@@ -18,6 +20,7 @@ export class PostsService {
     private readonly blocksService: BlocksService,
     private readonly domainEventService: DomainEventService,
     private readonly redisService: RedisService,
+    private readonly mentionsService: MentionsService,
   ) {}
 
   private formatPost(post: any, likedSet: Set<string>, bookmarkedSet: Set<string>, currentUserId?: string) {
@@ -77,7 +80,7 @@ export class PostsService {
     };
   }
 
-  async createPost(authorId: string, text: string, mediaKey?: string, communityId?: string, poll?: any, mentions?: any[]) {
+  async createPost(authorId: string, text: string, mediaKey?: string, communityId?: string, poll?: any, mentions?: MentionDto[]) {
     if (communityId) {
       const comm = await this.prisma.community.findUnique({
         where: { id: communityId },
@@ -88,11 +91,16 @@ export class PostsService {
       }
     }
 
+    // Re-derive the true mention set from the actual text before it's ever
+    // persisted — never trust client-claimed indices/usernames as-is.
+    const sanitizedMentions = await this.mentionsService.sanitize(text, mentions, authorId);
+
     const post = await this.prisma.post.create({
       data: {
         authorId,
         text,
         communityId,
+        mentions: sanitizedMentions.length > 0 ? (sanitizedMentions as any) : undefined,
         media: mediaKey ? {
           connect: { objectKey: mediaKey.replace('/api/media/', '') }
         } : undefined,
@@ -145,7 +153,21 @@ export class PostsService {
         totalVotes: 0,
       } : null,
     };
-    
+
+    // Fire-and-forget: indexing + notifying mentioned users must never add
+    // latency to the post-creation request or roll back the already-committed post.
+    if (sanitizedMentions.length > 0 && post.author) {
+      this.mentionsService.persistAndNotify({
+        mentions: sanitizedMentions,
+        sourceType: MentionSource.POST,
+        sourceId: post.id,
+        actor: post.author,
+        entityType: NotificationEntityType.POST,
+        entityId: post.id,
+        contextText: text,
+      }).catch(err => this.logger.warn('Failed to process post mentions', err));
+    }
+
     this.domainEventService.emit('post.created', { postId: post.id, authorId, communityId: post.communityId || undefined, post: formattedPost });
     return formattedPost;
   }
@@ -231,6 +253,7 @@ export class PostsService {
         p."authorId",
         p."communityId",
         p.text,
+        p.mentions,
         p."likeCount",
         p."commentCount",
         p."createdAt",
@@ -367,6 +390,7 @@ export class PostsService {
         authorId: post.authorId,
         communityId: post.communityId,
         text: post.text,
+        mentions: post.mentions || [],
         likeCount,
         likesCount: likeCount,
         commentCount,
@@ -615,6 +639,7 @@ export class PostsService {
         deletedAt: new Date(),
         // Scrub content and attribution — preserve only structural fields
         text: '',
+        mentions: Prisma.DbNull,
         authorId: comment.authorId, // keep FK to avoid cascade issues
         likeCount: 0,
       },
@@ -715,7 +740,7 @@ export class PostsService {
     });
   }
 
-  async addComment(postId: string, authorId: string, text: string, parentId?: string) {
+  async addComment(postId: string, authorId: string, text: string, parentId?: string, mentions?: MentionDto[]) {
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
     const excludedUserIds = await this.blocksService.getExcludedUserIds(authorId);
     if (!post || post.deletedAt || excludedUserIds.includes(post.authorId)) throw new NotFoundException('Post not found');
@@ -725,6 +750,9 @@ export class PostsService {
       parentComment = await this.prisma.comment.findUnique({ where: { id: parentId } });
     }
 
+    // Re-derive the true mention set from the actual comment text before persisting.
+    const sanitizedMentions = await this.mentionsService.sanitize(text, mentions, authorId);
+
     const comment = await this.prisma.$transaction(async (tx) => {
       const createdComment = await tx.comment.create({
         data: {
@@ -732,6 +760,7 @@ export class PostsService {
           authorId,
           text,
           parentId,
+          mentions: sanitizedMentions.length > 0 ? (sanitizedMentions as any) : undefined,
         },
         include: { author: { select: PostsService.COMMENT_AUTHOR_SELECT } },
       });
@@ -762,6 +791,24 @@ export class PostsService {
         this.notificationsService.createNotification(postDto).catch(err => {
           this.logger.warn('Failed to send comment notification', err);
         });
+      }
+
+      // 3. Notify every uniquely @mentioned user (excludes anyone already
+      // covered by the reply/post-author notifications above by design —
+      // createNotification's own recipientId===actorId guard prevents
+      // self-notifies, and a user can still legitimately get both a
+      // "commented on your post" AND a "mentioned you" notification).
+      if (sanitizedMentions.length > 0) {
+        this.mentionsService.persistAndNotify({
+          mentions: sanitizedMentions,
+          sourceType: MentionSource.COMMENT,
+          sourceId: comment.id,
+          actor,
+          entityType: NotificationEntityType.COMMENT,
+          entityId: comment.id,
+          contextText: text,
+          extraMetadata: { postId },
+        }).catch(err => this.logger.warn('Failed to process comment mentions', err));
       }
     }
 
