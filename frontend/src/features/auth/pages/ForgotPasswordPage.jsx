@@ -96,7 +96,6 @@ export default function ForgotPasswordPage() {
                   id="forgot-email"
                   label="Email Address"
                   type="email"
-                  autoFocus
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

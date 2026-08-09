@@ -24,14 +24,15 @@
 [data-theme="dark"] .eyebrow { color: #7965fb; }
 
 .title {
-  font-size: 1.875rem;
+  font-size: 2.25rem;
   font-weight: 400;
   letter-spacing: -0.025em;
   color: #111827;
+  line-height: 1.2;
   margin: 0;
 }
 
-@media (min-width: 768px) { .title { font-size: 2.25rem; } }
+@media (min-width: 768px) { .title { font-size: 3rem; } }
 
 [data-theme="dark"] .title { color: #fff; }
 

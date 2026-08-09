@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X } from 'lucide-react';
-import logo from '@assets/images/meetify_logo.webp';
+import wordmark from '@assets/images/meetifyy_wordmark.webp';
 import styles from './LandingNavbar.module.css';
 
 export default function LandingNavbar() {
@@ -27,8 +27,7 @@ export default function LandingNavbar() {
             className={styles.brand}
             aria-label="Go to homepage"
           >
-            <img src={logo} alt="Meetifyy" className={styles.logoImg} />
-            <span className={styles.brandName}>Meetifyy</span>
+            <img src={wordmark} alt="Meetifyy" className={styles.wordmarkImg} />
           </button>
 
           {/* Desktop CTAs */}
@@ -70,8 +69,7 @@ export default function LandingNavbar() {
               className={styles.mobileMenuCard}
             >
               <div className={styles.mobileLogo}>
-                <img src={logo} alt="Meetifyy" className={styles.mobileLogoImg} />
-                <span className={styles.mobileBrandName}>Meetifyy</span>
+                <img src={wordmark} alt="Meetifyy" className={styles.mobileWordmarkImg} />
               </div>
               <button
                 onClick={() => { navigate('/login'); setMenuOpen(false); }}

@@ -151,6 +151,7 @@
   flex: 1 1 54%;
   max-width: 600px;
   padding: 1.5rem 2.5rem 1.5rem 0;
+  align-self: flex-start;
 }
 
 .storyHeadline {
@@ -211,7 +212,14 @@
   border-radius: 26px;
   box-shadow: 0 34px 80px -24px rgba(15, 23, 42, 0.28), 0 8px 24px -10px rgba(92, 71, 250, 0.16);
   overflow: hidden;
-  transition: height 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: height 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.panelInitial {
+  animation: kitPanelExpand 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  /* Only worth compositing while the entrance animation runs — dropped
+     automatically once this class is removed after mount. */
+  will-change: transform, opacity;
 }
 
 /* Holds the padding + content; measured (never itself height-constrained) to
@@ -294,7 +302,7 @@
 }
 
 .field.isValid .fieldLabel {
-  color: var(--color-success);
+  color: var(--color-text-muted);
 }
 
 .fieldInner {
@@ -361,11 +369,12 @@
 }
 
 .input.valid {
-  border-color: var(--color-success);
+  border-color: var(--color-border);
 }
 
 .input.valid:focus {
-  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.14);
+  border-color: var(--color-brand-primary);
+  box-shadow: 0 0 0 4px rgba(92, 71, 250, 0.13);
 }
 
 /* ── Right-side adornment ───────────────────────────────────────────────── */
@@ -794,12 +803,11 @@
 }
 
 .selectLabel {
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--color-text-light);
-  margin-left: 0.15rem;
+  letter-spacing: 0.01em;
+  color: var(--color-text-muted);
+  margin-left: 0.1rem;
 }
 
 .selectRow {
@@ -980,6 +988,17 @@
 @keyframes kitFadeIn {
   from { opacity: 0; transform: translateY(2px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes kitPanelExpand {
+  0% {
+    opacity: 0;
+    transform: scale(0.93) translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 @keyframes kitShake {

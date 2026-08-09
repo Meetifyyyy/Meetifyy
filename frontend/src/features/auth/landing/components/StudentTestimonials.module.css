@@ -46,22 +46,21 @@
 }
 
 .eyebrowWrapper {
-  display: inline-block;
-  padding: 0.375rem 1rem;
-  background: transparent;
-  margin-bottom: 1.25rem;
+  display: block;
+  margin-bottom: 0.625rem;
 }
 
 .eyebrow {
-  color: var(--color-brand-primary);
+  color: #4434d6;
   font-weight: 700;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+  display: block;
 }
 
 [data-theme="dark"] .eyebrow {
-  color: var(--color-brand-accent);
+  color: #7965fb;
 }
 
 .title {
@@ -69,7 +68,8 @@
   font-weight: 400;
   letter-spacing: -0.025em;
   color: #111827;
-  margin-bottom: 0.75rem;
+  line-height: 1.2;
+  margin: 0;
 }
 
 @media (min-width: 768px) {

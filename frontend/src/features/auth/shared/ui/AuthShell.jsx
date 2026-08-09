@@ -1,9 +1,15 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import wordmark from '@assets/images/meetifyy_wordmark.webp';
 import proofCards from '@assets/images/auth_proof_cards.webp';
 import s from './authKit.module.css';
+
+const DEFAULT_HEADLINE = "Your campus,\n*finally connected.*";
+const DEFAULT_SUBTEXT = 'Meetifyy is where verified students meet, plan, and belong.';
+
+const AuthShellContext = createContext(null);
+let globalLastPanelHeight = null;
 
 /**
  * The shared canvas for every auth/onboarding screen: a full-bleed brand
@@ -12,92 +18,118 @@ import s from './authKit.module.css';
  * asymmetric composition instead of a hard two-panel split. The panel is
  * always vertically centered in the viewport and smoothly animates to its
  * new size/position whenever its content changes height (step switches,
- * status screens, validation messages appearing). Auth always renders in
- * the light palette regardless of the app's theme.
+ * status screens, validation messages appearing, or route navigation between
+ * auth pages). Auth always renders in the light palette regardless of the app's theme.
  *
  * @param {string}  [headline]     Story headline. Wrap a phrase in *asterisks* to gradient-highlight it.
  * @param {string}  [subtext]      Story supporting line.
  */
-export default function AuthShell({
-  children,
-  headline = "Your campus,\n*finally connected.*",
-  subtext = 'Meetifyy is where verified students meet, plan, and belong.',
-}) {
-  const headlineLines = headline.split('\n');
+export default function AuthShell({ children, headline = DEFAULT_HEADLINE, subtext = DEFAULT_SUBTEXT }) {
+  const parentContext = useContext(AuthShellContext);
 
-  // Smoothly animate the panel's height whenever its content changes size
-  // (step switches, status screens, a validation message appearing) instead
-  // of snapping. `panelInnerRef` is never itself height-constrained, so it
-  // always reports its true natural size; that measurement drives an
-  // explicit pixel height + CSS transition on the outer `.panel`. Measuring
-  // and constraining the same element would be self-referential — once the
-  // outer box is pinned to a height, its own size stops reflecting what its
-  // content actually needs.
-  //
-  // Re-measured after every commit (not just on mount) so it catches every
-  // content swap driven by React state — steps changing, a validation
-  // message appearing, a status screen replacing the form. A ResizeObserver
-  // is kept too, as a supplementary safety net for size changes React isn't
-  // driving directly (e.g. a window resize reflowing text).
+  // When nested inside a shared master (route group sharing one AuthShell
+  // instance), forward this page's story copy up instead of rendering our
+  // own canvas — the master owns the actual DOM/animation.
+  useLayoutEffect(() => {
+    if (parentContext) parentContext.setStory({ headline, subtext });
+  }, [parentContext, headline, subtext]);
+
+  if (parentContext) {
+    return <>{children}</>;
+  }
+
+  return <AuthShellMaster headline={headline} subtext={subtext}>{children}</AuthShellMaster>;
+}
+
+const StoryColumn = React.memo(function StoryColumn({ headline = DEFAULT_HEADLINE, subtext = DEFAULT_SUBTEXT }) {
+  const headlineLines = headline.split('\n');
+  return (
+    <aside className={s.story}>
+      <span className={s.storyMark} aria-hidden="true" />
+      <h2 className={s.storyHeadline}>
+        {headlineLines.map((line, i) => (
+          <React.Fragment key={i}>
+            {renderHighlighted(line)}
+            {i < headlineLines.length - 1 ? <br /> : null}
+          </React.Fragment>
+        ))}
+      </h2>
+      <p className={s.storySub}>{subtext}</p>
+      <img src={proofCards} alt="" className={s.proofCards} aria-hidden="true" />
+    </aside>
+  );
+});
+
+function AuthShellMaster({ children, headline: defaultHeadline, subtext: defaultSubtext }) {
   const panelInnerRef = useRef(null);
-  const [panelHeight, setPanelHeight] = useState(null);
+  const [panelHeight, setPanelHeight] = useState(globalLastPanelHeight);
+  const [isInitialMount, setIsInitialMount] = useState(true);
+  const [story, setStory] = useState({ headline: defaultHeadline, subtext: defaultSubtext });
+
+  const setStoryCallback = useCallback((next) => setStory(next), []);
+  const contextValue = useMemo(() => ({ setStory: setStoryCallback }), [setStoryCallback]);
 
   useLayoutEffect(() => {
     const el = panelInnerRef.current;
-    if (el) setPanelHeight(el.scrollHeight);
+    if (el) {
+      const h = el.scrollHeight;
+      globalLastPanelHeight = h;
+      setPanelHeight(h);
+    }
   });
 
   useEffect(() => {
     const el = panelInnerRef.current;
     if (!el) return;
-    const observer = new ResizeObserver(() => setPanelHeight(el.scrollHeight));
+    const observer = new ResizeObserver(() => {
+      const h = el.scrollHeight;
+      globalLastPanelHeight = h;
+      setPanelHeight(h);
+    });
     observer.observe(el);
-    return () => observer.disconnect();
+
+    const timer = setTimeout(() => {
+      setIsInitialMount(false);
+    }, 720);
+
+    return () => {
+      observer.disconnect();
+      clearTimeout(timer);
+    };
   }, []);
 
   return (
-    <div className={s.shell}>
-      <div className={s.ambient} aria-hidden="true">
-        <span className={`${s.blob} ${s.blobA}`} />
-        <span className={`${s.blob} ${s.blobB}`} />
-        <span className={`${s.blob} ${s.blobC}`} />
-      </div>
+    <AuthShellContext.Provider value={contextValue}>
+      <div className={s.shell}>
+        <div className={s.ambient} aria-hidden="true">
+          <span className={`${s.blob} ${s.blobA}`} />
+          <span className={`${s.blob} ${s.blobB}`} />
+          <span className={`${s.blob} ${s.blobC}`} />
+        </div>
 
-      <div className={s.topBar}>
-        <Link to="/" className={s.brandRow}>
-          <img src={wordmark} alt="Meetifyy" className={s.brandWordmarkImg} />
-        </Link>
-        <Link to="/" className={s.exitLink}>
-          <ArrowLeft size={15} className={s.exitLinkIcon} />
-          <span>Back to site</span>
-        </Link>
-      </div>
+        <div className={s.topBar}>
+          <Link to="/" className={s.brandRow}>
+            <img src={wordmark} alt="Meetifyy" className={s.brandWordmarkImg} />
+          </Link>
+          <Link to="/" className={s.exitLink}>
+            <ArrowLeft size={15} className={s.exitLinkIcon} />
+            <span>Back to site</span>
+          </Link>
+        </div>
 
-      <div className={s.stage}>
-        <aside className={s.story}>
-          <span className={s.storyMark} aria-hidden="true" />
-          <h2 className={s.storyHeadline}>
-            {headlineLines.map((line, i) => (
-              <React.Fragment key={i}>
-                {renderHighlighted(line)}
-                {i < headlineLines.length - 1 ? <br /> : null}
-              </React.Fragment>
-            ))}
-          </h2>
-          <p className={s.storySub}>{subtext}</p>
+        <div className={s.stage}>
+          <StoryColumn headline={story.headline} subtext={story.subtext} />
 
-          <img src={proofCards} alt="" className={s.proofCards} aria-hidden="true" />
-        </aside>
-
-        <div className={s.panelWrap}>
-          <div className={s.panel} style={panelHeight != null ? { height: panelHeight } : undefined}>
-            <div ref={panelInnerRef} className={s.panelInner}>
-              {children}
+          <div className={s.panelWrap}>
+            <div className={`${s.panel} ${isInitialMount ? s.panelInitial : ''}`} style={panelHeight != null ? { height: panelHeight } : undefined}>
+              <div ref={panelInnerRef} className={s.panelInner}>
+                {children}
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </AuthShellContext.Provider>
   );
 }
 
@@ -107,3 +139,4 @@ function renderHighlighted(line) {
   if (parts.length === 1) return line;
   return parts.map((part, i) => (i % 2 === 1 ? <em key={i}>{part}</em> : part));
 }
+

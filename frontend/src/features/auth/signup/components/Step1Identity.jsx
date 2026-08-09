@@ -129,7 +129,7 @@ export default function Step1Identity() {
         />
 
         <div className={s.selectGroup}>
-          <span className={s.selectLabel}>Date of Birth</span>
+          <span className={s.selectLabel}>Birthday</span>
           <div className={s.selectRow}>
             <CustomSelect
               value={month}

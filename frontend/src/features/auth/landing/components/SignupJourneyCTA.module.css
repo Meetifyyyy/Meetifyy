@@ -1,19 +1,14 @@
 .section {
   position: relative;
-  padding: 8rem 0;
+  padding: 8rem 0 4rem 0;
   text-align: center;
   overflow: hidden;
-  background: radial-gradient(circle at center, #1E1E1E 0%, #121212 45%, #000000 100%);
+  background: #000000;
+  border-bottom: none;
 }
 
 .gridOverlay {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.03;
-  z-index: 0;
-  background-image: radial-gradient(circle at 1px 1px, white 1px, transparent 0);
-  background-size: 24px 24px;
+  display: none;
 }
 
 .emojisContainer {
