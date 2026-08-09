@@ -92,26 +92,26 @@
   letter-spacing: 0.1em;
   font-weight: 700;
   color: #0f172a;
-  border: 1px solid rgba(15, 23, 42, 0.2);
+  border: 1px solid rgba(15, 23, 42, 0.35);
   padding: 0.5rem 1.25rem;
   border-radius: 9999px;
   background: transparent;
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
 }
 
 .signInBtn:hover {
-  border-color: #0f172a;
+  border-color: rgba(15, 23, 42, 0.6);
   background: rgba(15, 23, 42, 0.05);
 }
 
 [data-theme="dark"] .signInBtn {
   color: #f8fafc;
-  border-color: rgba(248, 250, 252, 0.25);
+  border: 1px solid rgba(248, 250, 252, 0.35);
 }
 
 [data-theme="dark"] .signInBtn:hover {
-  border-color: #f8fafc;
+  border-color: rgba(248, 250, 252, 0.65);
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -302,20 +302,21 @@
   font-weight: 700;
   color: var(--color-brand-primary);
   padding: 1rem;
-  border: 1.5px solid rgba(92, 71, 250, 0.2);
+  border: 1.5px solid rgba(92, 71, 250, 0.35);
   border-radius: 9999px;
   background: rgba(240, 238, 255, 0.6);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, border-color 0.2s;
 }
 
 .mobileSignIn:hover {
   background: rgba(240, 238, 255, 1);
+  border-color: rgba(92, 71, 250, 0.65);
 }
 
 [data-theme="dark"] .mobileSignIn {
   color: #8b7bfb;
-  border-color: rgba(121, 101, 251, 0.3);
+  border-color: rgba(121, 101, 251, 0.35);
   background: rgba(121, 101, 251, 0.05);
 }
 

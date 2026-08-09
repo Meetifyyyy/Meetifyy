@@ -1,194 +1,231 @@
 import StaticDocLayout from './StaticDocLayout';
 import styles from './StaticDocLayout.module.css';
-import { Lock, Mail } from 'lucide-react';
+import { Mail } from 'lucide-react';
 
 export default function PrivacyPolicyPage() {
   return (
     <StaticDocLayout
       badge="Legal & Transparency"
       title="Privacy Policy"
-      subtitle="How Meetifyy collects, uses, stores, and protects your information."
+      subtitle="Comprehensive details on how Meetifyy collects, uses, shares, and protects your personal data in compliance with global privacy standards."
       effectiveDate="17 July 2026"
+      noHeroCard
+      leftAlign
     >
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={styles.iconWrapper}>
-            <Lock size={22} />
-          </div>
-          <h2 className={styles.cardTitle}>Introduction</h2>
-        </div>
-        <p className={styles.cardText}>
-          Welcome to Meetifyy (“Meetifyy,” “we,” “our,” or “us”). Your privacy is important to us. This Privacy Policy explains how we collect, use, store, share, and protect your information when you use the Meetifyy platform, including our website, mobile application, and related services (collectively, the “Platform”).
+      <section className={styles.cleanSection}>
+        <h2 className={styles.cleanSectionTitle}>1. Introduction & Contact Information</h2>
+        <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem' }}>
+          Welcome to Meetifyy (“Meetifyy,” “we,” “our,” or “us”). Your privacy is fundamentally important to us. This Privacy Policy outlines our practices regarding the collection, use, disclosure, and safeguarding of your personal data when you use the Meetifyy platform, including our website, mobile applications, and related services (collectively, the “Platform”).
         </p>
-        <p className={styles.cardText}>
-          By using Meetifyy, you agree to the collection and use of your information in accordance with this Privacy Policy.
+        <p className={styles.hierarchyParagraph}>
+          By accessing or using the Platform, you acknowledge that you have read, understood, and agree to the data practices described in this policy. If you have any questions or require the contact details of our Data Protection Officer (DPO), please contact us using the information provided at the end of this document.
         </p>
       </section>
 
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={styles.numBadge}>1</div>
-          <h2 className={styles.cardTitle}>Information We Collect</h2>
-        </div>
-        
-        <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1c1917', margin: '1rem 0 0.5rem 0' }}>Information You Provide:</h3>
-        <ul className={styles.bulletList}>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Full name, email address, and username</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> College or university name</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Profile photo, bio, and profile details</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Communities you join & events you create or attend</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Messages you send through the Platform</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Posts, comments, images, and other content you upload</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Any information you voluntarily provide</li>
+      <section className={styles.cleanSection}>
+        <h2 className={styles.cleanSectionTitle}>2. Types of Personal Data Collected</h2>
+        <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem' }}>
+          We collect personal information through the following methods and categories:
+        </p>
+
+        <h3 className={styles.cleanSectionSubTitle} style={{ marginTop: '1rem' }}>Data You Provide Directly:</h3>
+        <ul className={styles.cleanBulletList}>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Account Credentials:</strong> Full name, email address, username, and password.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Profile Data:</strong> College or university affiliation, profile photos, bio, and academic interests.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>User-Generated Content:</strong> Communities joined, events created or RSVP'd to, comments, posts, and media uploads.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Communications:</strong> Direct messages sent through the Platform and communications with our support team.
+            </div>
+          </li>
         </ul>
 
-        <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1c1917', margin: '1.5rem 0 0.5rem 0' }}>Information Collected Automatically:</h3>
-        <ul className={styles.bulletList}>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Device information, browser type, and operating system</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> IP address, app version, and device identifiers</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Usage activity, log data, date & time of access</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Crash reports and diagnostics</li>
+        <h3 className={styles.cleanSectionSubTitle} style={{ marginTop: '1.25rem' }}>Data Collected Automatically:</h3>
+        <ul className={styles.cleanBulletList}>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Device Information:</strong> Hardware model, operating system, unique device identifiers, and network information.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Log Data:</strong> IP addresses, browser types, access times, pages viewed, and navigation patterns.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Location Information:</strong> General location derived from IP addresses to provide relevant campus community suggestions.
+            </div>
+          </li>
         </ul>
 
-        <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1c1917', margin: '1.5rem 0 0.5rem 0' }}>Cookies:</h3>
-        <p className={styles.cardText}>
-          We may use cookies and similar technologies to keep you signed in, remember preferences, improve user experience, analyze performance, and enhance security.
+        <h3 className={styles.cleanSectionSubTitle} style={{ marginTop: '1.25rem' }}>Cookies and Tracking Technologies:</h3>
+        <p className={styles.hierarchyParagraph}>
+          We deploy cookies, web beacons, and similar tracking technologies to maintain session states, store user preferences, analyze platform usage, and enhance security. For detailed information, please review our Cookie Policy.
         </p>
       </section>
 
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={styles.numBadge}>2</div>
-          <h2 className={styles.cardTitle}>How We Use Your Information</h2>
-        </div>
-        <p className={styles.cardText}>We use your information to:</p>
-        <ul className={styles.bulletList}>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Create and manage your account</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Connect you with other users and student communities</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Enable direct messaging and group discussions</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Display your student profile</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Recommend relevant communities and campus events</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Improve and personalize the Platform experience</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Prevent fraud, abuse, and security threats</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Maintain platform security and system reliability</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Respond to customer support requests</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Comply with legal obligations</li>
-        </ul>
-      </section>
-
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={styles.numBadge}>3</div>
-          <h2 className={styles.cardTitle}>Direct Messages</h2>
-        </div>
-        <p className={styles.cardText}>
-          Messages are processed to provide the messaging service. We may review messages only when necessary to investigate abuse, spam, illegal activity, comply with legal obligations, or protect users and the Platform. We do not routinely monitor private conversations.
+      <section className={styles.cleanSection}>
+        <h2 className={styles.cleanSectionTitle}>3. Purpose & Legal Basis of Processing</h2>
+        <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem' }}>
+          Under the GDPR and other applicable laws, we process your data based on the following legal grounds:
         </p>
-      </section>
-
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={styles.numBadge}>4</div>
-          <h2 className={styles.cardTitle}>Communities and Events</h2>
-        </div>
-        <p className={styles.cardText}>
-          Information shared in public communities or public event pages may be visible to other users. Avoid posting sensitive personal information publicly.
-        </p>
-      </section>
-
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={styles.numBadge}>5</div>
-          <h2 className={styles.cardTitle}>Sharing Your Information</h2>
-        </div>
-        <p className={styles.cardText} style={{ fontWeight: 600, color: '#1c1917' }}>
-          We do not sell your personal information.
-        </p>
-        <p className={styles.cardText}>We may share information:</p>
-        <ul className={styles.bulletList}>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> With trusted service providers helping operate the Platform</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> When required by law or legal proceedings</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> To investigate fraud, abuse, or security issues</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> To protect our rights, users, or safety</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> During a merger, acquisition, or business transfer</li>
-        </ul>
-      </section>
-
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={styles.numBadge}>6</div>
-          <h2 className={styles.cardTitle}>Data Security</h2>
-        </div>
-        <p className={styles.cardText}>
-          We use reasonable technical and organizational measures to protect your information. However, no system is completely secure, and absolute security cannot be guaranteed.
-        </p>
-      </section>
-
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={styles.numBadge}>7</div>
-          <h2 className={styles.cardTitle}>Data Retention</h2>
-        </div>
-        <p className={styles.cardText}>
-          We retain information only as long as necessary to provide services, comply with legal obligations, resolve disputes, and enforce our policies.
-        </p>
-      </section>
-
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={styles.numBadge}>8</div>
-          <h2 className={styles.cardTitle}>Your Rights</h2>
-        </div>
-        <p className={styles.cardText}>You may have the right to:</p>
-        <ul className={styles.bulletList}>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Access your personal information</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Correct or update your profile information</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Request deletion of your account and associated data</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Withdraw consent where applicable</li>
-          <li className={styles.bulletItem}><span className={styles.bulletDot} /> Contact us regarding privacy concerns</li>
+        <ul className={styles.cleanBulletList}>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Contractual Necessity:</strong> To create and manage your account, connect you with student communities, and provide core messaging and event features.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Legitimate Interests:</strong> To improve and personalize the Platform, maintain security, detect fraud, and provide customer support.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Consent:</strong> When you opt-in to specific features, such as promotional communications or location-based services.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Legal Obligations:</strong> To comply with applicable laws, regulations, and authorized legal requests.
+            </div>
+          </li>
         </ul>
       </section>
 
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={styles.numBadge}>9</div>
-          <h2 className={styles.cardTitle}>Children’s Privacy</h2>
-        </div>
-        <p className={styles.cardText}>
-          Meetifyy is not intended for children under 13 years of age. If we learn that we have collected personal information from a child under 13, we will take reasonable steps to delete it.
+      <section className={styles.cleanSection}>
+        <h2 className={styles.cleanSectionTitle}>4. Data Sharing & Third-Party Disclosures</h2>
+        <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem', fontWeight: 600, color: '#1c1917' }}>
+          We do not sell your personal information to third parties.
+        </p>
+        <p className={styles.hierarchyParagraph}>We may disclose your data in the following restricted circumstances:</p>
+        <ul className={styles.cleanBulletList}>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Service Providers:</strong> Trusted third-party vendors (e.g., cloud hosting, analytics, security) who assist in operating our Platform under strict data processing agreements.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Other Users:</strong> Information shared in public communities, event pages, or public profiles is visible to other registered users.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Legal and Safety Requirements:</strong> When legally required, or to protect the rights, property, and safety of Meetifyy, our users, or the public.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Business Transfers:</strong> In the event of a merger, acquisition, or sale of assets, user data may be transferred as a business asset.
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <section className={styles.cleanSection}>
+        <h2 className={styles.cleanSectionTitle}>5. User Rights (GDPR & CCPA/CPRA)</h2>
+        <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem' }}>
+          Depending on your jurisdiction, you hold specific rights regarding your personal data:
+        </p>
+        <ul className={styles.cleanBulletList}>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Right to Access & Know:</strong> You can request a copy of the personal data we hold about you and details on how it is processed.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Right to Rectification:</strong> You can correct inaccurate or incomplete personal information directly through account settings or support.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Right to Erasure (Right to be Forgotten):</strong> You may request the deletion of your account and associated personal data.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Right to Opt-Out:</strong> Maintain the right to opt-out of sharing personal information for cross-context behavioral advertising.
+            </div>
+          </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Right to Non-Discrimination:</strong> We will not discriminate against you for exercising your privacy rights.
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <section className={styles.cleanSection}>
+        <h2 className={styles.cleanSectionTitle}>6. Data Retention & Security</h2>
+        <h3 className={styles.cleanSectionSubTitle} style={{ marginTop: '1rem' }}>Data Retention:</h3>
+        <p className={styles.hierarchyParagraph}>
+          We retain your personal data only for as long as necessary to fulfill the purposes outlined in this policy, maintain your active account, comply with legal obligations, and resolve disputes. Account deletion permanently removes or anonymizes data within 30 days.
+        </p>
+        <h3 className={styles.cleanSectionSubTitle} style={{ marginTop: '1.25rem' }}>Security Measures:</h3>
+        <p className={styles.hierarchyParagraph}>
+          We implement industry-standard technical and organizational measures (encryption, secure socket layer technology, security audits) to protect your data against unauthorized access, alteration, or destruction.
         </p>
       </section>
 
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={styles.numBadge}>10</div>
-          <h2 className={styles.cardTitle}>Third-Party Services</h2>
-        </div>
-        <p className={styles.cardText}>
-          Meetifyy may contain links to third-party websites or services. We are not responsible for their privacy practices.
+      <section className={styles.cleanSection}>
+        <h2 className={styles.cleanSectionTitle}>7. Children’s Privacy</h2>
+        <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem' }}>
+          Meetifyy is strictly intended for university and college students. We do not knowingly collect personal data from individuals under 13 years of age. If we become aware that such data was inadvertently collected, we will take immediate steps to delete it.
         </p>
       </section>
 
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={styles.numBadge}>11</div>
-          <h2 className={styles.cardTitle}>Changes to This Privacy Policy</h2>
-        </div>
-        <p className={styles.cardText}>
-          We may update this Privacy Policy from time to time. Continued use of the Platform after updates constitutes acceptance of the revised policy.
+      <section className={styles.cleanSection}>
+        <h2 className={styles.cleanSectionTitle}>8. Updates & Policy Changes</h2>
+        <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem' }}>
+          We may revise this Privacy Policy periodically. We will notify you of material changes via in-app notifications or email. Your continued use of the Platform constitutes acceptance of the updated terms.
         </p>
       </section>
 
-      <div className={styles.contactCard}>
-        <h3 className={styles.contactCardTitle}>12. Contact Us</h3>
-        <p className={styles.contactCardText}>
-          For any privacy questions or requests regarding your data, reach out to us at:
+      <section className={styles.cleanSection} style={{ borderBottom: 'none' }}>
+        <h2 className={styles.cleanSectionTitle}>9. Contact Us</h2>
+        <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem' }}>
+          For inquiries regarding this Privacy Policy, to exercise your data rights, or to contact our Data Protection Officer, please reach out to us at:
         </p>
-        <a href="mailto:meetify0@gmail.com" className={styles.emailBtn}>
+        <a href="mailto:meetify0@gmail.com" className={styles.emailBtn} style={{ marginTop: '1rem', display: 'inline-flex' }}>
           <Mail size={18} />
           meetify0@gmail.com
         </a>
-      </div>
+      </section>
     </StaticDocLayout>
   );
 }

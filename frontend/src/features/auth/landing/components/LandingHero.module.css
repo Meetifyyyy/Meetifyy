@@ -96,7 +96,7 @@
   width: 100%;
   background: transparent;
   color: #111827;
-  border: 1.5px solid #94a3b8;
+  border: 1.5px solid rgba(15, 23, 42, 0.35);
   font-size: 0.9375rem;
   font-weight: 600;
   padding: 1rem 2rem;
@@ -110,18 +110,18 @@
 }
 
 .secondaryBtn:hover {
-  background: #f8fafc;
-  border-color: #475569;
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.6);
 }
 
 .secondaryBtn:active { transform: scale(0.98); }
 
 [data-theme="dark"] .secondaryBtn {
   color: #fff;
-  border-color: #475569;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
 }
 
 [data-theme="dark"] .secondaryBtn:hover {
   background: rgba(255, 255, 255, 0.08);
-  border-color: #94a3b8;
+  border-color: rgba(255, 255, 255, 0.65);
 }

@@ -2,7 +2,7 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: #fafafa;
+  background-color: #ffffff;
   color: #1c1917;
 }
 
@@ -23,6 +23,72 @@
   box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.04);
   position: relative;
   overflow: hidden;
+}
+
+.heroNoCard {
+  margin-bottom: 0;
+  padding: 0;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.heroNoCardLeft {
+  margin-bottom: 2rem;
+  padding: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.titleNoCard {
+  font-size: clamp(2.1rem, 6vw, 3.75rem);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: #0c0a09;
+  text-transform: uppercase;
+  text-align: center;
+  margin: 0;
+  word-break: break-word;
+}
+
+.titleNoCardLeft {
+  font-family: 'Changa One', sans-serif;
+  font-size: clamp(1.85rem, 5vw, 3rem);
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: #0c0a09;
+  text-transform: uppercase;
+  text-align: left;
+  margin: 0 0 0.5rem 0;
+  word-break: break-word;
+}
+
+.subtitleLeft {
+  font-family: 'Inter', sans-serif;
+  font-size: clamp(0.95rem, 2.5vw, 1.05rem);
+  line-height: 1.6;
+  color: #57534e;
+  margin: 0;
+  text-align: left;
+}
+
+.metaRowLeft {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #f5f5f4;
+  font-size: 0.8125rem;
+  color: #78716c;
+  font-family: 'Inter', sans-serif;
 }
 
 .heroGlow {
@@ -52,7 +118,7 @@
 }
 
 .title {
-  font-size: 2.5rem;
+  font-size: clamp(1.85rem, 5vw, 2.5rem);
   font-weight: 800;
   line-height: 1.15;
   letter-spacing: -0.025em;
@@ -61,7 +127,7 @@
 }
 
 .subtitle {
-  font-size: 1.05rem;
+  font-size: clamp(0.95rem, 2.5vw, 1.05rem);
   line-height: 1.6;
   color: #57534e;
   margin: 0;
@@ -88,6 +154,184 @@
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
+}
+
+.changaIntroText {
+  font-family: 'Inter', sans-serif;
+  text-align: center;
+  font-size: clamp(0.975rem, 2.2vw, 1.15rem);
+  font-weight: 500;
+  line-height: 1.75;
+  color: #44403c;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.heroImageWrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: -1.75rem auto 2rem auto;
+  width: 100%;
+  max-width: 48rem;
+}
+
+.heroImage {
+  width: 100%;
+  height: auto;
+  border-radius: 20px;
+  object-fit: cover;
+  border: none;
+}
+
+/* Clean Borderless Layout */
+.cleanSection {
+  margin-top: 1rem;
+}
+
+.cleanSectionTitle {
+  font-family: 'Changa One', sans-serif;
+  font-size: clamp(1.4rem, 4vw, 2.2rem);
+  font-weight: 400;
+  color: #0c0a09;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.emojiHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.bigEmoji {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  line-height: 1;
+}
+
+.hierarchySection {
+  margin-top: 2.5rem;
+}
+
+.centerSection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-top: 2.25rem;
+}
+
+.centerSection .bigEmoji {
+  margin-bottom: 0.4rem;
+}
+
+.centerSection .cleanSectionTitle {
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+.centerSection .hierarchyParagraph {
+  text-align: center;
+  max-width: 38rem;
+  margin: 0 auto;
+}
+
+.hierarchyParagraph {
+  font-family: 'Inter', sans-serif;
+  font-size: clamp(0.95rem, 2vw, 1.075rem);
+  line-height: 1.8;
+  color: #374151;
+  margin: 0;
+}
+
+.hierarchyParagraph + .hierarchyParagraph {
+  margin-top: 1rem;
+}
+
+.highlightText {
+  font-family: 'Inter', sans-serif;
+  font-size: clamp(1rem, 2.5vw, 1.15rem);
+  font-weight: 600;
+  color: #ea580c;
+  line-height: 1.7;
+  margin-top: 1.25rem;
+}
+
+.cleanSectionSubTitle {
+  font-family: 'Changa One', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 400;
+  color: #1c1917;
+  margin: 0 0 0.4rem 0;
+  letter-spacing: -0.01em;
+}
+
+.cleanText {
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: #44403c;
+  margin: 0;
+}
+
+.cleanText + .cleanText {
+  margin-top: 0.85rem;
+}
+
+.cleanBulletList {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cleanBulletItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  font-family: 'Inter', sans-serif;
+  font-size: clamp(0.925rem, 2vw, 1rem);
+  line-height: 1.65;
+  color: #44403c;
+}
+
+.cleanBulletDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #ea580c;
+  margin-top: 0.55rem;
+  flex-shrink: 0;
+}
+
+.cleanBulletText {
+  flex: 1;
+  font-family: 'Inter', sans-serif;
+  font-size: clamp(0.925rem, 2vw, 1rem);
+  line-height: 1.65;
+  color: #44403c;
+}
+
+.cleanGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem 1.75rem;
+  margin-top: 1.25rem;
+}
+
+@media (min-width: 640px) {
+  .cleanGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.cleanFeatureItem {
+  display: flex;
+  flex-direction: column;
 }
 
 /* Card Styling */
@@ -125,14 +369,16 @@
 }
 
 .cardTitle {
-  font-size: 1.35rem;
-  font-weight: 700;
+  font-family: 'Changa One', sans-serif;
+  font-size: clamp(1.2rem, 3vw, 1.45rem);
+  font-weight: 400;
   color: #0c0a09;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.01em;
   margin: 0;
 }
 
 .cardText {
+  font-family: 'Inter', sans-serif;
   font-size: 0.95rem;
   line-height: 1.7;
   color: #44403c;
@@ -156,6 +402,7 @@
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
+  font-family: 'Inter', sans-serif;
   font-size: 0.9375rem;
   line-height: 1.6;
   color: #44403c;
@@ -171,19 +418,19 @@
 }
 
 .numBadge {
-  width: 1.5rem;
-  height: 1.5rem;
+  font-family: 'Changa One', sans-serif;
+  width: 1.65rem;
+  height: 1.65rem;
   border-radius: 50%;
-  background: #f5f5f4;
-  border: 1px solid #e7e5e4;
+  background: rgba(249, 115, 22, 0.08);
+  border: 1px solid rgba(249, 115, 22, 0.2);
   color: #ea580c;
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-size: 0.85rem;
+  font-weight: 400;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-top: 0.15rem;
 }
 
 /* Grid layout for features/values */
@@ -208,13 +455,15 @@
 }
 
 .featureBoxTitle {
-  font-size: 1rem;
-  font-weight: 700;
+  font-family: 'Changa One', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 400;
   color: #1c1917;
   margin: 0 0 0.4rem 0;
 }
 
 .featureBoxText {
+  font-family: 'Inter', sans-serif;
   font-size: 0.875rem;
   color: #57534e;
   line-height: 1.55;
@@ -235,8 +484,9 @@
 }
 
 .contactCardTitle {
-  font-size: 1.35rem;
-  font-weight: 700;
+  font-family: 'Changa One', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 400;
   margin: 0;
   color: #ffffff;
 }
@@ -270,15 +520,21 @@
 
 @media (max-width: 640px) {
   .mainContent {
-    padding: 6rem 1rem 3rem 1rem;
+    padding: 5.5rem 1rem 3rem 1rem;
   }
   .hero {
-    padding: 1.75rem 1.25rem;
+    padding: 1.5rem 1rem;
   }
-  .title {
-    font-size: 1.85rem;
+  .heroImageWrapper {
+    margin: -1.75rem auto 0 auto;
+  }
+  .hierarchySection {
+    margin-top: 1.75rem;
+  }
+  .emojiHeader {
+    gap: 0.6rem;
   }
   .card {
-    padding: 1.35rem 1.25rem;
+    padding: 1.25rem 1rem;
   }
 }

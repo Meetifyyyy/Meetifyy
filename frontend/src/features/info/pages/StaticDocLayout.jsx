@@ -10,6 +10,8 @@ export default function StaticDocLayout({
   title,
   subtitle,
   effectiveDate,
+  noHeroCard = false,
+  leftAlign = false,
   children,
 }) {
   const originalTheme = useRef(null);
@@ -91,20 +93,32 @@ export default function StaticDocLayout({
 
   return (
     <div className={styles.pageWrapper}>
-      <Background />
       <LandingNavbar />
       <main className={styles.mainContent}>
-        <div className={styles.hero}>
-          <div className={styles.heroGlow} />
-          {badge && <div className={styles.badge}>{badge}</div>}
-          <h1 className={`${styles.title} landing-font-display`}>{title}</h1>
-          {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
-          {effectiveDate && (
-            <div className={styles.metaRow}>
-              <span>Effective Date: <strong className={styles.effectiveBadge}>{effectiveDate}</strong></span>
-            </div>
-          )}
-        </div>
+        {noHeroCard ? (
+          <div className={leftAlign ? styles.heroNoCardLeft : styles.heroNoCard}>
+            {badge && <div className={styles.badge}>{badge}</div>}
+            <h1 className={`${leftAlign ? styles.titleNoCardLeft : styles.titleNoCard} landing-font-display`}>{title}</h1>
+            {subtitle && <p className={leftAlign ? styles.subtitleLeft : styles.subtitle}>{subtitle}</p>}
+            {effectiveDate && (
+              <div className={leftAlign ? styles.metaRowLeft : styles.metaRow}>
+                <span>Last Updated: <strong className={styles.effectiveBadge}>{effectiveDate}</strong></span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className={styles.hero}>
+            <div className={styles.heroGlow} />
+            {badge && <div className={styles.badge}>{badge}</div>}
+            <h1 className={`${styles.title} landing-font-display`}>{title}</h1>
+            {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
+            {effectiveDate && (
+              <div className={styles.metaRow}>
+                <span>Last Updated: <strong className={styles.effectiveBadge}>{effectiveDate}</strong></span>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className={styles.bodyContainer}>
           {children}
