@@ -9,7 +9,7 @@ import { communitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, ArrowLeft } from 'lucide-react';
-import wordmark from '@assets/images/meetifyy_wordmark.webp';
+
 
 // Draft persistence so a mid-onboarding reload doesn't wipe the user's picks.
 const ONB_STEP_KEY = 'meetifyy_onboarding_step';
@@ -225,17 +225,6 @@ export default function OnboardingRoute() {
       <div className={styles.ambient} aria-hidden="true">
         <span className={`${styles.blob} ${styles.blobA}`} />
         <span className={`${styles.blob} ${styles.blobB}`} />
-      </div>
-
-      <div className={styles.topBar}>
-        <img src={wordmark} alt="Meetifyy" className={styles.brandImg} />
-        <div className={styles.progressPill}>
-          <span>Step {step}/2</span>
-          <span className={styles.progressTrack}>
-            <span className={`${styles.progressSegment} ${step >= 1 ? styles.done : ''}`} />
-            <span className={`${styles.progressSegment} ${step >= 2 ? styles.done : ''}`} />
-          </span>
-        </div>
       </div>
 
       <div className={styles.contentArea}>
