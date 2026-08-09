@@ -3,9 +3,16 @@ import { Link } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { supabase } from '@shared/context/AuthContext';
 import Toast from '@shared/components/ui/Toast';
-import { motion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
-import styles from './ForgotPasswordPage.module.css';
+import { MailCheck, ArrowRight } from 'lucide-react';
+import {
+  AuthShell,
+  AuthHeading,
+  AuthField,
+  AuthButton,
+  AuthStatus,
+  BackButton,
+  styles as s,
+} from '../shared/ui';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -28,7 +35,7 @@ export default function ForgotPasswordPage() {
       showToast('Please enter a valid email address.');
       return;
     }
-    
+
     setIsSubmitting(true);
     try {
       // Send the reset email directly via Supabase.
@@ -49,7 +56,7 @@ export default function ForgotPasswordPage() {
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo: `${siteUrl}/reset-password`,
       });
-      
+
       // Always show "check your email" — even if error, to prevent enumeration.
       // Supabase may return an error for rate limiting, which is the only case
       // where surfacing feedback makes sense.
@@ -57,7 +64,7 @@ export default function ForgotPasswordPage() {
         showToast('Too many requests. Please wait a moment before trying again.');
         return;
       }
-      
+
       setIsSubmitted(true);
     } catch (err) {
       // Only surface rate limit errors — all other errors are swallowed
@@ -74,75 +81,65 @@ export default function ForgotPasswordPage() {
 
   return (
     <>
-      <div className={styles.flowContainer}>
-        
-        <div className={styles.progressContainer}>
-          <button onClick={() => goBack('/login')} className={styles.backButton} aria-label="Go back">
-            <ArrowLeft size={22} />
-          </button>
-        </div>
+      <AuthShell
+        headline={'Locked out?\n*We’ll get you back in.*'}
+        subtext="Enter the email tied to your account and we'll send a secure reset link."
+      >
+        <div className={s.content}>
+          {!isSubmitted ? (
+            <>
+              <BackButton onClick={() => goBack('/login')} />
+              <AuthHeading title="Reset your password" subtitle="Enter your email and we'll send a reset link if an account exists." />
 
-        <div className={styles.contentArea}>
-          <motion.div 
-            className={styles.stepWrapper}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
-            {!isSubmitted ? (
-              <>
-                <h1 className={styles.headline}>Reset Password</h1>
-                <p className={styles.subheadline}>Enter your email and we'll send a reset link if an account exists.</p>
-                <form onSubmit={handleSubmit} style={{ width: '100%', marginTop: '1.5rem' }}>
-                  <div className={styles.inputGroup}>
-                    <div className={styles.inputWrapper}>
-                      <input
-                        id="email"
-                        type="email"
-                        autoFocus
-                        className={styles.largeInput}
-                        placeholder=" "
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                      />
-                      <label htmlFor="email" className={styles.floatingLabel}>Email Address</label>
-                    </div>
-                  </div>
-                  
-                  <button type="submit" className={styles.continueBtn} disabled={isSubmitting} style={{ marginTop: '1.25rem' }}>
-                    {isSubmitting ? 'Sending...' : 'Send Reset Link'} <ArrowRight className={styles.btnIcon} />
-                  </button>
-                </form>
-              </>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-                <div style={{ marginBottom: '1.5rem' }}>
-                  <CheckCircle size={48} color="#10B981" />
-                </div>
-                <h1 className={styles.headline} style={{ textAlign: 'center' }}>Check your email</h1>
-                <p className={styles.subheadline} style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-                  If an account exists for <strong style={{ color: 'var(--color-text-main)' }}>{email}</strong>, a reset link is on its way.
-                </p>
-                <p className={styles.subheadline} style={{ fontSize: '0.9rem', textAlign: 'center', marginBottom: '2.5rem' }}>
-                  Didn't get it? Check your spam folder or try again in a few minutes.
-                </p>
-                <Link
-                  to="/login"
-                  className={styles.continueBtn}
-                  style={{
-                    textDecoration: 'none',
-                    background: 'var(--color-bg-white)',
-                    color: 'var(--color-text-main)',
-                    border: '1px solid var(--color-border)',
-                    justifyContent: 'center'
-                  }}
+              <form onSubmit={handleSubmit} className={s.form} noValidate>
+                <AuthField
+                  id="forgot-email"
+                  label="Email Address"
+                  type="email"
+                  autoFocus
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+
+                <AuthButton
+                  type="submit"
+                  loading={isSubmitting}
+                  loadingText="Sending..."
+                  icon={<ArrowRight size={18} />}
+                  disabled={!email.trim()}
+                  style={{ marginTop: '0.5rem' }}
                 >
-                  Return to log in
+                  Send Reset Link
+                </AuthButton>
+              </form>
+
+              <div className={s.footer}>
+                Remembered it?
+                <Link to="/login" className={s.link}>
+                  Back to login
                 </Link>
               </div>
-            )}
-          </motion.div>
+            </>
+          ) : (
+            <AuthStatus
+              icon={MailCheck}
+              tone="success"
+              title="Check your email"
+              description={
+                <>
+                  If an account exists for <strong>{email}</strong>, a reset link is on its way. Didn't get it?
+                  Check your spam folder or try again in a few minutes.
+                </>
+              }
+            >
+              <Link to="/login" className={`${s.button} ${s.buttonGhost}`}>
+                Return to log in
+              </Link>
+            </AuthStatus>
+          )}
         </div>
-      </div>
+      </AuthShell>
       <Toast message={toastMsg} visible={toastVisible} onHide={() => setToastVisible(false)} />
     </>
   );
