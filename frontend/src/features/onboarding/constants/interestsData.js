@@ -30,7 +30,7 @@ export const INTERESTS_BY_CATEGORY = [
       { emoji: "🎤", label: "Arijit Singh" },
       { emoji: "🎧", label: "AP Dhillon" },
       { emoji: "🔥", label: "Diljit Dosanjh" },
-      { emoji: "🌈", label: "A.R. Rahman" },
+      { emoji: "🎹", label: "A.R. Rahman" },
       { emoji: "💖", label: "Taylor Swift" },
       { emoji: "🌌", label: "The Weeknd" },
       { emoji: "🪩", label: "Coldplay" },
@@ -70,7 +70,7 @@ export const INTERESTS_BY_CATEGORY = [
       { emoji: "🫡", label: "Good Listener" },
       { emoji: "🧃", label: "Go With The Flow" },
       { emoji: "🤠", label: "Chaotic Good" },
-      { emoji: "🌈", label: "Optimistic" },
+      { emoji: "🌟", label: "Optimistic" },
       { emoji: "🛋️", label: "Chill Vibes" }
     ]
   },
@@ -116,7 +116,7 @@ export const INTERESTS_BY_CATEGORY = [
       { emoji: "🏏", label: "Rohit Sharma" },
       { emoji: "⚽", label: "Cristiano Ronaldo" },
       { emoji: "⚽", label: "Lionel Messi" },
-      { emoji: "🌈", label: "Neeraj Chopra" },
+      { emoji: "🥇", label: "Neeraj Chopra" },
       { emoji: "🏎️", label: "Max Verstappen" },
       { emoji: "🏎️", label: "Lewis Hamilton" },
       { emoji: "💪", label: "Calisthenics & Gym" },
