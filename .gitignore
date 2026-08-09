@@ -34,7 +34,7 @@ pnpm-debug.log*
 *.log
 **/*.log
 
-# Agent/IDE directories and files
+# Agent/IDE directories and files — never committed
 .agent/
 .agents/
 .dual-graph/
@@ -44,8 +44,11 @@ GEMINI.md
 .gemini/
 .vscode/
 .idea/
+.claude/
 skills-lock.json
 REMEDIATION_PLAN.md
+
+# Documentation / internal files — kept local only
 docs/
 
 # Testing
@@ -78,7 +81,6 @@ all_files.txt
 git_files.txt
 *files_utf8.txt
 git_untracked.txt
-output/
 meetifyy-security-remediation-report.md
 
 # Temporary dev/debug scripts
@@ -89,5 +91,5 @@ update_*.ts
 inspect_*.ts
 test_svc.ts
 
-# Local scripts
-start.bat
+# Local scripts (never deploy these)
+*.bat
