@@ -8,8 +8,8 @@ import { useData } from '@shared/hooks/useData';
 import { communitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, ChevronDown, ArrowLeft } from 'lucide-react';
-import Background from '@shared/components/ui/Background';
+import { Check, ArrowLeft } from 'lucide-react';
+import wordmark from '@assets/images/meetifyy_wordmark.webp';
 
 // Draft persistence so a mid-onboarding reload doesn't wipe the user's picks.
 const ONB_STEP_KEY = 'meetifyy_onboarding_step';
@@ -206,38 +206,41 @@ export default function OnboardingRoute() {
 
   if (isCompleting) {
     return (
-      <div className={styles.onboardingContainer} style={{ justifyContent: 'center', alignItems: 'center' }}>
-        <Background />
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '2rem' }}>
-          <div style={{ position: 'relative', marginBottom: '2rem' }}>
-            <motion.div
-              style={{
-                width: '72px',
-                height: '72px',
-                borderRadius: '50%',
-                border: '4px solid var(--color-border)',
-                borderTopColor: 'var(--color-primary)',
-                display: 'inline-block',
-              }}
-              animate={{ rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 1.2, ease: 'linear' }}
-            />
-          </div>
-          <h2 className={styles.headline} style={{ fontSize: '1.75rem' }}>Creating profile...</h2>
-          <p className={styles.subheadline} style={{ color: 'var(--color-primary)', fontWeight: 600, marginTop: '0.5rem' }}>
-            {loadingMessages[loadingMsgIdx]}
-          </p>
+      <div className={styles.shell}>
+        <div className={styles.ambient} aria-hidden="true">
+          <span className={`${styles.blob} ${styles.blobA}`} />
+          <span className={`${styles.blob} ${styles.blobB}`} />
+        </div>
+        <div className={styles.completingWrap}>
+          <div className={styles.spinner} />
+          <h2 className={styles.completingTitle}>Creating profile...</h2>
+          <p className={styles.completingMsg}>{loadingMessages[loadingMsgIdx]}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={styles.onboardingContainer}>
-      <Background />
+    <div className={styles.shell}>
+      <div className={styles.ambient} aria-hidden="true">
+        <span className={`${styles.blob} ${styles.blobA}`} />
+        <span className={`${styles.blob} ${styles.blobB}`} />
+      </div>
+
+      <div className={styles.topBar}>
+        <img src={wordmark} alt="Meetifyy" className={styles.brandImg} />
+        <div className={styles.progressPill}>
+          <span>Step {step}/2</span>
+          <span className={styles.progressTrack}>
+            <span className={`${styles.progressSegment} ${step >= 1 ? styles.done : ''}`} />
+            <span className={`${styles.progressSegment} ${step >= 2 ? styles.done : ''}`} />
+          </span>
+        </div>
+      </div>
+
       <div className={styles.contentArea}>
         {step === 1 && (
-          <div className="animate-in" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div className={styles.stepWrap}>
             <h1 className={styles.headline}>What are you into?</h1>
             <p className={styles.subheadline}>
               {selectedInterests.length >= 1
@@ -345,26 +348,9 @@ export default function OnboardingRoute() {
         )}
 
         {step === 2 && (
-          <div className="animate-in" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              aria-label="Back to interests"
-              style={{
-                alignSelf: 'flex-start',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                background: 'none',
-                border: 'none',
-                color: 'var(--color-text-muted)',
-                cursor: 'pointer',
-                fontSize: '0.9rem',
-                fontWeight: 600,
-                padding: '0.25rem 0.25rem 0.75rem',
-              }}
-            >
-              <ArrowLeft size={18} /> Back
+          <div className={styles.stepWrap}>
+            <button type="button" onClick={() => setStep(1)} aria-label="Back to interests" className={styles.backLink}>
+              <ArrowLeft size={16} /> Back
             </button>
             <h1 className={styles.headline}>Join your first spaces</h1>
             <p className={styles.subheadline}>Based on your interests, we recommend these communities.</p>
@@ -404,12 +390,11 @@ export default function OnboardingRoute() {
             })}
           </div>
 
-            <button 
-              className={styles.continueBtn} 
-              onClick={handleNext}
-            >
-              Let's go
-            </button>
+            <div className={styles.actionsFooter}>
+              <button className={styles.continueBtn} onClick={handleNext}>
+                Let's go
+              </button>
+            </div>
           </div>
         )}
       </div>

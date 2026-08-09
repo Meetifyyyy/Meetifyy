@@ -1,9 +1,7 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { SignupProvider, useSignup } from '../context/SignupContext';
-import { AnimatePresence } from 'framer-motion';
-import styles from './SignupFlow.module.css';
-import SignupProgressBar from './components/SignupProgressBar';
-import loginIllustration from '@assets/login-illustration.png';
+import { AuthShell, StepProgress, styles as s } from '../shared/ui';
 
 import Step1Identity from './components/Step1Identity';
 import Step2Academic from './components/Step2Academic';
@@ -12,7 +10,13 @@ import Step4OTP from './components/Step4OTP';
 import Step5Avatar from './components/Step5Avatar';
 
 const StepRenderer = () => {
-  const { currentStep } = useSignup();
+  const { currentStep, totalSteps, prevStep } = useSignup();
+  const navigate = useNavigate();
+
+  const handleBack = () => {
+    if (currentStep === 1) navigate('/login');
+    else prevStep();
+  };
 
   const renderStep = () => {
     switch (currentStep) {
@@ -21,31 +25,25 @@ const StepRenderer = () => {
       case 3: return <Step3Password key="step3" />;
       case 4: return <Step4OTP key="step4" />;
       case 5: return <Step5Avatar key="step5" />;
-      default: return <div>Unknown Step</div>;
+      default: return null;
     }
   };
 
   return (
-    <div className={styles.pageContainer}>
-      <div className={styles.signupBox}>
-        {/* Left Panel: UI Design Showcase */}
-        <div className={styles.leftPanel}>
-          <div className={styles.illustrationWrapper}>
-            <img src={loginIllustration} alt="Signup Illustration" className={styles.loginIllustration} />
-          </div>
-        </div>
-
-        {/* Right Panel: Signup Form */}
-        <div className={styles.rightPanel}>
-          <SignupProgressBar />
-          <div className={styles.contentArea}>
-            <AnimatePresence mode="wait">
-              {renderStep()}
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
-    </div>
+    <AuthShell
+      headline={'Join a campus\nthat gets you.'}
+      subtext="A few quick steps and you're in — verified, matched, and ready to connect."
+    >
+      <StepProgress
+        currentStep={currentStep}
+        totalSteps={totalSteps}
+        onBack={handleBack}
+        // The final step is post-OTP (authenticated) — there's no valid step to
+        // return to, so the back control is hidden there.
+        hideBack={currentStep >= totalSteps}
+      />
+      <div className={s.content}>{renderStep()}</div>
+    </AuthShell>
   );
 };
 

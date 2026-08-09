@@ -2,10 +2,16 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@shared/context/AuthContext';
 import Toast from '@shared/components/ui/Toast';
-import { motion } from 'framer-motion';
-import { ArrowRight, CheckCircle, Eye, EyeOff, XCircle } from 'lucide-react';
+import { CheckCircle2, XCircle } from 'lucide-react';
 import { getBackendUrl } from '@shared/api/apiClient';
-import styles from './ForgotPasswordPage.module.css';
+import {
+  AuthShell,
+  AuthHeading,
+  PasswordField,
+  AuthButton,
+  AuthStatus,
+  styles as s,
+} from '../shared/ui';
 
 const API_URL = getBackendUrl();
 const MAX_PASSWORD_LENGTH = 128;
@@ -45,8 +51,6 @@ export default function ResetPasswordPage() {
   const [uiState, setUiState] = useState('loading');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
 
@@ -298,252 +302,88 @@ export default function ResetPasswordPage() {
     // no way to re-submit after a password has been changed.
   };
 
-  // ─── Loading ─────────────────────────────────────────────────────────────────
-  if (uiState === 'loading') {
-    return (
-      <div className={styles.flowContainer}>
-        <div className={styles.contentArea}>
-          <div
-            className={styles.stepWrapper}
-            style={{ alignItems: 'center', justifyContent: 'center', gap: '0.75rem', minHeight: 160 }}
-          >
-            <div
-              style={{
-                width: 28,
-                height: 28,
-                border: '2.5px solid #E2E8F0',
-                borderTopColor: '#4F46E5',
-                borderRadius: '50%',
-                animation: 'spin 0.75s linear infinite',
-              }}
-            />
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', margin: 0 }}>
-              Verifying reset link…
-            </p>
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Expired / Invalid / Used ─────────────────────────────────────────────
-  if (uiState === 'expired') {
-    return (
-      <div className={styles.flowContainer}>
-        <div className={styles.contentArea}>
-          <motion.div
-            className={styles.stepWrapper}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            style={{ alignItems: 'center' }}
-          >
-            <div style={{ marginBottom: '1.25rem' }}>
-              <XCircle size={48} color="#EF4444" strokeWidth={1.5} />
-            </div>
-            <h1
-              className={styles.headline}
-              style={{ textAlign: 'center', fontSize: '1.35rem', marginBottom: '0.5rem' }}
-            >
-              Reset Link Expired
-            </h1>
-            <p
-              className={styles.subheadline}
-              style={{ textAlign: 'center', marginBottom: '2rem', lineHeight: 1.6 }}
-            >
-              This password reset link is invalid or has expired.
-              <br />
-              Please request a new password reset email.
-            </p>
-            <Link
-              to="/forgot-password"
-              className={styles.continueBtn}
-              style={{ textDecoration: 'none', justifyContent: 'center' }}
-            >
-              Request New Link <ArrowRight className={styles.btnIcon} />
-            </Link>
-            <Link
-              to="/login"
-              style={{
-                marginTop: '0.875rem',
-                fontSize: '0.85rem',
-                color: 'var(--color-text-muted)',
-                textDecoration: 'none',
-                textAlign: 'center',
-              }}
-            >
-              Back to Login
-            </Link>
-          </motion.div>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Success ──────────────────────────────────────────────────────────────
-  if (uiState === 'success') {
-    return (
-      <div className={styles.flowContainer}>
-        <div className={styles.contentArea}>
-          <motion.div
-            className={styles.stepWrapper}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            style={{ alignItems: 'center' }}
-          >
-            <div style={{ marginBottom: '1.25rem' }}>
-              <CheckCircle size={48} color="#10B981" strokeWidth={1.5} />
-            </div>
-            <h1
-              className={styles.headline}
-              style={{ textAlign: 'center', marginBottom: '0.5rem' }}
-            >
-              Password Updated
-            </h1>
-            <p
-              className={styles.subheadline}
-              style={{ textAlign: 'center', marginBottom: '0.5rem' }}
-            >
-              Your password has been reset successfully.
-            </p>
-            <p
-              style={{
-                fontSize: '0.8rem',
-                color: 'var(--color-text-muted)',
-                textAlign: 'center',
-                marginBottom: '2.5rem',
-              }}
-            >
-              Redirecting to login in a moment…
-            </p>
-            <Link
-              to="/login"
-              replace
-              className={styles.continueBtn}
-              style={{
-                textDecoration: 'none',
-                background: 'var(--color-bg-white)',
-                color: 'var(--color-text-main)',
-                border: '1px solid var(--color-border)',
-                justifyContent: 'center',
-              }}
-            >
-              Log in now
-            </Link>
-          </motion.div>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Valid / Updating (form) ───────────────────────────────────────────────
   const isUpdating = uiState === 'updating';
 
   return (
     <>
-      <div className={styles.flowContainer}>
-        <div className={styles.progressContainer} />
+      <AuthShell
+        headline={'Almost there.\n*Set a fresh password.*'}
+        subtext="Choose something strong you'll remember — your campus circle is waiting."
+      >
+        <div className={s.content}>
+          {uiState === 'loading' && (
+            <AuthStatus tone="loading" title="Verifying reset link…" description="This only takes a second." />
+          )}
 
-        <div className={styles.contentArea}>
-          <motion.div
-            className={styles.stepWrapper}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
-            <h1 className={styles.headline}>Set New Password</h1>
-            <p className={styles.subheadline}>Choose a strong, secure password.</p>
-
-            <form
-              onSubmit={handleSubmit}
-              style={{
-                width: '100%',
-                marginTop: '1.5rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.5rem',
-              }}
+          {uiState === 'expired' && (
+            <AuthStatus
+              icon={XCircle}
+              tone="error"
+              title="Reset link expired"
+              description="This password reset link is invalid or has expired. Please request a new one."
             >
-              {/* New password */}
-              <div className={styles.inputGroup}>
-                <div className={styles.inputWrapper}>
-                  <input
-                    id="new-password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoFocus
-                    autoComplete="new-password"
-                    className={styles.largeInput}
-                    placeholder=" "
-                    value={password}
-                    maxLength={MAX_PASSWORD_LENGTH}
-                    onChange={(e) => setPassword(e.target.value)}
-                    style={{ paddingRight: '2.75rem' }}
-                    disabled={isUpdating}
-                  />
-                  <label htmlFor="new-password" className={styles.floatingLabel}>
-                    New Password
-                  </label>
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    className={styles.togglePassBtn}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => setShowPassword((p) => !p)}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </div>
+              <Link to="/forgot-password" className={s.button}>
+                Request new link
+              </Link>
+              <Link to="/login" className={`${s.button} ${s.buttonGhost}`}>
+                Back to login
+              </Link>
+            </AuthStatus>
+          )}
 
-              {/* Confirm password */}
-              <div className={styles.inputGroup}>
-                <div className={styles.inputWrapper}>
-                  <input
-                    id="confirm-new-password"
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    autoComplete="new-password"
-                    className={styles.largeInput}
-                    placeholder=" "
-                    value={confirmPassword}
-                    maxLength={MAX_PASSWORD_LENGTH}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    style={{ paddingRight: '2.75rem' }}
-                    disabled={isUpdating}
-                  />
-                  <label htmlFor="confirm-new-password" className={styles.floatingLabel}>
-                    Confirm New Password
-                  </label>
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    className={styles.togglePassBtn}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => setShowConfirmPassword((p) => !p)}
-                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </div>
+          {uiState === 'success' && (
+            <AuthStatus
+              icon={CheckCircle2}
+              tone="success"
+              title="Password updated"
+              description="Your password has been reset successfully. Redirecting to login in a moment…"
+            >
+              <Link to="/login" replace className={`${s.button} ${s.buttonGhost}`}>
+                Log in now
+              </Link>
+            </AuthStatus>
+          )}
 
-              <button
-                type="submit"
-                className={styles.continueBtn}
-                disabled={isUpdating}
-                style={{ marginTop: '1.25rem' }}
-              >
-                {isUpdating ? 'Updating…' : 'Update Password'}{' '}
-                {!isUpdating && <ArrowRight className={styles.btnIcon} />}
-              </button>
-            </form>
-          </motion.div>
+          {(uiState === 'valid' || uiState === 'updating') && (
+            <>
+              <AuthHeading title="Set new password" subtitle="Choose a strong, secure password." />
+
+              <form onSubmit={handleSubmit} className={s.form} noValidate>
+                <PasswordField
+                  id="reset-new-password"
+                  label="New Password"
+                  autoComplete="new-password"
+                  maxLength={MAX_PASSWORD_LENGTH}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={isUpdating}
+                />
+
+                <PasswordField
+                  id="reset-confirm-password"
+                  label="Confirm New Password"
+                  autoComplete="new-password"
+                  maxLength={MAX_PASSWORD_LENGTH}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={isUpdating}
+                />
+
+                <AuthButton
+                  type="submit"
+                  loading={isUpdating}
+                  loadingText="Updating..."
+                  disabled={!password || !confirmPassword}
+                  style={{ marginTop: '0.5rem' }}
+                >
+                  Update Password
+                </AuthButton>
+              </form>
+            </>
+          )}
         </div>
-      </div>
-      <Toast
-        message={toastMsg}
-        visible={toastVisible}
-        onHide={() => setToastVisible(false)}
-      />
+      </AuthShell>
+      <Toast message={toastMsg} visible={toastVisible} onHide={() => setToastVisible(false)} />
     </>
   );
 }

@@ -1,31 +1,28 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowRight, Upload, Loader2 } from 'lucide-react';
 import { useSignup } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
-import { useNavigate } from 'react-router-dom';
 import AnimatedStep from './AnimatedStep';
-import { motion } from 'framer-motion';
-import { ArrowRight, Camera, Upload, Check, Loader2 } from 'lucide-react';
-import styles from '../SignupFlow.module.css';
-import defaultAvatarImg from '../../../../assets/images/default_avatar.webp';
-
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import { normalizeDicebearUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
+import { AuthHeading, AuthButton, styles as s } from '../../shared/ui';
+import defaultAvatarImg from '../../../../assets/images/default_avatar.webp';
 
 const presetAvatars = [
   'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix',
   'https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka',
   'https://api.dicebear.com/7.x/adventurer/svg?seed=Jack',
   'https://api.dicebear.com/7.x/adventurer/svg?seed=Precious',
-  'https://api.dicebear.com/7.x/adventurer/svg?seed=Luna'
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Luna',
 ];
 
 export default function Step5Avatar() {
   const { signupData, clearSignupData } = useSignup();
-  const { updateProfile, currentUser } = useAuth();
+  const { updateProfile } = useAuth();
   const navigate = useNavigate();
 
-  
   const [avatar, setAvatar] = useState(signupData.avatar || '');
   const [isUploading, setIsUploading] = useState(false);
 
@@ -59,114 +56,71 @@ export default function Step5Avatar() {
 
   const handleFinish = async () => {
     const chosenAvatar = getProcessedAvatarUrl(avatar) || '';
-
-    updateProfile({ avatar: chosenAvatar }).catch(err => console.error('Avatar update error:', err));
-    
-    // Clear persistence to prevent stale state for future signups
+    updateProfile({ avatar: chosenAvatar }).catch((err) => console.error('Avatar update error:', err));
     clearSignupData();
-    
     navigate('/onboarding', { replace: true });
   };
 
   return (
-    <AnimatedStep className={styles.stepWrapper}>
-      <h2 className={styles.headline}>Add a profile picture</h2>
-      <p className={styles.subheadline}>Show your tribe who you are. You can always change this later.</p>
+    <AnimatedStep className={s.stepWrapper}>
+      <AuthHeading
+        title="Add a profile picture"
+        subtitle="Show your tribe who you are. You can always change this later."
+      />
 
-      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2rem' }}>
-        {/* Avatar Display */}
-        <div style={{ position: 'relative', width: '128px', height: '128px' }}>
-          <div style={{
-            width: '100%',
-            height: '100%',
-            borderRadius: '50%',
-            overflow: 'hidden',
-            background: 'var(--color-bg-alt)',
-            border: '3px solid var(--color-border)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: 'var(--shadow-md)'
-          }}>
+      <div className={s.avatarStage}>
+        <div className={s.avatarRing}>
+          <div className={s.avatarCircle}>
             {isUploading ? (
-              <Loader2 size={36} className="animate-spin" style={{ color: 'var(--color-text-muted)' }} />
-            ) : avatar ? (
-              <img src={getProcessedAvatarUrl(avatar)} alt="Profile Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+              <Loader2 size={32} className={s.btnSpin} style={{ color: 'var(--color-text-muted)' }} />
             ) : (
-              <img src={defaultAvatarImg} alt="Default Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+              <img
+                src={avatar ? getProcessedAvatarUrl(avatar) : defaultAvatarImg}
+                alt="Profile preview"
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.src = defaultAvatarImg;
+                }}
+              />
             )}
           </div>
-          
-          <label style={{
-            position: 'absolute',
-            bottom: '0',
-            right: '0',
-            background: 'var(--color-primary)',
-            color: 'white',
-            width: '38px',
-            height: '38px',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            boxShadow: 'var(--shadow-sm)',
-            border: '2px solid var(--color-bg-white)'
-          }}>
-            <Upload size={18} />
+          <label className={s.avatarUpload} aria-label="Upload a profile picture">
+            <Upload size={17} />
             <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
           </label>
         </div>
 
-        {/* Preset Avatars Selection */}
-        <div style={{ width: '100%', textAlign: 'center' }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)', display: 'block', textAlign: 'center' }}>Or choose a preset character</span>
-          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', marginTop: '0.75rem' }}>
-            {presetAvatars.map((url, idx) => {
+        <div className={s.presetWrap}>
+          <span className={s.presetLabel}>Or choose a preset character</span>
+          <div className={s.presetRow}>
+            {presetAvatars.map((url) => {
               const processedUrl = getProcessedAvatarUrl(url);
               const isSelected = avatar && avatar.split('&backgroundColor=')[0] === url;
               return (
                 <button
-                  key={idx}
+                  key={url}
+                  type="button"
                   onClick={() => setAvatar(url)}
-                  style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '50%',
-                    overflow: 'hidden',
-                    border: isSelected ? '3px solid var(--color-primary)' : '2px solid transparent',
-                    background: 'var(--color-bg-alt)',
-                    padding: 0,
-                    cursor: 'pointer',
-                    transform: isSelected ? 'scale(1.1)' : 'none',
-                    transition: 'all 0.2s'
-                  }}
+                  className={`${s.presetBtn} ${isSelected ? s.presetBtnActive : ''}`}
+                  aria-label="Choose preset avatar"
+                  aria-pressed={isSelected}
                 >
-                  <img src={processedUrl} alt={`Preset ${idx}`} style={{ width: '100%', height: '100%' }} />
+                  <img src={processedUrl} alt="" />
                 </button>
               );
             })}
           </div>
         </div>
 
-        <button
+        <AuthButton
           onClick={handleFinish}
-          className={styles.continueBtn}
-          disabled={isUploading}
-          style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}
+          loading={isUploading}
+          loadingText="Uploading..."
+          icon={<ArrowRight size={18} />}
         >
-          {isUploading ? (
-            <>
-              <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} /> Uploading...
-            </>
-          ) : (
-            <>
-              {avatar ? 'Complete Registration' : 'Skip & Finish Setup'} <ArrowRight className={styles.btnIcon} />
-            </>
-          )}
-        </button>
+          {avatar ? 'Complete Registration' : 'Skip & Finish Setup'}
+        </AuthButton>
       </div>
     </AnimatedStep>
   );
 }
-

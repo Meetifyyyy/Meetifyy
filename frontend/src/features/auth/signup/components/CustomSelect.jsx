@@ -265,7 +265,7 @@ export default function CustomSelect({ value, onChange, options, placeholder, se
                 autoFocus
               />
               {isSearching && (
-                <div style={{ position: 'absolute', right: '1rem', width: '12px', height: '12px', border: '2px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                <div style={{ position: 'absolute', right: '1rem', width: '12px', height: '12px', border: '2px solid var(--color-border)', borderTopColor: 'var(--color-brand-primary)', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
               )}
             </div>
           )}

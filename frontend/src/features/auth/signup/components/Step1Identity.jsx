@@ -1,23 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { AlertCircle, ArrowRight } from 'lucide-react';
 import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
-import { ArrowRight, Check, AlertCircle, Loader2, X, WifiOff } from 'lucide-react';
 import CustomSelect from './CustomSelect';
 import { validateDOB } from '../../../../shared/utils/dateValidation';
 import { useAvailabilityCheck } from '../hooks/useAvailabilityCheck';
-import styles from '../SignupFlow.module.css';
-
-// usernameStatus states:
-//   null           → not yet checked (input too short / still debouncing)
-//   'checking'     → API call in-flight
-//   'available'    → backend confirmed available
-//   'taken'        → backend confirmed taken
-//   'network-error'→ could not reach backend (don't block user)
+import { AuthHeading, AuthField, AuthButton, styles as s } from '../../shared/ui';
 
 export default function Step1Identity() {
   const { signupData, updateData, nextStep } = useSignup();
-  
-  const [name, setName] = useState(signupData.firstName ? `${signupData.firstName} ${signupData.lastName || ''}`.trim() : '');
+
+  const [name, setName] = useState(
+    signupData.firstName ? `${signupData.firstName} ${signupData.lastName || ''}`.trim() : '',
+  );
   const [username, setUsername] = useState(signupData.username || '');
 
   const initialDob = signupData.birthday || '';
@@ -35,12 +30,10 @@ export default function Step1Identity() {
   }, [month, year]);
 
   useEffect(() => {
-    if (day && parseInt(day, 10) > daysInMonth) {
-      setDay('');
-    }
+    if (day && parseInt(day, 10) > daysInMonth) setDay('');
   }, [daysInMonth, day]);
 
-  // ── Name Validation ────────────────────────────────────────────────────────
+  // ── Validation ────────────────────────────────────────────────────────────
   const nameError = useMemo(() => {
     if (!name) return 'Name is required.';
     if (/\d/.test(name)) return 'Names cannot contain numbers.';
@@ -50,7 +43,6 @@ export default function Step1Identity() {
     return null;
   }, [name]);
 
-  // ── Local Username Format Validation ──────────────────────────────────────
   const usernameFormatError = useMemo(() => {
     if (!username) return 'Username is required.';
     if (username.includes(' ')) return 'Usernames cannot contain spaces.';
@@ -60,144 +52,90 @@ export default function Step1Identity() {
     return null;
   }, [username]);
 
-  // ── Real-time Backend Availability Check ──────────────────────────────────
-  // Cached + debounced + abortable. 'network-error' is treated as a soft state
-  // (the real signup still catches conflicts), so it never blocks the user.
   const normalizedUsername = username.trim().toLowerCase();
-  const { status: usernameStatus } = useAvailabilityCheck(normalizedUsername, {
+  const { status: rawUsernameStatus } = useAvailabilityCheck(normalizedUsername, {
     endpoint: '/api/auth/check-username',
     field: 'username',
     enabled: !usernameFormatError && normalizedUsername.length >= 3,
   });
+  const usernameStatus = rawUsernameStatus === 'network-error' ? 'network' : rawUsernameStatus;
 
-  // ── DOB Validation ────────────────────────────────────────────────────────
   const dobValidation = useMemo(() => validateDOB(year, month, day), [year, month, day]);
   const dobError = dobValidation.error;
 
-  // ── Derived validity ──────────────────────────────────────────────────────
   const isChecking = usernameStatus === 'checking';
-  // 'taken' is the only hard block. null / 'network-error' are soft — let the user proceed.
   const isUsernameBlocked = !!usernameFormatError || usernameStatus === 'taken';
   const isValid = !nameError && !isUsernameBlocked && !dobError && !isChecking;
 
   const handleSubmit = (e) => {
     e.preventDefault();
     setAttempted(true);
-
-    // Still waiting for the debounced check to resolve — soft block
     if (isChecking) return;
-
     if (isValid) {
       const parts = name.trim().split(' ');
-      const firstName = parts[0];
-      const lastName = parts.slice(1).join(' ');
       updateData({
-        firstName,
-        lastName,
-        username: username.trim().toLowerCase(),
+        firstName: parts[0],
+        lastName: parts.slice(1).join(' '),
+        username: normalizedUsername,
         birthday: dobValidation.dobString,
       });
       nextStep();
     }
   };
 
-  // ── Derived UI state ──────────────────────────────────────────────────────
-  const showError =
-    (attempted && usernameFormatError) ||
-    usernameStatus === 'taken';
-
-  const activeUsernameError =
-    usernameFormatError ||
-    (usernameStatus === 'taken' ? 'Username not available' : null);
+  const usernameError =
+    attempted && usernameFormatError
+      ? usernameFormatError
+      : usernameStatus === 'taken'
+        ? 'Username not available'
+        : null;
+  const usernameHint =
+    usernameStatus === 'network'
+      ? "Couldn't verify availability — you can still continue."
+      : null;
 
   return (
-    <AnimatedStep className={styles.stepWrapper}>
-      <h2 className={styles.headline}>Tell us about yourself</h2>
-      <p className={styles.subheadline}>Let's start with the basics to set up your profile.</p>
-      
-      <form onSubmit={handleSubmit} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        {/* Full Name */}
-        <div className={styles.inputGroup}>
-          <div className={styles.inputWrapper}>
-            <input
-              id="name"
-              type="text"
-              className={`${styles.largeInput} ${attempted && nameError ? styles.inputError : ''}`}
-              placeholder=" "
-              value={name}
-              maxLength={30}
-              onChange={(e) => setName(e.target.value.slice(0, 30))}
-            />
-            <label htmlFor="name" className={styles.floatingLabel}>Full Name</label>
-          </div>
-          <div className={styles.errorText} style={{ visibility: attempted && nameError ? 'visible' : 'hidden' }}>
-            <AlertCircle size={13} /> {nameError || ' '}
-          </div>
-        </div>
+    <AnimatedStep className={s.stepWrapper}>
+      <AuthHeading
+        title="Tell us about yourself"
+        subtitle="Let's start with the basics to set up your profile."
+      />
 
-        {/* Username */}
-        <div className={styles.inputGroup}>
-          <div className={styles.inputWrapper}>
-            <input
-              id="username"
-              type="text"
-              className={`${styles.largeInput} ${showError ? styles.inputError : ''}`}
-              placeholder=" "
-              value={username}
-              maxLength={30}
-              onChange={(e) => {
-                const val = e.target.value.toLowerCase().slice(0, 30);
-                if (val !== '' && /[^a-z0-9_.]/.test(val)) return;
-                setUsername(val);
-              }}
-              style={{ paddingRight: '2.5rem' }}
-            />
-            <label htmlFor="username" className={styles.floatingLabel}>Username</label>
+      <form onSubmit={handleSubmit} className={s.form} noValidate>
+        <AuthField
+          id="signup-name"
+          label="Full Name"
+          type="text"
+          maxLength={30}
+          value={name}
+          error={attempted ? nameError : null}
+          onChange={(e) => setName(e.target.value.slice(0, 30))}
+        />
 
-            {/* Status indicator */}
-            <div style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
-              {usernameStatus === 'checking' && (
-                <Loader2 size={16} style={{ color: 'var(--color-primary)', animation: 'spin 1s linear infinite' }} />
-              )}
-              {usernameStatus === 'available' && (
-                <Check size={16} style={{ color: '#10b981' }} />
-              )}
-              {usernameStatus === 'taken' && (
-                <X size={16} style={{ color: '#ef4444' }} />
-              )}
-              {usernameStatus === 'network-error' && (
-                <WifiOff size={15} style={{ color: 'var(--color-text-muted)' }} />
-              )}
-            </div>
-          </div>
+        <AuthField
+          id="signup-username"
+          label="Username"
+          type="text"
+          maxLength={30}
+          value={username}
+          status={usernameStatus}
+          error={usernameError}
+          hint={usernameHint}
+          onChange={(e) => {
+            const val = e.target.value.toLowerCase().slice(0, 30);
+            if (val !== '' && /[^a-z0-9_.]/.test(val)) return;
+            setUsername(val);
+          }}
+        />
 
-          {/* Error text */}
-          <div
-            className={styles.errorText}
-            style={{ visibility: showError ? 'visible' : 'hidden' }}
-          >
-            <AlertCircle size={13} /> {activeUsernameError || ' '}
-          </div>
-
-          {/* Network error hint — shown inline, not as a blocking error */}
-          {usernameStatus === 'network-error' && !showError && (
-            <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
-              Couldn't verify availability — you can still continue.
-            </div>
-          )}
-        </div>
-
-        {/* Date of Birth */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-          <label style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--color-text-muted)', marginLeft: '0.25rem', marginBottom: '0.35rem' }}>
-            Date of Birth
-          </label>
-          <div className={styles.dateSelectRow}>
+        <div className={s.selectGroup}>
+          <span className={s.selectLabel}>Date of Birth</span>
+          <div className={s.selectRow}>
             <CustomSelect
               value={month}
               onChange={setMonth}
               placeholder="Month"
-              options={Array.from({ length: 12 }, (_, i) => i + 1).map(m => ({
+              options={Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
                 value: m,
                 label: new Date(0, m - 1).toLocaleString('default', { month: 'short' }),
               }))}
@@ -206,44 +144,33 @@ export default function Step1Identity() {
               value={day}
               onChange={setDay}
               placeholder="Day"
-              options={Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => ({
-                value: d,
-                label: d,
-              }))}
+              options={Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => ({ value: d, label: d }))}
             />
             <CustomSelect
               value={year}
               onChange={setYear}
               placeholder="Year"
-              options={Array.from({ length: new Date().getFullYear() - 1950 + 1 }, (_, i) => new Date().getFullYear() - i).map(y => ({
-                value: y,
-                label: y,
-              }))}
+              options={Array.from({ length: new Date().getFullYear() - 1950 + 1 }, (_, i) => new Date().getFullYear() - i).map((y) => ({ value: y, label: y }))}
             />
           </div>
-          <div className={styles.errorText} style={{ visibility: attempted && dobError ? 'visible' : 'hidden' }}>
-            <AlertCircle size={14} /> {dobError || ' '}
+          <div className={s.messageSlot}>
+            {attempted && dobError ? (
+              <div className={`${s.message} ${s.messageError}`}>
+                <AlertCircle size={13} /> {dobError}
+              </div>
+            ) : null}
           </div>
         </div>
 
-        <button
+        <AuthButton
           type="submit"
-          className={styles.continueBtn}
-          style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}
-          disabled={isChecking}
+          loading={isChecking}
+          loadingText="Checking..."
+          icon={<ArrowRight size={18} />}
+          style={{ marginTop: '0.5rem' }}
         >
-          {isChecking ? (
-            <>
-              <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-              <span>Checking...</span>
-            </>
-          ) : (
-            <>
-              <span>Continue</span>
-              <ArrowRight size={18} className={styles.btnIcon} />
-            </>
-          )}
-        </button>
+          Continue
+        </AuthButton>
       </form>
     </AnimatedStep>
   );

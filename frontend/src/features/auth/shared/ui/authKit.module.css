@@ -1,0 +1,1053 @@
+/* ============================================================================
+   Auth Kit — "asymmetric immersive" visual language for every auth screen
+   (login, signup, forgot/reset password). One full-bleed brand canvas instead
+   of a hard split panel: a decorative story column and a floating form card
+   share the same background and slightly overlap, with proof cards drifting
+   across the seam. Token-driven (--color-brand-*) so it stays in the site's
+   palette; composition and motion are the new part.
+   ============================================================================ */
+
+.shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  width: 100%;
+  overflow-x: clip;
+  background: var(--color-bg-white);
+
+  /* Auth is intentionally always light, regardless of the app's theme. */
+  --color-bg-white: #ffffff;
+  --color-bg-alt: #f5f3ff;
+  --color-text-main: #0f172a;
+  --color-text-muted: #3f3d56;
+  --color-text-light: #6b6885;
+  --color-border: #e7e3fb;
+  --color-border-light: #f1effe;
+  --color-border-dark: #cec6f9;
+}
+
+/* ── Ambient canvas — shared by both the story and the panel ─────────────── */
+.ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ambient::before {
+  /* Fine dot texture, faded toward the edges. */
+  content: '';
+  position: absolute;
+  inset: -10%;
+  background-image: radial-gradient(rgba(15, 23, 42, 0.08) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(60% 55% at 32% 20%, #000 0%, transparent 72%);
+  -webkit-mask-image: radial-gradient(60% 55% at 32% 20%, #000 0%, transparent 72%);
+}
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(64px);
+}
+
+.blobA {
+  width: 620px;
+  height: 620px;
+  top: -18%;
+  left: -14%;
+  background: radial-gradient(circle, rgba(92, 71, 250, 0.4), transparent 68%);
+}
+
+.blobB {
+  width: 480px;
+  height: 480px;
+  bottom: -16%;
+  right: -10%;
+  background: radial-gradient(circle, rgba(255, 107, 53, 0.28), transparent 68%);
+}
+
+.blobC {
+  width: 360px;
+  height: 360px;
+  top: 34%;
+  left: 40%;
+  background: radial-gradient(circle, rgba(121, 101, 251, 0.22), transparent 70%);
+}
+
+/* ── Top bar ───────────────────────────────────────────────────────────── */
+/* Kept in normal flow (not floated) so it always reserves its own space —
+   the panel centers within whatever's left below it, which costs a little
+   mathematical precision vs. the true viewport center but makes an overlap
+   with the card physically impossible regardless of viewport height. */
+.topBar {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem clamp(1.25rem, 5vw, 3.25rem) 0;
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  text-decoration: none;
+}
+
+.brandWordmarkImg {
+  height: 17px;
+  width: auto;
+  display: block;
+}
+
+.exitLink {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--color-border);
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.exitLink:hover {
+  color: var(--color-brand-primary);
+  border-color: var(--color-border-dark);
+  background: #fff;
+}
+
+.exitLinkIcon {
+  flex-shrink: 0;
+}
+
+/* ── Stage: story column + floating panel ─────────────────────────────── */
+.stage {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: clamp(1.5rem, 3vw, 3rem);
+  width: 100%;
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: clamp(1rem, 3vh, 2rem) clamp(1.25rem, 5vw, 3.25rem);
+}
+
+/* ── Story column (decorative, left) ─────────────────────────────────── */
+.story {
+  position: relative;
+  flex: 1 1 54%;
+  max-width: 600px;
+  padding: 1.5rem 2.5rem 1.5rem 0;
+}
+
+.storyHeadline {
+  position: relative;
+  font-family: 'Changa One', var(--font-family-display), sans-serif;
+  font-weight: 400;
+  font-size: clamp(2.1rem, 3.6vw, 3.15rem);
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+  color: var(--color-text-main);
+  margin: 0 0 1.1rem;
+}
+
+.storyHeadline em {
+  font-style: normal;
+  color: var(--color-brand-primary);
+}
+
+.storySub {
+  font-size: 1.02rem;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  max-width: 30rem;
+}
+
+/* Faint oversized outline shape behind the headline — pure texture. */
+.storyMark {
+  position: absolute;
+  top: -3.5rem;
+  left: -1.75rem;
+  width: 9rem;
+  height: 9rem;
+  border: 2px solid rgba(92, 71, 250, 0.14);
+  border-radius: 38% 62% 55% 45% / 45% 40% 60% 55%;
+  z-index: -1;
+}
+
+.proofCards {
+  display: block;
+  width: min(100%, 440px);
+  height: auto;
+  margin-top: 0.75rem;
+  filter: drop-shadow(0 24px 40px rgba(15, 23, 42, 0.16));
+}
+
+/* ── Panel (the actual form card) ──────────────────────────────────────── */
+.panelWrap {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  width: min(452px, 100%);
+}
+
+.panel {
+  position: relative;
+  box-sizing: border-box;
+  background: var(--color-bg-white);
+  border-radius: 26px;
+  box-shadow: 0 34px 80px -24px rgba(15, 23, 42, 0.28), 0 8px 24px -10px rgba(92, 71, 250, 0.16);
+  overflow: hidden;
+  transition: height 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Holds the padding + content; measured (never itself height-constrained) to
+   drive the smooth height transition on the outer .panel above. */
+.panelInner {
+  padding: 2.1rem 2.25rem;
+}
+
+.panel::before {
+  /* Thin gradient edge to lift the card off the ambient canvas. */
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.9), rgba(92, 71, 250, 0.12));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.content {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Heading ────────────────────────────────────────────────────────────── */
+.heading {
+  margin-bottom: 1.15rem;
+}
+
+.title {
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.18;
+  color: var(--color-text-main);
+  margin: 0 0 0.4rem;
+}
+
+.subtitle {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.subtitle strong {
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+/* ── Form + field ───────────────────────────────────────────────────────── */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.field {
+  width: 100%;
+}
+
+/* Static label, always above the field — never overlaps the value. */
+.fieldLabel {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--color-text-muted);
+  margin: 0 0 0.4rem 0.1rem;
+  transition: color 0.16s ease;
+}
+
+.field.isInvalid .fieldLabel {
+  color: var(--color-danger);
+}
+
+.field.isValid .fieldLabel {
+  color: var(--color-success);
+}
+
+.fieldInner {
+  position: relative;
+  width: 100%;
+}
+
+.input {
+  width: 100%;
+  height: 52px;
+  /* 16px minimum — below this, iOS Safari zooms the whole page in on focus,
+     which is what made the field (and the eye-toggle button on it) appear
+     to "jump" after tapping into a password field on mobile. */
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--color-text-main);
+  background: var(--color-bg-alt);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0 1.05rem;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  box-sizing: border-box;
+}
+
+/* Suppress native browser password-reveal/clear icons so they can't overlap
+   our own eye-toggle button in the same corner. */
+.input::-ms-reveal,
+.input::-ms-clear {
+  display: none;
+}
+
+.input::placeholder {
+  color: var(--color-text-light);
+  opacity: 1;
+}
+
+.input:hover:not(:focus):not(:disabled) {
+  border-color: var(--color-border-dark);
+}
+
+.input:focus {
+  background: var(--color-bg-white);
+  border-color: var(--color-brand-primary);
+  box-shadow: 0 0 0 4px rgba(92, 71, 250, 0.13);
+}
+
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.hasAdornment {
+  padding-right: 2.65rem;
+}
+
+.input.invalid {
+  background: rgba(239, 68, 68, 0.05);
+  border-color: var(--color-danger);
+}
+
+.input.invalid:focus {
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.13);
+}
+
+.input.valid {
+  border-color: var(--color-success);
+}
+
+.input.valid:focus {
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.14);
+}
+
+/* ── Right-side adornment ───────────────────────────────────────────────── */
+.adornment {
+  position: absolute;
+  right: 0.95rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.toggle {
+  position: absolute;
+  right: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-light);
+  cursor: pointer;
+  border-radius: var(--radius-full);
+  transition: color 0.18s ease, background 0.18s ease;
+}
+
+.toggle:hover {
+  color: var(--color-brand-primary);
+  background: rgba(92, 71, 250, 0.1);
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--color-brand-primary);
+  outline-offset: 2px;
+}
+
+/* The app-wide `button:active { transform: scale(0.97) }` rule would
+   otherwise completely replace this button's own centering transform
+   (transforms don't combine across rules) — snapping it from vertically
+   centered down to `top: 50%` with no offset the instant it's pressed.
+   Redeclaring both together keeps the press feedback without the jump. */
+.toggle:active {
+  transform: translateY(-50%) scale(0.97);
+}
+
+.statusIcon {
+  display: inline-flex;
+  animation: kitFadeIn 0.18s ease;
+}
+
+.spinIcon {
+  color: var(--color-brand-primary);
+  animation: kitSpin 0.7s linear infinite;
+}
+
+.okIcon {
+  color: var(--color-success);
+}
+
+.badIcon {
+  color: var(--color-danger);
+}
+
+.mutedIcon {
+  color: var(--color-text-light);
+}
+
+/* ── Field message ──────────────────────────────────────────────────────── */
+.message {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  margin-top: 0.32rem;
+  min-height: 1.05rem;
+  animation: kitShake 0.32s ease;
+}
+
+.messageError {
+  color: var(--color-danger);
+}
+
+.messageHint {
+  color: var(--color-text-light);
+}
+
+.messageSlot {
+  min-height: 1.1rem;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.button {
+  position: relative;
+  width: 100%;
+  height: 52px;
+  min-height: 52px;
+  padding: 0 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.96rem;
+  font-weight: 700;
+  text-decoration: none;
+  box-sizing: border-box;
+  color: #fff;
+  background: var(--color-brand-primary);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  box-shadow: 0 10px 22px -12px rgba(92, 71, 250, 0.5);
+  transition: background 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--color-brand-accent);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.buttonGhost {
+  color: var(--color-text-main);
+  background: var(--color-bg-white);
+  border: 1.5px solid var(--color-border);
+  box-shadow: none;
+}
+
+.buttonGhost:hover:not(:disabled) {
+  background: var(--color-bg-alt);
+  border-color: var(--color-brand-primary);
+}
+
+.btnIcon {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.btnSpin {
+  animation: kitSpin 0.7s linear infinite;
+}
+
+/* ── Secondary links / footer ───────────────────────────────────────────── */
+.link {
+  color: var(--color-brand-primary);
+  font-weight: 700;
+  text-decoration: none;
+  transition: color 0.16s ease;
+}
+
+.link:hover {
+  color: var(--color-highlight);
+  text-decoration: underline;
+}
+
+.actionsRow {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin: 0.15rem 0 0.4rem;
+  font-size: 0.85rem;
+}
+
+.footer {
+  margin-top: 1.35rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.footer .link {
+  margin-left: 0.3rem;
+}
+
+/* ── Top-level form error banner ────────────────────────────────────────── */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.35;
+  animation: kitShake 0.32s ease;
+}
+
+.bannerError {
+  color: var(--color-danger);
+  background: rgba(var(--color-danger-rgb), 0.08);
+  border: 1px solid rgba(var(--color-danger-rgb), 0.18);
+}
+
+/* ── Step progress — slim segmented track + step counter ──────────────── */
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  margin-bottom: 1.3rem;
+}
+
+.back,
+.standaloneBack {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-bg-white);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-full);
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.standaloneBack {
+  margin-bottom: 0.9rem;
+}
+
+.back:hover:not(:disabled),
+.standaloneBack:hover {
+  color: var(--color-brand-primary);
+  border-color: var(--color-brand-primary);
+  background: rgba(92, 71, 250, 0.08);
+}
+
+.progressTrack {
+  flex: 1;
+  display: flex;
+  gap: 0.3rem;
+}
+
+.progressSegment {
+  flex: 1;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--color-border-light);
+  overflow: hidden;
+}
+
+.progressSegment::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--color-brand-primary), var(--color-brand-accent));
+  transition: width 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.progressSegmentDone::after {
+  width: 100%;
+}
+
+.progressSegmentActive::after {
+  width: 55%;
+}
+
+.progressLabel {
+  flex-shrink: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-text-light);
+}
+
+/* ── OTP inputs ─────────────────────────────────────────────────────────── */
+.otpRow {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.otpInput {
+  flex: 1;
+  min-width: 0;
+  aspect-ratio: 1 / 1.1;
+  max-width: 54px;
+  text-align: center;
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  background: var(--color-bg-alt);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.otpInput:focus {
+  background: var(--color-bg-white);
+  border-color: var(--color-brand-primary);
+  box-shadow: 0 0 0 4px rgba(92, 71, 250, 0.14);
+}
+
+.otpInput.invalid {
+  background: rgba(239, 68, 68, 0.06);
+  border-color: var(--color-danger);
+}
+
+.otpInput:disabled {
+  opacity: 0.6;
+}
+
+/* ── Centered status blocks (used inline, e.g. Step4OTP success) ────────── */
+.statusBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: var(--radius-full);
+  margin-bottom: 0.5rem;
+  animation: kitPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.statusBadgeSuccess {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.05));
+  color: var(--color-success);
+}
+
+/* ── Standalone status panel (AuthStatus component) ──────────────────────── */
+.statusPanel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.6rem;
+  padding: 0.75rem 0 0.25rem;
+}
+
+.statusIconWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-full);
+  margin-bottom: 0.4rem;
+  animation: kitPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.toneSuccess {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.16), rgba(16, 185, 129, 0.05));
+  color: var(--color-success);
+}
+
+.toneError {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.14), rgba(239, 68, 68, 0.05));
+  color: var(--color-danger);
+}
+
+.toneLoading {
+  background: linear-gradient(135deg, rgba(92, 71, 250, 0.14), rgba(92, 71, 250, 0.05));
+  color: var(--color-brand-primary);
+}
+
+.statusTitle {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--color-text-main);
+  margin: 0;
+}
+
+.statusDesc {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+  margin: 0;
+  max-width: 26rem;
+}
+
+.statusActions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.spinner {
+  width: 26px;
+  height: 26px;
+  border: 2.5px solid var(--color-border);
+  border-top-color: var(--color-brand-primary);
+  border-radius: 50%;
+  animation: kitSpin 0.75s linear infinite;
+}
+
+/* ── Signup layout helpers ──────────────────────────────────────────────── */
+.stepWrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.selectGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.selectLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-light);
+  margin-left: 0.15rem;
+}
+
+.selectRow {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.selectRow > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.fieldRow {
+  display: flex;
+  gap: 0.85rem;
+}
+
+.fieldRowMain {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.fieldRowSide {
+  flex: 0 0 128px;
+  min-width: 128px;
+}
+
+/* Avatar step */
+.avatarStage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.75rem;
+  width: 100%;
+}
+
+.avatarRing {
+  position: relative;
+  width: 132px;
+  height: 132px;
+}
+
+.avatarCircle {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: var(--color-bg-alt);
+  border: 3px solid var(--color-bg-white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 3px var(--color-border), var(--shadow-lg);
+}
+
+.avatarCircle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatarUpload {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--color-brand-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 3px solid var(--color-bg-white);
+  box-shadow: 0 6px 16px -4px rgba(92, 71, 250, 0.55);
+  transition: background 0.18s ease;
+}
+
+.avatarUpload:hover {
+  background: var(--color-brand-accent);
+}
+
+.presetWrap {
+  width: 100%;
+  text-align: center;
+}
+
+.presetLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-light);
+  display: block;
+}
+
+.presetRow {
+  display: flex;
+  gap: 0.7rem;
+  justify-content: center;
+  margin-top: 0.8rem;
+}
+
+.presetBtn {
+  width: 50px;
+  height: 50px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  border: 2px solid var(--color-border);
+  background: var(--color-bg-alt);
+  padding: 0;
+  cursor: pointer;
+  transition: border-color 0.18s ease;
+}
+
+.presetBtn:hover {
+  border-color: var(--color-brand-accent);
+}
+
+.presetBtn img {
+  width: 100%;
+  height: 100%;
+}
+
+.presetBtnActive {
+  border-color: var(--color-brand-primary);
+  box-shadow: 0 0 0 3px rgba(92, 71, 250, 0.18);
+}
+
+/* OTP meta */
+.otpMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.otpTimer {
+  font-size: 0.9rem;
+  color: var(--color-text-light);
+}
+
+.resendBtn {
+  background: none;
+  border: none;
+  color: var(--color-brand-primary);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.resendBtn:hover:not(:disabled) {
+  color: var(--color-highlight);
+}
+
+.resendBtn:disabled {
+  color: var(--color-text-light);
+  cursor: not-allowed;
+}
+
+.otpErrorRow {
+  min-height: 1.4rem;
+  text-align: center;
+  margin-top: 0.9rem;
+}
+
+.centerMessage {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--color-danger);
+  font-size: 0.8rem;
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────── */
+@keyframes kitFadeIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes kitShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}
+
+@keyframes kitPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+@keyframes kitSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 1080px) {
+  .story {
+    display: none;
+  }
+
+  .stage {
+    justify-content: center;
+    padding-top: 1.5rem;
+  }
+
+  .panelWrap {
+    margin-left: 0;
+    width: min(452px, 100%);
+  }
+}
+
+@media (max-width: 560px) {
+  .topBar {
+    padding: 1.25rem 12px 0;
+  }
+
+  .exitLink {
+    padding: 0.55rem;
+  }
+
+  .exitLink span {
+    display: none;
+  }
+
+  .stage {
+    padding: 1.25rem 12px;
+  }
+
+  .panel {
+    border-radius: 22px;
+  }
+
+  .panelInner {
+    padding: 2.1rem 1.4rem;
+  }
+
+  .title {
+    font-size: 1.4rem;
+  }
+
+  .otpInput {
+    font-size: 1.2rem;
+  }
+}
