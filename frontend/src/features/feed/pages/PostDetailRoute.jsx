@@ -4,8 +4,7 @@ import { postsApi } from '@shared/api/apiClient';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useData } from '@shared/hooks/useData';
 import PostView from '../components/post/PostView';
-import RightPanel, { OnlineFriends } from '@layout/RightPanel';
-import rightPanelStyles from '@layout/RightPanel.module.css';
+import RightPanel from '@layout/RightPanel';
 import UserSidebarCard, { UserSidebarCardSkeleton } from '@shared/components/ui/UserSidebarCard';
 import postViewStyles from '../components/post/PostView.module.css';
 
@@ -14,7 +13,7 @@ export default function PostDetailRoute() {
   const goBack = useSmartBack();
   const location = useLocation();
   const { id } = useParams();
-  const { getUserById, communities } = useData();
+  const { getUserById } = useData();
 
   const handleBack = () => {
     navigate(location.state?.from ?? '/home', { replace: true });
@@ -104,63 +103,18 @@ export default function PostDetailRoute() {
     );
   }
 
-  const sourceContext = location.state?.sourceContext || (post?.communityId ? 'community' : 'feed');
-  const communityId = location.state?.communityId || post?.communityId;
-
-  const renderRightPanel = () => {
-    const comm = (sourceContext === 'community' && communityId)
-      ? (communities?.[communityId] || (Array.isArray(communities) ? communities.find(c => c.id === communityId || c.name === communityId) : null) || (Object.values(communities || {}).find(c => c?.id === communityId)))
-      : null;
-
-    return (
-      <RightPanel>
-        {comm ? (
-          <div className={rightPanelStyles.panelCard}>
-            <h3 className={rightPanelStyles.panelTitle}>About Community</h3>
-            <p style={{ fontSize: '0.9rem', color: 'var(--color-text-main)', marginBottom: '1.5rem', lineHeight: '1.5' }}>{comm.desc || comm.description || 'Welcome to the community!'}</p>
-
-            <div style={{ display: 'flex', gap: '2rem', marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <div style={{ fontFamily: 'var(--font-family-display)', fontSize: '1.15rem', fontWeight: 700, color: 'var(--color-text-main)' }}>{comm.members?.toLocaleString() || '0'}</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Members</div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <div style={{ fontFamily: 'var(--font-family-display)', fontSize: '1.15rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
-                  <span style={{ display: 'inline-block', marginRight: '6px', width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-success)' }}></span>
-                  {Math.floor((comm.members || 0) * 0.12).toLocaleString()}
-                </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Online</div>
-              </div>
-            </div>
-
-            {comm.created && (
-              <div style={{ paddingTop: '1.2rem', borderTop: '1px solid var(--color-border-light)', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-                </svg>
-                Created {comm.created}
-              </div>
-            )}
-          </div>
-        ) : (
-          <UserSidebarCard username={author?.username} initialUser={author} />
-        )}
-        <OnlineFriends />
-      </RightPanel>
-    );
-  };
-
   return (
     <>
       <main className="centre centre--post">
         <PostView post={displayPost} onBack={handleBack} />
       </main>
-      {hasFullData ? renderRightPanel() : (
-        <RightPanel>
+      <RightPanel>
+        {hasFullData ? (
+          <UserSidebarCard username={author?.username} initialUser={author} />
+        ) : (
           <UserSidebarCardSkeleton />
-          <OnlineFriends />
-        </RightPanel>
-      )}
+        )}
+      </RightPanel>
     </>
   );
 }

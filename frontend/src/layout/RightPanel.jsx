@@ -171,74 +171,79 @@ export function NotificationsActivity() {
 }
 
 export function OnlineFriends() {
-  const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
-  const users = React.useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
   const { currentUser } = useAuth();
   const navigate = useNavigate();
 
-  const friends = Object.values(users)
-    .filter(u => currentUser && u.id !== currentUser.id)
-    .filter(u => {
-      const isFollowing = currentUser?.followingList?.includes(u.username);
-      const isFollowedBy = currentUser?.followersList?.includes(u.username);
-      return isFollowing && isFollowedBy;
-    })
-    .map((u) => {
-      const canSee = canSeeOnlineStatus(currentUser, u);
-      const online = canSee ? !!u.isOnline : false;
-      return {
-        id: u.id,
-        name: u.displayName,
-        username: u.username,
-        avatar: u.avatar,
-        avatarUrl: u.avatarUrl,
-        status: online ? 'Online' : 'Offline',
-        online
-      };
-    })
-    .filter(f => f.online)
-    .slice(0, 6);
+  // Server-computed: mutual connections who are currently online, respecting
+  // each user's own presence-visibility settings. Replaces the old pattern of
+  // fetching a page of "all users" (capped at 20, ordered by signup recency)
+  // and re-deriving "is this a mutual, are they online" in JS — that scanned
+  // the wrong population entirely and could show zero friends even when the
+  // viewer had online mutuals outside that arbitrary recent-signup window.
+  const { data: friends = [], isLoading } = useQuery({
+    queryKey: ['online-friends', currentUser?.id],
+    queryFn: () => usersApi.getOnlineFriends(6),
+    enabled: !!currentUser?.id,
+    staleTime: 15_000,
+    // Presence changes in real time via sockets elsewhere in the app; a short
+    // background refetch keeps this widget reasonably fresh without hammering
+    // the endpoint on every focus/remount.
+    refetchInterval: 30_000,
+  });
 
-  if (friends.length === 0) return null;
+  // Distinguish "still loading" from "genuinely no online friends" so the
+  // card doesn't pop in after the fact (layout shift) or flash empty before
+  // data arrives — while loading, hold the card's place with skeleton dots;
+  // once resolved, collapse away entirely only if truly empty.
+  if (!isLoading && friends.length === 0) return null;
 
   return (
     <div className={styles.panelCard}>
       <h3 className={styles.panelTitle} style={{ marginBottom: '1rem' }}>Online Friends</h3>
       <div className={styles.onlineFriendsContainer} style={{ gap: '0.5rem', justifyContent: 'flex-start' }}>
-        {friends.map((f, i) => (
-          <div 
-            key={i} 
-            title={f.name}
-            style={{ 
-              cursor: 'pointer', 
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'center', 
-              gap: '4px',
-              width: '56px'
-            }}
-            onClick={() => f.username && navigate(`/profile/${f.username}`, { state: { from: location.pathname } })}
-          >
-            <Avatar 
-              src={f.avatarUrl || f.avatar} 
-              name={f.name} 
-              size="48px" 
-              isOnline={f.online} 
-            />
-            <span style={{ 
-              fontSize: '0.65rem', 
-              color: 'var(--color-text-muted)', 
-              overflow: 'hidden', 
-              textOverflow: 'ellipsis', 
-              whiteSpace: 'nowrap', 
-              width: '100%', 
-              textAlign: 'center',
-              lineHeight: '1.1'
-            }}>
-              {f.username.length > 8 ? f.username.slice(0, 7) + '...' : f.username}
-            </span>
-          </div>
-        ))}
+        {isLoading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', width: '56px' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--color-bg-soft)', animation: 'skeletonPulse 1.5s ease-in-out infinite' }} />
+              <div style={{ width: '36px', height: '9px', borderRadius: '4px', background: 'var(--color-bg-soft)', animation: 'skeletonPulse 1.5s ease-in-out infinite' }} />
+            </div>
+          ))
+        ) : (
+          friends.map((f) => (
+            <div
+              key={f.id}
+              title={f.displayName || f.username}
+              style={{
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '4px',
+                width: '56px'
+              }}
+              onClick={() => f.username && navigate(`/profile/${f.username}`, { state: { from: location.pathname } })}
+            >
+              <Avatar
+                src={f.avatar}
+                name={f.displayName || f.username}
+                size="48px"
+                isOnline
+              />
+              <span style={{
+                fontSize: '0.65rem',
+                color: 'var(--color-text-muted)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                width: '100%',
+                textAlign: 'center',
+                lineHeight: '1.1'
+              }}>
+                {f.username.length > 8 ? f.username.slice(0, 7) + '...' : f.username}
+              </span>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

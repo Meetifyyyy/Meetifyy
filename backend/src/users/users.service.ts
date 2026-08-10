@@ -981,4 +981,66 @@ export class UsersService {
 
     return scored.slice(0, limit).map((s) => s.user);
   }
+
+  /**
+   * "Online Friends" sidebar widget data — mutual connections (I follow them
+   * AND they follow me) who are currently online, respecting each user's own
+   * presence-visibility settings. Computed entirely server-side and capped to
+   * `limit` so the client never has to fetch a page of users and re-derive
+   * "is this a mutual, is this a friend" in JS — the client-facing hooks
+   * used to pull the 20 most-recently-created accounts (getAllUsers's
+   * default) and filter down to online mutuals from *that* set, which meant
+   * the widget could easily show zero or the wrong people even when the
+   * viewer had online friends outside that arbitrary recent-signup window.
+   */
+  async getOnlineFriends(userId: string, limit: number = 6) {
+    const myFollowing = await this.prisma.follow.findMany({
+      where: { followerId: userId },
+      select: { followingId: true },
+    });
+    const followingIds = myFollowing.map((f) => f.followingId);
+    if (followingIds.length === 0) return [];
+
+    const mutualRows = await this.prisma.follow.findMany({
+      where: { followerId: { in: followingIds }, followingId: userId },
+      select: { followerId: true },
+    });
+    const mutualIds = mutualRows.map((f) => f.followerId);
+    if (mutualIds.length === 0) return [];
+
+    const [candidates, presenceMap] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { id: { in: mutualIds }, accountStatus: 'ACTIVE' },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatar: true,
+          settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
+        },
+      }),
+      this.presenceService.getPresenceMany(mutualIds),
+    ]);
+
+    // Only bother with a privacy check for users actually reporting online —
+    // avoids N checkPresenceVisibility calls for the (usually majority)
+    // offline mutuals.
+    const onlineCandidates = candidates.filter((u) => presenceMap.get(u.id)?.status === 'online');
+
+    const results: Array<{ id: string; username: string; displayName: string; avatar: string | null; isOnline: true }> = [];
+    for (const u of onlineCandidates) {
+      const canSee = await checkPresenceVisibility(
+        u.id,
+        userId,
+        u.settings?.whoCanSeeOnline || 'everyone',
+        u.settings?.showOnlineStatus !== false,
+        this.prisma,
+      );
+      if (!canSee) continue;
+      results.push({ id: u.id, username: u.username, displayName: u.displayName, avatar: u.avatar, isOnline: true });
+      if (results.length >= limit) break;
+    }
+
+    return results;
+  }
 }

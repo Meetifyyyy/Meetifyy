@@ -39,6 +39,15 @@ export class UsersController {
     return this.usersService.getMentionSuggestions(req.user.id, query || '', communityId, limitNum);
   }
 
+  // NOTE: same route-ordering requirement as mention-search above.
+  @Get('online-friends')
+  @UseGuards(JwtGuard)
+  @CacheControl('private, max-age=15, stale-while-revalidate=30')
+  async getOnlineFriends(@Req() req: any, @Query('limit') limit?: string) {
+    const limitNum = limit ? Math.min(Math.max(parseInt(limit, 10) || 6, 1), 20) : 6;
+    return this.usersService.getOnlineFriends(req.user.id, limitNum);
+  }
+
   @Get('campus')
   @UseGuards(JwtGuard)
   @CacheControl('private, max-age=600, stale-while-revalidate=1800')

@@ -7,7 +7,14 @@
   display: flex !important;
   flex-direction: row !important;
   align-items: flex-start !important;
-  overflow-y: auto !important;
+  /* `visible`, not `auto`: this never produced a real scrollbar (its box just
+     grows to content height — scrollHeight === clientHeight always, verified
+     live), but as a CSS scroll container it was still the (wrong) `position:
+     sticky` anchor for .rightSidebar below, whose own scrollTop never moves.
+     `visible` lets .rightSidebar's sticky correctly bind to the window
+     instead — same root cause/fix as the html/#root and .centre rules in
+     global.css. `height: 100%` stays untouched on purpose. */
+  overflow-y: visible !important;
   gap: clamp(1rem, 2vw, 1.5rem);
   padding: 0 1rem 2rem 0rem !important;
   max-width: 1050px !important;

@@ -337,19 +337,26 @@ nav a.active {
   justify-content: flex-start;
   gap: 1rem;
   padding: 0 0rem;
-  /* `visible`/`auto` here, not `hidden`/an active scroll box: the app scrolls
-     via the window (useWindowVirtualizer for the feed/notifications lists
-     needs real window scroll to measure correctly), and `.centre`'s old
-     `overflow-y: auto; height: 100%` never actually produced a usable
-     scrollbar (its box just grows to content height, so scrollHeight ===
-     clientHeight always) — it was a dead scroll container that only served
-     to break `position: sticky` for anything nested inside it (e.g.
-     ProfilePage's own right sidebar), the same class of bug `overflow-x:
-     clip` on `html`/`#root` above fixes at the root level. `.centre--messages`
-     below opts back into a real bounded/clipped box, which it genuinely needs. */
+  /* `overflow-y: visible`, NOT `auto`: `auto` made `.centre` a CSS "scroll
+     container" (even though it never actually produced a usable scrollbar —
+     its box just grows to fit content, scrollHeight === clientHeight always),
+     and `position: sticky` binds to the *nearest* scroll-container ancestor.
+     That made `.centre` — whose own scrollTop never moves — the (wrong)
+     sticky anchor for anything nested directly inside it that isn't already
+     wrapped in its own bounded shell, e.g. ProfilePage's right sidebar. With
+     `visible`, sticky descendants correctly look past `.centre` to the real
+     scrolling ancestor (the window, after the matching `overflow-x: clip`
+     fix on html/#root above).
+     `height` stays `100%` on purpose — several page shells (Settings,
+     ActivityDetailPage, SearchResultsRoute, CommunityView, CreateActivityPage)
+     nest their own `height: 100%; overflow: hidden` root inside `.centre` and
+     depend on that percentage resolving to a real value; switching this to
+     `height: auto` breaks all of their internal `height:100%` chains at once
+     (confirmed live — do not change this again without auditing every
+     `.centre`-nested page shell first). */
   overflow-y: visible;
   overflow-x: clip;
-  height: auto;
+  height: 100%;
   max-width: 760px;
   margin: 0 auto;
   width: 100%;

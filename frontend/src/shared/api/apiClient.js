@@ -529,6 +529,7 @@ export const usersApi = {
     if (communityId) params.set('communityId', communityId);
     return apiClient.get(`/api/users/mention-search?${params.toString()}`);
   },
+  getOnlineFriends: (limit = 6) => apiClient.get(`/api/users/online-friends?limit=${limit}`),
   getByUsername: (username) => apiClient.get(`/api/users/${username}`),
   getFollowers: (username, limit = 50, offset = 0) => {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
