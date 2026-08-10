@@ -13,10 +13,11 @@ import { useDebouncedState } from '@shared/hooks/useDebounce';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { searchApi } from '@shared/api/apiClient';
 import Post from '@features/feed/components/post/Post';
+import CrewCard from '@features/crew/components/cards/CrewCard';
 import styles from './SearchResultsRoute.module.css';
 
 const QUICK_CHIPS = [
-  { id: 'all', label: 'All', Icon: Sparkles },
+  { id: 'all', label: 'All', Icon: null },
   { id: 'people', label: 'People', Icon: Users },
   { id: 'activities', label: 'Activities', Icon: Compass },
   { id: 'communities', label: 'Communities', Icon: Globe2 },
@@ -91,16 +92,36 @@ const UserRow = React.memo(function UserRow({ data, onOpen }) {
 });
 
 const CommunityRow = React.memo(function CommunityRow({ data, onOpen }) {
+  const [imgError, setImgError] = useState(false);
+  const avatar = data.avatarKey || data.avatar;
+  const memberCount = data.memberCount || data.membersCount || data.members || 0;
+  const hasDescription = Boolean(data.description && data.description.trim() && data.description.toLowerCase() !== data.name?.toLowerCase());
+
   return (
     <div className={styles.resultCard} onClick={() => onOpen('community', data)}>
-      <div className={styles.communityIconBox}>{data.name?.charAt(0).toUpperCase()}</div>
+      <div className={styles.communityIconBox}>
+        {avatar && isImageUrl(avatar) && !imgError ? (
+          <img
+            src={getProcessedAvatarUrl(avatar)}
+            alt={data.name || 'Community'}
+            className={styles.communityAvatarImg}
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <span>{data.name?.charAt(0).toUpperCase()}</span>
+        )}
+      </div>
       <div className={styles.feedInfo}>
         <div className={styles.rowHeaderTitle}>
           <span className={styles.feedName}>{data.name}</span>
         </div>
+        {hasDescription && (
+          <span className={styles.feedDesc}>
+            {data.description}
+          </span>
+        )}
         <span className={styles.feedSub}>
-          {data.description ? `${data.description.substring(0, 60)}... • ` : ''}
-          {data.memberCount || data.members || 0} members
+          <Users size={13} /> {memberCount} {memberCount === 1 ? 'member' : 'members'}
         </span>
       </div>
     </div>
@@ -446,7 +467,7 @@ export default function SearchResultsRoute() {
                 type="text"
                 autoFocus={shouldAutoFocus}
                 className={styles.searchInput}
-                placeholder="Search people, communities, activities, posts..."
+                placeholder="Search..."
                 value={inputVal}
                 aria-label="Search field"
                 onChange={(e) => setInputVal(e.target.value)}
@@ -484,7 +505,7 @@ export default function SearchResultsRoute() {
                   className={`${styles.filterChip} ${activeChip === id ? styles.filterChipActive : ''}`}
                   onClick={() => setActiveChip(id)}
                 >
-                  <Icon size={14} />
+                  {Icon && <Icon size={14} />}
                   <span>{label}</span>
                 </button>
               ))}
@@ -557,14 +578,14 @@ export default function SearchResultsRoute() {
                   return <UserRow key={id} data={data} onOpen={openEntity} />;
                 }
                 if (kind === 'activity') {
+                  const activityData = activitiesById.get(String(data.id)) || data;
                   return (
-                    <ActivityRow
-                      key={id}
-                      data={data}
-                      storeActivity={activitiesById.get(String(data.id))}
-                      usersById={usersById}
-                      onOpen={openEntity}
-                    />
+                    <div key={id} className={styles.crewCardWrapper}>
+                      <CrewCard
+                        activity={activityData}
+                        onClick={() => openEntity('activity', activityData)}
+                      />
+                    </div>
                   );
                 }
                 if (kind === 'community') {

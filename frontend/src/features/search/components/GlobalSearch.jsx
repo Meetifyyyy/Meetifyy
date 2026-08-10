@@ -239,7 +239,7 @@ export default function GlobalSearch() {
           aria-expanded={showDropdown}
           aria-autocomplete="list"
           className={styles.input}
-          placeholder="Search people, communities, activities..."
+          placeholder="Search..."
           value={query}
           maxLength={100}
           onChange={handleSearchChange}

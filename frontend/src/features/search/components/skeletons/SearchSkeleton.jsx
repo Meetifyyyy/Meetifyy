@@ -26,7 +26,7 @@ export default function SearchSkeleton() {
               <Search size={18} className={styles.searchPillIcon} aria-hidden="true" />
               <input
                 className={styles.searchInput}
-                placeholder="Search people, communities, activities, posts..."
+                placeholder="Search..."
                 aria-label="Search field"
                 disabled
               />

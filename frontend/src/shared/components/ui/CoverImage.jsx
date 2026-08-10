@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import defaultCover from '@assets/images/default_cover.webp';
 import { getMediaUrl } from '@shared/api/apiClient';
 import styles from './CoverImage.module.css';
@@ -17,6 +17,8 @@ export function getCleanCoverUrl(cover, fallback = defaultCover) {
   return { isGradient: false, url: getMediaUrl(clean) };
 }
 
+const loadedCoverCache = new Set();
+
 export default function CoverImage({
   cover,
   fallback = defaultCover,
@@ -26,8 +28,17 @@ export default function CoverImage({
   children
 }) {
   const { isGradient, gradient, url } = getCleanCoverUrl(cover, fallback);
-  const [loading, setLoading] = useState(!isGradient);
   const [error, setError] = useState(false);
+  const imgRef = useRef(null);
+
+  const activeUrl = (!error && url) ? url : fallback;
+
+  const isPreloaded = isGradient || 
+    loadedCoverCache.has(activeUrl) || 
+    activeUrl === fallback || 
+    (typeof activeUrl === 'string' && (activeUrl.startsWith('blob:') || activeUrl.startsWith('data:')));
+
+  const [loading, setLoading] = useState(!isPreloaded);
 
   useEffect(() => {
     if (isGradient) {
@@ -35,11 +46,34 @@ export default function CoverImage({
       setError(false);
       return;
     }
-    setLoading(true);
-    setError(false);
-  }, [url, isGradient]);
+    const preloaded = loadedCoverCache.has(activeUrl) || 
+      activeUrl === fallback || 
+      (typeof activeUrl === 'string' && (activeUrl.startsWith('blob:') || activeUrl.startsWith('data:')));
 
-  const activeUrl = (!error && url) ? url : fallback;
+    if (preloaded) {
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+    setError(false);
+  }, [url, isGradient, activeUrl, fallback]);
+
+  useEffect(() => {
+    if (!isGradient && imgRef.current && imgRef.current.complete) {
+      if (activeUrl) loadedCoverCache.add(activeUrl);
+      setLoading(false);
+    }
+  }, [activeUrl, isGradient]);
+
+  const handleLoad = () => {
+    if (activeUrl) loadedCoverCache.add(activeUrl);
+    setLoading(false);
+  };
+
+  const handleError = () => {
+    setError(true);
+    setLoading(false);
+  };
 
   return (
     <div className={`${styles.coverWrap} ${className}`} style={style}>
@@ -49,14 +83,12 @@ export default function CoverImage({
         <div className={styles.coverGradient} style={{ background: gradient }} />
       ) : (
         <img
+          ref={imgRef}
           src={activeUrl}
           alt={alt}
           className={`${styles.coverImg} ${loading ? styles.hidden : styles.visible}`}
-          onLoad={() => setLoading(false)}
-          onError={() => {
-            setError(true);
-            setLoading(false);
-          }}
+          onLoad={handleLoad}
+          onError={handleError}
           draggable={false}
         />
       )}

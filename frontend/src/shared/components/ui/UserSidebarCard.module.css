@@ -180,21 +180,21 @@
 
 .actionRow {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 0.65rem;
   width: 100%;
 }
 
-/* Message icon button: dark in light mode, white in dark mode */
+/* Message icon button */
 .iconBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  align-self: stretch;
-  aspect-ratio: 1;
-  border-radius: 9999px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
   border: 1px solid transparent;
-  background: #0F172A;
+  background: var(--color-primary);
   color: #FFFFFF;
   cursor: pointer;
   flex-shrink: 0;
@@ -203,13 +203,9 @@
   transition: background 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
 }
 
-:global([data-theme="dark"]) .iconBtn {
-  background: #FFFFFF;
-  color: #0F172A;
-}
-
 .iconBtn:hover {
-  opacity: 0.9;
+  background: var(--color-primary-hover, #1d4ed8);
+  opacity: 0.95;
 }
 
 .iconBtn:active {
@@ -221,6 +217,8 @@
   align-items: center;
   justify-content: center;
   padding: 0.55rem 1.1rem;
+  height: 44px;
+  box-sizing: border-box;
   border-radius: var(--radius-full, 9999px);
   border: none;
   background: var(--color-primary);

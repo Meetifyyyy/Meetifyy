@@ -20,6 +20,7 @@ import {
   Cog6ToothIcon as SettingsIcon,
 } from '@heroicons/react/24/outline';
 import styles from './Header.module.css';
+import wordmark from '@assets/images/meetifyy_wordmark.webp';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, getMediaUrl } from '@shared/api/apiClient';
 
@@ -134,9 +135,9 @@ export default function Header({ variant = 'dashboard' }) {
         aria-label="Open menu"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="4" y1="12" x2="20" y2="12"></line>
-          <line x1="4" y1="6" x2="20" y2="6"></line>
-          <line x1="4" y1="18" x2="20" y2="18"></line>
+          <line x1="3.5" y1="5.5" x2="20.5" y2="5.5" />
+          <line x1="3.5" y1="12" x2="16.5" y2="12" />
+          <line x1="3.5" y1="18.5" x2="11.5" y2="18.5" />
         </svg>
       </button>
 
@@ -148,7 +149,12 @@ export default function Header({ variant = 'dashboard' }) {
       {/* Side Drawer */}
       <div className={`${styles.mobileDrawer} ${drawerOpen ? styles.drawerOpen : ''}`}>
         <div className={styles.drawerHeader}>
-          <span className={styles.brand} onClick={() => { navigate('/home'); setDrawerOpen(false); }} style={{cursor: 'pointer'}}>Meetifyy</span>
+          <img 
+            src={wordmark} 
+            alt="Meetifyy" 
+            className={styles.drawerWordmark} 
+            onClick={() => { navigate('/home'); setDrawerOpen(false); }} 
+          />
           <button className={styles.closeDrawerBtn} onClick={() => setDrawerOpen(false)}>✕</button>
         </div>
         

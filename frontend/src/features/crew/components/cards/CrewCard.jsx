@@ -23,8 +23,9 @@ const DEFAULT_COVERS = [
 
 function getDefaultCover(idOrTitle = '') {
   let hash = 0;
-  for (let i = 0; i < idOrTitle.length; i++) {
-    hash = (hash << 5) - hash + idOrTitle.charCodeAt(i);
+  const str = String(idOrTitle || '');
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
     hash |= 0;
   }
   const idx = Math.abs(hash) % DEFAULT_COVERS.length;
@@ -80,8 +81,10 @@ export default function CrewCard({ activity, onClick }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showMenu]);
 
+  if (!activity) return null;
+
   const { 
-    title, description, dateLabel, time, location,
+    title = '', description, dateLabel, time, location,
     hostName, hostAvatar, hostUsername, slotsNeeded, slotsFilled,
     category
   } = activity;
@@ -95,10 +98,10 @@ export default function CrewCard({ activity, onClick }) {
 
   const handleSave = (e) => {
     e.stopPropagation();
-    toggleSaveActivity(activity.id);
+    if (activity.id) toggleSaveActivity(activity.id);
   };
 
-  const filled = Math.min(slotsFilled, slotsNeeded);
+  const filled = Math.min(slotsFilled || 0, slotsNeeded || 0);
   const coverImgUrl = activity.coverImage || getDefaultCover(title || activity.id);
 
   return (
@@ -173,7 +176,7 @@ export default function CrewCard({ activity, onClick }) {
           </div>
         </div>
 
-        <h3 className={styles.title}>{title?.length > 30 ? title.slice(0, 30) + '..' : title}</h3>
+        <h3 className={styles.title}>{typeof title === 'string' && title.length > 30 ? title.slice(0, 30) + '..' : (title || '')}</h3>
 
         <div className={styles.bottomRow}>
           <div className={styles.goingLine} style={{ cursor: 'default' }}>
@@ -182,33 +185,42 @@ export default function CrewCard({ activity, onClick }) {
                 const seenIds = new Set();
                 const displayUsers = [];
                 
-                // Add host if present
-                if (activity.hostAvatar || activity.hostName) {
-                  const hId = activity.hostId || 'host';
+                // Add host/creator if present
+                const hAv = activity.hostAvatar || activity.creator?.avatar || activity.host?.avatar || activity.user?.avatar;
+                const hName = activity.hostName || activity.creator?.displayName || activity.host?.displayName || activity.user?.displayName;
+                const hId = activity.hostId || activity.creatorId || activity.creator?.id || 'host';
+                
+                if (hAv || hName || activity.hostId || activity.creatorId) {
                   displayUsers.push({
                     id: hId,
-                    avatar: activity.hostAvatar,
-                    displayName: activity.hostName
+                    avatar: hAv,
+                    displayName: hName
                   });
                   seenIds.add(hId);
                 }
                 
-                // Add participants from store users or _membersData
-                const participantIds = activity.participants || [];
-                const memberObjs = activity._membersData || [];
+                // Add participants from store users or _membersData or members
+                const participantIds = activity.participants || (activity.members || []).map(m => typeof m === 'object' ? (m.userId || m.id) : m);
+                const memberObjs = activity._membersData || activity.members || [];
                 
                 participantIds.forEach(id => {
-                  if (seenIds.has(id)) return;
-                  const uObj = Object.values(users || {}).find(u => u.id === id) || memberObjs.find(m => m?.id === id);
-                  if (uObj) {
+                  const cleanId = typeof id === 'object' ? id.id || id.userId : id;
+                  if (!cleanId || seenIds.has(cleanId)) return;
+                  const uObj = Object.values(users || {}).find(u => u.id === cleanId) || memberObjs.find(m => m?.id === cleanId || m?.userId === cleanId || m?.user?.id === cleanId);
+                  const userRef = uObj?.user || uObj;
+                  if (userRef) {
                     displayUsers.push({
-                      id: uObj.id || id,
-                      avatar: uObj.avatar || uObj.profileImage,
-                      displayName: uObj.displayName || uObj.name
+                      id: cleanId,
+                      avatar: userRef?.avatar || userRef?.profileImage,
+                      displayName: userRef?.displayName || userRef?.name || userRef?.username
                     });
-                    seenIds.add(id);
+                    seenIds.add(cleanId);
                   }
                 });
+
+                if (displayUsers.length === 0) {
+                  displayUsers.push({ id: 'default-fallback', avatar: null, displayName: 'Participant' });
+                }
 
                 const finalAvatars = displayUsers.slice(0, 5);
 

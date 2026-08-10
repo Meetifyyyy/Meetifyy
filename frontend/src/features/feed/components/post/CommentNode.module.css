@@ -19,6 +19,12 @@
   overflow-x: auto;
   overflow-y: hidden;
   padding-bottom: 16px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.treeRoot::-webkit-scrollbar {
+  display: none;
 }
 
 /* ─── Appear animation ──────────────────────────────────────────────────── */
@@ -43,9 +49,9 @@
 /* ─── Card ──────────────────────────────────────────────────────────────── */
 .replyCard {
   border-radius: var(--radius-md, 12px);
-  padding:    calc(0.45rem * 1.00);
-  margin:     calc(-0.45rem * 1.00);
-
+  padding: 0.25rem 0;
+  margin: 0;
+  box-sizing: border-box;
   position: relative;
   z-index: 1;            /* sit above SVG (z-index:0) */
   outline: none;
@@ -195,6 +201,7 @@
   font-size: calc(0.92rem * var(--font-scale, 1));
   line-height: 1.5;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* ─── Actions ───────────────────────────────────────────────────────────── */

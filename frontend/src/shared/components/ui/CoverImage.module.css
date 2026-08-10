@@ -39,6 +39,7 @@
   background-size: 200% 100%;
   animation: coverShimmer 1.5s infinite linear;
   z-index: 1;
+  pointer-events: none;
 }
 
 @keyframes coverShimmer {
