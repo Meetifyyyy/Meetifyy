@@ -13,10 +13,11 @@ export class SearchController {
     @Query('q') query: string,
     @Query('type') type?: string,
     @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
   ) {
     const currentUserId = req.user?.id;
     const limitNum = limit ? parseInt(limit, 10) : 15;
-    return this.searchService.globalSearch(query, currentUserId, limitNum, type);
+    return this.searchService.globalSearch(query, currentUserId, limitNum, type, cursor);
   }
 
   @Get('suggestions')

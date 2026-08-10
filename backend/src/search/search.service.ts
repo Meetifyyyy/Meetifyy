@@ -1,11 +1,33 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ActivityVisibility } from '@prisma/client';
+import { ActivityVisibility, Prisma } from '@prisma/client';
 import { BlocksService } from '../users/blocks.service';
 import { RedisService } from '../redis/redis.service';
 
 /** How long (seconds) search results are cached per (query, userId) pair. */
 const SEARCH_CACHE_TTL = 15;
+/** How long (seconds) typeahead suggestions are cached — short since results are small and per-keystroke. */
+const SUGGESTIONS_CACHE_TTL = 10;
+
+interface SearchCursor {
+  /** `${createdAt ISO}__${id}` for posts (ordered createdAt desc). */
+  p?: string;
+  /** `${startDate ISO}__${id}` for activities (ordered startDate asc). */
+  a?: string;
+}
+
+function encodeCursor(cursor: SearchCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString('base64url');
+}
+
+function decodeCursor(raw?: string): SearchCursor {
+  if (!raw) return {};
+  try {
+    return JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as SearchCursor;
+  } catch {
+    return {};
+  }
+}
 
 @Injectable()
 export class SearchService {
@@ -20,13 +42,15 @@ export class SearchService {
     this.redis = this.redisService?.getClient() ?? null;
   }
 
-  async globalSearch(query?: string, currentUserId?: string, limit = 15, type?: string) {
+  async globalSearch(query?: string, currentUserId?: string, limit = 15, type?: string, cursorParam?: string) {
     const searchQuery = (query || '').trim();
     const cleanQuery = searchQuery.toLowerCase();
     const isDiscovery = searchQuery.length === 0;
     const now = new Date();
+    const cursor = decodeCursor(cursorParam);
+    const isPaginating = Boolean(cursor.p || cursor.a);
 
-    const cacheKey = `search:${cleanQuery || 'discovery'}:${type || 'all'}:${currentUserId ?? 'anon'}:${limit}`;
+    const cacheKey = `search:${cleanQuery || 'discovery'}:${type || 'all'}:${currentUserId ?? 'anon'}:${limit}:${cursorParam || 'first'}`;
 
     // 1. Cache read
     if (this.redis) {
@@ -41,16 +65,83 @@ export class SearchService {
       }
     }
 
+    let postCursorDate: Date | undefined;
+    let postCursorId: string | undefined;
+    if (cursor.p) {
+      const [dateStr, id] = cursor.p.split('__');
+      if (dateStr && id) {
+        postCursorDate = new Date(dateStr);
+        postCursorId = id;
+      }
+    }
+
+    let activityCursorDate: Date | undefined;
+    let activityCursorId: string | undefined;
+    if (cursor.a) {
+      const [dateStr, id] = cursor.a.split('__');
+      if (dateStr && id) {
+        activityCursorDate = new Date(dateStr);
+        activityCursorId = id;
+      }
+    }
+
     const excludedUserIds = currentUserId ? await this.blocksService.getExcludedUserIds(currentUserId) : [];
     const searchExcludedUserIds = currentUserId ? [...excludedUserIds, currentUserId] : excludedUserIds;
     const startTime = performance.now();
 
-    const fetchUsers = !type || type === 'all' || type === 'people' || type === 'users';
-    const fetchCommunities = !type || type === 'all' || type === 'communities';
+    // Users/communities aren't paginated (small, relevance-capped lists) — only re-fetched on the first page.
+    const fetchUsers = !isPaginating && (!type || type === 'all' || type === 'people' || type === 'users');
+    const fetchCommunities = !isPaginating && (!type || type === 'all' || type === 'communities');
     const fetchPosts = !type || type === 'all' || type === 'posts';
     const fetchActivities = !type || type === 'all' || type === 'activities';
+    const postFetchLimit = (isDiscovery ? 6 : limit) + 1;
+    const activityFetchLimit = (isDiscovery ? 6 : limit) + 1;
 
-    const [users, communities, rawPosts, activities] = await Promise.all([
+    const postAndConditions: Prisma.PostWhereInput[] = [
+      {
+        OR: [
+          { communityId: null },
+          { community: { is: { isPrivate: false } } },
+          ...(currentUserId ? [{ community: { is: { members: { some: { userId: currentUserId } } } } }] : []),
+        ],
+      },
+      ...(postCursorDate && postCursorId
+        ? [{
+            OR: [
+              { createdAt: { lt: postCursorDate } },
+              { createdAt: postCursorDate, id: { lt: postCursorId } },
+            ],
+          } as Prisma.PostWhereInput]
+        : []),
+    ];
+
+    const activityAndConditions: Prisma.CrewActivityWhereInput[] = [
+      {
+        OR: [
+          { endDate: null },
+          { endDate: { gte: now } },
+        ],
+      },
+      ...(isDiscovery
+        ? []
+        : [{
+            OR: [
+              { title: { contains: searchQuery, mode: 'insensitive' as Prisma.QueryMode } },
+              { description: { contains: searchQuery, mode: 'insensitive' as Prisma.QueryMode } },
+              { location: { contains: searchQuery, mode: 'insensitive' as Prisma.QueryMode } },
+            ],
+          } as Prisma.CrewActivityWhereInput]),
+      ...(activityCursorDate && activityCursorId
+        ? [{
+            OR: [
+              { startDate: { gt: activityCursorDate } },
+              { startDate: activityCursorDate, id: { gt: activityCursorId } },
+            ],
+          } as Prisma.CrewActivityWhereInput]
+        : []),
+    ];
+
+    const [users, communities, rawPostsPage, activitiesPage] = await Promise.all([
       fetchUsers
         ? this.prisma.user.findMany({
             where: {
@@ -112,13 +203,9 @@ export class SearchService {
         ? this.prisma.post.findMany({
             where: {
               deletedAt: null,
-              ...(isDiscovery ? {} : { text: { contains: searchQuery, mode: 'insensitive' } }),
+              ...(isDiscovery ? {} : { text: { contains: searchQuery, mode: 'insensitive' as Prisma.QueryMode } }),
               ...(searchExcludedUserIds.length > 0 ? { authorId: { notIn: searchExcludedUserIds } } : {}),
-              OR: [
-                { communityId: null },
-                { community: { is: { isPrivate: false } } },
-                ...(currentUserId ? [{ community: { is: { members: { some: { userId: currentUserId } } } } }] : []),
-              ],
+              AND: postAndConditions,
             },
             select: {
               id: true,
@@ -144,8 +231,8 @@ export class SearchService {
               },
               pollVotes: currentUserId ? { where: { userId: currentUserId } } : false,
             },
-            take: isDiscovery ? 6 : limit,
-            orderBy: { createdAt: 'desc' },
+            take: postFetchLimit,
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           })
         : Promise.resolve([]),
 
@@ -157,19 +244,7 @@ export class SearchService {
               deletedAt: null,
               visibility: ActivityVisibility.PUBLIC,
               ...(searchExcludedUserIds.length > 0 ? { creatorId: { notIn: searchExcludedUserIds } } : {}),
-              OR: [
-                { endDate: null },
-                { endDate: { gte: now } },
-              ],
-              ...(isDiscovery
-                ? {}
-                : {
-                    OR: [
-                      { title: { contains: searchQuery, mode: 'insensitive' } },
-                      { description: { contains: searchQuery, mode: 'insensitive' } },
-                      { location: { contains: searchQuery, mode: 'insensitive' } },
-                    ],
-                  }),
+              AND: activityAndConditions,
             },
             select: {
               id: true,
@@ -178,6 +253,7 @@ export class SearchService {
               location: true,
               startDate: true,
               endDate: true,
+              createdAt: true,
               maxMembers: true,
               coverImage: true,
               members: {
@@ -188,11 +264,25 @@ export class SearchService {
               },
               creator: { select: { id: true, username: true, displayName: true, avatar: true } },
             },
-            take: isDiscovery ? 6 : limit,
-            orderBy: { startDate: 'asc' },
+            take: activityFetchLimit,
+            orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
           })
         : Promise.resolve([]),
     ]);
+
+    let nextPostCursor: string | undefined;
+    const rawPosts = [...rawPostsPage];
+    if (rawPosts.length > postFetchLimit - 1) {
+      const extra = rawPosts.pop();
+      if (extra) nextPostCursor = `${new Date(extra.createdAt).toISOString()}__${extra.id}`;
+    }
+
+    let nextActivityCursor: string | undefined;
+    const activities = [...activitiesPage];
+    if (activities.length > activityFetchLimit - 1) {
+      const extra = activities.pop();
+      if (extra?.startDate) nextActivityCursor = `${new Date(extra.startDate).toISOString()}__${extra.id}`;
+    }
 
     // Rank Users
     const rankedUsers = users
@@ -299,7 +389,11 @@ export class SearchService {
     const duration = (performance.now() - startTime).toFixed(0);
     this.logger.log(`"${searchQuery || 'discovery'}" ${totalResults} results (${duration}ms)`);
 
-    const result = { users: rankedUsers, communities: rankedCommunities, posts, activities: formattedActivities };
+    const nextCursor = (nextPostCursor || nextActivityCursor)
+      ? encodeCursor({ p: nextPostCursor, a: nextActivityCursor })
+      : undefined;
+
+    const result = { users: rankedUsers, communities: rankedCommunities, posts, activities: formattedActivities, nextCursor };
 
     // 2. Cache write
     if (this.redis) {
@@ -314,11 +408,27 @@ export class SearchService {
   }
 
   async getSuggestions(query: string, currentUserId?: string) {
-    if (!query || query.trim().length === 0) {
+    const searchQuery = (query || '').trim();
+    // Require ≥2 chars: single-char patterns match nearly everything and can't use the
+    // pg_trgm indexes (trigrams need 3 chars), so they'd force a full scan for noise.
+    // The typeahead dropdown isn't useful for 1 char anyway.
+    if (searchQuery.length < 2) {
       return { users: [], communities: [], activities: [], keywords: [] };
     }
+    const cacheKey = `search:suggestions:${searchQuery.toLowerCase()}:${currentUserId ?? 'anon'}`;
 
-    const searchQuery = query.trim();
+    if (this.redis) {
+      try {
+        const cached = await this.redis.get(cacheKey);
+        if (cached) return JSON.parse(cached);
+      } catch {
+        // Redis unavailable — fall through to DB
+      }
+    }
+
+    const excludedUserIds = currentUserId ? await this.blocksService.getExcludedUserIds(currentUserId) : [];
+    const suggestionExcludedUserIds = currentUserId ? [...excludedUserIds, currentUserId] : excludedUserIds;
+
     const [users, communities, activities] = await Promise.all([
       this.prisma.user.findMany({
         where: {
@@ -327,7 +437,7 @@ export class SearchService {
             { displayName: { contains: searchQuery, mode: 'insensitive' } },
           ],
           deletedAt: null,
-          ...(currentUserId ? { id: { not: currentUserId } } : {}),
+          ...(suggestionExcludedUserIds.length > 0 ? { id: { notIn: suggestionExcludedUserIds } } : {}),
         },
         select: { id: true, username: true, displayName: true, avatar: true },
         take: 5,
@@ -346,13 +456,24 @@ export class SearchService {
           status: 'OPEN',
           visibility: ActivityVisibility.PUBLIC,
           deletedAt: null,
+          ...(suggestionExcludedUserIds.length > 0 ? { creatorId: { notIn: suggestionExcludedUserIds } } : {}),
         },
         select: { id: true, title: true, location: true },
         take: 5,
       }),
     ]);
 
-    return { users, communities, activities, keywords: [] };
+    const result = { users, communities, activities, keywords: [] };
+
+    if (this.redis) {
+      try {
+        await this.redis.setex(cacheKey, SUGGESTIONS_CACHE_TTL, JSON.stringify(result));
+      } catch {
+        // Non-fatal
+      }
+    }
+
+    return result;
   }
 
   async getRecentSearches(userId: string) {

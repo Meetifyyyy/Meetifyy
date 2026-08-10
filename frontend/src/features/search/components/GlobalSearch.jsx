@@ -1,21 +1,41 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import logo from '@assets/images/meetify_logo.webp';
 import { searchApi } from '@shared/api/apiClient';
+import { useDebounce } from '@shared/hooks/useDebounce';
+import { useIsMobile } from '@shared/hooks/useIsMobile';
+import { useSearchSuggestions } from '@features/search/hooks/useSearchSuggestions';
+import Avatar from '@shared/components/avatar/Avatar';
+import Skeleton from '@shared/components/skeletons/Skeleton';
 import styles from './GlobalSearch.module.css';
 
-export default function GlobalSearch({ variant = 'header', isActive = false, autoFocus = false }) {
+export default function GlobalSearch() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isMobile = useIsMobile();
   const q = searchParams.get('q') || '';
-  
+
+  const onSearchPage = location.pathname === '/search';
+  // On desktop, once the user is already on the /search page, the header search bar
+  // IS the search box (the in-page one is hidden). So typing should drive the results
+  // page live via the URL — not pop a competing dropdown that just flickers while the
+  // page underneath never updates.
+  const desktopLiveOnPage = !isMobile && onSearchPage;
+
   const [query, setQuery] = useState(q);
+  // Short debounce — the suggestions endpoint is cheap (indexed + Redis-cached),
+  // so we can stay snappy without hammering the network on every keystroke.
+  const debouncedQuery = useDebounce(query, 120);
   const inputRef = useRef(null);
   const containerRef = useRef(null);
   const [isFocused, setIsFocused] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
-  const [suggestions, setSuggestions] = useState({ users: [], communities: [], activities: [], keywords: [] });
+
+  // Only fetch suggestions while the dropdown could actually be visible (focused, and
+  // NOT in desktop-live-on-page mode where the results page itself shows results) —
+  // otherwise a hidden/backgrounded header would keep firing requests nobody sees.
+  const { suggestions, isLoading: suggestionsLoading, isError: suggestionsError } = useSearchSuggestions(debouncedQuery, isFocused && !desktopLiveOnPage);
 
   const [recentSearches, setRecentSearches] = useState(() => {
     try {
@@ -26,7 +46,7 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
       return [];
     }
   });
-  
+
   const [preSearchPath, setPreSearchPath] = useState('/');
 
   // Load server-synced recent searches
@@ -43,41 +63,21 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
     return () => { mounted = false; };
   }, []);
 
-  // Fetch live suggestions on query change
-  useEffect(() => {
-    if (!query.trim()) {
-      setSuggestions({ users: [], communities: [], activities: [], keywords: [] });
-      return;
-    }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      searchApi.getSuggestions(query.trim(), controller.signal)
-        .then(res => {
-          if (res) setSuggestions(res);
-        })
-        .catch(() => {});
-    }, 150);
-
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [query]);
-
   // Sync state if URL changes externally
   useEffect(() => {
     setQuery(q);
   }, [q]);
 
-  // Handle autoFocus on mount
+  // Desktop, already on /search: push the (debounced) query into the URL so the
+  // results page updates live as the user types. Guarded by an equality check so
+  // it never loops with the setQuery(q) sync above.
   useEffect(() => {
-    if (autoFocus && inputRef.current) {
-      setTimeout(() => {
-        if (inputRef.current) inputRef.current.focus();
-      }, 50);
+    if (!desktopLiveOnPage) return;
+    const trimmed = debouncedQuery.trim();
+    if (trimmed !== q) {
+      setSearchParams(trimmed ? { q: trimmed } : {}, { replace: true });
     }
-  }, [autoFocus]);
+  }, [debouncedQuery, desktopLiveOnPage, q, setSearchParams]);
 
   // Handle clicks outside the dropdown
   useEffect(() => {
@@ -94,11 +94,20 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
     const val = e.target.value.substring(0, 100);
     setQuery(val);
     setSelectedIndex(-1);
-    
-    const onSearchPage = location.pathname === '/search';
+
     if (!onSearchPage && val.trim()) {
       setPreSearchPath(location.pathname + location.search);
     }
+
+    // Mobile: the header shows the recent-searches dropdown on tap/focus, but the
+    // moment the user types the first character we hand off to the dedicated
+    // Search page — it takes over live typing and real-time results from there.
+    if (isMobile && val.trim()) {
+      setIsFocused(false);
+      navigate(`/search?q=${encodeURIComponent(val.trim())}`, { state: { autoFocus: true } });
+    }
+    // Desktop-on-search-page: the URL sync effect handles updating the page live —
+    // nothing else to do here (no dropdown, no navigation).
   };
 
   const handleClear = () => {
@@ -150,8 +159,26 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
     }
   };
 
-  // Keyboard navigation options list
-  const activeSuggestions = React.useMemo(() => {
+  const goToEntity = (item) => {
+    if (item.type === 'user') {
+      addRecentSearch(item.data.username);
+      setIsFocused(false);
+      navigate(`/profile/${item.data.username}`);
+    } else if (item.type === 'community') {
+      addRecentSearch(item.data.name);
+      setIsFocused(false);
+      navigate(`/communities/${item.data.id}`);
+    } else if (item.type === 'activity') {
+      addRecentSearch(item.data.title);
+      setIsFocused(false);
+      navigate(`/crew/${item.data.id}`);
+    } else {
+      triggerSearch(item.text);
+    }
+  };
+
+  // Keyboard nav options list
+  const activeSuggestions = useMemo(() => {
     const list = [];
     if (!query.trim()) {
       recentSearches.forEach(term => list.push({ type: 'recent', text: term }));
@@ -173,22 +200,7 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (selectedIndex >= 0 && activeSuggestions[selectedIndex]) {
-        const item = activeSuggestions[selectedIndex];
-        if (item.type === 'user') {
-          addRecentSearch(item.data.username);
-          setIsFocused(false);
-          navigate(`/profile/${item.data.username}`);
-        } else if (item.type === 'community') {
-          addRecentSearch(item.data.name);
-          setIsFocused(false);
-          navigate(`/communities/${item.data.id}`);
-        } else if (item.type === 'activity') {
-          addRecentSearch(item.data.title);
-          setIsFocused(false);
-          navigate(`/crew/${item.data.id}`);
-        } else {
-          triggerSearch(item.text);
-        }
+        goToEntity(activeSuggestions[selectedIndex]);
       } else {
         triggerSearch();
       }
@@ -198,31 +210,26 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
     }
   };
 
-  const showDropdown = isFocused && (query.trim() ? activeSuggestions.length > 0 : recentSearches.length > 0);
+  // Dropdown shows recents (empty query) or live suggestions (typing) on both
+  // breakpoints. On mobile it only ever gets to show recents in practice — the
+  // moment `query` becomes non-empty, handleSearchChange has already navigated
+  // away to the dedicated Search page.
+  const hasQuery = query.trim().length > 0;
+  // On the desktop search page the page itself is the results surface, so the header
+  // never opens its own dropdown there.
+  const showDropdown = isFocused && !desktopLiveOnPage && (hasQuery || recentSearches.length > 0);
 
   return (
-    <div ref={containerRef} className={`${styles.container} ${variant === 'bottomNav' ? styles.bottomNavContainer : ''} ${isActive ? styles.active : ''}`}>
-      <div className={`${styles.searchBox} ${variant === 'bottomNav' ? styles.bottomNavSearchBox : ''} ${(variant === 'mobileSearchPage' || variant === 'pageHeader') ? styles.mobileSearchPageBox : ''} ${showDropdown ? styles.searchBoxOpen : ''}`}>
-        {variant === 'bottomNav' ? (
-           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={styles.bottomNavIcon} onClick={() => triggerSearch()} style={{ cursor: 'pointer' }}>
-             <circle cx="11" cy="11" r="8" />
-             <line x1="21" y1="21" x2="16.65" y2="16.65" />
-           </svg>
-        ) : (variant === 'mobileSearchPage' || variant === 'pageHeader') ? (
-           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={styles.mobileSearchPageIcon} onClick={() => triggerSearch()} style={{ cursor: 'pointer' }}>
-             <circle cx="11" cy="11" r="8" />
-             <line x1="21" y1="21" x2="16.65" y2="16.65" />
-           </svg>
-        ) : (
-           <img className={styles.searchIcon} src={logo} alt="Meetifyy" onClick={() => triggerSearch()} style={{ cursor: 'pointer' }} />
-        )}
+    <div ref={containerRef} className={styles.container}>
+      <div className={`${styles.searchBox} ${showDropdown ? styles.searchBoxOpen : ''}`}>
+        <img className={styles.searchIcon} src={logo} alt="Meetifyy" onClick={() => triggerSearch()} style={{ cursor: 'pointer' }} />
         <input
           ref={inputRef}
           type="text"
           role="combobox"
           aria-expanded={showDropdown}
           aria-autocomplete="list"
-          className={`${styles.input} ${variant === 'bottomNav' ? styles.bottomNavInput : ''} ${(variant === 'mobileSearchPage' || variant === 'pageHeader') ? styles.mobileSearchPageInput : ''}`}
+          className={styles.input}
           placeholder="Search people, communities, activities..."
           value={query}
           maxLength={100}
@@ -231,11 +238,7 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
           onKeyDown={handleKeyDown}
         />
         {query && (
-          <button 
-            className={`${styles.clearBtn} ${variant === 'bottomNav' ? styles.bottomNavClearBtn : ''}`} 
-            onClick={handleClear}
-            aria-label="Clear search"
-          >
+          <button className={styles.clearBtn} onClick={handleClear} aria-label="Clear search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6L6 18M6 6l12 12"/>
             </svg>
@@ -245,7 +248,7 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
 
       {showDropdown && (
         <div className={styles.dropdownMenu} role="listbox">
-          {!query.trim() && recentSearches.length > 0 && (
+          {!hasQuery && recentSearches.length > 0 && (
             <>
               <div className={styles.dropdownHeader}>
                 Recent Searches
@@ -275,45 +278,82 @@ export default function GlobalSearch({ variant = 'header', isActive = false, aut
             </>
           )}
 
-          {query.trim() && (
-            <>
-              <div className={styles.dropdownHeader}>Suggestions</div>
-              {activeSuggestions.map((item, i) => (
-                <div
-                  key={`sug-${i}`}
-                  role="option"
-                  aria-selected={selectedIndex === i}
-                  className={`${styles.dropdownItem} ${selectedIndex === i ? styles.dropdownItemActive : ''}`}
-                  onClick={() => {
-                    if (item.type === 'user') {
-                      addRecentSearch(item.data.username);
-                      setIsFocused(false);
-                      navigate(`/profile/${item.data.username}`);
-                    } else if (item.type === 'community') {
-                      addRecentSearch(item.data.name);
-                      setIsFocused(false);
-                      navigate(`/communities/${item.data.id}`);
-                    } else if (item.type === 'activity') {
-                      addRecentSearch(item.data.title);
-                      setIsFocused(false);
-                      navigate(`/crew/${item.data.id}`);
-                    } else {
-                      triggerSearch(item.text);
-                    }
-                  }}
-                >
-                  <svg className={styles.dropdownIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    {item.type === 'user' && <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>}
-                    {item.type === 'activity' && <><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></>}
-                    {item.type === 'community' && <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></>}
-                  </svg>
-                  <span>{item.text}</span>
+          {hasQuery && suggestionsLoading && activeSuggestions.length === 0 && (
+            <div className={styles.suggestionsLoading}>
+              {[1, 2, 3].map(i => (
+                <div key={i} className={styles.dropdownItem}>
+                  <Skeleton type="circle" width="28px" height="28px" />
+                  <Skeleton type="text" width="60%" height="14px" />
                 </div>
               ))}
+            </div>
+          )}
+
+          {hasQuery && !suggestionsLoading && suggestionsError && (
+            <div className={styles.dropdownEmptyState}>Couldn't load results — try again.</div>
+          )}
+
+          {hasQuery && !suggestionsLoading && !suggestionsError && activeSuggestions.length === 0 && (
+            <div className={styles.dropdownEmptyState}>No matches for "{query.trim()}"</div>
+          )}
+
+          {hasQuery && activeSuggestions.length > 0 && (
+            <>
+              {renderSection('People', suggestions.users, 'user', selectedIndex, activeSuggestions, goToEntity)}
+              {renderSection('Communities', suggestions.communities, 'community', selectedIndex, activeSuggestions, goToEntity)}
+              {renderSection('Activities', suggestions.activities, 'activity', selectedIndex, activeSuggestions, goToEntity)}
+              <div className={styles.dropdownFooter} onClick={() => triggerSearch()}>
+                See all results for &ldquo;{query.trim()}&rdquo;
+              </div>
             </>
           )}
         </div>
       )}
     </div>
+  );
+}
+
+function entityIcon(type) {
+  if (type === 'user') {
+    return <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>;
+  }
+  if (type === 'activity') {
+    return <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />;
+  }
+  return <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></>;
+}
+
+function renderSection(label, items, type, selectedIndex, activeSuggestions, goToEntity) {
+  if (!items || items.length === 0) return null;
+  return (
+    <React.Fragment>
+      <div className={styles.dropdownHeader}>{label}</div>
+      {items.map((entity) => {
+        const globalIndex = activeSuggestions.findIndex(s => s.type === type && s.data?.id === entity.id);
+        const isUser = type === 'user';
+        return (
+          <div
+            key={`${type}-${entity.id}`}
+            role="option"
+            aria-selected={globalIndex === selectedIndex}
+            className={`${styles.dropdownItem} ${globalIndex === selectedIndex ? styles.dropdownItemActive : ''}`}
+            onClick={() => goToEntity({ type, data: entity })}
+          >
+            {isUser ? (
+              <Avatar src={entity.avatar} name={entity.displayName} size="28px" disableHover />
+            ) : (
+              <svg className={styles.dropdownIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                {entityIcon(type)}
+              </svg>
+            )}
+            <div className={styles.dropdownItemText}>
+              <span>{type === 'user' ? (entity.displayName || entity.username) : (entity.name || entity.title)}</span>
+              {type === 'user' && <span className={styles.dropdownItemSub}>@{entity.username}</span>}
+              {type === 'activity' && entity.location && <span className={styles.dropdownItemSub}>{entity.location}</span>}
+            </div>
+          </div>
+        );
+      })}
+    </React.Fragment>
   );
 }

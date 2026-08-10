@@ -695,9 +695,10 @@ export const notificationsApi = {
 };
 
 export const searchApi = {
-  globalSearch: (query, limit = 15, type = 'all', signal) => {
+  globalSearch: (query, limit = 15, type = 'all', signal, cursor) => {
     const params = new URLSearchParams({ q: query, limit: String(limit) });
     if (type && type !== 'all') params.set('type', type);
+    if (cursor) params.set('cursor', cursor);
     return apiClient.get(`/api/search?${params.toString()}`, { signal });
   },
   getSuggestions: (query, signal) => {

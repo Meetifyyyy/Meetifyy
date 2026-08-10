@@ -10,6 +10,8 @@
   display: flex;
   align-items: center;
   width: 100%;
+  height: 40px;
+  box-sizing: border-box;
   overflow: visible;
   border: 1.2px solid var(--color-primary);
   border-radius: var(--radius-xl);
@@ -49,13 +51,15 @@
 
 .input {
   width: 100%;
-  padding: 7px 40px 7px 50px;         /* right pad avoids clear btn overlap */
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0 40px 0 50px;             /* right pad avoids clear btn overlap, no vertical padding — height comes from .searchBox so it can never shift */
   border: none;
   background: transparent;
   color: var(--color-text-main);
   font-size: 0.95rem;
   font-family: var(--font-family-sans);
-  line-height: 1.5;                      /* consistent cursor height across browsers */
+  line-height: normal;
   outline: none;
 }
 
@@ -88,157 +92,6 @@
 .clearBtn:hover {
   background: var(--color-border-light);
   color: var(--color-text-main);
-}
-
-/* Bottom Nav Variant Styles */
-.bottomNavContainer {
-  display: flex;
-  height: 40px;
-  width: 100%;
-  overflow: visible;
-}
-
-.bottomNavSearchBox {
-  display: flex;
-  align-items: center;
-  background: var(--color-border-light);
-  border: 1px solid rgba(24, 24, 27, 0.1);
-  border-radius: var(--radius-xl);
-  padding: 0 0.75rem;
-  width: 100%;
-  overflow: visible;
-  transition:
-    border-radius 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 0.25s ease,
-    background-color 0.25s ease,
-    box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  cursor: text;
-}
-
-.active .bottomNavSearchBox {
-  background: rgba(var(--color-primary-rgb), 0.15);
-  border-color: rgba(var(--color-primary-rgb), 0.15);
-}
-
-.bottomNavIcon {
-  color: var(--color-text-muted);
-  flex-shrink: 0;
-  margin-right: 0.5rem;
-}
-
-.active .bottomNavIcon {
-  color: var(--color-primary);
-}
-
-.bottomNavInput {
-  background: transparent;
-  border: none;
-  outline: none;
-  padding: 0;
-  font-family: var(--font-family-sans);
-  font-size: 0.85rem;
-  line-height: 1.5;
-  color: var(--color-text-main);
-  width: 100%;
-}
-
-.bottomNavInput:focus {
-  background: transparent;
-  box-shadow: none;
-}
-
-.bottomNavInput::placeholder {
-  color: var(--color-text-muted);
-  opacity: 0.7;
-}
-
-.bottomNavClearBtn {
-  position: static;
-  padding: 4px;
-  margin-left: 4px;
-  color: var(--color-text-muted);
-  background: none;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-.bottomNavClearBtn:hover {
-  background: var(--color-border);
-  color: var(--color-text-main);
-}
-
-/* Mobile Search Page Variant Styles */
-.mobileSearchPageBox {
-  display: flex;
-  align-items: center;
-  background: var(--color-bg-white);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  padding: 0 1rem;
-  height: 40px;
-  gap: 0.5rem;
-  overflow: visible;
-  transition:
-    border-radius 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 0.25s ease,
-    background-color 0.25s ease,
-    box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.mobileSearchPageBox:focus-within {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb, 37, 99, 235), 0.15),
-              0 2px 8px rgba(15, 23, 42, 0.05);
-}
-
-.mobileSearchPageBox.searchBoxOpen,
-.bottomNavSearchBox.searchBoxOpen {
-  border-top-left-radius: var(--radius-xl);
-  border-top-right-radius: var(--radius-xl);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  border-color: var(--color-primary);
-  border-bottom-color: transparent;
-  box-shadow: none;
-}
-
-.mobileSearchPageIcon {
-  color: var(--color-text-light);
-  flex-shrink: 0;
-  pointer-events: none;
-  transition: color 0.25s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.mobileSearchPageBox:focus-within .mobileSearchPageIcon {
-  color: var(--color-primary);
-  transform: scale(1.08);
-}
-
-.mobileSearchPageInput {
-  background: transparent;
-  border: none;
-  outline: none;
-  padding: 0;
-  height: 100%;
-  font-family: var(--font-family-sans);
-  font-size: 0.88rem;
-  line-height: 1.5;
-  color: var(--color-text-main);
-  width: 100%;
-}
-
-.mobileSearchPageInput::placeholder {
-  color: var(--color-text-light);
-}
-
-.mobileSearchPageInput:focus {
-  background: transparent;
-  box-shadow: none;
 }
 
 /* Search Dropdown Menu */
@@ -342,4 +195,50 @@
 
 .clearAllBtn:hover {
   background: rgba(var(--color-primary-rgb), 0.1);
+}
+
+.dropdownItemText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dropdownItemText span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdownItemSub {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.dropdownFooter {
+  padding: 12px 16px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+  border-top: 1px solid var(--color-border-light);
+  transition: background 0.15s ease;
+}
+
+.dropdownFooter:hover {
+  background: var(--color-border-light);
+}
+
+.dropdownEmptyState {
+  padding: 20px 16px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.suggestionsLoading .dropdownItem {
+  cursor: default;
 }

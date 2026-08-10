@@ -23,6 +23,7 @@ export default function DashboardLayoutWrapper() {
     match.pathname.startsWith('/post') ||
     match.pathname.startsWith('/saved') ||
     match.pathname.startsWith('/settings') ||
+    match.pathname.startsWith('/search') ||
     /^\/communities\/.+/.test(match.pathname)
   );
   // A conversation open on mobile (/messages/:id or /inbox/:id, as opposed to
@@ -37,6 +38,7 @@ export default function DashboardLayoutWrapper() {
   const hideBottomNav = matches.some(match =>
     match.pathname.startsWith('/saved') ||
     match.pathname.startsWith('/settings') ||
+    match.pathname.startsWith('/search') ||
     match.pathname.startsWith('/communities/')
   ) || isMessageThreadOpen;
 

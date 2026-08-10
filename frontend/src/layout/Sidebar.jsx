@@ -11,7 +11,6 @@ import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import styles from './Sidebar.module.css';
 import {
   HomeIcon as HomeOutline,
-  MagnifyingGlassIcon as SearchOutline,
   ChatBubbleOvalLeftEllipsisIcon as MessagesOutline,
   UserGroupIcon as CommunitiesOutline,
   UserIcon as ProfileOutline,
@@ -22,7 +21,6 @@ import {
 } from '@heroicons/react/24/outline';
 import {
   HomeIcon as HomeSolid,
-  MagnifyingGlassIcon as SearchSolid,
   ChatBubbleOvalLeftEllipsisIcon as MessagesSolid,
   UserGroupIcon as CommunitiesSolid,
   UserIcon as ProfileSolid,
@@ -153,20 +151,6 @@ export default function Sidebar({ onCommunityClick }) {
             <span className={styles.linkText}>Home</span>
           </a>
           
-          <a
-            href="#"
-            className={`${styles.sidebarLink}${location.pathname.startsWith('/feed') || location.pathname.startsWith('/search') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/search', { replace: true }); }}
-            onMouseEnter={() => import('@features/search/pages/SearchResultsRoute')}
-          >
-            {location.pathname.startsWith('/feed') || location.pathname.startsWith('/search') ? (
-              <SearchSolid />
-            ) : (
-              <SearchOutline />
-            )}
-            <span className={styles.linkText}>Search</span>
-          </a>
-
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/messages') ? ` ${styles.active}` : ''}`}

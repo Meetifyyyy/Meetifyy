@@ -1,37 +1,37 @@
-.searchPageContainer {
+/* ─── Shell ──────────────────────────────────────────────────────────────── */
+.searchShell {
   display: flex;
   flex-direction: column;
   width: 100%;
   max-width: 100%;
+  height: 100%;
+  min-height: 0;
   margin: 0 auto;
-  min-height: calc(100vh - 120px);
   background: var(--color-bg-white);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  flex: 1;
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
-/* Sticky Search Header */
-.searchHeaderArea {
+/* ─── Header ─────────────────────────────────────────────────────────────── */
+.header {
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 20;
+  flex-shrink: 0;
   background: var(--color-bg-white);
-  padding: 1rem 1.25rem 0.85rem;
+  padding: 1.1rem 1.25rem 0.9rem;
   border-bottom: 1px solid var(--color-border-light);
-  border-top-left-radius: var(--radius-xl);
-  border-top-right-radius: var(--radius-xl);
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: 0.75rem;
 }
 
-.topBarRow {
+.topRow {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
   width: 100%;
 }
 
@@ -43,47 +43,78 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.4rem;
-  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
-  transition: background 0.15s ease;
+  transition: background var(--transition-fast);
 }
 
 .backBtn:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--color-bg-soft);
 }
 
-.searchBarBox {
+.searchPill {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  background: var(--color-bg-subtle, #f8fafc);
-  border: 1px solid var(--color-border);
-  border-radius: 100px;
-  padding: 0.55rem 1rem;
-  flex: 1;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  background: var(--color-bg-soft);
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-full);
+  padding: 0 1rem;
+  height: 40px;
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.searchBarBox:focus-within {
+.searchPill:focus-within {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.12);
   background: var(--color-bg-white);
+  box-shadow: 0 0 0 4px rgba(var(--color-primary-rgb), 0.1);
 }
 
-.searchIcon {
-  color: var(--color-text-muted);
+.searchPillIcon {
+  color: var(--color-text-light);
   flex-shrink: 0;
+}
+
+.searchPill:focus-within .searchPillIcon {
+  color: var(--color-primary);
 }
 
 .searchInput {
   border: none;
   background: transparent;
   width: 100%;
+  height: 100%;
+  min-width: 0;
   font-family: var(--font-family-sans);
-  font-size: 0.9rem;
+  font-size: 0.92rem;
+  line-height: normal;
   color: var(--color-text-main);
   outline: none;
+  box-sizing: border-box;
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-light);
+}
+
+.updatingSpinner {
+  color: var(--color-primary);
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  padding: 3px;
+  animation: searchSpin 0.8s linear infinite;
+}
+
+@keyframes searchSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .clearBtn {
@@ -94,142 +125,168 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
-  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  padding: 3px;
+  box-sizing: border-box;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
+  transition: all var(--transition-fast);
 }
 
 .clearBtn:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--color-border-light);
   color: var(--color-text-main);
 }
 
-/* Quick Filter Chips */
-.chipsBar {
+/* ─── Quick Filter Chips ─────────────────────────────────────────────────── */
+.filterRow {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.45rem;
   overflow-x: auto;
   scrollbar-width: none;
-  padding-bottom: 0.1rem;
+  min-height: 34px;
 }
 
-.chipsBar::-webkit-scrollbar {
+.filterRow::-webkit-scrollbar {
   display: none;
 }
 
-.chipBtn {
-  background: var(--color-bg-subtle, #f1f5f9);
-  border: 1px solid var(--color-border);
-  border-radius: 100px;
-  padding: 0.35rem 0.85rem;
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--color-bg-soft);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  padding: 0.4rem 0.85rem;
   font-family: var(--font-family-sans);
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  color: var(--color-text-main);
+  color: var(--color-text-muted);
   white-space: nowrap;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
   flex-shrink: 0;
 }
 
-.chipBtn:hover {
-  border-color: var(--color-primary);
-  background: var(--color-bg-white);
+.filterChip:hover {
+  color: var(--color-text-main);
+  border-color: var(--color-border-dark);
 }
 
-.chipBtnActive {
+.filterChipActive {
   background: var(--color-primary);
   color: #ffffff;
   border-color: var(--color-primary);
+  box-shadow: 0 4px 12px rgba(var(--color-primary-rgb), 0.25);
 }
 
-/* Recent Searches Bar */
-.recentBar {
+.filterChipActive:hover {
+  color: #ffffff;
+}
+
+/* ─── Recent Searches ────────────────────────────────────────────────────── */
+.recentRow {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  padding-top: 0.2rem;
+  gap: 0.5rem;
+  min-height: 54px;
+  justify-content: center;
 }
 
-.recentTitle {
+.recentLabel {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text-muted);
-}
-
-.recentChips {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-}
-
-.recentChipItem {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  background: var(--color-bg-subtle, #f8fafc);
-  border: 1px solid var(--color-border);
-  border-radius: 100px;
-  padding: 0.25rem 0.65rem;
-  font-size: 0.76rem;
-  color: var(--color-text-main);
-  cursor: pointer;
-}
-
-.recentChipItem:hover {
-  border-color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
 }
 
 .clearAllBtn {
   background: transparent;
   border: none;
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-primary);
   cursor: pointer;
-  text-decoration: underline;
   padding: 0;
-  margin-left: 0.25rem;
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
-/* Feed Container */
-.feedContainer {
+.recentList {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.recentChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--color-bg-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: 0.32rem 0.75rem;
+  font-size: 0.78rem;
+  color: var(--color-text-main);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.recentChip:hover {
+  border-color: var(--color-primary);
   background: var(--color-bg-white);
+}
+
+/* ─── Results Body ───────────────────────────────────────────────────────── */
+.body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
-  border-bottom-left-radius: var(--radius-xl);
-  border-bottom-right-radius: var(--radius-xl);
+  background: var(--color-bg-white);
 }
 
-.feedList {
+.resultsList {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 0.6rem;
+  padding: 0.85rem;
 }
 
-.feedRow {
+.sectionLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0.3rem 0.35rem 0.1rem;
+}
+
+/* ─── Result Card ─────────────────────────────────────────────────────────── */
+.resultCard {
   display: flex;
   align-items: flex-start;
   gap: 0.85rem;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 0.85rem 1rem;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
-.feedRow:last-child {
-  border-bottom: none;
-}
-
-.feedRow:hover {
-  background: var(--color-bg-subtle, rgba(0, 0, 0, 0.015));
+.resultCard:hover {
+  border-color: var(--color-primary);
+  background: var(--color-bg-soft);
 }
 
 .feedInfo {
@@ -258,11 +315,6 @@
   text-overflow: ellipsis;
 }
 
-.feedSubHandle {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-
 .feedSub {
   font-size: 0.8rem;
   color: var(--color-text-muted);
@@ -271,102 +323,13 @@
   text-overflow: ellipsis;
 }
 
-.postSnippetText {
-  font-size: 0.88rem;
-  line-height: 1.45;
-  color: var(--color-text-main);
-  margin: 0.2rem 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  word-break: break-word;
-}
-
-.metaRow {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-top: 0.2rem;
-}
-
-.metaItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.76rem;
-  color: var(--color-text-muted);
-  font-weight: 500;
-}
-
-.metaBadge {
-  font-size: 0.74rem;
-  color: var(--color-primary);
-  font-weight: 600;
-}
-
-.metaStat {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.76rem;
-  color: var(--color-text-muted);
-  font-weight: 600;
-}
-
-/* Badges */
-.badgePill {
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 0.12rem 0.45rem;
-  border-radius: 100px;
-  background: rgba(16, 185, 129, 0.12);
-  color: #10b981;
-  text-transform: uppercase;
-}
-
-.badgePillPublic {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  padding: 0.12rem 0.45rem;
-  border-radius: 100px;
-  background: rgba(37, 99, 235, 0.1);
-  color: var(--color-primary);
-}
-
-.badgePillPrivate {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  padding: 0.12rem 0.45rem;
-  border-radius: 100px;
-  background: rgba(245, 158, 11, 0.12);
-  color: #d97706;
-}
-
-.badgePillPost {
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 0.12rem 0.45rem;
-  border-radius: 100px;
-  background: rgba(139, 92, 246, 0.12);
-  color: #8b5cf6;
-  text-transform: uppercase;
-}
-
 .activityCoverThumb {
   width: 56px;
   height: 56px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   flex-shrink: 0;
-  background: var(--color-bg-subtle, #f1f5f9);
+  background: var(--color-bg-soft);
 }
 
 .activityCoverImg {
@@ -382,32 +345,14 @@
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--color-primary);
-  margin-top: 0.2rem;
+  margin-top: 0.15rem;
 }
 
 .activityFooterRow {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-top: 0.35rem;
-}
-
-.hostInfo {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.hostName {
-  font-size: 0.76rem;
-  color: var(--color-text-muted);
-  font-weight: 500;
-}
-
-.memberStack {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
+  margin-top: 0.3rem;
 }
 
 .goingLine {
@@ -423,11 +368,11 @@
 }
 
 .goingAvatarWrap {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   overflow: hidden;
-  background: var(--color-bg-subtle, #f1f5f9);
+  background: var(--color-bg-soft);
   border: 2px solid var(--color-bg-white);
   box-sizing: border-box;
   flex-shrink: 0;
@@ -444,43 +389,17 @@
   border-radius: 50%;
 }
 
-.defaultAvatarCircle {
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, #3b82f6, #6366f1);
-  color: #ffffff;
-  font-size: 0.7rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-}
-
 .goingText {
-  display: inline-flex;
-  align-items: center;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 500;
-  color: var(--color-text-main, #334155);
-}
-
-.activityIconBox {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: rgba(16, 185, 129, 0.12);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  color: var(--color-text-muted);
 }
 
 .communityIconBox {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #2563EB, #7C3AED);
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
   color: #ffffff;
   font-weight: 700;
   font-size: 1.1rem;
@@ -490,106 +409,182 @@
   flex-shrink: 0;
 }
 
-/* Empty & Skeleton states */
-.skeletonRow {
+/* ─── Load More ───────────────────────────────────────────────────────────── */
+.loadMoreRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.loadMoreBtn {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: 0.5rem 1.25rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.loadMoreBtn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* ─── Skeleton ────────────────────────────────────────────────────────────── */
+.skeletonCard {
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 0.9rem 1rem;
 }
 
 .skeletonCol {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.45rem;
 }
 
-.emptyStateContainer {
+/* ─── Empty / Error States ────────────────────────────────────────────────── */
+.stateContainer {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 3.5rem 1.5rem;
+  padding: 4rem 1.5rem;
   text-align: center;
 }
 
-.emptyIcon {
-  color: var(--color-text-muted);
-  margin-bottom: 0.75rem;
+.stateIconRing {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(var(--color-primary-rgb), 0.1);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
 }
 
-.emptyTitle {
-  font-size: 1.15rem;
+.stateIconRingDanger {
+  background: rgba(var(--color-danger-rgb), 0.1);
+  color: var(--color-danger);
+}
+
+.stateTitle {
+  font-size: 1.05rem;
   font-weight: 700;
   color: var(--color-text-main);
   margin: 0 0 0.3rem;
 }
 
-.emptySub {
+.stateSub {
   font-size: 0.85rem;
   color: var(--color-text-muted);
   margin: 0 0 1.25rem;
+  max-width: 320px;
 }
 
-.resetBtn {
+.stateBtn {
   background: var(--color-primary);
   color: #ffffff;
   border: none;
-  border-radius: 100px;
-  padding: 0.55rem 1.2rem;
+  border-radius: var(--radius-full);
+  padding: 0.6rem 1.3rem;
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-height: 40px;
-  transition: opacity 0.2s ease;
+  gap: 0.4rem;
+  transition: opacity var(--transition-fast);
 }
 
-.resetBtn:hover {
+.stateBtn:hover {
   opacity: 0.9;
 }
 
-/* Responsive & Safe Area Support */
+/* ─── Mobile: full-bleed, full-height ────────────────────────────────────── */
 @media (max-width: 768px) {
-  .searchPageContainer {
+  .searchShell {
     border: none;
     border-radius: 0;
     box-shadow: none;
-    margin: 0;
-    min-height: calc(100vh - 65px);
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
+  .header {
+    padding: 0.75rem 0.75rem 0.65rem;
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+
+  .searchPill {
+    /* Same fixed 40px height as the header GlobalSearch bar on the home page —
+       only horizontal padding differs, height must stay identical. */
+    padding: 0 0.9rem;
+  }
+
+  .resultsList {
+    padding: 0.6rem;
+    padding-bottom: calc(0.6rem + env(safe-area-inset-bottom));
+  }
+
+  .resultCard {
+    padding: 0.8rem 0.85rem;
+    /* Lighter on mobile: no hover repaint work, no tap-highlight flash, and the
+       body owns the scroll so cards paint on a simple flat surface. */
+    transition: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .resultCard:hover {
+    border-color: var(--color-border);
     background: var(--color-bg-white);
   }
 
-  .searchHeaderArea {
-    top: 0;
-    border-radius: 0;
-    padding: 0.75rem 0.75rem 0.65rem;
-  }
-
-  .searchBarBox {
-    padding: 0.5rem 0.85rem;
-  }
-
-  .chipBtn {
-    min-height: auto;
-    padding: 0.28rem 0.65rem;
-    font-size: 0.74rem;
-  }
-
-  .feedRow {
-    padding: 0.85rem 0.75rem;
+  .resultCard:active {
+    background: var(--color-bg-soft);
   }
 
   .feedName {
-    font-size: 0.88rem;
+    font-size: 0.89rem;
+  }
+
+  /* Momentum scrolling + isolate the scroll container so the sticky header and
+     result rows don't repaint the whole shell while flinging. */
+  .body {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Keep the header the same height whether the "no query" (recent searches, two lines)
+     or "has query" (quick filter chips, one line) row is showing, so the search bar
+     doesn't jump when results start loading. */
+  .filterRow {
+    min-height: 34px;
   }
 }
 
 @media (min-width: 1280px) {
-  .searchPageContainer {
-    max-width: 880px;
+  .searchShell {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+}
+
+/* Large devices already have the live search bar in the header (GlobalSearch) —
+   a second search box + back button on this page is redundant, so drop it and
+   let the "Showing results for ..." label carry that context instead. */
+@media (min-width: 769px) {
+  .topRow {
+    display: none;
   }
 }
