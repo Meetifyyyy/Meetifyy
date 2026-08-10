@@ -1,8 +1,8 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import logo from '@assets/images/meetify_logo.webp';
 import { searchApi } from '@shared/api/apiClient';
-import { useDebounce } from '@shared/hooks/useDebounce';
+import { useDebouncedState } from '@shared/hooks/useDebounce';
 import { useIsMobile } from '@shared/hooks/useIsMobile';
 import { useSearchSuggestions } from '@features/search/hooks/useSearchSuggestions';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -17,24 +17,21 @@ export default function GlobalSearch() {
   const q = searchParams.get('q') || '';
 
   const onSearchPage = location.pathname === '/search';
-  // On desktop, once the user is already on the /search page, the header search bar
-  // IS the search box (the in-page one is hidden). So typing should drive the results
-  // page live via the URL — not pop a competing dropdown that just flickers while the
-  // page underneath never updates.
   const desktopLiveOnPage = !isMobile && onSearchPage;
 
-  const [query, setQuery] = useState(q);
-  // Short debounce — the suggestions endpoint is cheap (indexed + Redis-cached),
-  // so we can stay snappy without hammering the network on every keystroke.
-  const debouncedQuery = useDebounce(query, 120);
+  const {
+    value: query,
+    debouncedValue: debouncedQuery,
+    setValue: setQuery,
+    resetValue: resetQuery,
+    setImmediateValue: setImmediateQuery,
+  } = useDebouncedState(q, 120);
+
   const inputRef = useRef(null);
   const containerRef = useRef(null);
   const [isFocused, setIsFocused] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
 
-  // Only fetch suggestions while the dropdown could actually be visible (focused, and
-  // NOT in desktop-live-on-page mode where the results page itself shows results) —
-  // otherwise a hidden/backgrounded header would keep firing requests nobody sees.
   const { suggestions, isLoading: suggestionsLoading, isError: suggestionsError } = useSearchSuggestions(debouncedQuery, isFocused && !desktopLiveOnPage);
 
   const [recentSearches, setRecentSearches] = useState(() => {
@@ -63,18 +60,33 @@ export default function GlobalSearch() {
     return () => { mounted = false; };
   }, []);
 
-  // Sync state if URL changes externally
+  const prevQRef = useRef(q);
+  // Last debounced value the URL-writer effect acted on. See the guard note below.
+  const prevDebouncedRef = useRef(debouncedQuery);
+
+  // Sync state if URL changes externally (back/forward nav, deep link, or the
+  // results page updating the URL). Never while the user is typing here: if the
+  // input is focused it is the source of truth, and copying a slightly-stale URL
+  // value back into it is exactly what made the text jump "hii → h → hii".
   useEffect(() => {
-    setQuery(q);
-  }, [q]);
+    if (q === prevQRef.current) return;
+    prevQRef.current = q;
+    if (document.activeElement === inputRef.current) return;
+    setImmediateQuery(q);
+  }, [q, setImmediateQuery]);
 
   // Desktop, already on /search: push the (debounced) query into the URL so the
-  // results page updates live as the user types. Guarded by an equality check so
-  // it never loops with the setQuery(q) sync above.
+  // results page updates live as the user types.
+  // Guard: this effect also depends on `q`, so a URL change (e.g. from back/forward
+  // nav) re-runs it with a STALE `debouncedQuery`. Writing that back would fight the
+  // real value and flicker the bar, so act only when the debounced value itself moved.
   useEffect(() => {
     if (!desktopLiveOnPage) return;
+    if (debouncedQuery === prevDebouncedRef.current) return;
+    prevDebouncedRef.current = debouncedQuery;
     const trimmed = debouncedQuery.trim();
     if (trimmed !== q) {
+      prevQRef.current = trimmed;
       setSearchParams(trimmed ? { q: trimmed } : {}, { replace: true });
     }
   }, [debouncedQuery, desktopLiveOnPage, q, setSearchParams]);
@@ -99,27 +111,24 @@ export default function GlobalSearch() {
       setPreSearchPath(location.pathname + location.search);
     }
 
-    // Mobile: the header shows the recent-searches dropdown on tap/focus, but the
-    // moment the user types the first character we hand off to the dedicated
-    // Search page — it takes over live typing and real-time results from there.
     if (isMobile && val.trim()) {
       setIsFocused(false);
       navigate(`/search?q=${encodeURIComponent(val.trim())}`, { state: { autoFocus: true } });
     }
-    // Desktop-on-search-page: the URL sync effect handles updating the page live —
-    // nothing else to do here (no dropdown, no navigation).
   };
 
   const handleClear = () => {
-    setQuery('');
+    resetQuery('');
+    prevQRef.current = '';
     setSelectedIndex(-1);
     inputRef.current?.focus();
     if (location.pathname === '/search') {
-      navigate('/search', { replace: true });
+      setSearchParams({}, { replace: true });
     } else {
       navigate(preSearchPath, { replace: true });
     }
   };
+
 
   const addRecentSearch = (text) => {
     if (!text || !text.trim()) return;

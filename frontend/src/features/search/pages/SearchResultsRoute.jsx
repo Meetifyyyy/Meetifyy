@@ -9,7 +9,7 @@ import Skeleton from '@shared/components/skeletons/Skeleton';
 import PageLayout from '@layout/PageLayout';
 import FollowButton from '@shared/components/ui/FollowButton';
 import { useData } from '@shared/hooks/useData';
-import { useDebounce } from '@shared/hooks/useDebounce';
+import { useDebouncedState } from '@shared/hooks/useDebounce';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { searchApi } from '@shared/api/apiClient';
 import Post from '@features/feed/components/post/Post';
@@ -206,20 +206,19 @@ export default function SearchResultsRoute() {
   const searchInputRef = useRef(null);
   const loadMoreRef = useRef(null);
 
-  const [inputVal, setInputVal] = useState(rawQ);
+  const {
+    value: inputVal,
+    debouncedValue: debouncedQuery,
+    setValue: setInputVal,
+    resetValue: resetInputVal,
+    setImmediateValue: setImmediateInputVal,
+  } = useDebouncedState(rawQ, 200);
+
   const [activeChip, setActiveChip] = useState('all');
 
   // Arrived here via the mobile header hand-off (first keystroke there navigates here).
-  // Captured once at mount, not read directly in JSX, so it survives the state-clearing
-  // navigate() below without flipping back to false on the same render.
   const [shouldAutoFocus] = useState(() => Boolean(location.state?.autoFocus));
 
-  // Clear the nav state so a later back/forward into this route doesn't re-trigger it,
-  // but leave the actual focusing to the `autoFocus` attribute on the input below —
-  // that's applied synchronously by React at mount, whereas a manual `.focus()` call
-  // here would fire a tick after the tap that triggered navigation, which mobile
-  // browsers often silently ignore (no virtual keyboard) since it's no longer treated
-  // as originating from the user's direct gesture.
   useEffect(() => {
     if (location.state?.autoFocus) {
       navigate(location.pathname + location.search, { replace: true, state: null });
@@ -252,18 +251,42 @@ export default function SearchResultsRoute() {
     return () => { mounted = false; };
   }, []);
 
-  // Sync URL search params with the input value (debounced so back/forward history isn't spammed)
-  const debouncedInputVal = useDebounce(inputVal, 300);
+  // Track the raw URL search parameter to prevent circular update loops
+  const prevRawQRef = useRef(rawQ);
+  // Track the last debounced value we acted on. The write-to-URL effect below
+  // depends on both `debouncedQuery` AND `rawQ`, so it re-runs whenever the URL
+  // changes too — even when the change came from OUTSIDE this input (back/forward
+  // nav, or the header GlobalSearch on desktop). In that case `debouncedQuery` is
+  // stale, and writing it back to the URL clobbers the newer value → a ping-pong
+  // that flickers the search bar and breaks the clear button. This ref lets the
+  // effect write ONLY when the debounced value itself actually moved (user typed).
+  const prevDebouncedRef = useRef(debouncedQuery);
+
+  // Synchronize inputVal from rawQ when rawQ changes externally (back/forward
+  // navigation, deep link, initial load). Never while this input is focused —
+  // the field the user is typing in is the source of truth, and echoing a
+  // slightly-stale URL value back into it is what made the text jump/revert.
   useEffect(() => {
-    const trimmed = debouncedInputVal.trim();
+    if (rawQ === prevRawQRef.current) return;
+    prevRawQRef.current = rawQ;
+    if (document.activeElement === searchInputRef.current) return;
+    setImmediateInputVal(rawQ);
+  }, [rawQ, setImmediateInputVal]);
+
+  // Sync debounced query to URL searchParams without ping-ponging.
+  // Guard: act only when the DEBOUNCED value genuinely changed (the user typed).
+  // If this effect re-ran only because `rawQ` changed externally, `debouncedQuery`
+  // still equals what we last saw, so we bail out instead of writing a stale value
+  // back over the fresher URL.
+  useEffect(() => {
+    if (debouncedQuery === prevDebouncedRef.current) return;
+    prevDebouncedRef.current = debouncedQuery;
+    const trimmed = debouncedQuery.trim();
     if (trimmed !== rawQ) {
+      prevRawQRef.current = trimmed;
       setSearchParams(trimmed ? { q: trimmed } : {}, { replace: true });
     }
-  }, [debouncedInputVal, rawQ, setSearchParams]);
-
-  useEffect(() => {
-    setInputVal(rawQ);
-  }, [rawQ]);
+  }, [debouncedQuery, rawQ, setSearchParams]);
 
   const {
     results,
@@ -274,16 +297,7 @@ export default function SearchResultsRoute() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useGlobalSearch(inputVal, 30, activeChip);
-
-  const handleSelectSearch = (term) => {
-    const trimmed = term.trim();
-    setInputVal(trimmed);
-    setSearchParams(trimmed ? { q: trimmed } : {}, { replace: true });
-    if (trimmed && trimmed.length >= 2) {
-      addRecentSearch(trimmed);
-    }
-  };
+  } = useGlobalSearch(debouncedQuery, 30, activeChip);
 
   // Stable identity (functional setState, no dependency on recentSearches) so the
   // memoized row `onOpen` handler below never changes ref while typing — rows stay memoized.
@@ -298,6 +312,23 @@ export default function SearchResultsRoute() {
     });
     searchApi.addRecentSearch(cleanTerm).catch(() => {});
   }, []);
+
+  const handleSelectSearch = useCallback((term) => {
+    const trimmed = term.trim();
+    if (trimmed) {
+      setImmediateInputVal(trimmed);
+      prevRawQRef.current = trimmed;
+      setSearchParams({ q: trimmed }, { replace: true });
+      if (trimmed.length >= 2) {
+        addRecentSearch(trimmed);
+      }
+    } else {
+      resetInputVal('');
+      prevRawQRef.current = '';
+      setSearchParams({}, { replace: true });
+    }
+  }, [addRecentSearch, resetInputVal, setImmediateInputVal, setSearchParams]);
+
 
   const removeRecentSearch = (e, term) => {
     e.stopPropagation();
@@ -425,7 +456,10 @@ export default function SearchResultsRoute() {
                   }
                 }}
               />
-              {inputVal ? (
+              {isSearching && !isLoading && (
+                <Loader2 size={16} className={styles.updatingSpinner} aria-label="Updating results" />
+              )}
+              {inputVal && (
                 <button
                   type="button"
                   className={styles.clearBtn}
@@ -435,9 +469,7 @@ export default function SearchResultsRoute() {
                 >
                   <X size={16} />
                 </button>
-              ) : isSearching && !isLoading ? (
-                <Loader2 size={16} className={styles.updatingSpinner} aria-label="Updating results" />
-              ) : null}
+              )}
             </div>
           </div>
 

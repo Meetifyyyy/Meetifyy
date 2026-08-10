@@ -251,8 +251,14 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
+  /* Scrollable but with the scrollbar hidden (Firefox / IE / WebKit). */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   background: var(--color-bg-white);
+}
+
+.body::-webkit-scrollbar {
+  display: none;
 }
 
 .resultsList {

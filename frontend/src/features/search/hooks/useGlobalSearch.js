@@ -2,13 +2,10 @@ import { useMemo } from 'react';
 import { useInfiniteQuery, keepPreviousData } from '@tanstack/react-query';
 import { searchApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
-import { useDebounce } from '@shared/hooks/useDebounce';
 
-export function useGlobalSearch(rawQuery = '', limit = 15, type = 'all') {
+export function useGlobalSearch(query = '', limit = 15, type = 'all') {
   const { currentUser } = useAuth();
-  // Short debounce — results are indexed (pg_trgm) + Redis-cached server-side,
-  // so we can afford to fire quickly and stay responsive while typing.
-  const debouncedQuery = useDebounce(rawQuery, 150);
+  const cleanQuery = (query || '').trim();
 
   const {
     data,
@@ -20,15 +17,25 @@ export function useGlobalSearch(rawQuery = '', limit = 15, type = 'all') {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['search', debouncedQuery, limit, type],
-    queryFn: ({ pageParam, signal }) => searchApi.globalSearch(debouncedQuery, limit, type, signal, pageParam),
+    queryKey: ['search', cleanQuery, limit, type],
+    queryFn: ({ pageParam, signal }) => searchApi.globalSearch(cleanQuery, limit, type, signal, pageParam),
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
-    enabled: debouncedQuery.length <= 100,
-    staleTime: 10000,
-    // Keep the previous query's pages on screen while a new (keystroke-triggered) query
-    // resolves, instead of flashing back to a loading state on every keystroke.
-    placeholderData: keepPreviousData,
+    enabled: cleanQuery.length <= 100,
+    // Keep search results fresh long enough that returning to the page (e.g. Back
+    // from a profile/activity the user opened from results) restores the exact
+    // list — including every loaded page and scroll position — instantly from
+    // cache with NO refetch. A short 10s window used to make Back feel slow: the
+    // query went stale and refetched on remount. 5 min matches typical browse time.
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 15,
+    // Don't refetch just because the component remounted (that's what Back does).
+    // If the cached data is still within staleTime it's served as-is; a genuinely
+    // new query is a different queryKey and fetches normally.
+    refetchOnMount: false,
+    // Only keep previous data when switching between active search queries (e.g. "app" -> "appl"),
+    // but drop previous data immediately when clearing to empty query so old search results don't linger.
+    placeholderData: cleanQuery ? keepPreviousData : undefined,
   });
 
   const pages = data?.pages || [];
@@ -46,10 +53,8 @@ export function useGlobalSearch(rawQuery = '', limit = 15, type = 'all') {
   }), [pages, currentUser?.id, currentUser?.username]);
 
   return {
-    query: rawQuery,
+    query: cleanQuery,
     results,
-    // Only the very first load (no data at all yet) should show a full skeleton;
-    // subsequent keystroke-triggered refetches keep prior results visible.
     isLoading: isLoading && !data,
     isSearching: isFetching,
     isError,
@@ -59,3 +64,4 @@ export function useGlobalSearch(rawQuery = '', limit = 15, type = 'all') {
     isFetchingNextPage,
   };
 }
+

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo } from 'react';
+import { lazy, Suspense, useMemo, useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
 import { SmartBackTracker } from './shared/hooks/useSmartBack';
 import { useAuth } from './shared/context/AuthContext';
@@ -103,6 +103,21 @@ function withBoundary(element, fallback = null) {
   );
 }
 
+/**
+ * Toggles a class on <html> to hide the window scrollbar on routes that scroll
+ * at the window level (home feed) or should read as chrome-less (search). Scoped
+ * to those paths so every other page keeps its normal scrollbar.
+ */
+function WindowScrollbarToggle() {
+  const location = useLocation();
+  useEffect(() => {
+    const hide = location.pathname === '/home' || location.pathname === '/search';
+    document.documentElement.classList.toggle('hide-window-scrollbar', hide);
+    return () => document.documentElement.classList.remove('hide-window-scrollbar');
+  }, [location.pathname]);
+  return null;
+}
+
 function ProtectedRoute({ children }) {
   const { isLoggedIn, currentUser, loading } = useAuth();
   const location = useLocation();
@@ -191,6 +206,7 @@ export default function App() {
       element: (
         <ErrorBoundary>
           <SmartBackTracker />
+          <WindowScrollbarToggle />
           <ScrollRestoration />
           <SocketManager />
           <Outlet />

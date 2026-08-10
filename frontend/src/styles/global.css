@@ -634,6 +634,19 @@ button:active {
   scrollbar-color: rgba(140, 140, 140, 0.35) transparent;
 }
 
+/* Completely hide the window scrollbar on routes that opt in (home, search),
+   toggled on <html> by WindowScrollbarToggle. Content stays scrollable. */
+html.hide-window-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html.hide-window-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 @keyframes spin {
   0% {
     transform: rotate(0deg);
