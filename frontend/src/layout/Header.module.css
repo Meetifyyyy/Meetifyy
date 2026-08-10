@@ -7,7 +7,7 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  background: transparent;
+  background: radial-gradient(circle at center, var(--bg-gradient-center) 0%, var(--bg-gradient-mid) 45%, var(--bg-gradient-edge) 100%);
   border-bottom: none;
   box-shadow: none;
 }

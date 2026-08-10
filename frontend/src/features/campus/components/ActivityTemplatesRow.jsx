@@ -5,7 +5,7 @@ export default function ActivityTemplatesRow({ returnTo = '/campus' }) {
   const navigate = useNavigate();
 
   return (
-    <div className={styles.templatesRow} style={{ paddingTop: '0.5rem', paddingBottom: '1rem', marginTop: '-0.5rem', marginBottom: '-1rem' }}>
+    <div className={styles.templatesRow}>
       <div className={styles.templateCard}>
         <span className={styles.templateEmoji}>☕</span>
         <span className={styles.templateTitle}>Coffee Meetup</span>

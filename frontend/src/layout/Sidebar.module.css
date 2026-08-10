@@ -3,8 +3,8 @@
   flex-direction: column;
   gap: 1.25rem;
   position: sticky;
-  top: 0;
-  max-height: 100dvh;
+  top: 60px;
+  max-height: calc(100dvh - 60px);
   overflow-y: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;

@@ -1,0 +1,161 @@
+.createCard {
+  background: #003BFF;
+  border-radius: var(--radius-lg, 16px);
+  padding: 1.5rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  color: white;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  box-shadow: 0 8px 30px rgba(0, 59, 255, 0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  height: 260px;
+  width: 100%;
+  justify-content: space-between;
+  cursor: default;
+  border: none;
+}
+
+.blackSlash {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 55%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.characterImg {
+  position: absolute;
+  bottom: 0;
+  right: 15px;
+  height: 240px;
+  pointer-events: none;
+  z-index: 2;
+  object-fit: contain;
+}
+
+.createCardContent {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.8rem;
+}
+
+.createCardTitle {
+  font-family: var(--font-family-display, sans-serif), "Inter", "Arial Black", sans-serif;
+  font-size: 2.1rem;
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  color: white;
+  text-transform: uppercase;
+  margin: 0;
+  text-align: left;
+}
+
+.createCardSubtitle {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.35;
+  margin: 0.15rem 0 0 0;
+  text-align: left;
+  max-width: 60%;
+  font-family: var(--font-family-sans, sans-serif), sans-serif;
+}
+
+.yellowDot {
+  color: #FFD700;
+}
+
+.createCardBottom {
+  position: relative;
+  z-index: 4;
+  width: 100%;
+  margin-top: auto;
+}
+
+/* The pill button */
+.createCardBtn {
+  background: white;
+  border: none;
+  border-radius: 9999px;
+  height: 48px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  transition: box-shadow 0.2s ease;
+}
+
+.createCardBtn:hover {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+}
+
+.createCardBtnIcon {
+  width: 40px;
+  height: 40px;
+  background: #003BFF;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.createCardBtn:hover .createCardBtnIcon {
+  transform: rotate(90deg);
+}
+
+.btnAsterisk {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  margin-top: 6px;
+}
+
+.createCardBtnText {
+  color: #003BFF;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  font-family: var(--font-family-sans, sans-serif), sans-serif;
+  flex: 1;
+  text-align: center;
+  margin-left: 12px;
+  transition: margin 0.25s ease;
+}
+
+.createCardBtnArrow {
+  color: #003BFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  margin-right: 12px;
+  opacity: 0;
+  transform: translateX(-12px);
+  overflow: hidden;
+  transition: opacity 0.25s ease, transform 0.25s ease, width 0.25s ease, margin 0.25s ease;
+}
+
+.createCardBtn:hover .createCardBtnText {
+  margin-left: 0;
+}
+
+.createCardBtn:hover .createCardBtnArrow {
+  opacity: 1;
+  width: 16px;
+  margin-right: 14px;
+  transform: translateX(0);
+}

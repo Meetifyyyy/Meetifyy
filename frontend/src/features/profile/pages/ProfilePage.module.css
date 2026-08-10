@@ -15,9 +15,9 @@
      instead — same root cause/fix as the html/#root and .centre rules in
      global.css. `height: 100%` stays untouched on purpose. */
   overflow-y: visible !important;
-  gap: clamp(1rem, 2vw, 1.5rem);
+  gap: 1.25rem;
   padding: 0 1rem 2rem 0rem !important;
-  max-width: 1050px !important;
+  max-width: 900px !important;
   margin: 0 auto !important;
   width: 100% !important;
   height: 100% !important;
@@ -36,6 +36,7 @@
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  max-width: 580px;
   height: auto;
 }
 
@@ -47,6 +48,10 @@
   overflow: hidden;
   margin-bottom: 1rem;
   box-shadow: 0 2px 12px rgba(18, 54, 107, 0.04);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .coverWrap {
@@ -156,8 +161,15 @@
 }
 
 @keyframes dropFadeIn {
-  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .dropdownItem {
@@ -203,6 +215,10 @@
   align-items: center;
   position: relative;
   z-index: 2;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .avatarWrapper {
@@ -292,16 +308,23 @@
   flex-direction: column;
   gap: 0.5rem;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   margin-bottom: 1.25rem;
   overflow-x: auto;
-  align-items: stretch;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
-  padding: 0 0.5rem; /* add a little safe padding on the sides */
+  align-items: center;
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE/Edge */
+  padding: 0 0.5rem;
+  /* add a little safe padding on the sides */
 }
 
 .tagsScrollWrapper::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Edge */
+  display: none;
+  /* Chrome, Safari, Edge */
 }
 
 .tagsRow {
@@ -394,7 +417,7 @@
   width: 100%;
 }
 
-.actionButtons > * {
+.actionButtons>* {
   flex: 1 1 0% !important;
   min-width: 0 !important;
   max-width: 200px !important;
@@ -481,9 +504,10 @@
 .rightSidebar {
   width: 280px;
   flex-shrink: 0;
+  flex-grow: 0;
   position: sticky;
-  top: 0;
-  max-height: calc(100vh - 2rem);
+  top: 60px;
+  max-height: calc(100dvh - 60px);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -503,27 +527,35 @@
 
 @media (min-width: 1441px) {
   .profileMain {
-    max-width: 1050px !important;
+    max-width: 900px !important;
   }
 }
 
 @media (max-width: 1200px) {
   .profileMain {
-    max-width: 960px !important;
+    max-width: 820px !important;
   }
 
   .rightSidebar {
     width: 240px;
   }
+
+  .centerColumn {
+    max-width: 540px;
+  }
 }
 
-@media (max-width: 960px) {
+@media (max-width: 860px) {
   .rightSidebar {
     display: none;
   }
 
+  .centerColumn {
+    max-width: 100%;
+  }
+
   .profileMain {
-    max-width: 680px !important;
+    max-width: 640px !important;
   }
 }
 
@@ -632,7 +664,7 @@
     width: 100% !important;
   }
 
-  .actionButtons > * {
+  .actionButtons>* {
     flex: 1 1 0% !important;
     min-width: 0 !important;
     max-width: 100% !important;

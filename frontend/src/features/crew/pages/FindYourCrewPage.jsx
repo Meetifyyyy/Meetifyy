@@ -10,6 +10,7 @@ import PageLayout from '@layout/PageLayout';
 import PageHeader from '@layout/PageHeader';
 import CrewCard from '../components/cards/CrewCard';
 import CrewCardSkeleton from '../components/cards/CrewCardSkeleton';
+import CreateActivityCard from '../components/cards/CreateActivityCard';
 import CrewRightPanel from '../components/layout/CrewRightPanel';
 import { filterActivities } from '@features/crew/utils/crewUtils';
 import styles from './FindYourCrewPage.module.css';
@@ -208,6 +209,13 @@ export default function FindYourCrewPage() {
     return { ongoingActivities: ongoing, upcomingActivities: upcoming, pastActivities: past };
   }, [filteredActivities, selectedTab]);
 
+  const hasActivities = useMemo(() => {
+    if (selectedTab === 'My Activities') {
+      return ongoingActivities.length > 0 || upcomingActivities.length > 0 || pastActivities.length > 0;
+    }
+    return filteredActivities.length > 0;
+  }, [selectedTab, ongoingActivities, upcomingActivities, pastActivities, filteredActivities]);
+
   const handleActivityClick = useCallback((activity) => {
     navigate(`/crew/${activity.id}`, { state: { activity, from: '/crew' } });
   }, [navigate]);
@@ -324,37 +332,15 @@ export default function FindYourCrewPage() {
                               onMouseEnter={() => prefetchActivity(queryClient, a.id)}
                             />
                           ))
-                        ) : (
+                        ) : searchQuery ? (
                           <div className={styles.empty}>
-                            <div className={styles.emptyEmoji}>
-                              {searchQuery ? '🔍' : selectedTab === '1 on 1' ? '🤝' : selectedTab === 'Saved' ? '🔖' : '✨'}
-                            </div>
-                            <h3 className={styles.emptyTitle}>
-                              {searchQuery
-                                ? 'No matching activities'
-                                : selectedTab === '1 on 1'
-                                ? 'No 1-on-1 hangouts yet'
-                                : selectedTab === 'Saved'
-                                ? 'No saved activities'
-                                : 'No activities right now'}
-                            </h3>
-                            <p className={styles.emptySubtitle}>
-                              {searchQuery
-                                ? 'Try searching for something else or clear your search query.'
-                                : selectedTab === '1 on 1'
-                                ? 'Create a 2-person activity to connect with someone one-on-one!'
-                                : selectedTab === 'Saved'
-                                ? 'Bookmark activities you like to easily find them here.'
-                                : 'Be the first to spark an activity and gather your crew!'}
-                            </p>
-                            <button
-                              type="button"
-                              className={styles.mobileCreateBtn}
-                              onClick={() => navigate('/crew/create')}
-                            >
-                              <Plus size={18} />
-                              Create Activity
-                            </button>
+                            <div className={styles.emptyEmoji}>🔍</div>
+                            <h3 className={styles.emptyTitle}>No matching activities</h3>
+                            <p className={styles.emptySubtitle}>Try searching for something else or clear your search query.</p>
+                          </div>
+                        ) : (
+                          <div className={styles.centerCreateCardWrapper}>
+                            <CreateActivityCard onCreateActivity={() => navigate('/crew/create')} />
                           </div>
                         )}
                       </div>
@@ -375,6 +361,7 @@ export default function FindYourCrewPage() {
             
             <div className={styles.sidebarWrapper}>
               <CrewRightPanel 
+                showCreateCard={hasActivities}
                 onCreateActivity={() => navigate('/crew/create')}
                 onViewAll={() => {
                   setSelectedTab('My Activities');

@@ -177,6 +177,14 @@
   transform: translateY(0);
 }
 
+.centerCreateCardWrapper {
+  width: 100%;
+  max-width: 480px;
+  margin: 0rem auto;
+  display: flex;
+  justify-content: center;
+}
+
 .loadMoreBtn {
   margin: 1rem auto;
   display: flex;
@@ -286,10 +294,12 @@
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
   }
+
   70% {
     transform: scale(1);
     box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
   }
+
   100% {
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
@@ -315,4 +325,3 @@
   font-size: 0.88rem;
   text-align: center;
 }
-

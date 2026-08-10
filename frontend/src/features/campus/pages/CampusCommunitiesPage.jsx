@@ -90,7 +90,7 @@ export default function CampusCommunitiesPage() {
         </header>
       </div>
 
-      <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: collegeCommunities.length > 0 ? 'stretch' : 'center', justifyContent: collegeCommunities.length > 0 ? 'flex-start' : 'center', padding: collegeCommunities.length > 0 ? '0 1rem' : '2rem 1rem' }}>
+      <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: collegeCommunities.length > 0 ? 'stretch' : 'center', justifyContent: collegeCommunities.length > 0 ? 'flex-start' : 'center', padding: collegeCommunities.length > 0 ? '0 1rem' : '2rem 1rem', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
         {collegeCommunities.length > 0 ? (
           <CommunityGrid>
             {collegeCommunities.map(community => (
