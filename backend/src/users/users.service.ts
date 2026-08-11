@@ -323,55 +323,51 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    let isBlocked = false;
     let isFollowing = false;
     let isFollowedBy = false;
 
-    if (currentUserId && currentUserId !== targetUser.id) {
-      const [blockCount, followRecord, followedByRecord] = await Promise.all([
-        this.prisma.block.count({
-          where: {
-            OR: [
-              { blockerId: currentUserId, blockedId: targetUser.id },
-              { blockerId: targetUser.id, blockedId: currentUserId },
-            ],
-          },
-        }),
-        this.prisma.follow.findUnique({
-          where: {
-            followerId_followingId: {
-              followerId: currentUserId,
-              followingId: targetUser.id,
+    // All of these are independent of each other, so run them in ONE parallel
+    // batch instead of sequentially — collapses the block-check, both follow
+    // lookups, presence read and visibility check from ~3-4 sequential
+    // backend↔DB round trips into a single round trip's worth of latency.
+    const needsRelational = Boolean(currentUserId && currentUserId !== targetUser.id);
+    const [blockCount, followRecord, followedByRecord, presence, canSeeOnline] = await Promise.all([
+      needsRelational
+        ? this.prisma.block.count({
+            where: {
+              OR: [
+                { blockerId: currentUserId!, blockedId: targetUser.id },
+                { blockerId: targetUser.id, blockedId: currentUserId! },
+              ],
             },
-          },
-        }),
-        this.prisma.follow.findUnique({
-          where: {
-            followerId_followingId: {
-              followerId: targetUser.id,
-              followingId: currentUserId,
-            },
-          },
-        }),
-      ]);
+          })
+        : Promise.resolve(0),
+      needsRelational
+        ? this.prisma.follow.findUnique({
+            where: { followerId_followingId: { followerId: currentUserId!, followingId: targetUser.id } },
+          })
+        : Promise.resolve(null),
+      needsRelational
+        ? this.prisma.follow.findUnique({
+            where: { followerId_followingId: { followerId: targetUser.id, followingId: currentUserId! } },
+          })
+        : Promise.resolve(null),
+      this.presenceService.getPresence(targetUser.id),
+      checkPresenceVisibility(
+        targetUser.id,
+        currentUserId || '',
+        targetUser.settings?.whoCanSeeOnline || 'everyone',
+        targetUser.settings?.showOnlineStatus !== false,
+        this.prisma,
+      ),
+    ]);
 
-      isBlocked = blockCount > 0;
-      isFollowing = !!followRecord;
-      isFollowedBy = !!followedByRecord;
-    }
-
-    if (isBlocked) {
+    if (blockCount > 0) {
       throw new NotFoundException('User not found');
     }
+    isFollowing = !!followRecord;
+    isFollowedBy = !!followedByRecord;
 
-    const presence = await this.presenceService.getPresence(targetUser.id);
-    const canSeeOnline = await checkPresenceVisibility(
-      targetUser.id,
-      currentUserId || '',
-      targetUser.settings?.whoCanSeeOnline || 'everyone',
-      targetUser.settings?.showOnlineStatus !== false,
-      this.prisma
-    );
     const isOnline = canSeeOnline ? (presence?.status === 'online') : false;
 
     const settings = targetUser.settings
