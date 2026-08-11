@@ -103,15 +103,18 @@ export function useActivitiesList() {
 /**
  * Paginated campus-specific activities.
  */
-export function useCampusActivities() {
+export function useCampusActivities(search = '') {
   const queryClient = useQueryClient();
   const { isLoggedIn } = useAuth();
+  const normSearch = (search || '').trim();
+  // Filter combos are cached independently; only the unfiltered list is IDB-hydrated.
+  const queryKey = normSearch ? [...CREW_KEYS.campus, { search: normSearch }] : CREW_KEYS.campus;
 
   const query = useInfiniteQuery({
-    queryKey: CREW_KEYS.campus,
+    queryKey,
     queryFn: async ({ pageParam }) => {
-      const data = await activitiesApi.getCampusActivities(20, pageParam);
-      if (!pageParam) idbSet('activities', 'campus_page1', data);
+      const data = await activitiesApi.getCampusActivities(20, pageParam, normSearch || undefined);
+      if (!pageParam && !normSearch) idbSet('activities', 'campus_page1', data);
       return data;
     },
     enabled: isLoggedIn,
@@ -123,7 +126,7 @@ export function useCampusActivities() {
   });
 
   useEffect(() => {
-    if (!query.data) {
+    if (!normSearch && !query.data) {
       idbGet('activities', 'campus_page1').then((cached) => {
         if (cached?.value) {
           queryClient.setQueryData(CREW_KEYS.campus, {

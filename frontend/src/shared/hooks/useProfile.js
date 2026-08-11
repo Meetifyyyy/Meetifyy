@@ -4,8 +4,8 @@
  * Fetches a profile by username with IndexedDB cross-session caching.
  * Includes a prefetch helper for hover-intent loading on profile links.
  */
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect } from 'react';
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo } from 'react';
 import { usersApi } from '@shared/api/apiClient';
 import { idbGet, idbSet } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
@@ -100,6 +100,47 @@ export function useCampusUsers(limit = 50) {
   return {
     campusUsers: query.data || [],
     isLoading: query.isLoading,
+  };
+}
+
+/**
+ * Server-driven campus directory: search + major + year filters with cursor-based
+ * infinite scrolling. The filters are part of the query key, so each combination
+ * is cached independently and a stale in-flight response for an old query can
+ * never overwrite the active one (TanStack drops results for inactive keys).
+ *
+ * @param {{ search?: string, major?: string, year?: string }} filters
+ *        Pass an already-debounced `search` so typing doesn't storm the server.
+ */
+export function useDirectory({ search = '', major = 'All', year = 'All' } = {}) {
+  const { isLoggedIn } = useAuth();
+  const normSearch = (search || '').trim();
+
+  const query = useInfiniteQuery({
+    queryKey: ['directory', { search: normSearch, major, year }],
+    queryFn: ({ pageParam }) =>
+      usersApi.getDirectory({ search: normSearch, major, year, limit: 30, cursor: pageParam }),
+    enabled: Boolean(isLoggedIn),
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
+    staleTime: 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    placeholderData: (prev) => prev,
+  });
+
+  const users = useMemo(
+    () => query.data?.pages?.flatMap((p) => (Array.isArray(p?.users) ? p.users : [])) ?? [],
+    [query.data],
+  );
+
+  return {
+    users,
+    isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    isFetchingNextPage: query.isFetchingNextPage,
+    hasNextPage: query.hasNextPage,
+    fetchNextPage: query.fetchNextPage,
+    isError: query.isError,
   };
 }
 

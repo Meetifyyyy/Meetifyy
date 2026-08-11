@@ -57,6 +57,30 @@ export class UsersController {
     return this.usersService.getCampusUsers(req.user.id, limitNum, offsetNum);
   }
 
+  // Server-side campus directory: search + major + year, keyset pagination.
+  // Registered before the catch-all `:username` route below.
+  @Get('directory')
+  @UseGuards(JwtGuard)
+  @CacheControl('private, max-age=30, stale-while-revalidate=120')
+  async getDirectory(
+    @Req() req: any,
+    @Query('search') search?: string,
+    @Query('major') major?: string,
+    @Query('year') year?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    const graduationYear = year && /^\d{4}$/.test(year) ? parseInt(year, 10) : undefined;
+    const limitNum = limit ? Math.min(Math.max(parseInt(limit, 10) || 30, 1), 50) : 30;
+    return this.usersService.getDirectory(req.user.id, {
+      search: search || undefined,
+      major: major && major !== 'All' ? major : undefined,
+      graduationYear,
+      limit: limitNum,
+      cursor: cursor || undefined,
+    });
+  }
+
   @Get('id/:id')
   @UseGuards(JwtGuard)
   @CacheControl('private, max-age=120, stale-while-revalidate=600')

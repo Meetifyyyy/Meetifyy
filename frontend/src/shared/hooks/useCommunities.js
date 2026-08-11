@@ -73,28 +73,31 @@ export function useCommunities() {
 /**
  * Fetches communities belonging to the current user's campus.
  */
-export function useCampusCommunities() {
-  const qk = COMMUNITY_KEYS.campus;
+export function useCampusCommunities(search = '') {
+  const normSearch = (search || '').trim();
+  // Filtered searches are cached under their own key; only the unfiltered list
+  // is IDB-hydrated for instant first paint.
+  const qk = normSearch ? [...COMMUNITY_KEYS.campus, { search: normSearch }] : COMMUNITY_KEYS.campus;
   const { isLoggedIn } = useAuth();
 
   const query = useQuery({
     queryKey: qk,
     queryFn: async () => {
-      const data = await communitiesApi.getCampusCommunities();
-      idbSet('communities', 'campus', data);
+      const data = await communitiesApi.getCampusCommunities(normSearch || undefined);
+      if (!normSearch) idbSet('communities', 'campus', data);
       return data;
     },
     enabled: isLoggedIn,
-    staleTime: 10 * 60 * 1000,
+    staleTime: normSearch ? 60 * 1000 : 10 * 60 * 1000,
     gcTime:    30 * 60 * 1000,
     placeholderData: (prev) => prev,
   });
 
   const queryClient = useQueryClient();
   useEffect(() => {
-    if (!query.data) {
+    if (!normSearch && !query.data) {
       idbGet('communities', 'campus').then((cached) => {
-        if (cached?.value) queryClient.setQueryData(qk, cached.value);
+        if (cached?.value) queryClient.setQueryData(COMMUNITY_KEYS.campus, cached.value);
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

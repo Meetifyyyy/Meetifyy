@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
@@ -7,20 +7,41 @@ import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import CrewCard from '@features/crew/components/cards/CrewCard';
 import ActivityTemplatesRow from '../components/ActivityTemplatesRow';
 import { Plus, Search, ArrowLeft } from 'lucide-react';
-import { useData } from '@shared/hooks/useData';
+import { useCampusActivities } from '@shared/hooks/useCrew';
+import { useDebounce } from '@shared/hooks/useDebounce';
+import { mapActivity } from '@shared/utils/mapActivity';
 
 
 export default function ActivitiesPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
-  const { campusCrewActivities } = useData();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
 
+  // Search runs on the server (matches title/description/location across ALL
+  // campus activities, not just the pages already loaded). Debounced.
+  const debouncedSearch = useDebounce(searchQuery, 300);
+  const { campusActivities: rawCampusActivities, hasNextPage, isFetchingNextPage, fetchNextPage } = useCampusActivities(debouncedSearch);
+  const campusCrewActivities = useMemo(() => (rawCampusActivities || []).map(mapActivity), [rawCampusActivities]);
+
+  // Infinite-scroll sentinel.
+  const sentinelRef = useRef(null);
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || !hasNextPage) return;
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) fetchNextPage(); },
+      { rootMargin: '400px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
   const filteredActivities = useMemo(() => {
-    // Only show activities visible to this college
+    // Server already scopes to campus + open + upcoming; this is a light client
+    // safety refinement for visibility/ended edge cases. Search is server-side.
     let list = campusCrewActivities;
 
     const isActivityEnded = (act) => {
@@ -55,16 +76,8 @@ export default function ActivitiesPage() {
 
     list = list.filter(act => isCampusActivity(act) && !isActivityEnded(act));
 
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter(act =>
-        act.title.toLowerCase().includes(q) ||
-        act.description?.toLowerCase().includes(q)
-      );
-    }
-
     return list;
-  }, [campusCrewActivities, searchQuery]);
+  }, [campusCrewActivities]);
 
   return (
     <main className={`centre centre-wide ${sharedStyles.hubContainer}`}>
@@ -126,6 +139,10 @@ export default function ActivitiesPage() {
             <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '3rem 0' }}>
               No activities yet.
             </p>
+          )}
+          <div ref={sentinelRef} style={{ gridColumn: '1 / -1', height: 1 }} />
+          {isFetchingNextPage && (
+            <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '1rem 0', gridColumn: '1 / -1', fontSize: '0.85rem' }}>Loading more…</p>
           )}
         </div>
       </div>

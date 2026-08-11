@@ -13,36 +13,31 @@ import CreateCommunityModal from '@features/communities/components/modals/Create
 import CommunityCard from '@features/communities/components/card/CommunityCard';
 import CommunityGrid from '@features/communities/components/card/CommunityGrid';
 import { useCampusCommunities } from '@shared/hooks/useCommunities';
+import { useDebounce } from '@shared/hooks/useDebounce';
 
 export default function CampusCommunitiesPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
-  const { campusCommunities } = useCampusCommunities();
-  
+
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
+  // Name/description search runs on the server (across all campus communities);
+  // category is a cheap client refinement on the returned set.
+  const debouncedSearch = useDebounce(searchQuery, 300);
+  const { campusCommunities } = useCampusCommunities(debouncedSearch);
+
   const collegeCommunities = useMemo(() => {
     let list = campusCommunities;
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter(c =>
-        c.name.toLowerCase().includes(q) ||
-        c.desc?.toLowerCase().includes(q)
-      );
-    }
-
     if (selectedCategory !== 'All') {
       list = list.filter(c => c.categories?.includes(selectedCategory.toLowerCase()));
     }
-
     return list;
-  }, [campusCommunities, searchQuery, selectedCategory]);
+  }, [campusCommunities, selectedCategory]);
 
   const handleCreateCommunity = async (id) => {
     navigate(`/communities/${id}`, { state: { from: location.pathname } });

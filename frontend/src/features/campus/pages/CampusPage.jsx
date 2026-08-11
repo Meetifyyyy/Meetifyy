@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/hooks/useData';
+import { useCampusActivities } from '@shared/hooks/useCrew';
+import { useCampusUsers } from '@shared/hooks/useProfile';
+import { mapActivity } from '@shared/utils/mapActivity';
 import { useCampusCommunities } from '@shared/hooks/useCommunities';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -16,7 +18,10 @@ import ActivityTemplatesRow from '../components/ActivityTemplatesRow';
 export default function CampusPage() {
   const navigate = useNavigate();
   const { currentUser, collegeName: authCollegeName } = useAuth();
-  const { campusCrewActivities, campusUsers, createCampusGroup } = useData();
+  // Only the two slices this page actually renders — no god-hook fan-out.
+  const { campusActivities: rawCampusActivities } = useCampusActivities();
+  const campusCrewActivities = useMemo(() => (rawCampusActivities || []).map(mapActivity), [rawCampusActivities]);
+  const { campusUsers } = useCampusUsers(50);
   const { campusCommunities } = useCampusCommunities();
 
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -76,10 +81,9 @@ export default function CampusPage() {
   }, [campusCrewActivities]);
 
   const suggestedUsers = useMemo(() => {
-    let list = Object.values(campusUsers).filter(u => u.collegeId === userCollegeId);
-    list = list.filter(u => u.id !== currentUser?.id);
-    return list.slice(0, 4);
-  }, [campusUsers, userCollegeId, currentUser]);
+    // useCampusUsers already returns this college's users; just exclude self.
+    return (campusUsers || []).filter(u => u.id !== currentUser?.id).slice(0, 4);
+  }, [campusUsers, currentUser]);
 
   const handleCreateGroup = async (id) => {
     navigate(`/communities/${id}`, { state: { from: '/campus' } });

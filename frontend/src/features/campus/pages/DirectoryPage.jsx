@@ -11,7 +11,8 @@ import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './DirectoryPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import { MAJORS_LIST } from '../data/majors';
-import { useData } from '@shared/hooks/useData';
+import { useDirectory } from '@shared/hooks/useProfile';
+import { useDebounce } from '@shared/hooks/useDebounce';
 
 const SearchableMajorSelect = ({ value, onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -165,31 +166,40 @@ export default function DirectoryPage() {
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
 
-  const { campusUsers: users } = useData();
-
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [dirBranch, setDirBranch] = useState('All');
   const [dirYear, setDirYear] = useState('All');
 
-  const userCollegeId = currentUser?.collegeId;
+  // Debounced so typing hits the server at most once per pause, not per keystroke.
+  const debouncedSearch = useDebounce(searchQuery, 300);
 
-  const collegeStudents = useMemo(() => {
-    let list = Object.values(users).filter(u => u.id !== currentUser?.id);
+  // Server-driven directory: search + filters + keyset pagination. Finds every
+  // student in the college (no more 50-row client cap), small payloads per page.
+  const {
+    users: collegeStudents,
+    isLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useDirectory({ search: debouncedSearch, major: dirBranch, year: dirYear });
 
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter(u =>
-        u.displayName?.toLowerCase().includes(q) ||
-        u.bio?.toLowerCase().includes(q) ||
-        u.major?.toLowerCase().includes(q)
-      );
-    }
-    if (dirBranch !== 'All') list = list.filter(u => u.major === dirBranch);
-    if (dirYear !== 'All') list = list.filter(u => String(u.graduationYear) === dirYear);
-
-    return list;
-  }, [users, userCollegeId, searchQuery, dirBranch, dirYear, currentUser]);
+  // Infinite-scroll sentinel — loads the next page as it nears the viewport.
+  const sentinelRef = useRef(null);
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || !hasNextPage) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: '400px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -321,9 +331,17 @@ export default function DirectoryPage() {
               </div>
             </div>
           ))}
-          {collegeStudents.length === 0 && !showCurrentUserCard && (
+          {!isLoading && collegeStudents.length === 0 && !showCurrentUserCard && (
             <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '2rem 0', gridColumn: '1 / -1' }}>
               No students found.
+            </p>
+          )}
+
+          {/* Infinite-scroll sentinel + next-page indicator */}
+          <div ref={sentinelRef} style={{ gridColumn: '1 / -1', height: 1 }} />
+          {isFetchingNextPage && (
+            <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '1rem 0', gridColumn: '1 / -1', fontSize: '0.85rem' }}>
+              Loading more…
             </p>
           )}
         </div>

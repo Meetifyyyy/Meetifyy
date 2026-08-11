@@ -30,11 +30,12 @@ export class CommunitiesController {
     @CurrentUser() user: any,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('search') search?: string,
   ) {
     const t0 = performance.now();
     const limitNum = limit ? parseInt(limit, 10) : 30;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
-    const result = await this.communitiesService.getCampusCommunities(user?.id, limitNum, offsetNum);
+    const result = await this.communitiesService.getCampusCommunities(user?.id, limitNum, offsetNum, search);
     this.logger.debug(`GET /communities/campus [userId=${user?.id}] ${Math.round(performance.now() - t0)}ms`);
     return result;
   }

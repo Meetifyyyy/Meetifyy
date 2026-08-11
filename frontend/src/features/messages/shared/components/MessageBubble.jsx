@@ -786,7 +786,7 @@ const MessageBubble = memo(function MessageBubble({
   const uploadStatus = msg.uploadStatus;
   const uploadProgress = typeof msg.uploadProgress === 'number' ? msg.uploadProgress : 0;
   const isUploading = uploadStatus === 'uploading';
-  const isUploadFailed = uploadStatus === 'failed' || (isMe && isFailed && rawMediaUrl && String(rawMediaUrl).startsWith('blob:'));
+  const isUploadFailed = uploadStatus === 'failed' || (isMe && isFailedMsg && rawMediaUrl && String(rawMediaUrl).startsWith('blob:'));
   const isAudio = msg.mediaType === 'audio' || msg.type === 'voice' || msg.payload?.mediaType === 'audio';
   const isVideo =
     msg.mediaType === 'video' ||

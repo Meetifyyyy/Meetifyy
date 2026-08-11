@@ -192,6 +192,9 @@ model User {
 
   @@index([collegeId])
   @@index([collegeId, createdAt(sort: Desc)])
+  // Campus directory filter patterns: WHERE collegeId=? AND major=? / graduationYear=?.
+  @@index([collegeId, major])
+  @@index([collegeId, graduationYear])
   @@index([deletedAt, createdAt])
   @@index([lastSeenAt])
   @@index([createdAt])

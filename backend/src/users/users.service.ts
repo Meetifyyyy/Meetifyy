@@ -170,6 +170,93 @@ export class UsersService {
     });
   }
 
+  /**
+   * Server-side campus directory: search + major + graduationYear filters with
+   * keyset (cursor) pagination on (createdAt desc, id desc). Scoped to the
+   * caller's college so a directory can scale past the previous 50-row client
+   * cap without ever downloading the whole college. Presence is batched.
+   *
+   * @param cursor  `${createdAt ISO}|${id}` of the last row from the prior page.
+   * @returns { users, nextCursor }
+   */
+  async getDirectory(
+    userId: string,
+    opts: { search?: string; major?: string; graduationYear?: number; limit?: number; cursor?: string } = {},
+  ): Promise<{ users: any[]; nextCursor?: string }> {
+    if (!userId) return { users: [], nextCursor: undefined };
+    const me = await this.prisma.user.findUnique({ where: { id: userId }, select: { collegeId: true } });
+    if (!me?.collegeId) return { users: [], nextCursor: undefined };
+
+    const limit = Math.min(Math.max(Number(opts.limit) || 30, 1), 50);
+    const search = (opts.search || '').trim();
+
+    // Decode keyset cursor.
+    let cursorWhere: any = undefined;
+    if (opts.cursor && opts.cursor.includes('|')) {
+      const [ts, id] = opts.cursor.split('|');
+      const createdAt = new Date(ts);
+      if (!isNaN(createdAt.getTime()) && id) {
+        cursorWhere = {
+          OR: [
+            { createdAt: { lt: createdAt } },
+            { createdAt: createdAt, id: { lt: id } },
+          ],
+        };
+      }
+    }
+
+    const where: any = {
+      collegeId: me.collegeId,
+      id: { not: userId },
+      accountStatus: 'ACTIVE',
+      deletedAt: null,
+      ...(opts.major ? { major: opts.major } : {}),
+      ...(opts.graduationYear ? { graduationYear: opts.graduationYear } : {}),
+      ...(search
+        ? {
+            OR: [
+              { displayName: { contains: search, mode: 'insensitive' as const } },
+              { username: { contains: search, mode: 'insensitive' as const } },
+              { major: { contains: search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+      ...(cursorWhere || {}),
+    };
+
+    const rows = await this.prisma.user.findMany({
+      where,
+      take: limit + 1, // fetch one extra to detect the next page
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatar: true,
+        bio: true,
+        collegeId: true,
+        major: true,
+        graduationYear: true,
+        createdAt: true,
+        settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const last = pageRows[pageRows.length - 1];
+    const nextCursor = hasMore && last ? `${new Date(last.createdAt).toISOString()}|${last.id}` : undefined;
+
+    const presenceMap = await this.presenceService.getPresenceMany(pageRows.map(u => u.id));
+    const users = pageRows.map(({ createdAt, ...u }) => {
+      const pres = presenceMap.get(u.id);
+      const isOnline = pres?.status === 'online';
+      return { ...u, isOnline, online: isOnline, lastActive: pres?.lastSeen || null };
+    });
+
+    return { users, nextCursor };
+  }
+
   async getUserById(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },

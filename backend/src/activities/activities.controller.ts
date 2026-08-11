@@ -27,11 +27,12 @@ export class ActivitiesController {
   async getCampusActivities(
     @CurrentUser() user: any,
     @Query('limit') limit?: string,
-    @Query('cursor') cursor?: string
+    @Query('cursor') cursor?: string,
+    @Query('search') search?: string
   ) {
     const rawLimit = parseInt(limit || '', 10);
     const parsedLimit = !isNaN(rawLimit) && rawLimit > 0 ? rawLimit : 20;
-    return this.activitiesService.getCampusActivities(user?.id, parsedLimit, cursor);
+    return this.activitiesService.getCampusActivities(user?.id, parsedLimit, cursor, search);
   }
 
   @Get('me')

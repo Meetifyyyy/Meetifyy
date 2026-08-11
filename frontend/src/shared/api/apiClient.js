@@ -484,7 +484,10 @@ const normalizeCommunity = (c) => {
 
 export const communitiesApi = {
   getAll: () => apiClient.get('/api/communities').then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list)),
-  getCampusCommunities: () => apiClient.get('/api/communities/campus').then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list)),
+  getCampusCommunities: (search) => {
+    const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+    return apiClient.get(`/api/communities/campus${qs}`).then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list));
+  },
   getById: (id) => apiClient.get(`/api/communities/${id}`).then(normalizeCommunity),
   create: (data) => apiClient.post('/api/communities', data).then(normalizeCommunity),
   join: (id, { signal } = {}) => apiClient.post(`/api/communities/${id}/join`, undefined, { signal }),
@@ -505,9 +508,10 @@ export const activitiesApi = {
     if (cursor) params.set('cursor', cursor);
     return apiClient.get(`/api/activities?${params.toString()}`);
   },
-  getCampusActivities: (limit = 20, cursor) => {
+  getCampusActivities: (limit = 20, cursor, search) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (cursor) params.set('cursor', cursor);
+    if (search) params.set('search', search);
     return apiClient.get(`/api/activities/campus?${params.toString()}`);
   },
   getMyActivities: () => apiClient.get('/api/activities/me'),
@@ -553,6 +557,15 @@ export const usersApi = {
   getCampusUsers: (limit = 100, offset = 0) => {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     return apiClient.get(`/api/users/campus?${params.toString()}`);
+  },
+  // Server-side campus directory: search + major + year, keyset pagination.
+  getDirectory: ({ search, major, year, limit = 30, cursor } = {}) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (search) params.set('search', search);
+    if (major && major !== 'All') params.set('major', major);
+    if (year && year !== 'All') params.set('year', String(year));
+    if (cursor) params.set('cursor', cursor);
+    return apiClient.get(`/api/users/directory?${params.toString()}`);
   },
   searchMentions: (query = '', communityId = null, limit = 15) => {
     const params = new URLSearchParams({ limit: String(limit) });

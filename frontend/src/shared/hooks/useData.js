@@ -12,6 +12,7 @@ import { showToast } from '../utils/toast';
 // the feature hooks with proper staleTime, IndexedDB hydration, and invalidation policies.
 import { useCommunities } from './useCommunities';
 import { useActivitiesList, useCampusActivities } from './useCrew';
+import { mapActivity } from '../utils/mapActivity';
 import { useConversations } from './useMessages';
 import { useCampusUsers } from './useProfile';
 
@@ -124,40 +125,10 @@ export function useData() {
     return list;
   }, [processedConversations, rawActivities, rawCampusActivities, currentUser?.id]);
 
-  const mapActivity = (a) => {
-    const startDate = a.startDate ? new Date(a.startDate) : null;
-    const endDate = a.endDate ? new Date(a.endDate) : null;
-
-    const dateFormatted = startDate ? startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
-    const dateLabelFormatted = startDate ? startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
-    const timeFormatted = startDate ? startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null;
-
-    const endDateFormatted = endDate ? endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
-    const endTimeFormatted = endDate ? endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null;
-
-    return {
-      ...a,
-      date: a.startDate || null,
-      endDate: a.endDate || null,
-      dateFormatted,
-      dateLabel: dateLabelFormatted,
-      time: timeFormatted,
-      endTime: endTimeFormatted,
-      endDateFormatted,
-      hostId: a.creatorId,
-      hostName: a.creator?.displayName || a.members?.find(m => m.userId === a.creatorId)?.user?.displayName || 'Host',
-      hostUsername: a.creator?.username || a.members?.find(m => m.userId === a.creatorId)?.user?.username || 'host',
-      hostAvatar: a.creator?.avatar || a.members?.find(m => m.userId === a.creatorId)?.user?.avatar || '',
-      participants: a.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [],
-      pendingRequests: a.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
-      slotsFilled: a.members?.filter(m => m.status === 'MEMBER').length || 1,
-      slotsNeeded: a.maxMembers || 999,
-      _membersData: a.members?.map(m => m.user) || [] // Keep full user objects for UI
-    };
-  };
-  
-  const crewActivities = rawActivities.map(mapActivity);
-  const campusCrewActivities = rawCampusActivities.map(mapActivity);
+  // Memoized so consumers of this globally-mounted hook don't re-map every
+  // activity on every render (this hook re-renders on many unrelated changes).
+  const crewActivities = useMemo(() => rawActivities.map(mapActivity), [rawActivities]);
+  const campusCrewActivities = useMemo(() => rawCampusActivities.map(mapActivity), [rawCampusActivities]);
 
   // Aliases for old properties — rawCommunities from useCommunities already has lookup keys
   const communitiesWithLookup = rawCommunities;

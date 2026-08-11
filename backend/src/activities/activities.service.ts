@@ -323,11 +323,15 @@ export class ActivitiesService implements OnModuleInit {
     return response;
   }
 
-  async getCampusActivities(userId: string, limit = 20, cursor?: string) {
+  async getCampusActivities(userId: string, limit = 20, cursor?: string, search?: string) {
     if (!userId) return { activities: [], nextCursor: undefined };
 
+    const searchTerm = (search || '').trim();
+    // Skip the cache for searches — caching every query string would bloat Redis
+    // and search results are cheap (scoped to one college).
+    const useCache = !searchTerm;
     const cacheKey = `activities:campus:${userId}:${limit}:${cursor || 'none'}`;
-    if (this.redis) {
+    if (this.redis && useCache) {
       try {
         const cached = await this.redis.get(cacheKey);
         if (cached) return JSON.parse(cached);
@@ -365,6 +369,15 @@ export class ActivitiesService implements OnModuleInit {
       ],
       ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
       ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
+      ...(searchTerm
+        ? {
+            OR: [
+              { title: { contains: searchTerm, mode: 'insensitive' as const } },
+              { description: { contains: searchTerm, mode: 'insensitive' as const } },
+              { location: { contains: searchTerm, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
     };
 
     const activities = await this.prisma.crewActivity.findMany({
@@ -397,7 +410,7 @@ export class ActivitiesService implements OnModuleInit {
 
     if (activities.length === 0) {
       const emptyRes = { activities: [], nextCursor: undefined };
-      if (this.redis) {
+      if (this.redis && useCache) {
         this.redis.setex(cacheKey, 60, JSON.stringify(emptyRes)).catch(() => {});
         this.registerFeedCacheKey(cacheKey);
       }
@@ -416,7 +429,7 @@ export class ActivitiesService implements OnModuleInit {
       nextCursor,
     };
 
-    if (this.redis) {
+    if (this.redis && useCache) {
       this.redis.setex(cacheKey, 60, JSON.stringify(response)).catch(() => {});
       this.registerFeedCacheKey(cacheKey);
     }

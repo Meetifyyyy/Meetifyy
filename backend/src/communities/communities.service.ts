@@ -205,7 +205,7 @@ export class CommunitiesService implements OnModuleInit {
     });
   }
 
-  async getCampusCommunities(userId: string, limit = 30, offset = 0) {
+  async getCampusCommunities(userId: string, limit = 30, offset = 0, search?: string) {
     if (!userId) return [];
 
     // Try Redis first — avoids a DB round-trip for the collegeId lookup
@@ -219,16 +219,28 @@ export class CommunitiesService implements OnModuleInit {
       collegeId = user.collegeId;
       await this.setCachedCollegeId(userId, collegeId);
     }
+
+    const searchTerm = (search || '').trim();
+    const searchWhere = searchTerm
+      ? {
+          OR: [
+            { name: { contains: searchTerm, mode: 'insensitive' as const } },
+            { description: { contains: searchTerm, mode: 'insensitive' as const } },
+          ],
+        }
+      : {};
+
     const cacheKey = `campus:${collegeId}:${limit}:${offset}`;
-    let communities = await this.getCachedList(cacheKey);
+    // Only the unfiltered list is cached (searches are cheap, per-college scoped).
+    let communities = searchTerm ? null : await this.getCachedList(cacheKey);
     if (!communities) {
       communities = await this.prisma.community.findMany({
-        where: { deletedAt: null, isCampusCommunity: true, collegeId },
+        where: { deletedAt: null, isCampusCommunity: true, collegeId, ...searchWhere },
         orderBy: { memberCount: 'desc' },
         take: limit,
         skip: offset,
       });
-      await this.setCachedList(cacheKey, communities, 120);
+      if (!searchTerm) await this.setCachedList(cacheKey, communities, 120);
     }
 
     if (communities.length === 0) return [];

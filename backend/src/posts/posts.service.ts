@@ -533,22 +533,24 @@ export class PostsService {
     const lockKey = `toggle:like:${userId}:${postId}`;
 
     return this.redisService.withLock(lockKey, 2000, async () => {
-      // Fully atomic: INSERT ... ON CONFLICT DO NOTHING — never throws P2002
-      const inserted = await this.prisma.$executeRaw`
-        INSERT INTO "PostLike" ("userId", "postId", "createdAt")
-        VALUES (${userId}, ${postId}, NOW())
-        ON CONFLICT ("userId", "postId") DO NOTHING
+      // Single round-trip: the INSERT ... ON CONFLICT and the counter increment
+      // run as one atomic statement (a CTE), so we pay one backend↔DB round trip
+      // instead of two. `inserted` reflects whether a new like row was created.
+      const rows: any[] = await this.prisma.$queryRaw`
+        WITH ins AS (
+          INSERT INTO "PostLike" ("userId", "postId", "createdAt")
+          VALUES (${userId}, ${postId}, NOW())
+          ON CONFLICT ("userId", "postId") DO NOTHING
+          RETURNING 1
+        )
+        UPDATE "Post"
+        SET "likeCount" = "likeCount" + (SELECT count(*)::int FROM ins)
+        WHERE id = ${postId}
+        RETURNING "likeCount", (SELECT count(*)::int FROM ins) AS inserted
       `;
-
-      let updatedCount = post.likeCount;
+      const inserted = Number(rows?.[0]?.inserted ?? 0);
+      let updatedCount = Number(rows?.[0]?.likeCount ?? post.likeCount);
       if (inserted === 1) {
-        const updated = await this.prisma.post.update({
-          where: { id: postId },
-          data: { likeCount: { increment: 1 } },
-          select: { likeCount: true },
-        });
-        updatedCount = updated.likeCount;
-
         if (post.authorId !== userId) {
           this.prisma.user.findUnique({
             where: { id: userId },
@@ -591,19 +593,21 @@ export class PostsService {
     const lockKey = `toggle:like:${userId}:${postId}`;
 
     return this.redisService.withLock(lockKey, 2000, async () => {
-      const deleted = await this.prisma.$executeRaw`
-        DELETE FROM "PostLike" WHERE "userId" = ${userId} AND "postId" = ${postId}
+      // One atomic round-trip: DELETE the like and decrement the counter only if a
+      // row was actually removed (floored at 0), via a single CTE statement.
+      const rows: any[] = await this.prisma.$queryRaw`
+        WITH del AS (
+          DELETE FROM "PostLike" WHERE "userId" = ${userId} AND "postId" = ${postId}
+          RETURNING 1
+        )
+        UPDATE "Post"
+        SET "likeCount" = GREATEST(0, "likeCount" - (SELECT count(*)::int FROM del))
+        WHERE id = ${postId}
+        RETURNING "likeCount", (SELECT count(*)::int FROM del) AS deleted
       `;
-
-      let updatedCount = post.likeCount;
+      const deleted = Number(rows?.[0]?.deleted ?? 0);
+      let updatedCount = Number(rows?.[0]?.likeCount ?? post.likeCount);
       if (deleted === 1) {
-        const rows: any[] = await this.prisma.$queryRaw`
-          UPDATE "Post" SET "likeCount" = GREATEST(0, "likeCount" - 1)
-          WHERE id = ${postId}
-          RETURNING "likeCount"
-        `;
-        updatedCount = Number(rows?.[0]?.likeCount ?? Math.max(0, post.likeCount - 1));
-
         this.domainEventService.emit('post.unliked', { postId, userId, likeCount: updatedCount }, [post.authorId]);
       }
 
@@ -671,22 +675,24 @@ export class PostsService {
     const lockKey = `toggle:commentlike:${userId}:${commentId}`;
 
     return this.redisService.withLock(lockKey, 2000, async () => {
-      // Fully atomic: INSERT ... ON CONFLICT DO NOTHING — never throws P2002 on
-      // a concurrent double-like, and the increment only runs when this call
-      // actually inserted the row, so the counter can't be double-incremented.
-      const inserted = await this.prisma.$executeRaw`
-        INSERT INTO "CommentLike" ("userId", "commentId", "createdAt")
-        VALUES (${userId}, ${commentId}, NOW())
-        ON CONFLICT ("userId", "commentId") DO NOTHING
+      // One atomic round-trip: INSERT ... ON CONFLICT + increment via a single CTE
+      // (never throws P2002, counter can't be double-incremented).
+      const rows: any[] = await this.prisma.$queryRaw`
+        WITH ins AS (
+          INSERT INTO "CommentLike" ("userId", "commentId", "createdAt")
+          VALUES (${userId}, ${commentId}, NOW())
+          ON CONFLICT ("userId", "commentId") DO NOTHING
+          RETURNING 1
+        )
+        UPDATE "Comment"
+        SET "likeCount" = "likeCount" + (SELECT count(*)::int FROM ins)
+        WHERE id = ${commentId}
+        RETURNING "likeCount", (SELECT count(*)::int FROM ins) AS inserted
       `;
+      const inserted = Number(rows?.[0]?.inserted ?? 0);
+      const updated = { likeCount: Number(rows?.[0]?.likeCount ?? comment.likeCount) };
 
       if (inserted === 1) {
-        const updated = await this.prisma.comment.update({
-          where: { id: commentId },
-          data: { likeCount: { increment: 1 } },
-          select: { likeCount: true },
-        });
-
         if (comment.authorId !== userId) {
           this.prisma.user.findUnique({
             where: { id: userId },
@@ -721,18 +727,20 @@ export class PostsService {
     const lockKey = `toggle:commentlike:${userId}:${commentId}`;
 
     return this.redisService.withLock(lockKey, 2000, async () => {
-      const deleted = await this.prisma.$executeRaw`
-        DELETE FROM "CommentLike" WHERE "userId" = ${userId} AND "commentId" = ${commentId}
+      // One atomic round-trip: DELETE + floored decrement via a single CTE.
+      const rows: any[] = await this.prisma.$queryRaw`
+        WITH del AS (
+          DELETE FROM "CommentLike" WHERE "userId" = ${userId} AND "commentId" = ${commentId}
+          RETURNING 1
+        )
+        UPDATE "Comment"
+        SET "likeCount" = GREATEST(0, "likeCount" - (SELECT count(*)::int FROM del))
+        WHERE id = ${commentId}
+        RETURNING "likeCount", (SELECT count(*)::int FROM del) AS deleted
       `;
-
+      const deleted = Number(rows?.[0]?.deleted ?? 0);
       if (deleted === 1) {
-        const rows: any[] = await this.prisma.$queryRaw`
-          UPDATE "Comment" SET "likeCount" = GREATEST(0, "likeCount" - 1)
-          WHERE id = ${commentId}
-          RETURNING "likeCount"
-        `;
         const likeCount = Number(rows?.[0]?.likeCount ?? 0);
-
         this.domainEventService.emit('comment.unliked', { commentId, postId: comment.postId, userId, likeCount });
       }
 
@@ -741,8 +749,11 @@ export class PostsService {
   }
 
   async addComment(postId: string, authorId: string, text: string, parentId?: string, mentions?: MentionDto[]) {
-    const post = await this.prisma.post.findUnique({ where: { id: postId } });
-    const excludedUserIds = await this.blocksService.getExcludedUserIds(authorId);
+    // Independent reads — run them in one parallel round-trip instead of two.
+    const [post, excludedUserIds] = await Promise.all([
+      this.prisma.post.findUnique({ where: { id: postId } }),
+      this.blocksService.getExcludedUserIds(authorId),
+    ]);
     if (!post || post.deletedAt || excludedUserIds.includes(post.authorId)) throw new NotFoundException('Post not found');
 
     let parentComment: any = null;
