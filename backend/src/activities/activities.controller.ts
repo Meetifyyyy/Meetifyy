@@ -11,7 +11,8 @@ export class ActivitiesController {
   constructor(private readonly activitiesService: ActivitiesService) {}
 
   @Get()
-  @CacheControl('private, max-age=30, stale-while-revalidate=120')
+  // @CacheControl removed: browser caching cannot be invalidated and causes
+  // stale data when navigating back after joining. Relies on backend Redis cache.
   async getAllActivities(
     @CurrentUser() user: any,
     @Query('limit') limit?: string,
@@ -23,7 +24,7 @@ export class ActivitiesController {
   }
 
   @Get('campus')
-  @CacheControl('private, max-age=60, stale-while-revalidate=300')
+  // @CacheControl removed for cache coherency after optimistic mutations
   async getCampusActivities(
     @CurrentUser() user: any,
     @Query('limit') limit?: string,
@@ -36,13 +37,13 @@ export class ActivitiesController {
   }
 
   @Get('me')
-  @CacheControl('private, max-age=30, stale-while-revalidate=120')
+  // @CacheControl removed
   async getMyActivities(@CurrentUser() user: any) {
     return this.activitiesService.getMyActivities(user.id);
   }
 
   @Get('bookmarks')
-  @CacheControl('private, max-age=30, stale-while-revalidate=120')
+  // @CacheControl removed
   async getSavedActivities(
     @CurrentUser() user: any,
     @Query('limit') limit?: string,
@@ -89,7 +90,7 @@ export class ActivitiesController {
   }
 
   @Get(':id')
-  @CacheControl('private, max-age=30, stale-while-revalidate=120')
+  @CacheControl('no-store')
   async getActivityById(@Param('id') id: string, @CurrentUser() user: any) {
     return this.activitiesService.getActivityById(id, user?.id);
   }

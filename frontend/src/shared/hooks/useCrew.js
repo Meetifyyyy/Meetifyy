@@ -8,7 +8,7 @@
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { activitiesApi } from '@shared/api/apiClient';
-import { idbGet, idbSet } from '@shared/lib/idb';
+import { idbGet, idbSet, idbDelete } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
@@ -40,23 +40,26 @@ export function useActivities() {
     enabled: isLoggedIn,
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
-    staleTime: 2 * 60 * 1000,
-    gcTime:    10 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    gcTime: 10 * 60 * 1000,
     placeholderData: (prev) => prev,
   });
 
-  // Hydrate page 1 from IndexedDB before first network response
+  // Hydrate page 1 from IndexedDB only when there is no live data yet.
+  // staleTime:0 + refetchOnMount:'always' ensures the real fetch fires immediately;
+  // IDB just fills the gap so the page isn't blank while the network responds.
   useEffect(() => {
-    if (!query.data) {
-      idbGet('activities', 'all_page1').then((cached) => {
-        if (cached?.value) {
-          queryClient.setQueryData(CREW_KEYS.all, {
-            pages: [cached.value],
-            pageParams: [undefined],
-          });
-        }
-      });
-    }
+    idbGet('activities', 'all_page1').then((cached) => {
+      // Never overwrite live server data with stale IDB data
+      if (cached?.value && !queryClient.getQueryData(CREW_KEYS.all)) {
+        queryClient.setQueryData(CREW_KEYS.all, {
+          pages: [cached.value],
+          pageParams: [undefined],
+        });
+        // No need to invalidate — the active query is already fetching
+      }
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -93,7 +96,8 @@ export function useActivitiesList() {
     queryKey: ['activities', 'list'],
     queryFn: () => activitiesApi.getAll(20),
     enabled: Boolean(isLoggedIn) && flat.length === 0,
-    staleTime: 2 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: 'always',
     select: (data) => (Array.isArray(data?.activities) ? data.activities : (Array.isArray(data) ? data : [])),
   });
 
@@ -120,15 +124,16 @@ export function useCampusActivities(search = '') {
     enabled: isLoggedIn,
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
-    staleTime: 5 * 60 * 1000,
-    gcTime:    15 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    gcTime: 15 * 60 * 1000,
     placeholderData: (prev) => prev,
   });
 
   useEffect(() => {
-    if (!normSearch && !query.data) {
+    if (!normSearch) {
       idbGet('activities', 'campus_page1').then((cached) => {
-        if (cached?.value) {
+        if (cached?.value && !queryClient.getQueryData(CREW_KEYS.campus)) {
           queryClient.setQueryData(CREW_KEYS.campus, {
             pages: [cached.value],
             pageParams: [undefined],
@@ -162,7 +167,8 @@ export function useSavedActivitiesQuery() {
     queryKey: CREW_KEYS.bookmarks,
     queryFn: () => activitiesApi.getBookmarks(),
     enabled: isLoggedIn,
-    staleTime: 2 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: 'always',
     select: (data) => (Array.isArray(data?.activities) ? data.activities : (Array.isArray(data) ? data : [])),
   });
 
@@ -181,7 +187,8 @@ export function useMyActivitiesQuery() {
     queryKey: ['activities', 'me'],
     queryFn: () => activitiesApi.getMyActivities(),
     enabled: isLoggedIn,
-    staleTime: 2 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: 'always',
     select: (data) => (Array.isArray(data?.activities) ? data.activities : (Array.isArray(data) ? data : [])),
   });
 
@@ -202,8 +209,14 @@ export function useActivityById(id) {
     queryKey: CREW_KEYS.byId(cleanId),
     queryFn: () => activitiesApi.getById(cleanId),
     enabled: !!cleanId,
-    staleTime: 2 * 60 * 1000,
-    // Try to seed from the list cache to avoid a spinner
+    // Always re-validate on mount so isJoined is always authoritative from the server.
+    // The optimistic update already has the cache showing the right state instantly;
+    // this background re-fetch just confirms it without any visible spinner.
+    staleTime: 0,
+    refetchOnMount: 'always',
+    // Try to seed from the list cache to avoid a spinner on first load.
+    // Note: list-cache entries may have isJoined missing (anonymous base cache),
+    // so we only use them as shape placeholders — the real query always fires.
     placeholderData: () => {
       const listCache = queryClient.getQueryData(CREW_KEYS.all);
       const all = listCache?.pages?.flatMap((p) => (Array.isArray(p?.activities) ? p.activities : (Array.isArray(p) ? p : []))) ?? [];
@@ -218,9 +231,13 @@ export function useJoinActivity() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id) => activitiesApi.join(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: CREW_KEYS.all });
-      queryClient.invalidateQueries({ queryKey: CREW_KEYS.campus });
+    onSuccess: (data, id) => {
+      // Clear IDB so next session doesn't restore stale pre-join state
+      idbDelete('activities', 'all_page1');
+      idbDelete('activities', 'campus_page1');
+      queryClient.invalidateQueries({ queryKey: ['activities'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['activity'], refetchType: 'active' });
+      if (id) queryClient.invalidateQueries({ queryKey: CREW_KEYS.byId(id), refetchType: 'active' });
     },
   });
 }
@@ -229,9 +246,12 @@ export function useLeaveActivity() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id) => activitiesApi.leave(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: CREW_KEYS.all });
-      queryClient.invalidateQueries({ queryKey: CREW_KEYS.campus });
+    onSuccess: (data, id) => {
+      idbDelete('activities', 'all_page1');
+      idbDelete('activities', 'campus_page1');
+      queryClient.invalidateQueries({ queryKey: ['activities'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['activity'], refetchType: 'active' });
+      if (id) queryClient.invalidateQueries({ queryKey: CREW_KEYS.byId(id), refetchType: 'active' });
     },
   });
 }
@@ -240,7 +260,10 @@ export function useCreateActivity() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data) => activitiesApi.create(data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: CREW_KEYS.all }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activities'] });
+      queryClient.invalidateQueries({ queryKey: ['activity'] });
+    },
   });
 }
 

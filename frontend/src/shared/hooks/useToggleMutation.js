@@ -27,6 +27,7 @@ const DEBOUNCE_MS = 280;
 function scheduleCoalescedRequest({
   entityKey,
   intent,
+  variables,
   queryClient,
   applyOptimistic,
   applyRollback,
@@ -61,14 +62,15 @@ function scheduleCoalescedRequest({
     _controllers.set(entityKey, controller);
 
     try {
-      await callApi(finalIntent, controller.signal);
+      await callApi(finalIntent, controller.signal, variables);
 
       if (seq === seqRef.current) {
         _controllers.delete(entityKey);
-        toggleRegistry.clearIfLatest(entityKey, toggleRegistry.activeMutations?.get?.(entityKey));
-        // Silent background sync — marks stale, re-fetches on next natural access
+        // Clear the registry entry now that the final request settled
+        toggleRegistry.clearIfLatest(entityKey, toggleRegistry.activeMutations.get(entityKey));
+        // Active refetch — triggers immediate background sync on all mounted queries
         invalidateKeys.forEach(key => {
-          queryClient.invalidateQueries({ queryKey: key, refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: key, refetchType: 'active' });
         });
       }
     } catch (err) {
@@ -80,7 +82,8 @@ function scheduleCoalescedRequest({
       // Stale sequence = newer request completed, ignore silently
       if (seq !== seqRef.current) return;
 
-      // Latest request failed — roll back optimistic update
+      // Latest request failed — roll back optimistic update and clear registry
+      toggleRegistry.clearIfLatest(entityKey, toggleRegistry.activeMutations.get(entityKey));
       applyRollback(queryClient, finalIntent);
       showToast(errorMessage);
     }
@@ -124,10 +127,11 @@ export function useToggleMutation({
     scheduleCoalescedRequest({
       entityKey,
       intent,
+      variables,
       queryClient,
       applyOptimistic: (qc, val) => applyOptimistic(qc, val, variables),
       applyRollback: (qc, val) => applyRollback(qc, val, variables),
-      callApi: (val, signal) => callApi(val, signal, variables),
+      callApi: (val, signal, vars) => callApi(val, signal, vars ?? variables),
       invalidateKeys: typeof invalidateKeys === 'function' ? invalidateKeys(variables) : invalidateKeys,
       errorMessage,
       debounceMs,

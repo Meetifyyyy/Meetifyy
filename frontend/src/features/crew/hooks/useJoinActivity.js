@@ -1,41 +1,157 @@
 import { useCallback } from 'react';
 import { useToggleMutation } from '@shared/hooks/useToggleMutation';
 import { activitiesApi } from '@shared/api/apiClient';
+import { idbDelete } from '@shared/lib/idb';
+
+/**
+ * Patches all derived membership fields on an activity record.
+ * Must update BOTH `members` (raw DB shape) AND `isJoined`/`participants`/`myStatus`
+ * (API-layer shape) so every consumer — detail page memo, list cards — reads the
+ * correct state immediately without waiting for a cache invalidation + refetch.
+ */
+function patchActivity(act, intent, currentUser) {
+  if (!act || !currentUser) return act;
+
+  let members = act.members || [];
+  if (intent && !members.some(m => m.userId === currentUser.id)) {
+    members = [
+      ...members,
+      { userId: currentUser.id, status: 'MEMBER', user: currentUser },
+    ];
+  } else if (!intent) {
+    members = members.filter(m => m.userId !== currentUser.id);
+  }
+
+  // ── Preserve the original participants array ──────────────────────────────
+  // List-cache items have members:[] but participants:[...all IDs].
+  // Reconstructing participants purely from members would wipe out everyone
+  // except the current user + creator. Instead, keep the original list and
+  // only add/remove the current user, so all other attendees stay intact.
+  const origParticipants = (Array.isArray(act.participants) ? act.participants : [])
+    .map(p => String(typeof p === 'object' ? (p.id || p.userId || p.user?.id || '') : (p || '')))
+    .filter(Boolean);
+
+  let participants;
+  if (intent) {
+    // Add current user; always keep creator
+    participants = Array.from(new Set([
+      ...origParticipants,
+      String(currentUser.id),
+      ...(act.creatorId ? [String(act.creatorId)] : []),
+    ]));
+  } else {
+    // Remove current user; always keep creator
+    participants = origParticipants.filter(p => p !== String(currentUser.id));
+    if (act.creatorId && !participants.includes(String(act.creatorId))) {
+      participants = [String(act.creatorId), ...participants];
+    }
+  }
+
+  return {
+    ...act,
+    members,
+    participants,
+    isJoined: intent,
+    myStatus: intent ? 'MEMBER' : null,
+  };
+}
 
 export function useJoinActivity() {
   const applyOptimistic = useCallback((queryClient, intent, variables) => {
     const { activityId, currentUser } = variables;
+    const cleanId = activityId ? String(activityId).replace(/^(act_)+/, '') : activityId;
 
-    queryClient.setQueryData(['activities'], (oldData) => {
-      if (!Array.isArray(oldData)) return oldData;
-      return oldData.map(act => {
-        if (act.id !== activityId) return act;
-        
-        // Optimistically calculate new member count and list
-        let members = act.members || [];
-        if (intent && currentUser && !members.some(m => m.userId === currentUser.id)) {
-          members = [...members, { userId: currentUser.id, status: 'MEMBER', user: currentUser }];
-        } else if (!intent && currentUser) {
-          members = members.filter(m => m.userId !== currentUser.id);
-        }
+    // Cancel any in-flight fetches so they don't race back and overwrite the optimistic patch.
+    // (staleTime:0 + refetchOnWindowFocus can trigger background refetches at any time.)
+    queryClient.cancelQueries({ queryKey: ['activities'] });
+    queryClient.cancelQueries({ queryKey: ['activity', cleanId] });
+    // Also cancel campus list queries — they share the same activity objects
+    queryClient.cancelQueries({ queryKey: ['activities', 'campus'] });
+    queryClient.cancelQueries({ queryKey: ['activities', 'me'] });
 
+    // ── 1. Infinite list cache (crew feed) ──────────────────────────────────
+    queryClient.setQueriesData({ queryKey: ['activities'] }, (oldData) => {
+      if (!oldData) return oldData;
+
+      // Helper to safely compare IDs with or without the act_ prefix
+      const matches = (act) => {
+        if (!act || !act.id) return false;
+        const cleanActId = String(act.id).replace(/^(act_)+/, '');
+        return cleanActId === cleanId;
+      };
+
+      // InfiniteQuery shape: { pages: [...], pageParams: [...] }
+      if (oldData?.pages) {
         return {
-          ...act,
-          members,
+          ...oldData,
+          pages: oldData.pages.map((page) => {
+            const activities = Array.isArray(page?.activities) ? page.activities
+              : Array.isArray(page) ? page : null;
+            if (!activities) return page;
+
+            const patched = activities.map(act =>
+              matches(act) ? patchActivity(act, intent, currentUser) : act
+            );
+            return Array.isArray(page) ? patched : { ...page, activities: patched };
+          }),
         };
-      });
+      }
+
+      // Flat array shape (some list queries)
+      if (Array.isArray(oldData)) {
+        return oldData.map(act =>
+          matches(act) ? patchActivity(act, intent, currentUser) : act
+        );
+      }
+
+      // Object wrapper shape (e.g. { activities: [...] } from some list endpoints)
+      if (oldData && Array.isArray(oldData.activities)) {
+        return {
+          ...oldData,
+          activities: oldData.activities.map(act =>
+            matches(act) ? patchActivity(act, intent, currentUser) : act
+          ),
+        };
+      }
+
+      return oldData;
+    });
+
+    // ── 2. Single-activity detail cache ─────────────────────────────────────
+    queryClient.setQueryData(['activity', cleanId], (old) => {
+      if (!old) return old;
+      return patchActivity(old, intent, currentUser);
     });
   }, []);
+
 
   const applyRollback = useCallback((queryClient, intent, variables) => {
     applyOptimistic(queryClient, !intent, variables);
   }, [applyOptimistic]);
 
-  const callApi = useCallback((intent, signal, variables) => {
+  const callApi = useCallback(async (intent, signal, variables) => {
     const { activityId } = variables;
-    return intent
-      ? activitiesApi.join(activityId, { signal })
-      : activitiesApi.leave(activityId, { signal });
+    try {
+      const result = await (intent
+        ? activitiesApi.join(activityId, { signal })
+        : activitiesApi.leave(activityId, { signal }));
+      // Bust IDB so navigating back to the list never loads stale pre-mutation data
+      idbDelete('activities', 'all_page1');
+      idbDelete('activities', 'campus_page1');
+      return result;
+    } catch (err) {
+      // Swallow benign "already joined / not a member" conflicts — the optimistic
+      // state is already correct; treat as a no-op rather than rolling back UI.
+      const msg = err?.response?.data?.message || err?.message || '';
+      if (
+        msg.toLowerCase().includes('already a member') ||
+        msg.toLowerCase().includes('not a member') ||
+        err?.response?.status === 400
+      ) {
+        return; // silent no-op
+      }
+      throw err;
+    }
   }, []);
 
   const { mutate } = useToggleMutation({
@@ -43,7 +159,14 @@ export function useJoinActivity() {
     applyOptimistic,
     applyRollback,
     callApi,
-    invalidateKeys: [['activities']],
+    debounceMs: 100,
+    errorMessage: 'Could not update. Please try again.',
+    invalidateKeys: (vars) => {
+      const cleanId = vars.activityId ? String(vars.activityId).replace(/^(act_)+/, '') : vars.activityId;
+      // We can safely invalidate ['activities'] now because the backend
+      // `joinActivity` awaits `clearActivityFeedCaches()` BEFORE returning success.
+      return [['activities'], ['activity', cleanId]];
+    },
   });
 
   return { mutate, isLoading: false };

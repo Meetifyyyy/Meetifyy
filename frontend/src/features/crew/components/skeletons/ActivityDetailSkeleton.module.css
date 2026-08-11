@@ -1,0 +1,51 @@
+/* ── ActivityDetailSkeleton.module.css ──────────────────────────────
+   Minimal helper classes for the skeleton only.
+   All structural layout (columns, glass cards, top-bar) comes from
+   ActivityDetailPage.module.css — imported directly in the component.
+   ─────────────────────────────────────────────────────────────────── */
+
+/* Row shared by date & location lines inside the glass info card */
+.infoRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0;
+}
+
+/* Secondary margin between info rows */
+.infoRow + .infoRow {
+  margin-top: 1.25rem;
+}
+
+/* Host name block inside the host glass card */
+.hostMeta {
+  display: flex;
+  flex-direction: column;
+  margin-left: 0.75rem;
+  flex: 1;
+}
+
+/* Description shimmer lines group */
+.descBlock {
+  margin-bottom: 2rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Attendee row — mirrors .attendeeRow from the page */
+.attendeeRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.attendeeRow:last-child {
+  margin-bottom: 0;
+}
+
+/* Flex column for name/username skeleton lines */
+.attendeeMeta {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}

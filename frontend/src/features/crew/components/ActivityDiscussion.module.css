@@ -6,32 +6,41 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: rgba(18, 18, 26, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   overflow: hidden;
   color: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  /* Isolate the panel's internal layout from the parent page.
+     Any height changes inside (textarea growth, new messages, re-renders)
+     will never trigger a scroll or layout recalculation on the ancestor. */
+  contain: layout;
 }
 
 /* ── Mobile inline box ─────────────────────────────────────────── */
 .inline {
   width: 100%;
-  height: 340px;
-  margin-top: 1.25rem;
+  height: 380px;
+  margin-top: 1rem;
+  /* Block scroll chaining: the messages scroller must never bubble
+     its scroll events up to the parent Activity Detail scroll area. */
+  overscroll-behavior: contain;
 }
 
 /* ── Desktop floating window ───────────────────────────────────── */
 .floating {
   position: fixed;
-  right: 24px;
-  bottom: 96px;
-  width: 360px;
-  height: 480px;
-  max-height: min(70vh, 560px);
-  z-index: 1200;
-  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.6);
+  top: 115px;
+  right: max(24px, calc((100vw - 1100px) / 2 + 16px));
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  height: 520px;
+  max-height: calc(100vh - 135px);
+  z-index: 99999;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.15);
   animation: discPopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -45,7 +54,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.7rem 0.9rem;
+  padding: 1rem 1.5rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
 }
@@ -54,9 +63,9 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.95);
+  font-weight: 500;
+  font-size: 1.15rem;
+  color: white;
 }
 
 .headerTitle svg { color: #818cf8; }
@@ -87,12 +96,14 @@
   flex-direction: column;
   gap: 0.7rem;
   overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
-.messages::-webkit-scrollbar { width: 6px; }
-.messages::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
-  border-radius: 3px;
+.messages::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .loadOlderBtn {
@@ -235,6 +246,13 @@
   line-height: 1.4;
   outline: none;
   transition: border-color 0.15s ease;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.textarea::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 .textarea::placeholder { color: rgba(255, 255, 255, 0.4); }
 .textarea:focus { border-color: rgba(129, 140, 248, 0.6); }

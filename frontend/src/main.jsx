@@ -13,9 +13,9 @@ import './styles/global.css';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 2,       // fresh for 2 min
+      staleTime: 0,                   // Always check server for latest state
       gcTime:    1000 * 60 * 15,       // cached for 15 min
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: true,     // Refetch when switching back to tab
       refetchOnReconnect: true,
       retry: 1,
       placeholderData: (prev) => prev, // SWR: show stale instantly, fetch in background

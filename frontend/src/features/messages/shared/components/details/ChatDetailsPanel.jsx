@@ -212,14 +212,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   const isGroup = conversation.type === 'GROUP' || !!conversation.isGroup;
   const isOneOnOne = !isGroup;
 
-  // Activity group chats have been removed — these remain as inert defaults so
-  // the general group/DM rendering paths below resolve without activity data.
-  const isEventGroup = false;
-  const activity = null;
-  const isCancelled = false;
-  const isEnded = false;
-  const isHost = false;
-  const activityHasStarted = false;
+  // Activity group chats have been removed.
 
   const { data: groupDetails } = useQuery({
     queryKey: ['groupDetails', conversation?.id || conversation?.publicId],
@@ -258,11 +251,11 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   const sortedParticipants = useMemo(() => {
     return sortGroupMembers(rawParticipants, {
       ownerId: isGroup ? groupDetails?.ownerId : conversation.ownerId,
-      hostId: conversation.hostId || (activity ? activity.hostId : null),
+      hostId: conversation.hostId || null,
       admins: isGroup ? groupDetails?.admins : conversation.admins,
       users
     });
-  }, [rawParticipants, isGroup, groupDetails?.ownerId, groupDetails?.admins, conversation.ownerId, conversation.hostId, activity, conversation.admins, users]);
+  }, [rawParticipants, isGroup, groupDetails?.ownerId, groupDetails?.admins, conversation.ownerId, conversation.hostId, conversation.admins, users]);
   const memberIds = sortedParticipants.map(p => p?.userId || p?.id || (typeof p === 'string' ? p : ''));
 
   // Formatted date for group creation
@@ -332,16 +325,9 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
     setShowConfirm(false);
     if (confirmType === 'leaveGroup') {
       await leaveGroup(conversation.id);
-      // For activity chats: if activity already started, stay in read-only view.
-      // If not started yet, leaving removes the person from the group entirely → go back.
-      if (!isEventGroup || !activityHasStarted) {
-        onBack();
-      }
+      onBack();
     } else if (confirmType === 'endGroup') {
       await endGroup(conversation.id);
-    } else if (confirmType === 'endActivity' && activity) {
-      await endCrewActivity(activity.id);
-      onBack();
     } else if (confirmType === 'removeMember' && targetUserId) {
       await removeGroupMember(conversation.id, targetUserId);
       setTargetUserId(null);
@@ -432,7 +418,6 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         isAdmin={isAdmin}
         canEditGroupInfo={canEditGroupInfo}
         isGroup={isGroup}
-        isEventGroup={isEventGroup}
         fileInputRef={fileInputRef}
         showImageSearch={showImageSearch}
         setShowImageSearch={setShowImageSearch}
@@ -518,10 +503,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         isMember={isMember}
         isClosed={isClosed}
         canEditGroupInfo={canEditGroupInfo}
-        isEventGroup={isEventGroup}
         isGroup={isGroup}
-        activity={activity}
-        activityHasStarted={activityHasStarted}
         users={users}
         memberIds={memberIds}
         targetUserId={targetUserId}
@@ -539,7 +521,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         }}
         onCancelConfirm={() => setShowConfirm(false)}
         onConfirmAction={handleConfirmAction}
-        handleLeaveGroup={isEventGroup && onLeaveActivity ? onLeaveActivity : handleLeaveGroup}
+        handleLeaveGroup={handleLeaveGroup}
         handleEndActivity={handleEndActivity}
         handleEndGroup={handleEndGroup}
       />
@@ -554,7 +536,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
           <ArrowLeft size={20} />
         </button>
         <h2 className={styles.headerTitle}>
-          {isOneOnOne ? 'Chat Details' : isEventGroup ? 'Activity Details' : 'Group Info'}
+          {isOneOnOne ? 'Chat Details' : 'Group Info'}
         </h2>
         <div className={styles.headerRight}>
           {!isOneOnOne && (
@@ -589,7 +571,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         <div className={styles.avatarSection}>
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <Avatar
-              src={isGroup ? (groupDetails?.avatar || groupDetails?.avatarKey || conversation.avatarKey || conversation.avatar || (isEventGroup ? (activity?.coverImage || conversation.coverImage || conversation.icon) : null)) : (conversation.avatar || targetUser?.avatar || conversation.otherUser?.avatar || conversation.targetUser?.avatar)}
+              src={isGroup ? (groupDetails?.avatar || groupDetails?.avatarKey || conversation.avatarKey || conversation.avatar || null) : (conversation.avatar || targetUser?.avatar || conversation.otherUser?.avatar || conversation.targetUser?.avatar)}
               name={conversation.name || targetUser?.displayName}
               size="120px"
               isGroup={isGroup}
@@ -968,27 +950,18 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             {!isClosed && isMember && (
               <div className={styles.actionSection}>
                 {isOwner ? (
-                  isEventGroup && !activityHasStarted && !isCancelled ? (
-                    <button 
-                      className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
-                      onClick={handleEndActivity}
-                    >
-                      Cancel Activity
-                    </button>
-                  ) : (
-                    <button 
-                      className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
-                      onClick={handleEndGroup}
-                    >
-                      End Group
-                    </button>
-                  )
+                  <button 
+                    className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
+                    onClick={handleEndGroup}
+                  >
+                    End Group
+                  </button>
                 ) : (
                   <button 
                     className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
-                    onClick={isEventGroup && onLeaveActivity ? onLeaveActivity : handleLeaveGroup}
+                    onClick={handleLeaveGroup}
                   >
-                    {isEventGroup ? (activityHasStarted || isCancelled ? 'Leave Group' : 'Leave Activity') : 'Leave Group'}
+                    Leave Group
                   </button>
                 )}
               </div>
@@ -1004,21 +977,13 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       <ConfirmModal
         title={
           confirmType === 'endGroup' ? 'End Group?' :
-          confirmType === 'leaveGroup'
-            ? (isEventGroup ? (activityHasStarted || isCancelled ? 'Leave Group' : 'Leave Activity') : 'Leave Group')
-            : confirmType === 'endActivity' ? 'Cancel Activity' :
+          confirmType === 'leaveGroup' ? 'Leave Group' :
           confirmType === 'changeOwner' ? 'Change Group Owner?' :
           'Remove Member'
         }
         desc={
           confirmType === 'endGroup' ? 'This group will be closed permanently. Previous chats and media will remain accessible.' :
-          confirmType === 'leaveGroup'
-            ? (isEventGroup
-                ? (activityHasStarted || isCancelled
-                    ? 'You can still view the chat history, but you won\'t be able to send or receive new messages.'
-                    : 'You will be removed from this activity and the group chat will be removed from your inbox.')
-                : 'Are you sure you want to leave this group?')
-            : confirmType === 'endActivity' ? 'Are you sure you want to cancel this activity?' :
+          confirmType === 'leaveGroup' ? 'Are you sure you want to leave this group?' :
           confirmType === 'changeOwner' ? `Ownership of this group will be transferred to ${(Object.values(users).find(u => u.id === targetUserId)?.displayName || Object.values(users).find(u => u.id === targetUserId)?.name || 'This member')}.` :
           'Are you sure you want to remove this member from the group?'
         }
@@ -1027,8 +992,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         onConfirm={handleConfirmAction}
         confirmText={
           confirmType === 'endGroup' ? 'End Group' :
-          confirmType === 'leaveGroup' ? (isEventGroup && !activityHasStarted && !isCancelled ? 'Leave Activity' : 'Leave') :
-          confirmType === 'endActivity' ? 'Cancel Activity' :
+          confirmType === 'leaveGroup' ? 'Leave' :
           confirmType === 'changeOwner' ? 'Change Owner' :
           'Remove'
         }

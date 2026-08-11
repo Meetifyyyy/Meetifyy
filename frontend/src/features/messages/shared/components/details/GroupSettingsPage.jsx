@@ -7,8 +7,6 @@ export default function GroupSettingsPage({
   isOwner,
   isAdmin,
   isMember,
-  isClosed,
-  isEventGroup,
   canEditGroupInfo,
   whoCanJoin,
   setWhoCanJoin,
@@ -22,15 +20,13 @@ export default function GroupSettingsPage({
   setGroupUpdatesActive,
   updateGroupSettings,
   updateGroupEditPermission,
-  activityHasStarted,
   onBack,
   onGoToEdit,
   onGoToChangeOwner,
   handleLeaveGroup,
-  handleEndActivity,
   handleEndGroup
 }) {
-  const isCancelled = (conversation?.activity?.status || conversation?.status || '').toUpperCase() === 'CANCELLED';
+  const isCancelled = (conversation?.status || '').toUpperCase() === 'CANCELLED';
 
   return (
     <div className={sharedStyles.container}>
@@ -270,9 +266,7 @@ export default function GroupSettingsPage({
                   onClick={handleLeaveGroup}
                 >
                   <span className={styles.settingLabel} style={{ color: '#ef4444', fontWeight: '600' }}>
-                    {isEventGroup
-                      ? (activityHasStarted || isCancelled ? 'Leave Group' : 'Leave Activity')
-                      : 'Leave Group'}
+                    Leave Group
                   </span>
                 </button>
               )}
@@ -281,16 +275,10 @@ export default function GroupSettingsPage({
                 <button 
                   type="button" 
                   className={styles.settingRow}
-                  onClick={() => {
-                    if (isEventGroup && !activityHasStarted && !isCancelled) {
-                      handleEndActivity();
-                    } else {
-                      handleEndGroup();
-                    }
-                  }}
+                  onClick={() => handleEndGroup()}
                 >
                   <span className={styles.settingLabel} style={{ color: '#ef4444', fontWeight: '600' }}>
-                    {isEventGroup && !activityHasStarted && !isCancelled ? 'Cancel Activity' : 'End Group'}
+                    End Group
                   </span>
                 </button>
               )}

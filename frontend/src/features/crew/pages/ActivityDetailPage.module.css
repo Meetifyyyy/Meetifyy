@@ -17,7 +17,14 @@
   overflow: hidden;
   isolation: isolate;
   transform: translate3d(0, 0, 0);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  text-shadow: none !important;
+}
+
+@media (min-width: 901px) {
+  .root {
+    height: calc(100% - 0.5rem) !important;
+    margin-bottom: 0.5rem !important;
+  }
 }
 
 .root::-webkit-scrollbar {
@@ -29,7 +36,9 @@
   position: relative;
   width: 100%;
   flex: 1;
-  background: transparent;
+  background: rgba(15, 17, 23, 0.12);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -51,9 +60,9 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 15% 25%, rgba(var(--extracted-rgb, 37, 99, 235), 0.15) 0%, transparent 60%),
-    radial-gradient(circle at 85% 75%, rgba(var(--extracted-rgb, 124, 58, 237), 0.1) 0%, transparent 60%),
-    linear-gradient(135deg, rgba(15, 17, 23, 0.25) 0%, rgba(10, 11, 15, 0.4) 100%);
+    radial-gradient(circle at 15% 25%, rgba(var(--extracted-rgb, 37, 99, 235), 0.28) 0%, transparent 65%),
+    radial-gradient(circle at 85% 75%, rgba(var(--extracted-rgb, 124, 58, 237), 0.22) 0%, transparent 65%),
+    linear-gradient(135deg, rgba(15, 17, 23, 0.1) 0%, rgba(10, 11, 15, 0.2) 100%);
   z-index: 1;
 }
 
@@ -63,9 +72,9 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(6px);
-  opacity: 1;
-  transform: translate3d(0, 0, 0) scale(1.03);
+  filter: blur(24px);
+  opacity: 0.8;
+  transform: translate3d(0, 0, 0) scale(1.05);
   will-change: transform;
   backface-visibility: hidden;
   transition: opacity 0.3s ease;
@@ -186,6 +195,12 @@
   background: rgba(0, 0, 0, 0.1);
 }
 
+.actionBtnActive {
+  background: rgba(99, 102, 241, 0.25) !important;
+  color: #818cf8 !important;
+  border: 1px solid rgba(129, 140, 248, 0.4) !important;
+}
+
 :global([data-theme="dark"]) .actionBtn.saved,
 [data-theme="dark"] .actionBtn.saved {
   color: #ffffff;
@@ -219,13 +234,13 @@
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  background: rgba(255, 255, 255, 0.01);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;
   padding: 1.25rem 1.5rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: none;
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
@@ -238,7 +253,7 @@
   aspect-ratio: 1 / 1;
   border-radius: 24px;
   overflow: hidden;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
+  box-shadow: none;
   background: var(--color-bg-soft);
   flex-shrink: 0;
 }
@@ -250,7 +265,7 @@
   height: 100%;
   object-fit: cover;
   filter: brightness(1.1) contrast(1.1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
   border-radius: 8px;
 }
 
@@ -273,7 +288,7 @@
   max-width: 100%;
 }
 
-.calendarBox > :first-child {
+.calendarBox> :first-child {
   flex-shrink: 0;
   width: 32px !important;
   height: 32px !important;
@@ -317,7 +332,7 @@
 
 .locText {
   font-size: 0.95rem;
-  font-weight: 500;
+  font-weight: 400;
   color: white;
   line-height: 1.4;
   word-break: break-word;
@@ -364,7 +379,7 @@
 
 .timeText {
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 400;
   color: white;
   font-family: var(--font-family-display);
   letter-spacing: -0.01em;
@@ -387,13 +402,13 @@
   display: flex;
   align-items: center;
   margin-bottom: 1.5rem;
-  background: rgba(255, 255, 255, 0.01);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;
   padding: 1rem 1.5rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: none;
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
@@ -419,7 +434,7 @@
   height: 40px;
   border-radius: 50%;
   object-fit: cover;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: none;
 }
 
 .hostMeta {
@@ -430,12 +445,12 @@
 .hostedBy {
   font-size: 1rem;
   color: rgba(255, 255, 255, 0.8);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .hostName {
   font-size: 1rem;
-  font-weight: 700;
+  font-weight: 400;
   color: white;
 }
 
@@ -443,37 +458,38 @@
   font-size: 1rem;
   line-height: 1.6;
   color: rgba(255, 255, 255, 0.9);
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.5rem;
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.01);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;
   padding: 1.25rem 1.5rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: none;
 }
 
 .stickyJoinWrap {
-  position: absolute;
-  bottom: 1.5rem;
-  left: 0;
-  right: 0;
+  position: fixed;
+  bottom: 2rem;
+  left: calc(260px + (100vw - 260px) / 2);
+  transform: translateX(-50%);
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   gap: 12px;
   pointer-events: none;
-  z-index: 100;
+  z-index: 99999;
   background: transparent;
-  padding: 0 1.5rem;
-  max-width: 600px;
-  margin: 0 auto;
+  padding: 1.5rem 1.5rem 0;
+  width: auto;
+  max-width: 500px;
+  overflow: visible;
 }
 
 .chatIconBtn {
@@ -502,27 +518,70 @@
 }
 
 .joinBtn {
-  background: var(--color-primary);
-  color: white;
-  border: none;
+  background: rgba(18, 18, 22, 0.75);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 100px;
-  padding: 1rem 4rem;
-  font-size: 1.05rem;
-  font-weight: 700;
+  padding: 0 2.2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: white;
   cursor: pointer;
-  box-shadow: 0 8px 32px rgba(var(--color-primary-rgb), 0.4);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
-  min-width: 170px;
-  min-height: 52px;
+  min-width: 125px;
+  height: 54px;
+  min-height: 54px;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  overflow: visible !important;
+  position: relative;
+}
+
+.imInContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: visible;
+  padding-top: 4px;
+}
+
+.thumbsEmoji {
+  display: block;
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  margin-top: -20px;
+  margin-bottom: -4px;
+  transform: scale(1.1);
+  transform-origin: bottom center;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), filter 0.35s ease;
+  will-change: transform;
+  pointer-events: none;
+  user-select: none;
+  border: none;
+  outline: none;
+  background: none;
+  flex-shrink: 0;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.3));
+}
+
+.thumbsEmojiJoined {
+  transform: scale(1.4) translateY(-3px);
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.4));
 }
 
 .joinBtn:hover {
+  background: rgba(28, 28, 35, 0.85);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.22);
   transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(var(--color-primary-rgb), 0.5);
 }
 
 .btnSpinner {
@@ -579,14 +638,14 @@
 }
 
 .joinedBtn {
-  background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%) !important;
+  background: rgba(13, 148, 136, 0.3) !important;
+  backdrop-filter: blur(16px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(140%) !important;
+  border: 1px solid rgba(20, 184, 166, 0.45) !important;
   color: #ffffff !important;
-  box-shadow: 0 8px 25px rgba(20, 184, 166, 0.4) !important;
-  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 10px 30px rgba(13, 148, 136, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
   opacity: 1 !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .leaveBtn {
@@ -622,22 +681,40 @@
 
 /* ── Attendees Section ── */
 .attendeesSection {
-  margin-top: 0.5rem;
+  margin-top: 1rem;
   display: flex;
   flex-direction: column;
-  background: rgba(255, 255, 255, 0.01);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;
   padding: 1.5rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: none;
   margin-bottom: 2rem;
+}
+
+.desktopOnlyAttendees {
+  display: flex;
+}
+
+.mobileOnlyAttendees {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .desktopOnlyAttendees {
+    display: none !important;
+  }
+
+  .mobileOnlyAttendees {
+    display: flex !important;
+  }
 }
 
 .attendeesTitle {
   font-size: 1.15rem;
-  font-weight: 700;
+  font-weight: 500;
   color: white;
   margin: 0 0 1rem;
 }
@@ -670,7 +747,7 @@
 
 .attendeeName {
   font-size: 1rem;
-  font-weight: 700;
+  font-weight: 400;
   color: white;
 }
 
@@ -701,7 +778,7 @@
   .detailsCol {
     overflow-y: visible !important;
     height: auto !important;
-    padding-bottom: 8rem !important;
+    padding-bottom: 13rem !important;
   }
 
   .root {
@@ -743,7 +820,34 @@
   }
 
   .stickyJoinWrap {
-    bottom: 5rem !important;
-    padding-bottom: 1rem !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    bottom: 1.5rem !important;
+    padding-bottom: 0 !important;
+    width: calc(100% - 2rem) !important;
+    max-width: 400px !important;
+  }
+
+  .joinBtn {
+    min-height: 64px !important;
+    height: 64px !important;
+    padding: 0 2.8rem !important;
+    font-size: 1rem !important;
+    min-width: 150px !important;
+  }
+
+  .thumbsEmoji {
+    width: 46px !important;
+    height: 46px !important;
+    margin-top: -22px !important;
+    margin-bottom: -4px !important;
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+  }
+
+  .chatIconBtn {
+    width: 60px !important;
+    height: 60px !important;
   }
 }

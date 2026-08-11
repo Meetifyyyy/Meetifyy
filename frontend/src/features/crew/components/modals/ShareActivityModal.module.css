@@ -5,7 +5,7 @@
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  z-index: 1000;
+  z-index: 1000000;
   animation: fadeIn 0.2s ease;
 }
 
@@ -98,6 +98,8 @@
   flex-direction: column;
   gap: 8px;
   padding-right: 4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .listItem {
@@ -185,15 +187,7 @@
 
 /* Scrollbar styles */
 .list::-webkit-scrollbar {
-  width: 6px;
-}
-.list::-webkit-scrollbar-track {
-  background: transparent;
-}
-.list::-webkit-scrollbar-thumb {
-  background: var(--color-border, #ccc);
-  border-radius: 10px;
-}
-.list::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-light, #999);
+  display: none;
+  width: 0;
+  height: 0;
 }

@@ -60,6 +60,73 @@ function formatDateTime(activity) {
   return `${startDateFormatted} • ${startTimeStr}`;
 }
 
+/**
+ * Derives a deduplicated attendee list and count from the canonical sources:
+ * - `activity.participants` — the authoritative flat ID list (preserved by patchActivity on
+ *    every optimistic update, so it always reflects the correct attendee set)
+ * - `activity.members`     — optional rich objects used as a data LOOKUP for avatar/displayName
+ *
+ * Never skip participants based on members.length — members is sparse in list-cache items.
+ * Returns { list: Array<{id,avatar,displayName}>, count: number }.
+ */
+function deriveAttendees(activity, users) {
+  const rawParticipants = Array.isArray(activity?.participants) ? activity.participants : [];
+  const rawMembers      = Array.isArray(activity?.members)      ? activity.members      : [];
+
+  // Build a userId → member object lookup for rich avatar/name data
+  const memberMap = new Map();
+  rawMembers.forEach(m => {
+    if (!m) return;
+    const uid = String(m.userId || m.id || m.user?.id || '');
+    if (uid) memberMap.set(uid, m);
+  });
+
+  const list    = [];
+  const seenIds = new Set();
+
+  // ── 1. Host always leads ────────────────────────────────────────────────────
+  const hostId   = String(activity?.hostId || activity?.creatorId || activity?.creator?.id || activity?.host?.id || '');
+  const hostAvatar = activity?.hostAvatar || activity?.creator?.avatar || activity?.host?.avatar || activity?.user?.avatar;
+  const hostName   = activity?.hostName   || activity?.creator?.displayName || activity?.host?.displayName || activity?.user?.displayName || 'Host';
+  if (hostId) {
+    list.push({ id: hostId, avatar: hostAvatar, displayName: hostName });
+    seenIds.add(hostId);
+  }
+
+  // ── 2. All participants (canonical) — enrich from members map or user store ─
+  rawParticipants.forEach(p => {
+    const uid = String(typeof p === 'object' ? (p.id || p.userId || p.user?.id || '') : (p || ''));
+    if (!uid || seenIds.has(uid)) return;
+
+    const m         = memberMap.get(uid);
+    const storeUser = users ? (users[uid] || Object.values(users).find(u => String(u?.id) === uid)) : null;
+
+    list.push({
+      id: uid,
+      avatar:      storeUser?.avatar || storeUser?.profileImage || m?.user?.avatar || m?.avatar || (typeof p === 'object' ? p.avatar : null),
+      displayName: storeUser?.displayName || storeUser?.name || storeUser?.username || m?.user?.displayName || m?.displayName || (typeof p === 'object' ? p.displayName : 'Participant'),
+    });
+    seenIds.add(uid);
+  });
+
+  // ── 3. Any members not already in participants (detail-cache-only entries) ──
+  rawMembers
+    .filter(m => m && (!m.status || m.status === 'MEMBER' || m.status === 'ACCEPTED'))
+    .forEach(m => {
+      const uid = String(m.userId || m.id || m.user?.id || '');
+      if (!uid || seenIds.has(uid)) return;
+      const storeUser = users ? (users[uid] || Object.values(users).find(u => String(u?.id) === uid)) : null;
+      list.push({
+        id: uid,
+        avatar:      storeUser?.avatar || m.user?.avatar || m.avatar,
+        displayName: storeUser?.displayName || m.user?.displayName || m.displayName || 'Participant',
+      });
+      seenIds.add(uid);
+    });
+
+  return { list, count: Math.max(list.length, 1) };
+}
+
 export default function CrewCard({ activity, onClick }) {
   const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
@@ -180,68 +247,37 @@ export default function CrewCard({ activity, onClick }) {
 
         <div className={styles.bottomRow}>
           <div className={styles.goingLine} style={{ cursor: 'default' }}>
-            <div className={styles.goingAvatarsGroup}>
-              {(() => {
-                const seenIds = new Set();
-                const displayUsers = [];
-                
-                // Add host/creator if present
-                const hAv = activity.hostAvatar || activity.creator?.avatar || activity.host?.avatar || activity.user?.avatar;
-                const hName = activity.hostName || activity.creator?.displayName || activity.host?.displayName || activity.user?.displayName;
-                const hId = activity.hostId || activity.creatorId || activity.creator?.id || 'host';
-                
-                if (hAv || hName || activity.hostId || activity.creatorId) {
-                  displayUsers.push({
-                    id: hId,
-                    avatar: hAv,
-                    displayName: hName
-                  });
-                  seenIds.add(hId);
-                }
-                
-                // Add participants from store users or _membersData or members
-                const participantIds = activity.participants || (activity.members || []).map(m => typeof m === 'object' ? (m.userId || m.id) : m);
-                const memberObjs = activity._membersData || activity.members || [];
-                
-                participantIds.forEach(id => {
-                  const cleanId = typeof id === 'object' ? id.id || id.userId : id;
-                  if (!cleanId || seenIds.has(cleanId)) return;
-                  const uObj = Object.values(users || {}).find(u => u.id === cleanId) || memberObjs.find(m => m?.id === cleanId || m?.userId === cleanId || m?.user?.id === cleanId);
-                  const userRef = uObj?.user || uObj;
-                  if (userRef) {
-                    displayUsers.push({
-                      id: cleanId,
-                      avatar: userRef?.avatar || userRef?.profileImage,
-                      displayName: userRef?.displayName || userRef?.name || userRef?.username
-                    });
-                    seenIds.add(cleanId);
-                  }
-                });
-
-                if (displayUsers.length === 0) {
-                  displayUsers.push({ id: 'default-fallback', avatar: null, displayName: 'Participant' });
-                }
-
-                const finalAvatars = displayUsers.slice(0, 5);
-
-                return finalAvatars.map((u, i) => (
-                  <div 
-                    key={u.id || i} 
-                    className={styles.goingAvatarWrap} 
-                    style={{ zIndex: 5 - i }}
-                  >
-                    {u.avatar && isImageUrl(u.avatar) ? (
-                      <img src={getProcessedAvatarUrl(u.avatar)} alt={u.displayName || "Participant"} className={styles.goingAvatarImg} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-                    ) : (
-                      <DefaultAvatar />
-                    )}
+            {/* Single derivation — count and avatars always come from the same list */}
+            {(() => {
+              const { list, count } = deriveAttendees(activity, users);
+              const visibleAvatars = list.slice(0, 5);
+              const label = activity.status === 'ENDED' || activity.status === 'CANCELLED' ? 'participated' : 'going';
+              return (
+                <>
+                  <div className={styles.goingAvatarsGroup}>
+                    {visibleAvatars.map((u, i) => (
+                      <div
+                        key={u.id || i}
+                        className={styles.goingAvatarWrap}
+                        style={{ zIndex: 5 - i }}
+                      >
+                        {u.avatar && isImageUrl(u.avatar) ? (
+                          <img
+                            src={getProcessedAvatarUrl(u.avatar)}
+                            alt={u.displayName || 'Participant'}
+                            className={styles.goingAvatarImg}
+                            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}
+                          />
+                        ) : (
+                          <DefaultAvatar />
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ));
-              })()}
-            </div>
-            <span className={styles.goingText}>
-              {activity.participants?.length || 1} {activity.status === 'ENDED' || activity.status === 'CANCELLED' ? 'participated' : 'going'}
-            </span>
+                  <span className={styles.goingText}>{count} {label}</span>
+                </>
+              );
+            })()}
           </div>
           
           <div className={styles.actionsGroup}>

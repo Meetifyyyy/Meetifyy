@@ -16,7 +16,6 @@ export default function GroupEditPage({
   isAdmin,
   canEditGroupInfo,
   isGroup,
-  isEventGroup,
   fileInputRef,
   showImageSearch,
   setShowImageSearch,

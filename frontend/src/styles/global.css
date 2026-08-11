@@ -300,9 +300,9 @@ nav a.active {
 
 .custom-toast {
   position: fixed;
-  bottom: 2rem;
+  top: 1.25rem;
   left: 50%;
-  transform: translateX(-50%) translateY(20px);
+  transform: translateX(-50%) translateY(-20px);
   background: var(--color-text-main);
   color: var(--color-text-inverse);
   padding: 0.75rem 1.5rem;
@@ -313,14 +313,13 @@ nav a.active {
   box-shadow: var(--shadow-md);
   opacity: 0;
   pointer-events: none;
-  z-index: 9999;
+  z-index: 999999;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @media (max-width: 768px) {
   .custom-toast {
-    bottom: calc(52px + 1rem);
-    /* 52px is the height of BottomNav.module.css bottomNav */
+    top: 1rem;
   }
 }
 

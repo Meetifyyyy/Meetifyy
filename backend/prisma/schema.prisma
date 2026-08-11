@@ -494,6 +494,7 @@ model CrewActivityMember {
   @@id([userId, activityId])
   @@index([userId])
   @@index([activityId])
+  @@index([activityId, status])
 }
 
 model ActivityDiscussionMessage {

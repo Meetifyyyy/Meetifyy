@@ -12,6 +12,7 @@ import CrewCard from '../components/cards/CrewCard';
 import CrewCardSkeleton from '../components/cards/CrewCardSkeleton';
 import CreateActivityCard from '../components/cards/CreateActivityCard';
 import CrewRightPanel from '../components/layout/CrewRightPanel';
+import { mapActivity } from '@shared/utils/mapActivity';
 import { filterActivities } from '@features/crew/utils/crewUtils';
 import styles from './FindYourCrewPage.module.css';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
@@ -32,27 +33,15 @@ export default function FindYourCrewPage() {
   const { savedActivitiesData } = useSavedActivitiesQuery();
   const { myActivitiesData } = useMyActivitiesQuery();
 
-  const mapActivity = (a) => {
-    if (!a || typeof a !== 'object') return null;
-    return {
-      ...a,
-      hostId: a.creatorId,
-      hostName: a.creator?.displayName || a.members?.find(m => m?.userId === a.creatorId)?.user?.displayName || 'Host',
-      hostUsername: a.creator?.username || a.members?.find(m => m?.userId === a.creatorId)?.user?.username || 'host',
-      hostAvatar: a.creator?.avatar || a.members?.find(m => m?.userId === a.creatorId)?.user?.avatar || '',
-      participants: a.members?.filter(m => m?.status === 'MEMBER').map(m => m?.userId).filter(Boolean) || [],
-      pendingRequests: a.members?.filter(m => m?.status === 'PENDING').map(m => m?.userId).filter(Boolean) || [],
-      slotsFilled: a.members?.filter(m => m?.status === 'MEMBER').length || 1,
-      slotsNeeded: a.maxMembers || 999,
-      _membersData: a.members?.map(m => m?.user).filter(Boolean) || [],
-    };
-  };
-
   const crewActivities = useMemo(() => (rawActivities || []).map(mapActivity).filter(Boolean), [rawActivities]);
 
   const allCombinedActivities = useMemo(() => {
+    // Secondary lists (saved, my-activities) spread FIRST so the primary
+    // infinite-query cache — which receives every optimistic patch from
+    // patchActivity — always wins for the same activity ID.
+    // Previously, secondary lists spread last, clobbering optimistic updates.
     const map = new Map();
-    [...(rawActivities || []), ...(rawCampusActivities || []), ...(savedActivitiesData || []), ...(myActivitiesData || [])].forEach(a => {
+    [...(savedActivitiesData || []), ...(myActivitiesData || []), ...(rawCampusActivities || []), ...(rawActivities || [])].forEach(a => {
       if (a && a.id) map.set(a.id, a);
     });
     return Array.from(map.values()).map(mapActivity).filter(Boolean);

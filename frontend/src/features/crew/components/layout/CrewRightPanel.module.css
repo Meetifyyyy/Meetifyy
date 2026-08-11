@@ -315,12 +315,11 @@
   justify-content: space-between;
   width: 100%;
   cursor: pointer;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
-  transition: box-shadow 0.2s ease;
+  box-shadow: none;
 }
 
 .createCardBtn:hover {
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+  box-shadow: none;
 }
 
 .createCardBtnIcon {
@@ -381,4 +380,28 @@
   width: 16px;
   margin-right: 14px;
   transform: translateX(0);
+}
+
+@media (max-width: 768px) {
+  .createCardBtn,
+  .createCardBtnIcon,
+  .createCardBtnText,
+  .createCardBtnArrow {
+    transition: none !important;
+  }
+
+  .createCardBtn:hover .createCardBtnIcon {
+    transform: none !important;
+  }
+
+  .createCardBtn:hover .createCardBtnText {
+    margin-left: 12px !important;
+  }
+
+  .createCardBtn:hover .createCardBtnArrow {
+    opacity: 0 !important;
+    width: 0 !important;
+    margin-right: 12px !important;
+    transform: translateX(-12px) !important;
+  }
 }

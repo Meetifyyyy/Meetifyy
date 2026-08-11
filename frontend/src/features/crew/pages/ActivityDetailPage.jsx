@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { activitiesApi, usersApi } from '@shared/api/apiClient';
@@ -13,12 +14,13 @@ import ActivityJoinedModal from '../components/modals/ActivityJoinedModal';
 import InviteFriendsModal from '@shared/components/modals/InviteFriendsModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ActivityDetailPage.module.css';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, MessageCircle } from 'lucide-react';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import { useJoinActivity } from '../hooks/useJoinActivity';
 import { useActivityById } from '@shared/hooks/useCrew';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
-import { ActivityDiscussion, ActivityDiscussionFloating } from '../components/ActivityDiscussion';
+import { ActivityDiscussion } from '../components/ActivityDiscussion';
+import ActivityDetailSkeleton from '../components/ActivityDetailSkeleton';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 const DEFAULT_COVERS = [
@@ -98,7 +100,9 @@ export default function ActivityDetailPage() {
   const { data: rawActivity, isLoading: isActivityLoading } = useActivityById(cleanId);
 
   const activity = useMemo(() => {
-    // If we have state from navigation, use it initially
+    // rawActivity is the authoritative server data (patched optimistically by useJoinActivity).
+    // location.state?.activity is only used as visual scaffolding (title, cover, etc.) while
+    // the network request is in-flight — it MUST NOT drive join-sensitive state.
     const baseAct = rawActivity || location.state?.activity;
     if (!baseAct) return null;
 
@@ -108,9 +112,9 @@ export default function ActivityDetailPage() {
     const hostUsername = hostUser?.username || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.username || 'host';
     const hostAvatar = hostUser?.avatar || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.avatar || '';
 
-    // Members with status MEMBER
+    // Members with status MEMBER (rich objects for the attendee list)
     const memberObjs = baseAct.members?.filter(m => m.status === 'MEMBER').map(m => m.user).filter(Boolean) || [];
-    
+
     // Ensure host is included in _membersData if missing
     const allMembersData = [...memberObjs];
     if (hostUser && !allMembersData.some(u => u.id === hostUser.id)) {
@@ -124,10 +128,34 @@ export default function ActivityDetailPage() {
       });
     }
 
+    // ── Participant IDs: union of members array AND the preserved participants field ──
+    // patchActivity preserves baseAct.participants on every optimistic update so it always
+    // reflects the full attendee set even when members is sparse (list-cache shape).
+    const memberIds = baseAct.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || [];
+    const preservedIds = (Array.isArray(baseAct.participants) ? baseAct.participants : [])
+      .map(p => String(typeof p === 'object' ? (p.id || p.userId || p.user?.id || '') : (p || '')))
+      .filter(Boolean);
     const participantIds = Array.from(new Set([
-      ...(baseAct.members?.filter(m => m.status === 'MEMBER').map(m => m.userId) || []),
-      ...(hostId ? [hostId] : [])
+      ...(hostId ? [hostId] : []),
+      ...memberIds,
+      ...preservedIds,
     ]));
+
+    // ── Build _membersData from participantIds so it always reflects optimistic joins ──
+    // The members array may be sparse (list-cache only has take:5). Build the display
+    // list from participantIds so any user added optimistically via patchActivity appears
+    // immediately, even if their server-side member row isn't loaded yet.
+    const memberUserMap = new Map();
+    allMembersData.forEach(u => { if (u?.id) memberUserMap.set(String(u.id), u); });
+
+    const enrichedMembersData = participantIds.map(pid => {
+      const pidStr = String(pid);
+      const known = memberUserMap.get(pidStr);
+      if (known) return known;
+      // Emit a minimal placeholder for IDs we don't have rich user data for yet.
+      // The count will be correct immediately; the name/avatar fills in on next refetch.
+      return { id: pidStr, displayName: 'Participant', username: 'participant', avatar: null };
+    });
 
     const startRaw = baseAct.startDate || baseAct.date || baseAct.createdAt;
     const startD = startRaw ? new Date(startRaw) : null;
@@ -147,9 +175,10 @@ export default function ActivityDetailPage() {
       hostAvatar,
       participants: participantIds,
       pendingRequests: baseAct.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
+      // slotsFilled = participants.length — single source of truth for count
       slotsFilled: participantIds.length,
       slotsNeeded: baseAct.maxMembers || 999,
-      _membersData: allMembersData
+      _membersData: enrichedMembersData
     };
   }, [rawActivity, location.state]);
 
@@ -238,7 +267,6 @@ export default function ActivityDetailPage() {
     };
   }, [activity?.coverImage]);
 
-  const [hasJoined, setHasJoined] = useState(false);
   const [hasRequested, setHasRequested] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
@@ -252,15 +280,9 @@ export default function ActivityDetailPage() {
     setShowHeaderTitle(prev => prev !== scrolled ? scrolled : prev);
   };
 
-  const [isActionLoading, setIsActionLoading] = useState(false);
 
   if (isActivityLoading && !activity) {
-    return (
-      <div className={styles.notFound} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <div style={{ width: '28px', height: '28px', border: '3px solid rgba(255,255,255,0.15)', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '12px' }} />
-        <span style={{ fontSize: '0.88rem', opacity: 0.7 }}>Loading activity...</span>
-      </div>
-    );
+    return <ActivityDetailSkeleton />;
   }
 
   if (!activity) {
@@ -282,8 +304,15 @@ export default function ActivityDetailPage() {
   } = activity;
 
   const entityKey = `joinActivity:${activity.id}`;
-  const isJoined = toggleRegistry.getLatestIntent(entityKey, activity.participants?.includes(currentUser?.id));
-  const wasOriginallyJoined = activity.participants?.includes(currentUser?.id);
+  // isJoined is read EXCLUSIVELY from rawActivity?.isJoined — the authoritative server field
+  // patched instantly by applyOptimistic on every join/leave click.
+  // We never fall back to activity.participants here because that may be built from the stale
+  // location.state?.activity snapshot, which causes a "joined → not joined" flicker after leave.
+  // When rawActivity hasn't loaded yet the default is false; it updates the moment the server
+  // responds (or immediately on optimistic patch).
+  const cacheIsJoined = rawActivity?.isJoined ?? false;
+  const isJoined = toggleRegistry.getLatestIntent(entityKey, cacheIsJoined);
+  const wasOriginallyJoined = cacheIsJoined;
   const slotsFilledAdjusted = slotsFilled + (isJoined && !wasOriginallyJoined ? 1 : (!isJoined && wasOriginallyJoined ? -1 : 0));
   const spotsLeft = slotsNeeded - slotsFilledAdjusted;
   const isFull = spotsLeft <= 0;
@@ -323,14 +352,15 @@ export default function ActivityDetailPage() {
     }
   }
 
-  const handleJoin = () => {
-    toggleJoin({ activityId: activity.id, isJoined: true, currentUser });
+  const handleToggleJoin = () => {
+    if (isHost) return;
+    // Always derive next intent from registry to handle rapid clicks correctly
+    const nextIntent = toggleRegistry.getNextToggleIntent(entityKey, isJoined);
+    toggleJoin({ activityId: activity.id, isJoined: nextIntent, currentUser });
   };
 
-  const handleLeave = () => {
-    if (isHost) return;
-    toggleJoin({ activityId: activity.id, isJoined: false, currentUser });
-  };
+  const handleJoin = handleToggleJoin;
+  const handleLeave = handleToggleJoin;
 
   const handleEndActivity = () => {
     setShowEndConfirm(true);
@@ -430,6 +460,61 @@ export default function ActivityDetailPage() {
                   }}
                 />
               </div>
+
+              <div className={`${styles.attendeesSection} ${styles.desktopOnlyAttendees}`}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                  <h3 className={styles.attendeesTitle} style={{ margin: 0 }}>Attendees ({activity.slotsFilled || activity.participants?.length || 0})</h3>
+                  {isHost && !hasStarted && !isCancelled && !hasEnded && (
+                    <button
+                      type="button"
+                      onClick={() => setShowInviteModal(true)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        padding: '0.4rem 0.85rem',
+                        borderRadius: '20px',
+                        background: 'rgba(99, 102, 241, 0.15)',
+                        border: '1px solid rgba(99, 102, 241, 0.35)',
+                        color: '#818cf8',
+                        fontWeight: 600,
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <UserPlus size={14} />
+                      Invite Friends
+                    </button>
+                  )}
+                </div>
+
+                <div className={styles.attendeesList}>
+                  {/* _membersData is always ordered: host first, then other members.
+                      Both are patched atomically by patchActivity on join/leave. */}
+                  {activity._membersData?.map((pUser, idx) => {
+                    if (!pUser) return null;
+                    const isThisHost = pUser.id === activity.hostId;
+                    return (
+                      <div
+                        key={pUser.id}
+                        className={styles.attendeeRow}
+                        onClick={() => navigate(`/profile/${pUser.username}`)}
+                      >
+                        <Avatar
+                          src={pUser.avatar}
+                          name={pUser.displayName || pUser.username}
+                          size="44px"
+                          className={styles.attendeeAvatar}
+                        />
+                        <div className={styles.attendeeMeta}>
+                          <span className={styles.attendeeName}>{pUser.displayName || pUser.username}</span>
+                          <span className={styles.attendeeRole}>@{pUser.username}{isThisHost ? ' (Host)' : ''}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             {/* Right: Details */}
@@ -467,7 +552,7 @@ export default function ActivityDetailPage() {
                   <Avatar
                     src={hostAvatar}
                     name={hostName}
-                    size="40px"
+                    size="44px"
                   />
                   <div className={styles.hostMeta}>
                     <span className={styles.hostedBy}>Hosted by</span>
@@ -480,10 +565,10 @@ export default function ActivityDetailPage() {
                 <p className={styles.description}>{description}</p>
               )}
 
-              {/* Attendees Section */}
-              <div className={styles.attendeesSection}>
+              {/* Mobile Attendees Section */}
+              <div className={`${styles.attendeesSection} ${styles.mobileOnlyAttendees}`}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                  <h3 className={styles.attendeesTitle} style={{ margin: 0 }}>Attendees ({activity.participants?.length || 0})</h3>
+                  <h3 className={styles.attendeesTitle} style={{ margin: 0 }}>Attendees ({activity.slotsFilled || activity.participants?.length || 0})</h3>
                   {isHost && !hasStarted && !isCancelled && !hasEnded && (
                     <button
                       type="button"
@@ -507,30 +592,14 @@ export default function ActivityDetailPage() {
                     </button>
                   )}
                 </div>
-                
+
                 <div className={styles.attendeesList}>
-                  {activity.participants?.includes(activity.hostId) && (
-                    <div 
-                      className={styles.attendeeRow}
-                      onClick={() => navigate(`/profile/${activity.hostUsername}`)}
-                    >
-                      <Avatar
-                        src={hostAvatar}
-                        name={hostName}
-                        size="44px"
-                        className={styles.attendeeAvatar}
-                      />
-                      <div className={styles.attendeeMeta}>
-                        <span className={styles.attendeeName}>{hostName}</span>
-                        <span className={styles.attendeeRole}>@{activity.hostUsername} (Host)</span>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {activity._membersData?.filter(u => u && u.id !== activity.hostId).map(pUser => {
+                  {activity._membersData?.map((pUser, idx) => {
+                    if (!pUser) return null;
+                    const isThisHost = pUser.id === activity.hostId;
                     return (
-                      <div 
-                        key={pUser.id} 
+                      <div
+                        key={pUser.id}
                         className={styles.attendeeRow}
                         onClick={() => navigate(`/profile/${pUser.username}`)}
                       >
@@ -542,7 +611,7 @@ export default function ActivityDetailPage() {
                         />
                         <div className={styles.attendeeMeta}>
                           <span className={styles.attendeeName}>{pUser.displayName || pUser.username}</span>
-                          <span className={styles.attendeeRole}>@{pUser.username}</span>
+                          <span className={styles.attendeeRole}>@{pUser.username}{isThisHost ? ' (Host)' : ''}</span>
                         </div>
                       </div>
                     );
@@ -550,82 +619,90 @@ export default function ActivityDetailPage() {
                 </div>
               </div>
 
-              {/* Mobile: compact discussion box directly below Attendees */}
-              {isMobile && (
-                <ActivityDiscussion variant="inline" activityId={activity.id} />
-              )}
+              {/* Permanent Discussion Panel */}
+              <ActivityDiscussion variant="inline" activityId={activity.id} />
             </div>
           </div>
         </div>
 
-        {/* Desktop: floating discussion window launcher */}
-        {!isMobile && <ActivityDiscussionFloating activityId={activity.id} />}
+
 
         {/* Sticky Action Bar */}
-        <div className={styles.stickyJoinWrap}>
-          {isCancelled ? (
-            <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.4)', flex: 1 }}>
-              Cancelled
-            </button>
-          ) : hasEnded ? (
-            <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ flex: 1 }}>
-              Ended
-            </button>
-          ) : hasStarted ? (
-            <button className={`${styles.joinBtn} ${styles.startedBtn}`} disabled>
-              Already started!
-            </button>
-          ) : isHost ? (
-            <div style={{ display: 'flex', gap: '0.75rem', flex: 1, minWidth: 0 }}>
-              <button className={`${styles.joinBtn} ${styles.joinedBtn}`} disabled style={{ flex: 1, cursor: 'default', padding: '0.8rem 1rem', minWidth: 0 }}>
-                Hosted by you
+        {typeof document !== 'undefined' && createPortal(
+          <div className={styles.stickyJoinWrap}>
+            {isCancelled ? (
+              <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.4)', flex: 1 }}>
+                Cancelled
               </button>
-              {!hasStarted && (
-                <button
-                  type="button"
-                  className={styles.joinBtn}
-                  onClick={() => setShowInviteModal(true)}
-                  style={{
-                    flex: 1,
-                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '0.8rem 1rem',
-                    minWidth: 0
-                  }}
-                >
-                  <UserPlus size={16} style={{ marginRight: '0.4rem', flexShrink: 0 }} />
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Invite Friends</span>
+            ) : hasEnded ? (
+              <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ flex: 1 }}>
+                Ended
+              </button>
+            ) : hasStarted ? (
+              <button className={`${styles.joinBtn} ${styles.startedBtn}`} disabled>
+                Already started!
+              </button>
+            ) : isHost ? (
+              <div style={{ display: 'flex', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+                <button className={`${styles.joinBtn} ${styles.joinedBtn}`} disabled style={{ flex: 1, cursor: 'default', padding: '0.8rem 1rem', minWidth: 0 }}>
+                  Hosted by you
                 </button>
-              )}
-            </div>
-          ) : isJoined ? (
-            <button 
-              className={`${styles.joinBtn} ${styles.joinedBtn}`} 
-              onClick={handleLeave}
-              disabled={isActionLoading}
-            >
-              {isActionLoading ? <span className={styles.btnSpinner} /> : 'Joined'}
-            </button>
-          ) : activity?.canJoin === false && activity?.joinRestrictionCode === 'COLLEGE_RESTRICTED' ? (
-            <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ background: 'rgba(239, 68, 68, 0.12)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)' }} title={activity.joinRestrictionReason}>
-              Restricted to College
-            </button>
-          ) : activity?.canJoin === false && activity?.joinRestrictionCode === 'PRIVATE' ? (
-            <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ background: 'rgba(107, 114, 128, 0.12)', color: '#9ca3af', border: '1px solid rgba(107, 114, 128, 0.3)' }} title={activity.joinRestrictionReason}>
-              Invitation Only
-            </button>
-          ) : (
-            <button 
-              className={styles.joinBtn} 
-              onClick={handleJoin} 
-              disabled={isFull || isActionLoading || activity?.canJoin === false}
-            >
-              {isActionLoading ? <span className={styles.btnSpinner} /> : (isFull ? 'Activity Full' : 'Join Activity')}
-            </button>
-          )}
-
-        </div>
+                {!hasStarted && (
+                  <button
+                    type="button"
+                    className={styles.joinBtn}
+                    onClick={() => setShowInviteModal(true)}
+                    style={{
+                      flex: 1,
+                      background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                      color: '#fff',
+                      border: 'none',
+                      padding: '0.8rem 1rem',
+                      minWidth: 0
+                    }}
+                  >
+                    <UserPlus size={16} style={{ marginRight: '0.4rem', flexShrink: 0 }} />
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Invite Friends</span>
+                  </button>
+                )}
+              </div>
+            ) : isJoined ? (
+              <button 
+                className={`${styles.joinBtn} ${styles.joinedBtn}`} 
+                onClick={handleLeave}
+              >
+                <span className={styles.imInContent}>
+                  <img src="/thumbs_up_3d.png" alt="" className={`${styles.thumbsEmoji} ${styles.thumbsEmojiJoined}`} />
+                  <span>I'm in</span>
+                </span>
+              </button>
+            ) : activity?.canJoin === false && activity?.joinRestrictionCode === 'COLLEGE_RESTRICTED' ? (
+              <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ background: 'rgba(239, 68, 68, 0.12)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)' }} title={activity.joinRestrictionReason}>
+                Restricted to College
+              </button>
+            ) : activity?.canJoin === false && activity?.joinRestrictionCode === 'PRIVATE' ? (
+              <button className={`${styles.joinBtn} ${styles.endedBtn}`} disabled style={{ background: 'rgba(107, 114, 128, 0.12)', color: '#9ca3af', border: '1px solid rgba(107, 114, 128, 0.3)' }} title={activity.joinRestrictionReason}>
+                Invitation Only
+              </button>
+            ) : (
+              <button 
+                className={styles.joinBtn} 
+                onClick={handleJoin} 
+                disabled={isFull || activity?.canJoin === false}
+              >
+                {isFull ? (
+                  'Activity Full'
+                ) : (
+                  <span className={styles.imInContent}>
+                    <img src="/thumbs_up_3d.png" alt="" className={`${styles.thumbsEmoji} ${isJoined ? styles.thumbsEmojiJoined : ''}`} />
+                    <span>I'm in</span>
+                  </span>
+                )}
+              </button>
+            )}
+          </div>,
+          document.body
+        )}
 
         {/* Modals */}
         <ShareActivityModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} activity={activity} />

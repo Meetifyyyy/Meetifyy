@@ -151,23 +151,36 @@ export class ActivitiesService implements OnModuleInit {
 
   async getAllActivities(userId?: string, limit = 20, cursor?: string) {
     const startTime = performance.now();
-    
-    // Tier 1: Check user-specific cache (Instant HIT)
+
+    // ── Tier 1: user-specific cache ──────────────────────────────────────────
     const userCacheKey = `activities:feed:${userId || 'anon'}:${limit}:${cursor || 'none'}`;
+    const baseCacheKey = `activities:feed:base:${limit}:${cursor || 'none'}`;
     let tCache = 0;
+
     if (this.redis) {
       const redisStart = performance.now();
       try {
-        const cached = await this.redis.get(userCacheKey);
+        // Fetch both user-specific and base cache in ONE round-trip
+        const [userCached, baseCached] = await this.redis.mget(userCacheKey, baseCacheKey);
         tCache = performance.now() - redisStart;
-        if (cached) {
-          const totalMs = performance.now() - startTime;
-          this.logger.log(`[STAGE_TIMINGS] GET /api/activities (HIT) - Total: ${totalMs.toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms`);
-          return JSON.parse(cached);
+
+        if (userCached) {
+          this.logger.log(`[STAGE_TIMINGS] GET /api/activities (USER_HIT) - Total: ${(performance.now() - startTime).toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms`);
+          return JSON.parse(userCached);
         }
-      } catch {}
+
+        // If base cache exists and user has no blocks (we assume no-blocks for anon/fast path),
+        // we'll check blocks in parallel below — store baseCached for later.
+        if (baseCached) {
+          // Still need to check blocks before we can use it — fall through with a hint
+          (this as any)._cachedBase = baseCached;
+        }
+      } catch {
+        tCache = performance.now() - redisStart;
+      }
     }
 
+    // ── PreFetch: blocks + cursor resolution in ONE parallel round-trip ───────
     const preFetchStart = performance.now();
     const [excludedUserIds, cursorDate] = await Promise.all([
       userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([]),
@@ -175,31 +188,38 @@ export class ActivitiesService implements OnModuleInit {
     ]);
     const tPreFetch = performance.now() - preFetchStart;
 
-    // Tier 2: Check shared base feed cache across all users when no user blocks
-    const baseCacheKey = `activities:feed:base:${limit}:${cursorDate ? cursorDate.toISOString() : 'none'}`;
+    // ── Tier 2: base feed cache (shared across users with no blocks) ──────────
     let baseFeed: { activities: any[]; nextCursor: string | undefined } | null = null;
-
     if (excludedUserIds.length === 0 && this.redis) {
-      try {
-        const cachedBase = await this.redis.get(baseCacheKey);
-        if (cachedBase) {
-          baseFeed = JSON.parse(cachedBase);
-        }
-      } catch {}
+      const hint = (this as any)._cachedBase;
+      delete (this as any)._cachedBase;
+      if (hint) {
+        try { baseFeed = JSON.parse(hint); } catch {}
+      } else {
+        try {
+          // Key changed: use resolved cursorDate for correctness
+          const resolvedBaseKey = `activities:feed:base:${limit}:${cursorDate ? cursorDate.toISOString() : 'none'}`;
+          const cachedBase = await this.redis.get(resolvedBaseKey);
+          if (cachedBase) baseFeed = JSON.parse(cachedBase);
+        } catch {}
+      }
+    } else {
+      delete (this as any)._cachedBase;
     }
 
+    // ── Main DB fetch (skipped on base cache HIT) ─────────────────────────────
     const dbStart = performance.now();
     let activities: any[];
-    let nextCursor: string | undefined = undefined;
+    let nextCursor: string | undefined;
 
     if (baseFeed) {
       activities = baseFeed.activities;
       nextCursor = baseFeed.nextCursor;
     } else {
-      await this.autoExpireActivities();
-      const now = new Date();
-      const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+      // Auto-expire is a background concern — fire it async, never block the request
+      setImmediate(() => { this.autoExpireActivities().catch(() => {}); });
 
+      const now = new Date();
       const whereClause: any = {
         deletedAt: null,
         status: 'OPEN',
@@ -209,6 +229,8 @@ export class ActivitiesService implements OnModuleInit {
         ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
       };
 
+      // Single Prisma query — Prisma resolves `members { user }` with a
+      // batched sub-query (not per-row N+1) when `take` is set.
       const fetchedActivities = await this.prisma.crewActivity.findMany({
         where: whereClause,
         take: limit + 1,
@@ -236,19 +258,14 @@ export class ActivitiesService implements OnModuleInit {
           visibility: true,
           _count: { select: { members: true } },
           members: {
+            where: { status: 'MEMBER' },
             take: 5,
+            orderBy: { joinedAt: 'asc' },
             select: {
               userId: true,
-              activityId: true,
-              joinedAt: true,
               status: true,
               user: {
-                select: {
-                  id: true,
-                  username: true,
-                  displayName: true,
-                  avatar: true,
-                },
+                select: { id: true, username: true, displayName: true, avatar: true },
               },
             },
           },
@@ -257,16 +274,16 @@ export class ActivitiesService implements OnModuleInit {
       });
 
       if (fetchedActivities.length > limit) {
-        const next = fetchedActivities.pop();
-        if (next?.createdAt && next?.id) {
-          nextCursor = `${next.createdAt.toISOString()}|${next.id}`;
-        }
+        const next = fetchedActivities.pop()!;
+        nextCursor = `${next.createdAt.toISOString()}|${next.id}`;
       }
       activities = fetchedActivities;
 
+      // Cache base feed in background
       if (excludedUserIds.length === 0 && this.redis) {
-        this.redis.setex(baseCacheKey, 60, JSON.stringify({ activities, nextCursor })).catch(() => {});
-        this.registerFeedCacheKey(baseCacheKey);
+        const resolvedBaseKey = `activities:feed:base:${limit}:${cursorDate ? cursorDate.toISOString() : 'none'}`;
+        this.redis.setex(resolvedBaseKey, 60, JSON.stringify({ activities, nextCursor })).catch(() => {});
+        this.registerFeedCacheKey(resolvedBaseKey);
       }
     }
     const tMainDb = performance.now() - dbStart;
@@ -282,7 +299,7 @@ export class ActivitiesService implements OnModuleInit {
       return emptyRes;
     }
 
-    // Scoped membership query: fetch ONLY for the activities returned on this page
+    // ── Scoped membership query — PARALLEL with nothing (already separated) ───
     const memberStart = performance.now();
     const activityIds = activities.map(a => a.id);
     const joinedMemberships = userId && activityIds.length > 0
@@ -299,26 +316,21 @@ export class ActivitiesService implements OnModuleInit {
     const response = {
       activities: activities.map(a => {
         const myStatus = membershipMap.get(a.id);
-        return {
-          ...a,
-          isJoined: myStatus === 'MEMBER',
-          myStatus: myStatus || null,
-        };
+        return { ...a, isJoined: myStatus === 'MEMBER', myStatus: myStatus || null };
       }),
       nextCursor,
     };
 
+    // Cache user-specific response (includes isJoined flags)
     if (this.redis) {
       this.redis.setex(userCacheKey, 60, JSON.stringify(response)).catch(() => {});
       this.registerFeedCacheKey(userCacheKey);
     }
     const tLogic = performance.now() - logicStart;
-
     const totalMs = performance.now() - startTime;
     this.logger.log(
-      `[STAGE_TIMINGS] GET /api/activities - Total: ${totalMs.toFixed(2)}ms | RedisLookup: ${tCache.toFixed(2)}ms | PreFetch: ${tPreFetch.toFixed(2)}ms | BaseCache: ${baseFeed ? 'HIT' : 'MISS'} | MainDB: ${tMainDb.toFixed(2)}ms | MemberDB: ${tMemberDb.toFixed(2)}ms | Logic: ${tLogic.toFixed(2)}ms`
+      `[STAGE_TIMINGS] GET /api/activities - Total: ${totalMs.toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms | PreFetch: ${tPreFetch.toFixed(2)}ms | BaseCache: ${baseFeed ? 'HIT' : 'MISS'} | MainDB: ${tMainDb.toFixed(2)}ms | MemberDB: ${tMemberDb.toFixed(2)}ms | Logic: ${tLogic.toFixed(2)}ms`
     );
-
     return response;
   }
 
@@ -326,8 +338,6 @@ export class ActivitiesService implements OnModuleInit {
     if (!userId) return { activities: [], nextCursor: undefined };
 
     const searchTerm = (search || '').trim();
-    // Skip the cache for searches — caching every query string would bloat Redis
-    // and search results are cheap (scoped to one college).
     const useCache = !searchTerm;
     const cacheKey = `activities:campus:${userId}:${limit}:${cursor || 'none'}`;
     if (this.redis && useCache) {
@@ -337,74 +347,84 @@ export class ActivitiesService implements OnModuleInit {
       } catch {}
     }
 
-    const [excludedUserIds, user, cursorDate, joinedMemberships] = await Promise.all([
+    // ── All pre-flight reads in ONE parallel round-trip ───────────────────────
+    // Fixed: was fetching ALL user memberships (unbounded). Now only fetched
+    // for the page's activity IDs after the main query.
+    const [excludedUserIds, user, cursorDate] = await Promise.all([
       this.blocksService.getExcludedUserIds(userId),
       this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }),
-      cursor ? this.prisma.crewActivity.findUnique({ where: { id: cursor }, select: { createdAt: true } }).then(r => r?.createdAt) : Promise.resolve(undefined),
-      this.prisma.crewActivityMember.findMany({ where: { userId }, select: { activityId: true, status: true } }),
+      this.resolveCursorDate(cursor),
     ]);
 
     if (!user?.collegeId) return { activities: [], nextCursor: undefined };
 
-    const joinedActivityIds = joinedMemberships.map(m => m.activityId);
-    const membershipMap = new Map(joinedMemberships.map(m => [m.activityId, m.status]));
+    // Auto-expire is background-only — never block the request
+    setImmediate(() => { this.autoExpireActivities().catch(() => {}); });
 
-    await this.autoExpireActivities();
     const now = new Date();
-    const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-
     const whereClause: any = {
       deletedAt: null,
       collegeId: user.collegeId,
       status: 'OPEN',
       startDate: { gt: now },
-      AND: [
-        {
-          OR: [
-            { visibility: 'COLLEGE_ONLY' },
-            { shareToCampus: true }
-          ]
-        }
-      ],
+      AND: [{ OR: [{ visibility: 'COLLEGE_ONLY' }, { shareToCampus: true }] }],
       ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
       ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
-      ...(searchTerm
-        ? {
-            OR: [
-              { title: { contains: searchTerm, mode: 'insensitive' as const } },
-              { description: { contains: searchTerm, mode: 'insensitive' as const } },
-              { location: { contains: searchTerm, mode: 'insensitive' as const } },
-            ],
-          }
-        : {}),
+      ...(searchTerm ? {
+        OR: [
+          { title: { contains: searchTerm, mode: 'insensitive' as const } },
+          { description: { contains: searchTerm, mode: 'insensitive' as const } },
+          { location: { contains: searchTerm, mode: 'insensitive' as const } },
+        ],
+      } : {}),
     };
 
-    const activities = await this.prisma.crewActivity.findMany({
+    // ── Main query ────────────────────────────────────────────────────────────
+    const fetchedActivities = await this.prisma.crewActivity.findMany({
       where: whereClause,
       take: limit + 1,
-      include: {
+      select: {
+        id: true,
+        creatorId: true,
+        title: true,
+        description: true,
+        location: true,
+        maxMembers: true,
+        createdAt: true,
+        coverImage: true,
+        coverMediaId: true,
+        deletedAt: true,
+        endDate: true,
+        latitude: true,
+        longitude: true,
+        startDate: true,
+        status: true,
+        updatedAt: true,
+        hostCollege: true,
+        collegeId: true,
+        participationType: true,
+        shareToCampus: true,
+        visibility: true,
         _count: { select: { members: true } },
         members: {
+          where: { status: 'MEMBER' },
           take: 5,
-          include: { 
-            user: {
-              select: {
-                id: true,
-                username: true,
-                displayName: true,
-                avatar: true
-              }
-            }
+          orderBy: { joinedAt: 'asc' },
+          select: {
+            userId: true,
+            status: true,
+            user: { select: { id: true, username: true, displayName: true, avatar: true } },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    let nextCursor: string | undefined = undefined;
+    let nextCursor: string | undefined;
+    const activities = fetchedActivities;
     if (activities.length > limit) {
-      const next = activities.pop();
-      nextCursor = next?.id;
+      const next = activities.pop()!;
+      nextCursor = `${next.createdAt.toISOString()}|${next.id}`;
     }
 
     if (activities.length === 0) {
@@ -416,14 +436,21 @@ export class ActivitiesService implements OnModuleInit {
       return emptyRes;
     }
 
+    // ── Scoped membership query — only IDs on this page (O(page_size)) ─────────
+    // Previously fetched ALL user memberships (unbounded). Now scoped to current
+    // page activity IDs only, matching the same pattern used in getAllActivities.
+    const pageIds = activities.map(a => a.id);
+    const pageMemberships = await this.prisma.crewActivityMember.findMany({
+      where: { userId, activityId: { in: pageIds } },
+      select: { activityId: true, status: true },
+    });
+
+    const membershipMap = new Map(pageMemberships.map(m => [m.activityId, m.status]));
+
     const response = {
       activities: activities.map(a => {
         const myStatus = membershipMap.get(a.id);
-        return {
-          ...a,
-          isJoined: myStatus === 'MEMBER',
-          myStatus: myStatus || null,
-        };
+        return { ...a, isJoined: myStatus === 'MEMBER', myStatus: myStatus || null };
       }),
       nextCursor,
     };
@@ -432,7 +459,6 @@ export class ActivitiesService implements OnModuleInit {
       this.redis.setex(cacheKey, 60, JSON.stringify(response)).catch(() => {});
       this.registerFeedCacheKey(cacheKey);
     }
-
     return response;
   }
 
@@ -572,77 +598,118 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   async joinActivity(activityId: string, userId: string): Promise<any> {
-    const [activity, user] = await Promise.all([
+    // ── Single targeted read: only the fields we need from the activity + one membership row ──
+    // No more `include: { members: true }` (which fetched ALL member rows).
+    const [activityRow, user, existingMember] = await Promise.all([
       this.prisma.crewActivity.findUnique({
         where: { id: activityId },
-        include: {
-          members: true,
-          invitations: { select: { inviteeId: true, status: true } },
+        select: {
+          id: true,
+          creatorId: true,
+          status: true,
+          deletedAt: true,
+          startDate: true,
+          participationType: true,
+          maxMembers: true,
+          hostCollege: true,
+          collegeId: true,
+          visibility: true,
+          invitations: { where: { inviteeId: userId }, select: { inviteeId: true, status: true } },
+          _count: { select: { members: true } },
         },
       }),
       this.prisma.user.findUnique({
         where: { id: userId },
         select: { id: true, collegeId: true },
       }),
+      // Check membership in the same parallel round-trip
+      this.prisma.crewActivityMember.findUnique({
+        where: { userId_activityId: { userId, activityId } },
+        select: { status: true },
+      }),
     ]);
 
-    if (!activity || activity.deletedAt) {
+    if (!activityRow || activityRow.deletedAt) {
       throw new NotFoundException('Activity not found');
     }
-
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    const startRaw = activity.startDate || (activity as any).date;
+    // Idempotent: already a member → return success silently (no error)
+    if (existingMember?.status === 'MEMBER') {
+      return { success: true };
+    }
+    if (existingMember?.status === 'PENDING') {
+      throw new BadRequestException('Join request already pending');
+    }
+
+    const startRaw = activityRow.startDate;
     if (startRaw && new Date(startRaw) <= new Date()) {
       throw new BadRequestException('Activity has already started and cannot be joined');
     }
 
-    const existingMember = activity.members.find(m => m.userId === userId);
-    if (existingMember) {
-      if (existingMember.status === 'MEMBER') throw new BadRequestException('Already a member of this activity');
-      if (existingMember.status === 'PENDING') throw new BadRequestException('Join request already pending');
-    }
-
-    const authDecision = this.activityAuthorizationService.canJoin(user, activity as any);
+    // Build a synthetic activity shape for the auth check (only the fields it reads)
+    const authDecision = this.activityAuthorizationService.canJoin(
+      user,
+      { ...activityRow, members: [] } as any,
+    );
     if (!authDecision.allowed) {
       throw new ForbiddenException(authDecision.reason || 'You are not authorized to join this activity');
     }
 
-    await this.prisma.crewActivityMember.upsert({
-      where: { userId_activityId: { userId, activityId } },
-      update: { status: 'MEMBER' },
-      create: { userId, activityId, status: 'MEMBER' },
+    // ── Atomic idempotent upsert — safe under concurrent requests ──────────────
+    // If two requests race, the second one hits the unique constraint and the
+    // ON CONFLICT DO NOTHING clause makes it a silent no-op instead of an error.
+    await this.prisma.$executeRaw`
+      INSERT INTO "CrewActivityMember" ("userId", "activityId", "status", "joinedAt")
+      VALUES (${userId}, ${activityId}, 'MEMBER', NOW())
+      ON CONFLICT ("userId", "activityId") DO UPDATE SET "status" = 'MEMBER'
+    `;
+
+    // Await cache clearing BEFORE responding to prevent the frontend's 
+    // post-mutation refetch from racing and hitting stale Redis data.
+    await this.clearActivityFeedCaches();
+    if (this.redis) {
+      await this.redis.del(`etag:/api/activities/${activityId}:${userId}`);
+    }
+
+    // Fire socket event side-effects in background
+    setImmediate(() => {
+      this.domainEventService.emit('activity.memberJoined', { activityId, userId });
     });
 
-    this.domainEventService.emit('activity.memberJoined', { activityId, userId });
-    this.clearActivityFeedCaches();
     return { success: true };
   }
 
   async leaveActivity(activityId: string, userId: string) {
+    // ── Single targeted read (only fields needed for guard) ────────────────────
     const activity = await this.prisma.crewActivity.findUnique({
       where: { id: activityId },
-      select: { creatorId: true, title: true, coverImage: true, startDate: true, status: true },
+      select: { creatorId: true },
     });
 
-    if (activity && activity.creatorId === userId) {
+    if (activity?.creatorId === userId) {
       throw new BadRequestException('Host cannot leave their own activity');
     }
 
-    const existingMember = await this.prisma.crewActivityMember.findUnique({
-      where: { userId_activityId: { userId, activityId } }
+    // ── Idempotent delete — deleteMany never throws if the row is missing ──────
+    await this.prisma.crewActivityMember.deleteMany({
+      where: { userId, activityId },
     });
 
-    if (existingMember) {
-      await this.prisma.crewActivityMember.delete({
-        where: { userId_activityId: { userId, activityId } }
-      });
+    // Await cache clearing BEFORE responding to prevent the frontend's 
+    // post-mutation refetch from racing and hitting stale Redis data.
+    await this.clearActivityFeedCaches();
+    if (this.redis) {
+      await this.redis.del(`etag:/api/activities/${activityId}:${userId}`);
     }
 
-    this.domainEventService.emit('activity.memberLeft', { activityId, userId });
-    this.clearActivityFeedCaches();
+    // Fire socket event side-effects in background
+    setImmediate(() => {
+      this.domainEventService.emit('activity.memberLeft', { activityId, userId });
+    });
+
     return { success: true };
   }
 

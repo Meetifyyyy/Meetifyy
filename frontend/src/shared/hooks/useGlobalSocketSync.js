@@ -414,10 +414,10 @@ export function useGlobalSocketSync() {
         }
 
         case 'activity.created':
-        case 'activity.updated':
         case 'activity.deleted':
-        case 'activity.memberJoined':
-        case 'activity.memberLeft': {
+        case 'activity.updated': {
+          // Structural changes: a new activity appeared or was cancelled/edited.
+          // Invalidate the whole feed so it appears/disappears in the list.
           const actId = event.data?.id || event.data?.activityId;
           queryClient.invalidateQueries({ queryKey: ['activities'] });
           queryClient.invalidateQueries({ queryKey: ['campus-activities'] });
@@ -425,7 +425,76 @@ export function useGlobalSocketSync() {
           queryClient.invalidateQueries({ queryKey: ['feed'] });
           if (actId) {
             queryClient.invalidateQueries({ queryKey: ['activity', actId] });
-            queryClient.invalidateQueries({ queryKey: ['crew-activity', actId] });
+          }
+          break;
+        }
+
+        case 'activity.memberJoined':
+        case 'activity.memberLeft': {
+          // Attendee change from ANOTHER user — the current user's own join/leave is
+          // already handled instantly by patchActivity (optimistic update) so we must
+          // NOT overwrite that with a stale server response here.
+          //
+          // Strategy:
+          //   1. Only refetch the specific activity detail (needed for the detail page).
+          //   2. Skip the full list refetch — it would reset optimistic patches and is
+          //      expensive. The list will re-validate on next focus/mount anyway.
+          const actId = event.data?.id || event.data?.activityId;
+          const eventUserId = event.data?.userId;
+
+          // Guard: if THIS device triggered the event (current user's own action),
+          // the optimistic update is already in place. Skip to avoid races.
+          const entityKey = `joinActivity:${actId}`;
+          const hasPendingLocalIntent = toggleRegistry.latestIntents.has(entityKey);
+          if (eventUserId === currentUser?.id && hasPendingLocalIntent) {
+            break;
+          }
+
+          if (actId) {
+            // Targeted refetch of just this activity's detail cache.
+            // refetchType:'active' means only components currently mounted and using
+            // this query will re-fetch — inactive/unmounted ones stay stale.
+            queryClient.invalidateQueries({ queryKey: ['activity', actId], refetchType: 'active' });
+
+            // Also patch the list cache in-place with the count change if we know it,
+            // so the feed card updates without a full list refetch.
+            // The event only tells us +1/-1, not the full member list, so we just
+            // increment/decrement slotsFilled and update participants.
+            const delta = event.type === 'activity.memberJoined' ? 1 : -1;
+            const patchListEntry = (act) => {
+              if (!act || act.id !== actId) return act;
+              const currentParticipants = Array.isArray(act.participants) ? act.participants : [];
+              let newParticipants = currentParticipants;
+              if (eventUserId) {
+                if (delta > 0 && !currentParticipants.includes(String(eventUserId))) {
+                  newParticipants = [...currentParticipants, String(eventUserId)];
+                } else if (delta < 0) {
+                  newParticipants = currentParticipants.filter(p => String(p) !== String(eventUserId));
+                }
+              }
+              return {
+                ...act,
+                participants: newParticipants,
+                slotsFilled: Math.max(1, (act.slotsFilled || currentParticipants.length) + delta),
+              };
+            };
+
+            queryClient.setQueriesData({ queryKey: ['activities'] }, (oldData) => {
+              if (!oldData) return oldData;
+              if (oldData?.pages) {
+                return {
+                  ...oldData,
+                  pages: oldData.pages.map((page) => {
+                    const activities = Array.isArray(page?.activities) ? page.activities : (Array.isArray(page) ? page : null);
+                    if (!activities) return page;
+                    const patched = activities.map(patchListEntry);
+                    return Array.isArray(page) ? patched : { ...page, activities: patched };
+                  }),
+                };
+              }
+              if (Array.isArray(oldData)) return oldData.map(patchListEntry);
+              return oldData;
+            });
           }
           break;
         }
