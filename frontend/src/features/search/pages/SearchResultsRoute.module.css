@@ -71,8 +71,12 @@
 
 .searchPill:focus-within {
   border-color: var(--color-primary);
-  background: var(--color-bg-white);
+  background: #FFFFFF !important;
   box-shadow: 0 0 0 4px rgba(var(--color-primary-rgb), 0.1);
+}
+
+:global([data-theme="dark"]) .searchPill:focus-within {
+  background: var(--color-bg-white) !important;
 }
 
 .searchPillIcon {

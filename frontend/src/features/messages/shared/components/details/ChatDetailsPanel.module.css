@@ -57,13 +57,20 @@
 .scrollBody {
   flex: 1;
   overflow-y: auto;
-  padding: 2rem 1rem;
+  padding: 2rem 1rem calc(2rem + env(safe-area-inset-bottom, 0px)) 1rem;
   display: flex;
   flex-direction: column;
   gap: 2rem;
   scrollbar-width: none;
   -ms-overflow-style: none;
   min-width: 0;
+}
+
+.scrollBody::after {
+  content: '';
+  display: block;
+  height: calc(3rem + env(safe-area-inset-bottom, 0px));
+  flex-shrink: 0;
 }
 
 .scrollBody::-webkit-scrollbar {
@@ -195,6 +202,8 @@
   text-align: left;
   padding: 0 1.25rem;
   width: 100%;
+  margin-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
 }
 
 .detailsList {
@@ -907,14 +916,15 @@
     left: 0;
     right: 0;
     bottom: 0;
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
     z-index: 9999;
     background: var(--color-bg-white);
   }
 
   .scrollBody {
-    padding-bottom: 6rem !important;
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
 

@@ -1,32 +1,26 @@
 import { forwardRef, useState, useEffect, useMemo } from 'react';
 import { UsersIcon } from '@heroicons/react/24/solid';
-import { mediaCache } from '@shared/utils/MediaCacheManager';
-import { getMediaUrl, normalizeDicebearUrl, deriveThumbnailKey } from '@shared/api/apiClient';
+import { getMediaUrl, normalizeDicebearUrl } from '@shared/api/apiClient';
 import { useCanSeeOthersPresence } from '@shared/hooks/usePresenceVisibility';
-import defaultAvatarImg from '../../../assets/images/default_avatar.webp';
 import styles from './Avatar.module.css';
 
 export function getProcessedAvatarUrl(src) {
-  if (!src) return '/default_avatar.webp';
+  if (!src) return '/default_avatar.svg';
   let s = src;
   if (typeof s === 'object') {
     s = s.avatar || s.avatarUrl || s.url || s.objectKey || s.profileImage || (s.avatarMedia ? s.avatarMedia.objectKey : '') || '';
   }
   if (typeof s !== 'string' || !s.trim() || s.trim().length <= 2) {
-    return '/default_avatar.webp';
+    return '/default_avatar.svg';
   }
   const clean = s.trim();
   if (clean.includes('default_avatar') || clean.includes('api.dicebear.com/7.x/initials')) {
-    return '/default_avatar.webp';
+    return '/default_avatar.svg';
   }
   if (clean.includes('api.dicebear.com/')) {
     return normalizeDicebearUrl(clean);
   }
-  // Convert /api/media/ relative paths to absolute backend URL so they work across environments
-  if (clean.startsWith('/api/media/') || (!clean.startsWith('http') && !clean.startsWith('data:') && !clean.startsWith('blob:') && !clean.startsWith('/'))) {
-    return getMediaUrl(clean);
-  }
-  return clean;
+  return getMediaUrl(clean);
 }
 
 const loadedAvatarCache = new Set();
@@ -41,58 +35,34 @@ const Avatar = forwardRef(({
   style = {},
   onClick,
   disableHover = false,
+  isLoading = false,
   children
 }, ref) => {
   const canSeePresence = useCanSeeOthersPresence();
-  const initialProcessedSrc = getProcessedAvatarUrl(src);
-  // Prefer a tiny derived thumbnail for the (usually small) avatar render; fall
-  // back to the original on error, then to the default. `null` for external /
-  // dicebear / default sources, which are already small.
-  const thumbKey = useMemo(() => deriveThumbnailKey(initialProcessedSrc), [initialProcessedSrc]);
-  const [useThumb, setUseThumb] = useState(!!thumbKey);
-  const resolveSrc = (useThumb && thumbKey) ? thumbKey : initialProcessedSrc;
+  const initialProcessedSrc = useMemo(() => getProcessedAvatarUrl(src), [src]);
 
-  const syncResolved = mediaCache.getSyncUrl(resolveSrc) || (
-    (resolveSrc && resolveSrc !== defaultAvatarImg) ? getMediaUrl(resolveSrc) : null
+  const hasCustomAvatar = Boolean(
+    initialProcessedSrc &&
+    typeof initialProcessedSrc === 'string' &&
+    initialProcessedSrc.trim() &&
+    !initialProcessedSrc.includes('default_avatar')
   );
 
-  const [imgSrc, setImgSrc] = useState(syncResolved || defaultAvatarImg);
-
-  // Reset the thumbnail preference whenever the underlying avatar changes.
-  useEffect(() => { setUseThumb(!!thumbKey); }, [thumbKey]);
+  const [hasError, setHasError] = useState(false);
+  const [imgSrc, setImgSrc] = useState(initialProcessedSrc);
+  const [imgLoading, setImgLoading] = useState(!loadedAvatarCache.has(initialProcessedSrc));
 
   useEffect(() => {
-    let isMounted = true;
-
-    if (!initialProcessedSrc || initialProcessedSrc === defaultAvatarImg || (typeof initialProcessedSrc === 'string' && initialProcessedSrc.includes('default_avatar'))) {
-      setImgSrc(defaultAvatarImg);
-      return;
+    setHasError(false);
+    setImgSrc(initialProcessedSrc);
+    if (loadedAvatarCache.has(initialProcessedSrc) || initialProcessedSrc.startsWith('blob:') || initialProcessedSrc.startsWith('data:')) {
+      setImgLoading(false);
+    } else {
+      setImgLoading(true);
     }
-
-    const currentSync = mediaCache.getSyncUrl(resolveSrc) || getMediaUrl(resolveSrc) || resolveSrc;
-    setImgSrc(currentSync);
-
-    const fetchUrl = async () => {
-      try {
-        const resolvedUrl = await mediaCache.getUrl(resolveSrc);
-        if (isMounted && resolvedUrl) {
-          setImgSrc(resolvedUrl);
-        }
-      } catch (err) {
-        // Keep currentSync fallback on error
-      }
-    };
-
-    fetchUrl();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [initialProcessedSrc, resolveSrc]);
+  }, [initialProcessedSrc]);
 
   const sizeValue = typeof size === 'number' ? `${size}px` : size;
-  const displaySrc = imgSrc || defaultAvatarImg;
-
   const avatarStyle = {
     '--size': sizeValue,
     ...style
@@ -101,46 +71,63 @@ const Avatar = forwardRef(({
   const handleClick = (e) => {
     if (onClick) onClick(e);
   };
-  
-  const isBlobOrPreloaded = loadedAvatarCache.has(displaySrc) || 
-    displaySrc === defaultAvatarImg || 
-    (typeof displaySrc === 'string' && (displaySrc.startsWith('blob:') || displaySrc.startsWith('data:')));
-  const [imgLoading, setImgLoading] = useState(!isBlobOrPreloaded);
 
-  useEffect(() => {
-    if (loadedAvatarCache.has(displaySrc) || displaySrc === defaultAvatarImg || (typeof displaySrc === 'string' && (displaySrc.startsWith('blob:') || displaySrc.startsWith('data:')))) {
-      setImgLoading(false);
-    } else {
-      setImgLoading(true);
-    }
-  }, [displaySrc]);
+  // Render shimmering skeleton if parent indicates loading
+  if (isLoading) {
+    return (
+      <div
+        ref={ref}
+        className={`${styles.avatarContainer} ${isGroup ? styles.avatarGroup : styles.avatarUser} ${className}`}
+        style={avatarStyle}
+      >
+        <div className={styles.avatarClip}>
+          <div className={styles.avatarSkeleton} />
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasCustomAvatar || hasError) {
+    return (
+      <div
+        ref={ref}
+        className={`${styles.avatarContainer} ${isGroup ? styles.avatarGroup : styles.avatarUser} ${(onClick && !disableHover) ? styles.clickable : ''} ${className}`}
+        style={avatarStyle}
+        onClick={handleClick}
+      >
+        <div
+          className={styles.avatarClip}
+          style={{ background: 'transparent' }}
+        >
+          {isGroup ? (
+            <div style={{ width: '100%', height: '100%', background: '#1d68f7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <UsersIcon className={styles.avatarIcon} style={{ color: '#ffffff' }} />
+            </div>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" style={{ width: '100%', height: '100%', display: 'block' }}>
+              <circle cx="12" cy="12" r="12" fill="#1d68f7"/>
+              <circle cx="12" cy="8.5" r="2.5" fill="#ffffff"/>
+              <path fill="#ffffff" d="M7 16.3c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5c0 1.2-2.2 1.8-5 1.8s-5-0.6-5-1.8z"/>
+            </svg>
+          )}
+          {children}
+        </div>
+        {isOnline && !isGroup && canSeePresence && (
+          <span className={styles.onlineDot} />
+        )}
+      </div>
+    );
+  }
 
   const handleLoad = () => {
-    if (displaySrc) loadedAvatarCache.add(displaySrc);
+    if (imgSrc) loadedAvatarCache.add(imgSrc);
     setImgLoading(false);
   };
 
   const handleError = () => {
-    // First failure on the thumbnail variant → retry with the full original
-    // (e.g. legacy avatars uploaded before thumbnails existed).
-    if (useThumb && thumbKey) {
-      mediaCache.invalidate(resolveSrc);
-      setUseThumb(false);
-      return;
-    }
-    if (initialProcessedSrc && initialProcessedSrc !== defaultAvatarImg) {
-      mediaCache.invalidate(initialProcessedSrc);
-    }
-    setImgSrc(defaultAvatarImg);
+    setHasError(true);
     setImgLoading(false);
   };
-
-  // Show the default group icon (UsersIcon) when the group has no custom avatar uploaded
-  const isDefaultGroupAvatar = isGroup && (
-    !src ||
-    initialProcessedSrc === defaultAvatarImg ||
-    imgSrc === defaultAvatarImg
-  );
 
   return (
     <div
@@ -149,31 +136,21 @@ const Avatar = forwardRef(({
       style={avatarStyle}
       onClick={handleClick}
     >
-      {isDefaultGroupAvatar ? (
-        <div
-          className={styles.avatarClip}
-          style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', color: '#ffffff' }}
-        >
-          <UsersIcon className={styles.avatarIcon} />
-          {children}
-        </div>
-      ) : (
-        <div className={styles.avatarClip}>
-          {imgLoading && (
-            <div className={styles.avatarSkeleton} />
-          )}
-          <img
-            src={displaySrc}
-            alt={name || 'Avatar'}
-            loading="lazy"
-            decoding="async"
-            className={`${styles.avatarImg} ${imgLoading ? styles.imgHidden : styles.imgVisible}`}
-            onLoad={handleLoad}
-            onError={handleError}
-          />
-          {children}
-        </div>
-      )}
+      <div className={styles.avatarClip}>
+        {imgLoading && (
+          <div className={styles.avatarSkeleton} />
+        )}
+        <img
+          src={imgSrc}
+          alt={name || 'Avatar'}
+          loading="lazy"
+          decoding="async"
+          className={`${styles.avatarImg} ${imgLoading ? styles.imgHidden : styles.imgVisible}`}
+          onLoad={handleLoad}
+          onError={handleError}
+        />
+        {children}
+      </div>
 
       {isOnline && !isGroup && canSeePresence && (
         <span className={styles.onlineDot} />

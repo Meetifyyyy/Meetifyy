@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
-import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
+import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import RichText from '@shared/components/mentions/RichText';
 import { useData } from '@shared/hooks/useData';
@@ -254,11 +254,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
         <div className={styles.postAvatarContainer}>
           <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none' }} onClick={(e) => e.stopPropagation()}>
             <div className={styles.postAvatar}>
-              {isImageUrl(author.avatar) ? (
-                <img src={getProcessedAvatarUrl(author.avatar)} alt={author.displayName} loading="lazy" className={styles.postAvatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-              ) : (
-                <DefaultAvatar />
-              )}
+              <Avatar src={author.avatar} name={author.displayName} size="100%" />
             </div>
           </Link>
           {postCommunity && (

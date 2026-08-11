@@ -85,14 +85,20 @@
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
-  max-width: 490px;
+  max-width: 480px;
   display: flex;
   align-items: center;
 }
 
 @media (min-width: 1200px) {
   .headerSearch {
-    max-width: 585px;
+    max-width: 560px;
+  }
+}
+
+@media (min-width: 1400px) {
+  .headerSearch {
+    max-width: 620px;
   }
 }
 

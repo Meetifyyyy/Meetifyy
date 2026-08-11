@@ -10,7 +10,7 @@ import styles from './PostComposer.module.css';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 
 function PostComposer({ onSubmit }) {
-  const { initial, currentUser } = useAuth();
+  const { loading, currentUser } = useAuth();
   const [value, setValue] = useState({ text: '', mentions: [] });
   const [media, setMedia] = useState(null);
   const [isPosting, setIsPosting] = useState(false);
@@ -181,7 +181,7 @@ function PostComposer({ onSubmit }) {
         onClick={() => { if (!expandedState) setIsExpanded(true); }}
       >
         <div className={styles.composerTopRow}>
-          <Avatar src={currentUser?.avatar} name={currentUser?.displayName} size="40px" disableHover />
+          <Avatar src={currentUser?.avatar} name={currentUser?.displayName} size="40px" disableHover isLoading={loading} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <MentionInput
               inputRef={inputRef}

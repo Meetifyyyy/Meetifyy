@@ -679,7 +679,7 @@ html.hide-window-scrollbar::-webkit-scrollbar {
   font-family: var(--font-family-display, 'Inter', sans-serif);
   font-weight: 600;
   color: var(--color-text-inverse, #fff);
-  background: var(--color-bg-white, #FFFFFF);
+  background: transparent;
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
@@ -693,7 +693,7 @@ html.hide-window-scrollbar::-webkit-scrollbar {
 
 /* Dark mode fallback adjustment if needed */
 [data-theme="dark"] .ui-avatar {
-  background: var(--color-bg-white, #202020);
+  background: transparent;
   color: var(--color-text-main, #fff);
 }
 

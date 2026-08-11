@@ -58,7 +58,7 @@ const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
 };
 
 export default function Header({ variant = 'dashboard' }) {
-  const { initial, logout, currentUser } = useAuth();
+  const { loading, logout, currentUser } = useAuth();
   const queryClient = useQueryClient();
   const { communities: communitiesDataMap } = useCommunities();
   const communities = communitiesDataMap || {};
@@ -170,6 +170,7 @@ export default function Header({ variant = 'dashboard' }) {
                   src={currentUser?.avatar || currentUser?.avatarUrl}
                   name={currentUser?.displayName}
                   size="100%"
+                  isLoading={loading}
                 />
               </div>
               <div className={styles.drawerProfileInfo}>
@@ -286,6 +287,7 @@ export default function Header({ variant = 'dashboard' }) {
                 src={currentUser?.avatar || currentUser?.avatarUrl}
                 name={currentUser?.displayName}
                 size="42px"
+                isLoading={loading}
               />
             </div>
             <div className={`${styles.dropdown} ${dropdownOpen ? styles.dropdownOpen : ''}`} ref={dropdownRef}>
@@ -298,6 +300,7 @@ export default function Header({ variant = 'dashboard' }) {
                     src={currentUser?.avatar || currentUser?.avatarUrl}
                     name={currentUser?.displayName}
                     size="32px"
+                    isLoading={loading}
                   />
                 </div>
                 <div className={styles.dropdownProfileDetails}>
