@@ -65,17 +65,13 @@ export class MessagesController {
     if (result.messages && Array.isArray(result.messages)) {
       for (const message of result.messages) {
         const conversationId = message.conversationId;
-        const participantIds = await this.messagesService.getConversationParticipantIds(conversationId);
-        const conv = await this.messagesService.getConversationById(conversationId);
 
-        const otherParticipantIds = participantIds.filter(pId => pId !== userId);
-        
-        // Filter out those who blocked the sender
-        const unblockedParticipantIds = [];
-        for (const pId of otherParticipantIds) {
-          const hasBlockedSender = await this.messagesService.isUserBlockedBy(userId, pId);
-          if (!hasBlockedSender) unblockedParticipantIds.push(pId);
-        }
+        // Batched block+mute resolution — replaces the per-participant
+        // isUserBlockedBy / isUserConversationMuted N+1 loops.
+        const [{ recipientIds: unblockedParticipantIds, unmutedRecipientIds }, conv] = await Promise.all([
+          this.messagesService.getBatchUnblockedAndUnmutedParticipants(conversationId, userId),
+          this.messagesService.getConversationById(conversationId),
+        ]);
 
         // Emit to others
         this.domainEventService.emit('message:new', message, unblockedParticipantIds);
@@ -90,21 +86,18 @@ export class MessagesController {
           }
         }, unblockedParticipantIds);
 
-        // Notifications
-        for (const pId of unblockedParticipantIds) {
-          const isMuted = await this.messagesService.isUserConversationMuted(conversationId, pId);
-          if (!isMuted) {
-            this.notificationsService.createNotification(
-              this.notificationFactory.createMessage(
-                { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
-                conv || { id: conversationId, name: message.senderName },
-                pId,
-                message.text || 'Forwarded a message'
-              )
-            ).catch(() => {});
-          }
+        // Notifications (only unmuted recipients)
+        for (const pId of unmutedRecipientIds) {
+          this.notificationsService.createNotification(
+            this.notificationFactory.createMessage(
+              { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
+              conv || { id: conversationId, name: message.senderName },
+              pId,
+              message.text || 'Forwarded a message'
+            )
+          ).catch(() => {});
         }
-        
+
         // Emit to sender
         this.domainEventService.emit('message:new', message, [userId]);
       }
@@ -347,12 +340,16 @@ export class MessagesController {
   @UseGuards(JwtGuard)
   async removeMember(@Req() req: any, @Param('id') conversationId: string, @Param('targetUserId') targetUserId: string) {
     const userId = req.user?.id;
-    const targetHandle = await this.messagesService.getUserHandle(targetUserId);
-    const actorHandle = await this.messagesService.getUserHandle(userId);
+    // Mutate FIRST — if removal is rejected (not admin, target is owner, etc.)
+    // we must not persist/broadcast an "X removed Y" system message.
+    const result = await this.messagesService.removeGroupMember(conversationId, userId, targetUserId);
+
+    const [targetHandle, actorHandle] = await Promise.all([
+      this.messagesService.getUserHandle(targetUserId),
+      this.messagesService.getUserHandle(userId),
+    ]);
     const text = `${actorHandle} removed ${targetHandle} from the group`;
     const message = await this.messagesService.createSystemMessage(conversationId, userId, text);
-
-    const result = await this.messagesService.removeGroupMember(conversationId, userId, targetUserId);
 
     this.domainEventService.emit('group:member_removed', {
       conversationId,
@@ -381,11 +378,12 @@ export class MessagesController {
   @UseGuards(JwtGuard)
   async leaveGroup(@Req() req: any, @Param('id') conversationId: string) {
     const userId = req.user?.id;
+    // Mutate FIRST so a failed leave never leaves an orphan "X left" message.
+    const result = await this.messagesService.leaveGroup(conversationId, userId);
+
     const actorHandle = await this.messagesService.getUserHandle(userId);
     const text = `${actorHandle} left the group`;
     const message = await this.messagesService.createSystemMessage(conversationId, userId, text);
-
-    const result = await this.messagesService.leaveGroup(conversationId, userId);
 
     this.domainEventService.emit('group:member_removed', {
       conversationId,

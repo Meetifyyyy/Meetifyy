@@ -12,6 +12,7 @@ export interface StorageProvider {
     contentType: string,
     folder?: string,
     expiresIn?: number,
+    explicitKey?: string,
   ): Promise<{ uploadUrl: string; publicUrl: string; key: string }>;
 
   /**

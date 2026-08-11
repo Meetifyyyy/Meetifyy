@@ -111,19 +111,36 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
 
   const queryClient = useQueryClient();
 
+  // Subscribe reactively to the live message cache so the gallery re-derives
+  // whenever new media is shared. `queryClient.getQueryData` alone is a
+  // non-reactive snapshot — reading it in a memo keyed only on
+  // `conversation.messages` let the gallery go stale. This observer re-renders
+  // the panel whenever the canonical ['messages', <pubId>] cache changes
+  // (optimistic send, socket delivery, media URL swap), keeping it in sync.
+  const messagesKey = conversation?.publicId || conversation?.id || conversation?.internalId || null;
+  const { data: liveHistory } = useQuery({
+    queryKey: ['messages', messagesKey],
+    enabled: false, // subscribe to cache updates only; never refetch here
+  });
+
+  const galleryMessages = useMemo(() => {
+    const fromLive = liveHistory?.pages ? liveHistory.pages.flatMap(p => p?.messages || []) : [];
+    if (fromLive.length > 0) return fromLive;
+    // Fallback for the brief window before the canonical cache is populated.
+    for (const key of [conversation?.id, conversation?.internalId].filter(Boolean)) {
+      const qd = queryClient.getQueryData(['messages', key]);
+      if (qd?.pages) {
+        const msgs = qd.pages.flatMap(p => p?.messages || []);
+        if (msgs.length > 0) return msgs;
+      }
+    }
+    return conversation?.messages || [];
+  }, [liveHistory, conversation?.id, conversation?.internalId, conversation?.messages, queryClient]);
+
   // Extract shared media from message history (ONLY images and videos, EXCLUDING voice notes/audio)
   const mediaList = useMemo(() => {
     const list = [];
-    const keys = [conversation?.id, conversation?.publicId, conversation?.internalId].filter(Boolean);
-    let cachedMessages = [];
-    for (const key of keys) {
-      const qData = queryClient.getQueryData(['messages', key]);
-      if (qData?.pages) {
-        cachedMessages = qData.pages.flatMap(p => p?.messages || []);
-        if (cachedMessages.length > 0) break;
-      }
-    }
-    const messages = cachedMessages.length > 0 ? cachedMessages : (conversation?.messages || []);
+    const messages = galleryMessages;
 
     messages.forEach(msg => {
       const text = msg.text || msg.payload?.text || '';
@@ -187,7 +204,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
 
     // Sort LATEST FIRST (most recent media items first)
     return uniqueList.sort((a, b) => b.createdAt - a.createdAt);
-  }, [conversation?.messages]);
+  }, [galleryMessages]);
 
   if (!conversation) return null;
 

@@ -60,6 +60,75 @@ export async function checkPresenceVisibility(
   return true;
 }
 
+/**
+ * Transpose of checkPresenceVisibilityBatch: given ONE viewer and MANY targets
+ * (each with its own privacy rule), return the set of target user IDs whose
+ * online status this viewer is allowed to see.
+ *
+ * Replaces the per-target `checkPresenceVisibility` calls that the conversation
+ * and DM list endpoints previously ran inside a map — those re-queried the
+ * viewer's own `userSettings` row once per online conversation (an N+1 on the
+ * same row) plus a `follow` lookup per row. This does one viewer-settings read
+ * and at most two batched `follow` queries total.
+ */
+export async function resolvePresenceVisibilityForViewer(
+  viewerUserId: string,
+  targets: { userId: string; rule: string; isEnabled: boolean }[],
+  prisma: PrismaService
+): Promise<Set<string>> {
+  const visible = new Set<string>();
+  if (!viewerUserId || targets.length === 0) return visible;
+
+  // Reciprocity: a viewer who hid their own online status sees nobody.
+  const viewerSettings = await prisma.userSettings.findUnique({
+    where: { userId: viewerUserId },
+    select: { showOnlineStatus: true }
+  });
+  if (viewerSettings && viewerSettings.showOnlineStatus === false) return visible;
+
+  const followingTargets: string[] = [];
+  const mutualTargets: string[] = [];
+
+  for (const t of targets) {
+    if (!t.isEnabled || !t.userId) continue;
+    if (t.userId === viewerUserId) { visible.add(t.userId); continue; }
+    const rule = t.rule || 'everyone';
+    if (rule === 'nobody') continue;
+    if (rule === 'everyone') { visible.add(t.userId); continue; }
+    if (rule === 'following') followingTargets.push(t.userId);
+    else if (rule === 'mutual') mutualTargets.push(t.userId);
+    else visible.add(t.userId); // unknown rule → default visible (matches single-item helper)
+  }
+
+  // 'following': target follows the viewer.
+  if (followingTargets.length > 0) {
+    const follows = await prisma.follow.findMany({
+      where: { followerId: { in: followingTargets }, followingId: viewerUserId },
+      select: { followerId: true }
+    });
+    for (const f of follows) visible.add(f.followerId);
+  }
+
+  // 'mutual': target follows viewer AND viewer follows target.
+  if (mutualTargets.length > 0) {
+    const [targetFollowsViewer, viewerFollowsTarget] = await Promise.all([
+      prisma.follow.findMany({
+        where: { followerId: { in: mutualTargets }, followingId: viewerUserId },
+        select: { followerId: true }
+      }),
+      prisma.follow.findMany({
+        where: { followerId: viewerUserId, followingId: { in: mutualTargets } },
+        select: { followingId: true }
+      })
+    ]);
+    const tfv = new Set(targetFollowsViewer.map(f => f.followerId));
+    const vft = new Set(viewerFollowsTarget.map(f => f.followingId));
+    for (const id of mutualTargets) if (tfv.has(id) && vft.has(id)) visible.add(id);
+  }
+
+  return visible;
+}
+
 export async function checkPresenceVisibilityBatch(
   targetUserId: string,
   viewerUserIds: string[],

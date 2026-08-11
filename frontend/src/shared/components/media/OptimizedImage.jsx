@@ -10,32 +10,35 @@ export default function OptimizedImage({
   skeletonClassName = 'bg-bg-tertiary animate-pulse',
   ...props 
 }) {
-  const [imgSrc, setImgSrc] = useState('');
+  // Paint synchronously from the (possibly persisted) cache so stable public
+  // assets show with zero network round-trip; refine async only if needed.
+  const [imgSrc, setImgSrc] = useState(() => (src ? mediaCache.getSyncUrl(src) || '' : ''));
   const [status, setStatus] = useState('loading'); // 'loading', 'loaded', 'error'
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
 
+    if (!src) {
+      setStatus('error');
+      return;
+    }
+
+    // Immediate best-effort URL (cache hit or direct/public URL) — avoids the
+    // async gap that previously delayed first paint on every mount.
+    const sync = mediaCache.getSyncUrl(src);
+    if (sync) setImgSrc(sync);
+
     const fetchUrl = async () => {
-      if (!src) {
-        if (isMounted) setStatus('error');
-        return;
-      }
-      
-      if (isMounted) setStatus('loading');
-      
       try {
         const resolvedUrl = await mediaCache.getUrl(src);
-        if (isMounted) {
-          if (resolvedUrl) {
-            setImgSrc(resolvedUrl);
-          } else {
-            setStatus('error');
-          }
+        if (isMounted && resolvedUrl && resolvedUrl !== sync) {
+          setImgSrc(resolvedUrl);
+        } else if (isMounted && !resolvedUrl && !sync) {
+          setStatus('error');
         }
       } catch (err) {
-        if (isMounted) setStatus('error');
+        if (isMounted && !sync) setStatus('error');
       }
     };
 
@@ -87,6 +90,7 @@ export default function OptimizedImage({
           src={imgSrc}
           alt={alt}
           loading="lazy"
+          decoding="async"
           onLoad={handleLoad}
           onError={handleError}
           className={`w-full h-full object-cover transition-opacity duration-300 ${

@@ -109,7 +109,9 @@ export default function ChatMessageList({
   onContextMenu,
   onOpenContextMenu,
   typingUsers,
-  onMarkSeen
+  onMarkSeen,
+  onRetryUpload,
+  onCancelUpload
 }) {
   const bodyRef = useRef(null);
   const virtualInnerRef = useRef(null);
@@ -247,7 +249,19 @@ export default function ChatMessageList({
       if (item?.type === 'load_more') return 52;
       if (item?.type === 'instant_match_banner') return 44;
       if (item?.type === 'date_separator') return 36;
-      if (item?.msg?.mediaUrl) return 240;
+      if (item?.msg?.mediaUrl || item?.msg?.payload?.mediaUrl) {
+        // Estimate media row height from known dimensions so the virtualizer
+        // reserves the right space up front (no jump as the image/video loads).
+        const w = item?.msg?.payload?.width || item?.msg?.width;
+        const h = item?.msg?.payload?.height || item?.msg?.height;
+        if (w && h) {
+          const displayW = Math.min(260, w);
+          const displayH = Math.min(360, Math.round(displayW * (h / w)));
+          const hasCaption = !!(item?.msg?.text || item?.msg?.payload?.text);
+          return displayH + (hasCaption ? 70 : 36);
+        }
+        return 240;
+      }
       if (item?.msg?.type === 'system' || item?.msg?.type === 'SYSTEM') return 40;
       const textLen = (item?.msg?.text || item?.msg?.payload?.text || '').length;
       if (textLen > 180) return 140;
@@ -473,6 +487,8 @@ export default function ChatMessageList({
                     onContextMenu={onContextMenu || onOpenContextMenu}
                     onOpenContextMenu={onOpenContextMenu}
                     onOpenMediaModal={onOpenMediaModal || openViewer}
+                    onRetryUpload={onRetryUpload}
+                    onCancelUpload={onCancelUpload}
                   />
                 )}
 

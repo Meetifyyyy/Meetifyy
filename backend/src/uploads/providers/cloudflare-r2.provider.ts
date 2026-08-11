@@ -39,9 +39,12 @@ export class CloudflareR2Provider implements StorageProvider {
     contentType: string,
     folder = 'general',
     expiresIn = 900,
+    explicitKey?: string,
   ): Promise<{ uploadUrl: string; publicUrl: string; key: string }> {
     const ext = filename.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'bin';
-    const key = `${folder}/${randomUUID()}.${ext}`;
+    // An explicit key (validated by the caller) lets a client upload a derived
+    // variant — e.g. a `<uuid>_thumb.webp` thumbnail sharing the original's key.
+    const key = explicitKey || `${folder}/${randomUUID()}.${ext}`;
 
     if (!this.isConfigured || !this.s3) {
       const uploadUrl = `/api/media/direct-upload?key=${encodeURIComponent(key)}`;

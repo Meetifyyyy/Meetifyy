@@ -245,6 +245,7 @@ export class GroupChatsController {
   async addMember(@Req() req: any, @Param('id') conversationId: string, @Body('userId') targetUserId: string) {
     const userId = req.user?.id;
     const result = await this.groupChatsService.addGroupMember(conversationId, userId, targetUserId);
+    this.groupChatsService.invalidateGroupDetailsCache(conversationId).catch(() => {});
     setImmediate(async () => {
       const [actorHandle, targetHandle] = await Promise.all([
         this.groupChatsService.getUserHandle(userId),
@@ -262,6 +263,7 @@ export class GroupChatsController {
   async removeMember(@Req() req: any, @Param('id') conversationId: string, @Param('targetUserId') targetUserId: string) {
     const userId = req.user?.id;
     const result = await this.groupChatsService.removeGroupMember(conversationId, userId, targetUserId);
+    this.groupChatsService.invalidateGroupDetailsCache(conversationId).catch(() => {});
 
     setImmediate(async () => {
       const [actorHandle, targetHandle, remainingParticipantIds] = await Promise.all([
@@ -290,6 +292,7 @@ export class GroupChatsController {
   async leaveGroup(@Req() req: any, @Param('id') conversationId: string) {
     const userId = req.user?.id;
     const result = await this.groupChatsService.leaveGroup(conversationId, userId);
+    this.groupChatsService.invalidateGroupDetailsCache(conversationId).catch(() => {});
 
     setImmediate(async () => {
       const [actorHandle, remainingParticipantIds] = await Promise.all([
@@ -372,6 +375,7 @@ export class GroupChatsController {
     const userId = req.user?.id;
     const targetHandle = await this.groupChatsService.getUserHandle(targetUserId);
     const result = await this.groupChatsService.changeGroupOwner(conversationId, userId, targetUserId);
+    this.groupChatsService.invalidateGroupDetailsCache(conversationId).catch(() => {});
     const actorHandle = await this.groupChatsService.getUserHandle(userId);
 
     const participantIds = await this.groupChatsService.getConversationParticipantIds(conversationId);
@@ -402,6 +406,7 @@ export class GroupChatsController {
     const userId = req.user?.id;
     const targetHandle = await this.groupChatsService.getUserHandle(targetUserId);
     const result = await this.groupChatsService.promoteToAdmin(conversationId, userId, targetUserId);
+    this.groupChatsService.invalidateGroupDetailsCache(conversationId).catch(() => {});
     const actorHandle = await this.groupChatsService.getUserHandle(userId);
     const participantIds = await this.groupChatsService.getConversationParticipantIds(conversationId);
     if (participantIds.length > 0) {
@@ -421,6 +426,7 @@ export class GroupChatsController {
     const userId = req.user?.id;
     const targetHandle = await this.groupChatsService.getUserHandle(targetUserId);
     const result = await this.groupChatsService.demoteFromAdmin(conversationId, userId, targetUserId);
+    this.groupChatsService.invalidateGroupDetailsCache(conversationId).catch(() => {});
     const actorHandle = await this.groupChatsService.getUserHandle(userId);
     const participantIds = await this.groupChatsService.getConversationParticipantIds(conversationId);
     if (participantIds.length > 0) {
@@ -449,6 +455,7 @@ export class GroupChatsController {
     const userId = req.user?.id;
     const targetHandle = await this.groupChatsService.getUserHandle(targetUserId);
     const result = await this.groupChatsService.acceptGroupJoinRequest(conversationId, userId, targetUserId);
+    this.groupChatsService.invalidateGroupDetailsCache(conversationId).catch(() => {});
     const actorHandle = await this.groupChatsService.getUserHandle(userId);
     const text = `${actorHandle} approved ${targetHandle}'s request to join`;
     await this.broadcastSystemMessage(conversationId, userId, text);
@@ -461,7 +468,9 @@ export class GroupChatsController {
   @UseGuards(JwtGuard)
   async declineJoinRequest(@Req() req: any, @Param('id') conversationId: string, @Param('targetUserId') targetUserId: string) {
     const userId = req.user?.id;
-    return this.groupChatsService.declineGroupJoinRequest(conversationId, userId, targetUserId);
+    const result = await this.groupChatsService.declineGroupJoinRequest(conversationId, userId, targetUserId);
+    this.groupChatsService.invalidateGroupDetailsCache(conversationId).catch(() => {});
+    return result;
   }
 
   @Post(':id/join')
@@ -469,6 +478,7 @@ export class GroupChatsController {
   async joinGroup(@Req() req: any, @Param('id') conversationId: string) {
     const userId = req.user?.id;
     const result = await this.groupChatsService.requestGroupJoin(conversationId, userId);
+    this.groupChatsService.invalidateGroupDetailsCache(conversationId).catch(() => {});
     if (result.status === 'JOINED') {
       const userHandle = await this.groupChatsService.getUserHandle(userId);
       await this.broadcastSystemMessage(conversationId, userId, `${userHandle} joined the group`);

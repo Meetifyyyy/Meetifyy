@@ -26,21 +26,17 @@ export default function DashboardLayoutWrapper() {
     match.pathname.startsWith('/search') ||
     /^\/communities\/.+/.test(match.pathname)
   );
-  // A conversation open on mobile (/messages/:id or /inbox/:id, as opposed to
-  // the bare list route) renders its own chat input pinned to the bottom of
-  // the viewport. Leaving the fixed BottomNav visible there overlaps that
-  // input — every chat app hides its own tab bar once a thread is open, so
-  // do the same here instead of stacking two fixed bottom bars.
-  const isMessageThreadOpen = matches.some(match =>
-    (match.pathname.startsWith('/messages/') && match.pathname !== '/messages/') ||
-    (match.pathname.startsWith('/inbox/') && match.pathname !== '/inbox/')
-  );
+  // The BottomNav stays visible with a conversation open: the messages layout
+  // reserves a 60px bottom row for it (see `.centre--messages` in global.css),
+  // so the chat input sits above the nav rather than under it. It is only
+  // hidden while the soft keyboard is open (handled in CSS via
+  // `html[data-keyboard-open]`), so the input can rise to the keyboard.
   const hideBottomNav = matches.some(match =>
     match.pathname.startsWith('/saved') ||
     match.pathname.startsWith('/settings') ||
     match.pathname.startsWith('/search') ||
     match.pathname.startsWith('/communities/')
-  ) || isMessageThreadOpen;
+  );
 
   useEffect(() => {
     const handleKeyDown = (e) => {

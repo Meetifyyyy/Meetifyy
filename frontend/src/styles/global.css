@@ -423,12 +423,25 @@ nav a.active {
   .centre--messages {
     padding-bottom: 0 !important;
     overflow: hidden !important;
-    /* 56px mobile header + 60px BottomNav (BottomNav.module.css .bottomNav)
-       — reserved unconditionally so the fixed nav can never overlap the chat
-       input, whether or not it's actually hidden for the open-thread case
-       (see DashboardLayoutWrapper's isMessageThreadOpen). */
-    height: calc(100dvh - 56px - 60px) !important;
-    max-height: calc(100dvh - 56px - 60px) !important;
+    /* The global app Header is display:none on mobile for /messages (Header's
+       hideOnMobile), so the messages section spans from the viewport top. The
+       only bottom reservation is max(60px BottomNav, keyboard height): keyboard
+       closed → reserve the 60px nav row so the fixed BottomNav never overlaps
+       the chat input; keyboard open (--kb-inset > 60px, set by useKeyboardInset)
+       → reserve exactly the keyboard height so the input rises just above the
+       keyboard while the chat header stays pinned at the top. */
+    height: calc(100dvh - max(60px, var(--kb-inset, 0px))) !important;
+    max-height: calc(100dvh - max(60px, var(--kb-inset, 0px))) !important;
+  }
+
+  /* When the soft keyboard is open, the BottomNav would sit behind it (or peek
+     above it on some browsers); hide it so only the chat input is above the
+     keyboard. Targets the stable `app-bottom-nav` class on the nav root (not the
+     hashed CSS-module class, which production may strip of its local name). */
+  html[data-keyboard-open] .app-bottom-nav {
+    transform: translateY(100%) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
   }
 
   .centre--post {

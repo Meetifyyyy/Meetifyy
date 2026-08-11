@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useGlobalSocketStore } from '../stores/useGlobalSocketStore';
 import { useQueryClient } from '@tanstack/react-query';
@@ -11,12 +11,23 @@ import { useGlobalSocketSync } from '../hooks/useGlobalSocketSync';
 import { appendMessageToCache, matchesConversationId, getConversationAliases, updateConversationPreview } from '../../features/messages/shared/utils/cacheUtils';
 
 export default function SocketManager() {
-  const { session, isLoggedIn } = useAuth();
+  const { session, isLoggedIn, currentUser } = useAuth();
   const { connect, disconnect, socket } = useGlobalSocketStore();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
   useGlobalSocketSync();
+
+  // Reciprocity gate: if the current user has hidden their own online status,
+  // they must not see anyone else's presence. Kept in a ref so the (rarely
+  // re-bound) socket handlers always read the freshest value without needing
+  // to be re-registered on every settings change.
+  const selfShowOnline =
+    (currentUser?.settings?.showOnlineStatus ?? currentUser?.preferences?.showOnlineStatus) !== false;
+  const selfShowOnlineRef = useRef(selfShowOnline);
+  useEffect(() => {
+    selfShowOnlineRef.current = selfShowOnline;
+  }, [selfShowOnline]);
 
   useEffect(() => {
     if (isLoggedIn && session?.access_token) {
@@ -25,6 +36,50 @@ export default function SocketManager() {
       disconnect();
     }
   }, [isLoggedIn, session?.access_token, connect, disconnect]);
+
+  // Instant reaction to the current user toggling their own "show online status".
+  // OFF → immediately scrub all cached presence to offline so other users'
+  // indicators disappear without a refresh (defense-in-depth alongside the
+  // backend, which also stops delivering presence to a hidden viewer).
+  // ON  → re-sync from the backend, which now re-permits presence for this viewer.
+  const prevSelfShowOnlineRef = useRef(selfShowOnline);
+  useEffect(() => {
+    if (prevSelfShowOnlineRef.current === selfShowOnline) return;
+    prevSelfShowOnlineRef.current = selfShowOnline;
+
+    if (!selfShowOnline) {
+      const scrubOffline = (userObj) =>
+        userObj ? { ...userObj, isOnline: false, online: false } : userObj;
+
+      queryClient.setQueryData(['conversations'], (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map((c) => ({
+          ...c,
+          online: false,
+          isOnline: false,
+          ...(c.targetUser ? { targetUser: scrubOffline(c.targetUser) } : {}),
+          ...(c.otherUser ? { otherUser: scrubOffline(c.otherUser) } : {}),
+          ...(c.user ? { user: scrubOffline(c.user) } : {}),
+          ...(Array.isArray(c.participants)
+            ? { participants: c.participants.map((p) => ({ ...p, isOnline: false, user: scrubOffline(p.user) })) }
+            : {}),
+          ...(Array.isArray(c.members)
+            ? { members: c.members.map((m) => ({ ...m, isOnline: false, user: scrubOffline(m.user) })) }
+            : {}),
+        }));
+      });
+      ['users', 'campusUsers'].forEach((key) => {
+        queryClient.setQueryData([key], (old) =>
+          Array.isArray(old) ? old.map(scrubOffline) : old
+        );
+      });
+    } else {
+      // Re-permitted: pull authoritative presence back from the server.
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['campusUsers'] });
+    }
+  }, [selfShowOnline, queryClient]);
 
   useEffect(() => {
     if (!socket) return;
@@ -186,7 +241,9 @@ export default function SocketManager() {
 
     const handlePresenceUpdate = ({ userId, status, lastActive }) => {
       if (!userId) return;
-      const isOnline = status === 'online';
+      // Reciprocity: a viewer who has hidden their own status must never see
+      // anyone as online, even if a stale/racing event slips through.
+      const isOnline = selfShowOnlineRef.current ? status === 'online' : false;
 
       const isSameId = (id1, id2) => {
         if (!id1 || !id2) return false;

@@ -23,6 +23,8 @@ export default function GroupChatArea({
   isLoadingMore,
   onLoadMore,
   onMarkSeen,
+  onRetryUpload,
+  onCancelUpload,
 }) {
   const convId = conversation?.id || conversation?.publicId || conversation?.internalId;
   const isGroup = Boolean(conversation?.type === 'GROUP' || conversation?.isGroup || conversation?.activityId);
@@ -82,6 +84,8 @@ export default function GroupChatArea({
       isLoadingMore={isLoadingMore}
       onLoadMore={onLoadMore}
       onMarkSeen={onMarkSeen}
+      onRetryUpload={onRetryUpload}
+      onCancelUpload={onCancelUpload}
       onSendMessage={onSendMessage}
       onBack={onBack}
       emptyIcon="👥"

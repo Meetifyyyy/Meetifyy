@@ -2,22 +2,56 @@ import { useEffect, useMemo, useCallback, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { messagesApi, dmApi, groupApi } from '@shared/api/apiClient';
 import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
-import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
+import { processAndUploadImage, processAndUploadVideo, uploadFileDirect, getImageDimensions } from '@shared/utils/mediaPipeline';
 import { useData } from '@shared/hooks/useData';
 import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, STATUS_RANK, checkIsMe } from '../utils/cacheUtils';
 
-import { idbGetMessages, idbSaveMessages, idbPatchMessage, migrateHistoricalFailedMessages } from '../utils/idbMessages';
+import { idbGetMessages, idbSaveMessages, idbPatchMessage, idbDeleteMessage, migrateHistoricalFailedMessages, trimMessageCache } from '../utils/idbMessages';
 
+
+// Throttles upload-progress writes so a fast XHR can't flood React state.
+// Emits on leading edge, then at most once per `interval` ms, and always the
+// final value — keeps the progress ring smooth without re-rendering per byte.
+function makeProgressThrottle(fn, interval = 150) {
+  let last = 0;
+  let pending = null;
+  let timer = null;
+  const flush = () => {
+    timer = null;
+    if (pending != null) {
+      last = Date.now();
+      const v = pending;
+      pending = null;
+      fn(v);
+    }
+  };
+  return (value) => {
+    const now = Date.now();
+    if (now - last >= interval) {
+      last = now;
+      fn(value);
+    } else {
+      pending = value;
+      if (!timer) timer = setTimeout(flush, interval - (now - last));
+    }
+  };
+}
 
 export function useChatManager(activeChatId, type = 'messages', currentUserParam) {
   const queryClient = useQueryClient();
   const { socket } = useGlobalSocketStore();
+  // Tracks in-flight/failed media uploads so they can be retried or cancelled
+  // by clientId without duplicating the message. Value shape:
+  // { file, mediaType, targetConvId, localPreviewUrl, abortController, sendArgs }
+  const pendingUploadsRef = useRef(new Map());
   const { conversations = [], currentUser: dataUser } = useData() || {};
   const currentUser = currentUserParam || dataUser;
 
-  // Run historical failed messages migration on startup
+  // Run historical failed messages migration on startup, then bound the local
+  // message/media-metadata cache so IndexedDB can't grow without limit.
   useEffect(() => {
     migrateHistoricalFailedMessages().catch(console.warn);
+    trimMessageCache().catch(console.warn);
   }, []);
 
   const isNearBottomRef = useRef(true);
@@ -335,6 +369,15 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
 
     const clientId = options?.clientId || options?.tempId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
     const tempId = clientId;
+
+    // The caller (ChatInputArea) passes an object-URL preview as mediaUrl alongside
+    // fileObj — capture it so the bubble can paint instantly and we can revoke it
+    // once the server asset has loaded (prevents the memory leak + flicker).
+    const localPreviewUrl = fileObj && typeof mediaUrl === 'string' && mediaUrl.startsWith('blob:') ? mediaUrl : null;
+    // Pre-seed dims from a caller-provided value if any; refined async below.
+    const initialWidth = options?.width || null;
+    const initialHeight = options?.height || null;
+
     const tempMessage = {
       id: tempId,
       tempId,
@@ -344,7 +387,23 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       sender: currentUser || { id: 'me' },
       from: 'me',
       text: payloadText,
-      payload: { text: payloadText, mediaUrl, mediaType, mentions, inviteData: explicitInviteData, clientId, tempId },
+      payload: {
+        text: payloadText,
+        mediaUrl,
+        thumbnailUrl: fileObj ? localPreviewUrl : (options?.thumbnailUrl || null),
+        localPreviewUrl,
+        mediaType,
+        width: initialWidth,
+        height: initialHeight,
+        duration: options?.duration || null,
+        mentions,
+        inviteData: explicitInviteData,
+        clientId,
+        tempId,
+      },
+      mediaType,
+      uploadStatus: fileObj ? 'uploading' : undefined,
+      uploadProgress: fileObj ? 0 : undefined,
       replyTo,
       status: 'sending',
       createdAt: new Date().toISOString(),
@@ -356,26 +415,88 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     idbSaveMessages(targetConvId, [tempMessage]);
 
     let finalMediaUrl = mediaUrl;
+    let finalThumbnailUrl = tempMessage.payload.thumbnailUrl;
+    let finalWidth = initialWidth;
+    let finalHeight = initialHeight;
+    let finalDuration = tempMessage.payload.duration;
 
     if (fileObj) {
+      const file = fileObj;
+      const abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      // Remember everything needed to retry/cancel this upload by clientId.
+      pendingUploadsRef.current.set(clientId, {
+        file, mediaType, targetConvId, localPreviewUrl, abortController,
+        sendArgs: { convId: targetConvId, text: payloadText, replyTo, mentions, mediaUrl, mediaType, explicitInviteData },
+      });
+
+      // Refine image dimensions off the main thread and reserve layout space early.
+      if (file.type?.startsWith('image/') && (!finalWidth || !finalHeight)) {
+        getImageDimensions(file).then((dims) => {
+          if (dims?.width && dims?.height) {
+            finalWidth = dims.width;
+            finalHeight = dims.height;
+            updateMessageInCache(queryClient, targetConvId, clientId, (existing) => ({
+              payload: { ...(existing?.payload || {}), width: dims.width, height: dims.height },
+            }));
+          }
+        }).catch(() => {});
+      }
+
+      // Throttled progress writer — updates ONLY this message's uploadProgress.
+      const onProgress = makeProgressThrottle((percent) => {
+        updateMessageInCache(queryClient, targetConvId, clientId, { uploadProgress: percent });
+      }, 150);
+
       try {
-        const file = fileObj;
         let uploadRes;
-        if (file.type.startsWith('image/')) {
-          uploadRes = await processAndUploadImage(file, 'chat');
+        if (file.type?.startsWith('image/')) {
+          uploadRes = await processAndUploadImage(file, 'chat', {}, onProgress, abortController?.signal);
+        } else if (file.type?.startsWith('video/')) {
+          uploadRes = await processAndUploadVideo(file, 'chat', onProgress, abortController?.signal);
         } else {
-          uploadRes = await uploadFileDirect(file, 'chat');
+          uploadRes = await uploadFileDirect(file, 'chat', onProgress, abortController?.signal);
         }
+
         if (uploadRes?.publicUrl) {
           finalMediaUrl = uploadRes.publicUrl;
-          updateMessageInCache(queryClient, targetConvId, clientId, {
+          finalThumbnailUrl = uploadRes.thumbnailUrl || uploadRes.publicUrl;
+          finalWidth = uploadRes.width || finalWidth;
+          finalHeight = uploadRes.height || finalHeight;
+          finalDuration = uploadRes.duration || finalDuration;
+
+          updateMessageInCache(queryClient, targetConvId, clientId, (existing) => ({
             mediaUrl: finalMediaUrl,
-            payload: { ...tempMessage.payload, mediaUrl: finalMediaUrl }
-          });
+            uploadStatus: 'done',
+            uploadProgress: 100,
+            payload: {
+              ...(existing?.payload || {}),
+              mediaUrl: finalMediaUrl,
+              thumbnailUrl: finalThumbnailUrl,
+              width: finalWidth,
+              height: finalHeight,
+              duration: finalDuration,
+            },
+          }));
+          idbPatchMessage(targetConvId, clientId, {
+            mediaUrl: finalMediaUrl,
+            uploadStatus: 'done',
+            payload: { ...tempMessage.payload, mediaUrl: finalMediaUrl, thumbnailUrl: finalThumbnailUrl, width: finalWidth, height: finalHeight, duration: finalDuration },
+          }).catch(() => {});
         }
+
+        pendingUploadsRef.current.delete(clientId);
+        // Revoke the local preview shortly after the server thumbnail has had time
+        // to load — avoids both the memory leak and a mid-load flash.
+        if (localPreviewUrl) setTimeout(() => { try { URL.revokeObjectURL(localPreviewUrl); } catch (_) {} }, 5000);
       } catch (err) {
-        updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed' });
-        idbPatchMessage(targetConvId, clientId, { status: 'failed' });
+        // A deliberate cancel removes the message; a real failure keeps it retryable.
+        if (err?.name === 'AbortError') {
+          pendingUploadsRef.current.delete(clientId);
+          if (localPreviewUrl) { try { URL.revokeObjectURL(localPreviewUrl); } catch (_) {} }
+          return;
+        }
+        updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed', uploadStatus: 'failed' });
+        idbPatchMessage(targetConvId, clientId, { status: 'failed', uploadStatus: 'failed' }).catch(() => {});
         return;
       }
     }
@@ -386,7 +507,11 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       conversationId: targetConvId,
       text: payloadText,
       mediaUrl: finalMediaUrl,
+      thumbnailUrl: (finalThumbnailUrl && !String(finalThumbnailUrl).startsWith('blob:')) ? finalThumbnailUrl : undefined,
       mediaType,
+      width: finalWidth || undefined,
+      height: finalHeight || undefined,
+      duration: finalDuration || undefined,
       mentions,
       replyToId: replyTo?.id,
       inviteData: explicitInviteData,
@@ -399,6 +524,19 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       sendHandled = true;
       updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
         const finalStatus = (existing?.status === 'read' || existing?.status === 'seen') ? existing.status : 'sent';
+        // Merge payloads so locally-derived media metadata (thumbnailUrl, width,
+        // height, duration) survives even if the server ACK omits them. Server
+        // values win when present; local preview URLs are dropped in favour of
+        // the confirmed server mediaUrl.
+        const mergedPayload = {
+          ...(existing?.payload || {}),
+          ...(serverMsg?.payload || {}),
+          thumbnailUrl: serverMsg?.payload?.thumbnailUrl || serverMsg?.thumbnailUrl || finalThumbnailUrl || existing?.payload?.thumbnailUrl,
+          width: serverMsg?.payload?.width || finalWidth || existing?.payload?.width,
+          height: serverMsg?.payload?.height || finalHeight || existing?.payload?.height,
+          duration: serverMsg?.payload?.duration || finalDuration || existing?.payload?.duration,
+          localPreviewUrl: undefined,
+        };
         const updated = {
           ...existing,
           ...(serverMsg || {}),
@@ -406,6 +544,9 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
           clientId,
           tempId: clientId,
           status: finalStatus,
+          uploadStatus: fileObj ? 'done' : existing?.uploadStatus,
+          mediaUrl: serverMsg?.mediaUrl || finalMediaUrl || existing?.mediaUrl,
+          payload: mergedPayload,
         };
         idbPatchMessage(targetConvId, updated.id, updated).catch(console.warn);
         return updated;
@@ -464,6 +605,51 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       }
     }
   }, [activeChatId, currentUser, queryClient, socket, applySeenToCache]);
+
+  // Retry a failed media upload with the SAME clientId — appendMessageToCache
+  // matches by clientId and updates in place, so no duplicate message/record.
+  const retryUpload = useCallback((clientId) => {
+    if (!clientId) return;
+    const entry = pendingUploadsRef.current.get(clientId);
+    // Even if the entry was cleared, the failed message row still holds the File
+    // reference via the pending map; if absent we cannot retry (page was reloaded).
+    if (!entry?.file) return;
+    const a = entry.sendArgs || {};
+    updateMessageInCache(queryClient, entry.targetConvId, clientId, { status: 'sending', uploadStatus: 'uploading', uploadProgress: 0 });
+    sendMessageOptimistically({
+      conversationId: entry.targetConvId,
+      text: a.text || '',
+      replyTo: a.replyTo,
+      mentions: a.mentions || [],
+      mediaUrl: entry.localPreviewUrl || a.mediaUrl,
+      mediaType: entry.mediaType,
+      inviteData: a.explicitInviteData,
+      fileObj: entry.file,
+      clientId,
+      tempId: clientId,
+    });
+  }, [queryClient, sendMessageOptimistically]);
+
+  // Cancel an in-flight upload — aborts the XHR and removes the optimistic row.
+  const cancelUpload = useCallback((clientId) => {
+    if (!clientId) return;
+    const entry = pendingUploadsRef.current.get(clientId);
+    if (entry?.abortController) { try { entry.abortController.abort(); } catch (_) {} }
+    pendingUploadsRef.current.delete(clientId);
+    if (entry?.localPreviewUrl) { try { URL.revokeObjectURL(entry.localPreviewUrl); } catch (_) {} }
+    // Remove the optimistic message from cache + IDB.
+    queryClient.setQueryData(['messages', entry?.targetConvId || activeChatId], (old) => {
+      if (!old?.pages) return old;
+      return {
+        ...old,
+        pages: old.pages.map((page) => ({
+          ...page,
+          messages: (page.messages || []).filter((m) => m.clientId !== clientId && m.tempId !== clientId && m.id !== clientId),
+        })),
+      };
+    });
+    idbDeleteMessage(clientId).catch(() => {});
+  }, [queryClient, activeChatId]);
 
   const conversationsRef = useRef(conversations);
   useEffect(() => {
@@ -648,6 +834,8 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     isLoadingMore: isFetchingNextPage,
     onLoadMore: fetchNextPage,
     sendMessageOptimistically,
+    retryUpload,
+    cancelUpload,
     markSeenIfEligible,
   };
 }

@@ -921,3 +921,65 @@
   text-decoration: underline;
   color: #a5b4fc;
 }
+/* --- Optimistic media upload overlay (progress / retry / cancel) --- */
+.msgUploadOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.42);
+  border-radius: inherit;
+  z-index: 4;
+  pointer-events: auto;
+}
+.msgUploadRing {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    conic-gradient(#ffffff var(--upload-pct, 0%), rgba(255, 255, 255, 0.25) 0);
+  -webkit-mask: radial-gradient(circle 15px at center, transparent 98%, #000 100%);
+          mask: radial-gradient(circle 15px at center, transparent 98%, #000 100%);
+  transition: background 0.15s linear;
+}
+.msgUploadPct {
+  position: absolute;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #fff;
+}
+.msgUploadFailedText {
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.msgUploadActions {
+  display: flex;
+  gap: 8px;
+}
+.msgUploadBtn {
+  background: var(--color-primary, #3b82f6);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 5px 14px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.msgUploadBtnGhost {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, MoreVertical, Search, BellOff, BellRing, Trash2, ShieldOff, Info, Pin } from 'lucide-react';
 import Avatar from '@shared/components/avatar/Avatar';
+import { useCanSeeOthersPresence } from '@shared/hooks/usePresenceVisibility';
 import styles from '../../../shared/components/chat/ChatHeader.module.css';
 
 export default function DMChatHeader({ 
@@ -14,10 +15,11 @@ export default function DMChatHeader({
 }) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [isMuted, setIsMuted] = useState(conversation?.muted || false);
+  const canSeePresence = useCanSeeOthersPresence();
 
   if (!conversation) return null;
 
-  const isOnline = Boolean(
+  const isOnline = canSeePresence && Boolean(
     conversation.targetUser ? conversation.targetUser.isOnline : (conversation.isOnline ?? conversation.online ?? false)
   );
   const isBlocked = conversation.isBlocked || conversation.blocked;

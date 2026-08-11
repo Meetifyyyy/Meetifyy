@@ -10,7 +10,15 @@ export default function ShareProfileModal({ isOpen, onClose, profileUser }) {
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
   
-  const { data: conversations = [] } = useQuery({ queryKey: ['conversations'], queryFn: messagesApi.getConversations });
+  // Reuse the main conversation-list cache (same key + args + staleTime) so this
+  // opens instantly from the warm cache and never truncates the shared list.
+  const { data: conversations = [] } = useQuery({
+    queryKey: ['conversations'],
+    queryFn: () => messagesApi.getConversations(50, 0),
+    enabled: isOpen,
+    staleTime: 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
   const handleCopyLink = () => {
     const link = `${window.location.origin}/profile/${profileUser.username}`;
     navigator.clipboard.writeText(link).then(() => {
@@ -20,22 +28,28 @@ export default function ShareProfileModal({ isOpen, onClose, profileUser }) {
   };
 
   const handleSend = async (convId) => {
-    await messagesApi.sendDirectMessage(convId, {
-      text: '',
-      inviteData: { 
-        type: 'profileShare', 
-        profile: { 
-          id: profileUser.id, 
-          username: profileUser.username, 
-          displayName: profileUser.displayName, 
-          avatar: profileUser.avatar,
-          bio: profileUser.bio,
-          followers: profileUser.stats?.followers ?? profileUser.followers ?? 0,
-          following: profileUser.stats?.following ?? profileUser.following ?? 0
-        } 
-      }
-    });
+    if (sentTo.has(convId)) return;
+    // Optimistic: mark as sent immediately, revert only if the request fails.
     setSentTo(prev => new Set(prev).add(convId));
+    try {
+      await messagesApi.sendDirectMessage(convId, {
+        text: '',
+        inviteData: {
+          type: 'profileShare',
+          profile: {
+            id: profileUser.id,
+            username: profileUser.username,
+            displayName: profileUser.displayName,
+            avatar: profileUser.avatar,
+            bio: profileUser.bio,
+            followers: profileUser.stats?.followers ?? profileUser.followers ?? 0,
+            following: profileUser.stats?.following ?? profileUser.following ?? 0
+          }
+        }
+      });
+    } catch {
+      setSentTo(prev => { const n = new Set(prev); n.delete(convId); return n; });
+    }
   };
 
   // Filter conversations

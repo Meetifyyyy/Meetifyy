@@ -85,25 +85,17 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
         return; // Already emitted to self
       }
 
-      if (rule === 'everyone') {
-        const userConvs = await this.prisma.conversationParticipant.findMany({
-          where: { userId, deletedAt: null, leftAt: null },
-          select: { conversationId: true }
-        });
-        userConvs.forEach(p => {
-          if (p.conversationId) {
-            this.server.to(`conv_${p.conversationId}`).emit('presence:update', presencePayload);
-          }
-        });
-        return;
-      }
-
-      // Restrictive rules: following or mutual
-      // Find all unique users in shared conversations
+      // For EVERY rule (including 'everyone') we must respect reciprocity: a
+      // viewer who has hidden their own online status must not receive anyone
+      // else's presence. Room-based fan-out (`conv_<id>`) cannot filter
+      // per-viewer, so we always resolve the concrete allowed-viewer set via
+      // checkPresenceVisibilityBatch and emit to those personal user rooms.
+      // (checkPresenceVisibilityBatch already handles 'everyone' by returning
+      // all non-hidden viewers.)
       const sharedConvs = await this.prisma.conversationParticipant.findMany({
-        where: { 
-          conversation: { participants: { some: { userId: userId, deletedAt: null, leftAt: null } } }, 
-          deletedAt: null, leftAt: null 
+        where: {
+          conversation: { participants: { some: { userId: userId, deletedAt: null, leftAt: null } } },
+          deletedAt: null, leftAt: null
         },
         select: { userId: true }
       });
@@ -417,7 +409,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('message:send')
   async handleSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { tempId?: string; clientId?: string; conversationId: string; text?: string; mediaUrl?: string; mediaType?: string; mentions?: MentionDto[]; replyToId?: string; inviteData?: any }
+    @MessageBody() data: { tempId?: string; clientId?: string; conversationId: string; text?: string; mediaUrl?: string; mediaType?: string; thumbnailUrl?: string; width?: number; height?: number; duration?: number; mentions?: MentionDto[]; replyToId?: string; inviteData?: any }
   ) {
     const senderId = (client as any).userId;
     if (!senderId) return { status: 'error', error: 'Unauthenticated' };
@@ -426,10 +418,19 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       const clientKey = data.clientId || data.tempId;
       const payload = { ...message, tempId: clientKey, clientId: clientKey, status: 'sent' };
 
-      // Broadcast to room excluding the sending socket to avoid duplicate websocket echo
-      const room = `conv_${data.conversationId}`;
-      client.to(room).emit('message:new', payload);
-      // Multi-device sync: emit to sender's other connected sockets/tabs
+      // Block enforcement: sendMessage already computed recipientIds, which
+      // EXCLUDES any participant who has blocked the sender (or whom the sender
+      // blocked). We must deliver to those recipients' personal rooms rather
+      // than fan out to `conv_<id>`, because a room broadcast would leak the
+      // message to a user who blocked the sender. This mirrors the HTTP
+      // controller path (MessagesController.sendMessage) exactly so realtime
+      // and REST enforce blocks identically.
+      const recipientIds: string[] = (message as any).recipientIds || [];
+      for (const rId of recipientIds) {
+        if (rId === senderId) continue;
+        this.server.to(rId).emit('message:new', payload);
+      }
+      // Multi-device sync: emit to sender's OTHER connected sockets/tabs
       client.to(senderId).emit('message:new', payload);
 
       // Return server ACK directly to sending client callback

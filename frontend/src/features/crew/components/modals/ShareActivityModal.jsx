@@ -10,7 +10,15 @@ export default function ShareActivityModal({ isOpen, onClose, activity }) {
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
   
-  const { data: conversations = [] } = useQuery({ queryKey: ['conversations'], queryFn: messagesApi.getConversations });
+  // Reuse the main conversation-list cache (same key + args + staleTime) so this
+  // opens instantly from the warm cache and never truncates the shared list.
+  const { data: conversations = [] } = useQuery({
+    queryKey: ['conversations'],
+    queryFn: () => messagesApi.getConversations(50, 0),
+    enabled: isOpen,
+    staleTime: 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
   const handleCopyLink = () => {
     const link = `${window.location.origin}/activity/${activity.id}`;
@@ -21,27 +29,33 @@ export default function ShareActivityModal({ isOpen, onClose, activity }) {
   };
 
   const handleSend = async (convId) => {
-    await messagesApi.sendDirectMessage(convId, { 
-      text: '',
-      inviteData: { 
-        type: 'activityShare', 
-        activity: { 
-          id: activity.id, 
-          title: activity.title, 
-          time: activity.time, 
-          date: activity.date,
-          dateLabel: activity.dateLabel,
-          hostName: activity.hostName,
-          category: activity.category,
-          location: activity.location,
-          description: activity.description,
-          slotsNeeded: activity.slotsNeeded,
-          slotsFilled: activity.slotsFilled,
-          hostAvatar: activity.hostAvatar
-        } 
-      }
-    });
+    if (sentTo.has(convId)) return;
+    // Optimistic: mark as sent immediately, revert only if the request fails.
     setSentTo(prev => new Set(prev).add(convId));
+    try {
+      await messagesApi.sendDirectMessage(convId, {
+        text: '',
+        inviteData: {
+          type: 'activityShare',
+          activity: {
+            id: activity.id,
+            title: activity.title,
+            time: activity.time,
+            date: activity.date,
+            dateLabel: activity.dateLabel,
+            hostName: activity.hostName,
+            category: activity.category,
+            location: activity.location,
+            description: activity.description,
+            slotsNeeded: activity.slotsNeeded,
+            slotsFilled: activity.slotsFilled,
+            hostAvatar: activity.hostAvatar
+          }
+        }
+      });
+    } catch {
+      setSentTo(prev => { const n = new Set(prev); n.delete(convId); return n; });
+    }
   };
 
   // Filter conversations based on search term

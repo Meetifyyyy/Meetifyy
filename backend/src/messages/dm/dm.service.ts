@@ -6,7 +6,7 @@ import { DomainEventService } from '../../events/domain-event.service';
 import { generatePublicId } from '../../common/utils/public-id.util';
 import { MentionsService } from '../../mentions/mentions.service';
 
-import { checkPresenceVisibility } from '../../users/privacy.helper';
+import { resolvePresenceVisibilityForViewer } from '../../users/privacy.helper';
 
 @Injectable()
 export class DmService extends MessagingCoreService {
@@ -20,14 +20,9 @@ export class DmService extends MessagingCoreService {
   }
 
   async getUserDMConversations(userId: string, limit: number = 20, offset: number = 0) {
-    const now = new Date();
-    this.prisma.conversation.deleteMany({
-      where: {
-        isInstantMatch: true,
-        expiresAt: { lt: now }
-      }
-    }).catch(() => { });
-
+    // NOTE: expired instant-match cleanup is handled by the 15-min cron in
+    // MessagesService.onModuleInit — a read endpoint must not issue a write
+    // (and its row lock) on every list load.
     const participants = await this.prisma.conversationParticipant.findMany({
       where: {
         userId,
@@ -41,6 +36,7 @@ export class DmService extends MessagingCoreService {
         isPinned: true,
         clearedAt: true,
         lastReadAt: true,
+        unreadCount: true,
         groupUpdatesActive: true,
         conversation: {
           select: {
@@ -127,26 +123,13 @@ export class DmService extends MessagingCoreService {
       });
     });
 
+    // Use the persisted unreadCount column (maintained by sendMessage/markAsRead),
+    // exactly like the /api/messages path — instead of one COUNT query per
+    // conversation (the previous N+1).
     const unreadMap = new Map<string, number>();
-    if (convIds.length > 0) {
-      await Promise.all(participants.map(async (part) => {
-        const cId = part.conversation.id;
-        const readAt = part.lastReadAt ? new Date(part.lastReadAt).getTime() : 0;
-        const clearAt = part.clearedAt ? new Date(part.clearedAt).getTime() : 0;
-        const maxTime = Math.max(readAt, clearAt);
-        const filterDate = maxTime > 0 ? new Date(maxTime) : new Date(0);
-
-        const count = await this.prisma.message.count({
-          where: {
-            conversationId: cId,
-            senderId: { not: userId },
-            deletedAt: null,
-            createdAt: { gt: filterDate }
-          }
-        });
-        unreadMap.set(cId, count);
-      }));
-    }
+    participants.forEach(part => {
+      unreadMap.set(part.conversation.id, (part as any).unreadCount || 0);
+    });
 
     const otherUsersMap = new Map<string, any>();
     participants.forEach(p => {
@@ -160,21 +143,24 @@ export class DmService extends MessagingCoreService {
     const presenceMap = new Map<string, { isOnline: boolean; lastActive: string | null }>();
     if (userIdsToFetchPresence.length > 0) {
       const batchPresence = await this.presenceService.getPresenceMany(userIdsToFetchPresence);
-      await Promise.all(userIdsToFetchPresence.map(async (uId) => {
-        const presence = batchPresence.get(uId);
+      // One viewer-settings read + at most two batched follow queries, replacing
+      // the previous per-user checkPresenceVisibility N+1.
+      const visTargets = userIdsToFetchPresence.map(uId => {
         const u = otherUsersMap.get(uId);
-        const canSee = await checkPresenceVisibility(
-          uId,
-          userId,
-          u?.settings?.whoCanSeeOnline || 'everyone',
-          u?.settings?.showOnlineStatus !== false,
-          this.prisma
-        );
+        return {
+          userId: uId,
+          rule: u?.settings?.whoCanSeeOnline || 'everyone',
+          isEnabled: u?.settings?.showOnlineStatus !== false,
+        };
+      });
+      const visibleSet = await resolvePresenceVisibilityForViewer(userId, visTargets, this.prisma);
+      userIdsToFetchPresence.forEach(uId => {
+        const presence = batchPresence.get(uId);
         presenceMap.set(uId, {
-          isOnline: canSee ? (presence?.status === 'online') : false,
+          isOnline: visibleSet.has(uId) ? (presence?.status === 'online') : false,
           lastActive: presence?.lastSeen || null
         });
-      }));
+      });
     }
 
     const userBlocks = await this.prisma.block.findMany({

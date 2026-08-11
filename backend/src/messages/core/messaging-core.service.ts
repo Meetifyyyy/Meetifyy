@@ -239,6 +239,12 @@ export class MessagingCoreService {
             text: payload.text || '',
             mediaUrl: payload.mediaUrl || null,
             mediaType: payload.mediaType || null,
+            // Lightweight media metadata for instant, layout-stable rendering on
+            // the recipient side (thumbnail/poster + intrinsic dimensions/duration).
+            thumbnailUrl: payload.thumbnailUrl || null,
+            width: payload.width || null,
+            height: payload.height || null,
+            duration: payload.duration || null,
             mentions: sanitizedMentions,
             inviteData: initialInviteData,
             isForwarded: payload.isForwarded || false,
@@ -271,7 +277,7 @@ export class MessagingCoreService {
       }),
       ...(otherUserIds.length > 0 ? [
         this.prisma.conversationParticipant.updateMany({
-          where: { conversationId: realConvId, userId: { not: senderId } },
+          where: { conversationId: realConvId, userId: { not: senderId }, leftAt: null, deletedAt: null },
           data: { unreadCount: { increment: 1 } }
         })
       ] : [])
@@ -617,41 +623,65 @@ export class MessagingCoreService {
     };
   }
 
-  async markAsRead(conversationId: string, userId: string) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    const now = new Date();
-
-    // Fast Single DB Write (< 20ms)
-    await this.prisma.conversationParticipant.upsert({
-      where: {
-        userId_conversationId: {
-          userId,
-          conversationId: realConvId
-        }
-      },
-      update: {
-        lastReadAt: now,
-        unreadCount: 0,
-      },
-      create: {
-        userId,
-        conversationId: realConvId,
-        lastReadAt: now,
-        unreadCount: 0,
-      }
-    }).catch(() => { });
-
-    // Asynchronous domain event emit (non-blocking)
-    setImmediate(() => {
-      this.domainEventService.emit('conversation:seen', {
-        conversationId,
-        realConvId,
-        readerId: userId,
-        lastReadAt: now.toISOString(),
-      }, [userId]);
-    });
-
+  /**
+   * Write-behind read receipt (WhatsApp/Slack pattern): acknowledge instantly,
+   * do the DB write + fan-out to OTHER participants in setImmediate so the
+   * caller's response is never blocked on it. Shared by all three messaging
+   * services (DM / group / unified) so every read endpoint is equally fast and
+   * correctly notifies the other side.
+   */
+  async markAsRead(conversationId: string, userId: string): Promise<{ success: boolean }> {
+    setImmediate(() => void this._persistMarkAsRead(conversationId, userId));
     return { success: true };
+  }
+
+  protected async _persistMarkAsRead(conversationId: string, userId: string): Promise<void> {
+    try {
+      const realConvId = await this.resolveConversationId(conversationId, userId);
+
+      const conv = await this.prisma.conversation.findUnique({
+        where: { id: realConvId },
+        select: { id: true }
+      });
+      if (!conv) return;
+
+      const now = new Date();
+      await this.prisma.conversationParticipant.upsert({
+        where: { userId_conversationId: { userId, conversationId: realConvId } },
+        update: { lastReadAt: now, unreadCount: 0 },
+        create: { userId, conversationId: realConvId, lastReadAt: now, unreadCount: 0 }
+      }).catch(() => {});
+
+      const participants = await this.prisma.conversationParticipant.findMany({
+        where: { conversationId: realConvId, deletedAt: null },
+        select: { userId: true, lastReadAt: true, user: { select: { settings: { select: { readReceipts: true } } } } }
+      });
+
+      const readerParticipant = participants.find(p => p.userId === userId);
+      if (readerParticipant?.user?.settings?.readReceipts === false) return;
+
+      for (const p of participants) {
+        if (p.userId === userId) continue;
+        const others = participants.filter(item => item.userId !== p.userId);
+        const otherReadTimestamps = others
+          .filter(item => item.user?.settings?.readReceipts !== false && item.lastReadAt != null)
+          .map(item => new Date(item.lastReadAt!).getTime());
+
+        const isAllRead = otherReadTimestamps.length > 0 && otherReadTimestamps.length === others.length;
+        const minOtherReadAt = isAllRead ? Math.min(...otherReadTimestamps) : 0;
+
+        this.domainEventService.emit('conversation:seen', {
+          conversationId,
+          realConvId,
+          readerId: userId,
+          lastReadAt: now.toISOString(),
+          isAllRead,
+          minOtherReadAt: minOtherReadAt ? new Date(minOtherReadAt).toISOString() : null
+        }, [p.userId]);
+      }
+    } catch (err) {
+      this.coreLogger.warn(`markAsRead background write failed: ${(err as Error)?.message}`);
+    }
   }
 
   async reactToMessage(messageId: string, userId: string, reaction: string) {
@@ -843,6 +873,106 @@ export class MessagingCoreService {
     await this.prisma.conversationParticipant.update({
       where: { userId_conversationId: { userId, conversationId: realConvId } },
       data: { deletedAt: new Date() }
+    });
+    return { success: true };
+  }
+
+  // ─── Canonical group role/ownership operations ─────────────────────────────
+  // Single source of truth shared by MessagesService and GroupChatsService
+  // (both extend this base). Each validates the actor's authority AND that the
+  // target is an active member, so a bad targetUserId yields a clean 404 rather
+  // than a raw Prisma "record not found" 500.
+
+  async changeGroupOwner(conversationId: string, userId: string, targetUserId: string) {
+    const realConvId = await this.resolveConversationId(conversationId);
+    const [participant, target] = await Promise.all([
+      this.prisma.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId, conversationId: realConvId } }
+      }),
+      this.prisma.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } }
+      })
+    ]);
+    if (!participant || participant.role !== 'OWNER') {
+      throw new ForbiddenException('Only the owner can transfer ownership');
+    }
+    if (!target || (target as any).leftAt || target.deletedAt) {
+      throw new NotFoundException('Target user is not a member of this group');
+    }
+    await this.prisma.$transaction([
+      this.prisma.conversationParticipant.update({
+        where: { userId_conversationId: { userId, conversationId: realConvId } },
+        data: { role: 'ADMIN' }
+      }),
+      this.prisma.conversationParticipant.update({
+        where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
+        data: { role: 'OWNER' }
+      }),
+      this.prisma.conversation.update({
+        where: { id: realConvId },
+        data: { ownerId: targetUserId }
+      })
+    ]);
+    return { success: true };
+  }
+
+  async promoteToAdmin(conversationId: string, userId: string, targetUserId: string) {
+    const realConvId = await this.resolveConversationId(conversationId);
+    const [participant, target] = await Promise.all([
+      this.prisma.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId, conversationId: realConvId } }
+      }),
+      this.prisma.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } }
+      })
+    ]);
+    if (!participant || participant.role !== 'OWNER') {
+      throw new ForbiddenException('Only the owner can promote admins');
+    }
+    if (!target || (target as any).leftAt || target.deletedAt) {
+      throw new NotFoundException('Target user is not a member of this group');
+    }
+    await this.prisma.conversationParticipant.update({
+      where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
+      data: { role: 'ADMIN' }
+    });
+    return { success: true };
+  }
+
+  async demoteFromAdmin(conversationId: string, userId: string, targetUserId: string) {
+    const realConvId = await this.resolveConversationId(conversationId);
+    const [participant, target] = await Promise.all([
+      this.prisma.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId, conversationId: realConvId } }
+      }),
+      this.prisma.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } }
+      })
+    ]);
+    if (!participant || participant.role !== 'OWNER') {
+      throw new ForbiddenException('Only the owner can demote admins');
+    }
+    if (!target || (target as any).leftAt || target.deletedAt) {
+      throw new NotFoundException('Target user is not a member of this group');
+    }
+    await this.prisma.conversationParticipant.update({
+      where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
+      data: { role: 'MEMBER' }
+    });
+    return { success: true };
+  }
+
+  async endGroup(conversationId: string, userId: string) {
+    const realConvId = await this.resolveConversationId(conversationId);
+    const participant = await this.prisma.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId: realConvId } }
+    });
+    if (!participant || participant.role !== 'OWNER') {
+      throw new ForbiddenException('Only the owner can end the group');
+    }
+    await this.prisma.conversation.update({
+      where: { id: realConvId },
+      data: { status: 'Closed' }
     });
     return { success: true };
   }

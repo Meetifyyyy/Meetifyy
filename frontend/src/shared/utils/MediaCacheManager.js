@@ -8,6 +8,44 @@ class MediaCacheManager {
     this.batchTimeout = null;
     this.resolvers = []; // Array of { resolve, reject, keys }
     this.EXPIRY_BUFFER = 60 * 1000; // 1 minute buffer before actual expiry
+    this.PERSIST_KEY = 'meetifyy_media_urls_v1';
+    this.STABLE_TTL = 7 * 24 * 60 * 60 * 1000; // 7d — safe for immutable public assets
+    this._hydrateFromStorage();
+  }
+
+  // A signed/expiring URL carries auth query params; a public immutable R2 URL
+  // does not. Only stable URLs are worth persisting across reloads.
+  _isStableUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    if (/[?&](X-Amz-|token=|Signature=|Expires=)/i.test(url)) return false;
+    if (url.includes('/object/sign/')) return false;
+    return url.startsWith('http://') || url.startsWith('https://');
+  }
+
+  _hydrateFromStorage() {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const raw = localStorage.getItem(this.PERSIST_KEY);
+      if (!raw) return;
+      const now = Date.now();
+      const obj = JSON.parse(raw);
+      for (const [key, entry] of Object.entries(obj)) {
+        if (entry && entry.expiresAt > now && entry.url) {
+          this.cache.set(key, entry);
+        }
+      }
+    } catch (_) { /* ignore corrupt cache */ }
+  }
+
+  _persistStable() {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const out = {};
+      for (const [key, entry] of this.cache.entries()) {
+        if (entry?.stable) out[key] = entry;
+      }
+      localStorage.setItem(this.PERSIST_KEY, JSON.stringify(out));
+    } catch (_) { /* quota / disabled — non-fatal */ }
   }
 
   /**
@@ -121,11 +159,20 @@ class MediaCacheManager {
 
       const now = Date.now();
       const expiresAt = now + (expiresIn * 1000);
+      let persistedAny = false;
 
       resolversToProcess.forEach(({ resolve, key }) => {
         const url = response?.[key];
         if (url) {
-          this.cache.set(key, { url, expiresAt });
+          // Immutable public URLs get a long TTL and survive reloads; signed URLs
+          // keep the short server TTL and stay in memory only.
+          const stable = this._isStableUrl(url);
+          this.cache.set(key, {
+            url,
+            expiresAt: stable ? now + this.STABLE_TTL : expiresAt,
+            stable,
+          });
+          if (stable) persistedAny = true;
           resolve(url);
         } else {
           // Use absolute backend URL so avatars work on Vercel (frontend-only deployments)
@@ -133,6 +180,7 @@ class MediaCacheManager {
         }
         this.pendingRequests.delete(key);
       });
+      if (persistedAny) this._persistStable();
     } catch (error) {
       console.warn('Bulk signed URL fetch fallback triggered:', error?.message || error);
       resolversToProcess.forEach(({ resolve, key }) => {

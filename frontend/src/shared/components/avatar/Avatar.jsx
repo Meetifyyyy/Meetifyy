@@ -1,7 +1,8 @@
-import { forwardRef, useState, useEffect } from 'react';
+import { forwardRef, useState, useEffect, useMemo } from 'react';
 import { UsersIcon } from '@heroicons/react/24/solid';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
-import { getMediaUrl, normalizeDicebearUrl } from '@shared/api/apiClient';
+import { getMediaUrl, normalizeDicebearUrl, deriveThumbnailKey } from '@shared/api/apiClient';
+import { useCanSeeOthersPresence } from '@shared/hooks/usePresenceVisibility';
 import defaultAvatarImg from '../../../assets/images/default_avatar.webp';
 import styles from './Avatar.module.css';
 
@@ -42,27 +43,38 @@ const Avatar = forwardRef(({
   disableHover = false,
   children
 }, ref) => {
+  const canSeePresence = useCanSeeOthersPresence();
   const initialProcessedSrc = getProcessedAvatarUrl(src);
-  const syncResolved = mediaCache.getSyncUrl(initialProcessedSrc) || (
-    (initialProcessedSrc && initialProcessedSrc !== defaultAvatarImg) ? initialProcessedSrc : null
+  // Prefer a tiny derived thumbnail for the (usually small) avatar render; fall
+  // back to the original on error, then to the default. `null` for external /
+  // dicebear / default sources, which are already small.
+  const thumbKey = useMemo(() => deriveThumbnailKey(initialProcessedSrc), [initialProcessedSrc]);
+  const [useThumb, setUseThumb] = useState(!!thumbKey);
+  const resolveSrc = (useThumb && thumbKey) ? thumbKey : initialProcessedSrc;
+
+  const syncResolved = mediaCache.getSyncUrl(resolveSrc) || (
+    (resolveSrc && resolveSrc !== defaultAvatarImg) ? getMediaUrl(resolveSrc) : null
   );
 
   const [imgSrc, setImgSrc] = useState(syncResolved || defaultAvatarImg);
 
+  // Reset the thumbnail preference whenever the underlying avatar changes.
+  useEffect(() => { setUseThumb(!!thumbKey); }, [thumbKey]);
+
   useEffect(() => {
     let isMounted = true;
-    
+
     if (!initialProcessedSrc || initialProcessedSrc === defaultAvatarImg || (typeof initialProcessedSrc === 'string' && initialProcessedSrc.includes('default_avatar'))) {
       setImgSrc(defaultAvatarImg);
       return;
     }
 
-    const currentSync = mediaCache.getSyncUrl(initialProcessedSrc) || initialProcessedSrc;
+    const currentSync = mediaCache.getSyncUrl(resolveSrc) || getMediaUrl(resolveSrc) || resolveSrc;
     setImgSrc(currentSync);
 
     const fetchUrl = async () => {
       try {
-        const resolvedUrl = await mediaCache.getUrl(initialProcessedSrc);
+        const resolvedUrl = await mediaCache.getUrl(resolveSrc);
         if (isMounted && resolvedUrl) {
           setImgSrc(resolvedUrl);
         }
@@ -70,13 +82,13 @@ const Avatar = forwardRef(({
         // Keep currentSync fallback on error
       }
     };
-    
+
     fetchUrl();
 
     return () => {
       isMounted = false;
     };
-  }, [initialProcessedSrc]);
+  }, [initialProcessedSrc, resolveSrc]);
 
   const sizeValue = typeof size === 'number' ? `${size}px` : size;
   const displaySrc = imgSrc || defaultAvatarImg;
@@ -109,6 +121,13 @@ const Avatar = forwardRef(({
   };
 
   const handleError = () => {
+    // First failure on the thumbnail variant → retry with the full original
+    // (e.g. legacy avatars uploaded before thumbnails existed).
+    if (useThumb && thumbKey) {
+      mediaCache.invalidate(resolveSrc);
+      setUseThumb(false);
+      return;
+    }
     if (initialProcessedSrc && initialProcessedSrc !== defaultAvatarImg) {
       mediaCache.invalidate(initialProcessedSrc);
     }
@@ -156,7 +175,7 @@ const Avatar = forwardRef(({
         </div>
       )}
 
-      {isOnline && !isGroup && (
+      {isOnline && !isGroup && canSeePresence && (
         <span className={styles.onlineDot} />
       )}
     </div>

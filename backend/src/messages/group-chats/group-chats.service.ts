@@ -243,8 +243,36 @@ export class GroupChatsService extends MessagingCoreService {
     return { recipientIds: unblockedIds, unmutedRecipientIds: unmutedIds };
   }
 
+  // ─── getGroupDetails cache (version-counter invalidation) ───────────────────
+  // Per-(conv,user) payload cached briefly. A single INCR of the conv's version
+  // key atomically invalidates every member's cached variant with no SCAN — so
+  // any membership/role/settings change is reflected on the next fetch.
+  private groupDetailsVerKey(realConvId: string) {
+    return `groupDetails:ver:${realConvId}`;
+  }
+  private groupDetailsDataKey(realConvId: string, userId: string, ver: string) {
+    return `groupDetails:${realConvId}:${userId}:v${ver}`;
+  }
+  private async _invalidateGroupDetailsByRealId(realConvId: string) {
+    if (!this.redis) return;
+    try { await this.redis.incr(this.groupDetailsVerKey(realConvId)); } catch {}
+  }
+  async invalidateGroupDetailsCache(conversationId: string) {
+    const realConvId = await this.resolveConversationId(conversationId);
+    await this._invalidateGroupDetailsByRealId(realConvId);
+  }
+
   async getGroupDetails(conversationId: string, userId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
+
+    if (this.redis) {
+      try {
+        const ver = (await this.redis.get(this.groupDetailsVerKey(realConvId))) || '0';
+        const cached = await this.redis.get(this.groupDetailsDataKey(realConvId, userId, ver));
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+
     const conv = await this.prisma.conversation.findFirst({
       where: {
         id: realConvId,
@@ -334,7 +362,7 @@ export class GroupChatsService extends MessagingCoreService {
 
     const pubId = conv.publicId || conv.id;
 
-    return {
+    const result = {
       id: pubId,
       publicId: pubId,
       internalId: conv.id,
@@ -359,6 +387,15 @@ export class GroupChatsService extends MessagingCoreService {
       updatedAt: conv.updatedAt,
       type: conv.type
     };
+
+    if (this.redis) {
+      try {
+        const ver = (await this.redis.get(this.groupDetailsVerKey(realConvId))) || '0';
+        this.redis.setex(this.groupDetailsDataKey(realConvId, userId, ver), 15, JSON.stringify(result)).catch(() => {});
+      } catch {}
+    }
+
+    return result;
   }
 
   async updateGroupInfo(conversationId: string, userId: string, data: { name?: string; description?: string; avatarKey?: string; avatar?: string }) {
@@ -414,6 +451,7 @@ export class GroupChatsService extends MessagingCoreService {
 
     const participantIds = participantRows.map(p => p.userId);
     this.invalidateUserConversationsCache(participantIds);
+    this._invalidateGroupDetailsByRealId(realConvId).catch(() => {});
 
     const rawName = user?.username || user?.displayName || 'Someone';
     const actorHandle = rawName.startsWith('@') ? rawName : `@${rawName}`;
@@ -433,6 +471,21 @@ export class GroupChatsService extends MessagingCoreService {
     });
     if (!participant) {
       throw new ForbiddenException('Not a member of this conversation');
+    }
+
+    // Block enforcement: don't let a member pull someone they've blocked (or who
+    // blocked them) into a shared group.
+    const blocked = await this.prisma.block.findFirst({
+      where: {
+        OR: [
+          { blockerId: requesterId, blockedId: targetUserId },
+          { blockerId: targetUserId, blockedId: requesterId }
+        ]
+      },
+      select: { blockerId: true }
+    });
+    if (blocked) {
+      throw new ForbiddenException('Cannot add a user you have blocked or who has blocked you');
     }
 
     const convRecord = await this.prisma.conversation.findUnique({
@@ -522,7 +575,7 @@ export class GroupChatsService extends MessagingCoreService {
 
     if (participant.role === 'OWNER') {
       const oldestAdmin = await this.prisma.conversationParticipant.findFirst({
-        where: { conversationId: realConvId, deletedAt: null, role: 'ADMIN' },
+        where: { conversationId: realConvId, deletedAt: null, leftAt: null, role: 'ADMIN' },
         orderBy: { joinedAt: 'asc' }
       });
 
@@ -539,7 +592,7 @@ export class GroupChatsService extends MessagingCoreService {
         ]);
       } else {
         const oldestMember = await this.prisma.conversationParticipant.findFirst({
-          where: { conversationId: realConvId, deletedAt: null },
+          where: { conversationId: realConvId, deletedAt: null, leftAt: null, userId: { not: userId } },
           orderBy: { joinedAt: 'asc' }
         });
 
@@ -579,8 +632,15 @@ export class GroupChatsService extends MessagingCoreService {
 
     // groupUpdatesActive is per-user — any member can toggle their own notification setting
     const groupUpdatesActive = data.groupUpdatesActive;
-    const restData: any = { ...data };
-    delete restData.groupUpdatesActive;
+
+    // Whitelist admin-editable settings. Never spread the raw body into
+    // conversation.update — that would let an admin mass-assign ANY column
+    // (ownerId, status, type, expiresAt, lastMessageText, isInstantMatch, …).
+    const ALLOWED_SETTINGS = ['whoCanJoin', 'visibility', 'allowSharing', 'editGroupPermission'] as const;
+    const restData: any = {};
+    for (const key of ALLOWED_SETTINGS) {
+      if (data[key] !== undefined) restData[key] = data[key];
+    }
 
     // Admin-only fields require OWNER or ADMIN role
     if (Object.keys(restData).length > 0) {
@@ -624,6 +684,7 @@ export class GroupChatsService extends MessagingCoreService {
     const participantRows = results[results.length - 1] || [];
     const participantIds = participantRows.map((p: any) => p.userId);
     this.invalidateUserConversationsCache(participantIds);
+    this._invalidateGroupDetailsByRealId(realConvId).catch(() => {});
 
     return { success: true, conversationId: realConvId, updatedConv, participantIds };
   }
@@ -650,80 +711,13 @@ export class GroupChatsService extends MessagingCoreService {
 
     const participantIds = participantRows.map(p => p.userId);
     this.invalidateUserConversationsCache(participantIds);
+    this._invalidateGroupDetailsByRealId(realConvId).catch(() => {});
 
     return { success: true, conversationId: realConvId, updatedConv, participantIds };
   }
 
-  async changeGroupOwner(conversationId: string, userId: string, targetUserId: string) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } }
-    });
-    if (!participant || participant.role !== 'OWNER') {
-      throw new ForbiddenException('Only the owner can transfer ownership');
-    }
-
-    await this.prisma.$transaction([
-      this.prisma.conversationParticipant.update({
-        where: { userId_conversationId: { userId, conversationId: realConvId } },
-        data: { role: 'ADMIN' }
-      }),
-      this.prisma.conversationParticipant.update({
-        where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
-        data: { role: 'OWNER' }
-      }),
-      this.prisma.conversation.update({
-        where: { id: realConvId },
-        data: { ownerId: targetUserId }
-      })
-    ]);
-    return { success: true };
-  }
-
-  async promoteToAdmin(conversationId: string, userId: string, targetUserId: string) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } }
-    });
-    if (!participant || participant.role !== 'OWNER') {
-      throw new ForbiddenException('Only the owner can promote admins');
-    }
-    await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
-      data: { role: 'ADMIN' }
-    });
-    return { success: true };
-  }
-
-  async demoteFromAdmin(conversationId: string, userId: string, targetUserId: string) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } }
-    });
-    if (!participant || participant.role !== 'OWNER') {
-      throw new ForbiddenException('Only the owner can demote admins');
-    }
-    await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
-      data: { role: 'MEMBER' }
-    });
-    return { success: true };
-  }
-
-  async endGroup(conversationId: string, userId: string) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } }
-    });
-    if (!participant || participant.role !== 'OWNER') {
-      throw new ForbiddenException('Only the owner can end the group');
-    }
-    await this.prisma.conversation.update({
-      where: { id: realConvId },
-      data: { status: 'Closed' }
-    });
-    return { success: true };
-  }
+  // changeGroupOwner / promoteToAdmin / demoteFromAdmin / endGroup are inherited
+  // from MessagingCoreService (single source of truth, with target validation).
 
   async acceptGroupJoinRequest(conversationId: string, userId: string, targetUserId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
@@ -794,6 +788,11 @@ export class GroupChatsService extends MessagingCoreService {
 
     if (!conversation) throw new NotFoundException('Group not found');
     if (conversation.participants.length > 0) return { status: 'JOINED' };
+
+    const convStatus = String(conversation.status || '').toUpperCase();
+    if (convStatus === 'CLOSED' || convStatus === 'ENDED') {
+      throw new BadRequestException('This group is closed and no longer accepts new members');
+    }
 
     const whoCanJoin = conversation.whoCanJoin || 'ANYONE';
     if (whoCanJoin === 'ANYONE') {

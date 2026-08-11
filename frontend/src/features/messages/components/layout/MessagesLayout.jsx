@@ -103,6 +103,8 @@ export default function MessagesLayout() {
     isLoadingMore: isFetchingNextPage, 
     onLoadMore: fetchNextPage,
     sendMessageOptimistically,
+    retryUpload,
+    cancelUpload,
     markSeenIfEligible
   } = useChatManager(activeChatId, 'messages', currentUser);
 
@@ -355,6 +357,8 @@ export default function MessagesLayout() {
               }
             },
             onMarkSeen: markSeenIfEligible,
+            onRetryUpload: retryUpload,
+            onCancelUpload: cancelUpload,
           };
 
           const activeKey = activeChatId || activeConv?.id || 'chat';

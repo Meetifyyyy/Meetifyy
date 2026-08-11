@@ -818,8 +818,11 @@ export class UsersService {
       create: { blockerId, blockedId },
       update: {},
     });
-    // Invalidate cached block lists for both users
+    // Invalidate cached block lists AND the conversation-list cache for both
+    // users so the `blocked` flag / hidden presence reflect the change
+    // immediately instead of lingering for the 60s conversation-cache TTL.
     await this.blocksService.invalidateBlockCache(blockerId, blockedId);
+    await this.invalidateConversationListCache([blockerId, blockedId]);
     return { success: true, blocked: true };
   }
 
@@ -829,14 +832,46 @@ export class UsersService {
     });
     // Invalidate cached block lists for both users
     await this.blocksService.invalidateBlockCache(blockerId, blockedId);
+    await this.invalidateConversationListCache([blockerId, blockedId]);
     return { success: true, blocked: false };
   }
 
+  /**
+   * Bust the `user:conversations:*` Redis cache for the given users. Mirrors the
+   * key scheme in MessagesService.invalidateUserConversationsCache (page 0 for
+   * the common UI page sizes). Kept here to avoid a MessagesService <-> UsersService
+   * circular dependency.
+   */
+  private async invalidateConversationListCache(userIds: string[]) {
+    const redis = this.redisService?.getClient?.();
+    if (!redis) return;
+    const COMMON_LIMITS = [20, 30, 50];
+    const keys: string[] = [];
+    for (const uid of userIds) {
+      for (const lim of COMMON_LIMITS) keys.push(`user:conversations:${uid}:${lim}:0`);
+    }
+    if (keys.length > 0) await redis.del(...keys).catch(() => {});
+  }
+
   async getConnections(userId: string, query?: string, limit: number = 50) {
+    const cleanQuery = (query || '').trim().toLowerCase();
+
+    // Short-lived Redis cache: the invite/share "people" list is opened
+    // repeatedly and is identical for a user within a few seconds. This turns
+    // repeat modal opens (and each keystroke that repeats an earlier query)
+    // into an O(1) cache hit instead of a fresh DB round-trip + pool acquire.
+    const redis = this.redisService?.getClient?.();
+    const cacheKey = `connections:${userId}:${cleanQuery}:${limit}`;
+    if (redis) {
+      try {
+        const cached = await redis.get(cacheKey);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+
     const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
     const excludeSet = new Set([...excludedUserIds, userId]);
 
-    const cleanQuery = (query || '').trim().toLowerCase();
     const whereClause: any = {
       id: { notIn: Array.from(excludeSet) },
       accountStatus: 'ACTIVE',
@@ -861,6 +896,12 @@ export class UsersService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    if (redis) {
+      // 20s TTL — long enough to make a modal session feel instant, short
+      // enough that a new block/signup surfaces quickly.
+      redis.setex(cacheKey, 20, JSON.stringify(users)).catch(() => {});
+    }
 
     return users;
   }

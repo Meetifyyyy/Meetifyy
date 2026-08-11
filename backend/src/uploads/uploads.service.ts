@@ -74,6 +74,7 @@ export class StorageService {
     contentType: string,
     folder = 'general',
     fileSize = 0,
+    variantKey?: string,
   ) {
     const safeFolder = this.normalizeFolder(folder);
     if (typeof contentType !== 'string' || !this.isAllowedMimeType(contentType)) throw new BadRequestException('Unsupported content type');
@@ -81,29 +82,52 @@ export class StorageService {
     if (!Number.isFinite(requestedFileSize) || requestedFileSize < 0 || requestedFileSize > 50 * 1024 * 1024) {
       throw new BadRequestException('Invalid file size');
     }
+
+    // A variant key lets the client upload a derived thumbnail sharing the
+    // original's key base. Restrict it hard: safe pattern, an allowed folder,
+    // and a `_thumb.<ext>` suffix so it can only ever be a thumbnail variant
+    // (never an arbitrary object overwrite).
+    let explicitKey: string | undefined;
+    if (variantKey) {
+      const [vFolder] = String(variantKey).split('/');
+      if (
+        !this.isSafeStorageKey(variantKey) ||
+        vFolder !== safeFolder ||
+        !/_thumb\.(webp|jpe?g|png)$/i.test(variantKey)
+      ) {
+        throw new BadRequestException('Invalid variant key');
+      }
+      explicitKey = variantKey;
+    }
+
     const { uploadUrl, publicUrl: providerUrl, key } = await this.storageProvider.createSignedUploadUrl(
       filename,
       contentType,
       safeFolder,
+      undefined,
+      explicitKey,
     );
 
-    // Register media in database (pending state)
-    const media = await this.prisma.media.create({
-      data: {
-        ownerId: userId,
-        objectKey: key,
-        provider: this.providerName,
-        bucket: this.bucketName,
-        storageKey: key, // Legacy fallback
-        type: contentType.startsWith('video')
-          ? 'VIDEO'
-          : contentType.startsWith('audio')
-          ? 'AUDIO'
-          : 'IMAGE', // Legacy fallback
-        mimeType: contentType,
-        fileSize: requestedFileSize,
-      },
-    });
+    const mediaData = {
+      ownerId: userId,
+      objectKey: key,
+      provider: this.providerName,
+      bucket: this.bucketName,
+      storageKey: key, // Legacy fallback
+      type: contentType.startsWith('video')
+        ? 'VIDEO'
+        : contentType.startsWith('audio')
+        ? 'AUDIO'
+        : 'IMAGE', // Legacy fallback
+      mimeType: contentType,
+      fileSize: requestedFileSize,
+    };
+
+    // Register media in database (pending state). Variant (thumbnail) keys can be
+    // re-requested on a retry, so upsert to stay idempotent on the unique objectKey.
+    const media = explicitKey
+      ? await this.prisma.media.upsert({ where: { objectKey: key }, create: mediaData, update: {} })
+      : await this.prisma.media.create({ data: mediaData });
 
     // Provide a generic, provider-agnostic URL to the frontend
     const publicUrl = `/api/media/${key}`;

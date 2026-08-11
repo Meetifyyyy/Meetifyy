@@ -123,6 +123,37 @@ export const getMediaUrl = (pathOrUrl) => {
   return `${backendUrl.replace(/\/+$/, '')}${cleanPath}`;
 };
 
+/**
+ * Derives the object key of an image's lightweight thumbnail variant from the
+ * original's key/URL, using the convention `<folder>/<name>.<ext>` ->
+ * `<folder>/<name>_thumb.webp`. Returns null for anything that isn't one of our
+ * own uploaded R2/media images (external URLs, data/blob URLs, already-a-thumb),
+ * so callers can fall back to the original safely.
+ */
+export const deriveThumbnailKey = (rawSrc) => {
+  if (!rawSrc || typeof rawSrc !== 'string') return null;
+  let key = rawSrc.trim();
+  if (key.startsWith('data:') || key.startsWith('blob:')) return null;
+
+  // Full external URLs that aren't our media endpoint are not derivable.
+  if ((key.startsWith('http://') || key.startsWith('https://'))) {
+    const m = key.match(/\/api\/media\/(.+)$/);
+    if (!m) return null;
+    key = m[1];
+  } else if (key.includes('/api/media/')) {
+    const m = key.match(/\/api\/media\/(.+)$/);
+    if (m) key = m[1];
+  }
+  key = key.split('?')[0].replace(/^\/+/, '');
+
+  // Only derive for our folder/uuid.ext keys; skip if it's already a thumbnail.
+  if (/_thumb\.[a-z0-9]+$/i.test(key)) return null;
+  const match = key.match(/^([a-z0-9_-]+)\/([A-Za-z0-9._-]+)\.(webp|jpe?g|png|gif)$/i);
+  if (!match) return null;
+  const [, folder, name] = match;
+  return `${folder}/${name}_thumb.webp`;
+};
+
 // Synchronous token read — O(1), no async overhead with localStorage fallback on boot
 function getToken() {
   if (_cachedToken) return _cachedToken;

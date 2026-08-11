@@ -173,12 +173,18 @@ function calculateMediaDimensions(nw, nh, isInline = false) {
   };
 }
 
-function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false, onErrorChange }) {
+function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false, onErrorChange, width, height, onClickSrc }) {
   const [loaded, setLoaded] = useState(() => Boolean(src && loadedImageUrls.has(src)));
   const [imgSrc, setImgSrc] = useState(null);
   const [error, setError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  const [mediaStyle, setMediaStyle] = useState(() => src ? cachedMediaStyles.get(src) || null : null);
+  // Reserve the correct box from known metadata dimensions BEFORE the image loads
+  // so the bubble never jumps (empty -> image). Falls back to cached measured style.
+  const [mediaStyle, setMediaStyle] = useState(() => {
+    if (src && cachedMediaStyles.get(src)) return cachedMediaStyles.get(src);
+    if (width && height) return calculateMediaDimensions(width, height, !isStandalone);
+    return null;
+  });
   const prevSrcRef = useRef(src);
 
   useEffect(() => {
@@ -296,7 +302,7 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
           decoding="async"
           className={`${className} ${!loaded ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
           style={{ display: 'block', width: '100%', height: '100%', background: 'transparent', ...(mediaStyle || {}) }}
-          onClick={() => onClick && onClick(finalSrc)}
+          onClick={() => onClick && onClick(onClickSrc || finalSrc)}
           onLoad={handleImageLoad}
           onError={handleError}
         />
@@ -305,10 +311,19 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
   );
 }
 
-function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpenMediaModal }) {
+function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = null, height = null, isInline = false, hasText = false, onOpenMediaModal }) {
   const videoRef = useRef(null);
   const resolvedSrc = src ? getMediaUrl(src) : '';
-  const [mediaStyle, setMediaStyle] = useState(() => resolvedSrc ? cachedMediaStyles.get(resolvedSrc) || null : null);
+  const resolvedPoster = poster ? getMediaUrl(poster) : '';
+  const [mediaStyle, setMediaStyle] = useState(() => {
+    if (resolvedSrc && cachedMediaStyles.get(resolvedSrc)) return cachedMediaStyles.get(resolvedSrc);
+    // Reserve the correct box from known metadata so the bubble never jumps.
+    if (width && height) return calculateMediaDimensions(width, height, isInline);
+    return null;
+  });
+  const durationLabel = (Number.isFinite(duration) && duration > 0)
+    ? `${Math.floor(duration / 60)}:${String(Math.round(duration % 60)).padStart(2, '0')}`
+    : null;
 
   const handlePlayClick = (e) => {
     e.stopPropagation();
@@ -361,8 +376,12 @@ function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpen
       <video
         ref={videoRef}
         src={resolvedSrc}
+        poster={resolvedPoster || undefined}
         playsInline
-        preload="metadata"
+        muted
+        // With a poster + known dimensions we can defer ALL video bytes until the
+        // user actually plays (preload="none"); otherwise fetch just metadata.
+        preload={resolvedPoster && mediaStyle ? 'none' : 'metadata'}
         onLoadedMetadata={handleLoadedMetadata}
         onLoadedData={handleLoadedMetadata}
         onCanPlay={handleLoadedMetadata}
@@ -379,6 +398,11 @@ function VideoPlayerWithOverlay({ src, isInline = false, hasText = false, onOpen
           ...(mediaStyle || {})
         }}
       />
+      {durationLabel && (
+        <span style={{ position: 'absolute', bottom: '8px', right: '8px', zIndex: 3, background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: '6px', pointerEvents: 'none' }}>
+          {durationLabel}
+        </span>
+      )}
       <button
         type="button"
         onClick={handlePlayClick}
@@ -543,7 +567,39 @@ const getDisplayClockTime = (msg) => {
 
 
 
-const MessageBubble = memo(function MessageBubble({ 
+// Lightweight overlay shown over the local preview while media uploads (progress
+// ring) or after a failure (retry / cancel). Rendered absolutely over the media
+// box so progress ticks (which only patch this one message) never reflow siblings.
+function MediaUploadOverlay({ progress = 0, failed = false, onRetry, onCancel }) {
+  if (failed) {
+    return (
+      <div className={styles.msgUploadOverlay} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.msgUploadFailedText}>Upload failed</div>
+        <div className={styles.msgUploadActions}>
+          {onRetry && (
+            <button type="button" className={styles.msgUploadBtn} onClick={onRetry}>Retry</button>
+          )}
+          {onCancel && (
+            <button type="button" className={styles.msgUploadBtnGhost} onClick={onCancel}>Cancel</button>
+          )}
+        </div>
+      </div>
+    );
+  }
+  const pct = Math.max(0, Math.min(100, Math.round(progress)));
+  return (
+    <div className={styles.msgUploadOverlay}>
+      <div className={styles.msgUploadRing} style={{ '--upload-pct': `${pct}%` }}>
+        <span className={styles.msgUploadPct}>{pct}%</span>
+      </div>
+      {onCancel && (
+        <button type="button" className={styles.msgUploadBtnGhost} onClick={(e) => { e.stopPropagation(); onCancel(); }}>Cancel</button>
+      )}
+    </div>
+  );
+}
+
+const MessageBubble = memo(function MessageBubble({
   msg, 
   conversation, 
   currentUser,
@@ -554,7 +610,9 @@ const MessageBubble = memo(function MessageBubble({
   onReplyTo,
   onReply,
   conversations,
-  requestToJoinGroup
+  requestToJoinGroup,
+  onRetryUpload,
+  onCancelUpload
 }) {
   const navigate = useNavigate();
   const { getUserById, users: storeUsers } = useData();
@@ -717,6 +775,18 @@ const MessageBubble = memo(function MessageBubble({
   const messageText = typeof rawText === 'string' ? rawText : String(rawText);
   const rawMediaUrl = msg.mediaUrl || msg.payload?.mediaUrl;
   const mediaUrl = rawMediaUrl ? getMediaUrl(rawMediaUrl) : '';
+  // Prefer the lightweight thumbnail/poster for in-list rendering; the full
+  // original is loaded only when the viewer opens (onClick -> mediaUrl).
+  const rawThumbUrl = msg.payload?.thumbnailUrl || msg.payload?.localPreviewUrl || rawMediaUrl;
+  const thumbUrl = rawThumbUrl ? getMediaUrl(rawThumbUrl) : mediaUrl;
+  const mediaWidth = msg.payload?.width || msg.width || null;
+  const mediaHeight = msg.payload?.height || msg.height || null;
+  const mediaDuration = msg.payload?.duration || msg.duration || null;
+  // Upload lifecycle for optimistic media (own outgoing messages only).
+  const uploadStatus = msg.uploadStatus;
+  const uploadProgress = typeof msg.uploadProgress === 'number' ? msg.uploadProgress : 0;
+  const isUploading = uploadStatus === 'uploading';
+  const isUploadFailed = uploadStatus === 'failed' || (isMe && isFailed && rawMediaUrl && String(rawMediaUrl).startsWith('blob:'));
   const isAudio = msg.mediaType === 'audio' || msg.type === 'voice' || msg.payload?.mediaType === 'audio';
   const isVideo =
     msg.mediaType === 'video' ||
@@ -807,8 +877,16 @@ const MessageBubble = memo(function MessageBubble({
     innerContent = (
       <div className={styles.msgImageCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
-          <div className={styles.msgImageCard} style={{ overflow: 'hidden', borderRadius: '16px', width: 'fit-content', height: 'fit-content' }}>
-            <VideoPlayerWithOverlay src={mediaUrl} isInline={false} onOpenMediaModal={onOpenMediaModal} />
+          <div className={styles.msgImageCard} style={{ overflow: 'hidden', borderRadius: '16px', width: 'fit-content', height: 'fit-content', position: 'relative' }}>
+            <VideoPlayerWithOverlay src={mediaUrl} poster={thumbUrl !== mediaUrl ? thumbUrl : null} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={false} onOpenMediaModal={onOpenMediaModal} />
+            {(isUploading || isUploadFailed) && (
+              <MediaUploadOverlay
+                progress={uploadProgress}
+                failed={isUploadFailed}
+                onRetry={onRetryUpload ? () => onRetryUpload(msg.clientId || msg.tempId) : null}
+                onCancel={onCancelUpload ? () => onCancelUpload(msg.clientId || msg.tempId) : null}
+              />
+            )}
           </div>
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
         </div>
@@ -822,15 +900,26 @@ const MessageBubble = memo(function MessageBubble({
     innerContent = (
       <div className={styles.msgImageCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
-          <div className={styles.msgImageCard}>
+          <div className={styles.msgImageCard} style={{ position: 'relative' }}>
             <ImageWithSkeleton
-              src={mediaUrl}
+              src={thumbUrl}
+              onClickSrc={mediaUrl}
               alt=""
+              width={mediaWidth}
+              height={mediaHeight}
               className={styles.msgMediaImgStandalone}
-              onClick={() => !mediaError && onOpenMediaModal && onOpenMediaModal(mediaUrl)}
+              onClick={() => !mediaError && !isUploading && onOpenMediaModal && onOpenMediaModal(mediaUrl)}
               isStandalone={true}
               onErrorChange={setMediaError}
             />
+            {(isUploading || isUploadFailed) && (
+              <MediaUploadOverlay
+                progress={uploadProgress}
+                failed={isUploadFailed}
+                onRetry={onRetryUpload ? () => onRetryUpload(msg.clientId || msg.tempId) : null}
+                onCancel={onCancelUpload ? () => onCancelUpload(msg.clientId || msg.tempId) : null}
+              />
+            )}
           </div>
           {!mediaError && (
             <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
@@ -894,16 +983,39 @@ const MessageBubble = memo(function MessageBubble({
 
           {mediaUrl && (
             isVideo ? (
-              <VideoPlayerWithOverlay src={mediaUrl} isInline={true} hasText={hasText} />
+              <div style={{ position: 'relative' }}>
+                <VideoPlayerWithOverlay src={mediaUrl} poster={thumbUrl !== mediaUrl ? thumbUrl : null} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={true} hasText={hasText} />
+                {(isUploading || isUploadFailed) && (
+                  <MediaUploadOverlay
+                    progress={uploadProgress}
+                    failed={isUploadFailed}
+                    onRetry={onRetryUpload ? () => onRetryUpload(msg.clientId || msg.tempId) : null}
+                    onCancel={onCancelUpload ? () => onCancelUpload(msg.clientId || msg.tempId) : null}
+                  />
+                )}
+              </div>
             ) : (
-              <ImageWithSkeleton
-                src={mediaUrl}
-                alt=""
-                className={styles.msgMediaImg}
-                onClick={() => !mediaError && onOpenMediaModal && onOpenMediaModal(mediaUrl)}
-                isStandalone={false}
-                onErrorChange={setMediaError}
-              />
+              <div style={{ position: 'relative' }}>
+                <ImageWithSkeleton
+                  src={thumbUrl}
+                  onClickSrc={mediaUrl}
+                  alt=""
+                  width={mediaWidth}
+                  height={mediaHeight}
+                  className={styles.msgMediaImg}
+                  onClick={() => !mediaError && !isUploading && onOpenMediaModal && onOpenMediaModal(mediaUrl)}
+                  isStandalone={false}
+                  onErrorChange={setMediaError}
+                />
+                {(isUploading || isUploadFailed) && (
+                  <MediaUploadOverlay
+                    progress={uploadProgress}
+                    failed={isUploadFailed}
+                    onRetry={onRetryUpload ? () => onRetryUpload(msg.clientId || msg.tempId) : null}
+                    onCancel={onCancelUpload ? () => onCancelUpload(msg.clientId || msg.tempId) : null}
+                  />
+                )}
+              </div>
             )
           )}
 

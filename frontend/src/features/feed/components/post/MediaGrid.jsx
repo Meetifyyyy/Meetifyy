@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
+import { deriveThumbnailKey } from '@shared/api/apiClient';
 import styles from './MediaGrid.module.css';
 
 /**
@@ -49,10 +50,16 @@ export function MediaGrid({ media, onMediaClick }) {
 
     Promise.all(list.map(async (item) => {
       try {
-        const resolvedUrl = await mediaCache.getUrl(item.rawSrc);
-        return { ...item, url: resolvedUrl || item.rawSrc };
+        // Render the lightweight thumbnail in the grid; keep the full original
+        // for the fullscreen viewer. Videos have no thumb key (image-only).
+        const thumbKey = item.isVideo ? null : deriveThumbnailKey(item.rawSrc);
+        const [fullUrl, thumbUrl] = await Promise.all([
+          mediaCache.getUrl(item.rawSrc).catch(() => item.rawSrc),
+          thumbKey ? mediaCache.getUrl(thumbKey).catch(() => null) : Promise.resolve(null),
+        ]);
+        return { ...item, url: thumbUrl || fullUrl || item.rawSrc, fullUrl: fullUrl || item.rawSrc };
       } catch (err) {
-        return { ...item, url: item.rawSrc };
+        return { ...item, url: item.rawSrc, fullUrl: item.rawSrc };
       }
     })).then(resolvedList => {
       if (isMounted) setMediaList(resolvedList);
@@ -78,11 +85,19 @@ export function MediaGrid({ media, onMediaClick }) {
   };
 
   const handleImageError = (index, e) => {
-    setLoadedStates((prev) => ({ ...prev, [index]: true }));
-    if (e?.target) {
-      e.target.onerror = null;
-      e.target.src = FALLBACK_POST_IMAGE;
+    const target = e?.target;
+    if (!target) return;
+    // First fall back from the (maybe-missing) thumbnail to the full original,
+    // then to the placeholder — never loop.
+    const full = mediaList[index]?.fullUrl;
+    if (full && target.src !== full && target.getAttribute('data-fellback') !== '1') {
+      target.setAttribute('data-fellback', '1');
+      target.src = full;
+      return;
     }
+    setLoadedStates((prev) => ({ ...prev, [index]: true }));
+    target.onerror = null;
+    target.src = FALLBACK_POST_IMAGE;
   };
 
   const handleVideoLoaded = (index, e) => {
@@ -99,7 +114,7 @@ export function MediaGrid({ media, onMediaClick }) {
     e.stopPropagation();
     if (onMediaClick) {
       const formattedItems = mediaList.map((m) => ({
-        url: m.url,
+        url: m.fullUrl || m.url,
         type: m.type,
         caption: '',
       }));
