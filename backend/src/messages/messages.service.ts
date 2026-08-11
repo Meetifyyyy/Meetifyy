@@ -90,7 +90,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
   async resolveConversationId(identifier: string, currentUserId?: string): Promise<string> {
     if (!identifier) return identifier;
-    const isActPrefix = String(identifier).startsWith('act_');
     const cleanId = String(identifier).replace(/^(act_)+/, '');
 
     const cacheKey = `${identifier}:${currentUserId || ''}`;
@@ -103,18 +102,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     }
 
     try {
-      // 1. Fast path for activity IDs: check activityId first before any other lookups
-      if (isActPrefix) {
-        const actConv = await this.prisma.conversation.findUnique({
-          where: { activityId: cleanId },
-          select: { id: true }
-        });
-        if (actConv?.id) {
-          this.resolveCache.set(cacheKey, { id: actConv.id, timestamp: Date.now() });
-          return actConv.id;
-        }
-      }
-
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
       if (isUuid) {
         const directConv = await this.prisma.conversation.findUnique({
@@ -135,18 +122,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       if (pubConv?.id) {
         this.resolveCache.set(cacheKey, { id: pubConv.id, timestamp: Date.now() });
         return pubConv.id;
-      }
-
-      // 3. Fallback index lookup via activityId
-      if (!isActPrefix) {
-        const actConv = await this.prisma.conversation.findUnique({
-          where: { activityId: cleanId },
-          select: { id: true }
-        });
-        if (actConv?.id) {
-          this.resolveCache.set(cacheKey, { id: actConv.id, timestamp: Date.now() });
-          return actConv.id;
-        }
       }
 
       if (currentUserId && identifier !== currentUserId) {
@@ -477,8 +452,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
   async getConversationHistory(conversationId: string, currentUserId?: string, beforeCursor?: string, limit: number = 50) {
     const realConvId = await this.resolveConversationId(conversationId, currentUserId);
-    const isActivityGroup = conversationId.startsWith('act_') || realConvId.startsWith('act_');
-    const actId = isActivityGroup ? (conversationId || realConvId).replace(/^act_/, '') : null;
 
     let clearedAt: Date | null = null;
     const whereCondition: any = {
@@ -486,7 +459,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       deletedAt: null
     };
 
-    const [deletedForUser, blocksMade, currentParticipant, nonActivityParticipants, activity] = await Promise.all([
+    const [deletedForUser, blocksMade, currentParticipant, participants] = await Promise.all([
       currentUserId ? this.prisma.deletedMessage.findMany({
         where: { userId: currentUserId, message: { conversationId: realConvId } },
         select: { messageId: true }
@@ -499,14 +472,10 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         where: { conversationId: realConvId, userId: currentUserId, deletedAt: null },
         select: { userId: true, lastReadAt: true, clearedAt: true, leftAt: true }
       }) : Promise.resolve(null),
-      !isActivityGroup ? this.prisma.conversationParticipant.findMany({
+      this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, deletedAt: null },
         select: { userId: true, lastReadAt: true, clearedAt: true, leftAt: true }
-      }) : Promise.resolve([]),
-      actId ? this.prisma.crewActivity.findUnique({
-        where: { id: actId },
-        select: { id: true, title: true, startDate: true, createdAt: true, creatorId: true }
-      }) : Promise.resolve(null)
+      })
     ]);
 
     if (deletedForUser && deletedForUser.length > 0) {
@@ -518,9 +487,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     }
 
     const participant = currentParticipant;
-    const participants = isActivityGroup 
-      ? (currentParticipant ? [currentParticipant] : []) 
-      : nonActivityParticipants;
 
     if (participant) {
       clearedAt = participant.clearedAt;
@@ -558,19 +524,13 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       }
 
       if (!cursorDate) {
-        if (beforeCursor.startsWith('sys_created_')) {
-          if (activity?.createdAt) cursorDate = activity.createdAt;
-        } else if (beforeCursor.startsWith('sys_started_')) {
-          if (activity?.startDate) cursorDate = activity.startDate;
-        } else {
-          const cursorMessage = await this.prisma.message.findUnique({
-            where: { id: beforeCursor },
-            select: { id: true, createdAt: true }
-          });
-          if (cursorMessage) {
-            cursorDate = cursorMessage.createdAt;
-            cursorId = cursorMessage.id;
-          }
+        const cursorMessage = await this.prisma.message.findUnique({
+          where: { id: beforeCursor },
+          select: { id: true, createdAt: true }
+        });
+        if (cursorMessage) {
+          cursorDate = cursorMessage.createdAt;
+          cursorId = cursorMessage.id;
         }
       }
 
@@ -680,60 +640,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       };
     });
 
-    if (activity) {
-      const hasCreatedMsg = messagesMapped.some(m => String(m.text).includes('group chat created'));
-      if (!hasCreatedMsg) {
-        const createdSysMsg: any = {
-          id: `sys_created_${activity.id}`,
-          conversationId,
-          senderId: activity.creatorId,
-          senderName: 'System',
-          senderAvatar: '',
-          from: 'them',
-          createdAt: activity.createdAt || new Date(),
-          timestamp: activity.createdAt || new Date(),
-          time: activity.createdAt ? new Date(activity.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-          type: 'system',
-          payload: { text: 'Activity group chat created' },
-          text: 'Activity group chat created',
-          mediaUrl: null,
-          mediaType: null,
-          mentions: [],
-          inviteData: null,
-          replyTo: null,
-          status: 'sent',
-          state: 'NORMAL'
-        };
-        messagesMapped.unshift(createdSysMsg);
-      }
-
-      const hasStarted = messagesMapped.some(m => String(m.text).includes('has started'));
-      if (!hasStarted && activity.startDate && new Date(activity.startDate) <= new Date()) {
-        const startedSysMsg: any = {
-          id: `sys_started_${activity.id}`,
-          conversationId,
-          senderId: 'system',
-          senderName: 'System',
-          senderAvatar: '',
-          from: 'them',
-          createdAt: activity.startDate,
-          timestamp: activity.startDate,
-          time: new Date(activity.startDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          type: 'system',
-          payload: { text: 'Activity has started!' },
-          text: 'Activity has started!',
-          mediaUrl: null,
-          mediaType: null,
-          mentions: [],
-          inviteData: null,
-          replyTo: null,
-          status: 'sent',
-          state: 'NORMAL'
-        };
-        messagesMapped.push(startedSysMsg);
-      }
-    }
-
     return {
       messages: messagesMapped,
       participants: participants.map(p => ({
@@ -778,8 +684,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
               avatarKey: true,
               description: true,
               type: true,
-              activityId: true,
-              activity: { select: { id: true, title: true, coverImage: true, startDate: true, endDate: true, status: true } },
               ownerId: true,
               status: true,
               lastMessageId: true,
@@ -885,11 +789,8 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     const result = await Promise.all((participants as any[]).map(async (p: any) => {
       const conv = p.conversation;
       const otherUser = targetUserByConvId.get(conv.id);
-      const isGroupConv = conv.type === 'GROUP' || conv.type === 'ACTIVITY' || (conv as any).isGroup;
-      const groupAvatar = conv.avatarKey || (conv as any).activity?.coverImage || (conv as any).activity?.image || null;
-      const actStartDate = (conv as any).activity?.startDate;
-      const actStatus = ((conv as any).activity?.status || conv.status || '').toUpperCase();
-      const hasStarted = ['IN_PROGRESS', 'STARTED', 'COMPLETED', 'ENDED', 'CLOSED', 'CANCELLED'].includes(actStatus) || (!!actStartDate && new Date(actStartDate) <= new Date());
+      const isGroupConv = conv.type === 'GROUP' || (conv as any).isGroup;
+      const groupAvatar = conv.avatarKey || null;
 
       const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
       let canSeeOnline = false;
@@ -922,13 +823,8 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         type: conv.type,
         isMember: (p as any).leftAt == null,
         ownerId: conv.ownerId || null,
-        activityId: conv.activityId || null,
-        activity: conv.activity || null,
-        hasStarted,
-        activityHasStarted: hasStarted,
-        isActivityChat: conv.type === 'ACTIVITY' || !!conv.activityId,
         isGroup: isGroupConv,
-        name: isGroupConv ? (conv.name || (conv as any).activity?.title || 'Group') : (conv.name || otherUser?.displayName || 'Chat'),
+        name: isGroupConv ? (conv.name || 'Group') : (conv.name || otherUser?.displayName || 'Chat'),
         avatar: isGroupConv ? groupAvatar : (conv.avatarKey || otherUser?.avatar || null),
         description: conv.description || null,
         status: conv.status || 'ACTIVE',
@@ -1180,7 +1076,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       }),
       this.prisma.conversation.findUnique({
         where: { id: realConvId },
-        select: { editGroupPermission: true, activityId: true }
+        select: { editGroupPermission: true }
       })
     ]);
 
@@ -1211,13 +1107,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, leftAt: null, deletedAt: null },
         select: { userId: true }
-      }),
-      conversation?.activityId && avatarVal !== undefined
-        ? this.prisma.crewActivity.update({
-            where: { id: conversation.activityId },
-            data: { coverImage: avatarVal }
-          }).catch(() => {})
-        : Promise.resolve(null)
+      })
     ]);
 
     this.invalidateUserConversationsCache(participantRows.map(p => p.userId));
@@ -1247,26 +1137,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     });
     if (blocked) {
       throw new ForbiddenException('Cannot add a user you have blocked or who has blocked you');
-    }
-
-    const convRecord = await this.prisma.conversation.findUnique({
-      where: { id: realConvId },
-      select: { activityId: true }
-    });
-
-    if (convRecord?.activityId) {
-      const activity = await this.prisma.crewActivity.findUnique({
-        where: { id: convRecord.activityId },
-        select: { startDate: true, status: true }
-      });
-      if (activity) {
-        const startRaw = activity.startDate;
-        const status = activity.status as string;
-        const hasStarted = (status === 'STARTED' || status === 'IN_PROGRESS' || status === 'ENDED') || (startRaw && new Date(startRaw) <= new Date());
-        if (!hasStarted) {
-          throw new BadRequestException('Members cannot be added directly to an activity group chat before the activity starts. Join or invite via the activity.');
-        }
-      }
     }
 
     await this.prisma.conversationParticipant.upsert({
@@ -1309,28 +1179,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       throw new ForbiddenException('Admins cannot remove other admins. Only the owner can remove admins.');
     }
 
-    const convRecord = await this.prisma.conversation.findUnique({
-      where: { id: realConvId },
-      select: { activityId: true }
-    });
-
-    if (convRecord?.activityId) {
-      const activity = await this.prisma.crewActivity.findUnique({
-        where: { id: convRecord.activityId },
-        select: { startDate: true, status: true }
-      });
-      if (activity) {
-        const startRaw = activity.startDate;
-        const status = activity.status as string;
-        const hasStarted = (status === 'STARTED' || status === 'IN_PROGRESS' || status === 'ENDED') || (startRaw && new Date(startRaw) <= new Date());
-        if (!hasStarted) {
-          await this.prisma.crewActivityMember.deleteMany({
-            where: { activityId: convRecord.activityId, userId: targetUserId }
-          }).catch(() => {});
-        }
-      }
-    }
-
     await this.prisma.conversationParticipant.update({
       where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
       data: { leftAt: new Date() } as any
@@ -1350,40 +1198,10 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       return { success: true };
     }
 
-    const convRecord = await this.prisma.conversation.findUnique({
-      where: { id: realConvId },
-      select: { activityId: true }
+    await this.prisma.conversationParticipant.update({
+      where: { userId_conversationId: { userId, conversationId: realConvId } },
+      data: { leftAt: new Date() } as any
     });
-
-    let isPreStartActivity = false;
-    if (convRecord?.activityId) {
-      const activity = await this.prisma.crewActivity.findUnique({
-        where: { id: convRecord.activityId },
-        select: { startDate: true, status: true }
-      });
-      if (activity) {
-        const startRaw = activity.startDate;
-        const status = activity.status as string;
-        const hasStarted = (status === 'STARTED' || status === 'IN_PROGRESS' || status === 'ENDED') || (startRaw && new Date(startRaw) <= new Date());
-        if (!hasStarted) {
-          isPreStartActivity = true;
-          await this.prisma.crewActivityMember.deleteMany({
-            where: { activityId: convRecord.activityId, userId }
-          }).catch(() => {});
-        }
-      }
-    }
-
-    if (isPreStartActivity) {
-      await this.prisma.conversationParticipant.deleteMany({
-        where: { conversationId: realConvId, userId }
-      });
-    } else {
-      await this.prisma.conversationParticipant.update({
-        where: { userId_conversationId: { userId, conversationId: realConvId } },
-        data: { leftAt: new Date() } as any
-      });
-    }
 
     this.invalidateUserConversationsCache([userId]).catch(() => {});
 

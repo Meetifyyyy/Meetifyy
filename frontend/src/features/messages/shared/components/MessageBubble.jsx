@@ -739,7 +739,7 @@ const MessageBubble = memo(function MessageBubble({
   }
 
   const isUnsent = msg.state === 'UNSENT' || msg.isUnsent || msg.text === 'This message was unsent' || msg.payload?.text === 'This message was unsent';
-  const isGroup = conversation?.isGroup || conversation?.type === 'GROUP' || conversation?.type === 'ACTIVITY';
+  const isGroup = conversation?.isGroup || conversation?.type === 'GROUP';
   const isMe = checkIsMe(msg, currentUser);
   const showSenderAvatar = isGroup && !isMe;
   const senderName = msg.senderName || msg.sender?.displayName || msg.sender?.name || msg.sender?.username || (msg.senderId && allUsers[msg.senderId] ? (allUsers[msg.senderId].displayName || allUsers[msg.senderId].username || allUsers[msg.senderId].name) : 'Member');

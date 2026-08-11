@@ -14,11 +14,8 @@ export function useUnreadCounts() {
 
       const isGroupChat =
         conv.isGroup ||
-        conv.isActivityChat ||
         conv.isCampusGroup ||
-        conv.activityId ||
-        String(conv.id).startsWith('c_') ||
-        String(conv.id).startsWith('act_');
+        String(conv.id).startsWith('c_');
 
       if (isGroupChat) {
         group += count;

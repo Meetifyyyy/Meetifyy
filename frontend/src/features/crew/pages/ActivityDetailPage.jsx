@@ -3,8 +3,8 @@ import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { activitiesApi, usersApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
-import { useNotifications } from '@shared/hooks/useNotifications';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
+import { useIsMobile } from '@shared/hooks/useIsMobile';
 import { getRelativeDateLabel } from '@shared/utils/time';
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
@@ -18,6 +18,7 @@ import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import { useJoinActivity } from '../hooks/useJoinActivity';
 import { useActivityById } from '@shared/hooks/useCrew';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
+import { ActivityDiscussion, ActivityDiscussionFloating } from '../components/ActivityDiscussion';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 const DEFAULT_COVERS = [
@@ -187,20 +188,8 @@ export default function ActivityDetailPage() {
   const endCrewActivity = (actId) => endMutation.mutateAsync(actId);
 
   const { savedActivities, toggleSaveActivity } = useSavedActivitiesStore();
-  const { addNotification } = useNotifications();
   const navigate = useNavigate();
-  const discussionRef = useRef(null);
-  const commentInputRef = useRef(null);
-
-  useEffect(() => {
-    if (location.search.includes('discussion=1') && discussionRef.current) {
-      setTimeout(() => {
-        discussionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        commentInputRef.current?.focus();
-      }, 300);
-    }
-  }, [location.search]);
-
+  const isMobile = useIsMobile();
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -256,7 +245,6 @@ export default function ActivityDetailPage() {
   const [showJoinedModal, setShowJoinedModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const isSaved = savedActivities?.includes(activity?.id);
-  const [comment, setComment] = useState('');
   const [showHeaderTitle, setShowHeaderTitle] = useState(false);
 
   const handleScroll = (e) => {
@@ -264,9 +252,6 @@ export default function ActivityDetailPage() {
     setShowHeaderTitle(prev => prev !== scrolled ? scrolled : prev);
   };
 
-  const [comments, setComments] = useState([
-    { id: 1, author: 'Jane Doe', text: 'Looking forward to this!', time: '2 hours ago' },
-  ]);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
   if (isActivityLoading && !activity) {
@@ -306,7 +291,6 @@ export default function ActivityDetailPage() {
   const isRequested = activity.pendingRequests?.includes(currentUser?.id) || hasRequested;
   const isCancelled = activity.status === 'CANCELLED';
   let hasEnded = activity.status === 'ENDED' || isCancelled;
-  const hasGroupChat = !!(activity.createEventGroup || activity.createActivityGroup);
 
   let hasStarted = false;
   const startRaw = activity.startDate || activity.date;
@@ -360,21 +344,6 @@ export default function ActivityDetailPage() {
 
   const handleSave = () => {
     toggleSaveActivity(activity.id);
-  };
-
-  const handlePostComment = (e) => {
-    e.preventDefault();
-    if (!comment.trim()) return;
-    setComments([...comments, { id: Date.now(), author: 'You', text: comment, time: 'Just now' }]);
-    if (currentUser?.id !== activity.hostId) {
-      const preview = comment.length > 60 ? comment.slice(0, 60) + '...' : comment;
-      addNotification('activity_discussion', {
-        activityId: activity.id,
-        actorId: currentUser?.id,
-        text: `commented on your activity: "${preview}"`,
-      });
-    }
-    setComment('');
   };
 
   const coverImgUrl = activity?.coverImage || getDefaultCover(title || cleanId);
@@ -580,9 +549,17 @@ export default function ActivityDetailPage() {
                   })}
                 </div>
               </div>
+
+              {/* Mobile: compact discussion box directly below Attendees */}
+              {isMobile && (
+                <ActivityDiscussion variant="inline" activityId={activity.id} />
+              )}
             </div>
           </div>
         </div>
+
+        {/* Desktop: floating discussion window launcher */}
+        {!isMobile && <ActivityDiscussionFloating activityId={activity.id} />}
 
         {/* Sticky Action Bar */}
         <div className={styles.stickyJoinWrap}>
@@ -648,18 +625,6 @@ export default function ActivityDetailPage() {
             </button>
           )}
 
-          {hasGroupChat && (isHost || isJoined) && (
-            <button 
-              className={styles.chatIconBtn}
-              onClick={() => navigate(`/messages/group/act_${activity.id}`, { state: { from: location.pathname } })}
-              title="Open Activity Group Chat"
-              aria-label="Open Activity Group Chat"
-            >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
-              </svg>
-            </button>
-          )}
         </div>
 
         {/* Modals */}

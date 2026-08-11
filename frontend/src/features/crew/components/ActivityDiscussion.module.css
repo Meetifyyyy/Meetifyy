@@ -1,0 +1,282 @@
+/* Activity Discussion — dark, glassy surface matching the Activity Detail page.
+   Two layouts: `.inline` (mobile, embedded below Attendees) and `.floating`
+   (desktop, a small overlapping window). In both, only `.messages` scrolls. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: rgba(18, 18, 26, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+/* ── Mobile inline box ─────────────────────────────────────────── */
+.inline {
+  width: 100%;
+  height: 340px;
+  margin-top: 1.25rem;
+}
+
+/* ── Desktop floating window ───────────────────────────────────── */
+.floating {
+  position: fixed;
+  right: 24px;
+  bottom: 96px;
+  width: 360px;
+  height: 480px;
+  max-height: min(70vh, 560px);
+  z-index: 1200;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.6);
+  animation: discPopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes discPopIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Header ────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.headerTitle svg { color: #818cf8; }
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.iconBtn:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+
+/* ── Messages area (the only scroller) ─────────────────────────── */
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  overscroll-behavior: contain;
+}
+
+.messages::-webkit-scrollbar { width: 6px; }
+.messages::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+}
+
+.loadOlderBtn {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  margin-bottom: 0.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.74rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.loadOlderBtn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
+.loadOlderBtn:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Message row ───────────────────────────────────────────────── */
+.msgRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+.msgRowMe { flex-direction: row-reverse; }
+
+.msgBody {
+  min-width: 0;
+  max-width: 82%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.msgRowMe .msgBody { align-items: flex-end; }
+
+.msgMeta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.msgName {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.82);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+.msgTime {
+  font-size: 0.66rem;
+  color: rgba(255, 255, 255, 0.4);
+  flex-shrink: 0;
+}
+
+.bubble {
+  padding: 0.45rem 0.7rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.bubbleMe {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #fff;
+}
+.bubblePending { opacity: 0.6; }
+
+/* ── States ────────────────────────────────────────────────────── */
+.stateMsg {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.82rem;
+}
+
+.emptyState {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.45);
+  gap: 0.25rem;
+  padding: 1rem;
+}
+.emptyTitle { margin: 0.3rem 0 0; font-size: 0.86rem; font-weight: 600; color: rgba(255, 255, 255, 0.7); }
+.emptyDesc { margin: 0; font-size: 0.76rem; }
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #818cf8;
+  border-radius: 50%;
+  animation: discSpin 0.8s linear infinite;
+}
+@keyframes discSpin { to { transform: rotate(360deg); } }
+
+.sendError {
+  padding: 0.35rem 0.9rem;
+  font-size: 0.74rem;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+  flex-shrink: 0;
+}
+
+/* ── Input ─────────────────────────────────────────────────────── */
+.inputRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.textarea {
+  flex: 1;
+  resize: none;
+  max-height: 90px;
+  min-height: 20px;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 0.85rem;
+  font-family: inherit;
+  line-height: 1.4;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.textarea::placeholder { color: rgba(255, 255, 255, 0.4); }
+.textarea:focus { border-color: rgba(129, 140, 248, 0.6); }
+
+.sendBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+.sendBtn:hover:not(:disabled) { transform: translateY(-1px); }
+.sendBtn:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Desktop launcher button ───────────────────────────────────── */
+.launcherBtn {
+  position: fixed;
+  right: 24px;
+  bottom: 96px;
+  z-index: 1200;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.1rem;
+  border: 1px solid rgba(129, 140, 248, 0.4);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.86rem;
+  cursor: pointer;
+  box-shadow: 0 12px 30px -8px rgba(79, 70, 229, 0.6);
+  transition: transform 0.12s ease, box-shadow 0.15s ease;
+}
+.launcherBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 36px -8px rgba(79, 70, 229, 0.7);
+}

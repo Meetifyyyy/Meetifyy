@@ -209,28 +209,17 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   if (!conversation) return null;
 
   // Determine chat type
-  const isEventGroup = !!conversation.isActivityChat || !!conversation.activityId || String(conversation.id).startsWith('act_');
-  const isGroup = conversation.type === 'GROUP' || conversation.type === 'ACTIVITY' || !!conversation.isGroup || isEventGroup;
+  const isGroup = conversation.type === 'GROUP' || !!conversation.isGroup;
   const isOneOnOne = !isGroup;
 
-  // Fetch related activity if event group
-  const activity = isEventGroup && (conversation.activityId || String(conversation.id).replace(/^act_/, ''))
-    ? crewActivities.find(a => a.id === (conversation.activityId || String(conversation.id).replace(/^act_/, '')))
-    : null;
-
-  const actStatus = (activity?.status || conversation.activity?.status || conversation.status || '').toUpperCase();
-  const isCancelled = actStatus === 'CANCELLED';
-  const isEnded = actStatus === 'ENDED' || actStatus === 'CLOSED' || actStatus === 'COMPLETED' || isCancelled;
-  const actDate = conversation.startDate || conversation.date || activity?.startDate || activity?.date || conversation.activity?.startDate;
-
-  const isHost = activity ? activity.creatorId === currentUser?.id || activity.hostId === currentUser?.id : false;
-  const activityHasStarted = activity
-    ? (() => {
-        const startRaw = activity.startDate || activity.date;
-        if (!startRaw) return false;
-        return new Date(startRaw) <= new Date();
-      })()
-    : false;
+  // Activity group chats have been removed — these remain as inert defaults so
+  // the general group/DM rendering paths below resolve without activity data.
+  const isEventGroup = false;
+  const activity = null;
+  const isCancelled = false;
+  const isEnded = false;
+  const isHost = false;
+  const activityHasStarted = false;
 
   const { data: groupDetails } = useQuery({
     queryKey: ['groupDetails', conversation?.id || conversation?.publicId],
@@ -669,27 +658,6 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                 </div>
               </div>
             </>
-          )}
-
-          {isEventGroup && (
-            <button
-              type="button"
-              className={styles.viewActivityBtn}
-              onClick={() => {
-                const actId = activity?.id || conversation.activityId || (conversation.id ? String(conversation.id).replace(/^act_/, '') : null);
-                if (actId) {
-                  navigate(`/crew/${actId}`, { state: { activity: activity || conversation.activity } });
-                }
-              }}
-              style={{ margin: '0.75rem 0 1rem 0' }}
-            >
-              {activityHasStarted ? (
-                <CalendarDays size={18} />
-              ) : (
-                <CalendarIcon date={activity?.startDate || activity?.date || conversation.startDate || conversation.date} size="badge" />
-              )}
-              <span>View Activity Details</span>
-            </button>
           )}
 
           {isGroup && !isClosed && isMember && (() => {

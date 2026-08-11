@@ -1,7 +1,6 @@
 import Avatar from '@shared/components/avatar/Avatar';
 import { timeAgo } from '@shared/utils/time';
-import { Pin, VolumeX, CalendarDays } from 'lucide-react';
-import CalendarIcon from '@shared/components/ui/CalendarIcon';
+import { Pin, VolumeX } from 'lucide-react';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/hooks/useData';
 import styles from '../../../shared/components/sidebar/ConversationList.module.css';
@@ -18,11 +17,6 @@ export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu 
 
   const memberCount = conv.memberCount || conv.members?.length || conv.participants?.length || 0;
   const pendingCount = conv.pendingRequests?.length || conv.pendingCount || 0;
-
-  const isActivityChat = !!(conv.isActivityChat || conv.activityId || String(conv.id).startsWith('act_'));
-  const actStatus = (conv.activity?.status || conv.status || '').toUpperCase();
-  const isEnded = actStatus === 'ENDED' || actStatus === 'CLOSED' || actStatus === 'COMPLETED' || actStatus === 'CANCELLED';
-  const actDate = conv.startDate || conv.date || conv.activity?.startDate || conv.activity?.date;
 
   const previewText = (() => {
     const lastMsgObj = (Array.isArray(conv.messages) && conv.messages.length > 0)
@@ -73,17 +67,6 @@ export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu 
     >
       <div className={styles.convAvatar}>
         <Avatar src={conv.avatarKey || conv.avatar || conv.icon || conv.coverImage || conv.avatarUrl} name={conv.name} size="48px" isGroup={true} />
-        {isActivityChat && (
-          isEnded ? (
-            <span className={styles.activityCalendarBadge} title="Activity ended">
-              <CalendarDays size={16} strokeWidth={2} />
-            </span>
-          ) : (
-            <div style={{ position: 'absolute', bottom: '-6px', right: '-10px', zIndex: 4 }} title="Activity date">
-              <CalendarIcon date={actDate} size="badge" />
-            </div>
-          )
-        )}
         {pendingCount > 0 && (
           <span 
             style={{

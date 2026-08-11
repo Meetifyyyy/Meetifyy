@@ -36,10 +36,9 @@ export function parseConversationRoute(param1, param2) {
     return { publicId: param1, slug: null, isLegacyFormat: true };
   }
 
-  // UUID pattern or legacy prefix (c_... / act_...) check for param1
+  // UUID pattern or legacy prefix (c_...) check for param1
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(param1) ||
-                 param1.startsWith('c_') ||
-                 param1.startsWith('act_');
+                 param1.startsWith('c_');
 
   if (isUuid) {
     // Legacy format: /inbox/:conversationId/:slug

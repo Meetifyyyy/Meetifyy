@@ -125,7 +125,7 @@ export default function ChatInputArea({
 
   const isClosed = conversation?.status === 'Closed';
   const isExpiredInstantMatch = conversation?.isInstantMatch && conversation?.expiresAt && new Date(conversation.expiresAt).getTime() < Date.now();
-  const isNotMember = (conversation?.type === 'GROUP' || conversation?.isGroup || conversation?.activityId) && conversation?.isMember === false;
+  const isNotMember = (conversation?.type === 'GROUP' || conversation?.isGroup) && conversation?.isMember === false;
   // Also respect the parent-level disabled flag (e.g. blocked DM, ended activity)
   const isDisabledByParent = !!disabled;
 
@@ -298,7 +298,7 @@ export default function ChatInputArea({
                   }}
                   onSubmit={handleSend}
                   singleLine={true}
-                  communityId={(conversation?.type === 'GROUP' || conversation?.isGroup || conversation?.isActivityChat) ? conversation?.id : null}
+                  communityId={(conversation?.type === 'GROUP' || conversation?.isGroup) ? conversation?.id : null}
                 />
               </div>
             </div>

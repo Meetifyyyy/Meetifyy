@@ -3,13 +3,12 @@ export function matchesConversationId(c, targetId) {
   const targetStr = String(targetId).trim().toLowerCase();
   if (!targetStr) return false;
 
-  const cleanTarget = targetStr.replace(/^(act_)+/, '').replace(/^(c_)+/, '');
+  const cleanTarget = targetStr.replace(/^(c_)+/, '');
 
   const candidates = [
     c.id,
     c.publicId,
     c.internalId,
-    c.activityId,
     c.username,
     c.otherUser?.username,
     c.otherUser?.id,
@@ -18,7 +17,7 @@ export function matchesConversationId(c, targetId) {
   if (candidates.includes(targetStr)) return true;
 
   for (const cand of candidates) {
-    const cleanCand = cand.replace(/^(act_)+/, '').replace(/^(c_)+/, '');
+    const cleanCand = cand.replace(/^(c_)+/, '');
     if (cleanCand && cleanCand === cleanTarget) return true;
   }
 
@@ -36,7 +35,6 @@ export function getConversationAliases(c) {
     c.id,
     c.publicId,
     c.internalId,
-    c.activityId,
     c.username,
     c.otherUser?.username,
     c.otherUser?.id,
@@ -45,7 +43,7 @@ export function getConversationAliases(c) {
       const s = String(val).trim();
       if (s) {
         set.add(s);
-        const clean = s.replace(/^(act_)+/, '').replace(/^(c_)+/, '');
+        const clean = s.replace(/^(c_)+/, '');
         if (clean) set.add(clean);
       }
     }

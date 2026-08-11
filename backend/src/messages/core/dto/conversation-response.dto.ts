@@ -10,8 +10,6 @@ export interface ConversationResponseDto {
   description?: string | null;
   status: string;
   isInstantMatch?: boolean;
-  isActivityChat?: boolean;
-  activityId?: string | null;
   expiresAt?: Date | string | null;
   createdAt: Date | string;
   updatedAt: Date | string;

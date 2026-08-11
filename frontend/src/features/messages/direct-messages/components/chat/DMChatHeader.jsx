@@ -24,7 +24,7 @@ export default function DMChatHeader({
   );
   const isBlocked = conversation.isBlocked || conversation.blocked;
 
-  const isGroupConv = conversation.type === 'GROUP' || conversation.type === 'ACTIVITY' || conversation.isGroup;
+  const isGroupConv = conversation.type === 'GROUP' || conversation.isGroup;
   const avatarSrc = isGroupConv
     ? (conversation.avatar || conversation.icon || conversation.coverImage || null)
     : (conversation.avatar || conversation.otherUser?.avatar || conversation.targetUser?.avatar || conversation.icon);

@@ -66,21 +66,16 @@ export function useTypingIndicator(conversationId, currentUserId) {
       c =>
         String(c.id) === String(conversationId) ||
         String(c.publicId) === String(conversationId) ||
-        String(c.internalId) === String(conversationId) ||
-        (c.activityId && `act_${c.activityId}` === String(conversationId))
+        String(c.internalId) === String(conversationId)
     );
-
-    const cleanId = String(conversationId).replace(/^(act_)+/, '');
 
     const allCandidateIds = Array.from(
       new Set(
         [
           conversationId,
-          cleanId,
           matchedConv?.id,
           matchedConv?.publicId,
-          matchedConv?.internalId,
-          matchedConv?.activityId ? `act_${matchedConv.activityId}` : null
+          matchedConv?.internalId
         ].filter(Boolean)
       )
     );
@@ -89,8 +84,7 @@ export function useTypingIndicator(conversationId, currentUserId) {
 
     const isMatch = (receivedId) => {
       if (!receivedId) return false;
-      const cleanRecId = String(receivedId).replace(/^(act_)+/, '');
-      return allCandidateIds.some(id => String(id) === String(receivedId) || String(id) === cleanRecId);
+      return allCandidateIds.some(id => String(id) === String(receivedId));
     };
 
     const clearUserTyping = (uId) => {

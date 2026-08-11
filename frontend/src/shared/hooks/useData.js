@@ -56,74 +56,10 @@ export function useData() {
   const { data: rawUsers = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll(20, 0), enabled: Boolean(currentUser?.id && isIdleLoaded), staleTime: 5 * 60_000 });
   const { campusUsers: rawCampusUsers } = useCampusUsers(isIdleLoaded ? 50 : 0);
 
-  const conversations = useMemo(() => {
-    const actList = [...(rawActivities || []), ...(rawCampusActivities || [])];
-    const uniqueActMap = new Map();
-    actList.forEach(a => { if (a && a.id) uniqueActMap.set(a.id, a); });
-
-    // Start from processedConversations (already transformed by useConversations hook)
-    const list = [...(processedConversations || [])];
-
-    // Augment with activity chat enrichment for activity-type conversations
-    list.forEach((c, idx) => {
-      if (!c.isActivityChat && !c.activityId) return;
-      const cleanActId = c.activityId || (String(c.id).startsWith('act_') ? String(c.id).replace('act_', '') : null);
-      const matchedAct = cleanActId ? uniqueActMap.get(cleanActId) : null;
-      if (!matchedAct) return;
-      const activity = c.activity || matchedAct;
-      const actStartDate = activity?.startDate || activity?.date || c.date;
-      const actStatus = (activity?.status || c.status || '').toUpperCase();
-      const calcHasStarted = actStatus === 'IN_PROGRESS' || actStatus === 'STARTED' || actStatus === 'COMPLETED' || actStatus === 'ENDED' || (actStartDate ? (new Date(actStartDate) <= new Date()) : false);
-      list[idx] = {
-        ...c,
-        activity,
-        activityId: c.activityId || (matchedAct ? matchedAct.id : null),
-        isActivityChat: true,
-        hasStarted: c.hasStarted || calcHasStarted,
-        activityHasStarted: c.hasStarted || calcHasStarted,
-        avatar: c.avatar || activity?.coverImage || null,
-      };
-    });
-
-    // Inject virtual activity group chats that have no conversation record yet
-    uniqueActMap.forEach((act) => {
-      const hasGroup = act.createActivityGroup ?? act.createEventGroup ?? false;
-      if (hasGroup) {
-        const actConvId = `act_${act.id}`;
-        const existsInRaw = list.some(c => String(c.id) === String(act.id) || String(c.id) === actConvId || String(c.activityId) === String(act.id));
-        if (!existsInRaw) {
-          const isParticipant = act.creatorId === currentUser?.id ||
-            (act.members && act.members.some(m => m.userId === currentUser?.id && m.status === 'MEMBER'));
-          if (isParticipant) {
-            const hostObj = act.creator || act.members?.find(m => m.userId === act.creatorId)?.user;
-            const hasStarted = act.startDate ? (new Date(act.startDate) <= new Date()) : false;
-            list.push({
-              id: actConvId,
-              publicId: actConvId,
-              internalId: act.id,
-              activityId: act.id,
-              activity: act,
-              isActivityChat: true,
-              hasStarted,
-              activityHasStarted: hasStarted,
-              isGroup: true,
-              isMember: true,
-              name: act.title,
-              avatar: act.coverImage || hostObj?.avatar || '/default_avatar.webp',
-              unread: 0,
-              lastMsg: hasStarted ? 'Activity has started!' : 'Activity group chat created',
-              timestamp: act.createdAt ? new Date(act.createdAt).getTime() : Date.now(),
-              participants: act.members?.map(m => m.user || { id: m.userId }) || [],
-              creatorId: act.creatorId,
-              hostName: hostObj?.displayName || hostObj?.username || 'Host',
-            });
-          }
-        }
-      }
-    });
-
-    return list;
-  }, [processedConversations, rawActivities, rawCampusActivities, currentUser?.id]);
+  const conversations = useMemo(
+    () => [...(processedConversations || [])],
+    [processedConversations]
+  );
 
   // Memoized so consumers of this globally-mounted hook don't re-map every
   // activity on every render (this hook re-renders on many unrelated changes).
@@ -354,7 +290,7 @@ export function useData() {
     const targetUserId = targetUserObj?.id || (Array.isArray(cleanIds) ? cleanIds[0] : cleanIds);
 
     const existingConv = (conversations || []).find(c => {
-      if (c.isGroup || c.isActivityChat || String(c.id).startsWith('act_') || String(c.id).startsWith('c_')) return false;
+      if (c.isGroup || String(c.id).startsWith('c_')) return false;
       const otherId = c.targetUser?.id || c.otherUser?.id || c.userId || c.participants?.find(p => {
         const pId = typeof p === 'string' ? p : (p.id || p.userId || p.user?.id);
         return String(pId) !== String(currentUser?.id);
@@ -604,13 +540,6 @@ export function useData() {
     if (String(convId).startsWith('c_')) {
       const actualId = convId.replace('c_', '');
       return communitiesApi.leave(actualId).then(() => queryClient.invalidateQueries({ queryKey: ['communities'] }));
-    }
-    if (String(convId).startsWith('act_')) {
-      const actualId = convId.replace('act_', '');
-      return activitiesApi.leave(actualId).then(() => {
-        queryClient.invalidateQueries({ queryKey: ['activities'] });
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      });
     }
     await groupApi.leaveGroup(convId);
     queryClient.invalidateQueries({ queryKey: ['conversations'] });

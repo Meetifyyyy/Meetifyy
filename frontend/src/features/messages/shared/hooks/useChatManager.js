@@ -242,17 +242,12 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
 
     queryClient.setQueryData(['conversations'], (oldConvs) => {
       if (!Array.isArray(oldConvs)) return oldConvs;
-      const cleanActiveId = String(activeChatId).replace(/^(act_)+/, '');
       let modified = false;
 
       const updated = oldConvs.map((c) => {
-        const cleanCid = String(c.id).replace(/^(act_)+/, '');
-        const cleanActId = c.activityId ? String(c.activityId).replace(/^(act_)+/, '') : null;
         const isMatch = String(c.id) === String(activeChatId) ||
           String(c.publicId) === String(activeChatId) ||
-          String(c.internalId) === String(activeChatId) ||
-          cleanCid === cleanActiveId ||
-          (cleanActId && cleanActId === cleanActiveId);
+          String(c.internalId) === String(activeChatId);
 
         if (isMatch && ((c.unreadCount || 0) > 0 || (c.unread || 0) > 0)) {
           modified = true;

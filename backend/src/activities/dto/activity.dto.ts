@@ -29,10 +29,6 @@ export class CreateActivityDto {
 
   @IsBoolean()
   @IsOptional()
-  createActivityGroup?: boolean;
-
-  @IsBoolean()
-  @IsOptional()
   shareToCampus?: boolean;
 
   @IsString()

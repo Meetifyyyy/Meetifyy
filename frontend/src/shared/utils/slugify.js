@@ -36,8 +36,7 @@ export function getConversationSlug(conversation, currentUserId) {
   const isGroup = Boolean(
     conversation.isGroup ||
     conversation.type === 'GROUP' ||
-    conversation.type === 'COMMUNITY' ||
-    conversation.type === 'ACTIVITY'
+    conversation.type === 'COMMUNITY'
   );
 
   if (!isGroup && Array.isArray(conversation.participants) && conversation.participants.length > 0) {

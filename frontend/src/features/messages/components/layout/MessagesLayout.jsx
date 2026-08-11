@@ -138,7 +138,7 @@ export default function MessagesLayout() {
     const initialPage = rawPages?.[0];
     const latestPage = rawPages?.[rawPages.length - 1];
 
-    const isGroupConv = baseConv.type === 'GROUP' || baseConv.type === 'ACTIVITY' || !!baseConv.isGroup || !!baseConv.isActivityChat || !!baseConv.activityId;
+    const isGroupConv = baseConv.type === 'GROUP' || !!baseConv.isGroup;
 
     const otherMsg = (allMessages || []).find(m => m.from === 'them' || (m.senderId && String(m.senderId) !== String(currentUser?.id)));
     const inferredName = baseConv.name || initialPage?.name || otherMsg?.senderName || 'Chat';
@@ -201,8 +201,8 @@ export default function MessagesLayout() {
       .filter(c => !c.isDraft && !String(c.id).startsWith('draft_'))
       .filter(c => {
         if (activeFilter === 'Unread') return (c.unread || 0) > 0 || (c.unreadCount || 0) > 0;
-        if (activeFilter === 'DMs') return c.type !== 'GROUP' && c.type !== 'ACTIVITY' && !c.isGroup && !c.isActivityChat && !String(c.id).startsWith('act_') && !String(c.id).startsWith('c_');
-        if (activeFilter === 'Groups') return c.type === 'GROUP' || c.type === 'ACTIVITY' || c.isGroup || c.isActivityChat || String(c.id).startsWith('act_') || String(c.id).startsWith('c_');
+        if (activeFilter === 'DMs') return c.type !== 'GROUP' && !c.isGroup && !String(c.id).startsWith('c_');
+        if (activeFilter === 'Groups') return c.type === 'GROUP' || c.isGroup || String(c.id).startsWith('c_');
         return true;
       })
       .filter(c => {
@@ -230,7 +230,7 @@ export default function MessagesLayout() {
     setIsModalOpen(false);
     if (!targetUser?.id) return;
     const existing = (conversations || []).find(c => {
-      if (c.isGroup || c.isActivityChat || String(c.id).startsWith('act_') || String(c.id).startsWith('c_')) return false;
+      if (c.isGroup || String(c.id).startsWith('c_')) return false;
       const otherId = c.targetUser?.id || c.otherUser?.id || c.userId || c.participants?.find(p => String(p.userId || p.id) !== String(currentUser?.id))?.userId;
       return String(otherId) === String(targetUser.id);
     });
@@ -249,10 +249,9 @@ export default function MessagesLayout() {
   };
 
 
-  // Activity group chats are rendered as normal group chats
   const getConvType = (c) => {
     if (!c) return 'dm';
-    if (c.type === 'GROUP' || c.type === 'ACTIVITY' || c.isGroup || c.isActivityChat || String(c.id).startsWith('act_') || String(c.id).startsWith('c_') || c.isCampusGroup || c.activityId) return 'group';
+    if (c.type === 'GROUP' || c.isGroup || String(c.id).startsWith('c_') || c.isCampusGroup) return 'group';
     return 'dm';
   };
 

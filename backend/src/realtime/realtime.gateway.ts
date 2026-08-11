@@ -206,6 +206,17 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       this.server.to(`post_${postScopeId}`).emit('domainEvent', payload);
     }
 
+    // Activity discussion: fan out to everyone currently viewing the activity
+    // (they joined `activity_<id>` via 'activity:join'). Purely room-scoped —
+    // there is no participant set, so return once broadcast.
+    if (payload.type === 'activity_discussion.created') {
+      const activityScopeId = payload.data?.activityId;
+      if (activityScopeId) {
+        this.server.to(`activity_${activityScopeId}`).emit('activity_discussion:new', payload.data.message);
+      }
+      return;
+    }
+
     const isLegacyEvent = payload.type?.includes(':');
     let targets: string[] = [];
 
@@ -490,6 +501,28 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   ) {
     if (!data?.postId) return;
     client.leave(`post_${data.postId}`);
+  }
+
+  // A client viewing an activity joins its discussion room so it receives live
+  // discussion messages; it leaves on unmount. Rooms are per-socket and
+  // auto-cleaned on disconnect, so a missed 'activity:leave' can't leak.
+  @SubscribeMessage('activity:join')
+  handleActivityJoin(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { activityId?: string }
+  ) {
+    const userId = (client as any).userId;
+    if (!userId || !data?.activityId) return;
+    client.join(`activity_${data.activityId}`);
+  }
+
+  @SubscribeMessage('activity:leave')
+  handleActivityLeave(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { activityId?: string }
+  ) {
+    if (!data?.activityId) return;
+    client.leave(`activity_${data.activityId}`);
   }
 
   @SubscribeMessage('typing:start')

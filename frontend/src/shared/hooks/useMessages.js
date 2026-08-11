@@ -43,7 +43,7 @@ export function useConversations() {
             return String(id) === String(currentUser?.id);
           });
       const isMember = c.isMember !== undefined ? c.isMember : calculatedIsMember;
-      const isGroup = c.type === 'GROUP' || c.type === 'ACTIVITY' || !!c.isGroup || !!c.isActivityChat || Boolean(c.activityId);
+      const isGroup = c.type === 'GROUP' || !!c.isGroup;
 
       const computedTimestamp = (() => {
         const times = [
@@ -198,13 +198,6 @@ export function useMessageMutations() {
       return communitiesApi.leave(actualId)
         .then(() => queryClient.invalidateQueries({ queryKey: ['communities'] }))
         .catch(() => {});
-    }
-    if (String(convId).startsWith('act_')) {
-      const actualId = convId.replace('act_', '');
-      return activitiesApi.leave(actualId).then(() => {
-        queryClient.invalidateQueries({ queryKey: ['activities'] });
-        invalidateConversations();
-      });
     }
     await groupApi.leaveGroup(convId).catch(() => {});
     invalidateConversations();

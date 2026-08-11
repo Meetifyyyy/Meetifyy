@@ -95,12 +95,6 @@ export class MessagingCoreService {
           where: { publicId: cleanId },
           select: { id: true }
         });
-        if (!conv) {
-          conv = await this.prisma.conversation.findUnique({
-            where: { activityId: cleanId },
-            select: { id: true }
-          });
-        }
       }
 
       if (conv?.id) {
@@ -420,23 +414,13 @@ export class MessagingCoreService {
       }
 
       if (!cursorDate) {
-        if (beforeCursor.startsWith('sys_created_')) {
-          const actId = beforeCursor.replace(/^sys_created_/, '');
-          const activity = await this.prisma.crewActivity.findUnique({ where: { id: actId }, select: { createdAt: true } });
-          if (activity?.createdAt) cursorDate = activity.createdAt;
-        } else if (beforeCursor.startsWith('sys_started_')) {
-          const actId = beforeCursor.replace(/^sys_started_/, '');
-          const activity = await this.prisma.crewActivity.findUnique({ where: { id: actId }, select: { startDate: true } });
-          if (activity?.startDate) cursorDate = activity.startDate;
-        } else {
-          const cursorMessage = await this.prisma.message.findUnique({
-            where: { id: beforeCursor },
-            select: { id: true, createdAt: true }
-          });
-          if (cursorMessage) {
-            cursorDate = cursorMessage.createdAt;
-            cursorId = cursorMessage.id;
-          }
+        const cursorMessage = await this.prisma.message.findUnique({
+          where: { id: beforeCursor },
+          select: { id: true, createdAt: true }
+        });
+        if (cursorMessage) {
+          cursorDate = cursorMessage.createdAt;
+          cursorId = cursorMessage.id;
         }
       }
 
@@ -550,68 +534,6 @@ export class MessagingCoreService {
         isUnsent
       };
     });
-
-    if (conversationId.startsWith('act_') || realConvId.startsWith('act_')) {
-      const actId = (conversationId || realConvId).replace(/^act_/, '');
-      const activity = await this.prisma.crewActivity.findUnique({
-        where: { id: actId },
-        select: { id: true, title: true, startDate: true, createdAt: true, creatorId: true }
-      });
-
-      if (activity) {
-        const hasCreatedMsg = messagesMapped.some(m => String(m.text).includes('group chat created'));
-        if (!hasCreatedMsg) {
-          const createdSysMsg: any = {
-            id: `sys_created_${activity.id}`,
-            conversationId,
-            senderId: activity.creatorId,
-            senderName: 'System',
-            senderAvatar: '',
-            from: 'them',
-            createdAt: activity.createdAt || new Date(),
-            timestamp: activity.createdAt || new Date(),
-            time: activity.createdAt ? new Date(activity.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-            type: 'system',
-            payload: { text: 'Activity group chat created' },
-            text: 'Activity group chat created',
-            mediaUrl: null,
-            mediaType: null,
-            mentions: [],
-            inviteData: null,
-            replyTo: null,
-            status: 'sent',
-            state: 'NORMAL'
-          };
-          messagesMapped.unshift(createdSysMsg);
-        }
-
-        const hasStarted = messagesMapped.some(m => String(m.text).includes('has started'));
-        if (!hasStarted && activity.startDate && new Date(activity.startDate) <= new Date()) {
-          const startedSysMsg: any = {
-            id: `sys_started_${activity.id}`,
-            conversationId,
-            senderId: 'system',
-            senderName: 'System',
-            senderAvatar: '',
-            from: 'them',
-            createdAt: activity.startDate,
-            timestamp: activity.startDate,
-            time: new Date(activity.startDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            type: 'system',
-            payload: { text: 'Activity has started!' },
-            text: 'Activity has started!',
-            mediaUrl: null,
-            mediaType: null,
-            mentions: [],
-            inviteData: null,
-            replyTo: null,
-            status: 'sent',
-            state: 'NORMAL'
-          };
-          messagesMapped.push(startedSysMsg);
-        }
-      }
-    }
 
     return {
       messages: messagesMapped,

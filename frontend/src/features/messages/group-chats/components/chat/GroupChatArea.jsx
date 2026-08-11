@@ -27,7 +27,7 @@ export default function GroupChatArea({
   onCancelUpload,
 }) {
   const convId = conversation?.id || conversation?.publicId || conversation?.internalId;
-  const isGroup = Boolean(conversation?.type === 'GROUP' || conversation?.isGroup || conversation?.activityId);
+  const isGroup = Boolean(conversation?.type === 'GROUP' || conversation?.isGroup);
 
   const { data: groupDetails } = useQuery({
     queryKey: ['groupDetails', convId],

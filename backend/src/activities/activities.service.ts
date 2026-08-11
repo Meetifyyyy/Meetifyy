@@ -222,7 +222,6 @@ export class ActivitiesService implements OnModuleInit {
           createdAt: true,
           coverImage: true,
           coverMediaId: true,
-          createActivityGroup: true,
           deletedAt: true,
           endDate: true,
           latitude: true,
@@ -525,7 +524,6 @@ export class ActivitiesService implements OnModuleInit {
       startDate: data.startDate ? new Date(data.startDate) : null,
       endDate: data.endDate ? new Date(data.endDate) : null,
       location: data.location,
-      createActivityGroup: data.createActivityGroup,
       maxMembers: data.maxMembers ? parseInt(data.maxMembers, 10) : null,
       visibility,
       shareToCampus: visibility === 'COLLEGE_ONLY' || Boolean(data.shareToCampus),
@@ -549,7 +547,6 @@ export class ActivitiesService implements OnModuleInit {
         status: true,
         visibility: true,
         shareToCampus: true,
-        createActivityGroup: true,
         maxMembers: true,
         createdAt: true,
         updatedAt: true,
@@ -567,32 +564,6 @@ export class ActivitiesService implements OnModuleInit {
     });
 
     setImmediate(async () => {
-      if (createdActivity.createActivityGroup) {
-        const convId = `act_${createdActivity.id}`;
-        await this.prisma.conversation.upsert({
-          where: { id: convId },
-          update: { name: createdActivity.title, avatarKey: createdActivity.coverImage },
-          create: {
-            id: convId,
-            name: createdActivity.title,
-            avatarKey: createdActivity.coverImage,
-            type: 'GROUP',
-            isActivityChat: true,
-            activityId: createdActivity.id,
-            ownerId: creatorId,
-            participants: {
-              create: [{ userId: creatorId, role: 'OWNER' }]
-            },
-            messages: {
-              create: [{
-                senderId: creatorId,
-                payload: { text: 'Activity group chat created' },
-                type: 'SYSTEM'
-              }]
-            }
-          }
-        }).catch(() => {});
-      }
       this.domainEventService.emit('activity.created', { id: createdActivity.id, creatorId, collegeId: user?.collegeId || null });
       this.clearActivityFeedCaches();
     });
@@ -645,102 +616,6 @@ export class ActivitiesService implements OnModuleInit {
       create: { userId, activityId, status: 'MEMBER' },
     });
 
-    const actor = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, displayName: true, username: true, avatar: true }
-    });
-
-    if (activity.createActivityGroup) {
-      try {
-        const convId = `act_${activityId}`;
-        const userHandle = actor?.username ? `@${actor.username}` : (actor?.displayName || 'Someone');
-
-        // Ensure conversation record exists
-        await this.prisma.conversation.upsert({
-          where: { id: convId },
-          update: { name: activity.title },
-          create: {
-            id: convId,
-            name: activity.title,
-            avatarKey: activity.coverImage,
-            type: 'GROUP',
-            isActivityChat: true,
-            activityId: activity.id,
-            ownerId: activity.creatorId,
-            participants: {
-              create: [{ userId: activity.creatorId, role: 'OWNER' }]
-            }
-          }
-        }).catch(() => {});
-
-        await this.prisma.conversationParticipant.upsert({
-          where: { userId_conversationId: { userId, conversationId: convId } },
-          update: { role: 'MEMBER', leftAt: null, deletedAt: null } as any,
-          create: { conversationId: convId, userId, role: 'MEMBER' }
-        }).catch(() => {});
-
-        const sysMsg = await this.prisma.message.create({
-          data: {
-            conversationId: convId,
-            senderId: userId,
-            payload: { text: `${userHandle} joined the activity` },
-            type: 'SYSTEM'
-          }
-        }).catch(() => null);
-
-        if (sysMsg) {
-          const formattedMsg = {
-            id: sysMsg.id,
-            conversationId: convId,
-            publicId: convId,
-            internalId: convId,
-            senderId: userId,
-            senderName: 'System',
-            senderAvatar: '',
-            from: 'them',
-            createdAt: sysMsg.createdAt,
-            timestamp: sysMsg.createdAt,
-            time: new Date(sysMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            type: 'system',
-            text: `${userHandle} joined the activity`,
-            payload: { text: `${userHandle} joined the activity` },
-            status: 'sent'
-          };
-
-          const membersList = await this.prisma.crewActivityMember.findMany({
-            where: { activityId },
-            select: { userId: true }
-          }).catch(() => []);
-
-          const participantsList = await this.prisma.conversationParticipant.findMany({
-            where: { conversationId: convId, leftAt: null, deletedAt: null } as any,
-            select: { userId: true }
-          }).catch(() => []);
-
-          const recipientUserIds = Array.from(new Set([
-            userId,
-            activity.creatorId,
-            ...membersList.map(m => m.userId),
-            ...participantsList.map(p => p.userId)
-          ].filter(Boolean)));
-
-          this.domainEventService.emit('message:new', formattedMsg, recipientUserIds);
-          this.domainEventService.emit('conversation:updated', {
-            conversationId: convId,
-            publicId: convId,
-            internalId: convId,
-            lastMessage: {
-              text: `${userHandle} joined the activity`,
-              createdAt: sysMsg.createdAt,
-              senderId: userId
-            }
-          }, recipientUserIds);
-        }
-      } catch (err) {
-        this.logger.warn('Failed group chat update during joinActivity', err);
-      }
-    }
-
     this.domainEventService.emit('activity.memberJoined', { activityId, userId });
     this.clearActivityFeedCaches();
     return { success: true };
@@ -749,17 +624,12 @@ export class ActivitiesService implements OnModuleInit {
   async leaveActivity(activityId: string, userId: string) {
     const activity = await this.prisma.crewActivity.findUnique({
       where: { id: activityId },
-      select: { creatorId: true, createActivityGroup: true, title: true, coverImage: true, startDate: true, status: true },
+      select: { creatorId: true, title: true, coverImage: true, startDate: true, status: true },
     });
 
     if (activity && activity.creatorId === userId) {
       throw new BadRequestException('Host cannot leave their own activity');
     }
-
-    const actor = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { displayName: true, username: true }
-    });
 
     const existingMember = await this.prisma.crewActivityMember.findUnique({
       where: { userId_activityId: { userId, activityId } }
@@ -769,69 +639,6 @@ export class ActivitiesService implements OnModuleInit {
       await this.prisma.crewActivityMember.delete({
         where: { userId_activityId: { userId, activityId } }
       });
-
-      // Broadcast a system message to the group chat if one exists.
-      // NOTE: leaving the activity does NOT remove the user from the group chat —
-      // they stay in the conversation. Only leaving via the group chat itself removes them.
-      if (activity?.createActivityGroup) {
-        try {
-          const convId = `act_${activityId}`;
-          const userHandle = actor?.username ? `@${actor.username}` : (actor?.displayName || 'Someone');
-
-          const sysMsg = await this.prisma.message.create({
-            data: {
-              conversationId: convId,
-              senderId: userId,
-              payload: { text: `${userHandle} left the activity` },
-              type: 'SYSTEM'
-            }
-          }).catch(() => null);
-
-          if (sysMsg) {
-            const formattedMsg = {
-              id: sysMsg.id,
-              conversationId: convId,
-              publicId: convId,
-              internalId: convId,
-              senderId: userId,
-              senderName: 'System',
-              senderAvatar: '',
-              from: 'them',
-              createdAt: sysMsg.createdAt,
-              timestamp: sysMsg.createdAt,
-              time: new Date(sysMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              type: 'system',
-              text: `${userHandle} left the activity`,
-              payload: { text: `${userHandle} left the activity` },
-              status: 'sent'
-            };
-
-            const participantsList = await this.prisma.conversationParticipant.findMany({
-              where: { conversationId: convId, leftAt: null, deletedAt: null } as any,
-              select: { userId: true }
-            }).catch(() => []);
-
-            const recipientUserIds = Array.from(new Set([
-              activity?.creatorId,
-              ...participantsList.map(p => p.userId)
-            ].filter(Boolean))) as string[];
-
-            this.domainEventService.emit('message:new', formattedMsg, recipientUserIds);
-            this.domainEventService.emit('conversation:updated', {
-              conversationId: convId,
-              publicId: convId,
-              internalId: convId,
-              lastMessage: {
-                text: `${userHandle} left the activity`,
-                createdAt: sysMsg.createdAt,
-                senderId: userId
-              }
-            }, recipientUserIds);
-          }
-        } catch (err) {
-          this.logger.warn('Failed group chat system message during leaveActivity', err);
-        }
-      }
     }
 
     this.domainEventService.emit('activity.memberLeft', { activityId, userId });
@@ -878,30 +685,6 @@ export class ActivitiesService implements OnModuleInit {
       where: { userId_activityId: { userId: requesterId, activityId } },
       data: { status: 'MEMBER' }
     });
-
-    if (activity.createActivityGroup) {
-      const convId = `act_${activityId}`;
-      const actor = await this.prisma.user.findUnique({
-        where: { id: requesterId },
-        select: { displayName: true, username: true }
-      });
-      const userHandle = actor?.username ? `@${actor.username}` : (actor?.displayName || 'Someone');
-
-      await this.prisma.conversationParticipant.upsert({
-        where: { userId_conversationId: { userId: requesterId, conversationId: convId } },
-        update: { role: 'MEMBER' },
-        create: { conversationId: convId, userId: requesterId, role: 'MEMBER' }
-      }).catch(() => {});
-
-      await this.prisma.message.create({
-        data: {
-          conversationId: convId,
-          senderId: requesterId,
-          payload: { text: `${userHandle} joined the activity` },
-          type: 'SYSTEM'
-        }
-      }).catch(() => {});
-    }
 
     this.domainEventService.emit('activity.memberJoined', { activityId, userId: requesterId });
     this.clearActivityFeedCaches();
@@ -959,24 +742,12 @@ export class ActivitiesService implements OnModuleInit {
       this.prisma.activityInvitation.updateMany({
         where: { activityId, status: 'PENDING' },
         data: { status: 'EXPIRED' },
-      }),
-      this.prisma.conversation.updateMany({
-        where: { activityId },
-        data: { status: 'Closed' }
       })
     ]);
 
-    setImmediate(async () => {
+    setImmediate(() => {
       this.domainEventService.emit('activity.updated', { id: activityId, status: 'CANCELLED' });
       this.clearActivityFeedCaches();
-      try {
-        const convs = await this.prisma.conversation.findMany({ where: { activityId }, select: { id: true } });
-        for (const conv of convs) {
-          this.domainEventService.emit('conversation:updated', { conversationId: conv.id });
-        }
-      } catch (e) {
-        // ignore
-      }
     });
 
     return { success: true };

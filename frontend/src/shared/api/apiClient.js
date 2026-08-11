@@ -520,6 +520,14 @@ export const activitiesApi = {
   join: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/join`, undefined, { signal }),
   leave: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/leave`, undefined, { signal }),
   requestToJoinActivity: (id) => apiClient.post(`/api/activities/${id}/request`),
+  getDiscussion: (id, { before, limit = 20 } = {}) => {
+    const params = new URLSearchParams();
+    if (before) params.set('before', before);
+    if (limit) params.set('limit', String(limit));
+    const qs = params.toString();
+    return apiClient.get(`/api/activities/${id}/discussion${qs ? `?${qs}` : ''}`);
+  },
+  sendDiscussionMessage: (id, text) => apiClient.post(`/api/activities/${id}/discussion`, { text }),
   acceptJoinRequest: (id, userId) => apiClient.post(`/api/activities/${id}/requests/${userId}/accept`),
   rejectJoinRequest: (id, userId) => apiClient.post(`/api/activities/${id}/requests/${userId}/reject`),
   cancelCrewActivity: (id) => apiClient.post(`/api/activities/${id}/cancel`),

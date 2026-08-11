@@ -78,9 +78,6 @@ export class GroupChatsService extends MessagingCoreService {
             type: true,
             ownerId: true,
             status: true,
-            activityId: true,
-            isActivityChat: true,
-            activity: { select: { id: true, title: true, coverImage: true, startDate: true, endDate: true, status: true } },
             lastMessageId: true,
             lastMessageText: true,
             lastMessageType: true,
@@ -107,10 +104,7 @@ export class GroupChatsService extends MessagingCoreService {
     return (participants as any[]).map((p: any) => {
       const conv = p.conversation;
       const pubId = conv.publicId || conv.id;
-      const groupAvatar = conv.avatarKey || conv.activity?.coverImage || null;
-      const actStartDate = conv.activity?.startDate;
-      const actStatus = (conv.activity?.status || conv.status || '').toUpperCase();
-      const hasStarted = ['IN_PROGRESS', 'STARTED', 'COMPLETED', 'ENDED', 'CLOSED', 'CANCELLED'].includes(actStatus) || (!!actStartDate && new Date(actStartDate) <= new Date());
+      const groupAvatar = conv.avatarKey || null;
       const unreadCount = p.unreadCount || 0;
 
       const resolvedLastMsg = conv.lastMessageAt ? {
@@ -130,14 +124,9 @@ export class GroupChatsService extends MessagingCoreService {
         internalId: conv.id,
         type: 'GROUP' as const,
         isGroup: true,
-        activityId: conv.activityId || null,
-        activity: conv.activity || null,
-        hasStarted,
-        activityHasStarted: hasStarted,
-        isActivityChat: conv.type === 'ACTIVITY' || !!conv.activityId,
         isMember: p.leftAt == null,
         ownerId: conv.ownerId || null,
-        name: conv.name || conv.activity?.title || 'Group',
+        name: conv.name || 'Group',
         avatar: groupAvatar,
         avatarKey: groupAvatar,
         description: conv.description || null,
@@ -276,10 +265,9 @@ export class GroupChatsService extends MessagingCoreService {
     const conv = await this.prisma.conversation.findFirst({
       where: {
         id: realConvId,
-        type: { in: ['GROUP', 'ACTIVITY'] }
+        type: 'GROUP'
       },
       include: {
-        activity: { select: { coverImage: true, title: true } },
         participants: {
           where: { leftAt: null, deletedAt: null },
           include: {
@@ -299,7 +287,7 @@ export class GroupChatsService extends MessagingCoreService {
       throw new ForbiddenException('Group not found or you are not a member');
     }
 
-    const groupAvatar = conv.avatarKey || (conv as any).activity?.coverImage || null;
+    const groupAvatar = conv.avatarKey || null;
 
     // Filter out expired pending requests
     const now = new Date();
@@ -366,7 +354,7 @@ export class GroupChatsService extends MessagingCoreService {
       id: pubId,
       publicId: pubId,
       internalId: conv.id,
-      name: conv.name || (conv as any).activity?.title || 'Group',
+      name: conv.name || 'Group',
       avatar: groupAvatar,
       avatarKey: conv.avatarKey || null,
       description: conv.description || null,
@@ -407,7 +395,7 @@ export class GroupChatsService extends MessagingCoreService {
       }),
       this.prisma.conversation.findUnique({
         where: { id: realConvId },
-        select: { id: true, name: true, description: true, avatarKey: true, editGroupPermission: true, activityId: true, publicId: true }
+        select: { id: true, name: true, description: true, avatarKey: true, editGroupPermission: true, publicId: true }
       }),
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -442,11 +430,7 @@ export class GroupChatsService extends MessagingCoreService {
       this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, leftAt: null, deletedAt: null },
         select: { userId: true }
-      }),
-      conversation?.activityId && avatarVal !== undefined ? this.prisma.crewActivity.update({
-        where: { id: conversation.activityId },
-        data: { coverImage: avatarVal }
-      }).catch(() => {}) : Promise.resolve(null)
+      })
     ]);
 
     const participantIds = participantRows.map(p => p.userId);
@@ -486,26 +470,6 @@ export class GroupChatsService extends MessagingCoreService {
     });
     if (blocked) {
       throw new ForbiddenException('Cannot add a user you have blocked or who has blocked you');
-    }
-
-    const convRecord = await this.prisma.conversation.findUnique({
-      where: { id: realConvId },
-      select: { activityId: true, isActivityChat: true }
-    });
-
-    if (convRecord?.activityId) {
-      const activity = await this.prisma.crewActivity.findUnique({
-        where: { id: convRecord.activityId },
-        select: { startDate: true, status: true }
-      });
-      if (activity) {
-        const startRaw = activity.startDate;
-        const status = activity.status as string;
-        const hasStarted = (status === 'STARTED' || status === 'IN_PROGRESS' || status === 'ENDED') || (startRaw && new Date(startRaw) <= new Date());
-        if (!hasStarted) {
-          throw new BadRequestException('Members cannot be added directly to an activity group chat before the activity starts. Join or invite via the activity.');
-        }
-      }
     }
 
     await this.prisma.conversationParticipant.upsert({

@@ -696,7 +696,6 @@ export default function CreateActivityPage() {
     location: '',
     slotsNeeded: 999,
     reminder: 'None',
-    createEventGroup: false,
     whoCanJoin: prefill.whoCanJoin || (isFromCampus ? 'College' : 'Anyone'),
   });
 
@@ -857,7 +856,6 @@ export default function CreateActivityPage() {
       creator: currentUser,
       members: [{ userId: currentUser?.id, status: 'MEMBER', role: 'HOST', user: currentUser }],
       status: 'UPCOMING',
-      createActivityGroup: fd.createEventGroup,
       maxMembers: fd.slotsNeeded === 999 ? null : fd.slotsNeeded,
     };
 
@@ -895,7 +893,6 @@ export default function CreateActivityPage() {
         location: fd.location,
         maxMembers: fd.slotsNeeded === 999 ? null : fd.slotsNeeded,
         coverImage: uploadedCoverUrl,
-        createActivityGroup: fd.createEventGroup,
         visibility: fd.whoCanJoin === 'College' ? 'COLLEGE_ONLY' : fd.whoCanJoin === 'No one' ? 'PRIVATE' : 'PUBLIC',
         shareToCampus: fd.whoCanJoin === 'College',
         startDate: finalStart.toISOString(),
@@ -1110,22 +1107,6 @@ export default function CreateActivityPage() {
                   ))}
                 </div>
               )}
-            </div>
-
-            {/* Event Group Toggle */}
-            <div className={styles.toggleRow}>
-              <div className={styles.toggleLabel}>
-                <span className={styles.toggleTitle}>Create an activity group</span>
-                <span className={styles.toggleDesc}>Create a shared chat and space for participants</span>
-              </div>
-              <label className={styles.switch}>
-                <input
-                  type="checkbox"
-                  checked={formData.createEventGroup}
-                  onChange={e => set({ createEventGroup: e.target.checked })}
-                />
-                <span className={styles.slider}></span>
-              </label>
             </div>
 
             {/* Share to University */}

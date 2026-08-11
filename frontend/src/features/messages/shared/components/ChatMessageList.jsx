@@ -499,7 +499,7 @@ export default function ChatMessageList({
                         <Avatar src={typingAvatar} name={typingName} size="28px" />
                       </div>
                       <div className={styles.msgBubbleContent}>
-                        {(conversation?.isGroup || conversation?.type === 'GROUP' || conversation?.type === 'ACTIVITY') && typingName && (
+                        {(conversation?.isGroup || conversation?.type === 'GROUP') && typingName && (
                           <span className={styles.msgSenderName}>{typingName}</span>
                         )}
                         <div className={`${styles.msgMainRow} ${styles.msgMainRowThem}`}>

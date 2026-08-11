@@ -120,75 +120,76 @@ model Media {
 }
 
 model User {
-  id                       String                    @id @default(uuid())
-  username                 String                    @unique
-  displayName              String
-  email                    String                    @unique
-  bio                      String?
-  major                    String?
-  location                 String?
-  createdAt                DateTime                  @default(now())
-  updatedAt                DateTime                  @updatedAt
-  avatar                   String?
-  avatarMediaId            String?
-  collegeEmail             String?
-  collegeId                String?
-  cover                    String?
-  coverMediaId             String?
-  deletedAt                DateTime?
-  emailVerified            Boolean                   @default(false)
-  graduationYear           Int?
-  birthday                 String?
-  interests                String[]
-  lastSeenAt               DateTime?
-  phoneVerified            Boolean                   @default(false)
-  profileCompleted         Boolean                   @default(false)
-  accountStatus            AccountStatus             @default(ACTIVE)
-  role                     UserRole                  @default(USER)
-  canPost                  Boolean                   @default(true)
-  canMessage               Boolean                   @default(true)
-  canActivity              Boolean                   @default(true)
-  activityBookmarks        ActivityBookmark[]
-  invitationsReceived      ActivityInvitation[]      @relation("ActivityInvitationsReceived")
-  invitationsSent          ActivityInvitation[]      @relation("ActivityInvitationsSent")
-  blocksReceived           Block[]                   @relation("Blocked")
-  blocksMade               Block[]                   @relation("Blocker")
-  comments                 Comment[]
-  commentLikes             CommentLike[]
-  ownedCommunities         Community[]               @relation("CommunityOwner")
-  communityJoinRequests    CommunityJoinRequest[]
-  communityMembers         CommunityMember[]
-  ownedConversations       Conversation[]            @relation("ConversationOwner")
-  groupJoinRequests        ConversationJoinRequest[]
-  conversationParticipants ConversationParticipant[]
-  crewActivitiesCreated    CrewActivity[]            @relation("ActivityCreator")
-  crewActivities           CrewActivityMember[]
-  deletedMessages          DeletedMessage[]
-  following                Follow[]                  @relation("follower")
-  followers                Follow[]                  @relation("following")
-  matchQueueEntry          MatchQueueEntry?
-  matchesAsA               MatchSession[]            @relation("MatchUserA")
-  matchesAsB               MatchSession[]            @relation("MatchUserB")
-  media                    Media[]
-  mentions                 Mention[]                 @relation("MentionedUser")
-  sentMessages             Message[]
-  messageReactions         MessageReaction[]
-  mutesMade                Mute[]                    @relation("Muter")
-  actorNotifications       Notification[]            @relation("NotificationActor")
-  notifications            Notification[]            @relation("NotificationRecipient")
-  notificationPrefs        NotificationPreferences?
-  pollVotes                PollVote[]
-  posts                    Post[]
-  bookmarks                PostBookmark[]
-  likes                    PostLike[]
-  shares                   PostShare[]
-  recentSearches           RecentSearch[]
-  reportsMade              Report[]                  @relation("Reporter")
-  supportTickets           SupportTicket[]
-  avatarMedia              Media?                    @relation("UserAvatar", fields: [avatarMediaId], references: [id])
-  college                  College?                  @relation(fields: [collegeId], references: [id])
-  coverMedia               Media?                    @relation("UserCover", fields: [coverMediaId], references: [id])
-  settings                 UserSettings?
+  id                         String                      @id @default(uuid())
+  username                   String                      @unique
+  displayName                String
+  email                      String                      @unique
+  bio                        String?
+  major                      String?
+  location                   String?
+  createdAt                  DateTime                    @default(now())
+  updatedAt                  DateTime                    @updatedAt
+  avatar                     String?
+  avatarMediaId              String?
+  collegeEmail               String?
+  collegeId                  String?
+  cover                      String?
+  coverMediaId               String?
+  deletedAt                  DateTime?
+  emailVerified              Boolean                     @default(false)
+  graduationYear             Int?
+  birthday                   String?
+  interests                  String[]
+  lastSeenAt                 DateTime?
+  phoneVerified              Boolean                     @default(false)
+  profileCompleted           Boolean                     @default(false)
+  accountStatus              AccountStatus               @default(ACTIVE)
+  role                       UserRole                    @default(USER)
+  canPost                    Boolean                     @default(true)
+  canMessage                 Boolean                     @default(true)
+  canActivity                Boolean                     @default(true)
+  activityBookmarks          ActivityBookmark[]
+  invitationsReceived        ActivityInvitation[]        @relation("ActivityInvitationsReceived")
+  invitationsSent            ActivityInvitation[]        @relation("ActivityInvitationsSent")
+  blocksReceived             Block[]                     @relation("Blocked")
+  blocksMade                 Block[]                     @relation("Blocker")
+  comments                   Comment[]
+  commentLikes               CommentLike[]
+  ownedCommunities           Community[]                 @relation("CommunityOwner")
+  communityJoinRequests      CommunityJoinRequest[]
+  communityMembers           CommunityMember[]
+  ownedConversations         Conversation[]              @relation("ConversationOwner")
+  groupJoinRequests          ConversationJoinRequest[]
+  conversationParticipants   ConversationParticipant[]
+  crewActivitiesCreated      CrewActivity[]              @relation("ActivityCreator")
+  crewActivities             CrewActivityMember[]
+  activityDiscussionMessages ActivityDiscussionMessage[]
+  deletedMessages            DeletedMessage[]
+  following                  Follow[]                    @relation("follower")
+  followers                  Follow[]                    @relation("following")
+  matchQueueEntry            MatchQueueEntry?
+  matchesAsA                 MatchSession[]              @relation("MatchUserA")
+  matchesAsB                 MatchSession[]              @relation("MatchUserB")
+  media                      Media[]
+  mentions                   Mention[]                   @relation("MentionedUser")
+  sentMessages               Message[]
+  messageReactions           MessageReaction[]
+  mutesMade                  Mute[]                      @relation("Muter")
+  actorNotifications         Notification[]              @relation("NotificationActor")
+  notifications              Notification[]              @relation("NotificationRecipient")
+  notificationPrefs          NotificationPreferences?
+  pollVotes                  PollVote[]
+  posts                      Post[]
+  bookmarks                  PostBookmark[]
+  likes                      PostLike[]
+  shares                     PostShare[]
+  recentSearches             RecentSearch[]
+  reportsMade                Report[]                    @relation("Reporter")
+  supportTickets             SupportTicket[]
+  avatarMedia                Media?                      @relation("UserAvatar", fields: [avatarMediaId], references: [id])
+  college                    College?                    @relation(fields: [collegeId], references: [id])
+  coverMedia                 Media?                      @relation("UserCover", fields: [coverMediaId], references: [id])
+  settings                   UserSettings?
 
   @@index([collegeId])
   @@index([collegeId, createdAt(sort: Desc)])
@@ -365,8 +366,6 @@ model Conversation {
   pinnedMessageId     String?
   isInstantMatch      Boolean                   @default(false)
   expiresAt           DateTime?
-  isActivityChat      Boolean                   @default(false)
-  activityId          String?                   @unique
   status              String                    @default("ACTIVE")
   lastMessageId       String?
   lastMessageText     String?
@@ -375,7 +374,6 @@ model Conversation {
   lastMessageSenderId String?
   updatedAt           DateTime                  @updatedAt
   type                ConversationType
-  activity            CrewActivity?             @relation("ActivityConversation", fields: [activityId], references: [id])
   avatarMedia         Media?                    @relation("ConversationAvatar", fields: [avatarMediaId], references: [id])
   owner               User?                     @relation("ConversationOwner", fields: [ownerId], references: [id])
   pinnedMessage       Message?                  @relation("PinnedMessage", fields: [pinnedMessageId], references: [id])
@@ -384,7 +382,6 @@ model Conversation {
   messages            Message[]                 @relation("ConversationMessages")
 
   @@index([ownerId])
-  @@index([activityId])
   @@index([updatedAt(sort: Desc)])
 }
 
@@ -415,25 +412,25 @@ model ConversationParticipant {
 }
 
 model Message {
-  id                String                   @id @default(uuid())
+  id                String            @id @default(uuid())
   clientMessageId   String?
   conversationId    String
   senderId          String
-  createdAt         DateTime                 @default(now())
+  createdAt         DateTime          @default(now())
   deletedAt         DateTime?
   editedAt          DateTime?
   payload           Json?
   replyToId         String?
-  pinnedIn          Conversation[]           @relation("PinnedMessage")
+  pinnedIn          Conversation[]    @relation("PinnedMessage")
   deletedByUsers    DeletedMessage[]
-  type              MessageType              @default(CHAT)
-  state             MessageState             @default(NORMAL)
+  type              MessageType       @default(CHAT)
+  state             MessageState      @default(NORMAL)
   attachmentMediaId String?
-  attachmentMedia   Media?                   @relation("MessageAttachment", fields: [attachmentMediaId], references: [id])
-  conversation      Conversation             @relation("ConversationMessages", fields: [conversationId], references: [id], onDelete: Cascade)
-  replyTo           Message?                 @relation("MessageReplies", fields: [replyToId], references: [id])
-  replies           Message[]                @relation("MessageReplies")
-  sender            User                     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  attachmentMedia   Media?            @relation("MessageAttachment", fields: [attachmentMediaId], references: [id])
+  conversation      Conversation      @relation("ConversationMessages", fields: [conversationId], references: [id], onDelete: Cascade)
+  replyTo           Message?          @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies           Message[]         @relation("MessageReplies")
+  sender            User              @relation(fields: [senderId], references: [id], onDelete: Cascade)
   reactions         MessageReaction[]
 
   @@index([conversationId, createdAt])
@@ -446,35 +443,34 @@ model Message {
 }
 
 model CrewActivity {
-  id                  String                @id @default(uuid())
-  creatorId           String
-  title               String
-  description         String?
-  location            String?
-  maxMembers          Int?
-  createdAt           DateTime              @default(now())
-  coverImage          String?
-  coverMediaId        String?
-  createActivityGroup Boolean               @default(false)
-  deletedAt           DateTime?
-  endDate             DateTime?
-  latitude            Float?
-  longitude           Float?
-  startDate           DateTime?
-  status              CrewActivityStatus    @default(OPEN)
-  updatedAt           DateTime              @updatedAt
-  hostCollege         String?
-  collegeId           String?
-  participationType   CrewParticipationType @default(OPEN)
-  shareToCampus       Boolean               @default(false)
-  visibility          ActivityVisibility    @default(PUBLIC)
-  bookmarks           ActivityBookmark[]
-  invitations         ActivityInvitation[]
-  conversation        Conversation?         @relation("ActivityConversation")
-  college             College?              @relation("ActivityCollege", fields: [collegeId], references: [id])
-  coverMedia          Media?                @relation("ActivityCover", fields: [coverMediaId], references: [id])
-  creator             User                  @relation("ActivityCreator", fields: [creatorId], references: [id], onDelete: Cascade)
-  members             CrewActivityMember[]
+  id                 String                      @id @default(uuid())
+  creatorId          String
+  title              String
+  description        String?
+  location           String?
+  maxMembers         Int?
+  createdAt          DateTime                    @default(now())
+  coverImage         String?
+  coverMediaId       String?
+  deletedAt          DateTime?
+  endDate            DateTime?
+  latitude           Float?
+  longitude          Float?
+  startDate          DateTime?
+  status             CrewActivityStatus          @default(OPEN)
+  updatedAt          DateTime                    @updatedAt
+  hostCollege        String?
+  collegeId          String?
+  participationType  CrewParticipationType       @default(OPEN)
+  shareToCampus      Boolean                     @default(false)
+  visibility         ActivityVisibility          @default(PUBLIC)
+  bookmarks          ActivityBookmark[]
+  invitations        ActivityInvitation[]
+  discussionMessages ActivityDiscussionMessage[]
+  college            College?                    @relation("ActivityCollege", fields: [collegeId], references: [id])
+  coverMedia         Media?                      @relation("ActivityCover", fields: [coverMediaId], references: [id])
+  creator            User                        @relation("ActivityCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  members            CrewActivityMember[]
 
   @@index([creatorId])
   @@index([createdAt])
@@ -498,6 +494,20 @@ model CrewActivityMember {
   @@id([userId, activityId])
   @@index([userId])
   @@index([activityId])
+}
+
+model ActivityDiscussionMessage {
+  id         String       @id @default(uuid())
+  activityId String
+  userId     String
+  text       String
+  createdAt  DateTime     @default(now())
+  activity   CrewActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Primary retrieval pattern: newest-first messages for an activity, cursor-paginated.
+  @@index([activityId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([userId])
 }
 
 model Notification {
@@ -1037,7 +1047,6 @@ enum NotificationType {
 enum ConversationType {
   DM
   GROUP
-  ACTIVITY
 }
 
 enum MessageType {
