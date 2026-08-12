@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X } from 'lucide-react';
-import wordmark from '@assets/images/meetifyy_wordmark.webp';
+import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import styles from './LandingNavbar.module.css';
 
 export default function LandingNavbar() {

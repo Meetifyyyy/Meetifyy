@@ -28,6 +28,23 @@
   border-radius: var(--radius-sm);
 }
 
+.brandWordmark {
+  height: 17px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.brandWordmark:hover {
+  opacity: 0.85;
+}
+
+:global([data-theme="dark"]) .brandWordmark {
+  filter: brightness(0) invert(1);
+}
+
 .brand {
   font-family: "Changa One", cursive;
   font-weight: normal;
@@ -51,6 +68,7 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
 
 .nav {
   display: flex;
@@ -468,7 +486,7 @@
 }
 
 .drawerWordmark {
-  height: 12px;
+  height: 16px;
   object-fit: contain;
   display: block;
   cursor: pointer;

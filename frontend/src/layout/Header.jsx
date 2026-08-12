@@ -20,7 +20,7 @@ import {
   Cog6ToothIcon as SettingsIcon,
 } from '@heroicons/react/24/outline';
 import styles from './Header.module.css';
-import wordmark from '@assets/images/meetifyy_wordmark.webp';
+import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, getMediaUrl } from '@shared/api/apiClient';
 
@@ -143,7 +143,12 @@ export default function Header({ variant = 'dashboard' }) {
 
       {/* Desktop/Default Left: Brand */}
       <div className={styles.navLeft}>
-        <span className={styles.brand} onClick={() => navigate('/home')} style={{cursor: 'pointer'}}>Meetifyy</span>
+        <img 
+          src={wordmark} 
+          alt="Meetifyy" 
+          className={styles.brandWordmark} 
+          onClick={() => navigate('/home')} 
+        />
       </div>
 
       {/* Side Drawer */}

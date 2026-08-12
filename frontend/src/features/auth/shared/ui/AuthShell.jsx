@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import wordmark from '@assets/images/meetifyy_wordmark.webp';
+import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import proofCards from '@assets/images/auth_proof_cards.webp';
 import s from './authKit.module.css';
 

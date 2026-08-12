@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import logoImg from '@assets/images/meetify_logo.webp';
-import wordmarkImg from '@assets/images/meetifyy_wordmark.webp';
+import wordmarkImg from '@assets/images/meetifyy_wordmark.svg';
 import styles from './LandingFooter.module.css';
 
 export default function LandingFooter() {

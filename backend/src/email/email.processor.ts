@@ -42,11 +42,25 @@ export class EmailProcessor extends WorkerHost {
     const smtpPort =
       this.configService.get<number>('email.smtpPort') ||
       parseInt(this.configService.get<string>('SMTP_PORT') || '1025', 10);
+    const smtpUser =
+      this.configService.get<string>('email.smtpUser') ||
+      this.configService.get<string>('SMTP_USER');
+    const smtpPass =
+      this.configService.get<string>('email.smtpPass') ||
+      this.configService.get<string>('SMTP_PASS');
 
     this.mailpitTransporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
-      secure: false,
+      secure: smtpPort === 465,
+      ...(smtpUser && smtpPass
+        ? {
+            auth: {
+              user: smtpUser,
+              pass: smtpPass,
+            },
+          }
+        : {}),
       tls: {
         rejectUnauthorized: false,
       },

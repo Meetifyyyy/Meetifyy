@@ -2,7 +2,7 @@
 node_modules/
 **/node_modules/
 
-# Build outputs
+# Build & Output directories
 dist/
 build/
 **/dist/
@@ -13,18 +13,24 @@ stats.html
 **/stats.html
 *.tsbuildinfo
 
-# Environment variables
+# Environment variables & local secrets
 .env
 .env.*
 !.env.example
 backend/.env
 frontend/.env
 admin-frontend/.env
+*.env.local
+*.env.development.local
+*.env.test.local
+*.env.production.local
 
-# Prisma
+# Database & Prisma
 /backend/generated/prisma
 backend/prisma/*.db
 backend/prisma/*.db-journal
+*.sqlite
+*.db
 
 # Logs
 npm-debug.log*
@@ -34,7 +40,7 @@ pnpm-debug.log*
 *.log
 **/*.log
 
-# Agent/IDE directories and files — never committed
+# IDE, Agent & System metadata (never committed)
 .agent/
 .agents/
 .dual-graph/
@@ -44,15 +50,21 @@ GEMINI.md
 .gemini/
 .vscode/
 .idea/
+.vs/
 .claude/
 skills-lock.json
 REMEDIATION_PLAN.md
 
-# Documentation / internal files — kept local only
+# Documentation / internal files
 docs/
 
-# Testing
+# Testing & E2E artifacts
 coverage/
+test-results/
+playwright-report/
+cypress/videos/
+cypress/screenshots/
+testmail/
 
 # OS/System files
 .DS_Store
@@ -70,8 +82,9 @@ desktop.ini
 .eslintcache
 .turbo/
 .vite/
+**/node_modules/.cache
 
-# Local media uploads
+# Local media & user uploads
 uploads/
 **/uploads/
 
@@ -89,7 +102,8 @@ test_*.ts
 remove_*.ts
 update_*.ts
 inspect_*.ts
+send_*.ts
 test_svc.ts
 
-# Local scripts (never deploy these)
+# Local scripts
 *.bat

@@ -6,6 +6,8 @@ import { useVersionCheck } from './shared/hooks/useVersionCheck';
 import DashboardLayoutWrapper from './layout/DashboardLayoutWrapper';
 import ErrorBoundary, { RouteErrorBoundary } from './shared/components/ErrorBoundary';
 import SocketManager from './shared/components/SocketManager';
+// DEV PREVIEW — remove before shipping
+import CriticalErrorScreen from './shared/components/ui/CriticalErrorScreen';
 
 import HomeSkeleton from './features/feed/components/skeletons/HomeSkeleton';
 import ProfilePageSkeleton from './features/profile/components/skeletons/ProfilePageSkeleton';
@@ -95,8 +97,13 @@ const ContactPage = lazyWithRetry(() => import('./features/info/pages/ContactPag
  * @param {JSX.Element} [fallback] - Custom skeleton. Defaults to full-page shell for public routes.
  */
 function withBoundary(element, fallback = null) {
+  // element.type is the lazy component reference — unique per route.
+  // Keying the boundary on it ensures React mounts a fresh boundary
+  // instance for every distinct page, so a stale hasError never bleeds
+  // into an unrelated route.
+  const boundaryKey = element.type;
   return (
-    <RouteErrorBoundary>
+    <RouteErrorBoundary key={boundaryKey} resetKey={boundaryKey}>
       <Suspense fallback={fallback}>
         {element}
       </Suspense>
@@ -274,6 +281,12 @@ export default function App() {
           path: '/contact',
           element: <StaticRoute>{withBoundary(<ContactPage />, null)}</StaticRoute>,
         },
+        // -- DEV PREVIEW - delete this route before shipping ------------------
+        {
+          path: '/dev/critical-error',
+          element: <CriticalErrorScreen onRetry={() => window.location.reload()} />,
+        },
+        // ----------------------------------------------------------------------
         {
           element: (
             <ProtectedRoute>

@@ -39,6 +39,8 @@ export const emailConfig = registerAs('email', () => ({
   driver: process.env.EMAIL_DRIVER || 'mailpit',
   smtpHost: process.env.SMTP_HOST || '127.0.0.1',
   smtpPort: parseInt(process.env.SMTP_PORT || '1025', 10),
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
   fromEmail: process.env.EMAIL_FROM || process.env.RESEND_FROM_EMAIL || 'noreply@meetifyy.app',
 }));
 
