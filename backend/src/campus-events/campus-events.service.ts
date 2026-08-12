@@ -84,6 +84,30 @@ export class CampusEventsService {
     return user;
   }
 
+  /**
+   * Validates a client-supplied poster reference before it is persisted. Accepts
+   * either a bare storage key or a `/api/media/<key>` URL, and requires that the
+   * referenced Media row exists AND is owned by the acting user — so an event can
+   * never be pointed at someone else's (or a non-existent) object. Returns the
+   * normalized bare key, or null when no poster is provided.
+   */
+  private async resolvePosterKey(posterUrl: string | undefined | null, userId: string): Promise<string | null> {
+    if (posterUrl === undefined || posterUrl === null) return null;
+    const key = String(posterUrl).replace('/api/media/', '').trim();
+    if (!key) return null; // empty string clears the poster
+    if (!/^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+$/.test(key)) {
+      throw new BadRequestException('Invalid poster reference.');
+    }
+    const media = await this.prisma.media.findUnique({
+      where: { objectKey: key },
+      select: { ownerId: true },
+    });
+    if (!media || media.ownerId !== userId) {
+      throw new BadRequestException('Poster image not found or not owned by you.');
+    }
+    return key;
+  }
+
   /** Lazily flips PUBLISHED events whose endTime has passed to EXPIRED. Fire-and-forget. */
   private autoExpire(campusId: string) {
     const now = new Date();
@@ -225,12 +249,14 @@ export class CampusEventsService {
       throw new BadRequestException('Venue is required.');
     }
 
+    const posterKey = await this.resolvePosterKey(dto.posterUrl, user.id);
+
     const created = await this.prisma.campusEvent.create({
       data: {
         campusId: user.collegeId!,
         title: dto.title,
         description: dto.description ?? null,
-        posterUrl: dto.posterUrl ?? null,
+        posterUrl: posterKey,
         eventDate,
         startTime,
         endTime,
@@ -268,7 +294,7 @@ export class CampusEventsService {
     const data: any = {};
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.description !== undefined) data.description = dto.description;
-    if (dto.posterUrl !== undefined) data.posterUrl = dto.posterUrl;
+    if (dto.posterUrl !== undefined) data.posterUrl = await this.resolvePosterKey(dto.posterUrl, userId);
     if (dto.hostedBy !== undefined) data.hostedBy = dto.hostedBy;
     if (dto.venue !== undefined) {
       if (!dto.venue.trim()) throw new BadRequestException('Venue cannot be empty.');

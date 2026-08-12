@@ -1,5 +1,5 @@
 import imageCompression from 'browser-image-compression';
-import { apiClient, deriveThumbnailKey } from '../api/apiClient';
+import { apiClient, deriveThumbnailKey, getBackendUrl, getAccessToken } from '../api/apiClient';
 
 /**
  * Creates an instantly-available local preview URL for a File/Blob.
@@ -219,13 +219,36 @@ export const compressImage = async (file, options = {}) => {
 };
 
 /**
+ * Wraps an onProgress callback so reported values are clamped to 0-100 and are
+ * strictly monotonic. Without this the bar visibly jumps backwards whenever a
+ * later stage starts from a lower number, which reads as a stalled/broken upload.
+ */
+const makeProgressReporter = (onProgress) => {
+  let last = 0;
+  return (value, phase) => {
+    if (typeof onProgress !== 'function') return;
+    const v = Math.max(0, Math.min(100, Math.round(value)));
+    if (v < last) return;
+    last = v;
+    onProgress(v, phase);
+  };
+};
+
+/** Maps a 0-100 sub-progress value into an overall [start,end] band. */
+const band = (start, end, pct) => start + ((end - start) * Math.max(0, Math.min(100, pct))) / 100;
+
+/**
  * Requests a presigned URL from the backend and uploads the file.
  * Falls back seamlessly to backend pass-through upload (/api/media/upload) if CORS or network issues block direct upload.
+ *
+ * `onProgress` reports TRUE byte progress for THIS file on a 0-100 scale, so
+ * callers can map it into whatever band of their overall pipeline they want.
  */
 export const uploadFileDirect = async (file, folder = 'general', onProgress = null, signal = null, variantKey = null) => {
+  const report = makeProgressReporter(onProgress);
   try {
     if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError');
-    if (onProgress) onProgress(10);
+    report(0, 'preparing');
 
     // Normalize filename extension to match actual MIME type after compression
     const mimeToExt = {
@@ -255,30 +278,41 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
         ...(variantKey ? { variantKey } : {}),
       });
 
-      if (onProgress) onProgress(20);
-
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('PUT', uploadUrl);
-        xhr.withCredentials = uploadUrl.startsWith('/');
+        // A relative uploadUrl (e.g. `/api/media/direct-upload?key=…`) is OUR
+        // backend's dev-fallback endpoint — it must be resolved against the
+        // backend origin (not the frontend dev server) and carry the auth token.
+        // An absolute uploadUrl is a third-party (R2) presigned URL and must be
+        // used verbatim with NO Authorization header (it would break the sig).
+        const isRelative = uploadUrl.startsWith('/');
+        const resolvedUploadUrl = isRelative
+          ? `${getBackendUrl().replace(/\/+$/, '')}${uploadUrl}`
+          : uploadUrl;
+        xhr.open('PUT', resolvedUploadUrl);
+        xhr.withCredentials = isRelative;
+        if (isRelative) {
+          const token = getAccessToken();
+          if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        }
         if (file.type) {
           xhr.setRequestHeader('Content-Type', file.type);
         }
         xhr.setRequestHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
-        if (onProgress && xhr.upload) {
+        if (xhr.upload) {
+          // True byte progress. Capped at 99 until the server actually ACKs the
+          // upload, so the bar never claims 100% while bytes are still in flight.
           xhr.upload.onprogress = (e) => {
             if (e.lengthComputable && e.total > 0) {
-              const xhrPercent = Math.round((e.loaded / e.total) * 100);
-              const overallPercent = Math.min(99, 20 + Math.round((xhrPercent * 79) / 100));
-              onProgress(overallPercent);
+              report(Math.min(99, (e.loaded / e.total) * 100), 'uploading');
             }
           };
         }
 
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
-            if (onProgress) onProgress(100);
+            report(100, 'uploaded');
             resolve(xhr.response);
           } else {
             let errMsg = `Upload failed with status ${xhr.status}`;
@@ -320,18 +354,15 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
       formData.append('file', file, normalizedName);
       formData.append('folder', folder);
 
+      // NOTE: apiClient is fetch-based and cannot emit upload progress events,
+      // so this pass-through leg is indeterminate by nature. We hold the bar at
+      // a steady value while it runs rather than faking movement, then complete.
+      report(15, 'uploading');
       const response = await apiClient.post('/api/media/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
         signal: signal || undefined,
-        onUploadProgress: (progressEvent) => {
-          if (onProgress && progressEvent.total) {
-            const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
-            onProgress(percent);
-          }
-        },
       });
 
-      if (onProgress) onProgress(100);
+      report(100, 'uploaded');
       return response;
     }
   } catch (error) {
@@ -361,8 +392,12 @@ const thumbSizeForFolder = (folder) => {
 };
 
 export const processAndUploadImage = async (file, folder = 'general', compressOptions = {}, onProgress = null, signal = null, options = {}) => {
+  // Overall progress bands (monotonic): the original upload owns the largest
+  // slice because it dominates wall-clock time on real connections.
+  //   0-10  prepare/compress   10-88 original upload   88-98 thumbnail   100 done
+  const report = makeProgressReporter(onProgress);
   validateFile(file);
-  if (onProgress) onProgress(6);
+  report(2, 'preparing');
 
   // Two thumbnail strategies:
   //  - 'separate': independent-key thumbnail whose URL is stored by the caller
@@ -380,7 +415,7 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
     needThumb ? generateImageThumbnail(file, { maxSize: thumbSizeForFolder(folder) }).catch(() => null) : Promise.resolve(null),
     compressImage(file, compressOptions),
   ]);
-  if (onProgress) onProgress(20);
+  report(10, 'preparing');
 
   let thumbnailUrl = null;
   let thumbnailKey = null;
@@ -398,11 +433,10 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
     }
   }
 
+  // Original upload occupies 10→88 (or 10→98 when no thumbnail follows).
+  const originalEnd = withDerivedThumb && thumb?.blob ? 88 : 98;
   const originalRes = await uploadFileDirect(compressedFile, folder, (percent) => {
-    if (onProgress) {
-      const overallPercent = Math.min(needThumb && withDerivedThumb ? 92 : 100, 25 + Math.round((percent * 75) / 100));
-      onProgress(overallPercent);
-    }
+    report(band(10, originalEnd, percent), 'uploading');
   }, signal);
 
   // Derived-thumb: upload to `<originalKey>_thumb.webp` so the UI can render it
@@ -413,7 +447,9 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
     if (variantKey) {
       try {
         const thumbFile = new File([thumb.blob], `thumb.webp`, { type: 'image/webp' });
-        await uploadFileDirect(thumbFile, folder, null, signal, variantKey);
+        await uploadFileDirect(thumbFile, folder, (percent) => {
+          report(band(88, 98, percent), 'finishing');
+        }, signal, variantKey);
         thumbnailKey = variantKey;
         thumbnailUrl = originalRes.publicUrl ? originalRes.publicUrl.replace(/\.([a-z0-9]+)$/i, '_thumb.webp') : null;
       } catch (err) {
@@ -422,7 +458,7 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
       }
     }
   }
-  if (onProgress) onProgress(100);
+  report(100, 'done');
 
   return {
     ...originalRes,
@@ -441,16 +477,30 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
  * range requests via preload="metadata" so the bubble shows instantly.
  */
 export const processAndUploadVideo = async (file, folder = 'general', onProgress = null, signal = null) => {
-  if (onProgress) onProgress(4);
+  // Validate before any processing so unsupported/oversized clips fail fast with
+  // a clear error instead of a broken upload.
+  const ALLOWED_VIDEO = ['video/mp4', 'video/webm', 'video/ogg'];
+  if (!file || !ALLOWED_VIDEO.includes(file.type)) {
+    throw new Error('Unsupported video format. Use MP4, WebM, or OGG.');
+  }
+  if (file.size / 1024 / 1024 > 50) {
+    throw new Error('Video is too large. Max size is 50MB.');
+  }
+  console.info('[mediaPipeline] video upload start', { name: file.name, type: file.type, size: file.size });
+  // Bands: 0-8 poster extraction, 8-14 poster upload, 14-99 clip upload, 100 done.
+  const report = makeProgressReporter(onProgress);
+  report(2, 'preparing');
   const meta = await generateVideoPoster(file).catch(() => null);
-  if (onProgress) onProgress(12);
+  report(8, 'preparing');
 
   let thumbnailUrl = null;
   let posterKey = null;
   if (meta?.posterBlob) {
     try {
       const posterFile = new File([meta.posterBlob], 'poster.webp', { type: 'image/webp' });
-      const posterRes = await uploadFileDirect(posterFile, folder, null, signal);
+      const posterRes = await uploadFileDirect(posterFile, folder, (percent) => {
+        report(band(8, 14, percent), 'preparing');
+      }, signal);
       thumbnailUrl = posterRes?.publicUrl || null;
       posterKey = posterRes?.key || null;
     } catch (err) {
@@ -459,12 +509,11 @@ export const processAndUploadVideo = async (file, folder = 'general', onProgress
   }
 
   const originalRes = await uploadFileDirect(file, folder, (percent) => {
-    if (onProgress) {
-      const overallPercent = Math.min(100, 15 + Math.round((percent * 85) / 100));
-      onProgress(overallPercent);
-    }
+    report(band(14, 99, percent), 'uploading');
   }, signal);
+  report(100, 'done');
 
+  console.info('[mediaPipeline] video upload done', { key: originalRes?.key, url: originalRes?.publicUrl });
   return {
     ...originalRes,
     thumbnailUrl,

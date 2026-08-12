@@ -31,6 +31,12 @@ export class CloudflareR2Provider implements StorageProvider {
         region: 'auto',
         endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
         credentials: { accessKeyId: accessKeyId!, secretAccessKey: secretAccessKey! },
+        // AWS SDK v3 (>= 3.729) can add default integrity checksums as SIGNED
+        // headers on PutObject, including in presigned URLs — headers a browser
+        // PUT cannot reproduce. WHEN_REQUIRED keeps presigned browser uploads to
+        // R2 signature-compatible (verified working against this bucket).
+        requestChecksumCalculation: 'WHEN_REQUIRED',
+        responseChecksumValidation: 'WHEN_REQUIRED',
       });
       this.logger.log('Cloudflare R2 configured');
     }

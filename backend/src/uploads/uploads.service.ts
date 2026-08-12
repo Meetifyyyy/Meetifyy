@@ -254,6 +254,17 @@ export class StorageService {
       });
     }
 
+    // Best-effort existence verification for diagnostics only. R2 is eventually
+    // consistent, so a transient miss right after PUT is normal — we log it but
+    // never delete the row here (that would regress the working image path).
+    this.storageProvider.exists(key).then(present => {
+      if (!present) {
+        this.logger.warn(`confirmUpload: object not yet visible in storage (key=${key}, owner=${userId})`);
+      } else {
+        this.logger.log(`confirmUpload: verified object present (key=${key})`);
+      }
+    }).catch(() => {});
+
     // Non-blocking background metadata synchronization
     this.storageProvider.getMetadata(key).then(metadata => {
       if (metadata && (metadata.contentLength || metadata.contentType)) {
@@ -297,5 +308,26 @@ export class StorageService {
       await this.prisma.media.deleteMany({ where: { objectKey: key } });
     }
     return deleted;
+  }
+
+  /**
+   * Discard an orphaned upload: deletes the storage object + Media row ONLY when
+   * it is owned by the caller AND not yet attached to a post. Used to clean up
+   * after a post-creation failure so a successful upload never leaves an orphan.
+   * Safe/idempotent — returns false without touching anything it doesn't own.
+   */
+  async discardOwnedUnattached(key: string, userId: string): Promise<{ discarded: boolean }> {
+    if (!this.isSafeStorageKey(key)) return { discarded: false };
+    const media = await this.prisma.media.findUnique({
+      where: { objectKey: key },
+      select: { id: true, ownerId: true, postId: true },
+    });
+    if (!media || media.ownerId !== userId || media.postId) {
+      return { discarded: false };
+    }
+    await this.storageProvider.delete(key).catch(() => {});
+    await this.prisma.media.deleteMany({ where: { objectKey: key, ownerId: userId, postId: null } });
+    this.logger.log(`discardOwnedUnattached: removed orphan media key=${key} owner=${userId}`);
+    return { discarded: true };
   }
 }

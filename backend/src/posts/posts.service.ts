@@ -95,14 +95,38 @@ export class PostsService {
     // persisted — never trust client-claimed indices/usernames as-is.
     const sanitizedMentions = await this.mentionsService.sanitize(text, mentions, authorId);
 
+    // ── Safe media attach ──────────────────────────────────────────────────────
+    // Verify the media BEFORE creating the post so a bad/missing key produces a
+    // clear 400 instead of an opaque Prisma P2025 that fails the whole request
+    // (and never silently drops the reference). Only the owner's own, not-yet-
+    // attached media may be linked.
+    let mediaToConnect: string | undefined;
+    if (mediaKey) {
+      const objectKey = mediaKey.replace('/api/media/', '');
+      const media = await this.prisma.media.findUnique({
+        where: { objectKey },
+        select: { id: true, ownerId: true, postId: true },
+      });
+      if (!media || media.ownerId !== authorId) {
+        this.logger.warn(`createPost: media not found or not owned (author=${authorId}, key=${objectKey})`);
+        throw new BadRequestException('Media not found or not owned');
+      }
+      if (media.postId && media.postId !== '') {
+        this.logger.warn(`createPost: media already attached to another post (key=${objectKey}, postId=${media.postId})`);
+        throw new BadRequestException('Media is already attached to a post');
+      }
+      mediaToConnect = media.id;
+      this.logger.log(`createPost: attaching media id=${media.id} key=${objectKey} author=${authorId}`);
+    }
+
     const post = await this.prisma.post.create({
       data: {
         authorId,
         text,
         communityId,
         mentions: sanitizedMentions.length > 0 ? (sanitizedMentions as any) : undefined,
-        media: mediaKey ? {
-          connect: { objectKey: mediaKey.replace('/api/media/', '') }
+        media: mediaToConnect ? {
+          connect: { id: mediaToConnect }
         } : undefined,
       },
       include: {
@@ -168,6 +192,7 @@ export class PostsService {
       }).catch(err => this.logger.warn('Failed to process post mentions', err));
     }
 
+    this.logger.log(`createPost: created post id=${post.id} author=${authorId} media=${formattedMedia.length} community=${post.communityId || 'none'}`);
     this.domainEventService.emit('post.created', { postId: post.id, authorId, communityId: post.communityId || undefined, post: formattedPost });
     return formattedPost;
   }

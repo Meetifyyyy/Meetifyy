@@ -95,6 +95,32 @@
   padding: 0;
 }
 
+.seeAllBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.seeAllBtn:hover {
+  text-decoration: underline;
+}
+
+.forYouWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  width: 100%;
+  min-width: 0;
+}
+
 .list {
   display: flex;
   flex-direction: column;

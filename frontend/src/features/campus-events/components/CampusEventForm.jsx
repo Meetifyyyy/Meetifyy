@@ -10,6 +10,15 @@ import CustomDatePicker from '@shared/components/ui/CustomDatePicker';
 import CustomTimePicker from '@shared/components/ui/CustomTimePicker';
 import styles from './CampusEventForm.module.css';
 
+// Human-readable label per upload phase reported by the media pipeline.
+const PHASE_LABELS = {
+  preparing: 'Preparing',
+  uploading: 'Uploading',
+  uploaded: 'Finishing',
+  finishing: 'Finishing',
+  done: 'Done',
+};
+
 /**
  * Create / edit modal for Campus Representatives. Image selection opens the
  * shared MediaCropper first; the cropped WebP blob then flows through
@@ -44,12 +53,18 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
   const [cropTarget, setCropTarget] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadPhase, setUploadPhase] = useState('preparing');
   const [error, setError] = useState('');
 
   // Refs for cleanup, body scrolling and abort
   const abortRef = useRef(null);
   const bodyRef = useRef(null);
   const activeBlobUrlRef = useRef(null); // Tracks the local blob URL shown in posterPreview
+  // Authoritative uploaded poster key (immune to any React state-timing) + the
+  // in-flight upload promise, so submit can await/verify it before saving and a
+  // selected poster is never dropped from the payload.
+  const posterKeyRef = useRef(event?.posterUrl || '');
+  const posterUploadRef = useRef(null);
 
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
@@ -116,41 +131,57 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
     activeBlobUrlRef.current = previewUrl;
     setPosterPreview(previewUrl);
 
-    // Clear stale error, start progress
+    // Clear stale error, start progress. A new upload invalidates any prior key.
     setError('');
     setUploading(true);
     setUploadProgress(0);
+    setUploadPhase('preparing');
+    posterKeyRef.current = '';
+    set({ posterUrl: '' });
 
     const controller = new AbortController();
     abortRef.current = controller;
 
-    try {
-      const uploadedKey = await processAndUploadImage(croppedFile, {
-        preset: 'poster',
-        onProgress: (p) => setUploadProgress(p),
-        signal: controller.signal,
-      });
+    // Store the in-flight upload as a promise so submit() can await/verify it —
+    // this guarantees the resolved storage key is captured before the event is
+    // saved, so a poster can never be silently dropped from the payload.
+    const uploadPromise = (async () => {
+      try {
+        const result = await processAndUploadImage(
+          croppedFile,
+          'events',
+          {},
+          (p, phase) => { setUploadProgress(p); if (phase) setUploadPhase(phase); },
+          controller.signal,
+        );
+        const uploadedKey = result?.key;
+        if (!uploadedKey) throw new Error('Image upload failed. Tap to try again.');
 
-      // Clear blob URL tracking now that we have a real backend key
-      if (activeBlobUrlRef.current) {
-        URL.revokeObjectURL(activeBlobUrlRef.current);
-        activeBlobUrlRef.current = null;
+        // Clear blob URL tracking now that we have a real backend key
+        if (activeBlobUrlRef.current) {
+          URL.revokeObjectURL(activeBlobUrlRef.current);
+          activeBlobUrlRef.current = null;
+        }
+        posterKeyRef.current = uploadedKey;
+        set({ posterUrl: uploadedKey });
+        setPosterPreview(getMediaUrl(uploadedKey));
+        return uploadedKey;
+      } catch (err) {
+        // Abort is expected when the user replaces the image mid-upload.
+        if (err?.name === 'AbortError') throw err;
+        const errMsg = err?.message || 'Image upload failed. Tap to try again.';
+        setError(errMsg);
+        setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
+        throw err;
+      } finally {
+        setUploading(false);
+        setUploadProgress(0);
+        abortRef.current = null;
       }
-      set({ posterUrl: uploadedKey });
-      // Keep posterPreview showing the blob URL or update to real URL
-      setPosterPreview(getMediaUrl(uploadedKey));
-    } catch (err) {
-      // Abort is expected when user replaces the image mid-upload — don't show error toast
-      if (err?.name === 'AbortError') return;
+    })();
 
-      const errMsg = err?.message || 'Image upload failed. Tap to try again.';
-      setError(errMsg);
-      setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-      abortRef.current = null;
-    }
+    posterUploadRef.current = uploadPromise;
+    uploadPromise.catch(() => {}); // avoid unhandled-rejection; submit awaits it
   };
 
 
@@ -208,7 +239,9 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
       eventDate: startISO,
       startTime: startISO,
       endTime: endISO,
-      posterUrl: form.posterUrl || undefined,
+      // Prefer the ref — it holds the authoritative uploaded key regardless of
+      // any state-update timing, so the poster is never lost from the payload.
+      posterUrl: posterKeyRef.current || form.posterUrl || undefined,
     };
   };
 
@@ -219,6 +252,22 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
       setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
       return;
     }
+
+    // Never save while a poster upload is still in flight — await it so the
+    // resolved key is in the payload. A failed upload blocks the save so the
+    // user can retry instead of silently publishing a poster-less event.
+    if (posterUploadRef.current) {
+      try {
+        await posterUploadRef.current;
+      } catch (err) {
+        if (err?.name !== 'AbortError') {
+          setError('Poster upload failed. Retry the image or remove it before saving.');
+          setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
+          return;
+        }
+      }
+    }
+
     setError('');
     try {
       const payload = buildPayload();
@@ -277,7 +326,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
                           />
                         </div>
                         <span className={styles.uploadLabel}>
-                          {uploadProgress < 100 ? `${uploadProgress}%` : 'Finishing…'}
+                          {PHASE_LABELS[uploadPhase] || 'Uploading'} · {uploadProgress}%
                         </span>
                       </div>
                     )}
@@ -299,7 +348,11 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
                 ) : (
                   <span className={styles.posterHint}>
                     <ImagePlus size={28} />
-                    <span>{uploading ? 'Uploading…' : 'Click to upload event poster'}</span>
+                    <span>
+                      {uploading
+                        ? `${PHASE_LABELS[uploadPhase] || 'Uploading'} · ${uploadProgress}%`
+                        : 'Click to upload event poster'}
+                    </span>
                     {uploading && (
                       <div className={styles.progressTrackBare}>
                         <div className={styles.progressBar} style={{ width: `${uploadProgress}%` }} />

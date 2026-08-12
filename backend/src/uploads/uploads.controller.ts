@@ -17,7 +17,7 @@ export class UploadsController {
   @UseGuards(JwtGuard)
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', {
-    limits: { fileSize: 25 * 1024 * 1024 },
+    limits: { fileSize: 50 * 1024 * 1024 },
     fileFilter: (_req, file, callback) => {
       const allowed = /^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|ogg)|audio\/(mpeg|wav|webm|ogg))$/i.test(file.mimetype);
       callback(null, allowed);
@@ -152,6 +152,21 @@ export class UploadsController {
       throw new BadRequestException('Failed to confirm upload. Object might not exist.');
     }
     return result;
+  }
+
+  /**
+   * POST /api/media/discard
+   * Clean up an orphaned upload (owned + not yet attached to a post). Called by
+   * the client when post creation fails after a successful media upload.
+   */
+  @UseGuards(JwtGuard)
+  @Post('discard')
+  async discardUpload(
+    @Body('key') key: string,
+    @Req() req: any,
+  ) {
+    if (!key) throw new BadRequestException('key is required');
+    return this.storageService.discardOwnedUnattached(key, req.user.id);
   }
 
   private async handleGetMedia(key: string, folder: string | undefined, res: Response) {

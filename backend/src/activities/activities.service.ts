@@ -149,12 +149,41 @@ export class ActivitiesService implements OnModuleInit {
     return undefined;
   }
 
-  async getAllActivities(userId?: string, limit = 20, cursor?: string) {
+  /**
+   * Scoped feed. `scope` selects which slice of activities to return:
+   *   - 'public'      → visibility PUBLIC (default, the "Recent" feed)
+   *   - 'college'     → visibility COLLEGE_ONLY for the caller's own college
+   *   - 'one_on_one'  → public activities with exactly 2 slots
+   * All scopes only ever return OPEN, not-yet-started, non-deleted activities.
+   */
+  async getAllActivities(
+    userId?: string,
+    limit = 20,
+    cursor?: string,
+    scope: 'public' | 'college' | 'one_on_one' = 'public',
+  ) {
     const startTime = performance.now();
 
+    // College scope needs the caller's collegeId to filter; resolve it up front.
+    // A user with no college has nothing to show in this scope.
+    let scopeCollegeId: string | null = null;
+    if (scope === 'college') {
+      if (!userId) return { activities: [], nextCursor: undefined };
+      const u = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { collegeId: true },
+      });
+      scopeCollegeId = u?.collegeId ?? null;
+      if (!scopeCollegeId) return { activities: [], nextCursor: undefined };
+    }
+
     // ── Tier 1: user-specific cache ──────────────────────────────────────────
-    const userCacheKey = `activities:feed:${userId || 'anon'}:${limit}:${cursor || 'none'}`;
-    const baseCacheKey = `activities:feed:base:${limit}:${cursor || 'none'}`;
+    const scopeTag = scope === 'college' ? `college:${scopeCollegeId}` : scope;
+    const userCacheKey = `activities:feed:${scopeTag}:${userId || 'anon'}:${limit}:${cursor || 'none'}`;
+    const baseCacheKey = `activities:feed:base:${scopeTag}:${limit}:${cursor || 'none'}`;
+    // Base-feed sharing across users is only sound for the anonymous public feed;
+    // scoped feeds always resolve per-user to keep membership/college correct.
+    const allowBaseCache = scope === 'public';
     let tCache = 0;
 
     if (this.redis) {
@@ -171,7 +200,7 @@ export class ActivitiesService implements OnModuleInit {
 
         // If base cache exists and user has no blocks (we assume no-blocks for anon/fast path),
         // we'll check blocks in parallel below — store baseCached for later.
-        if (baseCached) {
+        if (baseCached && allowBaseCache) {
           // Still need to check blocks before we can use it — fall through with a hint
           (this as any)._cachedBase = baseCached;
         }
@@ -190,7 +219,7 @@ export class ActivitiesService implements OnModuleInit {
 
     // ── Tier 2: base feed cache (shared across users with no blocks) ──────────
     let baseFeed: { activities: any[]; nextCursor: string | undefined } | null = null;
-    if (excludedUserIds.length === 0 && this.redis) {
+    if (allowBaseCache && excludedUserIds.length === 0 && this.redis) {
       const hint = (this as any)._cachedBase;
       delete (this as any)._cachedBase;
       if (hint) {
@@ -198,7 +227,7 @@ export class ActivitiesService implements OnModuleInit {
       } else {
         try {
           // Key changed: use resolved cursorDate for correctness
-          const resolvedBaseKey = `activities:feed:base:${limit}:${cursorDate ? cursorDate.toISOString() : 'none'}`;
+          const resolvedBaseKey = `activities:feed:base:${scopeTag}:${limit}:${cursorDate ? cursorDate.toISOString() : 'none'}`;
           const cachedBase = await this.redis.get(resolvedBaseKey);
           if (cachedBase) baseFeed = JSON.parse(cachedBase);
         } catch {}
@@ -224,7 +253,10 @@ export class ActivitiesService implements OnModuleInit {
         deletedAt: null,
         status: 'OPEN',
         startDate: { gt: now },
-        visibility: 'PUBLIC',
+        ...(scope === 'college'
+          ? { visibility: 'COLLEGE_ONLY', collegeId: scopeCollegeId }
+          : { visibility: 'PUBLIC' }),
+        ...(scope === 'one_on_one' ? { maxMembers: 2 } : {}),
         ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
         ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
       };
@@ -280,8 +312,8 @@ export class ActivitiesService implements OnModuleInit {
       activities = fetchedActivities;
 
       // Cache base feed in background
-      if (excludedUserIds.length === 0 && this.redis) {
-        const resolvedBaseKey = `activities:feed:base:${limit}:${cursorDate ? cursorDate.toISOString() : 'none'}`;
+      if (allowBaseCache && excludedUserIds.length === 0 && this.redis) {
+        const resolvedBaseKey = `activities:feed:base:${scopeTag}:${limit}:${cursorDate ? cursorDate.toISOString() : 'none'}`;
         this.redis.setex(resolvedBaseKey, 60, JSON.stringify({ activities, nextCursor })).catch(() => {});
         this.registerFeedCacheKey(resolvedBaseKey);
       }
@@ -332,6 +364,127 @@ export class ActivitiesService implements OnModuleInit {
       `[STAGE_TIMINGS] GET /api/activities - Total: ${totalMs.toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms | PreFetch: ${tPreFetch.toFixed(2)}ms | BaseCache: ${baseFeed ? 'HIT' : 'MISS'} | MainDB: ${tMainDb.toFixed(2)}ms | MemberDB: ${tMemberDb.toFixed(2)}ms | Logic: ${tLogic.toFixed(2)}ms`
     );
     return response;
+  }
+
+  /** Column set for feed/preview cards — mirrors getAllActivities' select. */
+  private static readonly CARD_SELECT = {
+    id: true,
+    creatorId: true,
+    title: true,
+    description: true,
+    location: true,
+    maxMembers: true,
+    createdAt: true,
+    coverImage: true,
+    coverMediaId: true,
+    endDate: true,
+    latitude: true,
+    longitude: true,
+    startDate: true,
+    status: true,
+    updatedAt: true,
+    hostCollege: true,
+    collegeId: true,
+    participationType: true,
+    shareToCampus: true,
+    visibility: true,
+    _count: { select: { members: true } },
+    members: {
+      where: { status: 'MEMBER' as const },
+      take: 5,
+      orderBy: { joinedAt: 'asc' as const },
+      select: {
+        userId: true,
+        status: true,
+        user: { select: { id: true, username: true, displayName: true, avatar: true } },
+      },
+    },
+  } as const;
+
+  /**
+   * Composed payload for the Crew "For You" page: college + 1-on-1 previews in a
+   * single cached round-trip. "Recent" is served by the paginated public feed and
+   * intentionally NOT duplicated here. Each preview returns up to 3 rows so the
+   * client can show 2 and decide whether to render a "See All".
+   */
+  async getCrewDiscover(userId: string) {
+    const cacheKey = `activities:discover:${userId}`;
+    if (this.redis) {
+      try {
+        const cached = await this.redis.get(cacheKey);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+
+    const [user, excludedUserIds] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { collegeId: true, college: { select: { name: true } } },
+      }),
+      this.blocksService.getExcludedUserIds(userId),
+    ]);
+
+    const now = new Date();
+    const creatorFilter = excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {};
+    const collegeId = user?.collegeId ?? null;
+
+    const [collegeRows, oneOnOneRows] = await Promise.all([
+      collegeId
+        ? this.prisma.crewActivity.findMany({
+            where: {
+              deletedAt: null,
+              status: 'OPEN',
+              startDate: { gt: now },
+              visibility: 'COLLEGE_ONLY',
+              collegeId,
+              ...creatorFilter,
+            },
+            take: 3,
+            orderBy: { createdAt: 'desc' },
+            select: ActivitiesService.CARD_SELECT,
+          })
+        : Promise.resolve([]),
+      this.prisma.crewActivity.findMany({
+        where: {
+          deletedAt: null,
+          status: 'OPEN',
+          startDate: { gt: now },
+          visibility: 'PUBLIC',
+          maxMembers: 2,
+          ...creatorFilter,
+        },
+        take: 3,
+        orderBy: { createdAt: 'desc' },
+        select: ActivitiesService.CARD_SELECT,
+      }),
+    ]);
+
+    // One membership query over the (≤6) collected ids to attach join state.
+    const ids = [...collegeRows, ...oneOnOneRows].map(a => a.id);
+    const memberships = ids.length > 0
+      ? await this.prisma.crewActivityMember.findMany({
+          where: { userId, activityId: { in: ids } },
+          select: { activityId: true, status: true },
+        })
+      : [];
+    const membershipMap = new Map(memberships.map(m => [m.activityId, m.status]));
+    const decorate = (a: any) => {
+      const myStatus = membershipMap.get(a.id);
+      return { ...a, isJoined: myStatus === 'MEMBER', myStatus: myStatus || null };
+    };
+
+    const result = {
+      collegeName: user?.college?.name || null,
+      collegeId,
+      college: { items: collegeRows.slice(0, 2).map(decorate), hasMore: collegeRows.length > 2 },
+      oneOnOne: { items: oneOnOneRows.slice(0, 2).map(decorate), hasMore: oneOnOneRows.length > 2 },
+    };
+
+    if (this.redis) {
+      this.redis.setex(cacheKey, 60, JSON.stringify(result)).catch(() => {});
+      this.registerFeedCacheKey(cacheKey);
+    }
+    return result;
   }
 
   async getActivityById(id: string, userId?: string) {

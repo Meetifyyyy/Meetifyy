@@ -372,6 +372,13 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
 
 window.__api_redirecting = false;
 
+/**
+ * Current access token (synchronous). Exposed so raw XHR/fetch flows that bypass
+ * `apiClient` (e.g. direct presigned uploads) can authenticate against our own
+ * backend endpoints. Never attach this to third-party (R2) presigned URLs.
+ */
+export const getAccessToken = () => getToken();
+
 export const apiClient = {
   get: (path, { signal } = {}) => request('GET', path, undefined, signal),
   post: (path, body, { signal } = {}) => request('POST', path, body, signal),
@@ -503,11 +510,13 @@ export const communitiesApi = {
 };
 
 export const activitiesApi = {
-  getAll: (limit = 20, cursor) => {
+  getAll: (limit = 20, cursor, scope = 'public') => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (cursor) params.set('cursor', cursor);
+    if (scope && scope !== 'public') params.set('scope', scope);
     return apiClient.get(`/api/activities?${params.toString()}`);
   },
+  getDiscover: () => apiClient.get('/api/activities/discover'),
   getMyActivities: () => apiClient.get('/api/activities/me'),
   getById: (id) => apiClient.get(`/api/activities/${id}`),
   create: (data) => apiClient.post('/api/activities', data),
@@ -725,7 +734,12 @@ export const uploadsApi = {
     formData.append('file', file);
     formData.append('folder', folder);
     return apiClient.post('/api/media/upload', formData);
-  }
+  },
+  /**
+   * Discard an orphaned upload (owned + not yet attached to a post). Best-effort
+   * cleanup used when post creation fails after a successful media upload.
+   */
+  discard: (key) => apiClient.post('/api/media/discard', { key }),
 };
 
 // ── Campus Events (official campus event discovery) ────────────────────────────

@@ -24,19 +24,26 @@ export const CREW_KEYS = {
  * Paginated crew activities with cursor-based infinite scrolling.
  * Hydrates from IndexedDB for instant first render.
  */
-export function useActivities() {
+export function useActivities(scope = 'public', { enabled = true } = {}) {
   const queryClient = useQueryClient();
   const { isLoggedIn } = useAuth();
 
+  // Each scope ('public' | 'college' | 'one_on_one') gets its own cache entry so
+  // the College tab, 1-on-1 tab and Recent feed never clobber one another. The
+  // For You preview and the corresponding full-list tab share the same key, so
+  // no duplicate fetching happens.
+  const queryKey = scope === 'public' ? CREW_KEYS.all : [...CREW_KEYS.all, scope];
+  const isPublic = scope === 'public';
+
   const query = useInfiniteQuery({
-    queryKey: CREW_KEYS.all,
+    queryKey,
     queryFn: async ({ pageParam }) => {
-      const data = await activitiesApi.getAll(20, pageParam);
-      // Persist first page for next-session instant load
-      if (!pageParam) idbSet('activities', 'all_page1', data);
+      const data = await activitiesApi.getAll(20, pageParam, scope);
+      // Persist first page of the public feed for next-session instant load
+      if (!pageParam && isPublic) idbSet('activities', 'all_page1', data);
       return data;
     },
-    enabled: isLoggedIn,
+    enabled: isLoggedIn && enabled,
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     staleTime: 0,
@@ -48,7 +55,9 @@ export function useActivities() {
   // Hydrate page 1 from IndexedDB only when there is no live data yet.
   // staleTime:0 + refetchOnMount:'always' ensures the real fetch fires immediately;
   // IDB just fills the gap so the page isn't blank while the network responds.
+  // Only the public feed is persisted/hydrated.
   useEffect(() => {
+    if (!isPublic) return;
     idbGet('activities', 'all_page1').then((cached) => {
       // Never overwrite live server data with stale IDB data
       if (cached?.value && !queryClient.getQueryData(CREW_KEYS.all)) {
@@ -60,7 +69,7 @@ export function useActivities() {
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isPublic]);
 
   const activities = useMemo(
     () => query.data?.pages?.flatMap((p) => (Array.isArray(p?.activities) ? p.activities : (Array.isArray(p) ? p : []))) ?? [],
@@ -74,6 +83,30 @@ export function useActivities() {
     hasNextPage: query.hasNextPage,
     fetchNextPage: query.fetchNextPage,
     isError: query.isError,
+  };
+}
+
+/**
+ * Composed "For You" discovery payload: college + 1-on-1 previews in one request.
+ * Recent is served by useActivities('public'), not this hook.
+ */
+export function useCrewDiscover() {
+  const { isLoggedIn } = useAuth();
+  const query = useQuery({
+    queryKey: [...CREW_KEYS.all, 'discover'],
+    queryFn: () => activitiesApi.getDiscover(),
+    enabled: isLoggedIn,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
+
+  const empty = { items: [], hasMore: false };
+  return {
+    collegeName: query.data?.collegeName || null,
+    collegeId: query.data?.collegeId || null,
+    college: query.data?.college || empty,
+    oneOnOne: query.data?.oneOnOne || empty,
+    isLoading: query.isLoading,
   };
 }
 

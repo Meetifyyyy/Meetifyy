@@ -16,11 +16,21 @@ export class ActivitiesController {
   async getAllActivities(
     @CurrentUser() user: any,
     @Query('limit') limit?: string,
-    @Query('cursor') cursor?: string
+    @Query('cursor') cursor?: string,
+    @Query('scope') scope?: string
   ) {
     const rawLimit = parseInt(limit || '', 10);
     const parsedLimit = !isNaN(rawLimit) && rawLimit > 0 ? rawLimit : 20;
-    return this.activitiesService.getAllActivities(user?.id, parsedLimit, cursor);
+    const allowedScopes = ['public', 'college', 'one_on_one'] as const;
+    const parsedScope = (allowedScopes as readonly string[]).includes(scope || '')
+      ? (scope as 'public' | 'college' | 'one_on_one')
+      : 'public';
+    return this.activitiesService.getAllActivities(user?.id, parsedLimit, cursor, parsedScope);
+  }
+
+  @Get('discover')
+  async getCrewDiscover(@CurrentUser() user: any) {
+    return this.activitiesService.getCrewDiscover(user.id);
   }
 
   @Get('me')

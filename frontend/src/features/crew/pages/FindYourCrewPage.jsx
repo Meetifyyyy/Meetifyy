@@ -1,9 +1,9 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useAuth } from '@shared/context/AuthContext';
-import { useActivities, useSavedActivitiesQuery, useMyActivitiesQuery } from '@shared/hooks/useCrew';
+import { useActivities, useCrewDiscover, useSavedActivitiesQuery, useMyActivitiesQuery } from '@shared/hooks/useCrew';
 import { useDebounce } from '@shared/hooks/useDebounce';
 import { prefetchActivity } from '@shared/hooks/prefetch';
 import PageLayout from '@layout/PageLayout';
@@ -17,149 +17,120 @@ import { filterActivities } from '@features/crew/utils/crewUtils';
 import styles from './FindYourCrewPage.module.css';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 
+// Small header row for a discovery section, with an optional "See All" link.
+function SectionHeader({ title, onSeeAll }) {
+  return (
+    <div className={styles.sectionHeader}>
+      <h2 className={styles.sectionTitle}>{title}</h2>
+      {onSeeAll && (
+        <button type="button" className={styles.seeAllBtn} onClick={onSeeAll}>
+          See All <ChevronRight size={15} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function FindYourCrewPage() {
-  const { currentUser } = useAuth();
+  const { currentUser, collegeName: authCollegeName } = useAuth();
   const queryClient = useQueryClient();
-
-  // Feature-scoped hooks — no more duplicate queries
-  const {
-    activities: rawActivities,
-    isLoading: loading,
-    isFetchingNextPage,
-    hasNextPage,
-    fetchNextPage,
-  } = useActivities();
-  const { savedActivitiesData } = useSavedActivitiesQuery();
-  const { myActivitiesData } = useMyActivitiesQuery();
-
-  const crewActivities = useMemo(() => (rawActivities || []).map(mapActivity).filter(Boolean), [rawActivities]);
-
-  const allCombinedActivities = useMemo(() => {
-    // Secondary lists (saved, my-activities) spread FIRST so the primary
-    // infinite-query cache — which receives every optimistic patch from
-    // patchActivity — always wins for the same activity ID.
-    // Previously, secondary lists spread last, clobbering optimistic updates.
-    const map = new Map();
-    [...(savedActivitiesData || []), ...(myActivitiesData || []), ...(rawCampusActivities || []), ...(rawActivities || [])].forEach(a => {
-      if (a && a.id) map.set(a.id, a);
-    });
-    return Array.from(map.values()).map(mapActivity).filter(Boolean);
-  }, [rawActivities, rawCampusActivities, savedActivitiesData, myActivitiesData]);
-
-  const savedActivities = useSavedActivitiesStore(state => state.savedActivities);
-  const fetchSavedActivityIds = useSavedActivitiesStore(state => state.fetchSavedActivityIds);
   const navigate = useNavigate();
   const location = useLocation();
+
   const [selectedTab, setSelectedTab] = useState(location.state?.selectedTab || 'For You');
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 200);
+
+  // ── Discovery previews (For You: college + 1-on-1) ─────────────────────────
+  const { collegeName: discCollegeName, college, oneOnOne } = useCrewDiscover();
+
+  const hasCollege = Boolean(
+    currentUser?.collegeId || currentUser?.college || currentUser?.university || currentUser?.campus,
+  );
+  // The dynamic college pill uses the authoritative name from discover, falling
+  // back to the auth-derived name so the tab renders before discover resolves.
+  const collegeTab = (discCollegeName || (hasCollege ? authCollegeName : null)) || null;
+
+  const isCollegeTab = Boolean(collegeTab) && selectedTab === collegeTab;
+
+  // ── Scoped feeds ───────────────────────────────────────────────────────────
+  // Recent (public) always loads — it's the For You main list and the default.
+  const recentFeed = useActivities('public');
+  // Full college / 1-on-1 lists only fetch while their tab is active.
+  const collegeFeed = useActivities('college', { enabled: isCollegeTab });
+  const oneOnOneFeed = useActivities('one_on_one', { enabled: selectedTab === '1 on 1' });
+
+  const { savedActivitiesData } = useSavedActivitiesQuery();
+  const { myActivitiesData } = useMyActivitiesQuery();
+
+  const savedActivities = useSavedActivitiesStore(state => state.savedActivities);
+  const fetchSavedActivityIds = useSavedActivitiesStore(state => state.fetchSavedActivityIds);
 
   useEffect(() => {
     fetchSavedActivityIds();
   }, [fetchSavedActivityIds]);
 
-  // IntersectionObserver sentinel — triggers fetchNextPage instead of visibleCount++
-  const sentinelRef = useRef(null);
-  useEffect(() => {
-    if (!sentinelRef.current) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { rootMargin: '400px' } // Start fetching 400px before the user reaches the bottom
-    );
-    observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  // ── Mapped lists ───────────────────────────────────────────────────────────
+  const recentActivities = useMemo(
+    () => filterActivities((recentFeed.activities || []).map(mapActivity).filter(Boolean), { search: debouncedSearchQuery }),
+    [recentFeed.activities, debouncedSearchQuery],
+  );
+  const collegeActivities = useMemo(
+    () => filterActivities((collegeFeed.activities || []).map(mapActivity).filter(Boolean), { search: debouncedSearchQuery }),
+    [collegeFeed.activities, debouncedSearchQuery],
+  );
+  const oneOnOneActivities = useMemo(
+    () => filterActivities((oneOnOneFeed.activities || []).map(mapActivity).filter(Boolean), { search: debouncedSearchQuery }),
+    [oneOnOneFeed.activities, debouncedSearchQuery],
+  );
+  const collegePreview = useMemo(() => (college.items || []).map(mapActivity).filter(Boolean), [college.items]);
+  const oneOnOnePreview = useMemo(() => (oneOnOne.items || []).map(mapActivity).filter(Boolean), [oneOnOne.items]);
 
-  const filteredActivities = useMemo(() => {
-    if (!crewActivities) return [];
+  // Combined pool for Saved / My Activities tabs (secondary lists first so the
+  // primary feed's optimistic patches win on ID collisions).
+  const allCombinedActivities = useMemo(() => {
+    const map = new Map();
+    [...(savedActivitiesData || []), ...(myActivitiesData || []), ...(recentFeed.activities || [])].forEach(a => {
+      if (a && a.id) map.set(a.id, a);
+    });
+    return Array.from(map.values()).map(mapActivity).filter(Boolean);
+  }, [recentFeed.activities, savedActivitiesData, myActivitiesData]);
 
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+  // ── Saved tab list ─────────────────────────────────────────────────────────
+  const savedList = useMemo(() => {
+    if (selectedTab !== 'Saved') return [];
+    const map = new Map();
+    (savedActivitiesData || []).forEach(a => { if (a && a.id) map.set(a.id, a); });
+    allCombinedActivities.forEach(a => {
+      if (a && a.id && (savedActivities?.includes(a.id) || a.isBookmarked)) map.set(a.id, a);
+    });
+    const list = Array.from(map.values()).map(mapActivity).filter(Boolean);
+    return filterActivities(list, { search: debouncedSearchQuery });
+  }, [selectedTab, savedActivitiesData, allCombinedActivities, savedActivities, debouncedSearchQuery]);
 
-    // Helper: has activity started?
-    const isActivityStarted = (a) => {
-      if (!a) return false;
-      const status = (a.status || '').toUpperCase();
-      if (status === 'ENDED' || status === 'CANCELLED' || status === 'CLOSED' || status === 'COMPLETED') return true;
-      const now = new Date();
-      const startRaw = a.startDate || a.date || a.createdAt;
-      if (startRaw && new Date(startRaw) <= now) return true;
-      if (a.endDate && new Date(a.endDate) <= now) return true;
-      return false;
-    };
-
-    // Helper: is this activity public ("Anyone")?
-    const isPublicActivity = (a) => {
-      if (!a) return false;
-      const vis = String(a.visibility || '').toUpperCase();
-      if (vis === 'PRIVATE' || vis === 'COLLEGE_ONLY' || vis === 'COLLEGE' || vis === 'SCHOOL' || vis === 'CAMPUS') return false;
-      if (vis === 'PUBLIC') return true;
-      if (a.isCollegeOnly === true) return false;
-      const join = String(a.whoCanJoin || '').toLowerCase();
-      if (join === 'college' || join === 'school' || join === 'campus' || join === 'no one') return false;
-      return true;
-    };
-
-    // Saved tab: show ALL activities saved/bookmarked by the user regardless of visibility or status
-    if (selectedTab === 'Saved') {
-      const map = new Map();
-      (savedActivitiesData || []).forEach(a => { if (a && a.id) map.set(a.id, a); });
-      allCombinedActivities.forEach(a => {
-        if (a && a.id && (savedActivities?.includes(a.id) || a.isBookmarked)) {
-          map.set(a.id, a);
-        }
-      });
-      const savedList = Array.from(map.values()).map(mapActivity).filter(Boolean);
-      return filterActivities(savedList, { search: debouncedSearchQuery });
-    }
-
-    // "My Activities" — show ALL activities the user is part of (created or joined), regardless of visibility.
-    if (selectedTab === 'My Activities') {
-      const mine = allCombinedActivities.filter(a =>
-        a && (
-          a.participants?.includes(currentUser?.id) ||
-          a.isJoined ||
-          a.myStatus === 'MEMBER' ||
-          a.creatorId === currentUser?.id ||
-          a.hostId === currentUser?.id ||
-          a.members?.some(m => (m.userId || m.id || m.user?.id) === currentUser?.id)
-        )
-      ).sort((a, b) => new Date(a.startDate || a.date || a.createdAt || 0) - new Date(b.startDate || b.date || b.createdAt || 0));
-      return filterActivities(mine, { search: debouncedSearchQuery });
-    }
-
-    // Public tabs ("For You", "1 on 1"): ONLY show PUBLIC ("Anyone") activities
-    let activities = crewActivities.filter(a => isPublicActivity(a));
-
-    // Exclude started/past activities from public-facing tabs
-    activities = activities.filter(a => !isActivityStarted(a));
-
-    if (selectedTab === 'For You') {
-      if (!searchQuery) activities = activities.slice(0, 10);
-    } else if (selectedTab === '1 on 1' || selectedTab === 'Popular') {
-      activities = activities.filter(a => {
-        const limit = Number(a.maxMembers || a.slotsNeeded || a.maxParticipants || 0);
-        return limit === 2;
-      });
-    }
-
-    return filterActivities(activities, { search: debouncedSearchQuery });
-  }, [crewActivities, allCombinedActivities, debouncedSearchQuery, selectedTab, currentUser, savedActivities, searchQuery]);
-
+  // ── My Activities grouping ─────────────────────────────────────────────────
   const { ongoingActivities, upcomingActivities, pastActivities } = useMemo(() => {
     if (selectedTab !== 'My Activities') {
       return { ongoingActivities: [], upcomingActivities: [], pastActivities: [] };
     }
+    const mine = allCombinedActivities.filter(a =>
+      a && (
+        a.participants?.includes(currentUser?.id) ||
+        a.isJoined ||
+        a.myStatus === 'MEMBER' ||
+        a.creatorId === currentUser?.id ||
+        a.hostId === currentUser?.id ||
+        a.members?.some(m => (m.userId || m.id || m.user?.id) === currentUser?.id)
+      )
+    );
+    const filtered = filterActivities(mine, { search: debouncedSearchQuery });
+
     const now = new Date();
     const ongoing = [];
     const upcoming = [];
     const past = [];
 
-    filteredActivities.forEach(a => {
+    filtered.forEach(a => {
       let hasEnded = a.status === 'ENDED' || a.status === 'CANCELLED';
       let hasStarted = false;
 
@@ -195,18 +166,64 @@ export default function FindYourCrewPage() {
     });
 
     return { ongoingActivities: ongoing, upcomingActivities: upcoming, pastActivities: past };
-  }, [filteredActivities, selectedTab]);
+  }, [selectedTab, allCombinedActivities, currentUser, debouncedSearchQuery]);
+
+  // ── Active feed for infinite scroll (For You Recent / College / 1-on-1) ─────
+  const activeFeed = isCollegeTab
+    ? collegeFeed
+    : selectedTab === '1 on 1'
+      ? oneOnOneFeed
+      : selectedTab === 'For You'
+        ? recentFeed
+        : null;
+
+  const sentinelRef = useRef(null);
+  useEffect(() => {
+    if (!sentinelRef.current || !activeFeed) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && activeFeed.hasNextPage && !activeFeed.isFetchingNextPage) {
+          activeFeed.fetchNextPage();
+        }
+      },
+      { rootMargin: '400px' },
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [activeFeed]);
+
+  const loading = isCollegeTab
+    ? collegeFeed.isLoading
+    : selectedTab === '1 on 1'
+      ? oneOnOneFeed.isLoading
+      : recentFeed.isLoading;
 
   const hasActivities = useMemo(() => {
     if (selectedTab === 'My Activities') {
       return ongoingActivities.length > 0 || upcomingActivities.length > 0 || pastActivities.length > 0;
     }
-    return filteredActivities.length > 0;
-  }, [selectedTab, ongoingActivities, upcomingActivities, pastActivities, filteredActivities]);
+    if (selectedTab === 'Saved') return savedList.length > 0;
+    if (isCollegeTab) return collegeActivities.length > 0;
+    if (selectedTab === '1 on 1') return oneOnOneActivities.length > 0;
+    return recentActivities.length > 0 || collegePreview.length > 0 || oneOnOnePreview.length > 0;
+  }, [selectedTab, isCollegeTab, ongoingActivities, upcomingActivities, pastActivities, savedList, collegeActivities, oneOnOneActivities, recentActivities, collegePreview, oneOnOnePreview]);
 
   const handleActivityClick = useCallback((activity) => {
     navigate(`/crew/${activity.id}`, { state: { activity, from: '/crew' } });
   }, [navigate]);
+
+  const renderCards = (list) => list.map(a => (
+    <CrewCard
+      key={a.id}
+      activity={a}
+      onClick={() => handleActivityClick(a)}
+      onMouseEnter={() => prefetchActivity(queryClient, a.id)}
+    />
+  ));
+
+  const tabs = ['For You', ...(collegeTab ? [collegeTab] : []), '1 on 1', 'My Activities', 'Saved'];
+
+  const searching = Boolean(searchQuery);
 
   return (
     <>
@@ -235,8 +252,8 @@ export default function FindYourCrewPage() {
                 </svg>
               </button>
             }
-            tabs={['For You', '1 on 1', 'My Activities', 'Saved']}
-            activeTab={selectedTab === 'Popular' ? '1 on 1' : selectedTab}
+            tabs={tabs}
+            activeTab={selectedTab}
             onTabChange={setSelectedTab}
             tabVariant="pills"
           />
@@ -250,105 +267,146 @@ export default function FindYourCrewPage() {
                   <CrewCardSkeleton />
                 </div>
               ) : (
-                <>
-                  <section className={styles.listSection}>
-                    {selectedTab !== 'For You' && selectedTab !== 'My Activities' && (
-                      <div className={styles.sectionHeader}>
-                        <h2 className={styles.sectionTitle}>
-                          {selectedTab === 'Saved' ? 'Saved Activities' : 
-                           (selectedTab === '1 on 1' || selectedTab === 'Popular') ? '1 on 1 Activities' : 'Activities'}
-                        </h2>
-                      </div>
-                    )}
-                    
-                    {selectedTab === 'My Activities' ? (
-                      <div className={styles.myActivitiesWrapper}>
-                        {/* Ongoing Section */}
-                        <div className={styles.subSection}>
-                          <h3 className={styles.subSectionTitle}>
-                            <span className={styles.liveBadge} />
-                            Ongoing Activities
-                            <span className={styles.subSectionCount}>{ongoingActivities.length}</span>
-                          </h3>
-                          {ongoingActivities.length > 0 ? (
-                            <div className={styles.list}>
-                              {ongoingActivities.map(a => <CrewCard key={a.id} activity={a} onClick={() => handleActivityClick(a)} />)}
-                            </div>
-                          ) : (
-                            <div className={styles.subEmpty}>No ongoing activities right now.</div>
-                          )}
+                <section className={styles.listSection}>
+                  {/* ── For You: sectioned discovery ─────────────────────────── */}
+                  {selectedTab === 'For You' && (
+                    searching ? (
+                      recentActivities.length > 0 ? (
+                        <div className={styles.list}>{renderCards(recentActivities)}</div>
+                      ) : (
+                        <div className={styles.empty}>
+                          <div className={styles.emptyEmoji}>🔍</div>
+                          <h3 className={styles.emptyTitle}>No matching activities</h3>
+                          <p className={styles.emptySubtitle}>Try searching for something else or clear your search query.</p>
                         </div>
-
-                        {/* Upcoming Section */}
-                        <div className={styles.subSection}>
-                          <h3 className={styles.subSectionTitle}>
-                            Upcoming Activities
-                            <span className={styles.subSectionCount}>{upcomingActivities.length}</span>
-                          </h3>
-                          {upcomingActivities.length > 0 ? (
-                            <div className={styles.list}>
-                              {upcomingActivities.map(a => <CrewCard key={a.id} activity={a} onClick={() => handleActivityClick(a)} />)}
-                            </div>
-                          ) : (
-                            <div className={styles.subEmpty}>No upcoming activities scheduled.</div>
-                          )}
-                        </div>
-
-                        {/* Past Section */}
-                        <div className={styles.subSection}>
-                          <h3 className={styles.subSectionTitle}>
-                            Past Activities
-                            <span className={styles.subSectionCount}>{pastActivities.length}</span>
-                          </h3>
-                          {pastActivities.length > 0 ? (
-                            <div className={styles.list}>
-                              {pastActivities.map(a => <CrewCard key={a.id} activity={a} onClick={() => handleActivityClick(a)} />)}
-                            </div>
-                          ) : (
-                            <div className={styles.subEmpty}>No past activities yet.</div>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className={styles.list}>
-                        {filteredActivities.length > 0 ? (
-                          filteredActivities.map(a => (
-                            <CrewCard
-                              key={a.id}
-                              activity={a}
-                              onClick={() => handleActivityClick(a)}
-                              onMouseEnter={() => prefetchActivity(queryClient, a.id)}
+                      )
+                    ) : hasActivities ? (
+                      <div className={styles.forYouWrapper}>
+                        {collegePreview.length > 0 && (
+                          <div className={styles.subSection}>
+                            <SectionHeader
+                              title={`From ${collegeTab || 'your college'}`}
+                              onSeeAll={collegeTab ? () => setSelectedTab(collegeTab) : undefined}
                             />
-                          ))
-                        ) : searchQuery ? (
-                          <div className={styles.empty}>
-                            <div className={styles.emptyEmoji}>🔍</div>
-                            <h3 className={styles.emptyTitle}>No matching activities</h3>
-                            <p className={styles.emptySubtitle}>Try searching for something else or clear your search query.</p>
+                            <div className={styles.list}>{renderCards(collegePreview.slice(0, 2))}</div>
                           </div>
-                        ) : (
-                          <div className={styles.centerCreateCardWrapper}>
-                            <CreateActivityCard onCreateActivity={() => navigate('/crew/create')} />
+                        )}
+
+                        {oneOnOnePreview.length > 0 && (
+                          <div className={styles.subSection}>
+                            <SectionHeader title="1-on-1" onSeeAll={() => setSelectedTab('1 on 1')} />
+                            <div className={styles.list}>{renderCards(oneOnOnePreview.slice(0, 2))}</div>
+                          </div>
+                        )}
+
+                        {recentActivities.length > 0 && (
+                          <div className={styles.subSection}>
+                            <SectionHeader title="Recent" />
+                            <div className={styles.list}>{renderCards(recentActivities)}</div>
+                            {recentFeed.hasNextPage && <div ref={sentinelRef} style={{ height: '1px', width: '100%' }} />}
                           </div>
                         )}
                       </div>
-                    )}
-                    
-                    {selectedTab !== 'My Activities' && hasNextPage && (
-                      <div ref={sentinelRef} style={{ height: '1px', width: '100%' }} />
-                    )}
-                    {isFetchingNextPage && (
-                      <div className={styles.paginationSpinnerWrapper}>
-                        <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '2.5px', borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }} />
+                    ) : (
+                      <div className={styles.centerCreateCardWrapper}>
+                        <CreateActivityCard onCreateActivity={() => navigate('/crew/create')} />
                       </div>
-                    )}
-                  </section>
-                </>
+                    )
+                  )}
+
+                  {/* ── College category tab ─────────────────────────────────── */}
+                  {isCollegeTab && (
+                    <>
+                      <SectionHeader title={collegeTab} />
+                      {collegeActivities.length > 0 ? (
+                        <div className={styles.list}>{renderCards(collegeActivities)}</div>
+                      ) : (
+                        <EmptyOrSearch searching={searching} label="No college activities yet." />
+                      )}
+                      {collegeFeed.hasNextPage && <div ref={sentinelRef} style={{ height: '1px', width: '100%' }} />}
+                    </>
+                  )}
+
+                  {/* ── 1-on-1 tab ───────────────────────────────────────────── */}
+                  {selectedTab === '1 on 1' && (
+                    <>
+                      <SectionHeader title="1-on-1 Activities" />
+                      {oneOnOneActivities.length > 0 ? (
+                        <div className={styles.list}>{renderCards(oneOnOneActivities)}</div>
+                      ) : (
+                        <EmptyOrSearch searching={searching} label="No 1-on-1 activities yet." />
+                      )}
+                      {oneOnOneFeed.hasNextPage && <div ref={sentinelRef} style={{ height: '1px', width: '100%' }} />}
+                    </>
+                  )}
+
+                  {/* ── Saved tab ────────────────────────────────────────────── */}
+                  {selectedTab === 'Saved' && (
+                    <>
+                      <div className={styles.sectionHeader}>
+                        <h2 className={styles.sectionTitle}>Saved Activities</h2>
+                      </div>
+                      {savedList.length > 0 ? (
+                        <div className={styles.list}>{renderCards(savedList)}</div>
+                      ) : (
+                        <EmptyOrSearch searching={searching} label="No saved activities yet." />
+                      )}
+                    </>
+                  )}
+
+                  {/* ── My Activities tab ────────────────────────────────────── */}
+                  {selectedTab === 'My Activities' && (
+                    <div className={styles.myActivitiesWrapper}>
+                      <div className={styles.subSection}>
+                        <h3 className={styles.subSectionTitle}>
+                          <span className={styles.liveBadge} />
+                          Ongoing Activities
+                          <span className={styles.subSectionCount}>{ongoingActivities.length}</span>
+                        </h3>
+                        {ongoingActivities.length > 0 ? (
+                          <div className={styles.list}>{renderCards(ongoingActivities)}</div>
+                        ) : (
+                          <div className={styles.subEmpty}>No ongoing activities right now.</div>
+                        )}
+                      </div>
+
+                      <div className={styles.subSection}>
+                        <h3 className={styles.subSectionTitle}>
+                          Upcoming Activities
+                          <span className={styles.subSectionCount}>{upcomingActivities.length}</span>
+                        </h3>
+                        {upcomingActivities.length > 0 ? (
+                          <div className={styles.list}>{renderCards(upcomingActivities)}</div>
+                        ) : (
+                          <div className={styles.subEmpty}>No upcoming activities scheduled.</div>
+                        )}
+                      </div>
+
+                      <div className={styles.subSection}>
+                        <h3 className={styles.subSectionTitle}>
+                          Past Activities
+                          <span className={styles.subSectionCount}>{pastActivities.length}</span>
+                        </h3>
+                        {pastActivities.length > 0 ? (
+                          <div className={styles.list}>{renderCards(pastActivities)}</div>
+                        ) : (
+                          <div className={styles.subEmpty}>No past activities yet.</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {activeFeed?.isFetchingNextPage && (
+                    <div className={styles.paginationSpinnerWrapper}>
+                      <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '2.5px', borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }} />
+                    </div>
+                  )}
+                </section>
               )}
             </div>
-            
+
             <div className={styles.sidebarWrapper}>
-              <CrewRightPanel 
+              <CrewRightPanel
                 showCreateCard={hasActivities}
                 onCreateActivity={() => navigate('/crew/create')}
                 onViewAll={() => {
@@ -358,9 +416,22 @@ export default function FindYourCrewPage() {
               />
             </div>
           </div>
-          
         </div>
       </PageLayout>
     </>
   );
+}
+
+// Shared empty state for list tabs — a search-aware message.
+function EmptyOrSearch({ searching, label }) {
+  if (searching) {
+    return (
+      <div className={styles.empty}>
+        <div className={styles.emptyEmoji}>🔍</div>
+        <h3 className={styles.emptyTitle}>No matching activities</h3>
+        <p className={styles.emptySubtitle}>Try searching for something else or clear your search query.</p>
+      </div>
+    );
+  }
+  return <div className={styles.subEmpty}>{label}</div>;
 }
