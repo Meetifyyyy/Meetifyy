@@ -13,6 +13,7 @@ import CreateCommunityModal from '@features/communities/components/modals/Create
 import CampusEventSection from '@features/campus-events/components/CampusEventSection';
 import CampusEventForm from '@features/campus-events/components/CampusEventForm';
 import eventStyles from '@features/campus-events/components/CampusEvents.module.css';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import { Plus, Users, CalendarPlus, Megaphone, ChevronRight } from 'lucide-react';
 
 export default function CampusPage() {
@@ -56,14 +57,17 @@ export default function CampusPage() {
     navigate(`/communities/${id}`, { state: { from: '/campus' } });
   };
 
-  const handleDeleteEvent = async (event) => {
-    if (!event?.id) return;
-    if (!window.confirm(`Delete "${event.title}"? This cannot be undone.`)) return;
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
+
+  const handleDeleteEvent = async () => {
+    if (!deleteCandidate?.id) return;
     try {
-      await deleteEvent.mutateAsync(event.id);
+      await deleteEvent.mutateAsync(deleteCandidate.id);
       showToast('Event deleted', 'success');
     } catch (err) {
       showToast(err?.message || 'Failed to delete event', 'error');
+    } finally {
+      setDeleteCandidate(null);
     }
   };
 
@@ -108,6 +112,10 @@ export default function CampusPage() {
 
         {/* NAVIGATION TABS */}
         <div className={styles.stickyNav}>
+          <button className={styles.navTab} onClick={() => navigate('/campus/events')}>
+            <span className={styles.tabEmoji}>🎟️</span>
+            <span>Events</span>
+          </button>
           <button className={styles.navTab} onClick={() => navigate('/campus/directory')}>
             <span className={styles.tabEmoji}>🤩</span>
             <span>Directory</span>
@@ -115,10 +123,6 @@ export default function CampusPage() {
           <button className={styles.navTab} onClick={() => navigate('/campus/communities')}>
             <span className={styles.tabEmoji}>🫧</span>
             <span>Communities</span>
-          </button>
-          <button className={styles.navTab} onClick={() => navigate('/campus/events')}>
-            <span className={styles.tabEmoji}>🎟️</span>
-            <span>Events</span>
           </button>
         </div>
       </div>
@@ -133,9 +137,11 @@ export default function CampusPage() {
               <span className={styles.sectionEmoji}>🎟️</span>
               <h2 className={styles.sectionTitleText}>campus events</h2>
             </div>
-            <button className={eventStyles.createBtn} style={{ background: 'transparent', color: 'var(--color-primary, #8f0c13)', border: '1px solid var(--color-border, rgba(0,0,0,0.12))' }} onClick={() => navigate('/campus/events')}>
-              See all <ChevronRight size={15} />
-            </button>
+            {Boolean(upcoming.events && upcoming.events.length > 0) && (
+              <button className={eventStyles.createBtn} style={{ background: 'transparent', color: 'var(--color-primary, #8f0c13)', border: '1px solid var(--color-border, rgba(0,0,0,0.12))' }} onClick={() => navigate('/campus/events')}>
+                See all <ChevronRight size={15} />
+              </button>
+            )}
           </div>
 
           {isCampusRep && (
@@ -148,21 +154,20 @@ export default function CampusPage() {
                 <span className={eventStyles.repBannerSub}>Publish official events for {collegeName}.</span>
               </div>
               <button className={eventStyles.repCreateCta} onClick={() => setEventFormState({})}>
-                <CalendarPlus size={16} /> Create event
+                <img src="/icons/tear-off_calendar_color.svg" width={18} height={18} alt="" /> Create event
               </button>
             </div>
           )}
 
           <CampusEventSection
             scope="upcoming"
-            title="Upcoming events"
-            emoji="📅"
+            showCount={false}
             events={upcoming.events}
             isLoading={upcoming.isLoading}
             emptyText="No upcoming events yet. Check back soon!"
             canManage={isCampusRep}
             onEdit={(ev) => setEventFormState({ event: ev })}
-            onDelete={handleDeleteEvent}
+            onDelete={setDeleteCandidate}
             hasNextPage={upcoming.hasNextPage}
             isFetchingNextPage={upcoming.isFetchingNextPage}
             fetchNextPage={upcoming.fetchNextPage}
@@ -230,6 +235,16 @@ export default function CampusPage() {
           onSaved={() => setEventFormState(null)}
         />
       )}
+
+      <ConfirmModal
+        visible={Boolean(deleteCandidate)}
+        title="Delete event?"
+        description={deleteCandidate ? `Delete "${deleteCandidate.title}"? This cannot be undone.` : ''}
+        confirmText="Delete"
+        isDestructive={true}
+        onConfirm={handleDeleteEvent}
+        onCancel={() => setDeleteCandidate(null)}
+      />
     </main>
   );
 }

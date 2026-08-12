@@ -88,10 +88,10 @@ export async function getCroppedImg(
     pixelCrop.height
   )
 
-  // As a blob
+  // As a blob (WebP — matches the compressImage target format; avoids double-encode)
   return new Promise((resolve, reject) => {
     croppedCanvas.toBlob((file) => {
       resolve(file)
-    }, 'image/jpeg')
+    }, 'image/webp', 0.92)
   })
 }

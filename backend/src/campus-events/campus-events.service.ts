@@ -221,6 +221,10 @@ export class CampusEventsService {
 
     const registrationUrl = sanitizeRegistrationUrl(dto.registrationUrl);
 
+    if (!dto.venue || !dto.venue.trim()) {
+      throw new BadRequestException('Venue is required.');
+    }
+
     const created = await this.prisma.campusEvent.create({
       data: {
         campusId: user.collegeId!,
@@ -231,7 +235,7 @@ export class CampusEventsService {
         startTime,
         endTime,
         hostedBy: dto.hostedBy,
-        venue: dto.venue ?? null,
+        venue: dto.venue.trim(),
         registrationUrl,
         createdBy: user.id,
         status: 'DRAFT',
@@ -266,7 +270,10 @@ export class CampusEventsService {
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.posterUrl !== undefined) data.posterUrl = dto.posterUrl;
     if (dto.hostedBy !== undefined) data.hostedBy = dto.hostedBy;
-    if (dto.venue !== undefined) data.venue = dto.venue;
+    if (dto.venue !== undefined) {
+      if (!dto.venue.trim()) throw new BadRequestException('Venue cannot be empty.');
+      data.venue = dto.venue.trim();
+    }
     if (dto.eventDate !== undefined) {
       const d = new Date(dto.eventDate);
       if (isNaN(d.getTime())) throw new BadRequestException('Invalid event date.');

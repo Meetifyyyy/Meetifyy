@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { getMediaUrl, deriveThumbnailKey } from '@shared/api/apiClient';
-import { formatEventDate } from '../utils/formatEvent';
 import styles from './CampusEvents.module.css';
 
 const STATUS_LABELS = {
@@ -22,7 +21,8 @@ export default function CampusEventCard({ event, scope, canManage = false, onEdi
   if (!event) return null;
 
   const isDraft = event.status === 'DRAFT';
-  const badge = STATUS_LABELS[isDraft ? 'draft' : scope] || null;
+  const badgeKey = isDraft ? 'draft' : scope;
+  const badge = (badgeKey !== 'upcoming' && STATUS_LABELS[badgeKey]) || null;
 
   const thumbKey = event.posterUrl ? deriveThumbnailKey(event.posterUrl) : null;
   const posterSrc = thumbKey ? getMediaUrl(thumbKey) : (event.posterUrl ? getMediaUrl(event.posterUrl) : '');
@@ -41,13 +41,17 @@ export default function CampusEventCard({ event, scope, canManage = false, onEdi
             loading="lazy"
             decoding="async"
             onError={(e) => {
-              // Derived thumb missing → fall back to the original once, then hide.
-              if (fullSrc && e.currentTarget.src !== fullSrc) e.currentTarget.src = fullSrc;
-              else e.currentTarget.style.display = 'none';
+              if (fullSrc && e.currentTarget.src !== fullSrc) {
+                e.currentTarget.src = fullSrc;
+              } else {
+                e.currentTarget.style.display = 'none';
+              }
             }}
           />
         ) : (
-          <div className={styles.posterFallback}>{event.title}</div>
+          <div className={styles.posterFallback}>
+            <img src="/icons/tear-off_calendar_color.svg" width={48} height={48} alt="Event" className={styles.fallbackIcon} />
+          </div>
         )}
 
         {badge && <span className={`${styles.statusBadge} ${badge.cls}`}>{badge.label}</span>}
@@ -70,15 +74,10 @@ export default function CampusEventCard({ event, scope, canManage = false, onEdi
             </button>
           </div>
         )}
-      </div>
 
-      <div className={styles.cardBody}>
-        <h3 className={styles.cardTitle}>{event.title}</h3>
-        <div className={styles.metaRow}>
-          <Calendar size={14} />
-          <span>{formatEventDate(event.eventDate || event.startTime)}</span>
+        <div className={styles.posterOverlay}>
+          <h3 className={styles.cardTitle}>{event.title}</h3>
         </div>
-        {event.hostedBy && <div className={styles.hostedBy}>{event.hostedBy}</div>}
       </div>
     </article>
   );

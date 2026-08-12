@@ -42,9 +42,11 @@ export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', on
     const startTime = Date.now();
     try {
       const croppedBlob = await getCroppedImg(imageSrc, croppedAreaPixels);
-      const fileName = (typeof imageFile === 'object' && imageFile?.name) ? imageFile.name : 'cropped.jpg';
+      const fileName = (typeof imageFile === 'object' && imageFile?.name)
+        ? imageFile.name.replace(/\.[^.]+$/, '.webp')
+        : 'cropped.webp';
       const croppedFile = new File([croppedBlob], fileName, {
-        type: 'image/jpeg',
+        type: 'image/webp',
         lastModified: Date.now(),
       });
       croppedFile.previewUrl = URL.createObjectURL(croppedBlob);

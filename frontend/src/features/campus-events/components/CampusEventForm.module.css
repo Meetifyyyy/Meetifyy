@@ -8,6 +8,7 @@
   z-index: 1000000;
   padding: 1rem;
   animation: fadeIn 0.2s ease;
+  overscroll-behavior: contain;
 }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -58,9 +59,32 @@
 .body {
   padding: 1.1rem 1.25rem;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+}
+
+.body::-webkit-scrollbar {
+  display: none;
+}
+
+.hiddenFile { display: none; }
+
+.error, .errorBanner {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: 10px;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .field { display: flex; flex-direction: column; gap: 0.35rem; }
@@ -95,12 +119,63 @@
 
 @media (max-width: 480px) { .row { flex-direction: column; } }
 
-/* Poster upload */
+/* ── Split date + time picker group ──────────────────────────────────────── */
+.dateTimeGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.dateTimeGroupLabel {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-muted, #555);
+}
+
+.dateTimeRow {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Date picker gets more width since the formatted value is wider */
+.dateBox  { flex: 1.7; display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.timeBox  { flex: 1;   display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+
+.subLabel {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-light, #aaa);
+}
+
+/* Ensure time inputs don't overflow on small screens */
+@media (max-width: 360px) {
+  .dateTimeRow { flex-direction: column; }
+  .dateBox, .timeBox { flex: none; }
+}
+
+/* Live multi-day indicator that appears between the time pickers */
+.multiDayBadge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-primary, #8f0c13);
+  background: color-mix(in srgb, var(--color-primary, #8f0c13) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary, #8f0c13) 20%, transparent);
+  border-radius: 8px;
+  padding: 0.4rem 0.7rem;
+}
+
+/* Poster upload — 3:4 portrait, same ratio as the event card grid */
 .posterUpload {
   position: relative;
   width: 100%;
+  max-width: 260px;      /* at 3:4 this gives ~347px height — visible but not overwhelming */
   aspect-ratio: 3 / 4;
-  max-height: 340px;
+  margin: 0 auto;        /* center in the field */
   border: 1.5px dashed var(--color-border, rgba(0, 0, 0, 0.2));
   border-radius: 12px;
   overflow: hidden;
@@ -114,8 +189,121 @@
 
 .posterUpload:hover { border-color: var(--color-primary, #8f0c13); }
 
-/* contain — organizers see the full poster, never cropped, any aspect ratio. */
-.posterPreview { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
+/* Disable interaction while an upload is in flight */
+.posterUpload.posterBusy { cursor: not-allowed; pointer-events: none; }
+
+/* Cover — fills the container, clean card look matching the event card grid. */
+.posterPreview { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.previewContainer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.changeOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  backdrop-filter: blur(2px);
+}
+
+/* Upload progress overlay */
+.uploadOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.60);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  backdrop-filter: blur(3px);
+}
+
+/* Upload-failed overlay — amber, always visible (not just on hover) */
+.uploadFailedOverlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(180, 83, 9, 0.88);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.uploadFailedIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  font-size: 0.65rem;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.uploadFailedText {
+  white-space: nowrap;
+}
+
+.uploadLabel {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.progressTrack {
+  width: 72%;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+
+.progressTrackBare {
+  width: 72%;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  margin-top: 0.4rem;
+}
+
+.progressBar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary, #8f0c13);
+  transition: width 0.3s ease;
+  min-width: 6px;
+}
+
+.posterUpload:hover .changeOverlay {
+  opacity: 1;
+}
 
 .posterHint {
   display: flex;

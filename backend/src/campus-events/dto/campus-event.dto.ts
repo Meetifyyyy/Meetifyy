@@ -8,12 +8,12 @@ import {
 
 export class CreateCampusEventDto {
   @IsString()
-  @MaxLength(120)
+  @MaxLength(50)
   title: string;
 
   @IsString()
   @IsOptional()
-  @MaxLength(4000)
+  @MaxLength(500)
   description?: string;
 
   // Media key/URL returned by POST /api/media/upload (same convention as CrewActivity.coverImage).
@@ -32,13 +32,12 @@ export class CreateCampusEventDto {
   endTime: string;
 
   @IsString()
-  @MaxLength(120)
+  @MaxLength(50)
   hostedBy: string;
 
   @IsString()
-  @IsOptional()
-  @MaxLength(200)
-  venue?: string;
+  @MaxLength(100)
+  venue: string;
 
   // Authoritative validation/sanitization happens server-side (see sanitizeRegistrationUrl).
   @IsString()
@@ -50,12 +49,12 @@ export class CreateCampusEventDto {
 export class UpdateCampusEventDto {
   @IsString()
   @IsOptional()
-  @MaxLength(120)
+  @MaxLength(50)
   title?: string;
 
   @IsString()
   @IsOptional()
-  @MaxLength(4000)
+  @MaxLength(500)
   description?: string;
 
   @IsString()
@@ -77,12 +76,12 @@ export class UpdateCampusEventDto {
 
   @IsString()
   @IsOptional()
-  @MaxLength(120)
+  @MaxLength(50)
   hostedBy?: string;
 
   @IsString()
   @IsOptional()
-  @MaxLength(200)
+  @MaxLength(100)
   venue?: string;
 
   @IsString()

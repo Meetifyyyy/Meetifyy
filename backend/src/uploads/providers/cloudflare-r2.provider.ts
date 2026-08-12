@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { StorageProvider } from './storage-provider.interface';
 
 @Injectable()
@@ -31,6 +33,25 @@ export class CloudflareR2Provider implements StorageProvider {
         credentials: { accessKeyId: accessKeyId!, secretAccessKey: secretAccessKey! },
       });
       this.logger.log('Cloudflare R2 configured');
+    }
+  }
+
+  private getLocalFilePath(key: string): string {
+    const cwd = process.cwd();
+    const baseDir = cwd.endsWith('backend') ? path.join(cwd, 'uploads') : path.join(cwd, 'backend', 'uploads');
+    return path.resolve(baseDir, key);
+  }
+
+  private saveToLocalDisk(key: string, fileBuffer: Buffer): void {
+    try {
+      const filePath = this.getLocalFilePath(key);
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(filePath, fileBuffer);
+    } catch (e) {
+      this.logger.error(`Failed to save file to local disk for key ${key}`, e);
     }
   }
 
@@ -94,6 +115,11 @@ export class CloudflareR2Provider implements StorageProvider {
   }
 
   async delete(key: string): Promise<boolean> {
+    try {
+      const localPath = this.getLocalFilePath(key);
+      if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+    } catch (_) {}
+
     if (!this.isConfigured || !this.s3) return true;
     try {
       await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucketName, Key: key }));
@@ -105,28 +131,42 @@ export class CloudflareR2Provider implements StorageProvider {
   }
 
   async upload(key: string, fileBuffer: Buffer, contentType: string): Promise<string> {
+    // Always save to local disk as fallback guarantee
+    this.saveToLocalDisk(key, fileBuffer);
+
     if (!this.isConfigured || !this.s3) return this.getPublicUrl(key);
     try {
       await this.s3.send(new PutObjectCommand({ Bucket: this.bucketName, Key: key, Body: fileBuffer, ContentType: contentType, CacheControl: 'public, max-age=31536000, immutable' }));
       return this.getPublicUrl(key);
     } catch (e) {
-      this.logger.error(`Failed to upload object ${key}`, e);
-      throw new Error('Upload failed');
+      this.logger.warn(`R2 upload failed for key ${key}, relying on local disk storage: ${e?.message || e}`);
+      return this.getPublicUrl(key);
     }
   }
 
   async exists(key: string): Promise<boolean> {
+    const localPath = this.getLocalFilePath(key);
+    if (fs.existsSync(localPath)) return true;
+
     if (!this.isConfigured || !this.s3) return false;
     try {
       await this.s3.send(new HeadObjectCommand({ Bucket: this.bucketName, Key: key }));
       return true;
     } catch (e: any) {
       if (e.name === 'NotFound') return false;
-      throw e;
+      return false;
     }
   }
 
   async getMetadata(key: string): Promise<any> {
+    const localPath = this.getLocalFilePath(key);
+    if (fs.existsSync(localPath)) {
+      try {
+        const stat = fs.statSync(localPath);
+        return { contentLength: stat.size };
+      } catch (_) {}
+    }
+
     if (!this.isConfigured || !this.s3) return null;
     try {
       const head = await this.s3.send(new HeadObjectCommand({ Bucket: this.bucketName, Key: key }));

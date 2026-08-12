@@ -48,6 +48,11 @@ export function assertCoherentEventTimes(startTime: Date, endTime: Date): void {
   if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
     throw new BadRequestException('Invalid start or end time.');
   }
+  const now = new Date();
+  // Allow a 5-minute grace period for clock drift and request latency
+  if (startTime.getTime() < now.getTime() - 5 * 60 * 1000) {
+    throw new BadRequestException('Event start date/time cannot be in the past.');
+  }
   if (endTime.getTime() <= startTime.getTime()) {
     throw new BadRequestException('End time must be after start time.');
   }

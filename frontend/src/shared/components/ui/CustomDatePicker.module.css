@@ -1,0 +1,206 @@
+.container {
+  position: relative;
+  width: 100%;
+}
+
+.trigger {
+  width: 100%;
+  background: var(--color-bg-elevated, #fff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.14));
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.88rem;
+  font-family: inherit;
+  color: var(--color-text-main, #111);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.trigger:hover {
+  border-color: var(--color-text-muted, rgba(0, 0, 0, 0.3));
+}
+
+.trigger.open {
+  border-color: var(--color-primary, #8f0c13);
+  box-shadow: 0 0 0 3px rgba(143, 12, 19, 0.15);
+}
+
+.placeholder {
+  color: var(--color-text-light, #aaa);
+}
+
+.calendarIcon {
+  width: 16px;
+  height: 16px;
+  color: var(--color-text-muted, #666);
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.trigger:hover .calendarIcon,
+.trigger.open .calendarIcon {
+  color: var(--color-primary, #8f0c13);
+}
+
+/* Compact Popover Calendar Container */
+.popover {
+  background: var(--color-bg-elevated, #fff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2), 0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 0.5rem 0.6rem;
+  width: 230px;
+  box-sizing: border-box;
+  user-select: none;
+  animation: popoverFadeIn 0.12s ease-out;
+  overscroll-behavior: contain;
+}
+
+@keyframes popoverFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Calendar Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.monthLabel {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--color-text-main, #111);
+}
+
+.navBtn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted, #666);
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.navBtn:hover {
+  background: var(--color-bg-soft, rgba(0, 0, 0, 0.06));
+  color: var(--color-text-main, #111);
+}
+
+/* Days of Week Header */
+.weekDays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  margin-bottom: 0.25rem;
+}
+
+.weekDay {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted, #888);
+  padding: 0.1rem 0;
+}
+
+/* Days Grid */
+.daysGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+}
+
+.dayCell {
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--color-text-main, #222);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0;
+}
+
+.dayCell:hover:not(.disabledCell):not(.selectedCell) {
+  background: color-mix(in srgb, var(--color-primary, #8f0c13) 12%, transparent);
+  color: var(--color-primary, #8f0c13);
+  font-weight: 600;
+}
+
+.otherMonth {
+  color: var(--color-text-light, #ccc);
+}
+
+.todayCell:not(.selectedCell) {
+  border-color: var(--color-primary, #8f0c13);
+  color: var(--color-primary, #8f0c13);
+  font-weight: 700;
+}
+
+.selectedCell {
+  background: var(--color-primary, #8f0c13) !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+.disabledCell {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Footer Actions */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.4rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+}
+
+.actionBtn {
+  background: none;
+  border: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-primary, #8f0c13);
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  transition: background 0.12s ease;
+}
+
+.actionBtn:hover {
+  background: color-mix(in srgb, var(--color-primary, #8f0c13) 10%, transparent);
+}
+
+.clearBtn {
+  color: var(--color-text-muted, #666);
+}
+
+.clearBtn:hover {
+  background: var(--color-bg-soft, rgba(0, 0, 0, 0.06));
+}

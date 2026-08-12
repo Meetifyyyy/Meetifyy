@@ -9,6 +9,7 @@ import { validateDOB } from '@shared/utils/dateValidation';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
 import { MAJORS_LIST } from '@features/campus/data/majors';
 import { Pencil, Lock, Eye, EyeOff, AlertCircle, Trash2 } from 'lucide-react';
+import CustomDatePicker from '@shared/components/ui/CustomDatePicker';
 import styles from './SettingsRoute.module.css';
 
 // Build emoji lookup map
@@ -642,11 +643,9 @@ export default function SettingsRoute() {
             <div className={styles.divider} />
             <div className={styles.inputRow}>
               <label className={styles.inputLabel}>Date of Birth</label>
-              <input
-                className={styles.input}
-                type="date"
+              <CustomDatePicker
                 value={birthday}
-                onChange={e => setBirthday(e.target.value)}
+                onChange={val => setBirthday(val)}
               />
             </div>
           </div>

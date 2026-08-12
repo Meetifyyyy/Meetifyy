@@ -1,4 +1,6 @@
 import Skeleton from '@shared/components/skeletons/Skeleton';
+import CampusEventSkeleton from '@features/campus-events/components/CampusEventSkeleton';
+import eventStyles from '@features/campus-events/components/CampusEvents.module.css';
 import sharedStyles from './CampusShared.module.css';
 import pageStyles from '../../pages/CampusPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
@@ -20,7 +22,7 @@ export default function CampusSkeleton() {
         </header>
         {/* Nav tabs */}
         <div className={styles.stickyNav}>
-          {['Directory', 'Communities', 'Events'].map(tab => (
+          {['Events', 'Directory', 'Communities'].map(tab => (
             <Skeleton
               key={tab}
               type="rect"
@@ -40,22 +42,9 @@ export default function CampusSkeleton() {
             <Skeleton type="text" width="150px" height="16px" style={{ marginBottom: 0 }} />
           </div>
           {/* Event poster card placeholders */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: '1rem' }}>
-            {[0, 1].map(i => (
-              <div key={i} style={{
-                background: 'var(--color-bg-white)',
-                border: '1px solid var(--color-border-light)',
-                borderRadius: 'var(--radius-lg)',
-                overflow: 'hidden',
-              }}>
-                <Skeleton type="rect" width="100%" height="180px" style={{ borderRadius: 0 }} />
-                <div style={{ padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <Skeleton type="text" width="80%" height="16px" style={{ marginBottom: 0 }} />
-                  <Skeleton type="text" width="50%" height="11px" style={{ marginBottom: 0 }} />
-                  <Skeleton type="rect" width="100%" height="34px" style={{ borderRadius: '10px', marginTop: '6px' }} />
-                </div>
-              </div>
-            ))}
+          <div className={eventStyles.grid}>
+            <CampusEventSkeleton />
+            <CampusEventSkeleton />
           </div>
         </section>
 

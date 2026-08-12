@@ -13,6 +13,7 @@ export default function CampusEventSection({
   emoji,
   live = false,
   events = [],
+  showCount = true,
   isLoading = false,
   emptyText = 'Nothing here yet.',
   canManage = false,
@@ -39,11 +40,13 @@ export default function CampusEventSection({
 
   return (
     <section className={styles.sectionGroup}>
-      <div className={styles.groupHeader}>
-        {live ? <span className={styles.liveDot} /> : <span aria-hidden="true">{emoji}</span>}
-        <h2 className={styles.groupTitle}>{title}</h2>
-        {events.length > 0 && <span className={styles.groupCount}>{events.length}</span>}
-      </div>
+      {title && (
+        <div className={styles.groupHeader}>
+          {live ? <span className={styles.liveDot} /> : emoji ? <span aria-hidden="true">{emoji}</span> : null}
+          <h2 className={styles.groupTitle}>{title}</h2>
+          {showCount && events.length > 0 && <span className={styles.groupCount}>{events.length}</span>}
+        </div>
+      )}
 
       {isLoading ? (
         <div className={styles.grid}>

@@ -7,6 +7,7 @@ import { showToast } from '@shared/utils/toast';
 import { useCampusEvents, useDeleteCampusEvent } from '@shared/hooks/useCampusEvents';
 import CampusEventSection from '../components/CampusEventSection';
 import CampusEventForm from '../components/CampusEventForm';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import sharedStyles from '@features/campus/components/skeletons/CampusShared.module.css';
 
 /**
@@ -26,15 +27,17 @@ export default function CampusEventsPage() {
   const deleteEvent = useDeleteCampusEvent();
 
   const [eventFormState, setEventFormState] = useState(null);
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
 
-  const handleDeleteEvent = async (event) => {
-    if (!event?.id) return;
-    if (!window.confirm(`Delete "${event.title}"? This cannot be undone.`)) return;
+  const handleDeleteEvent = async () => {
+    if (!deleteCandidate?.id) return;
     try {
-      await deleteEvent.mutateAsync(event.id);
+      await deleteEvent.mutateAsync(deleteCandidate.id);
       showToast('Event deleted', 'success');
     } catch (err) {
       showToast(err?.message || 'Failed to delete event', 'error');
+    } finally {
+      setDeleteCandidate(null);
     }
   };
 
@@ -73,7 +76,7 @@ export default function CampusEventsPage() {
           emptyText="No events are live right now."
           canManage={isCampusRep}
           onEdit={(ev) => setEventFormState({ event: ev })}
-          onDelete={handleDeleteEvent}
+          onDelete={setDeleteCandidate}
           hasNextPage={ongoing.hasNextPage}
           isFetchingNextPage={ongoing.isFetchingNextPage}
           fetchNextPage={ongoing.fetchNextPage}
@@ -88,7 +91,7 @@ export default function CampusEventsPage() {
           emptyText="No upcoming events yet. Check back soon!"
           canManage={isCampusRep}
           onEdit={(ev) => setEventFormState({ event: ev })}
-          onDelete={handleDeleteEvent}
+          onDelete={setDeleteCandidate}
           hasNextPage={upcoming.hasNextPage}
           isFetchingNextPage={upcoming.isFetchingNextPage}
           fetchNextPage={upcoming.fetchNextPage}
@@ -115,6 +118,16 @@ export default function CampusEventsPage() {
           onSaved={() => setEventFormState(null)}
         />
       )}
+
+      <ConfirmModal
+        visible={Boolean(deleteCandidate)}
+        title="Delete event?"
+        description={deleteCandidate ? `Delete "${deleteCandidate.title}"? This cannot be undone.` : ''}
+        confirmText="Delete"
+        isDestructive={true}
+        onConfirm={handleDeleteEvent}
+        onCancel={() => setDeleteCandidate(null)}
+      />
     </main>
   );
 }
