@@ -1,6 +1,7 @@
 import { useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 import CommunityView from '../components/view/CommunityView';
 import { useCommunities } from '@shared/hooks/useCommunities';
+import NotFoundState from '@shared/components/ui/NotFoundState';
 
 export default function CommunityDetailRoute() {
   const navigate = useNavigate();

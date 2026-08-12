@@ -299,13 +299,10 @@ function PostComposer({ onSubmit }) {
       {/* Popups rendered above the composer */}
       {showEmoji && (
         <div className={styles.emojiPicker} ref={emojiPanelRef}>
-          <Suspense fallback={<div style={{ padding: '1rem', background: 'var(--color-bg-white)', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '0.85rem' }}>Loading Emojis...</div>}>
-            <Picker
-              data={data}
-              onEmojiSelect={(emoji) => insertEmoji(emoji.native)}
-              theme="light"
-            />
-          </Suspense>
+          <LazyEmojiPicker
+            onEmojiSelect={(emoji) => insertEmoji(emoji.native)}
+            theme="light"
+          />
         </div>
       )}
 

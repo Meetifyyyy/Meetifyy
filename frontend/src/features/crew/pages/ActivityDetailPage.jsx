@@ -21,6 +21,7 @@ import { useActivityById } from '@shared/hooks/useCrew';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { ActivityDiscussion } from '../components/ActivityDiscussion';
 import ActivityDetailSkeleton from '../components/ActivityDetailSkeleton';
+import NotFoundState from '@shared/components/ui/NotFoundState';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 const DEFAULT_COVERS = [
@@ -287,12 +288,13 @@ export default function ActivityDetailPage() {
 
   if (!activity) {
     return (
-      <div className={styles.notFound}>
-        <h2>Activity not found</h2>
-        <button onClick={() => goBack('/crew')} className={styles.joinBtn} style={{ width: 'auto' }}>
-          Back to Crew
-        </button>
-      </div>
+      <main style={{ gridColumn: '2 / -1', width: '100%', maxWidth: 'none', margin: 0, padding: 0 }}>
+        <NotFoundState
+          type="activity"
+          onAction={() => goBack('/home')}
+          coverPage={true}
+        />
+      </main>
     );
   }
 

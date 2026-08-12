@@ -35,3 +35,6 @@ export function ErrorState({ title = 'Something went wrong', message = 'There wa
     </div>
   );
 }
+
+export { default as NotFoundState } from './NotFoundState';
+

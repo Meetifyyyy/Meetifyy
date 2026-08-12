@@ -4,6 +4,7 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { useCampusEvent } from '@shared/hooks/useCampusEvents';
 import Skeleton from '@shared/components/skeletons/Skeleton';
+import NotFoundState from '@shared/components/ui/NotFoundState';
 import { formatCombinedDateTime, isSingleDayEvent, isSafeRegistrationUrl } from '../utils/formatEvent';
 import styles from './CampusEventDetailPage.module.css';
 
@@ -48,16 +49,12 @@ export default function CampusEventDetailPage() {
 
   if (isError || !event) {
     return (
-      <main className={styles.page}>
-        <div className={styles.topbar}>
-          <button className={styles.backBtn} onClick={back}><ArrowLeft size={20} /></button>
-        </div>
-        <div className={styles.centerState}>
-          <CalendarX size={40} />
-          <h2 style={{ margin: 0 }}>Event not found</h2>
-          <p style={{ margin: 0, fontSize: '0.9rem' }}>This event may have been removed or is no longer available.</p>
-          <button className={styles.backBtn} style={{ width: 'auto', padding: '0 1rem' }} onClick={back}>Back to campus</button>
-        </div>
+      <main style={{ gridColumn: '2 / -1', width: '100%', maxWidth: 'none', margin: 0, padding: 0 }}>
+        <NotFoundState
+          type="event"
+          onAction={() => goBack('/home')}
+          coverPage={true}
+        />
       </main>
     );
   }

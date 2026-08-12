@@ -11,6 +11,7 @@ import Post from '@features/feed/components/post/Post';
 import UserListModal from '@shared/components/modals/UserListModal';
 import { ErrorState } from '@shared/components/ui/StateViews';
 import Avatar from '@shared/components/avatar/Avatar';
+import NotFoundState from '@shared/components/ui/NotFoundState';
 import s from './ProfilePage.module.css';
 import defaultCover from '@assets/images/default_cover.webp';
 import MediaCropper from '@shared/components/media/MediaCropper';
@@ -233,8 +234,12 @@ export default function ProfilePage() {
 
   if (profileError || !profileUser) {
     return (
-      <main className={`centre centre-wide animate-in ${s.profileMain}`} style={{ alignItems: 'center', justifyContent: 'center' }}>
-        <ErrorState onRetry={refetchProfile} />
+      <main className="centre centre-wide">
+        <NotFoundState
+          type="user"
+          onAction={() => goBack('/home')}
+          coverPage={true}
+        />
       </main>
     );
   }

@@ -158,6 +158,8 @@ function StaticRoute({ children }) {
   return children;
 }
 
+import NotFoundState from './shared/components/ui/NotFoundState';
+
 /**
  * NotFound — shown for authenticated users who hit an unmatched route.
  * Keeps the shell (header + sidebar) mounted.
@@ -166,24 +168,8 @@ function NotFound() {
   const { isLoggedIn } = useAuth();
   if (!isLoggedIn) return <Navigate to="/" replace />;
   return (
-    <main className="centre">
-      <div style={{
-        padding: '3rem 2rem',
-        textAlign: 'center',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '1rem',
-        marginTop: '4rem',
-      }}>
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-light)" strokeWidth="1.5">
-          <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--color-text-main)', margin: 0 }}>Page not found</h1>
-        <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', margin: 0 }}>
-          That page doesn't exist or has been moved.
-        </p>
-      </div>
+    <main style={{ gridColumn: '2 / -1', width: '100%', maxWidth: 'none', margin: 0, padding: 0 }}>
+      <NotFoundState type="page" coverPage={true} />
     </main>
   );
 }

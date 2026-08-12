@@ -11,6 +11,7 @@ import MediaCropper from '@shared/components/media/MediaCropper';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { ErrorState } from '@shared/components/ui/StateViews';
+import NotFoundState from '@shared/components/ui/NotFoundState';
 import Post from '@features/feed/components/post/Post';
 import PostComposer from '@features/feed/components/composer/PostComposer';
 import PostSkeleton from '@features/feed/components/skeletons/PostSkeleton';
@@ -872,59 +873,41 @@ function DeletedCommunityView({ onBack }) {
   const navigate = useNavigate();
 
   return (
-    <div className={styles.deletedContainer}>
-      <div className={styles.deletedCard}>
-        <div className={styles.deletedIconWrap}>
-          <div className={styles.deletedIconBg}>
-            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-            </svg>
-          </div>
-        </div>
-
-        <h2 className={styles.deletedTitle}>Community Deleted</h2>
-        <p className={styles.deletedSubtitle}>
-          This community has been deleted by its owner or moderators and is no longer accessible.
-        </p>
-
-        <div className={styles.deletedActions}>
-          <button 
-            type="button"
-            className={styles.deletedPrimaryBtn} 
-            onClick={() => navigate('/communities')}
-          >
-            Explore Other Communities
-          </button>
-          <button 
-            type="button"
-            className={styles.deletedSecondaryBtn} 
-            onClick={() => navigate('/home')}
-          >
-            Go to Home Feed
-          </button>
-        </div>
-      </div>
-    </div>
+    <NotFoundState
+      type="community"
+      title="Community not found"
+      message="This community doesn't exist, has been deleted, or is no longer accessible."
+      actionLabel="Back to Communities"
+      onAction={() => navigate('/communities')}
+      secondaryActionLabel="Back to Home Feed"
+      onSecondaryAction={() => navigate('/home')}
+      coverPage={true}
+    />
   );
 }
 
-  if (error || isDeletedError) {
-    const errorMsg = apiError?.response?.data?.message || apiError?.message || '';
-    const isDeleted = isDeletedError || errorMsg === 'COMMUNITY_DELETED' || errorMsg.includes('COMMUNITY_DELETED') || apiError?.response?.status === 404;
+  if (isApiError || (!isApiLoading && !comm)) {
+    const status = apiError?.response?.status;
+    const isServerError = status >= 500;
 
-    if (isDeleted) {
-      return <DeletedCommunityView onBack={onBack} />;
+    if (isServerError) {
+      return (
+        <div className={styles.wrapper} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+          <ErrorState onRetry={retry} />
+        </div>
+      );
     }
 
     return (
-      <div className={styles.wrapper} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <ErrorState onRetry={retry} />
-      </div>
+      <NotFoundState
+        type="community"
+        title="Community not found"
+        message="This community doesn't exist, has been deleted, or is no longer accessible."
+        onAction={() => navigate('/home')}
+        coverPage={true}
+      />
     );
   }
-
-  if (!comm) return null;
 
   const handleToggleJoin = async (e) => {
     if (e) e.stopPropagation();
