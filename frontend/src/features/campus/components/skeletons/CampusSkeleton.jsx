@@ -20,7 +20,7 @@ export default function CampusSkeleton() {
         </header>
         {/* Nav tabs */}
         <div className={styles.stickyNav}>
-          {['Directory', 'Activities', 'Groups'].map(tab => (
+          {['Directory', 'Communities', 'Events'].map(tab => (
             <Skeleton
               key={tab}
               type="rect"
@@ -33,28 +33,26 @@ export default function CampusSkeleton() {
       </div>
 
       <div className={styles.campusBody}>
-        {/* Activities section */}
+        {/* Campus Events section */}
         <section className={styles.section}>
           <div className={styles.sectionHeaderRow}>
             <Skeleton type="rect" width="24px" height="24px" style={{ borderRadius: '6px' }} />
-            <Skeleton type="text" width="130px" height="16px" style={{ marginBottom: 0 }} />
+            <Skeleton type="text" width="150px" height="16px" style={{ marginBottom: 0 }} />
           </div>
-          {/* 2 crew card placeholders */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 380px), 1fr))', gap: '0.6rem' }}>
+          {/* Event poster card placeholders */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: '1rem' }}>
             {[0, 1].map(i => (
               <div key={i} style={{
                 background: 'var(--color-bg-white)',
                 border: '1px solid var(--color-border-light)',
                 borderRadius: 'var(--radius-lg)',
-                padding: '1rem',
-                display: 'flex',
-                gap: '1rem',
+                overflow: 'hidden',
               }}>
-                <Skeleton type="circle" width="48px" height="48px" />
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <Skeleton type="rect" width="60px" height="18px" style={{ borderRadius: '100px' }} />
-                  <Skeleton type="text" width="70%" height="14px" style={{ marginBottom: 0 }} />
-                  <Skeleton type="text" width="90%" height="10px" style={{ marginBottom: 0 }} />
+                <Skeleton type="rect" width="100%" height="180px" style={{ borderRadius: 0 }} />
+                <div style={{ padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <Skeleton type="text" width="80%" height="16px" style={{ marginBottom: 0 }} />
+                  <Skeleton type="text" width="50%" height="11px" style={{ marginBottom: 0 }} />
+                  <Skeleton type="rect" width="100%" height="34px" style={{ borderRadius: '10px', marginTop: '6px' }} />
                 </div>
               </div>
             ))}

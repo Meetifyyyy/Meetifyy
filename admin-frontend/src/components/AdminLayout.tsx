@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   LogOut,
   Sparkles,
+  Megaphone,
   Menu,
   X,
 } from 'lucide-react';
@@ -49,6 +50,7 @@ export const AdminLayout: React.FC = () => {
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { label: 'Colleges', path: '/colleges', icon: Building2, badge: pendingCount },
     { label: 'Users', path: '/users', icon: Users },
+    { label: 'Campus Reps', path: '/campus-reps', icon: Megaphone },
     { label: 'Moderation', path: '/reports', icon: ShieldAlert },
     { label: 'Support', path: '/support', icon: HelpCircle },
     { label: 'Feature Flags', path: '/flags', icon: Flag },

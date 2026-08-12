@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SupabaseService } from '../../supabase/supabase.service';
@@ -201,6 +202,128 @@ export class AdminUsersService {
     });
 
     return { success: true, user: updated };
+  }
+
+  /**
+   * Assign or revoke the Campus Representative role. This is the ONLY write path
+   * for `isCampusRep` in the entire system — no /api/* user-facing endpoint ever
+   * accepts this field, so the role is immutable from normal user flows.
+   */
+  async setCampusRep(id: string, isCampusRep: boolean) {
+    const repSelect = {
+      id: true,
+      username: true,
+      displayName: true,
+      avatar: true,
+      isCampusRep: true,
+      college: { select: { id: true, name: true } },
+    } as const;
+
+    // Run the invariant check + write in one transaction so two concurrent
+    // assignments can't both slip a second rep onto the same campus.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id },
+        select: { id: true, collegeId: true, isCampusRep: true },
+      });
+      if (!user) throw new NotFoundException('User not found');
+
+      if (isCampusRep) {
+        // A representative must belong to a campus (their event scope).
+        if (!user.collegeId) {
+          throw new BadRequestException(
+            'User has no verified campus. Cannot assign Campus Representative.',
+          );
+        }
+        // Enforce exactly one representative per campus.
+        if (!user.isCampusRep) {
+          const existing = await tx.user.findFirst({
+            where: {
+              collegeId: user.collegeId,
+              isCampusRep: true,
+              deletedAt: null,
+              NOT: { id },
+            },
+            select: { username: true, displayName: true },
+          });
+          if (existing) {
+            throw new ConflictException(
+              `This campus already has a representative (@${existing.username}). Revoke them first.`,
+            );
+          }
+        }
+      }
+
+      return tx.user.update({
+        where: { id },
+        data: { isCampusRep },
+        select: repSelect,
+      });
+    });
+
+    return { success: true, user: updated };
+  }
+
+  /**
+   * Lightweight, fast search for users who could be made a Campus Representative.
+   * Returns only the fields the assignment UI needs (no per-user _count
+   * subqueries), so it stays fast. Includes `isCampusRep` so the UI can render
+   * the correct Assign/Revoke state.
+   */
+  async searchRepCandidates(search?: string, collegeId?: string) {
+    const term = (search || '').trim();
+    if (!term) return { data: [] };
+
+    const where: any = {
+      deletedAt: null,
+      OR: [
+        { username: { contains: term, mode: 'insensitive' } },
+        { displayName: { contains: term, mode: 'insensitive' } },
+        { email: { contains: term, mode: 'insensitive' } },
+      ],
+    };
+    if (collegeId) where.collegeId = collegeId;
+
+    const users = await this.prisma.user.findMany({
+      where,
+      take: 20,
+      orderBy: { displayName: 'asc' },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatar: true,
+        isCampusRep: true,
+        college: { select: { id: true, name: true } },
+      },
+    });
+
+    return { data: users };
+  }
+
+  /**
+   * List all active Campus Representatives, optionally filtered by campus.
+   */
+  async listCampusReps(collegeId?: string) {
+    const where: any = { isCampusRep: true, deletedAt: null };
+    if (collegeId) where.collegeId = collegeId;
+
+    const reps = await this.prisma.user.findMany({
+      where,
+      orderBy: { displayName: 'asc' },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        email: true,
+        avatar: true,
+        isCampusRep: true,
+        createdAt: true,
+        college: { select: { id: true, name: true } },
+      },
+    });
+
+    return { data: reps, meta: { total: reps.length } };
   }
 
   async forceLogout(id: string) {

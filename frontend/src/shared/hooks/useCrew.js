@@ -14,7 +14,6 @@ import { useAuth } from '@shared/context/AuthContext';
 // ── Query keys ───────────────────────────────────────────────────────────────
 export const CREW_KEYS = {
   all:       ['activities'],
-  campus:    ['activities', 'campus'],
   byId:      (id) => ['activity', id],
   bookmarks: ['activities', 'bookmarks'],
 };
@@ -105,60 +104,6 @@ export function useActivitiesList() {
 }
 
 /**
- * Paginated campus-specific activities.
- */
-export function useCampusActivities(search = '') {
-  const queryClient = useQueryClient();
-  const { isLoggedIn } = useAuth();
-  const normSearch = (search || '').trim();
-  // Filter combos are cached independently; only the unfiltered list is IDB-hydrated.
-  const queryKey = normSearch ? [...CREW_KEYS.campus, { search: normSearch }] : CREW_KEYS.campus;
-
-  const query = useInfiniteQuery({
-    queryKey,
-    queryFn: async ({ pageParam }) => {
-      const data = await activitiesApi.getCampusActivities(20, pageParam, normSearch || undefined);
-      if (!pageParam && !normSearch) idbSet('activities', 'campus_page1', data);
-      return data;
-    },
-    enabled: isLoggedIn,
-    initialPageParam: undefined,
-    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
-    staleTime: 0,
-    refetchOnMount: 'always',
-    gcTime: 15 * 60 * 1000,
-    placeholderData: (prev) => prev,
-  });
-
-  useEffect(() => {
-    if (!normSearch) {
-      idbGet('activities', 'campus_page1').then((cached) => {
-        if (cached?.value && !queryClient.getQueryData(CREW_KEYS.campus)) {
-          queryClient.setQueryData(CREW_KEYS.campus, {
-            pages: [cached.value],
-            pageParams: [undefined],
-          });
-        }
-      });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const activities = useMemo(
-    () => query.data?.pages?.flatMap((p) => (Array.isArray(p?.activities) ? p.activities : (Array.isArray(p) ? p : []))) ?? [],
-    [query.data]
-  );
-
-  return {
-    campusActivities: activities,
-    isLoading: query.isLoading,
-    isFetchingNextPage: query.isFetchingNextPage,
-    hasNextPage: query.hasNextPage,
-    fetchNextPage: query.fetchNextPage,
-  };
-}
-
-/**
  * Saved/bookmarked activities.
  */
 export function useSavedActivitiesQuery() {
@@ -234,7 +179,6 @@ export function useJoinActivity() {
     onSuccess: (data, id) => {
       // Clear IDB so next session doesn't restore stale pre-join state
       idbDelete('activities', 'all_page1');
-      idbDelete('activities', 'campus_page1');
       queryClient.invalidateQueries({ queryKey: ['activities'], refetchType: 'active' });
       queryClient.invalidateQueries({ queryKey: ['activity'], refetchType: 'active' });
       if (id) queryClient.invalidateQueries({ queryKey: CREW_KEYS.byId(id), refetchType: 'active' });
@@ -248,7 +192,6 @@ export function useLeaveActivity() {
     mutationFn: (id) => activitiesApi.leave(id),
     onSuccess: (data, id) => {
       idbDelete('activities', 'all_page1');
-      idbDelete('activities', 'campus_page1');
       queryClient.invalidateQueries({ queryKey: ['activities'], refetchType: 'active' });
       queryClient.invalidateQueries({ queryKey: ['activity'], refetchType: 'active' });
       if (id) queryClient.invalidateQueries({ queryKey: CREW_KEYS.byId(id), refetchType: 'active' });

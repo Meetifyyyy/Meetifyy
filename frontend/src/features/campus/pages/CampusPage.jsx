@@ -1,30 +1,35 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { useCampusActivities } from '@shared/hooks/useCrew';
 import { useCampusUsers } from '@shared/hooks/useProfile';
-import { mapActivity } from '@shared/utils/mapActivity';
 import { useCampusCommunities } from '@shared/hooks/useCommunities';
+import { useCampusEvents, useDeleteCampusEvent } from '@shared/hooks/useCampusEvents';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './CampusPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import CreateCommunityModal from '@features/communities/components/modals/CreateCommunityModal';
-import CrewCard from '@features/crew/components/cards/CrewCard';
-import { Plus, Users, Calendar } from 'lucide-react';
-import ActivityTemplatesRow from '../components/ActivityTemplatesRow';
+import CampusEventSection from '@features/campus-events/components/CampusEventSection';
+import CampusEventForm from '@features/campus-events/components/CampusEventForm';
+import eventStyles from '@features/campus-events/components/CampusEvents.module.css';
+import { Plus, Users, CalendarPlus, Megaphone, ChevronRight } from 'lucide-react';
 
 export default function CampusPage() {
   const navigate = useNavigate();
   const { currentUser, collegeName: authCollegeName } = useAuth();
-  // Only the two slices this page actually renders — no god-hook fan-out.
-  const { campusActivities: rawCampusActivities } = useCampusActivities();
-  const campusCrewActivities = useMemo(() => (rawCampusActivities || []).map(mapActivity), [rawCampusActivities]);
+  const isCampusRep = Boolean(currentUser?.isCampusRep);
+
   const { campusUsers } = useCampusUsers(50);
   const { campusCommunities } = useCampusCommunities();
 
+  // Lightweight discovery surface: only upcoming events here. The full
+  // Upcoming/Ongoing/Past breakdown lives on the dedicated /campus/events page.
+  const upcoming = useCampusEvents('upcoming');
+  const deleteEvent = useDeleteCampusEvent();
+
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [eventFormState, setEventFormState] = useState(null); // null | { event? }
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -43,50 +48,23 @@ export default function CampusPage() {
   const collegeCommunity = campusCommunities[userCollegeId];
   const collegeName = collegeCommunity?.name || authCollegeName;
 
-  const recentActivities = useMemo(() => {
-    const isActivityEnded = (act) => {
-      if (!act) return true;
-      const status = (act.status || '').toUpperCase();
-      if (status === 'ENDED' || status === 'CANCELLED' || status === 'CLOSED' || status === 'COMPLETED') return true;
-      const startDateStr = act.startDate || act.date;
-      if (startDateStr) {
-        const start = new Date(startDateStr);
-        if (!isNaN(start.getTime())) {
-          let durationHours = 2;
-          if (act.duration) {
-            const match = String(act.duration).match(/(\d+)/);
-            if (match) durationHours = parseInt(match[1], 10);
-          }
-          const calculatedEnd = new Date(start.getTime() + durationHours * 60 * 60 * 1000);
-          if (new Date() >= calculatedEnd) return true;
-        }
-      }
-      return false;
-    };
-
-    const isCampusActivity = (act) => {
-      if (!act) return false;
-      const vis = String(act.visibility || '').toUpperCase();
-      if (vis === 'PRIVATE') return false;
-      if (vis === 'COLLEGE_ONLY' || vis === 'COLLEGE' || act.shareToCampus || act.isCollegeOnly) return true;
-      const join = String(act.whoCanJoin || '').toLowerCase();
-      if (join === 'college' || join === 'school' || join === 'campus') return true;
-      return false;
-    };
-
-    return campusCrewActivities
-      .filter(act => isCampusActivity(act) && !isActivityEnded(act))
-      .sort((a, b) => new Date(a.startDate || a.date) - new Date(b.startDate || b.date))
-      .slice(0, 2);
-  }, [campusCrewActivities]);
-
   const suggestedUsers = useMemo(() => {
-    // useCampusUsers already returns this college's users; just exclude self.
     return (campusUsers || []).filter(u => u.id !== currentUser?.id).slice(0, 4);
   }, [campusUsers, currentUser]);
 
   const handleCreateGroup = async (id) => {
     navigate(`/communities/${id}`, { state: { from: '/campus' } });
+  };
+
+  const handleDeleteEvent = async (event) => {
+    if (!event?.id) return;
+    if (!window.confirm(`Delete "${event.title}"? This cannot be undone.`)) return;
+    try {
+      await deleteEvent.mutateAsync(event.id);
+      showToast('Event deleted', 'success');
+    } catch (err) {
+      showToast(err?.message || 'Failed to delete event', 'error');
+    }
   };
 
   return (
@@ -107,23 +85,18 @@ export default function CampusPage() {
 
             {isPlusMenuOpen && (
               <div className={styles.plusDropdownMenu}>
+                {isCampusRep && (
+                  <button
+                    className={styles.plusMenuItem}
+                    onClick={() => { setIsPlusMenuOpen(false); setEventFormState({}); }}
+                  >
+                    <CalendarPlus size={18} className={styles.plusMenuIcon} />
+                    <span>Create event</span>
+                  </button>
+                )}
                 <button
                   className={styles.plusMenuItem}
-                  onClick={() => {
-                    setIsPlusMenuOpen(false);
-                    navigate('/crew/create', { state: { returnTo: '/campus' } });
-                  }}
-                >
-                  <Calendar size={18} className={styles.plusMenuIcon} />
-                  <span>Create activity</span>
-                </button>
-
-                <button
-                  className={styles.plusMenuItem}
-                  onClick={() => {
-                    setIsPlusMenuOpen(false);
-                    setIsGroupModalOpen(true);
-                  }}
+                  onClick={() => { setIsPlusMenuOpen(false); setIsGroupModalOpen(true); }}
                 >
                   <Users size={18} className={styles.plusMenuIcon} />
                   <span>Create community</span>
@@ -135,57 +108,70 @@ export default function CampusPage() {
 
         {/* NAVIGATION TABS */}
         <div className={styles.stickyNav}>
-          <button
-            className={styles.navTab}
-            onClick={() => navigate('/campus/directory')}
-          >
+          <button className={styles.navTab} onClick={() => navigate('/campus/directory')}>
             <span className={styles.tabEmoji}>🤩</span>
             <span>Directory</span>
           </button>
-          <button
-            className={styles.navTab}
-            onClick={() => navigate('/campus/activities')}
-          >
-            <span className={styles.tabEmoji}>🎟️</span>
-            <span>Activities</span>
-          </button>
-          <button
-            className={styles.navTab}
-            onClick={() => navigate('/campus/communities')}
-          >
+          <button className={styles.navTab} onClick={() => navigate('/campus/communities')}>
             <span className={styles.tabEmoji}>🫧</span>
             <span>Communities</span>
+          </button>
+          <button className={styles.navTab} onClick={() => navigate('/campus/events')}>
+            <span className={styles.tabEmoji}>🎟️</span>
+            <span>Events</span>
           </button>
         </div>
       </div>
 
       {/* CAMPUS BODY SECTIONS */}
       <div className={styles.campusBody}>
-        
-        {/* Section 1: add your activity */}
+
+        {/* Campus Events — lightweight discovery: upcoming only. */}
         <section className={styles.section}>
-          <div className={styles.sectionHeaderRow}>
-            <span className={styles.sectionEmoji}>🎟️</span>
-            <h2 className={styles.sectionTitleText}>add your activity</h2>
+          <div className={styles.sectionHeaderRow} style={{ justifyContent: 'space-between' }}>
+            <div className={styles.sectionHeaderRow}>
+              <span className={styles.sectionEmoji}>🎟️</span>
+              <h2 className={styles.sectionTitleText}>campus events</h2>
+            </div>
+            <button className={eventStyles.createBtn} style={{ background: 'transparent', color: 'var(--color-primary, #8f0c13)', border: '1px solid var(--color-border, rgba(0,0,0,0.12))' }} onClick={() => navigate('/campus/events')}>
+              See all <ChevronRight size={15} />
+            </button>
           </div>
-          {/* Recent activities preview */}
-          {recentActivities.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 380px), 1fr))', gap: '0.6rem' }}>
-              {recentActivities.map(act => (
-                <CrewCard
-                  key={act.id}
-                  activity={act}
-                  onClick={() => navigate(`/crew/${act.id}`, { state: { activity: act, from: '/campus' } })}
-                />
-              ))}
+
+          {isCampusRep && (
+            <div className={eventStyles.repBanner}>
+              <div className={eventStyles.repBannerText}>
+                <span className={eventStyles.repBannerTitle}>
+                  <Megaphone size={15} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                  You're a Campus Representative
+                </span>
+                <span className={eventStyles.repBannerSub}>Publish official events for {collegeName}.</span>
+              </div>
+              <button className={eventStyles.repCreateCta} onClick={() => setEventFormState({})}>
+                <CalendarPlus size={16} /> Create event
+              </button>
             </div>
           )}
-          <ActivityTemplatesRow returnTo="/campus" />
+
+          <CampusEventSection
+            scope="upcoming"
+            title="Upcoming events"
+            emoji="📅"
+            events={upcoming.events}
+            isLoading={upcoming.isLoading}
+            emptyText="No upcoming events yet. Check back soon!"
+            canManage={isCampusRep}
+            onEdit={(ev) => setEventFormState({ event: ev })}
+            onDelete={handleDeleteEvent}
+            hasNextPage={upcoming.hasNextPage}
+            isFetchingNextPage={upcoming.isFetchingNextPage}
+            fetchNextPage={upcoming.fetchNextPage}
+          />
         </section>
 
         {/* Wrapper for Side by Side Sections on Desktop */}
         <div className={styles.sideBySideDesktop}>
-          {/* Section 2: you may know */}
+          {/* you may know */}
           <section className={styles.section}>
             <div className={styles.sectionHeaderRow}>
               <span className={styles.sectionEmoji}>🤩</span>
@@ -212,15 +198,13 @@ export default function CampusPage() {
             </button>
           </section>
 
-          {/* Section 3: discover communities */}
+          {/* discover communities */}
           <section className={styles.section}>
             <div className={styles.sectionHeaderRow}>
               <span className={styles.sectionEmoji}>🫧</span>
               <h2 className={styles.sectionTitleText}>discover communities</h2>
             </div>
-            <div className={styles.discoverGroupsCard} onClick={() => {
-              setIsGroupModalOpen(true);
-            }}>
+            <div className={styles.discoverGroupsCard} onClick={() => setIsGroupModalOpen(true)}>
               <div className={styles.dashedAddSquare}>
                 <Users size={20} />
                 <span className={styles.plusOverlay}>+</span>
@@ -231,12 +215,19 @@ export default function CampusPage() {
         </div>
       </div>
 
-
       {isGroupModalOpen && (
-        <CreateCommunityModal 
-          onClose={() => setIsGroupModalOpen(false)} 
-          onCreated={handleCreateGroup} 
+        <CreateCommunityModal
+          onClose={() => setIsGroupModalOpen(false)}
+          onCreated={handleCreateGroup}
           isCampusCommunity={true}
+        />
+      )}
+
+      {eventFormState && (
+        <CampusEventForm
+          event={eventFormState.event || null}
+          onClose={() => setEventFormState(null)}
+          onSaved={() => setEventFormState(null)}
         />
       )}
     </main>

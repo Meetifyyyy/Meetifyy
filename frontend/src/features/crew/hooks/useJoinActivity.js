@@ -137,7 +137,6 @@ export function useJoinActivity() {
         : activitiesApi.leave(activityId, { signal }));
       // Bust IDB so navigating back to the list never loads stale pre-mutation data
       idbDelete('activities', 'all_page1');
-      idbDelete('activities', 'campus_page1');
       return result;
     } catch (err) {
       // Swallow benign "already joined / not a member" conflicts — the optimistic

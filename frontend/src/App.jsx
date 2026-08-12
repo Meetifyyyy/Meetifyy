@@ -78,8 +78,9 @@ const CreateActivityPage = lazyWithRetry(() => import('./features/crew/pages/Cre
 const NotificationsRoute = lazyWithRetry(() => import('./features/notifications/pages/NotificationsRoute'));
 const CampusPage = lazyWithRetry(() => import('./features/campus/pages/CampusPage'));
 const DirectoryPage = lazyWithRetry(() => import('./features/campus/pages/DirectoryPage'));
-const ActivitiesPage = lazyWithRetry(() => import('./features/campus/pages/ActivitiesPage'));
 const CampusCommunitiesPage = lazyWithRetry(() => import('./features/campus/pages/CampusCommunitiesPage'));
+const CampusEventsPage = lazyWithRetry(() => import('./features/campus-events/pages/CampusEventsPage'));
+const CampusEventDetailPage = lazyWithRetry(() => import('./features/campus-events/pages/CampusEventDetailPage'));
 const SavedPage = lazyWithRetry(() => import('./features/feed/pages/SavedPage'));
 const AboutPage = lazyWithRetry(() => import('./features/info/pages/AboutPage'));
 const CommunityGuidelinesPage = lazyWithRetry(() => import('./features/info/pages/CommunityGuidelinesPage'));
@@ -310,8 +311,9 @@ export default function App() {
             { path: '/notifications',              element: withBoundary(<NotificationsRoute />, <NotificationsSkeleton />), handle: { wide: true } },
             { path: '/campus',                     element: withBoundary(<CampusPage />, <CampusSkeleton />), handle: { wide: true } },
             { path: '/campus/directory',           element: withBoundary(<DirectoryPage />, null), handle: { wide: true } },
-            { path: '/campus/activities',          element: withBoundary(<ActivitiesPage />, null), handle: { wide: true } },
             { path: '/campus/communities',         element: withBoundary(<CampusCommunitiesPage />, null), handle: { wide: true } },
+            { path: '/campus/events',              element: withBoundary(<CampusEventsPage />, null), handle: { wide: true } },
+            { path: '/campus/events/:id',          element: withBoundary(<CampusEventDetailPage />, null), handle: { wide: true } },
             { path: '/crew',                       element: withBoundary(<FindYourCrewPage />, <CrewSkeleton />), handle: { wide: true } },
             { path: '/crew/create',                element: withBoundary(<CreateActivityPage />, null), handle: { wide: true } },
             { path: '/crew/:id',                   element: withBoundary(<ActivityDetailPage />, null), handle: { wide: true } },

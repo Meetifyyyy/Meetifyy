@@ -61,6 +61,7 @@ export class AuditInterceptor implements NestInterceptor {
         else if (url.includes('/reset-college')) action = 'USER_RESET_COLLEGE';
         else if (url.includes('/capabilities')) action = 'USER_UPDATE_CAPABILITIES';
         else if (url.includes('/force-logout')) action = 'USER_FORCE_LOGOUT';
+        else if (url.includes('/campus-rep')) action = 'USER_SET_CAMPUS_REP';
         else if (url.includes('/status')) action = `${targetType}_STATUS_CHANGE`;
         else if (url.includes('/domains')) action = 'COLLEGE_DOMAIN_CHANGE';
         else if (url.includes('/reply')) action = 'SUPPORT_TICKET_REPLY';

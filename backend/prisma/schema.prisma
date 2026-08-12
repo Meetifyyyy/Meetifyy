@@ -32,6 +32,7 @@ model College {
   domains       CollegeDomain[]
   communities   Community[]     @relation("CommunityCollege")
   activities    CrewActivity[]  @relation("ActivityCollege")
+  campusEvents  CampusEvent[]
   users         User[]
 
   @@index([status])
@@ -110,6 +111,7 @@ model Media {
   coverCommunities    Community[]    @relation("CommunityCover")
   avatarConversations Conversation[] @relation("ConversationAvatar")
   coverActivities     CrewActivity[] @relation("ActivityCover")
+  campusEventPosters  CampusEvent[]  @relation("CampusEventPoster")
   owner               User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   post                Post?          @relation(fields: [postId], references: [id], onDelete: Cascade)
   messageAttachments  Message[]      @relation("MessageAttachment")
@@ -148,7 +150,11 @@ model User {
   canPost                    Boolean                     @default(true)
   canMessage                 Boolean                     @default(true)
   canActivity                Boolean                     @default(true)
+  // Campus Representative flag. Assignable ONLY by a Super Admin (admin portal);
+  // never accepted by any /api/* user-facing endpoint or profile update.
+  isCampusRep                Boolean                     @default(false)
   activityBookmarks          ActivityBookmark[]
+  campusEventsCreated        CampusEvent[]               @relation("CampusEventCreator")
   invitationsReceived        ActivityInvitation[]        @relation("ActivityInvitationsReceived")
   invitationsSent            ActivityInvitation[]        @relation("ActivityInvitationsSent")
   blocksReceived             Block[]                     @relation("Blocked")
@@ -199,6 +205,8 @@ model User {
   @@index([deletedAt, createdAt])
   @@index([lastSeenAt])
   @@index([createdAt])
+  // Campus Representatives listing (Super Admin portal), scoped per campus.
+  @@index([collegeId, isCampusRep])
   // Empty-query invite/connections list: WHERE accountStatus='ACTIVE' ORDER BY createdAt DESC.
   @@index([accountStatus, createdAt(sort: Desc)])
   // Speeds up the signup email-availability check (OR email/collegeEmail).
@@ -509,6 +517,39 @@ model ActivityDiscussionMessage {
   // Primary retrieval pattern: newest-first messages for an activity, cursor-paginated.
   @@index([activityId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([userId])
+}
+
+/// Official campus events published by Campus Representatives (fests, workshops,
+/// hackathons, seminars, club/department/sports/cultural events). Distinct from the
+/// user-generated CrewActivity model. Expiry is time-derived (see status flow).
+model CampusEvent {
+  id              String            @id @default(uuid())
+  campusId        String
+  title           String
+  description     String?           @db.VarChar(4000)
+  posterUrl       String?
+  posterMediaId   String?
+  eventDate       DateTime
+  startTime       DateTime
+  endTime         DateTime
+  hostedBy        String
+  venue           String?
+  registrationUrl String?
+  createdBy       String
+  status          CampusEventStatus @default(DRAFT)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+  campus          College           @relation(fields: [campusId], references: [id])
+  poster          Media?            @relation("CampusEventPoster", fields: [posterMediaId], references: [id])
+  creator         User              @relation("CampusEventCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  // Upcoming/ongoing discovery: WHERE campusId=? AND status=? ORDER BY startTime.
+  @@index([campusId, status, startTime])
+  // Ongoing/past discovery + auto-expire sweep: filter/sort by endTime.
+  @@index([campusId, status, endTime])
+  @@index([createdBy])
+  @@index([deletedAt, campusId, status, startTime])
 }
 
 model Notification {
@@ -1060,6 +1101,12 @@ enum CommunityRole {
   OWNER
   MODERATOR
   MEMBER
+}
+
+enum CampusEventStatus {
+  DRAFT
+  PUBLISHED
+  EXPIRED
 }
 
 enum CrewActivityStatus {

@@ -16,6 +16,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CommunitiesModule } from './communities/communities.module';
 import { ActivitiesModule } from './activities/activities.module';
+import { CampusEventsModule } from './campus-events/campus-events.module';
 import { UsersModule } from './users/users.module';
 import { MessagesModule } from './messages/messages.module';
 import { MessagingCoreModule } from './messages/core/messaging-core.module';
@@ -96,6 +97,7 @@ import { DomainValidatorModule } from './common/services/domain-validator.module
     RealtimeModule,
     CommunitiesModule,
     ActivitiesModule,
+    CampusEventsModule,
     UsersModule,
     MessagesModule,
     MessagingCoreModule,

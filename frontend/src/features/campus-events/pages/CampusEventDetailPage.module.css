@@ -1,0 +1,176 @@
+.page {
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 0 0 4rem;
+  box-sizing: border-box;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 0.5rem;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  background: var(--color-bg-elevated, #fff);
+  color: var(--color-text-main);
+  cursor: pointer;
+}
+
+.backBtn:hover { background: var(--color-bg-soft, rgba(0, 0, 0, 0.05)); }
+
+/* Poster shown at its natural aspect ratio — never cropped or distorted. The
+   neutral frame keeps the layout tidy for any ratio; the image is contained. */
+.posterHero {
+  width: 100%;
+  border-radius: var(--radius-xl, 18px);
+  overflow: hidden;
+  background: var(--color-bg-soft, #f1f1f4);
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.posterHero img {
+  max-width: 100%;
+  max-height: 78vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.posterHeroFallback {
+  width: 100%;
+  min-height: 220px;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #8f0c13 0%, #b91c1c 100%);
+  color: #fff;
+  font-family: "Changa One", cursive;
+  font-size: 1.6rem;
+  text-align: center;
+  padding: 1.5rem;
+}
+
+.content { padding: 0 0.75rem; display: flex; flex-direction: column; gap: 1rem; }
+
+.statusPill {
+  align-self: flex-start;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  color: #fff;
+}
+.pillLive { background: #16a34a; }
+.pillUpcoming { background: #2563eb; }
+.pillPast { background: #6b7280; }
+.pillDraft { background: #ca8a04; }
+
+.title {
+  font-family: "Changa One", cursive;
+  font-weight: normal;
+  font-size: 2rem;
+  line-height: 1.15;
+  color: var(--color-text-main);
+  margin: 0;
+}
+
+.hostedBy { font-size: 0.95rem; font-weight: 700; color: var(--color-primary, #8f0c13); }
+
+.metaGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.85rem;
+  background: var(--color-bg-soft, rgba(0, 0, 0, 0.03));
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.06));
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+}
+
+.metaItem { display: flex; gap: 0.65rem; align-items: flex-start; }
+.metaItem svg { flex-shrink: 0; margin-top: 2px; color: var(--color-primary, #8f0c13); }
+.metaLabel { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--color-text-light, #999); font-weight: 700; }
+.metaValue { font-size: 0.9rem; color: var(--color-text-main); font-weight: 500; }
+
+.sectionLabel {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--color-text-main);
+  margin: 0.5rem 0 0;
+}
+
+.description {
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: var(--color-text-muted, #555);
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.registerBar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.85rem 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.registerBtn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--color-primary, #8f0c13);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.registerBtn:hover { filter: brightness(1.08); }
+
+.registerBtn.disabled {
+  background: var(--color-bg-soft, #e5e7eb);
+  color: var(--color-text-light, #9ca3af);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* States */
+.centerState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 4rem 1.5rem;
+  text-align: center;
+  color: var(--color-text-light, #999);
+}
+
+.skelBlock { background: var(--color-bg-soft, #eee); border-radius: 10px; }

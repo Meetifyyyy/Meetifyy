@@ -67,19 +67,9 @@ export default function SavedPage() {
     queryFn: () => activitiesApi.getAll(),
     staleTime: 30_000,
   });
-  const { data: rawCampusActivitiesData } = useQuery({
-    queryKey: ['campusActivities'],
-    queryFn: () => activitiesApi.getCampusActivities(),
-    staleTime: 30_000,
-  });
-
-  const rawActivitiesList = Array.isArray(rawActivitiesData) 
-    ? rawActivitiesData 
+  const rawActivitiesList = Array.isArray(rawActivitiesData)
+    ? rawActivitiesData
     : (Array.isArray(rawActivitiesData?.activities) ? rawActivitiesData.activities : []);
-
-  const rawCampusActivitiesList = Array.isArray(rawCampusActivitiesData) 
-    ? rawCampusActivitiesData 
-    : (Array.isArray(rawCampusActivitiesData?.activities) ? rawCampusActivitiesData.activities : []);
 
   const fullPosts = postsData?.pages.flatMap(page => page.posts || []) ?? [];
 
@@ -94,7 +84,7 @@ export default function SavedPage() {
       if (a && a.id) actMap.set(a.id, a);
     });
     // Add any raw/campus activity that is in savedActivities array
-    [...rawActivitiesList, ...rawCampusActivitiesList].forEach(a => {
+    rawActivitiesList.forEach(a => {
       if (a && a.id && savedActivities?.includes(a.id) && !actMap.has(a.id)) {
         actMap.set(a.id, a);
       }

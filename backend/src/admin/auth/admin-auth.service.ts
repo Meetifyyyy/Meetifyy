@@ -3,13 +3,17 @@ import {
   UnauthorizedException,
   ForbiddenException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../../email/email.service';
+import { RedisService } from '../../redis/redis.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
@@ -31,7 +35,33 @@ export class AdminAuthService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly emailService: EmailService,
+    @Optional() private readonly redisService?: RedisService,
   ) {}
+
+  /**
+   * Fixed-window brute-force guard for admin auth. Backed by Redis so it holds
+   * across replicas; fails OPEN if Redis is unavailable (never lock admins out
+   * due to infra). Throws HTTP 429 when the window limit is exceeded.
+   */
+  private async enforceRateLimit(bucket: string, max: number, windowSec: number) {
+    const client = this.redisService?.getClient?.();
+    if (!client) return; // fail-open when Redis isn't configured
+    const key = `admin-auth-rl:${bucket}`;
+    try {
+      const count = await client.incr(key);
+      if (count === 1) await client.expire(key, windowSec);
+      if (count > max) {
+        const ttl = await client.ttl(key).catch(() => windowSec);
+        throw new HttpException(
+          `Too many attempts. Try again in ${Math.max(1, ttl)}s.`,
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      // Redis error → fail open, don't block legitimate admins.
+    }
+  }
 
   async onModuleInit() {
     await this.seedDefaultSuperAdmin();
@@ -115,6 +145,11 @@ export class AdminAuthService implements OnModuleInit {
   async login(dto: AdminLoginDto, ip: string, userAgent: string) {
     const email = dto.email.toLowerCase().trim();
 
+    // Brute-force protection: cap attempts per IP and per (IP+email) in a 15-min
+    // window. Per-IP catches password spraying; per-email catches targeting.
+    await this.enforceRateLimit(`login:ip:${ip}`, 20, 15 * 60);
+    await this.enforceRateLimit(`login:id:${ip}:${email}`, 8, 15 * 60);
+
     const admin = await this.prisma.superAdmin.findUnique({
       where: { email },
     });
@@ -147,8 +182,8 @@ export class AdminAuthService implements OnModuleInit {
       throw new UnauthorizedException('Invalid admin credentials');
     }
 
-    // Generate 6-digit OTP
-    const rawOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate 6-digit OTP with a cryptographically secure RNG (not Math.random).
+    const rawOtp = crypto.randomInt(100000, 1000000).toString();
     const otpHash = this.hashOtp(rawOtp);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
@@ -188,6 +223,10 @@ export class AdminAuthService implements OnModuleInit {
    * Step 2: Verify Email OTP
    */
   async verifyOtp(dto: VerifyOtpDto, ip: string, userAgent: string) {
+    // Cap OTP submissions per IP (defense-in-depth on top of the per-record
+    // 5-attempt lockout) to blunt distributed guessing.
+    await this.enforceRateLimit(`verify-otp:ip:${ip}`, 30, 15 * 60);
+
     let payload: any;
     try {
       payload = jwt.verify(dto.pendingToken, this.getPendingSecret());
@@ -255,6 +294,10 @@ export class AdminAuthService implements OnModuleInit {
    * Step 3: Verify optional TOTP (Google Authenticator)
    */
   async verifyTotp(dto: VerifyTotpDto, ip: string, userAgent: string) {
+    // A 6-digit TOTP has only 1M values — rate-limit submissions per IP so the
+    // 5-minute pending window can't be exhausted by brute force.
+    await this.enforceRateLimit(`verify-totp:ip:${ip}`, 15, 15 * 60);
+
     let payload: any;
     try {
       payload = jwt.verify(dto.pendingToken, this.getPendingSecret());

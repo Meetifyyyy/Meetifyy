@@ -508,12 +508,6 @@ export const activitiesApi = {
     if (cursor) params.set('cursor', cursor);
     return apiClient.get(`/api/activities?${params.toString()}`);
   },
-  getCampusActivities: (limit = 20, cursor, search) => {
-    const params = new URLSearchParams({ limit: String(limit) });
-    if (cursor) params.set('cursor', cursor);
-    if (search) params.set('search', search);
-    return apiClient.get(`/api/activities/campus?${params.toString()}`);
-  },
   getMyActivities: () => apiClient.get('/api/activities/me'),
   getById: (id) => apiClient.get(`/api/activities/${id}`),
   create: (data) => apiClient.post('/api/activities', data),
@@ -732,6 +726,22 @@ export const uploadsApi = {
     formData.append('folder', folder);
     return apiClient.post('/api/media/upload', formData);
   }
+};
+
+// ── Campus Events (official campus event discovery) ────────────────────────────
+export const campusEventsApi = {
+  list: (scope = 'upcoming', { limit = 20, cursor, campusId } = {}) => {
+    const params = new URLSearchParams({ scope, limit: String(limit) });
+    if (cursor) params.set('cursor', cursor);
+    if (campusId) params.set('campusId', campusId);
+    return apiClient.get(`/api/campus-events?${params.toString()}`);
+  },
+  getMine: () => apiClient.get('/api/campus-events/mine'),
+  getById: (id) => apiClient.get(`/api/campus-events/${id}`),
+  create: (data) => apiClient.post('/api/campus-events', data),
+  update: (id, data) => apiClient.patch(`/api/campus-events/${id}`, data),
+  publish: (id) => apiClient.post(`/api/campus-events/${id}/publish`),
+  delete: (id) => apiClient.delete(`/api/campus-events/${id}`),
 };
 
 export const notificationsApi = {

@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useAuth } from '@shared/context/AuthContext';
-import { useActivities, useCampusActivities, useSavedActivitiesQuery, useMyActivitiesQuery } from '@shared/hooks/useCrew';
+import { useActivities, useSavedActivitiesQuery, useMyActivitiesQuery } from '@shared/hooks/useCrew';
 import { useDebounce } from '@shared/hooks/useDebounce';
 import { prefetchActivity } from '@shared/hooks/prefetch';
 import PageLayout from '@layout/PageLayout';
@@ -29,7 +29,6 @@ export default function FindYourCrewPage() {
     hasNextPage,
     fetchNextPage,
   } = useActivities();
-  const { campusActivities: rawCampusActivities } = useCampusActivities();
   const { savedActivitiesData } = useSavedActivitiesQuery();
   const { myActivitiesData } = useMyActivitiesQuery();
 

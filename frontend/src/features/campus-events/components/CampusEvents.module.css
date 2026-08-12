@@ -1,0 +1,337 @@
+/* Campus Events — official event discovery surface */
+
+.sectionGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.groupTitle {
+  font-family: "Changa One", cursive;
+  font-weight: normal;
+  font-size: 1.2rem;
+  color: var(--color-text-main);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.groupCount {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-light, #888);
+  background: var(--color-bg-soft, rgba(0, 0, 0, 0.05));
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
+.liveDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #16a34a;
+  box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.6);
+  animation: pulse 1.8s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(22, 163, 74, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
+
+/* Uniform, responsive grid — width-driven columns, compact on mobile so users
+   can browse multiple posters at once rather than one huge card per row. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.7rem;
+  }
+}
+
+/* ── Event Card ── */
+.card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-elevated, #fff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--radius-xl, 16px);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+}
+
+/* Consistent portrait-friendly frame with a neutral backdrop. The poster is
+   contained (never cropped/stretched) so any aspect ratio — A4 portrait, 4:5,
+   square, landscape — is preserved and letterboxed within the uniform footprint. */
+.posterWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background: var(--color-bg-soft, #f1f1f4);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.poster {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.posterFallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #8f0c13 0%, #b91c1c 100%);
+  color: rgba(255, 255, 255, 0.95);
+  font-family: "Changa One", cursive;
+  font-size: 1.15rem;
+  text-align: center;
+  padding: 1rem;
+}
+
+/* Rep management controls overlaid on the poster (kept off the metadata area). */
+.posterControls {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 0.35rem;
+  z-index: 2;
+}
+
+.statusBadge {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
+  color: #fff;
+}
+
+.statusLive { background: rgba(22, 163, 74, 0.92); }
+.statusUpcoming { background: rgba(37, 99, 235, 0.92); }
+.statusPast { background: rgba(107, 114, 128, 0.92); }
+.statusDraft { background: rgba(202, 138, 4, 0.95); }
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.85rem 0.95rem 1rem;
+  flex: 1;
+}
+
+.cardTitle {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  margin: 0;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #666);
+}
+
+.metaRow svg { flex-shrink: 0; opacity: 0.75; }
+
+.hostedBy {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-primary, #8f0c13);
+}
+
+.desc {
+  font-size: 0.82rem;
+  color: var(--color-text-muted, #666);
+  line-height: 1.4;
+  margin: 0.15rem 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.registerBtn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: var(--color-primary, #8f0c13);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+  text-decoration: none;
+}
+
+.registerBtn:hover { filter: brightness(1.08); }
+
+.registerBtn.disabled {
+  background: var(--color-bg-soft, #e5e7eb);
+  color: var(--color-text-light, #9ca3af);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  background: var(--color-bg-elevated, #fff);
+  color: var(--color-text-muted, #555);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.iconBtn:hover { background: var(--color-bg-soft, rgba(0, 0, 0, 0.05)); }
+.iconBtn.danger:hover { color: #dc2626; }
+
+/* Overlay variant (on poster) */
+.posterIconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(3px);
+  transition: background 0.15s ease;
+}
+
+.posterIconBtn:hover { background: rgba(0, 0, 0, 0.75); }
+.posterIconBtn.danger:hover { background: #dc2626; }
+
+/* ── Empty state ── */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem 1rem;
+  border: 1px dashed var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: var(--radius-xl, 16px);
+  color: var(--color-text-light, #999);
+  text-align: center;
+}
+
+.emptyEmoji { font-size: 1.6rem; }
+.emptyText { font-size: 0.88rem; margin: 0; }
+
+/* ── Rep create button ── */
+.createBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.createBtn:hover { background: rgba(0, 0, 0, 0.4); }
+
+.repBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, rgba(143, 12, 19, 0.08), rgba(185, 28, 28, 0.05));
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--radius-xl, 16px);
+  padding: 0.75rem 1rem;
+}
+
+.repBannerText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.repBannerTitle { font-size: 0.9rem; font-weight: 700; color: var(--color-text-main); }
+.repBannerSub { font-size: 0.78rem; color: var(--color-text-muted, #666); }
+
+.repCreateCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: var(--color-primary, #8f0c13);
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.repCreateCta:hover { filter: brightness(1.08); }

@@ -23,19 +23,6 @@ export class ActivitiesController {
     return this.activitiesService.getAllActivities(user?.id, parsedLimit, cursor);
   }
 
-  @Get('campus')
-  // @CacheControl removed for cache coherency after optimistic mutations
-  async getCampusActivities(
-    @CurrentUser() user: any,
-    @Query('limit') limit?: string,
-    @Query('cursor') cursor?: string,
-    @Query('search') search?: string
-  ) {
-    const rawLimit = parseInt(limit || '', 10);
-    const parsedLimit = !isNaN(rawLimit) && rawLimit > 0 ? rawLimit : 20;
-    return this.activitiesService.getCampusActivities(user?.id, parsedLimit, cursor, search);
-  }
-
   @Get('me')
   // @CacheControl removed
   async getMyActivities(@CurrentUser() user: any) {

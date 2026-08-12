@@ -7,10 +7,9 @@ import { getMediaUrl } from '@shared/api/apiClient';
 
 export function SharedActivityPreview({ activity: passedActivity }) {
   const navigate = useNavigate();
-  const { crewActivities, campusCrewActivities } = useData();
+  const { crewActivities } = useData();
 
-  const allActs = [...(crewActivities || []), ...(campusCrewActivities || [])];
-  const dbActivity = allActs.find(act => act.id === passedActivity?.id) || {};
+  const dbActivity = (crewActivities || []).find(act => act.id === passedActivity?.id) || {};
   const activity = { ...dbActivity, ...passedActivity };
 
   if (!activity || (!activity.id && !activity.title)) return null;

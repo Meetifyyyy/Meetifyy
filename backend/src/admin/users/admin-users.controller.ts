@@ -36,9 +36,31 @@ export class AdminUsersController {
     });
   }
 
+  // Static routes MUST precede `:id` so they aren't captured as an id.
+  @Get('campus-reps')
+  async listCampusReps(@Query('collegeId') collegeId?: string) {
+    return this.usersService.listCampusReps(collegeId);
+  }
+
+  @Get('rep-candidates')
+  async searchRepCandidates(
+    @Query('search') search?: string,
+    @Query('collegeId') collegeId?: string,
+  ) {
+    return this.usersService.searchRepCandidates(search, collegeId);
+  }
+
   @Get(':id')
   async getUser(@Param('id') id: string) {
     return this.usersService.getUserById(id);
+  }
+
+  @Post(':id/campus-rep')
+  async setCampusRep(
+    @Param('id') id: string,
+    @Body('isCampusRep') isCampusRep: boolean,
+  ) {
+    return this.usersService.setCampusRep(id, Boolean(isCampusRep));
   }
 
   @Post(':id/suspend')

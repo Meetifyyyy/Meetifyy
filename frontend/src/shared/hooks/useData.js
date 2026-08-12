@@ -11,7 +11,7 @@ import { showToast } from '../utils/toast';
 // This makes useData a thin compatibility adapter while the real caching logic lives in
 // the feature hooks with proper staleTime, IndexedDB hydration, and invalidation policies.
 import { useCommunities } from './useCommunities';
-import { useActivitiesList, useCampusActivities } from './useCrew';
+import { useActivitiesList } from './useCrew';
 import { mapActivity } from '../utils/mapActivity';
 import { useConversations } from './useMessages';
 import { useCampusUsers } from './useProfile';
@@ -50,7 +50,6 @@ export function useData() {
   const campusCommunities = [];
   // Activities: flat list from infinite query cache
   const rawActivities = useActivitiesList();
-  const { campusActivities: rawCampusActivities } = useCampusActivities();
   const { conversations: processedConversations, rawConversations, isLoading: isConversationsLoading, error: conversationsError } = useConversations();
   // Users: small general list (20) for mention lookups; deferred to idle time
   const { data: rawUsers = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll(20, 0), enabled: Boolean(currentUser?.id && isIdleLoaded), staleTime: 5 * 60_000 });
@@ -64,7 +63,6 @@ export function useData() {
   // Memoized so consumers of this globally-mounted hook don't re-map every
   // activity on every render (this hook re-renders on many unrelated changes).
   const crewActivities = useMemo(() => rawActivities.map(mapActivity), [rawActivities]);
-  const campusCrewActivities = useMemo(() => rawCampusActivities.map(mapActivity), [rawCampusActivities]);
 
   // Aliases for old properties — rawCommunities from useCommunities already has lookup keys
   const communitiesWithLookup = rawCommunities;
@@ -885,7 +883,6 @@ const updatePollInCache = (oldData, postId, updatedPollOrIndices, currentUserId)
     isConversationsLoading,
     conversationsError,
     campusCommunities,
-    campusCrewActivities,
     campusUsers,
     joinCommunity: joinCommMutation.mutate,
     createCampusGroup,

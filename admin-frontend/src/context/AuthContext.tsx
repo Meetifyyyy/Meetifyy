@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { apiRequest } from '../api/apiClient';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { apiRequest, onSessionExpired } from '../api/apiClient';
 
 interface AdminUser {
   id: string;
@@ -24,24 +24,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [admin, setAdmin] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const checkAuth = async () => {
+  const checkAuth = useCallback(async () => {
     try {
       const res = await apiRequest('/admin/auth/me');
-      if (res && res.admin) {
-        setAdmin(res.admin);
-      } else {
-        setAdmin(null);
-      }
+      setAdmin(res && res.admin ? res.admin : null);
     } catch (err) {
+      // 401 / SessionExpiredError / network → simply "not authenticated".
       setAdmin(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // When apiClient can't refresh a live session, clear auth in-app so the route
+  // guards redirect to /login via React Router (no window.location hard reload).
+  useEffect(() => {
+    onSessionExpired(() => setAdmin(null));
+  }, []);
 
   useEffect(() => {
     checkAuth();
-  }, []);
+  }, [checkAuth]);
 
   const login = async (email: string, password: string) => {
     const res = await apiRequest('/admin/auth/login', {
