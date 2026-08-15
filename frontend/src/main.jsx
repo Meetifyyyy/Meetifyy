@@ -13,7 +13,7 @@ import './styles/global.css';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 0,                   // Always check server for latest state
+      staleTime: 30_000,              // 30s default; real-time data overrides via sockets or per-query values
       gcTime:    1000 * 60 * 15,       // cached for 15 min
       refetchOnWindowFocus: true,     // Refetch when switching back to tab
       refetchOnReconnect: true,

@@ -186,6 +186,9 @@ export class UploadsController {
 
     for (const localFilePath of pathsToCheck) {
       if (fs.existsSync(localFilePath)) {
+        // Content-addressed: filename contains a random hex so the same key always
+        // maps to the same bytes. Safe to cache for 1 year.
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         return res.sendFile(localFilePath);
       }
     }
@@ -195,6 +198,10 @@ export class UploadsController {
       if (existsInStorage) {
         const url = await this.storageService.getResolvedPublicUrl(key);
         if (url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('/api/media/')) {
+          // Let the browser/CDN cache the redirect destination for 1 hour.
+          // The client-side MediaCacheManager already handles signed-URL expiry;
+          // this header prevents redundant redirect hops on repeated loads.
+          res.setHeader('Cache-Control', 'public, max-age=3600');
           return res.redirect(url);
         }
       }
@@ -214,6 +221,7 @@ export class UploadsController {
     }
 
     if (folder === 'posts' || key.includes('posts/') || key.includes('post')) {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
       return res.redirect('https://images.unsplash.com/photo-1517842645767-c639042777db?w=800&auto=format&fit=crop&q=80');
     }
 

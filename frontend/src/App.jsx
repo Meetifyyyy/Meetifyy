@@ -62,8 +62,8 @@ function lazyWithRetry(componentImport) {
   });
 }
 
-import LandingPage from './features/auth/pages/LandingPage';
-import AuthShell from './features/auth/shared/ui/AuthShell';
+const LandingPage = lazyWithRetry(() => import('./features/auth/pages/LandingPage'));
+const AuthShell = lazyWithRetry(() => import('./features/auth/shared/ui/AuthShell'));
 const FeedRoute = lazyWithRetry(() => import('./features/feed/pages/FeedRoute'));
 const CommunitiesRoute = lazyWithRetry(() => import('./features/communities/pages/CommunitiesRoute'));
 const CommunityDetailRoute = lazyWithRetry(() => import('./features/communities/pages/CommunityDetailRoute'));

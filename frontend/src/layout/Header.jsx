@@ -45,7 +45,7 @@ const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
         style={{ background: (!isImage || imgError) ? (comm.color || 'var(--color-primary)') : 'transparent' }}
       >
         {isImage && !imgError ? (
-          <img src={avatarSrc} alt={comm.name} onError={() => setImgError(true)} />
+          <img src={avatarSrc} alt={comm.name} width="100%" height="100%" style={{ objectFit: 'cover', display: 'block' }} onError={() => setImgError(true)} />
         ) : (
           <span style={{ color: '#FFFFFF', fontWeight: 700 }}>
             {comm.name ? comm.name.charAt(0).toUpperCase() : 'C'}

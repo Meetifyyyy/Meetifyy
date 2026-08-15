@@ -240,7 +240,11 @@ model Post {
   @@index([deletedAt, createdAt])
   @@index([authorId, deletedAt, createdAt(sort: Desc)])
   @@index([deletedAt, createdAt(sort: Desc), authorId])
+  // Covers (deletedAt, createdAt DESC, id DESC) — the exact keyset-pagination order
+  // used by the feed, profile, and search queries, eliminating the in-memory id sort.
+  @@index([deletedAt, createdAt(sort: Desc), id(sort: Desc)])
   @@index([communityId, deletedAt, createdAt(sort: Desc)])
+
 }
 
 model PostLike {

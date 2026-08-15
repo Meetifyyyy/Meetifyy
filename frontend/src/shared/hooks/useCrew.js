@@ -46,8 +46,11 @@ export function useActivities(scope = 'public', { enabled = true } = {}) {
     enabled: isLoggedIn && enabled,
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
-    staleTime: 0,
-    refetchOnMount: 'always',
+    // IDB hydration fills the gap between mount and network response (below).
+    // 30s staleTime matches the global default — activities don't change faster
+    // than that and mutations already invalidate via queryClient.invalidateQueries.
+    staleTime: 30_000,
+    refetchOnMount: true,
     gcTime: 10 * 60 * 1000,
     placeholderData: (prev) => prev,
   });
@@ -96,8 +99,8 @@ export function useCrewDiscover() {
     queryKey: [...CREW_KEYS.all, 'discover'],
     queryFn: () => activitiesApi.getDiscover(),
     enabled: isLoggedIn,
-    staleTime: 0,
-    refetchOnMount: 'always',
+    staleTime: 30_000,
+    refetchOnMount: true,
   });
 
   const empty = { items: [], hasMore: false };
