@@ -49,26 +49,52 @@ body {
 }
 
 /* Toast Notification Clearance & Unified Positioning System */
-[data-sonner-toaster] {
-  --width: auto !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  right: auto !important;
+[data-sonner-toaster],
+[data-sonner-toaster][data-x-position="center"],
+[data-sonner-toaster][data-x-position="left"],
+[data-sonner-toaster][data-x-position="right"] {
+  --mobile-offset-top: 0px !important;
+  --mobile-offset-bottom: 0px !important;
+  --mobile-offset-left: 0px !important;
+  --mobile-offset-right: 0px !important;
+  --offset-top: 0px !important;
+  --offset-bottom: 0px !important;
+  --offset-left: 0px !important;
+  --offset-right: 0px !important;
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100vw !important;
+  max-width: 100vw !important;
+  box-sizing: border-box !important;
   padding: 0 !important;
+  margin: 0 !important;
+  transform: none !important;
   z-index: 9999999 !important;
   pointer-events: none !important;
-  width: auto !important;
-  max-width: 100vw !important;
+  overflow: visible !important;
+}
+
+@media (max-width: 768px), (max-width: 600px) {
+  [data-sonner-toaster],
+  [data-sonner-toaster][data-x-position="center"],
+  [data-sonner-toaster][data-x-position="left"],
+  [data-sonner-toaster][data-x-position="right"] {
+    left: 0 !important;
+    right: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    transform: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
 }
 
 /* 1. Bottom Sonner Toasts (Default Sonner Toaster / bottom-center) */
 [data-sonner-toaster][data-y-position="bottom"] {
   bottom: 2rem !important;
   top: auto !important;
-  display: flex !important;
-  flex-direction: column-reverse !important;
-  align-items: center !important;
-  justify-content: flex-end !important;
 }
 
 @media (max-width: 768px) {
@@ -82,10 +108,6 @@ body {
 [data-sonner-toaster][data-y-position="top"] {
   top: 1.25rem !important;
   bottom: auto !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  justify-content: flex-start !important;
 }
 
 @media (max-width: 768px) {
@@ -95,22 +117,66 @@ body {
   }
 }
 
+[data-sonner-toaster] [data-sonner-toast],
 [data-sonner-toast] {
-  --width: auto !important;
-  width: auto !important;
-  width: fit-content !important;
+  left: 0 !important;
+  right: 0 !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
   width: -moz-fit-content !important;
+  width: fit-content !important;
   max-width: min(420px, calc(100vw - 24px)) !important;
-  margin: 0 auto !important;
   pointer-events: auto !important;
+  box-sizing: border-box !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  border-radius: 16px !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+@media (max-width: 768px), (max-width: 600px) {
+  [data-sonner-toaster] [data-sonner-toast],
+  [data-sonner-toast] {
+    left: 0 !important;
+    right: 0 !important;
+    width: -moz-fit-content !important;
+    width: fit-content !important;
+    max-width: min(420px, calc(100vw - 24px)) !important;
+    overflow: visible !important;
+  }
+}
+
+[data-sonner-toaster] [data-sonner-toast]:focus,
+[data-sonner-toaster] [data-sonner-toast]:focus-visible,
+[data-sonner-toaster] [data-sonner-toast]:active,
+[data-sonner-toaster] [data-sonner-toast]:hover,
+[data-sonner-toast]:focus,
+[data-sonner-toast]:focus-visible,
+[data-sonner-toast]:active,
+[data-sonner-toast]:hover {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast]::before,
+[data-sonner-toaster] [data-sonner-toast]::after,
+[data-sonner-toast]::before,
+[data-sonner-toast]::after {
+  display: none !important;
+  content: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
 }
 
 /* Sonner Styled Monochrome Pill (Default Light Mode) */
 [data-sonner-toast][data-styled="true"] {
-  --width: auto !important;
-  width: auto !important;
-  width: fit-content !important;
-  width: -moz-fit-content !important;
   min-width: 0 !important;
   background: #000000 !important;
   color: #ffffff !important;
@@ -129,7 +195,6 @@ body {
   text-align: center !important;
   gap: 0 !important;
   box-sizing: border-box !important;
-  margin: 0 auto !important;
 }
 
 [data-sonner-toast] [data-content] {
@@ -218,12 +283,47 @@ body {
 }
 
 /* Reset any default sonner wrapping for custom toasts (Instant Notification cards) */
+[data-sonner-toaster] [data-sonner-toast]:not([data-styled="true"]),
 [data-sonner-toast]:not([data-styled="true"]) {
   background: transparent !important;
+  background-color: transparent !important;
   border: none !important;
   box-shadow: none !important;
+  outline: none !important;
   padding: 0 !important;
-  width: auto !important;
+  border-radius: 16px !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  overflow: visible !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast]:not([data-styled="true"]):focus,
+[data-sonner-toaster] [data-sonner-toast]:not([data-styled="true"]):focus-visible,
+[data-sonner-toast]:not([data-styled="true"]):focus,
+[data-sonner-toast]:not([data-styled="true"]):focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast]:not([data-styled="true"])::before,
+[data-sonner-toaster] [data-sonner-toast]:not([data-styled="true"])::after,
+[data-sonner-toast]:not([data-styled="true"])::before,
+[data-sonner-toast]:not([data-styled="true"])::after {
+  display: none !important;
+  content: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+[data-theme="dark"] [data-sonner-toaster] [data-sonner-toast]:not([data-styled="true"]),
+[data-theme="dark"] [data-sonner-toast]:not([data-styled="true"]) {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 html {

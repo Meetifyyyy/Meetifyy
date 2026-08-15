@@ -294,6 +294,12 @@ export default function App() {
           path: '/dev/critical-error',
           element: <CriticalErrorScreen onRetry={() => window.location.reload()} />,
         },
+        ...(import.meta.env.DEV && NotificationPlayground ? [
+          {
+            path: '/dev/notifications',
+            element: <Suspense fallback={null}><NotificationPlayground /></Suspense>,
+          }
+        ] : []),
         // ----------------------------------------------------------------------
         {
           element: (

@@ -192,7 +192,7 @@ export default function SocketManager() {
               onDismiss={() => toast.dismiss(t)}
             />
           );
-        }, { duration: 5000, position: 'top-center' });
+        }, { duration: 5000, position: 'top-center', dismissible: false });
       }
     };
 
@@ -894,7 +894,7 @@ export default function SocketManager() {
                 onDismiss={() => toast.dismiss(t)}
               />
             );
-          }, { duration: 4000, position: 'top-center' });
+          }, { duration: 4000, position: 'top-center', dismissible: false });
         }
       }
     };
