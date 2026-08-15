@@ -2,6 +2,12 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 
+// ─── DEV BYPASS ────────────────────────────────────────────────────────────────
+// Set to true to skip all signup validation and API calls (dev/design mode).
+// Set back to false before shipping.
+export const DEV_BYPASS_SIGNUP = false;
+// ───────────────────────────────────────────────────────────────────────────────
+
 const SignupContext = createContext();
 
 const initialData = {
@@ -40,14 +46,16 @@ export const SignupProvider = ({ children }) => {
   const savedStepStr = sessionStorage.getItem(STEP_KEY);
   const savedStep = savedStepStr ? parseInt(savedStepStr, 10) : null;
 
-  const currentStep = isFreshIntent
+  const currentStep = isFreshIntent || !urlStep || urlStep === 1
     ? 1
     : (!isNaN(urlStep) && urlStep >= 1 && urlStep <= 5
         ? urlStep
         : (savedStep && savedStep >= 1 && savedStep <= 5 ? savedStep : 1));
 
   const [signupData, setSignupData] = useState(() => {
-    if (isFreshIntent) {
+    // If starting on step 1 or fresh entry, always clear any old draft data
+    const stepInUrl = parseInt(searchParams.get('step'), 10);
+    if (!stepInUrl || stepInUrl === 1 || isFreshIntent) {
       sessionStorage.removeItem(SESSION_KEY);
       sessionStorage.removeItem(STEP_KEY);
       sessionStorage.removeItem(TIMESTAMP_KEY);
@@ -123,7 +131,7 @@ export const SignupProvider = ({ children }) => {
       return;
     }
 
-    if (currentStep === 2 && !signupData.username) {
+    if (currentStep === 2 && (!signupData.username || !signupData.birthday)) {
       setSearchParams({ step: 1 }, { replace: true });
     } else if ((currentStep === 3 || currentStep === 4) && !signupData.email) {
       setSearchParams({ step: 2 }, { replace: true });
@@ -169,7 +177,7 @@ export const SignupProvider = ({ children }) => {
         nextStep,
         prevStep,
         goToStep,
-        totalSteps: 5
+        totalSteps: 5,
       }}
     >
       {children}

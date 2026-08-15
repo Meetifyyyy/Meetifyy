@@ -1,20 +1,48 @@
 .page {
-  max-width: 860px;
-  margin: 0 auto;
+  position: relative;
   width: 100%;
-  padding: 0 0 0rem;
+  max-width: 100%;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 60px - 0.5rem);
+  max-height: calc(100dvh - 60px - 0.5rem);
+  overflow: hidden;
   box-sizing: border-box;
+  background: var(--color-bg-white, #ffffff);
+  border-radius: var(--radius-xl, 20px);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
 }
 
 .topbar {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0 rem 0.5rem 0.75rem 0.5rem;
+  padding: 0 1.5rem;
+  height: 56px;
   position: sticky;
-  top: 60px;
-  z-index: 400;
-  background: transparent;
+  top: 0;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px) saturate(180%);
+  border-bottom: 1px solid var(--color-border-light);
+  border-top-left-radius: var(--radius-xl, 20px);
+  border-top-right-radius: var(--radius-xl, 20px);
+}
+
+:global([data-theme="dark"]) .topbar {
+  background: rgba(32, 32, 32, 0.85);
+  border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+.scrollBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.75rem 2rem 2.5rem;
+  display: flex;
+  flex-direction: column;
 }
 
 .backBtn {
@@ -297,17 +325,26 @@
     bottom: 0;
     z-index: 9999;
     background: var(--color-bg-main, #ffffff);
-    overflow-y: auto;
-    margin: 0;
-    max-width: none;
-    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    overflow: hidden;
   }
 
   .topbar {
     top: 0;
     padding: max(0.6rem, env(safe-area-inset-top)) 0.85rem 0.5rem;
+    height: auto;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
     background: var(--color-bg-main, #ffffff);
     border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.06));
-    margin-bottom: 0.75rem;
+    margin-bottom: 0;
+  }
+
+  .scrollBody {
+    padding: 1rem 1rem max(1.5rem, env(safe-area-inset-bottom));
   }
 }

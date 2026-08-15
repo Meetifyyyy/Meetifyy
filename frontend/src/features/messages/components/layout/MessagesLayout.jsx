@@ -166,7 +166,7 @@ export default function MessagesLayout() {
     }
   }, [activeChatId, activeConv, currentUser?.id, location.pathname, navigate]);
 
-  const handleSendMessage = async (...args) => {
+  const handleSendMessage = async (convId, text, replyTo, mentions, mediaUrl, mediaType, explicitLinkPreview, explicitInviteData, options) => {
     if (activeConv?.isDraft) {
       const targetId = activeConv.targetUserId || activeConv.targetUser?.id;
       if (targetId) {
@@ -177,7 +177,7 @@ export default function MessagesLayout() {
           if (realId) {
             setActiveChatId(realId);
             queryClient.invalidateQueries({ queryKey: ['conversations'] });
-            await sendMessageOptimistically(realId, ...args);
+            await sendMessageOptimistically(realId, text, replyTo, mentions, mediaUrl, mediaType, explicitLinkPreview, explicitInviteData, options);
             const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
             navigate(`${basePath}/${realId}`, { replace: true, state: location.state });
             return;
@@ -189,7 +189,7 @@ export default function MessagesLayout() {
         }
       }
     }
-    return sendMessageOptimistically(...args);
+    return sendMessageOptimistically(convId, text, replyTo, mentions, mediaUrl, mediaType, explicitLinkPreview, explicitInviteData, options);
   };
 
   const totalUnread = useMemo(() => {

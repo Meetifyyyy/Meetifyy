@@ -141,6 +141,7 @@ export default function ImageViewer({ src, onToggleControls, preloadNext, preloa
     animatingRef.current = false;
     xf.current = { scale: 1, tx: 0, ty: 0 };
     applyTransform(imgRef.current, 0, 0, 1, false);
+    if (wrapRef.current) wrapRef.current.removeAttribute('data-zoomed');
   }, []);
 
   // ─────────────────────────────────────
@@ -153,6 +154,15 @@ export default function ImageViewer({ src, onToggleControls, preloadNext, preloa
     xf.current.tx = clamped.tx;
     xf.current.ty = clamped.ty;
     applyTransform(imgRef.current, clamped.tx, clamped.ty, scale, animated);
+    
+    if (wrapRef.current) {
+      if (scale > 1.01) {
+        wrapRef.current.setAttribute('data-zoomed', 'true');
+      } else {
+        wrapRef.current.removeAttribute('data-zoomed');
+      }
+    }
+    
     if (animated) {
       animatingRef.current = true;
       setTimeout(() => { animatingRef.current = false; }, ANIM_DURATION_MS + 10);

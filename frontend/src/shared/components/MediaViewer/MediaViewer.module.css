@@ -94,6 +94,14 @@
   justify-content: center;
   overflow: hidden;
   user-select: none;
+  transition: transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.28s ease;
+  transform: scale(0.85);
+  opacity: 0;
+}
+
+.overlay.visible .stage {
+  transform: scale(1) translate3d(0,0,0);
+  opacity: 1;
 }
 
 /* ── Nav Arrows ── */

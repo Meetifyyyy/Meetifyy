@@ -63,10 +63,7 @@ export default function Step5Avatar() {
 
   return (
     <AnimatedStep className={s.stepWrapper}>
-      <AuthHeading
-        title="Add a profile picture"
-        subtitle="Show your tribe who you are. You can always change this later."
-      />
+      <AuthHeading title="Add a profile picture" />
 
       <div className={s.avatarStage}>
         <div className={s.avatarRing}>

@@ -2,13 +2,18 @@
 .page {
   position: relative;
   width: 100%;
-  max-width: 650px;
-  margin: 0 auto;
+  max-width: 100%;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: calc(100dvh - 60px - 0.5rem);
+  max-height: calc(100dvh - 60px - 0.5rem);
   overflow: hidden;
-  background: var(--color-bg-white);
+  box-sizing: border-box;
+  background: var(--color-bg-white, #ffffff);
+  border-radius: var(--radius-xl, 20px);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
 }
 
 /* ── Sticky top bar ── */
@@ -20,14 +25,16 @@
   align-items: center;
   justify-content: space-between;
   height: 56px;
-  padding: 0 8px;
+  padding: 0 16px;
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(16px) saturate(180%);
   border-bottom: 1px solid var(--color-border-light);
+  border-top-left-radius: var(--radius-xl, 20px);
+  border-top-right-radius: var(--radius-xl, 20px);
 }
 
 :global([data-theme="dark"]) .topBar {
-  background: rgba(20, 20, 20, 0.85);
+  background: rgba(32, 32, 32, 0.85);
   border-bottom-color: rgba(255, 255, 255, 0.05);
 }
 
@@ -774,17 +781,20 @@ input:checked+.slider::before {
   font-weight: 500;
 }
 
-/* ── Desktop adjustments ── */
-@media (min-width: 769px) {
+/* ── Desktop & Mobile adjustments ── */
+@media (max-width: 768px) {
   .page {
-    padding-top: 0;
-    border-top-left-radius: var(--radius-xl);
-    border-top-right-radius: var(--radius-xl);
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    height: 100%;
+    max-height: none;
   }
 
   .topBar {
-    border-top-left-radius: var(--radius-xl);
-    border-top-right-radius: var(--radius-xl);
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    padding: 0 8px;
   }
 }
 

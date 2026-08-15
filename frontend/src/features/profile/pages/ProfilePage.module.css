@@ -6,7 +6,8 @@
 .profileMain {
   display: flex !important;
   flex-direction: row !important;
-  align-items: flex-start !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
   /* `visible`, not `auto`: this never produced a real scrollbar (its box just
      grows to content height — scrollHeight === clientHeight always, verified
      live), but as a CSS scroll container it was still the (wrong) `position:
@@ -16,14 +17,15 @@
      global.css. `height: 100%` stays untouched on purpose. */
   overflow-y: visible !important;
   gap: 1.25rem;
-  padding: 0 1rem 2rem 0rem !important;
-  max-width: 900px !important;
-  margin: 0 auto !important;
+  padding: 0 0 2rem 0 !important;
   width: 100% !important;
-  height: 100% !important;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  box-sizing: border-box;
+  min-height: 100%;
+}
+
+@media (min-width: 1100px) {
+  .profileMain {
+    padding: 0 0rem 2rem 0rem !important;
+  }
 }
 
 .profileMain::-webkit-scrollbar {
@@ -34,10 +36,15 @@
 .centerColumn {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  max-width: 580px;
-  height: auto;
+  width: 100%;
+  max-width: 100%;
+  gap: 1rem;
+}
+
+@media (min-width: 1024px) {
+  .centerColumn {
+    gap: 1.25rem;
+  }
 }
 
 /* ── Profile card (cover + info) ── */
@@ -525,37 +532,17 @@
    Responsive Breakpoints
    ═══════════════════════════════════════════ */
 
-@media (min-width: 1441px) {
-  .profileMain {
-    max-width: 900px !important;
-  }
-}
+@media (min-width: 1441px) {}
 
 @media (max-width: 1200px) {
-  .profileMain {
-    max-width: 820px !important;
-  }
-
-  .rightSidebar {
-    width: 240px;
-  }
-
   .centerColumn {
-    max-width: 540px;
+    max-width: 100%;
   }
 }
 
 @media (max-width: 860px) {
-  .rightSidebar {
-    display: none;
-  }
-
   .centerColumn {
     max-width: 100%;
-  }
-
-  .profileMain {
-    max-width: 640px !important;
   }
 }
 
@@ -564,7 +551,6 @@
   .profileMain {
     flex-direction: column !important;
     padding: 0 0 5rem 0 !important;
-    max-width: 100% !important;
     width: 100% !important;
     overflow-x: hidden !important;
   }

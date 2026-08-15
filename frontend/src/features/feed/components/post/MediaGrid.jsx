@@ -10,7 +10,7 @@ import styles from './MediaGrid.module.css';
  * - NO 3-dots menu button
  * - Clicking expand or video opens MediaViewer
  */
-function InlineVideoPlayer({ src, isPortrait, handleVideoLoaded, handleItemClick, index }) {
+function InlineVideoPlayer({ src, isPortrait, aspect, handleVideoLoaded, handleItemClick, index }) {
   const videoRef = useRef(null);
   const [playing, setPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
@@ -67,7 +67,7 @@ function InlineVideoPlayer({ src, isPortrait, handleVideoLoaded, handleItemClick
         handleItemClick(e, index);
       }}
     >
-      <div className={`${styles.videoWrapper} ${styles.loadedWrapper} ${styles.inlineVideoWrap}`}>
+      <div className={`${styles.videoWrapper} ${styles.inlineVideoWrap}`} style={{ '--aspect': aspect }}>
         <video
           ref={videoRef}
           src={src}
@@ -77,7 +77,7 @@ function InlineVideoPlayer({ src, isPortrait, handleVideoLoaded, handleItemClick
           onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
           onLoadedMetadata={(e) => {
             setDuration(e.target.duration);
-            handleVideoLoaded(index, e);
+            handleVideoLoaded(index);
           }}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
@@ -185,7 +185,6 @@ function normalizeMedia(mediaInput) {
 export function MediaGrid({ media, onMediaClick }) {
   const [mediaList, setMediaList] = useState(() => normalizeMedia(media));
   const [loadedStates, setLoadedStates] = useState({});
-  const [singleAspect, setSingleAspect] = useState(null);
   const [inlinePlaying, setInlinePlaying] = useState({});
 
   useEffect(() => {
@@ -216,14 +215,8 @@ export function MediaGrid({ media, onMediaClick }) {
 
   const FALLBACK_POST_IMAGE = 'https://images.unsplash.com/photo-1517842645767-c639042777db?w=800&auto=format&fit=crop&q=80';
 
-  const handleImageLoad = (index, e) => {
+  const handleImageLoad = (index) => {
     setLoadedStates((prev) => ({ ...prev, [index]: true }));
-    if (index === 0 && e?.target) {
-      const { naturalWidth, naturalHeight } = e.target;
-      if (naturalWidth && naturalHeight) {
-        setSingleAspect(naturalWidth / naturalHeight);
-      }
-    }
   };
 
   const handleImageError = (index, e) => {
@@ -240,14 +233,8 @@ export function MediaGrid({ media, onMediaClick }) {
     target.src = FALLBACK_POST_IMAGE;
   };
 
-  const handleVideoLoaded = (index, e) => {
+  const handleVideoLoaded = (index) => {
     setLoadedStates((prev) => ({ ...prev, [index]: true }));
-    if (index === 0 && e?.target) {
-      const { videoWidth, videoHeight } = e.target;
-      if (videoWidth && videoHeight) {
-        setSingleAspect(videoWidth / videoHeight);
-      }
-    }
   };
 
   const handleItemClick = (e, index) => {
@@ -266,12 +253,13 @@ export function MediaGrid({ media, onMediaClick }) {
   if (mediaList.length === 1) {
     const item = mediaList[0];
 
-    const rawAspect =
+    // Determine deterministic aspect ratio before load
+    const aspect =
       item.raw?.width && item.raw?.height
         ? item.raw.width / item.raw.height
-        : singleAspect;
+        : item.isVideo ? 16 / 9 : 1;
 
-    const isPortrait = rawAspect !== null && rawAspect !== undefined && rawAspect < 1;
+    const isPortrait = aspect < 1;
 
     if (item.isVideo) {
       const isLoaded = loadedStates[0];
@@ -283,6 +271,7 @@ export function MediaGrid({ media, onMediaClick }) {
           <InlineVideoPlayer
             src={item.url}
             isPortrait={isPortrait}
+            aspect={aspect}
             handleVideoLoaded={handleVideoLoaded}
             handleItemClick={handleItemClick}
             index={0}
@@ -301,9 +290,8 @@ export function MediaGrid({ media, onMediaClick }) {
           }}
         >
           <div
-            className={`${styles.videoWrapper} ${
-              isLoaded ? styles.loadedWrapper : styles.loadingWrapper
-            }`}
+            className={styles.videoWrapper}
+            style={{ '--aspect': aspect }}
           >
             {!isLoaded && <div className={styles.skeleton} />}
             {posterUrl ? (
@@ -312,11 +300,11 @@ export function MediaGrid({ media, onMediaClick }) {
                 alt="Video thumbnail"
                 loading="lazy"
                 decoding="async"
-                onLoad={(e) => handleImageLoad(0, e)}
+                onLoad={() => handleImageLoad(0)}
                 onError={(e) => handleImageError(0, e)}
                 ref={(imgEl) => {
                   if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[0]) {
-                    handleImageLoad(0, { target: imgEl });
+                    handleImageLoad(0);
                   }
                 }}
                 className={`${styles.singleVideo} ${
@@ -329,11 +317,11 @@ export function MediaGrid({ media, onMediaClick }) {
                 preload="metadata"
                 playsInline
                 muted
-                onLoadedMetadata={(e) => handleVideoLoaded(0, e)}
-                onLoadedData={(e) => handleVideoLoaded(0, e)}
+                onLoadedMetadata={() => handleVideoLoaded(0)}
+                onLoadedData={() => handleVideoLoaded(0)}
                 ref={(vidEl) => {
                   if (vidEl && vidEl.readyState >= 1 && !loadedStates[0]) {
-                    handleVideoLoaded(0, { target: vidEl });
+                    handleVideoLoaded(0);
                   }
                 }}
                 className={`${styles.singleVideo} ${
@@ -360,9 +348,8 @@ export function MediaGrid({ media, onMediaClick }) {
         }`}
       >
         <div
-          className={`${styles.singleImageWrapper} ${
-            isLoaded ? styles.loadedWrapper : styles.loadingWrapper
-          }`}
+          className={styles.singleImageWrapper}
+          style={{ '--aspect': aspect }}
         >
           {!isLoaded && <div className={styles.skeleton} />}
           <img
@@ -370,11 +357,11 @@ export function MediaGrid({ media, onMediaClick }) {
             alt="Post content"
             loading="lazy"
             decoding="async"
-            onLoad={(e) => handleImageLoad(0, e)}
+            onLoad={() => handleImageLoad(0)}
             onError={(e) => handleImageError(0, e)}
             ref={(imgEl) => {
               if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[0]) {
-                handleImageLoad(0, { target: imgEl });
+                handleImageLoad(0);
               }
             }}
             onClick={(e) => handleItemClick(e, 0)}

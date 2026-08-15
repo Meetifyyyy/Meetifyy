@@ -113,79 +113,14 @@ function SystemMessageContent({ text, navigate }) {
 }
 
 const loadedImageUrls = new Set();
-const cachedMediaStyles = new Map();
-
-function getResponsiveMediaLimits(isInline = false) {
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 640;
-  if (vw < 480) {
-    const maxW = Math.min(Math.round(vw * 0.65), isInline ? 210 : 230);
-    const maxH = 240;
-    const minLimit = 100;
-    return { maxW, maxH, minLimit };
-  } else if (vw < 768) {
-    const maxW = Math.min(Math.round(vw * 0.65), isInline ? 240 : 265);
-    const maxH = 265;
-    const minLimit = 120;
-    return { maxW, maxH, minLimit };
-  } else {
-    const maxW = isInline ? 260 : 285;
-    const maxH = isInline ? 260 : 285;
-    const minLimit = 130;
-    return { maxW, maxH, minLimit };
-  }
-}
-
-function calculateMediaDimensions(nw, nh, isInline = false) {
-  if (!nw || !nh) return null;
-  const { maxW, maxH, minLimit } = getResponsiveMediaLimits(isInline);
-  const ratio = nw / nh;
-
-  let targetW, targetH;
-
-  if (nh > nw) {
-    targetH = maxH;
-    targetW = targetH * ratio;
-    if (targetW > maxW) {
-      targetW = maxW;
-      targetH = targetW / ratio;
-    }
-  } else {
-    targetW = maxW;
-    targetH = targetW / ratio;
-    if (targetH > maxH) {
-      targetH = maxH;
-      targetW = targetH * ratio;
-    }
-  }
-
-  targetW = Math.max(minLimit, Math.round(targetW));
-  targetH = Math.max(minLimit, Math.round(targetH));
-
-  return {
-    width: `${targetW}px`,
-    height: `${targetH}px`,
-    maxWidth: `min(${maxW}px, 68vw)`,
-    maxHeight: `${maxH}px`,
-    aspectRatio: `${nw} / ${nh}`,
-    objectFit: 'cover',
-    borderRadius: isInline ? '12px' : '16px',
-    overflow: 'hidden'
-  };
-}
 
 function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false, onErrorChange, width, height, onClickSrc }) {
   const [loaded, setLoaded] = useState(() => Boolean(src && loadedImageUrls.has(src)));
   const [imgSrc, setImgSrc] = useState(null);
   const [error, setError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  // Reserve the correct box from known metadata dimensions BEFORE the image loads
-  // so the bubble never jumps (empty -> image). Falls back to cached measured style.
-  const [mediaStyle, setMediaStyle] = useState(() => {
-    if (src && cachedMediaStyles.get(src)) return cachedMediaStyles.get(src);
-    if (width && height) return calculateMediaDimensions(width, height, !isStandalone);
-    return null;
-  });
   const prevSrcRef = useRef(src);
+  const aspect = (width && height) ? (width / height) : 1;
 
   useEffect(() => {
     if (src === prevSrcRef.current && retryCount === 0) return;
@@ -259,17 +194,11 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
     if (onErrorChange) onErrorChange(true);
   };
 
-  const handleImageLoad = (e) => {
+  const handleImageLoad = () => {
     setLoaded(true);
     const activeUrl = imgSrc || src;
     if (activeUrl) loadedImageUrls.add(activeUrl);
     if (src) loadedImageUrls.add(src);
-
-    if (e?.target?.naturalWidth && e?.target?.naturalHeight) {
-      const style = calculateMediaDimensions(e.target.naturalWidth, e.target.naturalHeight, !isStandalone);
-      if (src) cachedMediaStyles.set(src, style);
-      setMediaStyle(style);
-    }
   };
 
   if (error) {
@@ -286,10 +215,12 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
   }
 
   const finalSrc = imgSrc || src;
-  const defaultMediaStyle = { width: isStandalone ? '260px' : '220px', height: isStandalone ? '260px' : '220px' };
 
   return (
-    <div className={`${styles.msgMediaWrapper} ${isStandalone ? styles.msgMediaWrapperStandalone : ''}`} style={{ background: 'transparent', ...(mediaStyle || defaultMediaStyle) }}>
+    <div 
+      className={`${styles.msgMediaWrapper} ${isStandalone ? styles.msgMediaWrapperStandalone : styles.msgMediaWrapperInline}`} 
+      style={{ '--aspect': aspect }}
+    >
       {!loaded && (
         <div className={`${styles.msgMediaSkeleton} ${isStandalone ? styles.msgMediaSkeletonStandalone : ''}`}>
           <ImageIcon size={22} className={styles.msgMediaSkeletonIcon} />
@@ -301,7 +232,6 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
           alt={alt || ''}
           decoding="async"
           className={`${className} ${!loaded ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
-          style={{ display: 'block', width: '100%', height: '100%', background: 'transparent', ...(mediaStyle || {}) }}
           onClick={() => onClick && onClick(onClickSrc || finalSrc)}
           onLoad={handleImageLoad}
           onError={handleError}
@@ -315,12 +245,7 @@ function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = n
   const videoRef = useRef(null);
   const resolvedSrc = src ? getMediaUrl(src) : '';
   const resolvedPoster = poster ? getMediaUrl(poster) : '';
-  const [mediaStyle, setMediaStyle] = useState(() => {
-    if (resolvedSrc && cachedMediaStyles.get(resolvedSrc)) return cachedMediaStyles.get(resolvedSrc);
-    // Reserve the correct box from known metadata so the bubble never jumps.
-    if (width && height) return calculateMediaDimensions(width, height, isInline);
-    return null;
-  });
+  const aspect = (width && height) ? (width / height) : (16 / 9);
   const durationLabel = (Number.isFinite(duration) && duration > 0)
     ? `${Math.floor(duration / 60)}:${String(Math.round(duration % 60)).padStart(2, '0')}`
     : null;
@@ -338,38 +263,17 @@ function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = n
     }
   };
 
-  const handleLoadedMetadata = (e) => {
-    const v = e?.target;
-    if (v?.videoWidth && v?.videoHeight) {
-      const style = calculateMediaDimensions(v.videoWidth, v.videoHeight, isInline);
-      if (resolvedSrc) cachedMediaStyles.set(resolvedSrc, style);
-      setMediaStyle(style);
-    }
+  const handleLoadedMetadata = () => {
+    // Media dimension resizing is removed; sizing is purely CSS + --aspect now.
   };
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!mediaStyle) {
-        const defaultStyle = { width: isInline ? '220px' : '260px', height: isInline ? '220px' : '260px' };
-        setMediaStyle(defaultStyle);
-      }
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [mediaStyle, isInline]);
 
   return (
     <div
+      className={`${styles.msgMediaWrapper} ${isInline ? styles.msgMediaWrapperInline : styles.msgMediaWrapperStandalone}`}
       style={{
-        position: 'relative',
-        width: mediaStyle?.width || (isInline ? '220px' : '260px'),
-        height: mediaStyle?.height || (isInline ? '220px' : '260px'),
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        cursor: 'pointer',
-        borderRadius: isInline ? '12px' : '16px',
-        overflow: 'hidden',
+        '--aspect': aspect,
         backgroundColor: '#16181c',
+        cursor: 'pointer',
       }}
       onClick={() => onOpenMediaModal && onOpenMediaModal(resolvedSrc, 'video')}
     >
@@ -381,7 +285,7 @@ function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = n
         muted
         // With a poster + known dimensions we can defer ALL video bytes until the
         // user actually plays (preload="none"); otherwise fetch just metadata.
-        preload={resolvedPoster && mediaStyle ? 'none' : 'metadata'}
+        preload={resolvedPoster ? 'none' : 'metadata'}
         onLoadedMetadata={handleLoadedMetadata}
         onLoadedData={handleLoadedMetadata}
         onCanPlay={handleLoadedMetadata}
@@ -390,12 +294,9 @@ function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = n
           display: 'block',
           width: '100%',
           height: '100%',
-          borderRadius: isInline ? '12px' : '16px',
-          overflow: 'hidden',
           marginBottom: isInline && hasText ? '6px' : '0',
           objectFit: 'cover',
-          pointerEvents: 'none',
-          ...(mediaStyle || {})
+          pointerEvents: 'none'
         }}
       />
       {durationLabel && (
@@ -1095,7 +996,7 @@ const MessageBubble = memo(function MessageBubble({
           {innerContent}
 
           {isMe && (
-            <div className={`${styles.msgStatusLabel} ${isFailedMsg ? styles.msgStatusLabelFailed : ''}`}>
+            <div className={`${styles.msgStatusLabel} ${isFailedMsg ? styles.msgStatusLabelFailed : ''}`} style={{ visibility: (isFailedMsg || isLatestMessage) ? 'visible' : 'hidden' }}>
               {/* Failed status is always shown — never hidden even if not the latest message */}
               {isFailedMsg && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -1104,7 +1005,7 @@ const MessageBubble = memo(function MessageBubble({
                 </span>
               )}
               {/* Normal delivery status: only shown on the latest message */}
-              {!isFailedMsg && isLatestMessage && (() => {
+              {!isFailedMsg && (() => {
                 const s = msg.status;
                 if (s === 'sending') return <span>Sending…</span>;
                 if (s === 'read' || s === 'seen') return <span>Seen</span>;

@@ -102,7 +102,7 @@ export default function Step2Academic() {
 
   return (
     <AnimatedStep className={s.stepWrapper}>
-      <AuthHeading title="Academic details" subtitle="Connect with peers at your institution." />
+      <AuthHeading title="Academic details" />
 
       <form onSubmit={handleSubmit} className={s.form} noValidate>
         <AuthField

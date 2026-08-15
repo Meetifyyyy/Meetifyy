@@ -24,6 +24,7 @@ import { createPortal } from 'react-dom';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { getCollegeName } from '@shared/utils/user';
 
+import RightPanel from '@layout/RightPanel';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
 
 function formatMajor(majorStr) {
@@ -314,7 +315,7 @@ export default function ProfilePage() {
 
   return (
     <>
-      <main className={`centre centre-wide animate-in ${s.profileMain}`}>
+      <main className={`centre animate-in ${s.profileMain}`}>
         {/* ── Center column ── */}
         <div className={s.centerColumn}>
 
@@ -518,12 +519,12 @@ export default function ProfilePage() {
             )}
           </div>
         </div>
-
-        {/* ── Right sidebar ── */}
-        <aside className={s.rightSidebar}>
-          <ProfileRightSidebar embedded />
-        </aside>
       </main>
+
+      {/* ── Right sidebar ── */}
+      <RightPanel className="animate-in">
+        <ProfileRightSidebar embedded={false} />
+      </RightPanel>
 
       {modalType && (
         <UserListModal

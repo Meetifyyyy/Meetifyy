@@ -31,6 +31,16 @@ export default function MediaViewer() {
   const { open, items, index, meta } = state;
 
   const overlayRef = useRef(null);
+  const stageRef = useRef(null);
+  const dragState = useRef({
+    startY: 0,
+    startX: 0,
+    currentY: 0,
+    dragging: false,
+    startTime: 0,
+    isVertical: false,
+    lockAxis: false
+  });
   const [visible, setVisible] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -259,7 +269,119 @@ export default function MediaViewer() {
       </div>
 
       {/* ── Media stage ── */}
-      <div className={styles.stage} onClick={() => setShowMoreMenu(false)}>
+      <div 
+        className={styles.stage} 
+        ref={stageRef}
+        onClick={() => setShowMoreMenu(false)}
+        onTouchStart={(e) => {
+          if (e.touches.length !== 1) return;
+          if (e.target.closest('[data-zoomed="true"]')) return;
+          
+          dragState.current = {
+            startY: e.touches[0].clientY,
+            startX: e.touches[0].clientX,
+            currentY: e.touches[0].clientY,
+            dragging: true,
+            startTime: Date.now(),
+            isVertical: false,
+            lockAxis: false
+          };
+        }}
+        onTouchMove={(e) => {
+          if (!dragState.current.dragging) return;
+          const touch = e.touches[0];
+          const dy = touch.clientY - dragState.current.startY;
+          const dx = touch.clientX - dragState.current.startX;
+          const state = dragState.current;
+          
+          if (!state.lockAxis) {
+            if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+              state.lockAxis = true;
+              if (Math.abs(dy) > Math.abs(dx)) {
+                state.isVertical = true;
+              } else {
+                state.dragging = false;
+                return;
+              }
+            } else {
+              return;
+            }
+          }
+          
+          if (!state.isVertical) return;
+          
+          state.currentY = touch.clientY;
+          
+          const dampen = (val) => val * 0.85;
+          const dragY = dampen(dy);
+          const windowHeight = window.innerHeight;
+          const progress = Math.min(Math.abs(dragY) / (windowHeight * 0.7), 1);
+          
+          const scale = 1 - (progress * 0.25);
+          const opacity = 1 - progress;
+          
+          if (stageRef.current) {
+            stageRef.current.style.transition = 'none';
+            stageRef.current.style.transform = `translate3d(0, ${dragY}px, 0) scale(${scale})`;
+          }
+          if (overlayRef.current) {
+            overlayRef.current.style.transition = 'none';
+            overlayRef.current.style.backgroundColor = `rgba(0, 0, 0, ${opacity * 0.92})`;
+          }
+          
+          if (controlsVisible && Math.abs(dy) > 20) {
+            setControlsVisible(false);
+          }
+        }}
+        onTouchEnd={(e) => {
+          if (!dragState.current.dragging || !dragState.current.isVertical) {
+            dragState.current.dragging = false;
+            return;
+          }
+          dragState.current.dragging = false;
+          
+          const dy = dragState.current.currentY - dragState.current.startY;
+          const dt = Date.now() - dragState.current.startTime;
+          const velocity = Math.abs(dy) / dt;
+          const threshold = window.innerHeight * 0.18;
+          
+          if (Math.abs(dy) > threshold || velocity > 0.65) {
+            const sign = dy > 0 ? 1 : -1;
+            const finishY = sign * window.innerHeight;
+            
+            if (stageRef.current) {
+              stageRef.current.style.transition = 'transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+              stageRef.current.style.transform = `translate3d(0, ${finishY}px, 0) scale(0.6)`;
+            }
+            if (overlayRef.current) {
+              overlayRef.current.style.transition = 'background-color 0.25s ease';
+              overlayRef.current.style.backgroundColor = 'rgba(0, 0, 0, 0)';
+            }
+            handleClose();
+          } else {
+            setControlsVisible(true);
+            if (stageRef.current) {
+              stageRef.current.style.transition = 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+              stageRef.current.style.transform = `translate3d(0, 0px, 0) scale(1)`;
+            }
+            if (overlayRef.current) {
+              overlayRef.current.style.transition = 'background-color 0.35s ease';
+              overlayRef.current.style.backgroundColor = '';
+            }
+            
+            setTimeout(() => {
+              if (stageRef.current) {
+                stageRef.current.style.transition = '';
+                stageRef.current.style.transform = '';
+              }
+              if (overlayRef.current) {
+                overlayRef.current.style.transition = '';
+                overlayRef.current.style.backgroundColor = '';
+              }
+            }, 350);
+          }
+        }}
+      >
         {currentItem?.url && (isVid ? (
           <VideoViewer
             key={currentItem.url}

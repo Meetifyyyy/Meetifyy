@@ -96,10 +96,7 @@ export default function Step1Identity() {
 
   return (
     <AnimatedStep className={s.stepWrapper}>
-      <AuthHeading
-        title="Tell us about yourself"
-        subtitle="Let's start with the basics to set up your profile."
-      />
+      <AuthHeading title="Tell us about yourself" />
 
       <form onSubmit={handleSubmit} className={s.form} noValidate>
         <AuthField

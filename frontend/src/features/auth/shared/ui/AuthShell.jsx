@@ -72,7 +72,8 @@ function AuthShellMaster({ children, headline: defaultHeadline, subtext: default
   useLayoutEffect(() => {
     const el = panelInnerRef.current;
     if (el) {
-      const h = el.scrollHeight;
+      // We also use getBoundingClientRect here for consistency
+      const h = el.getBoundingClientRect().height;
       globalLastPanelHeight = h;
       setPanelHeight(h);
     }
@@ -82,9 +83,15 @@ function AuthShellMaster({ children, headline: defaultHeadline, subtext: default
     const el = panelInnerRef.current;
     if (!el) return;
     const observer = new ResizeObserver(() => {
-      const h = el.scrollHeight;
-      globalLastPanelHeight = h;
-      setPanelHeight(h);
+      // Use getBoundingClientRect().height instead of scrollHeight to ignore temporary
+      // scrollHeight expansions caused by mobile virtual keyboard carets.
+      // We also enforce a >3px threshold to ignore sub-pixel rounding jitter when
+      // moving focus between inputs on mobile.
+      const h = el.getBoundingClientRect().height;
+      if (globalLastPanelHeight === null || Math.abs(h - globalLastPanelHeight) > 3) {
+        globalLastPanelHeight = h;
+        setPanelHeight(h);
+      }
     });
     observer.observe(el);
 

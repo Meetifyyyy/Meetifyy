@@ -442,8 +442,9 @@ export default function SettingsRoute() {
   };
 
   return (
-    <div className={styles.page}>
-      {/* ── Sticky header ── */}
+    <main className="centre centre-wide animate-in">
+      <div className={styles.page}>
+        {/* ── Sticky header ── */}
       <header className={styles.topBar}>
         <button
           className={styles.backBtn}
@@ -1044,6 +1045,7 @@ export default function SettingsRoute() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </main>
   );
 }

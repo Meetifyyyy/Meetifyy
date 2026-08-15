@@ -1,3 +1,7 @@
+# Local dev scripts
+start.sh
+plan.md
+
 # Dependency directories
 node_modules/
 **/node_modules/

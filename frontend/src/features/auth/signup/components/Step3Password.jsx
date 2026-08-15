@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { AlertCircle, ArrowRight } from 'lucide-react';
-import { useSignup } from '../../context/SignupContext';
+import { useSignup, DEV_BYPASS_SIGNUP } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';
 import { AuthHeading, AuthField, PasswordField, AuthButton, styles as s } from '../../shared/ui';
@@ -35,6 +35,16 @@ export default function Step3Password() {
     setSubmitError(null);
     if (!isValid) return;
 
+    // ── DEV BYPASS ──────────────────────────────────────────────────────────
+    // Skip initiateSignup so no account is created during dev/design mode.
+    // Remove this block (and the DEV_BYPASS_SIGNUP flag) before shipping.
+    if (DEV_BYPASS_SIGNUP) {
+      updateData({ password });
+      nextStep();
+      return;
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     setIsSubmitting(true);
     try {
       updateData({ password });
@@ -50,7 +60,7 @@ export default function Step3Password() {
 
   return (
     <AnimatedStep className={s.stepWrapper}>
-      <AuthHeading title="Set up a password" subtitle="Keep your Meetifyy profile secure and private." />
+      <AuthHeading title="Set up a password" />
 
       <form onSubmit={handleSubmit} className={s.form} noValidate>
         <PasswordField

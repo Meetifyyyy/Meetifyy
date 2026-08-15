@@ -1,9 +1,12 @@
 .page {
   flex: 1;
   min-height: 0;
+  height: calc(100dvh - 60px - 0.5rem);
+  max-height: calc(100dvh - 60px - 0.5rem);
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  overflow: hidden;
+  box-sizing: border-box;
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
@@ -15,9 +18,13 @@
   flex: 1;
   min-height: 0;
   min-width: 0;
-  background: var(--color-bg-white);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  height: 100%;
+  max-height: 100%;
+  box-sizing: border-box;
+  background: var(--color-bg-white, #ffffff);
+  border-radius: var(--radius-xl, 20px);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
@@ -29,6 +36,8 @@
   .page {
     padding: 0;
     gap: 0;
+    height: 100%;
+    max-height: none;
     overflow: hidden;
   }
 
@@ -38,6 +47,7 @@
     max-height: 100%;
     flex-direction: column;
     border: none;
+    box-shadow: none;
     box-sizing: border-box;
     padding: 0;
   }

@@ -11,54 +11,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { NOTIFICATIONS_QUEUE, FollowNotifJob } from '../notifications/notifications.processor';
 import { clearAuthSyncCache } from '../auth/auth.service';
-
-function validateBirthday(birthdayStr: string) {
-  if (!birthdayStr) {
-    throw new BadRequestException('Date of birth is required.');
-  }
-
-  const parts = birthdayStr.split('-');
-  if (parts.length !== 3) {
-    throw new BadRequestException('Please enter a valid date of birth.');
-  }
-
-  const y = parseInt(parts[0], 10);
-  const m = parseInt(parts[1], 10);
-  const d = parseInt(parts[2], 10);
-
-  if (isNaN(y) || isNaN(m) || isNaN(d)) {
-    throw new BadRequestException('Please enter a valid date of birth.');
-  }
-
-  const currentYear = new Date().getFullYear();
-  if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1950 || y > currentYear) {
-    throw new BadRequestException(`Year of birth must be between 1950 and ${currentYear}.`);
-  }
-
-  const dateObj = new Date(y, m - 1, d);
-  if (dateObj.getFullYear() !== y || dateObj.getMonth() !== m - 1 || dateObj.getDate() !== d) {
-    throw new BadRequestException('Please enter a valid date of birth.');
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  dateObj.setHours(0, 0, 0, 0);
-
-  if (dateObj > today) {
-    throw new BadRequestException('Date of birth cannot be in the future.');
-  }
-
-  const age18Date = new Date(y + 18, m - 1, d);
-  age18Date.setHours(0, 0, 0, 0);
-  if (age18Date > today) {
-    throw new BadRequestException('You must be at least 18 years old.');
-  }
-
-  const age120Date = new Date(y + 120, m - 1, d);
-  if (age120Date < today) {
-    throw new BadRequestException('Please enter a valid date of birth.');
-  }
-}
+import { validateBirthday } from '../common/utils/birthday-validation.util';
 
 @Injectable()
 export class UsersService {
@@ -727,10 +680,11 @@ export class UsersService {
     }
 
     if (birthday !== undefined) {
-      if (birthday !== null && birthday !== '') {
-        validateBirthday(birthday);
+      if (!birthday || typeof birthday !== 'string' || birthday.trim() === '') {
+        throw new BadRequestException('Date of birth is required.');
       }
-      updateData.birthday = birthday;
+      validateBirthday(birthday);
+      updateData.birthday = birthday.trim();
     }
     
     if (avatar !== undefined) {

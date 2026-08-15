@@ -374,7 +374,7 @@ export default function ResetPasswordPage() {
                   loading={isUpdating}
                   loadingText="Updating..."
                   disabled={!password || !confirmPassword}
-                  style={{ marginTop: '0.5rem' }}
+                  style={{ marginTop: '0.2rem' }}
                 >
                   Update Password
                 </AuthButton>

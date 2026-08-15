@@ -107,7 +107,7 @@ export default function ForgotPasswordPage() {
                   loadingText="Sending..."
                   icon={<ArrowRight size={18} />}
                   disabled={!email.trim()}
-                  style={{ marginTop: '0.5rem' }}
+                  style={{ marginTop: '0.2rem' }}
                 >
                   Send Reset Link
                 </AuthButton>

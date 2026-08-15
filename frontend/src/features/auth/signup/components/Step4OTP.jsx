@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Mail, Check, AlertCircle } from 'lucide-react';
-import { useSignup } from '../../context/SignupContext';
+import { useSignup, DEV_BYPASS_SIGNUP } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';
 import { AuthHeading, AuthButton, styles as s } from '../../shared/ui';
@@ -81,6 +81,16 @@ export default function Step4OTP() {
     async (e) => {
       if (e) e.preventDefault();
       if (!isComplete || isVerifyingRef.current) return;
+
+      // ── DEV BYPASS ──────────────────────────────────────────────────────────
+      // "123456" is the magic dev code that skips the real OTP API call.
+      // Remove this block (and the DEV_BYPASS_SIGNUP flag) before shipping.
+      if (DEV_BYPASS_SIGNUP && code.join('') === '123456') {
+        setStatus('success');
+        setTimeout(() => nextStep(), 400);
+        return;
+      }
+      // ────────────────────────────────────────────────────────────────────────
 
       isVerifyingRef.current = true;
       setStatus('verifying');

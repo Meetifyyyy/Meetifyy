@@ -8,7 +8,7 @@ import styles from '../../pages/SettingsRoute.module.css';
  */
 export default function SettingsSkeleton() {
   return (
-    <main className="centre animate-in">
+    <main className="centre centre-wide animate-in">
       <div className={styles.page}>
         {/* Top bar */}
         <header className={styles.topBar}>

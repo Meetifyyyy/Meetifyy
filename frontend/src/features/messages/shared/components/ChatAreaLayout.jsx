@@ -157,49 +157,27 @@ export default function ChatAreaLayout({
       )}
 
       <div className={styles.chatBody}>
-        {isLoading ? (
-          <div className={styles.messagesSkeleton}>
-            {[
-              { align: 'left', widths: ['55%'] },
-              { align: 'right', widths: ['40%'] },
-              { align: 'right', widths: ['65%'] },
-              { align: 'left', widths: ['48%', '70%'] },
-              { align: 'right', widths: ['35%'] },
-              { align: 'left', widths: ['58%'] },
-              { align: 'right', widths: ['42%', '55%'] },
-            ].map((row, i) => (
-              <div key={i} className={`${styles.skeletonRow} ${row.align === 'right' ? styles.skeletonRight : styles.skeletonLeft}`}>
-                {row.align === 'left' && <div className={styles.skeletonAvatar} />}
-                <div className={styles.skeletonBubbles}>
-                  {row.widths.map((w, j) => (
-                    <div key={j} className={`${styles.skeletonBubble} ${row.align === 'right' ? styles.skeletonBubbleRight : ''}`} style={{ width: w }} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <ChatMessageList
-            key={conversation?.internalId || conversation?.publicId || conversation?.id || 'chat-list'}
-            messages={messages}
-            conversation={conversation}
-            currentUser={currentUser}
-            users={users}
-            searchQuery={searchQuery}
-            isTyping={isTyping}
-            typingUsers={typingUsers}
-            hasMore={hasMore}
-            isLoadingMore={isLoadingMore}
-            onLoadMore={onLoadMore}
-            onContextMenu={openContextMenu}
-            onReplyTo={setReplyingTo}
-            onOpenMediaModal={(url, type) => openViewer([{ url, type: type || 'image' }], 0)}
-            conversations={conversations}
-            onMarkSeen={onMarkSeen}
-            onRetryUpload={onRetryUpload}
-            onCancelUpload={onCancelUpload}
-          />
-        )}
+        <ChatMessageList
+          key={conversation?.internalId || conversation?.publicId || conversation?.id || 'chat-list'}
+          isLoading={isLoading}
+          messages={messages}
+          conversation={conversation}
+          currentUser={currentUser}
+          users={users}
+          searchQuery={searchQuery}
+          isTyping={isTyping}
+          typingUsers={typingUsers}
+          hasMore={hasMore}
+          isLoadingMore={isLoadingMore}
+          onLoadMore={onLoadMore}
+          onContextMenu={openContextMenu}
+          onReplyTo={setReplyingTo}
+          onOpenMediaModal={(url, type) => openViewer([{ url, type: type || 'image' }], 0)}
+          conversations={conversations}
+          onMarkSeen={onMarkSeen}
+          onRetryUpload={onRetryUpload}
+          onCancelUpload={onCancelUpload}
+        />
       </div>
 
       <ChatInputArea

@@ -328,6 +328,9 @@ export function AuthProvider({ children }) {
     if (!userData.email || !userData.email.trim()) {
       throw new Error('College email is required to sign up. Please check your details.');
     }
+    if (!userData.birthday) {
+      throw new Error('Date of birth is required.');
+    }
     if (!userData.password) {
       throw new Error('Password is required.');
     }

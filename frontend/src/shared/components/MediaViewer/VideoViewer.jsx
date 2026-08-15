@@ -642,6 +642,11 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
     }
   }, [seekBy, triggerRipple, togglePlay, triggerTapFeedback, playing, onControlsChange, onStageClick]);
 
+  const handleWrapTouchMove = useCallback((e) => {
+    // If the user drags, cancel the pending tap (play/pause)
+    clearTimeout(clickTimerRef.current);
+  }, []);
+
   // ─── Click handler on wrap — distinguishes video area vs backdrop area ──
   const handleWrapClick = useCallback((e) => {
     // If clicking on controls, let them handle it
@@ -698,6 +703,7 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
       onClick={handleWrapClick}
       onDoubleClick={handleWrapDoubleClick}
       onTouchStart={handleWrapTouch}
+      onTouchMove={handleWrapTouchMove}
       data-fullscreen={isFullscreen || undefined}
     >
       {/* ── Video element — no click/dblclick handlers; events bubble to wrap ── */}
@@ -709,6 +715,7 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
         autoPlay
         preload="auto"
         aria-label="Video player"
+        style={{ opacity: isLoading ? 0 : 1, transition: 'opacity 0.3s ease' }}
       />
 
       {/* ── Loading / Buffering spinner ───────────────────────────────────── */}

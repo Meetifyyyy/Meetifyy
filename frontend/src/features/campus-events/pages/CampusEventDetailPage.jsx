@@ -28,19 +28,23 @@ export default function CampusEventDetailPage() {
 
   if (isLoading) {
     return (
-      <main className={styles.page}>
-        <div className={styles.topbar}>
-          <button className={styles.backBtn} onClick={back} aria-label="Back"><ArrowLeft size={20} /></button>
-        </div>
-        <div className={styles.detailLayout}>
-          <div className={styles.posterHero}>
-            <Skeleton type="rect" width="100%" height="320px" style={{ borderRadius: '16px' }} />
+      <main className="centre centre-wide animate-in">
+        <div className={styles.page}>
+          <div className={styles.topbar}>
+            <button className={styles.backBtn} onClick={back} aria-label="Back"><ArrowLeft size={20} /></button>
           </div>
-          <div className={styles.content}>
-            <Skeleton type="rect" width="80px" height="24px" style={{ borderRadius: '999px' }} />
-            <Skeleton type="text" width="70%" height="28px" style={{ borderRadius: '6px', margin: '0.5rem 0 0.25rem' }} />
-            <Skeleton type="text" width="40%" height="16px" style={{ borderRadius: '6px', marginBottom: '1rem' }} />
-            <Skeleton type="rect" width="100%" height="150px" style={{ borderRadius: '14px' }} />
+          <div className={styles.scrollBody}>
+            <div className={styles.detailLayout}>
+              <div className={styles.posterHero}>
+                <Skeleton type="rect" width="100%" height="320px" style={{ borderRadius: '16px' }} />
+              </div>
+              <div className={styles.content}>
+                <Skeleton type="rect" width="80px" height="24px" style={{ borderRadius: '999px' }} />
+                <Skeleton type="text" width="70%" height="28px" style={{ borderRadius: '6px', margin: '0.5rem 0 0.25rem' }} />
+                <Skeleton type="text" width="40%" height="16px" style={{ borderRadius: '6px', marginBottom: '1rem' }} />
+                <Skeleton type="rect" width="100%" height="150px" style={{ borderRadius: '14px' }} />
+              </div>
+            </div>
           </div>
         </div>
       </main>
@@ -64,75 +68,79 @@ export default function CampusEventDetailPage() {
   const registrable = isSafeRegistrationUrl(event.registrationUrl) && state.key !== 'past';
 
   return (
-    <main className={styles.page}>
-      <div className={styles.topbar}>
-        <button className={styles.backBtn} onClick={back} aria-label="Back"><ArrowLeft size={20} /></button>
-      </div>
-
-      <div className={styles.detailLayout}>
-        <div className={styles.posterHero}>
-          {posterSrc ? (
-            <img src={posterSrc} alt={event.title} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-          ) : (
-            <div className={styles.posterHeroFallback}>{event.title}</div>
-          )}
+    <main className="centre centre-wide animate-in">
+      <div className={styles.page}>
+        <div className={styles.topbar}>
+          <button className={styles.backBtn} onClick={back} aria-label="Back"><ArrowLeft size={20} /></button>
         </div>
 
-        <div className={styles.content}>
-          <span className={`${styles.statusPill} ${state.cls}`}>{state.label}</span>
-          <h1 className={styles.title}>{event.title}</h1>
-          <div className={styles.hostedBy}>Hosted by {event.hostedBy}</div>
-
-          <div className={styles.metaGrid}>
-            <div className={styles.metaItem}>
-              <img src="/icons/tear-off_calendar_color.svg" width={22} height={22} alt="Date & Time" />
-              <div>
-                <div className={styles.metaLabel}>{isSingleDayEvent(event.startTime, event.endTime) ? 'Date & Time' : 'Dates & Time'}</div>
-                <div className={styles.metaValue}>
-                  {formatCombinedDateTime(event.startTime, event.endTime)}
-                </div>
-              </div>
+        <div className={styles.scrollBody}>
+          <div className={styles.detailLayout}>
+            <div className={styles.posterHero}>
+              {posterSrc ? (
+                <img src={posterSrc} alt={event.title} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+              ) : (
+                <div className={styles.posterHeroFallback}>{event.title}</div>
+              )}
             </div>
-            {event.venue && (
-              <div className={styles.metaItem}>
-                <img src="/icons/classical_building_color.svg" width={22} height={22} alt="Venue" />
-                <div>
-                  <div className={styles.metaLabel}>Venue</div>
-                  <div className={styles.metaValue}>{event.venue}</div>
+
+            <div className={styles.content}>
+              <span className={`${styles.statusPill} ${state.cls}`}>{state.label}</span>
+              <h1 className={styles.title}>{event.title}</h1>
+              <div className={styles.hostedBy}>Hosted by {event.hostedBy}</div>
+
+              <div className={styles.metaGrid}>
+                <div className={styles.metaItem}>
+                  <img src="/icons/tear-off_calendar_color.svg" width={22} height={22} alt="Date & Time" />
+                  <div>
+                    <div className={styles.metaLabel}>{isSingleDayEvent(event.startTime, event.endTime) ? 'Date & Time' : 'Dates & Time'}</div>
+                    <div className={styles.metaValue}>
+                      {formatCombinedDateTime(event.startTime, event.endTime)}
+                    </div>
+                  </div>
+                </div>
+                {event.venue && (
+                  <div className={styles.metaItem}>
+                    <img src="/icons/classical_building_color.svg" width={22} height={22} alt="Venue" />
+                    <div>
+                      <div className={styles.metaLabel}>Venue</div>
+                      <div className={styles.metaValue}>{event.venue}</div>
+                    </div>
+                  </div>
+                )}
+                <div className={styles.metaItem}>
+                  <img src="/icons/busts_in_silhouette_color.svg" width={22} height={22} alt="Organizer" />
+                  <div>
+                    <div className={styles.metaLabel}>Organizer</div>
+                    <div className={styles.metaValue}>{event.hostedBy}</div>
+                  </div>
                 </div>
               </div>
-            )}
-            <div className={styles.metaItem}>
-              <img src="/icons/busts_in_silhouette_color.svg" width={22} height={22} alt="Organizer" />
-              <div>
-                <div className={styles.metaLabel}>Organizer</div>
-                <div className={styles.metaValue}>{event.hostedBy}</div>
-              </div>
+
+              {event.description && (
+                <>
+                  <h3 className={styles.sectionLabel}>About this event</h3>
+                  <p className={styles.description}>{event.description}</p>
+                </>
+              )}
             </div>
           </div>
 
-          {event.description && (
-            <>
-              <h3 className={styles.sectionLabel}>About this event</h3>
-              <p className={styles.description}>{event.description}</p>
-            </>
+          {isSafeRegistrationUrl(event.registrationUrl) && (
+            <div className={styles.registerBar}>
+              {registrable ? (
+                <a className={styles.registerBtn} href={event.registrationUrl} target="_blank" rel="noopener noreferrer">
+                  Register Now <ExternalLink size={18} />
+                </a>
+              ) : (
+                <span className={`${styles.registerBtn} ${styles.disabled}`}>
+                  {state.key === 'past' ? 'This event has ended' : 'Registration not available'}
+                </span>
+              )}
+            </div>
           )}
         </div>
       </div>
-
-      {isSafeRegistrationUrl(event.registrationUrl) && (
-        <div className={styles.registerBar}>
-          {registrable ? (
-            <a className={styles.registerBtn} href={event.registrationUrl} target="_blank" rel="noopener noreferrer">
-              Register Now <ExternalLink size={18} />
-            </a>
-          ) : (
-            <span className={`${styles.registerBtn} ${styles.disabled}`}>
-              {state.key === 'past' ? 'This event has ended' : 'Registration not available'}
-            </span>
-          )}
-        </div>
-      )}
     </main>
   );
 }

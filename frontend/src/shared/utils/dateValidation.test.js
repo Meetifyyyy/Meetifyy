@@ -49,8 +49,8 @@ describe('validateDOB', () => {
       expect(res.error).toBe('You must be at least 18 years old.');
     });
 
-    it('rejects future DOB', () => {
-      const res = validateDOB(2025, 1, 1);
+    it('rejects future DOB within current year', () => {
+      const res = validateDOB(2024, 6, 1);
       expect(res.isValid).toBe(false);
       expect(res.error).toBe('Date of birth cannot be in the future.');
     });
@@ -102,10 +102,9 @@ describe('validateDOB', () => {
       vi.setSystemTime(new Date(2024, 4, 15));
     });
 
-    it('rejects age over 120 (prevent 1900 born issues)', () => {
-      // 120 years before 2024 is 1904
+    it('rejects age over 120 / before 1950', () => {
       expect(validateDOB(1899, 1, 1).isValid).toBe(false);
-      expect(validateDOB(1899, 1, 1).error).toBe('Please enter a valid date.');
+      expect(validateDOB(1899, 1, 1).error).toBe('Year of birth must be between 1950 and 2024.');
     });
   });
 });
