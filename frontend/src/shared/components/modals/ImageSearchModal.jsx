@@ -5,6 +5,7 @@ import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import { compressAndCacheDraftImage } from '@shared/utils/draftImageCache';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { showToast } from '@shared/utils/toast';
 
 export default function ImageSearchModal({ onClose, onSelect }) {
   const [query, setQuery] = useState('');
@@ -148,12 +149,12 @@ export default function ImageSearchModal({ onClose, onSelect }) {
     if (file) {
       const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
       if (!file.type.startsWith('image/')) {
-        alert('Only image files are allowed.');
+        showToast('Only image files allowed', 'error');
         e.target.value = '';
         return;
       }
       if (file.size > MAX_SIZE) {
-        alert('Image too large. Maximum size is 10 MB.');
+        showToast('File size limit is 10 MB', 'error');
         e.target.value = '';
         return;
       }
@@ -206,7 +207,7 @@ export default function ImageSearchModal({ onClose, onSelect }) {
       }
     } catch (e) {
       console.error('Failed to compress image:', e);
-      alert('Failed to process image. Please try again.');
+      showToast('Image processing failed', 'error');
     } finally {
       setIsCompressingRemote(false);
       setCropTarget(null);

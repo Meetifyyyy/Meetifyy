@@ -5,6 +5,7 @@ import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import { sortGroupMembers } from '@shared/utils/memberSort';
+import { showToast } from '@shared/utils/toast';
 import styles from './GroupSettingsModal.module.css';
 
 export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup }) {
@@ -62,7 +63,7 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
     if (file) {
       const MAX_FILE_SIZE = 50 * 1024 * 1024;
       if (file.size > MAX_FILE_SIZE) {
-        alert('File too large. Maximum size is 50 MB.');
+        showToast('File size limit is 50 MB', 'error');
         e.target.value = '';
         return;
       }
@@ -78,7 +79,7 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
           const { publicUrl } = await processAndUploadImage(file, 'avatars', { maxWidthOrHeight: 512 });
           await updateGroupInfo(conversation.id, undefined, publicUrl, undefined, originalAvatar);
         } catch {
-          alert('Failed to upload group icon.');
+          showToast('Icon upload failed', 'error');
           updateGroupInfo(conversation.id, undefined, originalAvatar, undefined);
         }
       })();
@@ -237,11 +238,13 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
 
       <ConfirmModal
         title="Remove Member"
-        desc="Are you sure you want to remove this member from the group?"
+        desc="This member will be removed from the group."
         visible={confirmModal.visible}
         onCancel={() => setConfirmModal({ visible: false, targetUserId: null })}
         onConfirm={confirmRemoveMember}
         confirmText="Remove"
+        cancelText="Cancel"
+        isDestructive={true}
       />
     </>
   );

@@ -22,15 +22,15 @@ export function useReportMutation({ onSuccess, onError } = {}) {
       return parsed.data;
     },
     onSuccess: (data, variables) => {
-      showToast('Report submitted. Thank you for keeping Meetifyy safe.');
+      showToast('Report submitted', 'success');
       if (onSuccess) onSuccess(data, variables);
     },
     onError: (error, variables) => {
       const message =
         error?.response?.data?.message ||
         error?.message ||
-        'Could not submit report. Please try again.';
-      showToast(message);
+        "Couldn't submit report";
+      showToast(message, 'error');
       if (onError) onError(error, variables);
     },
   });

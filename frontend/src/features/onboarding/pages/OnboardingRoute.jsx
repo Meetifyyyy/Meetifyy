@@ -181,13 +181,13 @@ export default function OnboardingRoute() {
         // Keep the draft so the user's picks survive a retry.
         setIsCompleting(false);
         isFinishingRef.current = false;
-        showToast('Failed to save your profile. Please try again.');
+        showToast("Couldn't save profile", 'error');
       }
     } catch (err) {
       clearInterval(interval);
       setIsCompleting(false);
       isFinishingRef.current = false;
-      showToast(err?.message || 'An error occurred while saving your profile.');
+      showToast(err?.message || "Couldn't save profile", 'error');
     }
   };
 

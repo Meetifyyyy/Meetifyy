@@ -184,7 +184,7 @@ export default function MessagesLayout() {
           }
         } catch (err) {
           console.error('Failed to create conversation on send:', err);
-          showToast('Could not send message — please try again.');
+          showToast('Message failed to send', 'error');
           return;
         }
       }

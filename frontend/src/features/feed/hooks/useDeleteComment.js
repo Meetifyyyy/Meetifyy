@@ -96,7 +96,7 @@ export function useDeleteComment() {
       queryClient.invalidateQueries({ queryKey: ['feed'] });
       queryClient.invalidateQueries({ queryKey: ['posts'] });
       queryClient.invalidateQueries({ queryKey: ['user-posts'] });
-      showToast('Could not delete comment. Please try again.');
+      showToast("Couldn't delete comment", 'error');
     },
 
     onSuccess: (_result, { postId }) => {

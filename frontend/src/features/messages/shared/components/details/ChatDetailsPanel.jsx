@@ -466,13 +466,10 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             if (descChanged) changes.push('description');
 
             if (changes.length > 0) {
-              const toastMsg = changes.length === 1 
-                ? `Updated ${changes[0]}` 
-                : (changes.length === 2 ? `Updated ${changes[0]} and ${changes[1]}` : 'Updated group info');
-              showToast(toastMsg);
+              showToast('Group updated', 'success');
             }
           } catch (err) {
-            showToast('Failed to update group info');
+            showToast("Couldn't update group", 'error');
           } finally {
             setIsUploadingAvatar(false);
             setShowEditGroupPage(false);
@@ -976,16 +973,16 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
 
       <ConfirmModal
         title={
-          confirmType === 'endGroup' ? 'End Group?' :
+          confirmType === 'endGroup' ? 'End Group' :
           confirmType === 'leaveGroup' ? 'Leave Group' :
-          confirmType === 'changeOwner' ? 'Change Group Owner?' :
+          confirmType === 'changeOwner' ? 'Transfer Ownership' :
           'Remove Member'
         }
         desc={
-          confirmType === 'endGroup' ? 'This group will be closed permanently. Previous chats and media will remain accessible.' :
-          confirmType === 'leaveGroup' ? 'Are you sure you want to leave this group?' :
-          confirmType === 'changeOwner' ? `Ownership of this group will be transferred to ${(Object.values(users).find(u => u.id === targetUserId)?.displayName || Object.values(users).find(u => u.id === targetUserId)?.name || 'This member')}.` :
-          'Are you sure you want to remove this member from the group?'
+          confirmType === 'endGroup' ? 'This will close the group permanently for all members.' :
+          confirmType === 'leaveGroup' ? 'You will stop receiving messages from this group.' :
+          confirmType === 'changeOwner' ? `${(Object.values(users).find(u => u.id === targetUserId)?.displayName || Object.values(users).find(u => u.id === targetUserId)?.name || 'This member')} will become the new group owner.` :
+          `${(Object.values(users).find(u => u.id === targetUserId)?.displayName || Object.values(users).find(u => u.id === targetUserId)?.name || 'This member')} will be removed from this group.`
         }
         visible={showConfirm}
         onCancel={() => setShowConfirm(false)}
@@ -993,9 +990,14 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         confirmText={
           confirmType === 'endGroup' ? 'End Group' :
           confirmType === 'leaveGroup' ? 'Leave' :
-          confirmType === 'changeOwner' ? 'Change Owner' :
+          confirmType === 'changeOwner' ? 'Transfer' :
           'Remove'
         }
+        cancelText={
+          confirmType === 'leaveGroup' ? 'Stay' :
+          'Cancel'
+        }
+        isDestructive={true}
       />
       
       <InviteModal 

@@ -22,18 +22,19 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
   const [uploadingType, setUploadingType] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [kickTarget, setKickTarget] = useState(null);
 
   const handleDeleteCommunity = async () => {
     setIsDeleting(true);
     try {
       await communitiesApi.delete(community.id);
-      showToast('Community deleted.');
+      showToast('Community deleted', 'success');
       onClose();
       if (onDeleteCommunity) {
         onDeleteCommunity();
       }
     } catch (err) {
-      showToast(err?.message || 'Could not delete community.');
+      showToast(err?.message || "Couldn't delete community", 'error');
     } finally {
       setIsDeleting(false);
       setShowDeleteConfirm(false);
@@ -65,7 +66,7 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
     if (e) e.preventDefault();
     const finalName = name.trim();
     if (!finalName) {
-      showToast('Community name is required');
+      showToast('Name is required', 'error');
       return;
     }
     setIsSaving(true);
@@ -90,20 +91,29 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
         interests: parsedInterests,
         rules: parsedRules
       });
-      showToast('Community updated successfully!');
+      showToast('Community updated', 'success');
       onClose();
     } catch (err) {
       console.error(err);
-      showToast(err?.message || 'Failed to update community');
+      showToast(err?.message || "Couldn't update community", 'error');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleKick = async (memberId) => {
-    if (window.confirm('Are you sure you want to kick this member? They will be banned from joining for 7 days.')) {
-      await kickMember(community.id, memberId);
-      showToast('Member kicked successfully');
+  const handleKick = (memberId) => {
+    setKickTarget(memberId);
+  };
+
+  const confirmKickMember = async () => {
+    if (!kickTarget) return;
+    try {
+      await kickMember(community.id, kickTarget);
+      showToast('Member removed', 'success');
+    } catch (err) {
+      showToast(err?.message || "Couldn't remove member", 'error');
+    } finally {
+      setKickTarget(null);
     }
   };
 
@@ -125,7 +135,7 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
       }
     } catch (e) {
       console.error(e);
-      showToast('Upload failed');
+      showToast('Upload failed', 'error');
     } finally {
       setIsUploading(false);
       setUploadingType(null);
@@ -162,9 +172,9 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
     try {
       await communitiesApi.approveJoinRequest(community.id, requestId);
       setRequests((prev) => prev.filter((r) => r.id !== requestId));
-      showToast('Join request approved');
+      showToast('Request approved', 'success');
     } catch {
-      showToast('Failed to approve request');
+      showToast("Couldn't approve request", 'error');
     }
   };
 
@@ -172,9 +182,9 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
     try {
       await communitiesApi.declineJoinRequest(community.id, requestId);
       setRequests(prev => prev.filter(r => r.id !== requestId));
-      showToast('Join request declined');
+      showToast('Request declined', 'success');
     } catch {
-      showToast('Failed to decline request');
+      showToast("Couldn't decline request", 'error');
     }
   };
 
@@ -462,12 +472,24 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
 
         <ConfirmModal
           visible={showDeleteConfirm}
-          title="Delete Community?"
-          desc={`Are you sure you want to delete "${community.name}"? This action is permanent and cannot be undone.`}
-          cancelText="No"
-          confirmText={isDeleting ? 'Deleting...' : 'Yes'}
+          title="Delete Community"
+          desc={`"${community.name}" and all of its content will be permanently removed.`}
+          confirmText={isDeleting ? 'Deleting...' : 'Delete'}
+          cancelText="Cancel"
+          isDestructive={true}
           onCancel={() => setShowDeleteConfirm(false)}
           onConfirm={handleDeleteCommunity}
+        />
+
+        <ConfirmModal
+          visible={Boolean(kickTarget)}
+          title="Remove Member"
+          desc="They will be removed and temporarily banned for 7 days."
+          confirmText="Remove"
+          cancelText="Cancel"
+          isDestructive={true}
+          onCancel={() => setKickTarget(null)}
+          onConfirm={confirmKickMember}
         />
 
 

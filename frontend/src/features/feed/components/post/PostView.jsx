@@ -136,7 +136,7 @@ export default function PostView({ post, onBack }) {
         return { ...old, comments: merged, commentsNextCursor: res.nextCursor };
       });
     } catch {
-      showToast('Could not load more comments.');
+      showToast("Couldn't load comments", 'error');
     } finally {
       setLoadingMore(false);
     }

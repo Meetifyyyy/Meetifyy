@@ -207,13 +207,14 @@ export default function ChatAreaLayout({
 
       {unsendConfirmMsg && (
         <ConfirmModal
-          title="Unsend message?"
-          desc="This will remove the message for everyone."
+          title="Unsend Message"
+          desc="This message will be removed for everyone in this chat."
           confirmText="Unsend"
+          cancelText="Cancel"
           visible={Boolean(unsendConfirmMsg)}
           onConfirm={handleUnsend}
           onCancel={() => setUnsendConfirmMsg(null)}
-          isDestructive
+          isDestructive={true}
         />
       )}
 

@@ -138,10 +138,10 @@ export default function ProfilePage() {
       await usersApi.updateProfile({ cover: gradient });
       await updateProfile({ cover: gradient });
       queryClient.invalidateQueries(PROFILE_KEYS.byUsername(targetUsername));
-      showToast('Cover updated!');
+      showToast('Cover updated', 'success');
       setShowCoverEditor(false);
     } catch {
-      showToast('Could not update cover.');
+      showToast("Couldn't update cover", 'error');
     } finally {
       setSavingCover(false);
     }
@@ -151,7 +151,7 @@ export default function ProfilePage() {
     const file = e.target.files[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
-      showToast('Image too large — max 10 MB.');
+      showToast('Image too large (max 10MB)', 'error');
       e.target.value = '';
       return;
     }
@@ -164,7 +164,7 @@ export default function ProfilePage() {
     const file = e.target.files[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
-      showToast('Image too large — max 10 MB.');
+      showToast('Image too large (max 10MB)', 'error');
       e.target.value = '';
       return;
     }
@@ -186,11 +186,11 @@ export default function ProfilePage() {
       await usersApi.updateProfile(updateData);
       await updateProfile(updateData);
       queryClient.invalidateQueries(PROFILE_KEYS.byUsername(targetUsername));
-      showToast(`${cropType === 'avatar' ? 'Avatar' : 'Cover'} updated!`);
+      showToast(`${cropType === 'avatar' ? 'Avatar' : 'Cover'} updated`, 'success');
       if (cropType === 'cover') setShowCoverEditor(false);
     } catch (e) {
       console.error(e);
-      showToast('Upload failed.');
+      showToast('Upload failed', 'error');
     } finally {
       setSavingCover(false);
       setCropType(null);

@@ -1,24 +1,48 @@
 .toast {
   position: fixed;
-  bottom: 32px;
+  bottom: 2rem;
+  top: auto;
   left: 50%;
   transform: translateX(-50%) translateY(20px);
-  z-index: 999999;
-  display: flex;
+  z-index: 9999999;
+  display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.75rem 1.25rem;
-  background: #FEF2F2;
-  border: 1px solid #FECACA;
-  border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.15);
+  justify-content: center;
+  text-align: center;
+  padding: 0.55rem 1.25rem;
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
+  min-height: 38px;
+  width: auto;
+  width: fit-content;
+  width: -moz-fit-content;
+  min-width: 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   font-family: var(--font-family-sans);
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   font-weight: 500;
-  color: #B91C1C;
+  line-height: 1.35;
+  color: #ffffff;
+  white-space: nowrap;
+  max-width: min(420px, calc(100vw - 24px));
+  box-sizing: border-box;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.35s ease, transform 0.35s ease;
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 768px) {
+  .toast {
+    bottom: max(1.5rem, calc(4.5rem + env(safe-area-inset-bottom, 0px)));
+    top: auto;
+  }
+}
+
+.toast span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .toast.visible {
@@ -27,7 +51,9 @@
   pointer-events: auto;
 }
 
-.toast svg {
-  color: var(--color-danger);
-  flex-shrink: 0;
+:global([data-theme="dark"]) .toast {
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }

@@ -66,7 +66,7 @@ export default function ChatInputArea({
 
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
-      if (showToast) showToast('File too large. Maximum size is 50 MB.');
+      if (showToast) showToast('File too large (max 50MB)', 'error');
       e.target.value = '';
       return;
     }
@@ -76,7 +76,7 @@ export default function ChatInputArea({
     const ALLOWED_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES];
     
     if (!ALLOWED_TYPES.includes(file.type)) {
-      if (showToast) showToast('Unsupported file type.');
+      if (showToast) showToast('Unsupported file type', 'error');
       e.target.value = '';
       return;
     }

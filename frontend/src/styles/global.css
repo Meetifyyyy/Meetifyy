@@ -48,15 +48,182 @@ body {
   -webkit-user-select: none;
 }
 
-/* Toast Notification Clearance */
+/* Toast Notification Clearance & Unified Positioning System */
 [data-sonner-toaster] {
-  top: 16px !important;
-  padding: 0 16px !important;
+  --width: auto !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  right: auto !important;
+  padding: 0 !important;
   z-index: 9999999 !important;
+  pointer-events: none !important;
+  width: auto !important;
+  max-width: 100vw !important;
+}
+
+/* 1. Bottom Sonner Toasts (Default Sonner Toaster / bottom-center) */
+[data-sonner-toaster][data-y-position="bottom"] {
+  bottom: 2rem !important;
+  top: auto !important;
+  display: flex !important;
+  flex-direction: column-reverse !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+}
+
+@media (max-width: 768px) {
+  [data-sonner-toaster][data-y-position="bottom"] {
+    bottom: max(1.5rem, calc(4.5rem + env(safe-area-inset-bottom, 0px))) !important;
+    top: auto !important;
+  }
+}
+
+/* 2. Top Instant Notifications (Instant Notification Cards / top-center) */
+[data-sonner-toaster][data-y-position="top"] {
+  top: 1.25rem !important;
+  bottom: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+}
+
+@media (max-width: 768px) {
+  [data-sonner-toaster][data-y-position="top"] {
+    top: max(1rem, env(safe-area-inset-top, 0px)) !important;
+    bottom: auto !important;
+  }
 }
 
 [data-sonner-toast] {
-  margin-top: 8px !important;
+  --width: auto !important;
+  width: auto !important;
+  width: fit-content !important;
+  width: -moz-fit-content !important;
+  max-width: min(420px, calc(100vw - 24px)) !important;
+  margin: 0 auto !important;
+  pointer-events: auto !important;
+}
+
+/* Sonner Styled Monochrome Pill (Default Light Mode) */
+[data-sonner-toast][data-styled="true"] {
+  --width: auto !important;
+  width: auto !important;
+  width: fit-content !important;
+  width: -moz-fit-content !important;
+  min-width: 0 !important;
+  background: #000000 !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25) !important;
+  padding: 0.55rem 1.25rem !important;
+  min-height: 38px !important;
+  font-family: var(--font-family-sans) !important;
+  font-weight: 500 !important;
+  font-size: 0.86rem !important;
+  line-height: 1.35 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  gap: 0 !important;
+  box-sizing: border-box !important;
+  margin: 0 auto !important;
+}
+
+[data-sonner-toast] [data-content] {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+
+[data-sonner-toast] [data-title],
+[data-sonner-toast] [data-description] {
+  color: #ffffff !important;
+  font-weight: 500 !important;
+  font-size: 0.86rem !important;
+  line-height: 1.35 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  width: auto !important;
+  display: inline-block !important;
+}
+
+/* Completely remove all icons from toasts */
+[data-sonner-toast] [data-icon] {
+  display: none !important;
+}
+
+[data-sonner-toast] [data-button] {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border: none !important;
+  border-radius: 9999px !important;
+  padding: 3px 10px !important;
+  font-size: 0.78rem !important;
+  font-weight: 500 !important;
+  height: auto !important;
+  margin-left: 8px !important;
+  flex-shrink: 0 !important;
+  cursor: pointer !important;
+}
+
+[data-sonner-toast] [data-cancel] {
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 9999px !important;
+  padding: 3px 10px !important;
+  font-size: 0.78rem !important;
+  font-weight: 500 !important;
+}
+
+[data-sonner-toast] [data-close-button] {
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 9999px !important;
+}
+
+/* Sonner Monochrome Dark Mode */
+[data-theme="dark"] [data-sonner-toast][data-styled="true"] {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+}
+
+[data-theme="dark"] [data-sonner-toast] [data-title],
+[data-theme="dark"] [data-sonner-toast] [data-description] {
+  color: #000000 !important;
+}
+
+[data-theme="dark"] [data-sonner-toast] [data-button] {
+  background: #000000 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] [data-sonner-toast] [data-cancel] {
+  background: rgba(0, 0, 0, 0.1) !important;
+  color: #000000 !important;
+}
+
+[data-theme="dark"] [data-sonner-toast] [data-close-button] {
+  background: rgba(0, 0, 0, 0.1) !important;
+  color: #000000 !important;
+}
+
+/* Reset any default sonner wrapping for custom toasts (Instant Notification cards) */
+[data-sonner-toast]:not([data-styled="true"]) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  width: auto !important;
 }
 
 html {
@@ -302,43 +469,80 @@ nav a.active {
 .custom-toast {
   position: fixed;
   bottom: 2rem;
+  top: auto;
   left: 50%;
   transform: translateX(-50%) translateY(20px);
-  background: var(--color-text-main, #1e293b);
-  color: var(--color-text-inverse, #ffffff);
-  padding: 0.75rem 1.5rem;
-  border-radius: 100px;
+  background: #000000;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 0.55rem 1.25rem;
+  border-radius: 9999px;
+  min-height: 38px;
+  width: auto;
+  width: fit-content;
+  width: -moz-fit-content;
+  min-width: 0;
+  max-width: min(420px, calc(100vw - 24px));
   font-family: var(--font-family-sans);
-  font-weight: 600;
-  font-size: 0.85rem;
+  font-weight: 500;
+  font-size: 0.86rem;
+  line-height: 1.35;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   opacity: 0;
   pointer-events: none;
   z-index: 9999999;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+  box-sizing: border-box;
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.custom-toast.custom-toast-error {
-  background: #dc2626;
-  color: #ffffff;
-  box-shadow: 0 8px 24px rgba(220, 38, 38, 0.4);
+.custom-toast.custom-toast-bottom {
+  bottom: 2rem;
+  top: auto;
+  transform: translateX(-50%) translateY(20px);
 }
 
-.custom-toast.custom-toast-success {
-  background: #16a34a;
-  color: #ffffff;
-  box-shadow: 0 8px 24px rgba(22, 163, 74, 0.4);
+.custom-toast.custom-toast-top {
+  top: 1.25rem;
+  bottom: auto;
+  transform: translateX(-50%) translateY(-20px);
+}
+
+.custom-toast-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Custom Toast Dark Mode */
+[data-theme="dark"] .custom-toast {
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 @media (max-width: 768px) {
-  .custom-toast {
+  .custom-toast,
+  .custom-toast.custom-toast-bottom {
     bottom: max(1.5rem, calc(4.5rem + env(safe-area-inset-bottom, 0px)));
+    top: auto;
+  }
+
+  .custom-toast.custom-toast-top {
+    top: max(1rem, env(safe-area-inset-top, 0px));
+    bottom: auto;
   }
 }
 
 .custom-toast.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
 }
 
 /* ---------- Centre Layout ---------- */

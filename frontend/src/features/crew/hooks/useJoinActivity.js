@@ -159,7 +159,7 @@ export function useJoinActivity() {
     applyRollback,
     callApi,
     debounceMs: 100,
-    errorMessage: 'Could not update. Please try again.',
+    errorMessage: "Couldn't update activity",
     invalidateKeys: (vars) => {
       const cleanId = vars.activityId ? String(vars.activityId).replace(/^(act_)+/, '') : vars.activityId;
       // We can safely invalidate ['activities'] now because the backend

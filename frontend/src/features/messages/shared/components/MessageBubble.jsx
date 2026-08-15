@@ -399,7 +399,7 @@ function GroupInviteCard({ msg, currentUser, conversations, navigate, requestToJ
       if (isApprovalRequired) {
         if (!isRequested) {
           await requestToJoinGroup(targetGroupId);
-          toast.success('Join request sent! 📨');
+          toast.success('Join request sent');
         }
       } else {
         if (isCampusGroup) {
@@ -410,7 +410,7 @@ function GroupInviteCard({ msg, currentUser, conversations, navigate, requestToJ
         navigateToGroup();
       }
     } catch {
-      toast.error('Failed to send request');
+      toast.error('Request failed');
     } finally {
       setIsSubmitting(false);
     }

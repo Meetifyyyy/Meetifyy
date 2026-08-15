@@ -167,7 +167,6 @@ export default defineConfig({
     warmup: {
       clientFiles: [
         './src/App.jsx',
-        './src/layout/MainLayout.jsx',
         './src/shared/context/AuthContext.jsx',
         './src/features/feed/pages/FeedRoute.jsx',
         './src/features/messages/components/layout/MessagesLayout.jsx',

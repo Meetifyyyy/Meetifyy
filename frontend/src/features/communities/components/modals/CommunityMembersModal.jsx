@@ -62,9 +62,9 @@ function MemberActionMenu({ member, communityId, isCurrentUser, isAdmin, onRemov
     setOpen(false);
     try {
       await usersApi.blockUser(member.id);
-      showToast(`${member.name} blocked.`);
+      showToast(`${member.name} blocked`, 'success');
     } catch {
-      showToast('Could not block user.');
+      showToast("Couldn't block user", 'error');
     }
   };
 
@@ -72,10 +72,10 @@ function MemberActionMenu({ member, communityId, isCurrentUser, isAdmin, onRemov
     setOpen(false);
     try {
       await communitiesApi.removeGroupMember(communityId, member.id);
-      showToast(`${member.name} removed.`);
+      showToast(`${member.name} removed`, 'success');
       if (onRemoved) onRemoved(member.id);
     } catch {
-      showToast('Could not remove member.');
+      showToast("Couldn't remove member", 'error');
     }
   };
 

@@ -203,7 +203,7 @@ export default function DirectoryPage() {
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
-    showToast('Directory link copied! 🔗');
+    showToast('Link copied', 'success');
   };
 
   const showCurrentUserCard = useMemo(() => {

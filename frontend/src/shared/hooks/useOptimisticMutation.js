@@ -21,7 +21,7 @@ export function useOptimisticMutation({
   onOptimisticUpdate,
   onSuccess,
   onError,
-  errorMessage = 'Something went wrong. Please try again.',
+  errorMessage = 'Action failed',
 }) {
   const queryClient = useQueryClient();
 

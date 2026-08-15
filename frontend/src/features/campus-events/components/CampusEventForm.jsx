@@ -126,7 +126,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
 
         const uploadedKey = result?.key;
         if (!uploadedKey) {
-          throw new Error('Image upload failed. Please try again.');
+          throw new Error('Image upload failed');
         }
 
         logUploadStage('UPLOAD_SUCCESS', { key: uploadedKey });
@@ -139,7 +139,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
           logUploadStage('UPLOAD_ABORTED');
           throw err;
         }
-        const errMsg = err?.message || 'Image upload failed. Please try again.';
+        const errMsg = err?.message || 'Image upload failed';
         logUploadStage('UPLOAD_FAILED', { message: errMsg });
         setError(errMsg);
         showToast(errMsg, 'error');
@@ -168,14 +168,14 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
     const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     const ALLOWED_EXT  = /\.(jpe?g|png|webp|gif)$/i;
     if (!ALLOWED_MIME.includes(file.type) || !ALLOWED_EXT.test(file.name)) {
-      const errMsg = 'Only JPG, PNG, WebP, or GIF images are allowed.';
+      const errMsg = 'Invalid image format (JPG, PNG, WebP)';
       setError(errMsg);
       showToast(errMsg, 'error');
       setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
-      const errMsg = 'Image must be under 20 MB.';
+      const errMsg = 'Image must be under 20MB';
       setError(errMsg);
       showToast(errMsg, 'error');
       setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
@@ -279,7 +279,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
         await posterUploadRef.current;
       } catch (err) {
         if (err?.name !== 'AbortError') {
-          const errMsg = 'Poster upload failed. Retry the image or remove it before saving.';
+          const errMsg = 'Poster upload failed';
           setError(errMsg);
           showToast(errMsg, 'error');
           setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
@@ -290,7 +290,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
 
     // Block submit if a new image was selected but upload failed and was not resolved
     if (activeBlobUrlRef.current && !posterKeyRef.current) {
-      const errMsg = 'Poster image upload failed. Tap to retry before saving.';
+      const errMsg = 'Poster upload failed';
       setError(errMsg);
       showToast(errMsg, 'error');
       return;
@@ -316,7 +316,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
       onSaved?.(saved);
       onClose?.();
     } catch (err) {
-      const errMsg = err?.message || 'Something went wrong. Please try again.';
+      const errMsg = err?.message || "Couldn't save event";
       setError(errMsg);
       showToast(errMsg, 'error');
       setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
@@ -353,7 +353,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
                     }}
                     onError={() => {
                       if (posterKeyRef.current) {
-                        const message = 'The poster uploaded, but could not be displayed. Please retry the image.';
+                        const message = "Couldn't display poster";
                         logUploadStage('UI_RENDER_FAILED', { key: posterKeyRef.current, message });
                         setError(message);
                         showToast(message, 'error');

@@ -337,7 +337,7 @@ export function useData() {
       return realId;
     } catch (err) {
       console.error('Failed to create group:', err);
-      showToast('Failed to create group. Please try again.');
+      showToast("Couldn't create group", 'error');
       return null;
     }
   };
@@ -714,7 +714,7 @@ export function useData() {
       });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     } catch (err) {
-      showToast(err?.message || 'Retry failed.');
+      showToast(err?.message || 'Retry failed', 'error');
       const isBlockError = err?.message?.toLowerCase().includes('block') || err?.message?.includes('Forbidden');
       queryClient.setQueryData(['messages', convId], (old) => {
         if (!old) return old;
@@ -810,7 +810,7 @@ const updatePollInCache = (oldData, postId, updatedPollOrIndices, currentUserId)
       }
       return res;
     } catch (err) {
-      showToast(err?.response?.data?.message || err?.message || 'Failed to submit vote');
+      showToast(err?.response?.data?.message || err?.message || "Couldn't submit vote", 'error');
       queryClient.invalidateQueries({ queryKey: ['posts'] });
       queryClient.invalidateQueries({ queryKey: ['feed'] });
       queryClient.invalidateQueries({ queryKey: ['user-posts'] });
@@ -851,7 +851,7 @@ const updatePollInCache = (oldData, postId, updatedPollOrIndices, currentUserId)
       }
       return newPost;
     } catch (err) {
-      showToast(err?.message || 'Failed to create post');
+      showToast(err?.message || "Couldn't create post", 'error');
       throw err;
     }
   };
@@ -867,7 +867,7 @@ const updatePollInCache = (oldData, postId, updatedPollOrIndices, currentUserId)
       queryClient.invalidateQueries({ queryKey: ['community', id] });
       return updated;
     } catch (err) {
-      showToast(err?.message || 'Failed to update community');
+      showToast(err?.message || "Couldn't update community", 'error');
       throw err;
     }
   };

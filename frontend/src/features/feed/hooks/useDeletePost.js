@@ -55,7 +55,7 @@ export function useDeletePost() {
         if (data !== undefined) queryClient.setQueryData(queryKey, data);
       });
       if (context?.previousPost) queryClient.setQueryData(['post', postId], context.previousPost);
-      showToast('Failed to delete post. Please try again.');
+      showToast("Couldn't delete post", 'error');
     },
 
     // No onSuccess reconciliation needed — the post is already gone from every

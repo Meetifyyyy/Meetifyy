@@ -38,7 +38,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
     const link = `${window.location.origin}${relativeUrl}`;
     navigator.clipboard.writeText(link).then(() => {
       setCopied(true);
-      toast.success('Invite link copied!');
+      toast.success('Invite link copied');
       setTimeout(() => {
         setCopied(false);
         copyLockRef.current = false;
@@ -79,7 +79,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
 
       setSentTo(prev => new Set(prev).add(user.id));
     } catch {
-      toast.error('Failed to send invite.');
+      toast.error("Couldn't send invite");
     } finally {
       setSendingIds(prev => {
         const next = new Set(prev);

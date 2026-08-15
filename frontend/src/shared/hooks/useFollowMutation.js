@@ -201,7 +201,7 @@ export function useFollowMutation(targetUsername) {
         // Rollback optimistic update for latest-sequence errors
         applyOptimisticUpdate(!finalIntent);
         toggleRegistry.clearIfLatest(entityKey, toggleRegistry.activeMutations.get(entityKey));
-        showToast('Something went wrong. Please try again.');
+        showToast('Action failed', 'error');
       }
     }, DEBOUNCE_MS);
 

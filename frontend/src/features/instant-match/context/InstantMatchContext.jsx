@@ -98,7 +98,7 @@ export function InstantMatchProvider({ children }) {
           navigate(`/messages/${targetChatId}`, { state: { from: '/home' } });
         } else {
           // Chat creation failed server-side — don't send the user to a broken route.
-          showToast("You're matched! We couldn't open the chat automatically — check your messages.");
+          showToast("You're matched", 'success');
           navigate('/messages', { state: { from: '/home' } });
         }
       }, 1500);

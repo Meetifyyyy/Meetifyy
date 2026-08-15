@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Info } from 'lucide-react';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import styles from './ConfirmModal.module.css';
 
@@ -45,14 +45,18 @@ export default function ConfirmModal({
   return createPortal(
     <div className={styles.confirmOverlay} ref={overlayRef} onClick={(e) => { if (e.target === overlayRef.current) handleClose(); }}>
       <div className={styles.confirmModal}>
-        <div className={styles.confirmIcon}>
-          <AlertTriangle size={24} strokeWidth={2} />
+        <div className={`${styles.confirmIcon} ${isDestructive ? styles.confirmIconDestructive : styles.confirmIconPrimary}`}>
+          {isDestructive ? (
+            <AlertTriangle size={24} strokeWidth={2} />
+          ) : (
+            <Info size={24} strokeWidth={2} />
+          )}
         </div>
         <div className={styles.confirmTitle}>{title}</div>
         {actualDesc && <div className={styles.confirmDesc}>{actualDesc}</div>}
         <div className={styles.confirmActions}>
           <button className={`${styles.confirmBtn} ${styles.confirmBtnCancel}`} onClick={handleClose}>{actualCancelText}</button>
-          <button className={`${styles.confirmBtn} ${isDestructive ? styles.confirmBtnLeave : styles.confirmBtnLeave}`} onClick={handleConfirm}>{actualConfirmText}</button>
+          <button className={`${styles.confirmBtn} ${isDestructive ? styles.confirmBtnLeave : styles.confirmBtnPrimary}`} onClick={handleConfirm}>{actualConfirmText}</button>
         </div>
       </div>
     </div>,

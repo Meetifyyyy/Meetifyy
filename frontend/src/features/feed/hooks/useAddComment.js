@@ -77,7 +77,7 @@ export function useAddComment() {
     },
     onError: (err, variables, rollback) => {
       if (typeof rollback === 'function') rollback();
-      showToast('Something went wrong. Please try again.');
+      showToast("Couldn't post comment", 'error');
     },
     onSuccess: (result, variables) => {
       // Refetch only the open post detail so the optimistic temp comment is

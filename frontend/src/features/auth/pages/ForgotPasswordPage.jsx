@@ -32,7 +32,7 @@ export default function ForgotPasswordPage() {
     const cleanEmail = email.trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!cleanEmail || !emailRegex.test(cleanEmail)) {
-      showToast('Please enter a valid email address.');
+      showToast('Enter a valid email');
       return;
     }
 
@@ -61,7 +61,7 @@ export default function ForgotPasswordPage() {
       // Supabase may return an error for rate limiting, which is the only case
       // where surfacing feedback makes sense.
       if (error && error.message?.toLowerCase().includes('rate limit')) {
-        showToast('Too many requests. Please wait a moment before trying again.');
+        showToast('Too many requests');
         return;
       }
 
@@ -69,7 +69,7 @@ export default function ForgotPasswordPage() {
     } catch (err) {
       // Only surface rate limit errors — all other errors are swallowed
       if (err?.message?.toLowerCase().includes('rate limit')) {
-        showToast('Too many requests. Please try again later.');
+        showToast('Too many requests');
       } else {
         // Still show success UI to prevent enumeration
         setIsSubmitted(true);

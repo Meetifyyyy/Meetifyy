@@ -483,8 +483,8 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
       {showDeleteConfirm && (
         <div onClick={(e) => e.stopPropagation()}>
           <ConfirmModal
-            title="Delete Post?"
-            desc="Are you sure you want to delete this post? This action is permanent and cannot be undone."
+            title="Delete Post"
+            desc="This post will be permanently removed."
             visible={showDeleteConfirm}
             onCancel={() => setShowDeleteConfirm(false)}
             onConfirm={() => {
@@ -493,6 +493,8 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
               if (isDetailed && onDeleted) onDeleted();
             }}
             confirmText="Delete"
+            cancelText="Cancel"
+            isDestructive={true}
           />
         </div>
       )}

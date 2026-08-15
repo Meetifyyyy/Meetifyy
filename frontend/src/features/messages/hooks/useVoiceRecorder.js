@@ -18,7 +18,7 @@ export function useVoiceRecorder({ onSend, showToast }) {
 
   const startRecording = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      if (showToast) showToast('Microphone not supported or disabled in insecure HTTP contexts. Please use HTTPS.');
+      if (showToast) showToast('Microphone not supported');
       return;
     }
     try {
@@ -46,7 +46,7 @@ export function useVoiceRecorder({ onSend, showToast }) {
       }, 1000);
     } catch (err) {
       console.error('Error starting audio recording:', err);
-      if (showToast) showToast('Microphone permission denied or not available.');
+      if (showToast) showToast('Microphone access denied');
     }
   };
 

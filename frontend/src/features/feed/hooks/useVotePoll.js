@@ -98,7 +98,7 @@ export function useVotePoll() {
       if (context?.previousPost) {
         queryClient.setQueryData(['post', postId], context.previousPost);
       }
-      showToast('Failed to vote in poll. Please try again.');
+      showToast("Couldn't submit vote", 'error');
     },
 
     onSuccess: (result, { postId, currentUserId }) => {

@@ -407,12 +407,12 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
       const activity = await creationPromise;
       if (selectedIds.length > 0 && activity?.id) {
         await activitiesApi.inviteFriends(activity.id, selectedIds).catch(() => {});
-        showToast(`Activity published! Invited ${selectedIds.length} friend${selectedIds.length > 1 ? 's' : ''}.`);
+        showToast('Activity published', 'success');
       } else {
-        showToast('Activity published!');
+        showToast('Activity published', 'success');
       }
     } catch {
-      showToast('Activity published!');
+      showToast('Activity published', 'success');
     }
     onDone();
   };
@@ -420,7 +420,7 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
   const handleSkip = async () => {
     // still await so the cache is populated before we navigate
     await creationPromise.catch(() => {});
-    showToast('Activity published!');
+    showToast('Activity published', 'success');
     onDone();
   };
 

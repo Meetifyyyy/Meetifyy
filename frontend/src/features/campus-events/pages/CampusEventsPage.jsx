@@ -35,7 +35,7 @@ export default function CampusEventsPage() {
       await deleteEvent.mutateAsync(deleteCandidate.id);
       showToast('Event deleted', 'success');
     } catch (err) {
-      showToast(err?.message || 'Failed to delete event', 'error');
+      showToast(err?.message || "Couldn't delete event", 'error');
     } finally {
       setDeleteCandidate(null);
     }
@@ -121,9 +121,10 @@ export default function CampusEventsPage() {
 
       <ConfirmModal
         visible={Boolean(deleteCandidate)}
-        title="Delete event?"
-        description={deleteCandidate ? `Delete "${deleteCandidate.title}"? This cannot be undone.` : ''}
+        title="Delete Event"
+        description={deleteCandidate ? `"${deleteCandidate.title}" will be permanently removed.` : ''}
         confirmText="Delete"
+        cancelText="Cancel"
         isDestructive={true}
         onConfirm={handleDeleteEvent}
         onCancel={() => setDeleteCandidate(null)}

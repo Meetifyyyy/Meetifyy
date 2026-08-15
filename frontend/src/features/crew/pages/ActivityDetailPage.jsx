@@ -708,7 +708,16 @@ export default function ActivityDetailPage() {
 
         {/* Modals */}
         <ShareActivityModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} activity={activity} />
-        <ConfirmModal title="Cancel Activity" desc="Are you sure you want to cancel this activity?" visible={showEndConfirm} onCancel={() => setShowEndConfirm(false)} onConfirm={confirmEndActivity} confirmText="Cancel Activity" cancelText="Go Back" />
+        <ConfirmModal 
+          title="Cancel Activity" 
+          desc="This will cancel the activity and notify all participants." 
+          visible={showEndConfirm} 
+          onCancel={() => setShowEndConfirm(false)} 
+          onConfirm={confirmEndActivity} 
+          confirmText="Yes" 
+          cancelText="No" 
+          isDestructive={true} 
+        />
       </div>
     </div>
   );

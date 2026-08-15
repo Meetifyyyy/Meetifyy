@@ -2,7 +2,7 @@ let lastToastMessage = '';
 let lastToastTime = 0;
 let activeToastEl = null;
 
-export function showToast(message, type = 'default') {
+export function showToast(message, type = 'default', positionOrOptions = 'bottom') {
   if (!message || typeof message !== 'string') return;
 
   const now = Date.now();
@@ -19,11 +19,20 @@ export function showToast(message, type = 'default') {
     activeToastEl = null;
   }
 
+  const position = typeof positionOrOptions === 'string'
+    ? positionOrOptions
+    : (positionOrOptions?.position || 'bottom');
+
   const toast = document.createElement('div');
-  toast.innerText = message;
-  toast.className = `custom-toast${type && type !== 'default' ? ` custom-toast-${type}` : ''}`;
+  toast.className = `custom-toast${type && type !== 'default' ? ` custom-toast-${type}` : ''} custom-toast-${position}`;
   toast.setAttribute('role', 'alert');
   toast.setAttribute('aria-live', 'assertive');
+
+  const span = document.createElement('span');
+  span.className = 'custom-toast-message';
+  span.innerText = message;
+  toast.appendChild(span);
+
   document.body.appendChild(toast);
   activeToastEl = toast;
 
@@ -34,7 +43,7 @@ export function showToast(message, type = 'default') {
     });
   });
 
-  const duration = type === 'error' ? 3500 : 2500;
+  const duration = 2500;
   setTimeout(() => {
     toast.classList.remove('show');
     const removeHandler = () => {
@@ -47,4 +56,3 @@ export function showToast(message, type = 'default') {
     setTimeout(removeHandler, 400);
   }, duration);
 }
-

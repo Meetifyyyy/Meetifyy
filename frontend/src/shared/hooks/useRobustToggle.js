@@ -22,7 +22,7 @@ export function useRobustToggle({
   onMutate: customOnMutate,
   onError: customOnError,
   onSuccess: customOnSuccess,
-  errorMessage = 'Something went wrong. Please try again.',
+  errorMessage = 'Action failed',
 }) {
   const queryClient = useQueryClient();
 

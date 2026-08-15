@@ -73,7 +73,7 @@ export function useChatAreaState(conversation) {
     try {
       await messagesApi.unsendMessage(targetMsgId);
     } catch {
-      toast.error('Could not unsend');
+      toast.error("Couldn't unsend");
       convIds.forEach((cId) => {
         queryClient.invalidateQueries({ queryKey: ['messages', cId] });
       });
@@ -95,7 +95,7 @@ export function useChatAreaState(conversation) {
     try {
       await messagesApi.deleteMessageForMe(msg.id);
     } catch {
-      toast.error('Could not delete message');
+      toast.error("Couldn't delete message");
       convIds.forEach((cId) => {
         queryClient.invalidateQueries({ queryKey: ['messages', cId] });
       });

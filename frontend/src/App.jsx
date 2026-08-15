@@ -8,6 +8,9 @@ import ErrorBoundary, { RouteErrorBoundary } from './shared/components/ErrorBoun
 import SocketManager from './shared/components/SocketManager';
 // DEV PREVIEW — remove before shipping
 import CriticalErrorScreen from './shared/components/ui/CriticalErrorScreen';
+const NotificationPlayground = import.meta.env.DEV
+  ? lazy(() => import('./local/NotificationPlayground').catch(() => ({ default: () => null })))
+  : null;
 
 import HomeSkeleton from './features/feed/components/skeletons/HomeSkeleton';
 import ProfilePageSkeleton from './features/profile/components/skeletons/ProfilePageSkeleton';
@@ -203,6 +206,11 @@ export default function App() {
           <WindowScrollbarToggle />
           <ScrollRestoration />
           <SocketManager />
+          {import.meta.env.DEV && NotificationPlayground && (
+            <Suspense fallback={null}>
+              <NotificationPlayground />
+            </Suspense>
+          )}
           <Outlet />
         </ErrorBoundary>
       ),

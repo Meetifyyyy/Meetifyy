@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   z-index: 1000000;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   display: flex;
@@ -21,15 +21,16 @@
 
 .confirmModal {
   background: var(--color-bg-white, #ffffff);
-  border: 1px solid var(--color-border-light, #e2e8f0);
+  border: 1px solid var(--color-border, #e2e8f0);
   border-radius: var(--radius-lg, 16px);
   padding: 2rem;
   width: 350px;
   max-width: 90vw;
   text-align: center;
-  box-shadow: var(--shadow-lg, 0 10px 25px -5px rgba(0, 0, 0, 0.1));
+  box-shadow: var(--shadow-lg, 0 10px 25px -5px rgba(0, 0, 0, 0.3));
   transform: scale(0.92) translateY(8px);
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-sizing: border-box;
 }
 
 .confirmOverlay.open .confirmModal {
@@ -40,12 +41,30 @@
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: rgba(239, 68, 68, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 1rem;
+}
+
+.confirmIconDestructive {
+  background: rgba(239, 68, 68, 0.12);
   color: var(--color-danger, #ef4444);
+}
+
+.confirmIconPrimary {
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--color-primary, #2563eb);
+}
+
+[data-theme="dark"] .confirmIconPrimary {
+  background: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+}
+
+[data-theme="dark"] .confirmIconDestructive {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
 }
 
 /* Ensure SVG icon aligns properly centered */
@@ -87,16 +106,17 @@
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
+  box-sizing: border-box;
 }
 
 .confirmBtnCancel {
   background: var(--color-bg-soft, #f1f5f9);
-  color: var(--color-text-light, #475569);
+  color: var(--color-text-main, #0f172a);
   border: 1px solid var(--color-border, #e2e8f0);
 }
 
 .confirmBtnCancel:hover {
-  background: var(--color-border-light, #f8fafc);
+  background: var(--color-bg-alt, #e2e8f0);
   color: var(--color-text-main, #0f172a);
 }
 
@@ -107,7 +127,17 @@
 }
 
 .confirmBtnLeave:hover {
-  filter: brightness(1.05);
+  filter: brightness(1.08);
   transform: translateY(-1px);
 }
 
+.confirmBtnPrimary {
+  background: var(--color-text-main, #0f172a);
+  color: var(--color-text-inverse, #ffffff);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.confirmBtnPrimary:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}

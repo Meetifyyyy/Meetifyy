@@ -1,109 +1,199 @@
-# Local dev scripts & tools
-start.sh
-start.bat
-local/
-plan.md
+# ==============================================================================
+# Meetifyy Monorepo .gitignore
+# Comprehensive rules for Frontend (Vite/React), Backend (NestJS/Prisma),
+# Admin Frontend, Local Tooling, Caches, Secrets, and OS/IDE files.
+# ==============================================================================
 
-
-# Dependency directories
+# ------------------------------------------------------------------------------
+# 1. Dependency Directories
+# ------------------------------------------------------------------------------
 node_modules/
 **/node_modules/
+.pnp
+.pnp.js
 
-# Build & Output directories
+# ------------------------------------------------------------------------------
+# 2. Build & Production Outputs
+# ------------------------------------------------------------------------------
 dist/
 build/
+out/
+output/
+dist-ssr/
 **/dist/
 **/build/
-output/
 **/output/
-stats.html
-**/stats.html
+**/dist-ssr/
 *.tsbuildinfo
+.next/
+.nuxt/
+.output/
 
-# Environment variables & local secrets
+# ------------------------------------------------------------------------------
+# 3. Cache & Framework Temporary Directories
+# ------------------------------------------------------------------------------
+.cache/
+**/.cache/
+.vite/
+**/.vite/
+.turbo/
+**/.turbo/
+.eslintcache
+.stylelintcache
+.parcel-cache/
+.rollup.cache/
+.swc/
+**/node_modules/.cache/
+
+# ------------------------------------------------------------------------------
+# 4. Environment Variables, Local Secrets & Credentials
+# ------------------------------------------------------------------------------
 .env
 .env.*
-!.env.example
-backend/.env
-frontend/.env
-admin-frontend/.env
+*.env
+*.env.*
 *.env.local
 *.env.development.local
 *.env.test.local
 *.env.production.local
+*.local
 
-# Database & Prisma
+# Whitelist safe example / template configs
+!.env.example
+!*.env.example
+!.env.template
+!*.env.template
+!backend/.env.example
+!frontend/.env.example
+!admin-frontend/.env.example
+
+# ------------------------------------------------------------------------------
+# 5. Local Development Runtime, Scripts & Playgrounds
+# ------------------------------------------------------------------------------
+local/
+**/local/
+start.sh
+start.bat
+plan.md
+.cloudflared
+.mobile-url.txt
+mobile-qr.png
+
+# Local notification / debug playground components (development-only)
+frontend/src/local/
+admin-frontend/src/local/
+backend/src/local/
+**/src/local/
+**/src/dev/
+
+# ------------------------------------------------------------------------------
+# 6. Database, SQLite & Local Prisma Artifacts
+# ------------------------------------------------------------------------------
+*.sqlite
+*.sqlite-journal
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
 /backend/generated/prisma
 backend/prisma/*.db
 backend/prisma/*.db-journal
-*.sqlite
-*.db
 
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-*.log
-**/*.log
-
-# IDE, Agent & System metadata (never committed)
-.agent/
-.agents/
-.dual-graph/
+# ------------------------------------------------------------------------------
+# 7. Local Media, Uploads & Temporary Scratchpads
+# ------------------------------------------------------------------------------
+uploads/
+**/uploads/
+tmp/
+temp/
 scratch/
-AGENTS.md
-GEMINI.md
-.gemini/
-.vscode/
-.idea/
-.vs/
-.claude/
-skills-lock.json
-REMEDIATION_PLAN.md
+**/*.tmp
+**/*.temp
 
-# Documentation / internal files
-docs/
-
-# Testing & E2E artifacts
+# ------------------------------------------------------------------------------
+# 8. Testing, Coverage & E2E Artifacts
+# ------------------------------------------------------------------------------
 coverage/
+**/coverage/
+*.lcov
+.nyc_output/
 test-results/
 playwright-report/
 cypress/videos/
 cypress/screenshots/
 testmail/
 
-# OS/System files
+# ------------------------------------------------------------------------------
+# 9. Logs & Runtime Diagnostics
+# ------------------------------------------------------------------------------
+logs/
+**/logs/
+*.log
+**/*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Visualizer & Bundle Audit Reports
+stats.html
+**/stats.html
+report.html
+**/report.html
+
+# ------------------------------------------------------------------------------
+# 10. OS & Machine-Specific Files
+# ------------------------------------------------------------------------------
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 desktop.ini
+$RECYCLE.BIN/
 
-# Temporary & cache files
-*.tmp
-*.temp
+# ------------------------------------------------------------------------------
+# 11. IDEs, Editors & AI Agent Metadata (Never Committed)
+# ------------------------------------------------------------------------------
+.vscode/
+.idea/
+.vs/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 *.swp
 *.swo
 *~
 *.bak
-.cache/
-.eslintcache
-.turbo/
-.vite/
-**/node_modules/.cache
+*.orig
+*.rej
+.project
+.settings/
+.claude/
+.gemini/
+.agent/
+.agents/
+.dual-graph/
+AGENTS.md
+GEMINI.md
+skills-lock.json
+REMEDIATION_PLAN.md
+meetifyy-security-remediation-report.md
 
-# Local media & user uploads
-uploads/
-**/uploads/
-
-# Generated diff / audit output files
+# ------------------------------------------------------------------------------
+# 12. Documentation & Temporary Audit Scripts
+# ------------------------------------------------------------------------------
+docs/
 diff_*.txt
 all_files.txt
 git_files.txt
-*files_utf8.txt
 git_untracked.txt
-meetifyy-security-remediation-report.md
-
-# Temporary dev/debug scripts
+*files_utf8.txt
 check_*.ts
 test_*.ts
 remove_*.ts
@@ -111,17 +201,3 @@ update_*.ts
 inspect_*.ts
 send_*.ts
 test_svc.ts
-
-# Local development runtime directories & artifacts
-local/bin/
-local/logs/
-local/temp/
-local/mobile-url.txt
-local/mobile-qr.png
-local/*.log
-local/*.pid
-.cloudflared
-.mobile-url.txt
-mobile-qr.png
-
-

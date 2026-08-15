@@ -88,7 +88,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
     if (!file) return;
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
-      showToast('File too large. Maximum size is 50 MB.');
+      showToast('File too large (max 50MB)', 'error');
       e.target.value = '';
       return;
     }
@@ -108,7 +108,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
       const fieldKey = cropType === 'avatar' ? 'avatarKey' : 'coverKey';
       await onUpdateCommunity(comm.id, { [fieldKey]: publicUrl });
     } catch {
-      showToast('Upload failed. Try again.');
+      showToast('Upload failed', 'error');
     } finally {
       setIsUploading(false);
       setCropType(null);
@@ -728,11 +728,11 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
     if (mutedList.includes(communityId)) {
       mutedList = mutedList.filter(id => id !== communityId);
       setIsMuted(false);
-      showToast('Updates from this community will show in your feed.');
+      showToast('Community unmuted', 'success');
     } else {
       mutedList.push(communityId);
       setIsMuted(true);
-      showToast('Updates from this community will be hidden.');
+      showToast('Community muted', 'success');
     }
     localStorage.setItem('meetify_muted_communities', JSON.stringify(mutedList));
   };
@@ -918,10 +918,10 @@ function DeletedCommunityView({ onBack }) {
     if (!joined && (comm.isPrivate || comm.privacy === 'private')) {
       try {
         const res = await communitiesApi.join(communityId);
-        showToast(res?.message || 'Join request sent — waiting for admin approval.');
+        showToast(res?.message || 'Join request sent', 'success');
         queryClient.invalidateQueries({ queryKey: ['community', communityId] });
       } catch (err) {
-        showToast(err?.response?.data?.message || err?.message || 'Failed to submit join request');
+        showToast(err?.response?.data?.message || err?.message || "Couldn't send join request", 'error');
       }
       return;
     }
@@ -960,11 +960,11 @@ function DeletedCommunityView({ onBack }) {
     try {
       await communitiesApi.delete(communityId);
       queryClient.invalidateQueries({ queryKey: ['communities'] });
-      showToast('Community deleted.');
+      showToast('Community deleted', 'success');
       if (onBack) onBack();
       else navigate('/communities');
     } catch (err) {
-      showToast(err?.message || 'Could not delete community.');
+      showToast(err?.message || "Couldn't delete community", 'error');
     } finally {
       setDeleting(false);
       setShowDeleteConfirm(false);
@@ -1139,10 +1139,11 @@ function DeletedCommunityView({ onBack }) {
 
       <ConfirmModal
         visible={showDeleteConfirm}
-        title="Delete Community?"
-        desc={`Are you sure you want to delete "${comm.name}"? This action is permanent and cannot be undone.`}
-        cancelText="No"
-        confirmText={deleting ? 'Deleting...' : 'Yes'}
+        title="Delete Community"
+        desc={`"${comm.name}" and all of its content will be permanently removed.`}
+        confirmText={deleting ? 'Deleting...' : 'Delete'}
+        cancelText="Cancel"
+        isDestructive={true}
         onCancel={() => setShowDeleteConfirm(false)}
         onConfirm={handleDeleteCommunity}
       />

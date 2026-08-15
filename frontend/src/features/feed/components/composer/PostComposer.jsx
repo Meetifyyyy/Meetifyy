@@ -9,6 +9,7 @@ import MediaGrid from '../post/MediaGrid';
 import styles from './PostComposer.module.css';
 import { processAndUploadImage, processAndUploadVideo } from '@shared/utils/mediaPipeline';
 import { uploadsApi } from '@shared/api/apiClient';
+import { showToast } from '@shared/utils/toast';
 
 const overlayStyle = {
   position: 'absolute',
@@ -156,7 +157,7 @@ function PostComposer({ onSubmit }) {
       // Post creation failed AFTER a successful upload — keep the media (still
       // owned + unattached) so the user can retry without re-uploading.
       console.error('[PostComposer] post creation failed', err);
-      alert(err?.message || 'Failed to create post. Please try again.');
+      showToast(err?.message || 'Post failed', 'error');
     } finally {
       setIsPosting(false);
     }
@@ -225,7 +226,7 @@ function PostComposer({ onSubmit }) {
 
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
-      alert('File too large. Maximum size is 50 MB.');
+      showToast('File size limit is 50 MB', 'error');
       e.target.value = '';
       return;
     }
@@ -233,7 +234,7 @@ function PostComposer({ onSubmit }) {
     const isVideo = file.type.startsWith('video/');
     const isImage = file.type.startsWith('image/');
     if (!isVideo && !isImage) {
-      alert('Unsupported file. Please choose an image or video.');
+      showToast('Unsupported file type', 'error');
       e.target.value = '';
       return;
     }

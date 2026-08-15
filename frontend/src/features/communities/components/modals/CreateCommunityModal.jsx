@@ -130,12 +130,12 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
 
     const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      showToast('Supported formats: JPG, PNG, WEBP');
+      showToast('Invalid format (use JPG, PNG, WebP)', 'error');
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      showToast('File size must be under 5 MB');
+      showToast('File too large (max 5MB)', 'error');
       return;
     }
 
@@ -294,7 +294,7 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
 
       onCreated(id);
     } catch (err) {
-      showToast('Failed to create community');
+      showToast("Couldn't create community", 'error');
       console.error(err);
     } finally {
       setIsSubmitting(false);

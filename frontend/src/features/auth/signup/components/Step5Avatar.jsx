@@ -37,7 +37,7 @@ export default function Step5Avatar() {
 
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
-      showToast('File too large. Maximum size is 50 MB.');
+      showToast('File too large (max 50MB)', 'error');
       e.target.value = '';
       return;
     }
@@ -47,7 +47,7 @@ export default function Step5Avatar() {
       const { publicUrl } = await processAndUploadImage(file, 'avatars', { maxWidthOrHeight: 512 });
       setAvatar(publicUrl);
     } catch {
-      showToast('Upload failed. Try again.');
+      showToast('Upload failed', 'error');
     } finally {
       setIsUploading(false);
       e.target.value = '';

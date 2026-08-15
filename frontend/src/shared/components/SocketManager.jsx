@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import Avatar from './avatar/Avatar';
+import InstantNotificationCard from './InstantNotificationCard';
 import { parseConversationRoute } from '../utils/conversationUrl';
 import { messagesApi } from '../api/apiClient';
 import { useGlobalSocketSync } from '../hooks/useGlobalSocketSync';
@@ -180,58 +181,18 @@ export default function SocketManager() {
           };
 
           return (
-            <div
+            <InstantNotificationCard
+              avatar={isGroupMessage ? groupAvatar : actorAvatar}
+              isGroup={isGroupMessage}
+              groupName={groupName}
+              actorName={actorName}
+              bodyText={isGroupMessage ? (notification.metadata?.messageText || '') : bodyText}
+              time="just now"
               onClick={handleClick}
-              style={{
-                background: 'var(--color-bg-white, #ffffff)',
-                border: '1px solid var(--color-border, #e2e8f0)',
-                boxShadow: '0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06)',
-                borderRadius: '16px',
-                padding: '12px 16px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                width: '360px',
-                maxWidth: 'calc(100vw - 32px)',
-                margin: '0 auto',
-                boxSizing: 'border-box',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-family-sans, sans-serif)',
-                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-              }}
-            >
-              <div style={{ flexShrink: 0 }}>
-                <Avatar 
-                  src={isGroupMessage ? groupAvatar : actorAvatar} 
-                  name={isGroupMessage ? groupName : actorName} 
-                  size="40px" 
-                  isGroup={isGroupMessage} 
-                />
-              </div>
-
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%' }}>
-                  <strong style={{ color: 'var(--color-text-main, #0f172a)', fontWeight: 700, fontSize: '0.86rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {isGroupMessage ? groupName : actorName}
-                  </strong>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--color-text-light, #94a3b8)', fontWeight: 500, flexShrink: 0 }}>
-                    just now
-                  </span>
-                </div>
-
-                {isGroupMessage ? (
-                  <div style={{ fontSize: '0.82rem', color: 'var(--color-text-muted, #475569)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    <span style={{ fontWeight: 600, color: 'var(--color-text-main, #0f172a)' }}>{actorName}:</span> {notification.metadata?.messageText || ''}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: '0.83rem', color: 'var(--color-text-muted, #475569)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {bodyText}
-                  </div>
-                )}
-              </div>
-            </div>
+              onDismiss={() => toast.dismiss(t)}
+            />
           );
-        }, { duration: 5000 });
+        }, { duration: 5000, position: 'top-center' });
       }
     };
 
@@ -918,54 +879,22 @@ export default function SocketManager() {
             const textSnippet = message.text || (message.mediaType === 'image' ? 'Sent a photo' : message.mediaType === 'video' ? 'Sent a video' : message.mediaUrl ? 'Sent media' : 'New message');
 
             return (
-              <div
+              <InstantNotificationCard
+                avatar={isGroupMessage ? (groupAvatar || actorAvatar) : actorAvatar}
+                isGroup={isGroupMessage}
+                groupName={groupName}
+                actorName={actorName}
+                bodyText={textSnippet}
+                time="just now"
                 onClick={() => {
                   toast.dismiss(t);
                   const origin = window.location.pathname.startsWith('/messages') || window.location.pathname.startsWith('/inbox') ? '/home' : window.location.pathname;
                   navigate(`/messages/${convId}`, { state: { from: origin } });
                 }}
-                style={{
-                  background: 'var(--color-bg-white, #ffffff)',
-                  border: '1px solid var(--color-border, #e2e8f0)',
-                  boxShadow: '0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06)',
-                  borderRadius: '16px',
-                  padding: '12px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  width: '360px',
-                  boxSizing: 'border-box',
-                  cursor: 'pointer',
-                  fontFamily: 'var(--font-family-sans, sans-serif)',
-                  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                }}
-              >
-                <div style={{ flexShrink: 0 }}>
-                  <Avatar 
-                    src={isGroupMessage ? (groupAvatar || actorAvatar) : actorAvatar} 
-                    name={isGroupMessage ? groupName : actorName} 
-                    size="40px" 
-                    isGroup={isGroupMessage} 
-                  />
-                </div>
-
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%' }}>
-                    <strong style={{ color: 'var(--color-text-main, #0f172a)', fontWeight: 700, fontSize: '0.86rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {isGroupMessage ? groupName : actorName}
-                    </strong>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-light, #94a3b8)', fontWeight: 500, flexShrink: 0 }}>
-                      just now
-                    </span>
-                  </div>
-
-                  <div style={{ fontSize: '0.83rem', color: 'var(--color-text-muted, #475569)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {isGroupMessage ? <><span style={{ fontWeight: 600, color: 'var(--color-text-main, #0f172a)' }}>{actorName}:</span> {textSnippet}</> : textSnippet}
-                  </div>
-                </div>
-              </div>
+                onDismiss={() => toast.dismiss(t)}
+              />
             );
-          }, { duration: 4000 });
+          }, { duration: 4000, position: 'top-center' });
         }
       }
     };

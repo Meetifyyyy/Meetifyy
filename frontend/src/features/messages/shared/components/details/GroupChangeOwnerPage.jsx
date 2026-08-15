@@ -70,12 +70,14 @@ export default function GroupChangeOwnerPage({
         </div>
       </div>
       <ConfirmModal
-        title="Change Group Owner?"
-        desc={`Ownership of this group will be transferred to ${(Object.values(users).find(u => u.id === targetUserId)?.displayName || Object.values(users).find(u => u.id === targetUserId)?.name || 'This member')}.`}
+        title="Transfer Ownership"
+        desc={`${(Object.values(users).find(u => u.id === targetUserId)?.displayName || Object.values(users).find(u => u.id === targetUserId)?.name || 'This member')} will become the new group owner.`}
         visible={showConfirm && confirmType === 'changeOwner'}
         onCancel={onCancelConfirm}
         onConfirm={onConfirmAction}
-        confirmText="Change Owner"
+        confirmText="Transfer"
+        cancelText="Cancel"
+        isDestructive={true}
       />
     </div>
   );

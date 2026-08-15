@@ -256,11 +256,11 @@ export default function SettingsRoute() {
   const handleSave = async () => {
     if (activePanel === 'profile') {
       if (displayName && displayName.trim().length > 30) {
-        showToast('Name cannot exceed 30 characters');
+        showToast('Name too long (max 30)', 'error');
         return;
       }
       if (bio && bio.length > 200) {
-        showToast('Description cannot exceed 200 characters');
+        showToast('Bio too long (max 200)', 'error');
         return;
       }
       if (birthday) {
@@ -268,24 +268,24 @@ export default function SettingsRoute() {
         if (parts.length === 3) {
           const dobRes = validateDOB(parts[0], parts[1], parts[2]);
           if (!dobRes.isValid) {
-            showToast(dobRes.error || 'Invalid date of birth');
+            showToast(dobRes.error || 'Invalid date of birth', 'error');
             return;
           }
         }
       }
       setActivePanel(null);
-      showToast('Profile details updated');
+      showToast('Profile updated', 'success');
       if (updateCurrentUser) {
         updateCurrentUser({ ...currentUser, displayName, bio, birthday });
       }
       queryClient.invalidateQueries({ queryKey: ['profile'] });
       updateProfile({ displayName, bio, birthday }).catch(err => {
         console.error('Failed to update profile:', err);
-        showToast(err?.message || 'Failed to save profile — please try again.');
+        showToast(err?.message || "Couldn't save profile", 'error');
       });
     } else if (activePanel === 'academic') {
       setActivePanel(null);
-      showToast('Academic details updated');
+      showToast('Academic details updated', 'success');
       const updatedUser = { ...currentUser, major: course, graduationYear: year ? parseInt(year, 10) : null };
       if (updateCurrentUser) {
         updateCurrentUser(updatedUser);
@@ -296,7 +296,7 @@ export default function SettingsRoute() {
         graduationYear: year ? parseInt(year, 10) : null 
       }).catch(err => {
         console.error('Failed to update academic info:', err);
-        showToast(err?.message || 'Failed to save academic details — please try again.');
+        showToast(err?.message || "Couldn't save academic details", 'error');
       });
     } else if (activePanel === 'security') {
       const errors = {};
@@ -326,7 +326,7 @@ export default function SettingsRoute() {
         setNewPassword('');
         setConfirmPassword('');
         setPasswordErrors({});
-        showToast('Password changed successfully');
+        showToast('Password changed', 'success');
         setActivePanel(null);
       } catch (err) {
         // Use structured error code when available (set in AuthContext changePassword)
@@ -338,14 +338,14 @@ export default function SettingsRoute() {
         } else if (err?.code === 'PASSWORD_REUSE') {
           setPasswordErrors({ new: 'Must differ from your current password' });
         } else {
-          showToast(err?.message || 'Failed to change password');
+          showToast(err?.message || "Couldn't change password", 'error');
         }
       } finally {
         setIsSavingPassword(false);
       }
     } else if (activePanel === 'privacy') {
       setActivePanel(null);
-      showToast('Privacy settings saved');
+      showToast('Privacy settings saved', 'success');
       if (updateCurrentUser) {
         updateCurrentUser({
           ...currentUser,
@@ -367,11 +367,11 @@ export default function SettingsRoute() {
         readReceipts,
       }).catch(err => {
         console.error('Failed to update privacy settings:', err);
-        showToast(err?.message || 'Failed to save privacy settings — please try again.');
+        showToast(err?.message || "Couldn't save privacy settings", 'error');
       });
     } else if (activePanel === 'notifications') {
       setActivePanel(null);
-      showToast('Notification preferences saved');
+      showToast('Notification settings saved', 'success');
       if (updateCurrentUser) {
         updateCurrentUser({
           ...currentUser,
@@ -387,18 +387,18 @@ export default function SettingsRoute() {
         pushNotifs,
       }).catch(err => {
         console.error('Failed to update notification settings:', err);
-        showToast(err?.message || 'Failed to save notification settings — please try again.');
+        showToast(err?.message || "Couldn't save notification settings", 'error');
       });
     } else if (activePanel === 'interests') {
       setActivePanel(null);
-      showToast('Interests saved');
+      showToast('Interests saved', 'success');
       if (updateCurrentUser) {
         updateCurrentUser({ ...currentUser, interests: selectedInterests });
       }
       queryClient.invalidateQueries({ queryKey: ['profile'] });
       updateProfile({ interests: selectedInterests }).catch(err => {
         console.error('Failed to update interests:', err);
-        showToast(err?.message || 'Failed to save interests — please try again.');
+        showToast(err?.message || "Couldn't save interests", 'error');
       });
     }
   };
@@ -409,7 +409,7 @@ export default function SettingsRoute() {
         return prev.filter(i => i !== id);
       }
       if (prev.length >= 10) {
-        showToast('Maximum 10 interests allowed');
+        showToast('Maximum 10 interests', 'error');
         return prev;
       }
       return [...prev, id];
@@ -960,9 +960,9 @@ export default function SettingsRoute() {
             <div className={styles.modalWarningIcon}>
               <AlertCircle size={32} />
             </div>
-            <h3 className={styles.modalTitle}>Delete Account?</h3>
+            <h3 className={styles.modalTitle}>Delete Account</h3>
             <p className={styles.modalText}>
-              This action is permanent and cannot be undone. All your posts, profile data, and matches will be deleted forever.
+              All your posts, matches, and profile data will be permanently deleted.
             </p>
             <div className={styles.modalButtons}>
               <button 
@@ -980,13 +980,13 @@ export default function SettingsRoute() {
                   try {
                     await apiClient.delete('/api/users/me');
                   } catch (err) {
-                    showToast('Failed to delete account. Please try again.');
+                    showToast("Couldn't delete account", 'error');
                     return;
                   }
                   logout();
                 }}
               >
-                Delete Account
+                Delete
               </button>
             </div>
           </div>

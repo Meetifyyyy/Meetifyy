@@ -231,19 +231,19 @@ export default function ResetPasswordPage() {
     const trimmedConfirm = confirmPassword.trim();
 
     if (!trimmedPassword) {
-      showToast('Enter a new password.');
+      showToast('Enter a new password');
       return;
     }
     if (trimmedPassword.length < 8) {
-      showToast('Password must be at least 8 characters.');
+      showToast('Password too short (min 8)');
       return;
     }
     if (trimmedPassword.length > MAX_PASSWORD_LENGTH) {
-      showToast(`Password must be at most ${MAX_PASSWORD_LENGTH} characters.`);
+      showToast(`Password too long (max ${MAX_PASSWORD_LENGTH})`);
       return;
     }
     if (trimmedPassword !== trimmedConfirm) {
-      showToast('Passwords do not match.');
+      showToast("Passwords don't match");
       return;
     }
 
@@ -296,7 +296,7 @@ export default function ResetPasswordPage() {
       // JWT expired before submission, network failure).
       setUiState('valid');
       isSubmittingRef.current = false;
-      showToast(err?.message || 'Failed to update password. Please try again.');
+      showToast(err?.message || "Couldn't update password");
     }
     // isSubmittingRef is intentionally NOT reset on success — there should be
     // no way to re-submit after a password has been changed.

@@ -75,7 +75,7 @@ createRoot(document.getElementById('root')).render(
       <ThemeProvider>
         <AuthProvider>
           <MediaViewerProvider>
-            <Toaster position="top-center" richColors />
+            <Toaster position="bottom-center" duration={2500} />
             <App />
             <MediaViewer />
           </MediaViewerProvider>

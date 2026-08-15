@@ -33,7 +33,7 @@ function scheduleCoalescedRequest({
   applyRollback,
   callApi,
   invalidateKeys = [],
-  errorMessage = 'Something went wrong. Please try again.',
+  errorMessage = 'Action failed',
   debounceMs = DEBOUNCE_MS,
   seqRef,
 }) {
@@ -101,7 +101,7 @@ export function useToggleMutation({
   applyRollback,
   callApi,
   invalidateKeys = [],
-  errorMessage = 'Something went wrong. Please try again.',
+  errorMessage = 'Action failed',
   debounceMs = DEBOUNCE_MS,
 }) {
   const queryClient = useQueryClient();
