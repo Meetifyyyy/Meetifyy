@@ -144,21 +144,50 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src'),
     },
   },
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'react-router-dom',
+      '@tanstack/react-query',
+      'framer-motion',
+      'lucide-react',
+      'zustand',
+      'immer',
+      'socket.io-client',
+      '@supabase/supabase-js',
+    ],
+  },
+  clearScreen: false,
   server: {
     port: 3000,
     open: true,
     host: true,
     allowedHosts: true,
+    warmup: {
+      clientFiles: [
+        './src/App.jsx',
+        './src/layout/MainLayout.jsx',
+        './src/shared/context/AuthContext.jsx',
+        './src/features/feed/pages/FeedRoute.jsx',
+        './src/features/messages/components/layout/MessagesLayout.jsx',
+      ],
+    },
     proxy: {
       '/api': {
-        target: process.env.VITE_API_URL || 'http://127.0.0.1:4000',
+        target: 'http://127.0.0.1:4000',
         changeOrigin: true,
         secure: false,
       },
       '/health': {
-        target: process.env.VITE_API_URL || 'http://127.0.0.1:4000',
+        target: 'http://127.0.0.1:4000',
         changeOrigin: true,
         secure: false,
+      },
+      '/socket.io': {
+        target: 'http://127.0.0.1:4000',
+        changeOrigin: true,
+        ws: true,
       },
     },
   },

@@ -31,29 +31,27 @@ if (supabase) {
 }
 
 export const getBackendUrl = () => {
+  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+    const host = window.location.hostname;
+    const protocol = window.location.protocol;
+    const isLocalHost = host === 'localhost' || host === '127.0.0.1';
+    const isLocalIp = /^(192\.168\.|10\.|100\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|.+\.local$)/.test(host) || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+
+    // In local development on localhost, Tailscale (100.x.x.x), or LAN IP, connect to local backend at port 4000
+    if (isLocalHost || isLocalIp) {
+      return `${protocol}//${host}:4000`;
+    }
+  }
+
   let rawEnv = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
 
   if (rawEnv.includes('dev-api.meetifyy.app')) {
     rawEnv = 'https://meetifyy-production.up.railway.app';
   }
 
-  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-    const host = window.location.hostname;
-    const protocol = window.location.protocol;
-    const isLocalHost = host === 'localhost' || host === '127.0.0.1';
-    const isLocalIp = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|.+\.local$)/.test(host) || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
-
-    // In local development or on localhost/local IP, default to local NestJS backend at port 4000
-    // when VITE_API_URL points to remote Railway/dev-api production server
-    if ((isLocalHost || isLocalIp) && (import.meta.env.DEV || !rawEnv || rawEnv.includes('railway.app') || rawEnv.includes('meetifyy.app'))) {
-      return `${protocol}//${host}:4000`;
-    }
-
-    // On HTTPS public hosts (e.g. Vercel), upgrade http:// backend URLs to https:// to prevent Mixed Content blocking
-    if (rawEnv && protocol === 'https:' && !isLocalHost && !isLocalIp) {
-      if (rawEnv.startsWith('http://') && !rawEnv.includes('localhost') && !rawEnv.includes('127.0.0.1')) {
-        return rawEnv.replace(/^http:\/\//i, 'https://');
-      }
+  if (typeof window !== 'undefined' && window.location && window.location.protocol === 'https:') {
+    if (rawEnv.startsWith('http://') && !rawEnv.includes('localhost') && !rawEnv.includes('127.0.0.1')) {
+      return rawEnv.replace(/^http:\/\//i, 'https://');
     }
   }
 

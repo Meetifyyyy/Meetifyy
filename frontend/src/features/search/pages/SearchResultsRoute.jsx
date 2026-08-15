@@ -400,6 +400,10 @@ export default function SearchResultsRoute() {
     }
   }, [addRecentSearch, navigate]);
 
+  const handlePostClick = useCallback((data) => {
+    openEntity('post', data);
+  }, [openEntity]);
+
   // Interleave search & discovery feed evenly across entity categories
   const activeFeed = useMemo(() => {
     const uList = (results.users || []).map(r => ({ kind: 'user', data: r.item, id: `su-${r.item.id}` }));
@@ -594,7 +598,7 @@ export default function SearchResultsRoute() {
                 if (kind === 'post') {
                   return (
                     <div key={id} style={{ marginBottom: '8px' }}>
-                      <Post postData={data} onClick={() => openEntity('post', data)} />
+                      <Post postData={data} onClick={handlePostClick} />
                     </div>
                   );
                 }

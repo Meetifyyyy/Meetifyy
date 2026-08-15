@@ -1,6 +1,9 @@
-# Local dev scripts
+# Local dev scripts & tools
 start.sh
+start.bat
+local/
 plan.md
+
 
 # Dependency directories
 node_modules/
@@ -109,5 +112,16 @@ inspect_*.ts
 send_*.ts
 test_svc.ts
 
-# Local scripts
-*.bat
+# Local development runtime directories & artifacts
+local/bin/
+local/logs/
+local/temp/
+local/mobile-url.txt
+local/mobile-qr.png
+local/*.log
+local/*.pid
+.cloudflared
+.mobile-url.txt
+mobile-qr.png
+
+

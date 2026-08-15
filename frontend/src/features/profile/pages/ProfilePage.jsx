@@ -514,7 +514,7 @@ export default function ProfilePage() {
               </div>
             ) : (
               posts.map((p) => (
-                <Post key={p.id} postData={p} onClick={() => handlePostClick(p)} />
+                <Post key={p.id} postData={p} onClick={handlePostClick} />
               ))
             )}
           </div>

@@ -971,6 +971,10 @@ function DeletedCommunityView({ onBack }) {
     }
   };
 
+  const handleCommunityPostClick = useCallback((post) => {
+    if (onPostClick) onPostClick(post, 'community', comm?.id);
+  }, [onPostClick, comm?.id]);
+
   return (
     <div className={styles.wrapper}>
       <div className={styles.mobileHeader}>
@@ -1298,7 +1302,7 @@ function DeletedCommunityView({ onBack }) {
                             </span>
                           )}
                         </div>
-                        <Post key={p.id} postData={p} hideCommunityTag={true} onClick={() => onPostClick && onPostClick(p, 'community', comm.id)} />
+                        <Post key={p.id} postData={p} hideCommunityTag={true} onClick={handleCommunityPostClick} />
                       </div>
                     ))}
                     {hasMorePosts && (

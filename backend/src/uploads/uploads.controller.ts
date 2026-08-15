@@ -45,13 +45,16 @@ export class UploadsController {
     @Body('folder') folder: string = 'general',
     @Body('fileSize') fileSize: number = 0,
     @Body('variantKey') variantKey: string | undefined,
+    @Body('width') width: number | undefined,
+    @Body('height') height: number | undefined,
+    @Body('duration') duration: number | undefined,
     @Req() req: any
   ) {
     if (!filename || !contentType) {
       throw new BadRequestException('filename and contentType are required');
     }
     const userId = req.user.id;
-    return this.storageService.getPresignedUrl(userId, filename, contentType, folder, fileSize, variantKey);
+    return this.storageService.getPresignedUrl(userId, filename, contentType, folder, fileSize, variantKey, width, height, duration);
   }
 
   /**

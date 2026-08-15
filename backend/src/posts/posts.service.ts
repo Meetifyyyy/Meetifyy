@@ -256,7 +256,8 @@ export class PostsService {
     let cursorDate: Date | undefined = undefined;
     let cursorId: string | undefined = undefined;
     if (cursor) {
-      const [datePart, idPart] = cursor.split('__');
+      const delimiter = cursor.includes('|') ? '|' : '__';
+      const [datePart, idPart] = cursor.split(delimiter);
       const parsed = new Date(datePart);
       if (!isNaN(parsed.getTime()) && datePart.includes('T')) {
         cursorDate = parsed;
@@ -364,7 +365,7 @@ export class PostsService {
     if (rawPosts.length > limit) {
       const nextItem = rawPosts.pop();
       nextCursor = nextItem?.createdAt
-        ? `${new Date(nextItem.createdAt).toISOString()}__${nextItem.id}`
+        ? `${new Date(nextItem.createdAt).toISOString()}|${nextItem.id}`
         : undefined;
     }
 
@@ -456,7 +457,8 @@ export class PostsService {
     let cursorDate: Date | undefined = undefined;
     let cursorId: string | undefined = undefined;
     if (cursor) {
-      const [datePart, idPart] = cursor.split('__');
+      const delimiter = cursor.includes('|') ? '|' : '__';
+      const [datePart, idPart] = cursor.split(delimiter);
       const parsed = new Date(datePart);
       if (!isNaN(parsed.getTime()) && datePart.includes('T')) {
         cursorDate = parsed;
@@ -516,7 +518,7 @@ export class PostsService {
     let nextCursor: string | undefined = undefined;
     if (posts.length > limit) {
       const nextItem = posts.pop();
-      nextCursor = nextItem ? `${nextItem.createdAt.toISOString()}__${nextItem.id}` : undefined;
+      nextCursor = nextItem ? `${nextItem.createdAt.toISOString()}|${nextItem.id}` : undefined;
     }
 
     if (posts.length === 0) {
@@ -1153,7 +1155,8 @@ export class PostsService {
     let cursorDate: Date | undefined = undefined;
     let cursorPostId: string | undefined = undefined;
     if (cursor) {
-      const [datePart, idPart] = cursor.split('__');
+      const delimiter = cursor.includes('|') ? '|' : '__';
+      const [datePart, idPart] = cursor.split(delimiter);
       const parsed = new Date(datePart);
       if (!isNaN(parsed.getTime()) && datePart.includes('T')) {
         cursorDate = parsed;
@@ -1194,7 +1197,7 @@ export class PostsService {
     let nextCursor: string | undefined = undefined;
     if (bookmarks.length > limit) {
       const nextItem = bookmarks.pop();
-      nextCursor = nextItem ? `${nextItem.createdAt.toISOString()}__${nextItem.postId}` : undefined;
+      nextCursor = nextItem ? `${nextItem.createdAt.toISOString()}|${nextItem.postId}` : undefined;
     }
 
     if (bookmarks.length === 0) {

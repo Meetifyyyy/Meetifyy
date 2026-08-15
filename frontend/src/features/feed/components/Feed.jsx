@@ -1,4 +1,4 @@
-import { useCallback, memo, useEffect, useRef } from 'react';
+import { useCallback, memo, useEffect, useRef, useMemo } from 'react';
 import useUIStore from '@stores/uiStore';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
@@ -48,8 +48,7 @@ function Feed({ onPostClick }) {
     isError,
     refetch,
   } = useInfiniteQuery({
-    // M-1 fix: Scope the feed cache to the current user so logging out and logging
-    // in as a different user doesn't temporarily show the previous user's feed.
+    // Scope the feed cache to the current user and search query
     queryKey: ['feed', searchQuery, currentUser?.id],
     queryFn: async ({ pageParam = undefined }) => {
       const limit = 20;
@@ -57,11 +56,26 @@ function Feed({ onPostClick }) {
       return res; // Returns { posts: [...], nextCursor: ... }
     },
     getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
-    staleTime: 30_000,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
   });
 
-  // Flatten the pages of posts into a single array
-  const allPosts = data?.pages.flatMap(page => page.posts || page.items || []) ?? [];
+  // Flatten the pages of posts into a single deduped array with stable reference
+  const allPosts = useMemo(() => {
+    if (!data?.pages) return [];
+    const seen = new Set();
+    const result = [];
+    for (const page of data.pages) {
+      const list = page.posts || page.items || [];
+      for (const item of list) {
+        if (item?.id && !seen.has(item.id)) {
+          seen.add(item.id);
+          result.push(item);
+        }
+      }
+    }
+    return result;
+  }, [data?.pages]);
 
   const loadMoreRef = useRef(null);
 
@@ -73,7 +87,7 @@ function Feed({ onPostClick }) {
           fetchNextPage();
         }
       },
-      { threshold: 0.1, rootMargin: '200px' }
+      { threshold: 0.05, rootMargin: '400px' }
     );
     if (loadMoreRef.current) {
       observer.observe(loadMoreRef.current);
@@ -108,7 +122,7 @@ function Feed({ onPostClick }) {
   const handleNewPost = useCallback(async (text, pollData, mediaData, mentions) => {
     if (!(pollData || text || mediaData)) return;
 
-    // Pass the VERIFIED storage key (not a blob/preview url) to the backend.
+    // Pass the VERIFIED storage key to the backend.
     const created = await postsApi.createPost({
       text,
       mediaKey: mediaData?.mediaKey,
@@ -116,11 +130,6 @@ function Feed({ onPostClick }) {
       poll: pollData || undefined,
     });
 
-    // Requirement 3: the author's own post appears instantly with no full feed
-    // refetch. The backend returns the fully-formatted post — normalize the
-    // viewer-state flags and prepend it into every cached feed list (deduped by
-    // id, so a later socket/refetch can't double it). Other users' posts are
-    // untouched here; they still surface only on manual refresh.
     if (created?.id) {
       const normalized = {
         ...created,
@@ -138,12 +147,6 @@ function Feed({ onPostClick }) {
     }
   }, [queryClient]);
 
-  // Pulling down resets straight to a fresh first page rather than calling the
-  // infinite query's default `refetch()` — that would re-request every page
-  // the user has already scrolled through. A pull-to-refresh gesture means
-  // "start me over at the freshest top," so a full reset (discarding deeper
-  // pages, keyset cursors included) is both the correct semantics AND avoids
-  // the N-pages-at-once request burst.
   const handlePullToRefresh = useCallback(() => {
     return queryClient.resetQueries({ queryKey: ['feed', searchQuery, currentUser?.id] });
   }, [queryClient, searchQuery, currentUser?.id]);

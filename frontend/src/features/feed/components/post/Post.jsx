@@ -1,16 +1,14 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, memo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
-import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
-import MentionInput from '@shared/components/mentions/MentionInput';
 import RichText from '@shared/components/mentions/RichText';
-import { useData } from '@shared/hooks/useData';
+import { useAuth } from '@shared/context/AuthContext';
+import { useCommunities } from '@shared/hooks/useCommunities';
 import { timeAgo } from '@shared/utils/time';
 import styles from './Post.module.css';
 import SharePostModal from '../modals/SharePostModal';
-import VideoPlayer from '@shared/components/media/VideoPlayer';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
@@ -18,11 +16,12 @@ import MediaGrid from './MediaGrid';
 import { useLikePost } from '../../hooks/useLikePost';
 import { useSavePost } from '../../hooks/useSavePost';
 import { useDeletePost } from '../../hooks/useDeletePost';
+import { useVotePoll } from '../../hooks/useVotePoll';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 function PollCard({ poll, postId }) {
-  const { voteInPoll, currentUser } = useData();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { currentUser } = useAuth();
+  const { mutate: voteInPoll, isLoading: isSubmitting } = useVotePoll();
 
   // Derive voted state and votes from the shared poll object
   const optionsList = Array.isArray(poll.options) ? poll.options : [];
@@ -46,7 +45,7 @@ function PollCard({ poll, postId }) {
   // Local state only for multi-select pre-submission selection
   const [pendingSelection, setPendingSelection] = useState([]);
 
-  const handleVote = async (idx) => {
+  const handleVote = (idx) => {
     if (hasVoted || isSubmitting) return;
 
     if (poll.multiSelect) {
@@ -54,28 +53,14 @@ function PollCard({ poll, postId }) {
         prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
       );
     } else {
-      setIsSubmitting(true);
-      try {
-        await voteInPoll(postId, [idx]);
-      } catch (err) {
-        // Toast handled in useData
-      } finally {
-        setIsSubmitting(false);
-      }
+      voteInPoll({ postId, indices: [idx], currentUserId: currentUser?.id });
     }
   };
 
-  const confirmMultiVote = async () => {
+  const confirmMultiVote = () => {
     if (pendingSelection.length === 0 || hasVoted || isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-      await voteInPoll(postId, pendingSelection);
-      setPendingSelection([]);
-    } catch (err) {
-      // Toast handled in useData
-    } finally {
-      setIsSubmitting(false);
-    }
+    voteInPoll({ postId, indices: pendingSelection, currentUserId: currentUser?.id });
+    setPendingSelection([]);
   };
 
   const showResults = hasVoted;
@@ -144,28 +129,9 @@ const normalizePostText = (str) => {
     .replace(/\n{3,}/g, '\n\n');
 };
 
-const formatTimestamp = (isoString) => {
-  if (!isoString) return '';
-  const date = new Date(isoString);
-  const now = new Date();
-  const diffInSeconds = Math.floor((now - date) / 1000);
-
-  if (diffInSeconds < 60) return `${diffInSeconds}s`;
-  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m`;
-  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h`;
-  if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
-};
-
-const processMentions = (text) => {
-  if (!text) return '';
-  return text
-    .replace(/@([a-zA-Z0-9_]+)/g, '<a href="/profile/$1" class="mention">@$1</a>')
-    .replace(/\n{3,}/g, '\n\n');
-};
-
 function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityTag = false }) {
-  const { getUserById, getPostById, communities, currentUser } = useData();
+  const { currentUser } = useAuth();
+  const { communities } = useCommunities();
   const { openViewer } = useMediaViewer();
   const [showMenu, setShowMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -174,15 +140,10 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
 
-  const livePost = postData ? (getPostById(postData.id) || postData) : null;
-  const id = livePost?.id;
+  const id = postData?.id;
 
-  // All hooks are declared unconditionally, before the `!livePost` early
-  // return below — calling hooks after a conditional return would violate
-  // the rules of hooks the moment `postData` ever transitions to/from null
-  // across renders (e.g. right as the post it belongs to gets deleted).
-  const { mutate: toggleLike, isLoading: isLiking } = useLikePost();
-  const { mutate: toggleSave, isLoading: isSaving } = useSavePost();
+  const { mutate: toggleLike } = useLikePost();
+  const { mutate: toggleSave } = useSavePost();
   const { mutate: deletePost } = useDeletePost();
 
   useEffect(() => {
@@ -202,21 +163,21 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
     return () => window.removeEventListener('close-all-post-menus', handleCloseOthers);
   }, [id]);
 
-  if (!livePost) return null;
+  if (!postData) return null;
 
-  const { authorId, time, text, mentions, poll, likeCount, commentCount, hasLiked, isLiked, isLikedByMe: rawIsLiked, isBookmarked: rawIsBookmarked, hasBookmarked } = livePost;
+  const { authorId, time, text, mentions, poll, likeCount, commentCount, hasLiked, isLiked, isLikedByMe: rawIsLiked, isBookmarked: rawIsBookmarked, hasBookmarked } = postData;
 
-  const rawIsLikedByMe = hasLiked !== undefined ? !!hasLiked : (isLiked !== undefined ? !!isLiked : (rawIsLiked !== undefined ? !!rawIsLiked : (livePost.likedBy ? livePost.likedBy.includes(currentUser?.id) : false)));
+  const rawIsLikedByMe = hasLiked !== undefined ? !!hasLiked : (isLiked !== undefined ? !!isLiked : (rawIsLiked !== undefined ? !!rawIsLiked : (postData.likedBy ? postData.likedBy.includes(currentUser?.id) : false)));
   const isLikedByMe = toggleRegistry.getLatestIntent(`likePost:${id}`, rawIsLikedByMe);
 
-  const likes = likeCount !== undefined ? likeCount : (livePost.likesCount !== undefined ? livePost.likesCount : (livePost.likes || 0));
-  const comments = commentCount !== undefined ? commentCount : (livePost.commentsCount !== undefined ? livePost.commentsCount : (livePost.comments || 0));
+  const likes = likeCount !== undefined ? likeCount : (postData.likesCount !== undefined ? postData.likesCount : (postData.likes || 0));
+  const comments = commentCount !== undefined ? commentCount : (postData.commentsCount !== undefined ? postData.commentsCount : (postData.comments || 0));
 
   const rawIsSaved = hasBookmarked !== undefined ? !!hasBookmarked : !!rawIsBookmarked;
   const isSaved = toggleRegistry.getLatestIntent(`savePost:${id}`, rawIsSaved);
 
-  const author = livePost.author || getUserById(authorId) || { displayName: 'User', username: 'user', avatar: null };
-  const authorCollege = author.collegeId ? communities[author.collegeId] : null;
+  const author = postData.author || { id: authorId, displayName: 'User', username: 'user', avatar: null };
+  const authorCollege = (author.collegeId && communities) ? communities[author.collegeId] : null;
 
   const formatExactDate = (timestamp) => {
     if (!timestamp) return '';
@@ -226,11 +187,11 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
     return `${timeStr} · ${dateStr}`;
   };
 
-  const exactTimeStr = livePost.createdAt ? formatExactDate(livePost.createdAt) : time;
+  const exactTimeStr = postData.createdAt ? formatExactDate(postData.createdAt) : time;
 
   const handleCardClick = () => {
     if (isDetailed) return;
-    if (onClick) onClick(livePost);
+    if (onClick) onClick(postData);
   };
 
   const toggleLikeHandler = (e) => {
@@ -246,7 +207,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
     setShowShareModal(true);
   };
 
-  const postCommunity = (!hideCommunityTag && livePost.communityId) ? communities[livePost.communityId] : null;
+  const postCommunity = (!hideCommunityTag && postData.communityId && communities) ? communities[postData.communityId] : null;
 
   return (
     <div className={styles.post} onClick={handleCardClick} style={{ cursor: (!isDetailed && onClick) ? 'pointer' : 'default' }}>
@@ -301,7 +262,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
               <span className={styles.postUsername}>@{author.username}</span>
             )}
             <span className={styles.postTimeDot}>·</span>
-            <span>{livePost.createdAt ? timeAgo(livePost.createdAt) : (time ? timeAgo(time) : '')}</span>
+            <span>{postData.createdAt ? timeAgo(postData.createdAt) : (time ? timeAgo(time) : '')}</span>
           </div>
         </div>
 
@@ -327,24 +288,21 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
           {showMenu && (
             <div className="dropdown open" style={{ right: 0, top: '100%', width: '140px' }} onClick={(e) => e.stopPropagation()}>
               {currentUser && authorId === currentUser.id && (
-                <>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowMenu(false);
-                      setShowDeleteConfirm(true);
-                    }}
-                    style={{ color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                    Delete Post
-                  </button>
-                </>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMenu(false);
+                    setShowDeleteConfirm(true);
+                  }}
+                  style={{ color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  Delete Post
+                </button>
               )}
-              {/* Report — for all posts */}
               {(!currentUser || authorId !== currentUser.id) && (
                 <button
                   onClick={(e) => {
@@ -426,42 +384,42 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
         const showMedia = !needsTruncation || isExpanded;
         return (
           <div className={`${styles.collapsibleMedia} ${showMedia ? styles.expanded : ''}`}>
-            {livePost.media && (
+            {postData.media && (
               <MediaGrid
-                media={livePost.media}
+                media={postData.media}
                 onMediaClick={(items, index) => {
                   const meta = {
                     authorName: author.displayName,
                     authorAvatar: author.avatar,
                     authorUsername: author.username,
-                    timestamp: livePost.createdAt ? new Date(livePost.createdAt).toLocaleString() : time,
+                    timestamp: postData.createdAt ? new Date(postData.createdAt).toLocaleString() : time,
                     source: 'Post',
                     isOwner: currentUser?.id === authorId,
-                    post: livePost,
+                    post: postData,
                     author,
                   };
                   openViewer(items, index, meta);
                 }}
               />
             )}
-            {livePost.linkPreview && (
+            {postData.linkPreview && (
               <a
-                href={sanitizeUrl(livePost.linkPreview.url)}
+                href={sanitizeUrl(postData.linkPreview.url)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={styles.linkPreview}
                 onClick={(e) => e.stopPropagation()}
               >
-                {livePost.linkPreview.image && (
-                  <img src={livePost.linkPreview.image} alt="" loading="lazy" className={styles.linkPreviewImg} />
+                {postData.linkPreview.image && (
+                  <img src={postData.linkPreview.image} alt="" loading="lazy" className={styles.linkPreviewImg} />
                 )}
                 <div className={styles.linkPreviewBody}>
-                  {livePost.linkPreview.site && (
-                    <span className={styles.linkPreviewSite}>{livePost.linkPreview.site}</span>
+                  {postData.linkPreview.site && (
+                    <span className={styles.linkPreviewSite}>{postData.linkPreview.site}</span>
                   )}
-                  <span className={styles.linkPreviewTitle}>{livePost.linkPreview.title}</span>
-                  {livePost.linkPreview.description && (
-                    <span className={styles.linkPreviewDesc}>{livePost.linkPreview.description}</span>
+                  <span className={styles.linkPreviewTitle}>{postData.linkPreview.title}</span>
+                  {postData.linkPreview.description && (
+                    <span className={styles.linkPreviewDesc}>{postData.linkPreview.description}</span>
                   )}
                 </div>
               </a>
@@ -484,7 +442,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
           </svg>
           <span className={styles.postActionCount}>{likes}</span>
         </button>
-        <button className={styles.postActionBtn} onClick={(e) => { e.stopPropagation(); if (onClick) onClick(livePost); }}>
+        <button className={styles.postActionBtn} onClick={(e) => { e.stopPropagation(); if (onClick) onClick(postData); }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
           </svg>
@@ -504,7 +462,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
           e.stopPropagation(); 
           const entityKey = `savePost:${id}`;
           const nextSaved = toggleRegistry.getNextToggleIntent(entityKey, isSaved);
-          toggleSave({ postId: id, isSaved: nextSaved, postData: livePost }); 
+          toggleSave({ postId: id, isSaved: nextSaved, postData }); 
         }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill={isSaved ? 'var(--color-primary)' : 'none'} stroke={isSaved ? 'var(--color-primary)' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
@@ -512,46 +470,71 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
           <span className={styles.shareText} style={{ fontSize: '0.85rem', fontWeight: 600 }}>{isSaved ? 'Saved' : 'Save'}</span>
         </button>
       </div>
-      <SharePostModal 
-        isOpen={showShareModal} 
-        onClose={() => setShowShareModal(false)} 
-        post={livePost} 
-        author={author} 
-      />
-      <div onClick={(e) => e.stopPropagation()}>
-        <ConfirmModal
-          title="Delete Post?"
-          desc="Are you sure you want to delete this post? This action is permanent and cannot be undone."
-          visible={showDeleteConfirm}
-          onCancel={() => setShowDeleteConfirm(false)}
-          onConfirm={() => {
-            setShowDeleteConfirm(false);
-            // Fire-and-forget: useDeletePost removes the post from every cache
-            // synchronously (before the network call even starts), so this is
-            // instant regardless of the request's latency. A failure rolls the
-            // cache back and toasts — handled entirely inside the hook.
-            deletePost({ postId: id });
-            // Viewing this exact post's detail page — it's gone, so leave it
-            // rather than showing a ghost of now-deleted content.
-            if (isDetailed && onDeleted) onDeleted();
-          }}
-          confirmText="Delete"
-        />
-      </div>
 
-      <ReportModal
-        isOpen={showReportModal}
-        onClose={() => setShowReportModal(false)}
-        targetType="POST"
-        targetId={id}
-        targetPreview={text?.slice(0, 80)}
-        targetName={author?.displayName || author?.username}
-        targetAvatar={author?.avatar}
-        reportedFrom="feed"
-        onSubmitted={() => setHasReported(true)}
-      />
+      {showShareModal && (
+        <SharePostModal 
+          isOpen={showShareModal} 
+          onClose={() => setShowShareModal(false)} 
+          post={postData} 
+          author={author} 
+        />
+      )}
+
+      {showDeleteConfirm && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <ConfirmModal
+            title="Delete Post?"
+            desc="Are you sure you want to delete this post? This action is permanent and cannot be undone."
+            visible={showDeleteConfirm}
+            onCancel={() => setShowDeleteConfirm(false)}
+            onConfirm={() => {
+              setShowDeleteConfirm(false);
+              deletePost({ postId: id });
+              if (isDetailed && onDeleted) onDeleted();
+            }}
+            confirmText="Delete"
+          />
+        </div>
+      )}
+
+      {showReportModal && (
+        <ReportModal
+          isOpen={showReportModal}
+          onClose={() => setShowReportModal(false)}
+          targetType="POST"
+          targetId={id}
+          targetPreview={text?.slice(0, 80)}
+          targetName={author?.displayName || author?.username}
+          targetAvatar={author?.avatar}
+          reportedFrom="feed"
+          onSubmitted={() => setHasReported(true)}
+        />
+      )}
     </div>
   );
 }
 
-export default memo(Post);
+function arePostPropsEqual(prevProps, nextProps) {
+  if (prevProps.isDetailed !== nextProps.isDetailed) return false;
+  if (prevProps.hideCommunityTag !== nextProps.hideCommunityTag) return false;
+  if (prevProps.onClick !== nextProps.onClick) return false;
+  if (prevProps.onDeleted !== nextProps.onDeleted) return false;
+
+  const prev = prevProps.postData;
+  const next = nextProps.postData;
+  if (prev === next) return true;
+  if (!prev || !next) return false;
+  if (prev.id !== next.id) return false;
+  if (prev.text !== next.text) return false;
+  if (prev.likeCount !== next.likeCount || prev.likesCount !== next.likesCount) return false;
+  if (prev.commentCount !== next.commentCount || prev.commentsCount !== next.commentsCount) return false;
+  if (prev.isLiked !== next.isLiked || prev.hasLiked !== next.hasLiked || prev.isLikedByMe !== next.isLikedByMe) return false;
+  if (prev.isBookmarked !== next.isBookmarked || prev.hasBookmarked !== next.hasBookmarked) return false;
+  if (prev.updatedAt !== next.updatedAt) return false;
+  if (prev.poll !== next.poll && JSON.stringify(prev.poll) !== JSON.stringify(next.poll)) return false;
+  if (prev.media !== next.media && JSON.stringify(prev.media) !== JSON.stringify(next.media)) return false;
+  if (prev.author !== next.author && JSON.stringify(prev.author) !== JSON.stringify(next.author)) return false;
+  return true;
+}
+
+export default memo(Post, arePostPropsEqual);

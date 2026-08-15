@@ -816,7 +816,6 @@ export default function SocketManager() {
       const currentUserId = session?.user?.id;
 
       const isSenderSelf = String(message.senderId) === String(currentUserId) || message.from === 'me' || message.senderId === 'me';
-      if (isSenderSelf) return;
 
       const convId = message.conversationId || message.publicId || message.internalId;
       if (!convId) return;
@@ -854,7 +853,9 @@ export default function SocketManager() {
         }
       }
 
-      // 1. Instant update of ['conversations'] cache so unread counts, latest snippet, and timestamps update immediately
+      // 1. Instant update of ['conversations'] cache so unread counts, latest snippet, and timestamps update immediately.
+      //    For messages sent by the current user (this device or another device): update preview + timestamp, but
+      //    never increment unread (sender has implicitly "read" by sending).
       queryClient.setQueryData(['conversations'], (oldConvs) => {
         if (!Array.isArray(oldConvs)) return oldConvs;
 
@@ -869,14 +870,17 @@ export default function SocketManager() {
             found = true;
             const currentUnread = c.unreadCount || c.unread || 0;
             const textSnippet = message.text || (message.mediaType === 'image' ? 'Photo' : message.mediaType === 'video' ? 'Video' : message.mediaUrl ? 'Media' : '');
+            // Own-sent messages: keep unread at current value (sender read it by sending).
+            // Other users' messages: increment unless currently viewing that chat.
+            const newUnread = isSenderSelf ? currentUnread : (isViewingCurrentChat ? currentUnread : currentUnread + 1);
             return {
               ...c,
               lastMessage: message,
               lastMsg: textSnippet,
               updatedAt: message.createdAt || new Date().toISOString(),
               timestamp: new Date(message.createdAt || Date.now()).getTime(),
-              unreadCount: isViewingCurrentChat ? currentUnread : currentUnread + 1,
-              unread: isViewingCurrentChat ? currentUnread : currentUnread + 1,
+              unreadCount: newUnread,
+              unread: newUnread,
             };
           }
           return c;
@@ -890,15 +894,18 @@ export default function SocketManager() {
         return [...updatedConvs].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       });
 
-      // 2. Instant update of ['messages', key] query cache for all aliases
+      // 2. Instant update of ['messages', key] query cache for all aliases.
+      //    appendMessageToCache is idempotent (dedupes by id/clientId) so if this tab already
+      //    applied an optimistic message, it won't be duplicated.
       const aliases = targetConv ? getConversationAliases(targetConv) : [];
       const targetKeys = [...new Set([message.conversationId, message.publicId, message.internalId, ...aliases].filter(Boolean))];
       targetKeys.forEach((key) => {
         appendMessageToCache(queryClient, key, message);
       });
 
-      // 3. If chat is NOT currently open, show instant screen toast notification
-      if (!isViewingCurrentChat) {
+      // 3. If chat is NOT currently open, show instant screen toast notification.
+      //    Never toast for own-sent messages (multi-device sync) — the sender already knows.
+      if (!isViewingCurrentChat && !isSenderSelf) {
         const isMuted = Boolean(targetConv?.muted || targetConv?.isMuted);
 
         if (!isMuted && window.location.pathname !== '/onboarding') {

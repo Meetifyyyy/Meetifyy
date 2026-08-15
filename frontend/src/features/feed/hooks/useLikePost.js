@@ -71,7 +71,7 @@ export function useLikePost() {
     applyOptimistic,
     applyRollback,
     callApi,
-    invalidateKeys: (vars) => [['feed'], ['post', vars.postId]],
+    invalidateKeys: (vars) => [['post', vars.postId]],
   });
 
   return { mutate, isLoading: false };

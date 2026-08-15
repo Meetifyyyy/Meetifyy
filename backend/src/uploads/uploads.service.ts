@@ -75,6 +75,9 @@ export class StorageService {
     folder = 'general',
     fileSize = 0,
     variantKey?: string,
+    width?: number,
+    height?: number,
+    duration?: number,
   ) {
     const safeFolder = this.normalizeFolder(folder);
     if (typeof contentType !== 'string' || !this.isAllowedMimeType(contentType)) throw new BadRequestException('Unsupported content type');
@@ -121,12 +124,15 @@ export class StorageService {
         : 'IMAGE', // Legacy fallback
       mimeType: contentType,
       fileSize: requestedFileSize,
+      width: width ? Math.round(Number(width)) : undefined,
+      height: height ? Math.round(Number(height)) : undefined,
+      duration: duration ? Math.round(Number(duration)) : undefined,
     };
 
     // Register media in database (pending state). Variant (thumbnail) keys can be
     // re-requested on a retry, so upsert to stay idempotent on the unique objectKey.
     const media = explicitKey
-      ? await this.prisma.media.upsert({ where: { objectKey: key }, create: mediaData, update: {} })
+      ? await this.prisma.media.upsert({ where: { objectKey: key }, create: mediaData, update: mediaData })
       : await this.prisma.media.create({ data: mediaData });
 
     // Provide a generic, provider-agnostic URL to the frontend

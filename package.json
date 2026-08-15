@@ -9,7 +9,8 @@
   "scripts": {
     "build": "npm --prefix backend install && npm --prefix backend run build",
     "start": "cd backend && npx prisma db push && npm run start:prod",
-    "dev": "npx concurrently -k -p \"[{name}]\" -n \"BACKEND,FRONTEND,ADMIN\" -c \"blue.bold,magenta.bold,yellow.bold\" \"npm --prefix backend run start:dev\" \"npm --prefix frontend run dev\" \"npm --prefix admin-frontend run dev\"",
+    "dev": "./start.sh",
+    "dev:services": "npx concurrently -k -p \"[{name}]\" -n \"BACKEND,FRONTEND,ADMIN\" -c \"blue.bold,magenta.bold,yellow.bold\" \"npm --prefix backend run start:dev\" \"npm --prefix frontend run dev\" \"npm --prefix admin-frontend run dev\"",
     "dev:backend": "npm --prefix backend run start:dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "dev:admin": "npm --prefix admin-frontend run dev"

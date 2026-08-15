@@ -1,4 +1,4 @@
-/* MediaGrid.module.css — Production-Grade Social Media Media Layout */
+/* MediaGrid.module.css — Dynamic Aspect Ratio Social Media Layout */
 
 .mediaContainer {
   position: relative;
@@ -33,35 +33,50 @@
   justify-content: center;
 }
 
-/* Single Image Wrapper */
+/* Single Image Wrapper:
+ * - Width scales naturally to fit post width up to the constraint defined by aspect-ratio & max-height.
+ * - Height is derived from the natural aspect ratio.
+ * - Max height prevents giant portrait media from dominating the viewport.
+ * - Min height ensures extremely wide media remains legible.
+ */
 .singleImageWrapper {
   position: relative;
-  display: block;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   border-radius: var(--radius-xl, 20px);
   overflow: hidden;
-  border: none;
+  border: 1px solid var(--color-border-light, rgba(0, 0, 0, 0.08));
   background: var(--color-bg-subtle, #f1f5f9);
   box-shadow: none !important;
-  width: min(100%, calc(360px * var(--aspect)));
-  aspect-ratio: var(--aspect);
-  max-height: 360px;
+  width: min(100%, calc(clamp(320px, 70vh, 580px) * var(--aspect, 1.25)));
+  aspect-ratio: var(--aspect, 1.25);
+  max-width: 100%;
+  max-height: clamp(320px, 70vh, 580px);
+  min-height: clamp(100px, 15vh, 160px);
+  contain: layout paint;
+  margin: 0 auto;
 }
 
 [data-theme="dark"] .singleImageWrapper {
-  background: var(--color-bg-subtle, #151923);
+  background: var(--color-bg-subtle, #12161f);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
-/* Single Image Element */
+/* Single Image Element:
+ * - Uses object-fit: contain to NEVER crop or distort the user's uploaded image.
+ * - Fills the exact aspect-ratio container without overflow.
+ */
 .singleImage {
   display: block;
   cursor: pointer;
-  transition: filter 0.25s ease;
   border-radius: var(--radius-xl, 20px);
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   box-shadow: none !important;
   filter: none;
+  transition: filter 0.25s ease;
 }
 
 .singleImage:hover {
@@ -118,27 +133,29 @@
   opacity: 0;
 }
 
-/* Multi-Image Grid Layouts */
+/* Multi-Image Grid Layouts (2, 3, 4 images) */
 .gridTwo {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
-  height: 180px;
+  aspect-ratio: 16 / 9;
+  max-height: clamp(200px, 40vh, 340px);
 }
 
 .gridThree {
   display: grid;
   grid-template-columns: 1.2fr 1fr;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
-  height: 200px;
+  aspect-ratio: 16 / 9;
+  max-height: clamp(220px, 45vh, 380px);
 }
 
 .gridThreeRight {
   display: grid;
   grid-template-rows: 1fr 1fr;
-  gap: 2px;
+  gap: 3px;
   height: 100%;
 }
 
@@ -146,9 +163,10 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
-  height: 200px;
+  aspect-ratio: 16 / 9;
+  max-height: clamp(240px, 50vh, 400px);
 }
 
 .gridItem {
@@ -157,7 +175,11 @@
   height: 100%;
   overflow: hidden;
   cursor: pointer;
-  background: #f1f5f9;
+  background: var(--color-bg-subtle, #f1f5f9);
+}
+
+[data-theme="dark"] .gridItem {
+  background: var(--color-bg-subtle, #12161f);
 }
 
 .gridImage {
@@ -197,16 +219,26 @@
 /* Single Video Wrapper & Element */
 .videoWrapper {
   position: relative;
-  display: block;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   border-radius: var(--radius-xl, 20px);
   overflow: hidden;
-  border: none;
+  border: 1px solid var(--color-border-light, rgba(0, 0, 0, 0.08));
   background: #000000;
   -webkit-mask-image: -webkit-radial-gradient(white, black);
   isolation: isolate;
-  width: min(100%, calc(360px * var(--aspect)));
-  aspect-ratio: var(--aspect);
-  max-height: 360px;
+  width: min(100%, calc(clamp(320px, 70vh, 580px) * var(--aspect, 1.7778)));
+  aspect-ratio: var(--aspect, 1.7778);
+  max-width: 100%;
+  max-height: clamp(320px, 70vh, 580px);
+  min-height: clamp(100px, 15vh, 160px);
+  contain: layout paint;
+  margin: 0 auto;
+}
+
+[data-theme="dark"] .videoWrapper {
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .singleVideo {
@@ -235,50 +267,42 @@
   justify-content: center;
   color: #ffffff;
   cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease;
   z-index: 4;
-  transition: background 0.2s ease;
-  box-shadow: none !important;
 }
 
-.videoWrapper {
-  cursor: pointer;
-}
-
-.videoWrapper:hover .playButtonOverlay {
-  transform: translate(-50%, -50%);
+.playButtonOverlay:hover {
+  transform: translate(-50%, -50%) scale(1.08);
   background: rgba(0, 0, 0, 0.75);
 }
 
 .playIcon {
-  width: 24px;
-  height: 24px;
-  margin: 0 0 0 2px;
+  width: 28px;
+  height: 28px;
   fill: currentColor;
-  display: block;
+  margin-left: 3px;
 }
 
-/* Custom Inline Video Controls */
+/* Inline Video Controls Overlay */
 .inlineVideoWrap {
-  position: relative;
+  cursor: default;
 }
 
 .inlineTimerPill {
   position: absolute;
-  bottom: 8px;
-  left: 8px;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  bottom: 12px;
+  right: 12px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   color: #ffffff;
-  font-family: var(--font-family-sans, sans-serif);
-  font-size: 0.68rem;
-  font-weight: 500;
+  font-size: 0.78rem;
+  font-weight: 600;
   padding: 3px 8px;
   border-radius: 6px;
-  z-index: 5;
   pointer-events: none;
-  transition: opacity 0.25s ease;
-  line-height: 1.2;
+  transition: opacity 0.2s ease;
+  z-index: 3;
 }
 
 .inlineVideoWrap:hover .inlineTimerPill {
@@ -290,17 +314,15 @@
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 10px 14px 12px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 65%, transparent 100%);
+  padding: 24px 12px 10px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 60%, transparent 100%);
   display: flex;
   align-items: center;
-  gap: 10px;
-  z-index: 6;
+  gap: 8px;
   opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 4;
   pointer-events: none;
-  transition: opacity 0.25s ease;
-  border-bottom-left-radius: var(--radius-xl, 20px);
-  border-bottom-right-radius: var(--radius-xl, 20px);
 }
 
 .inlineVideoWrap:hover .inlineControlsOverlay {
@@ -309,39 +331,47 @@
 }
 
 .inlineCtrlBtn {
-  background: transparent;
+  background: none;
   border: none;
   color: #ffffff;
   cursor: pointer;
-  padding: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
-  transition: background 0.15s ease, opacity 0.15s ease;
+  padding: 4px;
+  border-radius: 4px;
+  transition: transform 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
 }
 
 .inlineCtrlBtn:hover {
-  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.15);
+  color: var(--color-primary, #6366f1);
 }
 
 .inlineTimeText {
-  color: #ffffff;
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-family: var(--font-family-sans, sans-serif);
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
   white-space: nowrap;
 }
 
 .inlineSeekBar {
   flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
   height: 4px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.3);
-  appearance: none;
-  -webkit-appearance: none;
   outline: none;
   cursor: pointer;
+  transition: height 0.15s ease;
+}
+
+.inlineSeekBar:hover {
+  height: 6px;
 }
 
 .inlineSeekBar::-webkit-slider-thumb {
@@ -352,6 +382,7 @@
   border-radius: 50%;
   background: #ffffff;
   cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
 .inlineSeekBar::-moz-range-thumb {
@@ -359,30 +390,33 @@
   height: 12px;
   border-radius: 50%;
   background: #ffffff;
-  border: none;
   cursor: pointer;
+  border: none;
 }
 
-/* Mobile Adjustments */
+/* Mobile Responsiveness */
 @media (max-width: 640px) {
-  .singleMediaContainer {
-    margin-top: 0.5rem;
-    margin-bottom: 0.6rem;
+  .singleImageWrapper,
+  .videoWrapper {
+    width: min(100%, calc(clamp(260px, 60vh, 460px) * var(--aspect, 1.25)));
+    max-height: clamp(260px, 60vh, 460px);
+    border-radius: var(--radius-lg, 16px);
   }
 
-  .singleMediaLandscape .singleImage,
-  .singleMediaPortrait .singleImage,
-  .singleMediaLandscape .singleVideo,
-  .singleMediaPortrait .singleVideo {
-    max-height: 300px;
+  .singleImage,
+  .singleVideo {
+    border-radius: var(--radius-lg, 16px);
   }
 
   .gridTwo {
-    height: 150px;
+    max-height: 220px;
   }
 
-  .gridThree,
+  .gridThree {
+    max-height: 240px;
+  }
+
   .gridFour {
-    height: 170px;
+    max-height: 260px;
   }
 }

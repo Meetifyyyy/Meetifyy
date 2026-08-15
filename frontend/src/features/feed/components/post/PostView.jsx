@@ -9,7 +9,7 @@ import Skeleton from '@shared/components/skeletons/Skeleton';
 import Post from './Post';
 import { CommentTreeRoot } from './CommentNode';
 import styles from './PostView.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useAuth } from '@shared/context/AuthContext';
 import { useGlobalSocketStore } from '@stores/useGlobalSocketStore';
 import { useAddComment } from '../../hooks/useAddComment';
 
@@ -80,7 +80,7 @@ function CommentsSkeleton() {
 export default function PostView({ post, onBack }) {
   const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
   const [loadingMore, setLoadingMore] = useState(false);
-  const { currentUser } = useData();
+  const { currentUser } = useAuth();
   const { mutate: addComment } = useAddComment();
   const { socket, isConnected } = useGlobalSocketStore();
   const queryClient = useQueryClient();

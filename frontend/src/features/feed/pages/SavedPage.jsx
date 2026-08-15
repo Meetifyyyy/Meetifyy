@@ -9,17 +9,19 @@ import CrewCard from '@features/crew/components/cards/CrewCard';
 import CrewCardSkeleton from '@features/crew/components/cards/CrewCardSkeleton';
 import Avatar from '@shared/components/avatar/Avatar';
 import styles from './SavedPage.module.css';
-import { useData } from '@shared/hooks/useData';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 
 export default function SavedPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
-  const { getUserById } = useData();
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'activities' | 'posts'
 
   const handleTabClick = (tab) => {
     setActiveTab((prev) => (prev === tab ? 'all' : tab));
+  };
+
+  const handlePostClick = (post) => {
+    navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved', from: '/saved' } });
   };
 
   const savedActivities = useSavedActivitiesStore(state => state.savedActivities);
@@ -254,7 +256,7 @@ export default function SavedPage() {
                           <Post 
                             postData={post} 
                             hideCommunityTag={false} 
-                            onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved', from: '/saved' } })} 
+                            onClick={handlePostClick} 
                           />
                         </div>
                       ))}
@@ -262,13 +264,13 @@ export default function SavedPage() {
                   ) : (
                     <div className={styles.compactContainer}>
                       {fullPosts.map(post => {
-                        const author = getUserById ? getUserById(post.authorId) : null;
+                        const author = post.author;
                         const displayName = author?.displayName || author?.username || 'Unknown';
                         const avatar = author?.avatar;
                         const previewText = post.text?.length > 80 ? post.text.substring(0, 80) + '...' : post.text;
 
                         return (
-                          <div key={post.id} className={styles.compactRow} onClick={() => navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved', from: '/saved' } })}>
+                          <div key={post.id} className={styles.compactRow} onClick={() => handlePostClick(post)}>
                             <div className={styles.compactAvatar}>
                               <Avatar 
                                 src={avatar} 

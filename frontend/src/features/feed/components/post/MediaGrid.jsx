@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, memo, useCallback } from 'react';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { deriveThumbnailKey } from '@shared/api/apiClient';
 import styles from './MediaGrid.module.css';
+
+const FALLBACK_POST_IMAGE = 'https://images.unsplash.com/photo-1517842645767-c639042777db?w=800&auto=format&fit=crop&q=80';
 
 /**
  * Custom inline video player component for post feed cards.
@@ -77,7 +79,7 @@ function InlineVideoPlayer({ src, isPortrait, aspect, handleVideoLoaded, handleI
           onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
           onLoadedMetadata={(e) => {
             setDuration(e.target.duration);
-            handleVideoLoaded(index);
+            handleVideoLoaded(index, e);
           }}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
@@ -147,7 +149,7 @@ function InlineVideoPlayer({ src, isPortrait, aspect, handleVideoLoaded, handleI
 }
 
 /**
- * Normalizes a raw media object/string/array into a standardized array of items.
+ * Normalizes a raw media object/string/array into a standardized array of items with intrinsic aspect ratio.
  */
 function normalizeMedia(mediaInput) {
   if (!mediaInput) return [];
@@ -162,7 +164,9 @@ function normalizeMedia(mediaInput) {
   }
 
   return rawList.map((item) => {
+    if (!item) return null;
     const rawSrc = item.url || item.storageKey || item.path || item.objectKey || '';
+    if (!rawSrc) return null;
 
     const typeStr = (item.type || item.mimeType || '').toLowerCase();
     const isVideo =
@@ -172,23 +176,48 @@ function normalizeMedia(mediaInput) {
       rawSrc.endsWith('.webm') ||
       rawSrc.startsWith('data:video');
 
+    const width = Number(item.width || item.raw?.width || item.originalWidth) || null;
+    const height = Number(item.height || item.raw?.height || item.originalHeight) || null;
+    const aspectRatio = Number(item.aspectRatio || item.raw?.aspectRatio) || (width && height ? width / height : null);
+
+    // Immediately usable URL if it's already a full or relative path
+    const isDirectUrl =
+      rawSrc.startsWith('http://') ||
+      rawSrc.startsWith('https://') ||
+      rawSrc.startsWith('data:') ||
+      rawSrc.startsWith('blob:') ||
+      rawSrc.startsWith('/api/media/') ||
+      rawSrc.startsWith('/');
+
+    const initialUrl = isDirectUrl ? rawSrc : null;
+
     return {
       raw: item,
       rawSrc: rawSrc,
-      url: null, // Will be resolved
+      url: initialUrl,
+      fullUrl: initialUrl,
+      width,
+      height,
+      aspectRatio,
       isVideo,
       type: isVideo ? 'video' : 'image',
     };
-  }).filter((item) => Boolean(item.rawSrc));
+  }).filter(Boolean);
 }
 
 export function MediaGrid({ media, onMediaClick }) {
   const [mediaList, setMediaList] = useState(() => normalizeMedia(media));
   const [loadedStates, setLoadedStates] = useState({});
+  const [naturalAspects, setNaturalAspects] = useState({});
   const [inlinePlaying, setInlinePlaying] = useState({});
 
   useEffect(() => {
     const list = normalizeMedia(media);
+    if (!list.length) {
+      setMediaList([]);
+      return;
+    }
+
     let isMounted = true;
 
     Promise.all(list.map(async (item) => {
@@ -198,7 +227,11 @@ export function MediaGrid({ media, onMediaClick }) {
           mediaCache.getUrl(item.rawSrc).catch(() => item.rawSrc),
           thumbKey ? mediaCache.getUrl(thumbKey).catch(() => null) : Promise.resolve(null),
         ]);
-        return { ...item, url: thumbUrl || fullUrl || item.rawSrc, fullUrl: fullUrl || item.rawSrc };
+        return {
+          ...item,
+          url: thumbUrl || fullUrl || item.rawSrc,
+          fullUrl: fullUrl || item.rawSrc,
+        };
       } catch (err) {
         return { ...item, url: item.rawSrc, fullUrl: item.rawSrc };
       }
@@ -211,12 +244,18 @@ export function MediaGrid({ media, onMediaClick }) {
     };
   }, [media]);
 
-  if (!mediaList.length || !mediaList[0].url) return null;
+  if (!mediaList.length) return null;
 
-  const FALLBACK_POST_IMAGE = 'https://images.unsplash.com/photo-1517842645767-c639042777db?w=800&auto=format&fit=crop&q=80';
-
-  const handleImageLoad = (index) => {
+  const handleImageLoad = (index, e) => {
     setLoadedStates((prev) => ({ ...prev, [index]: true }));
+    const naturalWidth = e?.target?.naturalWidth;
+    const naturalHeight = e?.target?.naturalHeight;
+    if (naturalWidth && naturalHeight && !mediaList[index]?.aspectRatio && !mediaList[index]?.width) {
+      setNaturalAspects((prev) => ({
+        ...prev,
+        [index]: naturalWidth / naturalHeight,
+      }));
+    }
   };
 
   const handleImageError = (index, e) => {
@@ -233,15 +272,23 @@ export function MediaGrid({ media, onMediaClick }) {
     target.src = FALLBACK_POST_IMAGE;
   };
 
-  const handleVideoLoaded = (index) => {
+  const handleVideoLoaded = (index, e) => {
     setLoadedStates((prev) => ({ ...prev, [index]: true }));
+    const vw = e?.target?.videoWidth;
+    const vh = e?.target?.videoHeight;
+    if (vw && vh && !mediaList[index]?.aspectRatio && !mediaList[index]?.width) {
+      setNaturalAspects((prev) => ({
+        ...prev,
+        [index]: vw / vh,
+      }));
+    }
   };
 
   const handleItemClick = (e, index) => {
     e.stopPropagation();
     if (onMediaClick) {
       const formattedItems = mediaList.map((m) => ({
-        url: m.fullUrl || m.url,
+        url: m.fullUrl || m.url || m.rawSrc,
         type: m.type,
         caption: '',
       }));
@@ -253,11 +300,13 @@ export function MediaGrid({ media, onMediaClick }) {
   if (mediaList.length === 1) {
     const item = mediaList[0];
 
-    // Determine deterministic aspect ratio before load
+    // Read natural/metadata aspect ratio directly without forcing into any common ratio
     const aspect =
-      item.raw?.width && item.raw?.height
-        ? item.raw.width / item.raw.height
-        : item.isVideo ? 16 / 9 : 1;
+      naturalAspects[0] ||
+      item.aspectRatio ||
+      (item.width && item.height ? item.width / item.height : null) ||
+      (item.raw?.width && item.raw?.height ? item.raw.width / item.raw.height : null) ||
+      (item.isVideo ? 16 / 9 : 1.25);
 
     const isPortrait = aspect < 1;
 
@@ -265,11 +314,12 @@ export function MediaGrid({ media, onMediaClick }) {
       const isLoaded = loadedStates[0];
       const isPlayingInline = Boolean(inlinePlaying[0]);
       const posterUrl = item.raw?.poster || item.raw?.thumbnail || item.raw?.thumbnailUrl;
+      const mediaSrc = item.url || (item.rawSrc ? `/api/media/${item.rawSrc.replace(/^\/?api\/media\//, '')}` : null);
 
-      if (isPlayingInline) {
+      if (isPlayingInline && mediaSrc) {
         return (
           <InlineVideoPlayer
-            src={item.url}
+            src={mediaSrc}
             isPortrait={isPortrait}
             aspect={aspect}
             handleVideoLoaded={handleVideoLoaded}
@@ -300,35 +350,35 @@ export function MediaGrid({ media, onMediaClick }) {
                 alt="Video thumbnail"
                 loading="lazy"
                 decoding="async"
-                onLoad={() => handleImageLoad(0)}
+                onLoad={(e) => handleImageLoad(0, e)}
                 onError={(e) => handleImageError(0, e)}
                 ref={(imgEl) => {
                   if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[0]) {
-                    handleImageLoad(0);
+                    handleImageLoad(0, { target: imgEl });
                   }
                 }}
                 className={`${styles.singleVideo} ${
                   isLoaded ? styles.loaded : styles.loading
                 }`}
               />
-            ) : (
+            ) : mediaSrc ? (
               <video
-                src={`${item.url}#t=0.001`}
+                src={`${mediaSrc}#t=0.001`}
                 preload="metadata"
                 playsInline
                 muted
-                onLoadedMetadata={() => handleVideoLoaded(0)}
-                onLoadedData={() => handleVideoLoaded(0)}
+                onLoadedMetadata={(e) => handleVideoLoaded(0, e)}
+                onLoadedData={(e) => handleVideoLoaded(0, e)}
                 ref={(vidEl) => {
                   if (vidEl && vidEl.readyState >= 1 && !loadedStates[0]) {
-                    handleVideoLoaded(0);
+                    handleVideoLoaded(0, { target: vidEl });
                   }
                 }}
                 className={`${styles.singleVideo} ${
                   isLoaded ? styles.loaded : styles.loading
                 }`}
               />
-            )}
+            ) : null}
             <div className={styles.playButtonOverlay} aria-label="Play video">
               <svg className={styles.playIcon} viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z" />
@@ -340,6 +390,7 @@ export function MediaGrid({ media, onMediaClick }) {
     }
 
     const isLoaded = loadedStates[0];
+    const imageSrc = item.url || (item.rawSrc ? `/api/media/${item.rawSrc.replace(/^\/?api\/media\//, '')}` : null);
 
     return (
       <div
@@ -352,23 +403,25 @@ export function MediaGrid({ media, onMediaClick }) {
           style={{ '--aspect': aspect }}
         >
           {!isLoaded && <div className={styles.skeleton} />}
-          <img
-            src={item.url}
-            alt="Post content"
-            loading="lazy"
-            decoding="async"
-            onLoad={() => handleImageLoad(0)}
-            onError={(e) => handleImageError(0, e)}
-            ref={(imgEl) => {
-              if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[0]) {
-                handleImageLoad(0);
-              }
-            }}
-            onClick={(e) => handleItemClick(e, 0)}
-            className={`${styles.singleImage} ${
-              isLoaded ? styles.loaded : styles.loading
-            }`}
-          />
+          {imageSrc && (
+            <img
+              src={imageSrc}
+              alt="Post content"
+              loading="lazy"
+              decoding="async"
+              onLoad={(e) => handleImageLoad(0, e)}
+              onError={(e) => handleImageError(0, e)}
+              ref={(imgEl) => {
+                if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[0]) {
+                  handleImageLoad(0, { target: imgEl });
+                }
+              }}
+              onClick={(e) => handleItemClick(e, 0)}
+              className={`${styles.singleImage} ${
+                isLoaded ? styles.loaded : styles.loading
+              }`}
+            />
+          )}
         </div>
       </div>
     );
@@ -379,20 +432,25 @@ export function MediaGrid({ media, onMediaClick }) {
     return (
       <div className={styles.mediaContainer}>
         <div className={styles.gridTwo}>
-          {mediaList.map((item, index) => (
-            <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
-              {!loadedStates[index] && <div className={styles.skeleton} />}
-              <img
-                src={item.url}
-                alt={`Media ${index + 1}`}
-                loading="lazy"
-                decoding="async"
-                onLoad={() => handleImageLoad(index)}
-                onError={(e) => handleImageError(index, e)}
-                className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
-              />
-            </div>
-          ))}
+          {mediaList.map((item, index) => {
+            const imgSrc = item.url || (item.rawSrc ? `/api/media/${item.rawSrc.replace(/^\/?api\/media\//, '')}` : null);
+            return (
+              <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
+                {!loadedStates[index] && <div className={styles.skeleton} />}
+                {imgSrc && (
+                  <img
+                    src={imgSrc}
+                    alt={`Media ${index + 1}`}
+                    loading="lazy"
+                    decoding="async"
+                    onLoad={(e) => handleImageLoad(index, e)}
+                    onError={(e) => handleImageError(index, e)}
+                    className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -400,36 +458,42 @@ export function MediaGrid({ media, onMediaClick }) {
 
   // Three Images (1 Main Left + 2 Stacked Right)
   if (mediaList.length === 3) {
+    const firstImgSrc = mediaList[0].url || (mediaList[0].rawSrc ? `/api/media/${mediaList[0].rawSrc.replace(/^\/?api\/media\//, '')}` : null);
     return (
       <div className={styles.mediaContainer}>
         <div className={styles.gridThree}>
           <div className={styles.gridItem} onClick={(e) => handleItemClick(e, 0)}>
             {!loadedStates[0] && <div className={styles.skeleton} />}
-            <img
-              src={mediaList[0].url}
-              alt="Media 1"
-              loading="lazy"
-              decoding="async"
-              onLoad={() => handleImageLoad(0)}
-              onError={(e) => handleImageError(0, e)}
-              className={`${styles.gridImage} ${loadedStates[0] ? styles.loaded : styles.loading}`}
-            />
+            {firstImgSrc && (
+              <img
+                src={firstImgSrc}
+                alt="Media 1"
+                loading="lazy"
+                decoding="async"
+                onLoad={(e) => handleImageLoad(0, e)}
+                onError={(e) => handleImageError(0, e)}
+                className={`${styles.gridImage} ${loadedStates[0] ? styles.loaded : styles.loading}`}
+              />
+            )}
           </div>
           <div className={styles.gridThreeRight}>
             {mediaList.slice(1, 3).map((item, idx) => {
               const index = idx + 1;
+              const subSrc = item.url || (item.rawSrc ? `/api/media/${item.rawSrc.replace(/^\/?api\/media\//, '')}` : null);
               return (
                 <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
                   {!loadedStates[index] && <div className={styles.skeleton} />}
-                  <img
-                    src={item.url}
-                    alt={`Media ${index + 1}`}
-                    loading="lazy"
-                    decoding="async"
-                    onLoad={() => handleImageLoad(index)}
-                    onError={(e) => handleImageError(index, e)}
-                    className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
-                  />
+                  {subSrc && (
+                    <img
+                      src={subSrc}
+                      alt={`Media ${index + 1}`}
+                      loading="lazy"
+                      decoding="async"
+                      onLoad={(e) => handleImageLoad(index, e)}
+                      onError={(e) => handleImageError(index, e)}
+                      className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -448,18 +512,21 @@ export function MediaGrid({ media, onMediaClick }) {
       <div className={styles.gridFour}>
         {displayItems.map((item, index) => {
           const isLast = index === 3 && remainingCount > 0;
+          const subSrc = item.url || (item.rawSrc ? `/api/media/${item.rawSrc.replace(/^\/?api\/media\//, '')}` : null);
           return (
             <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
               {!loadedStates[index] && <div className={styles.skeleton} />}
-              <img
-                src={item.url}
-                alt={`Media ${index + 1}`}
-                loading="lazy"
-                decoding="async"
-                onLoad={() => handleImageLoad(index)}
-                onError={(e) => handleImageError(index, e)}
-                className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
-              />
+              {subSrc && (
+                <img
+                  src={subSrc}
+                  alt={`Media ${index + 1}`}
+                  loading="lazy"
+                  decoding="async"
+                  onLoad={(e) => handleImageLoad(index, e)}
+                  onError={(e) => handleImageError(index, e)}
+                  className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
+                />
+              )}
               {isLast && (
                 <div className={styles.moreOverlay}>
                   <span>+{remainingCount}</span>
@@ -473,4 +540,4 @@ export function MediaGrid({ media, onMediaClick }) {
   );
 }
 
-export default MediaGrid;
+export default memo(MediaGrid);

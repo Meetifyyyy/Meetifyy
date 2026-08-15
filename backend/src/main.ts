@@ -61,25 +61,29 @@ async function bootstrap() {
   const configuredCorsOrigins = Array.from(new Set([...defaultCorsOrigins, ...envCorsOrigins]));
 
   // Security Headers
+  // In development, CSP is disabled so LAN access from other devices on the same
+  // Wi-Fi works without needing to pre-list every possible local IP address.
+  // HSTS is also skipped in dev — it can permanently redirect HTTP→HTTPS on
+  // a browser session and break local http:// connections.
   app.use(helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-    crossOriginOpenerPolicy: { policy: "unsafe-none" },
-    contentSecurityPolicy: {
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginOpenerPolicy: { policy: 'unsafe-none' },
+    contentSecurityPolicy: isProd ? {
       directives: {
         defaultSrc: ["'self'"],
-         scriptSrc: ["'self'", "https://cdn.jsdelivr.net"],
-        workerSrc: ["'self'", "blob:", "https://cdn.jsdelivr.net"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-        fontSrc: ["'self'", "https://fonts.gstatic.com"],
-         imgSrc: ["'self'", "data:", "blob:", "https://images.unsplash.com", "https://media.giphy.com", "https://*.r2.dev"],
-         connectSrc: ["'self'", "https://*.vercel.app", "https://*.meetifyy.app", "wss://*.railway.app", "wss://*.meetifyy.app", ...configuredCorsOrigins],
+        scriptSrc: ["'self'", 'https://cdn.jsdelivr.net'],
+        workerSrc: ["'self'", 'blob:', 'https://cdn.jsdelivr.net'],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https://images.unsplash.com', 'https://media.giphy.com', 'https://*.r2.dev'],
+        connectSrc: ["'self'", 'https://*.vercel.app', 'https://*.meetifyy.app', 'wss://*.railway.app', 'wss://*.meetifyy.app', ...configuredCorsOrigins],
       },
-    },
-    hsts: {
+    } : false,
+    hsts: isProd ? {
       maxAge: 31536000,
       includeSubDomains: true,
-      preload: true
-    },
+      preload: true,
+    } : false,
   }));
 
   app.use(cookieParser());
@@ -92,7 +96,7 @@ async function bootstrap() {
       // must never treat a developer's local machine as a same-trust origin.
       const isDevelopmentOrigin =
         !isProd &&
-        /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/i.test(origin);
+        /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|100\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/i.test(origin);
       // Scope the Vercel wildcard to this project's deployments/previews
       // (meetify*) rather than accepting ANY *.vercel.app site.
       const isVercelOrigin = /^https:\/\/meetify[a-zA-Z0-9-]*\.vercel\.app$/i.test(origin);

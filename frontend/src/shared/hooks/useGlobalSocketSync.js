@@ -417,12 +417,10 @@ export function useGlobalSocketSync() {
         case 'activity.deleted':
         case 'activity.updated': {
           // Structural changes: a new activity appeared or was cancelled/edited.
-          // Invalidate the whole feed so it appears/disappears in the list.
           const actId = event.data?.id || event.data?.activityId;
           queryClient.invalidateQueries({ queryKey: ['activities'] });
           queryClient.invalidateQueries({ queryKey: ['campus-activities'] });
           queryClient.invalidateQueries({ queryKey: ['saved-activities'] });
-          queryClient.invalidateQueries({ queryKey: ['feed'] });
           if (actId) {
             queryClient.invalidateQueries({ queryKey: ['activity', actId] });
           }

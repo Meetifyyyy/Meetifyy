@@ -42,9 +42,9 @@ export default function DMChatHeader({
             <span className={styles.msgChatNameText}>{conversation.name || 'Chat'}</span>
             {isBlocked && <span className={styles.msgBlockedBadge}>Blocked</span>}
           </div>
-          <div className={`${styles.msgChatStatus} ${isOnline ? styles.msgStatusOnline : styles.msgStatusOffline}`}>
-            {isOnline ? 'Online' : 'Offline'}
-          </div>
+          {isOnline && (
+            <div className={styles.msgChatStatus}>Online</div>
+          )}
         </div>
       </div>
 

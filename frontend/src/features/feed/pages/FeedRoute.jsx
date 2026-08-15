@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Feed from '../components/Feed';
 import RightPanel, { NotificationsActivity, OnlineFriends, UpcomingEvents } from '@layout/RightPanel';
@@ -7,12 +7,12 @@ export default function FeedRoute() {
   const navigate = useNavigate();
   const scrollContainerRef = useRef(null);
 
-  const handlePostClick = (post, sourceContext, communityId) => {
-    const postId = post.id;
+  const handlePostClick = useCallback((post, sourceContext, communityId) => {
+    const postId = post?.id;
     if (postId) {
       navigate(`/post/${postId}`, { state: { post, sourceContext, communityId, from: '/home' } });
     }
-  };
+  }, [navigate]);
 
   return (
     <>

@@ -22,7 +22,9 @@ import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import RichText from '@shared/components/mentions/RichText';
 import { timeAgo } from '@shared/utils/time';
 import styles from './CommentNode.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useAuth } from '@shared/context/AuthContext';
+import { useCommunities } from '@shared/hooks/useCommunities';
+import { useDeleteComment } from '../../hooks/useDeleteComment';
 import { useLikeComment } from '../../hooks/useLikeComment';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
@@ -263,7 +265,9 @@ export default function CommentNode({
   const filterId = useRef(`cf-${comment.id}`.replace(/[^a-zA-Z0-9-]/g, '_')).current;
 
   const navigate = useNavigate();
-  const { getUserById, deleteComment, communities, currentUser } = useData();
+  const { currentUser } = useAuth();
+  const { communities } = useCommunities();
+  const { mutate: deleteCommentMutate } = useDeleteComment();
   const { mutate: toggleLike, isLoading: isLiking } = useLikeComment();
   const { tier, expandedMap, toggleExpanded } = useContext(TreeDensityContext);
 
@@ -277,8 +281,8 @@ export default function CommentNode({
     ? expandedMap[comment.id] !== false 
     : expandedMap[comment.id] === true;
 
-  const author = getUserById(comment.authorId) || { displayName: 'Unknown', username: 'unknown', avatar: '?' };
-  const authorCollege = author.collegeId ? communities[author.collegeId] : null;
+  const author = comment.author || { displayName: 'Unknown', username: 'unknown', avatar: '?' };
+  const authorCollege = (author.collegeId && communities) ? communities[author.collegeId] : null;
   const initialLiked = comment.hasLiked !== undefined ? comment.hasLiked : (comment.likedBy ? comment.likedBy.includes(currentUser?.id) : false);
   const initialLikes = comment.likeCount !== undefined ? comment.likeCount : (comment.likes || 0);
 
@@ -304,13 +308,13 @@ export default function CommentNode({
   const handleReplyClick   = () => { setIsReplying(r => !r); setReplyContent({ text: '', mentions: [] }); };
   const handleCancelReply  = () => { setIsReplying(false); setReplyContent({ text: '', mentions: [] }); };
 
-  const handleDelete = async (e) => {
+  const handleDelete = (e) => {
     e.stopPropagation();
     setShowMenu(false);
     if (isDeleting) return;
     setIsDeleting(true);
     try {
-      if (deleteComment) await deleteComment(postId, comment.id);
+      deleteCommentMutate({ postId, commentId: comment.id });
     } finally {
       setIsDeleting(false);
     }

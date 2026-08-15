@@ -244,7 +244,7 @@ const band = (start, end, pct) => start + ((end - start) * Math.max(0, Math.min(
  * `onProgress` reports TRUE byte progress for THIS file on a 0-100 scale, so
  * callers can map it into whatever band of their overall pipeline they want.
  */
-export const uploadFileDirect = async (file, folder = 'general', onProgress = null, signal = null, variantKey = null) => {
+export const uploadFileDirect = async (file, folder = 'general', onProgress = null, signal = null, variantKey = null, meta = {}) => {
   const report = makeProgressReporter(onProgress);
   try {
     if (signal?.aborted) throw new DOMException('Upload aborted', 'AbortError');
@@ -276,6 +276,9 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
         folder,
         fileSize: Number(file.size || 0),
         ...(variantKey ? { variantKey } : {}),
+        ...(meta?.width ? { width: meta.width } : {}),
+        ...(meta?.height ? { height: meta.height } : {}),
+        ...(meta?.duration ? { duration: meta.duration } : {}),
       });
 
       await new Promise((resolve, reject) => {
@@ -437,7 +440,7 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
   const originalEnd = withDerivedThumb && thumb?.blob ? 88 : 98;
   const originalRes = await uploadFileDirect(compressedFile, folder, (percent) => {
     report(band(10, originalEnd, percent), 'uploading');
-  }, signal);
+  }, signal, null, { width: dims?.width, height: dims?.height });
 
   // Derived-thumb: upload to `<originalKey>_thumb.webp` so the UI can render it
   // without the entity storing a second URL. Best-effort — render falls back to
@@ -449,7 +452,7 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
         const thumbFile = new File([thumb.blob], `thumb.webp`, { type: 'image/webp' });
         await uploadFileDirect(thumbFile, folder, (percent) => {
           report(band(88, 98, percent), 'finishing');
-        }, signal, variantKey);
+        }, signal, variantKey, { width: thumb?.width, height: thumb?.height });
         thumbnailKey = variantKey;
         thumbnailUrl = originalRes.publicUrl ? originalRes.publicUrl.replace(/\.([a-z0-9]+)$/i, '_thumb.webp') : null;
       } catch (err) {
@@ -466,13 +469,14 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
     thumbnailKey,
     width: dims?.width || null,
     height: dims?.height || null,
+    aspectRatio: dims?.width && dims?.height ? Number((dims.width / dims.height).toFixed(4)) : null,
   };
 };
 
 /**
  * Full video pipeline: extract poster + metadata client-side (no transcoding),
  * upload the small poster then the original clip. Returns:
- *   { publicUrl, thumbnailUrl (poster), key, posterKey, width, height, duration, mediaId }.
+ *   { publicUrl, thumbnailUrl (poster), key, posterKey, width, height, duration, aspectRatio, mediaId }.
  * The original is NOT re-encoded (browser can't transcode cheaply); playback uses
  * range requests via preload="metadata" so the bubble shows instantly.
  */
@@ -500,7 +504,7 @@ export const processAndUploadVideo = async (file, folder = 'general', onProgress
       const posterFile = new File([meta.posterBlob], 'poster.webp', { type: 'image/webp' });
       const posterRes = await uploadFileDirect(posterFile, folder, (percent) => {
         report(band(8, 14, percent), 'preparing');
-      }, signal);
+      }, signal, null, { width: meta?.width, height: meta?.height });
       thumbnailUrl = posterRes?.publicUrl || null;
       posterKey = posterRes?.key || null;
     } catch (err) {
@@ -510,7 +514,7 @@ export const processAndUploadVideo = async (file, folder = 'general', onProgress
 
   const originalRes = await uploadFileDirect(file, folder, (percent) => {
     report(band(14, 99, percent), 'uploading');
-  }, signal);
+  }, signal, null, { width: meta?.width, height: meta?.height, duration: meta?.duration });
   report(100, 'done');
 
   console.info('[mediaPipeline] video upload done', { key: originalRes?.key, url: originalRes?.publicUrl });
@@ -521,6 +525,7 @@ export const processAndUploadVideo = async (file, folder = 'general', onProgress
     width: meta?.width || null,
     height: meta?.height || null,
     duration: meta?.duration || null,
+    aspectRatio: meta?.width && meta?.height ? Number((meta.width / meta.height).toFixed(4)) : null,
   };
 };
 

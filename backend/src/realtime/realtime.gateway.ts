@@ -43,6 +43,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   private userPresenceSettingsCache = new Map<string, { settings: any; cachedAt: number }>();
   private readonly PRESENCE_SETTINGS_TTL_MS = 60 * 1000; // 60 seconds
 
+  // Sweep interval for proactive in-memory cache eviction
+  private cacheEvictionTimer: NodeJS.Timeout | null = null;
+
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly messagesService: MessagesService,
@@ -65,6 +68,21 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     });
 
     this.setupDomainEventSubscriber();
+
+    // Proactively evict stale entries from in-memory caches every 10 minutes.
+    // Without this, entries only age out on access; long-lived servers with many
+    // conversations accumulate unbounded Map entries over time.
+    this.cacheEvictionTimer = setInterval(() => {
+      const now = Date.now();
+      const aliasTTL = this.ALIAS_CACHE_TTL_MS * 2;
+      for (const [key, val] of this.convAliasCache.entries()) {
+        if (now - val.cachedAt > aliasTTL) this.convAliasCache.delete(key);
+      }
+      const presenceTTL = this.PRESENCE_SETTINGS_TTL_MS * 2;
+      for (const [key, val] of this.userPresenceSettingsCache.entries()) {
+        if (now - val.cachedAt > presenceTTL) this.userPresenceSettingsCache.delete(key);
+      }
+    }, 10 * 60 * 1000);
   }
 
   private async broadcastPresenceUpdate(userId: string, status: string, lastSeen: string) {
@@ -306,7 +324,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     (client as any).userName = userName;
     client.join(userId); // Join user's personal room for multiplexed broadcasting
 
-    // Automatically join all active conversation rooms for O(1) broadcasting
+    // Automatically join all active conversation rooms for O(1) broadcasting.
+    // Cache the internal conv IDs on the socket so handleDisconnect can read them
+    // without a second DB round-trip on every tab close / network drop.
     try {
       const activeConvs = await this.prisma.conversationParticipant.findMany({
         where: { userId, deletedAt: null, leftAt: null },
@@ -315,12 +335,18 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
           conversation: { select: { publicId: true } }
         }
       });
+      const cachedConvIds: string[] = [];
       activeConvs.forEach(p => {
-        if (p.conversationId) client.join(`conv_${p.conversationId}`);
+        if (p.conversationId) {
+          client.join(`conv_${p.conversationId}`);
+          cachedConvIds.push(p.conversationId);
+        }
         if (p.conversation?.publicId) client.join(`conv_${p.conversation.publicId}`);
       });
+      (client as any).userConvIds = cachedConvIds;
     } catch (err) {
       this.logger.error('Failed to pre-join conversation rooms', err);
+      (client as any).userConvIds = [];
     }
 
 
@@ -333,16 +359,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     const userId = (client as any).userId;
     
     if (userId) {
-      let userConvIds: string[] = [];
-      try {
-        const userConvs = await this.prisma.conversationParticipant.findMany({
-          where: { userId, deletedAt: null, leftAt: null },
-          select: { conversationId: true }
-        });
-        userConvIds = userConvs.map(p => p.conversationId).filter(Boolean);
-      } catch (err) {
-        this.logger.error('Failed to fetch conversation rooms on disconnect', err);
-      }
+      // Use the conv IDs cached at connection time — avoids a DB query on every
+      // disconnect (tab close, network drop, mobile background, etc.).
+      const userConvIds: string[] = (client as any).userConvIds || [];
 
       userConvIds.forEach(cId => {
         this.server.to(`conv_${cId}`).emit('typing:stop', { conversationId: cId, userId });
@@ -622,24 +641,27 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       if (cached) userMap.set(uId, cached.settings);
     });
 
-    const result: Record<string, any> = {};
-    for (const uId of data.userIds) {
-      const val = presenceMap.get(uId);
-      const targetUser = userMap.get(uId);
-
-      let canSeeOnline = true;
-      if (targetUser) {
-        canSeeOnline = await checkPresenceVisibility(
+    // Run all visibility checks in parallel instead of sequential awaits.
+    const visibilityResults = await Promise.all(
+      data.userIds.map(async (uId) => {
+        const targetUser = userMap.get(uId);
+        if (!targetUser) return { uId, canSee: true };
+        const canSee = await checkPresenceVisibility(
           uId,
           viewerId,
           targetUser.settings?.whoCanSeeOnline || 'everyone',
           targetUser.settings?.showOnlineStatus !== false,
           this.prisma
         );
-      }
+        return { uId, canSee };
+      })
+    );
 
+    const result: Record<string, any> = {};
+    for (const { uId, canSee } of visibilityResults) {
+      const val = presenceMap.get(uId);
       result[uId] = {
-        status: canSeeOnline ? (val?.status || 'offline') : 'offline',
+        status: canSee ? (val?.status || 'offline') : 'offline',
         lastActive: val?.lastSeen || null,
         lastSeen: val?.lastSeen || null
       };
