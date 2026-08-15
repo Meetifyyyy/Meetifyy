@@ -272,8 +272,14 @@
 }
 
 .playButtonOverlay:hover {
-  transform: translate(-50%, -50%) scale(1.08);
   background: rgba(0, 0, 0, 0.75);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .playButtonOverlay:hover {
+  transform: translate(-50%, -50%) scale(1.08);
+  }
 }
 
 .playIcon {
@@ -345,8 +351,14 @@
 }
 
 .inlineCtrlBtn:hover {
-  transform: scale(1.15);
   color: var(--color-primary, #6366f1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .inlineCtrlBtn:hover {
+  transform: scale(1.15);
+  }
 }
 
 .inlineTimeText {

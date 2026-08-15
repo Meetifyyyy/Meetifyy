@@ -130,8 +130,14 @@
 }
 
 .voiceSpeedBtn:hover {
-  transform: none !important;
   opacity: 0.85;
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .voiceSpeedBtn:hover {
+  transform: none !important;
+  }
 }
 
 .voicePlayerMe .voiceSpeedBtn {
@@ -170,8 +176,11 @@
   background: white;
 }
 
-.voiceScrubber::-webkit-slider-thumb:hover {
+@media (hover: hover) and (pointer: fine) {
+
+  .voiceScrubber::-webkit-slider-thumb:hover {
   transform: scale(1.2);
+  }
 }
 
 .voiceTimeText {
@@ -217,5 +226,11 @@
 
 .voiceSpeedBtn:hover {
   background: rgba(128, 128, 128, 0.35);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .voiceSpeedBtn:hover {
   transform: scale(1.05);
+  }
 }

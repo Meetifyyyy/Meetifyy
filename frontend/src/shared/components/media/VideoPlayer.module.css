@@ -40,9 +40,15 @@
 }
 
 .bigPlayCircle:hover {
-  transform: scale(1.1);
   background: #ffffff;
   color: var(--color-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .bigPlayCircle:hover {
+  transform: scale(1.1);
+  }
 }
 
 /* ── Bottom controls ── */
@@ -120,8 +126,11 @@
   transition: transform 0.15s ease;
 }
 
-.progressWrap:hover .progressThumb {
+@media (hover: hover) and (pointer: fine) {
+
+  .progressWrap:hover .progressThumb {
   transform: translate(-50%, -50%) scale(1.2);
+  }
 }
 
 /* ── Bottom row ── */
@@ -225,8 +234,11 @@
   transition: transform 0.1s ease;
 }
 
-.volumeSlider::-webkit-slider-thumb:hover {
+@media (hover: hover) and (pointer: fine) {
+
+  .volumeSlider::-webkit-slider-thumb:hover {
   transform: scale(1.2);
+  }
 }
 
 .volumeSlider::-moz-range-thumb {
@@ -240,8 +252,11 @@
   transition: transform 0.1s ease;
 }
 
-.volumeSlider::-moz-range-thumb:hover {
+@media (hover: hover) and (pointer: fine) {
+
+  .volumeSlider::-moz-range-thumb:hover {
   transform: scale(1.2);
+  }
 }
 
 .time {

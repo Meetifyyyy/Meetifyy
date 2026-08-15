@@ -23,7 +23,13 @@
 
 .createIconBtn:hover {
   background: var(--color-primary-hover);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .createIconBtn:hover {
   transform: scale(1.05);
+  }
 }
 
 .layout {
@@ -195,8 +201,14 @@
 }
 
 .mobileCreateBtn:hover {
-  transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .mobileCreateBtn:hover {
+  transform: translateY(-2px);
+  }
 }
 
 .mobileCreateBtn:active {

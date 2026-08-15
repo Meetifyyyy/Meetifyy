@@ -36,6 +36,40 @@
   border-bottom-color: rgba(255, 255, 255, 0.05);
 }
 
+.topbarActions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.registerBtnTopbar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: var(--color-primary, #8f0c13);
+  color: #fff;
+  border: none;
+  border-radius: 99px;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: filter 0.15s ease;
+}
+
+.registerBtnTopbar:hover {
+  filter: brightness(1.08);
+}
+
+.registerBtnTopbar.disabled {
+  background: var(--color-bg-soft, #e5e7eb);
+  color: var(--color-text-light, #9ca3af);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .scrollBody {
   flex: 1;
   min-height: 0;
@@ -43,23 +77,34 @@
   padding: 1.75rem 2rem 2.5rem;
   display: flex;
   flex-direction: column;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollBody::-webkit-scrollbar {
+  display: none;
 }
 
 .backBtn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
-  background: var(--color-bg-elevated, #fff);
+  background: none;
+  border: none;
   color: var(--color-text-main);
   cursor: pointer;
+  padding: 0.4rem;
+  margin: -0.4rem 0 -0.4rem -0.4rem;
+  border-radius: 50%;
+  transition: background 0.2s;
 }
 
 .backBtn:hover {
-  background: var(--color-bg-soft, rgba(0, 0, 0, 0.05));
+  background: rgba(0, 0, 0, 0.06);
+}
+
+:global([data-theme="dark"]) .backBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .detailLayout {
@@ -85,7 +130,7 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
   flex-shrink: 0;
   position: sticky;
-  top: 118px;
+  top: calc(50vh - 180px);
 }
 
 .posterHero img {
@@ -166,8 +211,8 @@
 }
 
 .title {
-  font-family: "Changa One", cursive;
-  font-weight: normal;
+  font-family: "Inter", sans-serif;
+  font-weight: 800;
   font-size: 2rem;
   line-height: 1.15;
   color: var(--color-text-main);
@@ -233,71 +278,6 @@
   margin: 0;
 }
 
-.registerBar {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  gap: 0.75rem;
-  padding: 0.85rem 0.75rem;
-  margin-top: 0.5rem;
-  z-index: 100;
-}
-
-.registerBtn {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  background: var(--color-primary, #8f0c13);
-  color: #fff;
-  border: none;
-  border-radius: 12px;
-  padding: 0.85rem 1rem;
-  font-size: 1rem;
-  font-weight: 800;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.registerBtn:hover {
-  filter: brightness(1.08);
-}
-
-.registerBtn.disabled {
-  background: var(--color-bg-soft, #e5e7eb);
-  color: var(--color-text-light, #9ca3af);
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-/* Floating sticky button on desktop / large screens */
-@media (min-width: 769px) {
-  .registerBar {
-    position: sticky;
-    bottom: 1.5rem;
-    padding: 0;
-    margin-top: 2rem;
-    justify-content: center;
-    pointer-events: none;
-  }
-
-  .registerBtn {
-    flex: none;
-    width: auto;
-    min-width: 360px;
-    max-width: 480px;
-    padding: 0.85rem 2.25rem;
-    border-radius: 999px;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
-    pointer-events: auto;
-    transition: transform 0.2s ease, filter 0.15s ease;
-  }
-
-  .registerBtn:hover {
-    transform: translateY(-2px);
-  }
-}
 
 /* States */
 .centerState {

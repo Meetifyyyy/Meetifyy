@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import FollowButton from '@shared/components/ui/FollowButton';
 import { useNavigate, useLocation } from 'react-router-dom';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
@@ -220,7 +221,10 @@ export default function ProfileRightSidebar({ embedded = false }) {
             >
               <Avatar src={u.avatar} name={u.displayName || u.username} size="38px" />
               <div className={s.personInfo}>
-                <div className={s.personName}>{u.displayName || u.username}</div>
+                <div className={s.personName} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {u.displayName || u.username}
+                  <CollegeRepresentativeBadge isCampusRep={u.isCampusRep} size="sm" />
+                </div>
                 <div className={s.personSub}>@{u.username}</div>
               </div>
               <FollowButton targetUsername={u.username} initialFollowing={u.isFollowing || false} size="sm" />

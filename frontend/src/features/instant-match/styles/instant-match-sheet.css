@@ -154,7 +154,13 @@
 
 .activity-chip:hover {
   background-color: var(--color-border-light);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .activity-chip:hover {
   transform: translateY(-2px);
+  }
 }
 
 .activity-chip.selected {

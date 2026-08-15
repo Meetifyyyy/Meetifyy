@@ -31,7 +31,12 @@ export default function CampusEventDetailPage() {
       <main className="centre centre-wide animate-in">
         <div className={styles.page}>
           <div className={styles.topbar}>
-            <button className={styles.backBtn} onClick={back} aria-label="Back"><ArrowLeft size={20} /></button>
+            <button className={styles.backBtn} onClick={back} aria-label="Back">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <line x1="19" y1="12" x2="5" y2="12" />
+                <polyline points="12 19 5 12 12 5" />
+              </svg>
+            </button>
           </div>
           <div className={styles.scrollBody}>
             <div className={styles.detailLayout}>
@@ -71,7 +76,26 @@ export default function CampusEventDetailPage() {
     <main className="centre centre-wide animate-in">
       <div className={styles.page}>
         <div className={styles.topbar}>
-          <button className={styles.backBtn} onClick={back} aria-label="Back"><ArrowLeft size={20} /></button>
+          <button className={styles.backBtn} onClick={back} aria-label="Back">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <line x1="19" y1="12" x2="5" y2="12" />
+              <polyline points="12 19 5 12 12 5" />
+            </svg>
+          </button>
+
+          {isSafeRegistrationUrl(event.registrationUrl) && (
+            <div className={styles.topbarActions}>
+              {registrable ? (
+                <a className={styles.registerBtnTopbar} href={event.registrationUrl} target="_blank" rel="noopener noreferrer">
+                  Register <ExternalLink size={16} />
+                </a>
+              ) : (
+                <span className={`${styles.registerBtnTopbar} ${styles.disabled}`}>
+                  {state.key === 'past' ? 'Ended' : 'Unavailable'}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className={styles.scrollBody}>
@@ -126,19 +150,6 @@ export default function CampusEventDetailPage() {
             </div>
           </div>
 
-          {isSafeRegistrationUrl(event.registrationUrl) && (
-            <div className={styles.registerBar}>
-              {registrable ? (
-                <a className={styles.registerBtn} href={event.registrationUrl} target="_blank" rel="noopener noreferrer">
-                  Register Now <ExternalLink size={18} />
-                </a>
-              ) : (
-                <span className={`${styles.registerBtn} ${styles.disabled}`}>
-                  {state.key === 'past' ? 'This event has ended' : 'Registration not available'}
-                </span>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </main>

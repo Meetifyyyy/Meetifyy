@@ -105,8 +105,10 @@
   transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-.cardWrap:hover {
+@media (hover: hover) and (pointer: fine) {
+  .cardWrap:hover {
   transform: translateY(-16px) scale(1.03);
+  }
 }
 
 /* Sticker */
@@ -132,11 +134,26 @@
 .stickerRot10  { transform: rotate(10deg); }
 .stickerRotN8  { transform: rotate(-8deg); }
 
-.cardWrap:hover .stickerRotN12 { transform: translateY(-5px) rotate(-16deg) scale(1.05); }
-.cardWrap:hover .stickerRot15  { transform: translateY(-5px) rotate(19deg) scale(1.05); }
-.cardWrap:hover .stickerRotN5  { transform: translateY(-5px) rotate(-8deg) scale(1.05); }
-.cardWrap:hover .stickerRot10  { transform: translateY(-5px) rotate(14deg) scale(1.05); }
-.cardWrap:hover .stickerRotN8  { transform: translateY(-5px) rotate(-11deg) scale(1.05); }
+@media (hover: hover) and (pointer: fine) {
+  .cardWrap:hover .stickerRotN12 { transform: translateY(-5px) rotate(-16deg) scale(1.05);
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .cardWrap:hover .stickerRot15 { transform: translateY(-5px) rotate(19deg) scale(1.05);
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .cardWrap:hover .stickerRotN5 { transform: translateY(-5px) rotate(-8deg) scale(1.05);
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .cardWrap:hover .stickerRot10 { transform: translateY(-5px) rotate(14deg) scale(1.05);
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .cardWrap:hover .stickerRotN8 { transform: translateY(-5px) rotate(-11deg) scale(1.05);
+  }
+}
 .cardWrap:hover .sticker       { filter: drop-shadow(0 8px 16px rgba(0,0,0,0.22)); }
 
 /* Card */

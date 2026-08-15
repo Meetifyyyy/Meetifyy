@@ -2,8 +2,8 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { activitiesApi, usersApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useIsMobile } from '@shared/hooks/useIsMobile';
 import { getRelativeDateLabel } from '@shared/utils/time';
@@ -112,6 +112,7 @@ export default function ActivityDetailPage() {
     const hostName = hostUser?.displayName || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.displayName || 'Host';
     const hostUsername = hostUser?.username || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.username || 'host';
     const hostAvatar = hostUser?.avatar || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.avatar || '';
+    const hostIsCampusRep = hostUser?.isCampusRep || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user?.isCampusRep || false;
 
     // Members with status MEMBER (rich objects for the attendee list)
     const memberObjs = baseAct.members?.filter(m => m.status === 'MEMBER').map(m => m.user).filter(Boolean) || [];
@@ -174,6 +175,7 @@ export default function ActivityDetailPage() {
       hostName,
       hostUsername,
       hostAvatar,
+      hostIsCampusRep,
       participants: participantIds,
       pendingRequests: baseAct.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
       // slotsFilled = participants.length — single source of truth for count
@@ -302,7 +304,7 @@ export default function ActivityDetailPage() {
     title, description, category, tags,
     date, time, duration, location: actLocation, isOnline,
     participationType, slotsNeeded, slotsFilled,
-    hostName, hostAvatar,
+    hostName, hostAvatar, hostIsCampusRep,
   } = activity;
 
   const entityKey = `joinActivity:${activity.id}`;
@@ -510,6 +512,7 @@ export default function ActivityDetailPage() {
                         />
                         <div className={styles.attendeeMeta}>
                           <span className={styles.attendeeName}>{pUser.displayName || pUser.username}</span>
+                          <CollegeRepresentativeBadge isCampusRep={pUser.isCampusRep} size="sm" />
                           <span className={styles.attendeeRole}>@{pUser.username}{isThisHost ? ' (Host)' : ''}</span>
                         </div>
                       </div>
@@ -559,6 +562,7 @@ export default function ActivityDetailPage() {
                   <div className={styles.hostMeta}>
                     <span className={styles.hostedBy}>Hosted by</span>
                     <span className={styles.hostName}>{hostName}</span>
+                    <CollegeRepresentativeBadge isCampusRep={hostIsCampusRep} size="md" />
                   </div>
                 </div>
               </div>
@@ -613,6 +617,7 @@ export default function ActivityDetailPage() {
                         />
                         <div className={styles.attendeeMeta}>
                           <span className={styles.attendeeName}>{pUser.displayName || pUser.username}</span>
+                          <CollegeRepresentativeBadge isCampusRep={pUser.isCampusRep} size="sm" />
                           <span className={styles.attendeeRole}>@{pUser.username}{isThisHost ? ' (Host)' : ''}</span>
                         </div>
                       </div>

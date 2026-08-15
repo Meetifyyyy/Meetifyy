@@ -13,9 +13,15 @@
 }
 
 .card:hover {
-  transform: translateY(-2px);
   border-color: var(--color-primary);
   box-shadow: var(--shadow-md);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .card:hover {
+  transform: translateY(-2px);
+  }
 }
 
 .cardHeader {
@@ -72,7 +78,13 @@
 
 .joinBtn:hover {
   background: var(--color-primary-hover);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .joinBtn:hover {
   transform: scale(1.03);
+  }
 }
 
 .joined {
@@ -82,7 +94,13 @@
 
 .joined:hover {
   background: rgba(24, 24, 27, 0.12);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .joined:hover {
   transform: none;
+  }
 }
 
 .cardDesc {

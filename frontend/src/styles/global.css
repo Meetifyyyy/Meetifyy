@@ -759,14 +759,16 @@ nav a.active {
     max-height: calc(100dvh - max(60px, var(--kb-inset, 0px))) !important;
   }
 
-  /* When the soft keyboard is open, the BottomNav would sit behind it (or peek
-     above it on some browsers); hide it so only the chat input is above the
-     keyboard. Targets the stable `app-bottom-nav` class on the nav root (not the
-     hashed CSS-module class, which production may strip of its local name). */
-  html[data-keyboard-open] .app-bottom-nav {
-    transform: translateY(100%) !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
+  .centre--messages.chat-is-open {
+    height: calc(100dvh - var(--kb-inset, 0px)) !important;
+    max-height: calc(100dvh - var(--kb-inset, 0px)) !important;
+  }
+
+  /* Hide the BottomNav completely when the keyboard opens so it never gets pushed up. 
+     Using :has(:focus) ensures it hides instantly BEFORE the Android viewport resize fires, preventing flicker. */
+  html[data-keyboard-open] .app-bottom-nav,
+  body:has(input:focus, textarea:focus, [contenteditable="true"]:focus) .app-bottom-nav {
+    display: none !important;
   }
 
   .centre--post {

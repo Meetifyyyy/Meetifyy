@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import logo from '@assets/images/meetify_logo.webp';
 import { searchApi } from '@shared/api/apiClient';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { useDebouncedState } from '@shared/hooks/useDebounce';
 import { useIsMobile } from '@shared/hooks/useIsMobile';
 import { useSearchSuggestions } from '@features/search/hooks/useSearchSuggestions';
@@ -356,7 +357,10 @@ function renderSection(label, items, type, selectedIndex, activeSuggestions, goT
               </svg>
             )}
             <div className={styles.dropdownItemText}>
-              <span>{type === 'user' ? (entity.displayName || entity.username) : (entity.name || entity.title)}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                {type === 'user' ? (entity.displayName || entity.username) : (entity.name || entity.title)}
+                {type === 'user' && <CollegeRepresentativeBadge isCampusRep={entity.isCampusRep} size="sm" />}
+              </span>
               {type === 'user' && <span className={styles.dropdownItemSub}>@{entity.username}</span>}
               {type === 'activity' && entity.location && <span className={styles.dropdownItemSub}>{entity.location}</span>}
             </div>

@@ -262,11 +262,11 @@
   .headerArea {
     position: static;
     background: transparent;
-    padding: 0.5rem 0.5rem 0.25rem;
+    padding: 0rem 0rem 0.25rem;
   }
 
   .list {
-    padding: 0.5rem 0.5rem 90px;
+    padding: 0rem 0rem 0rem;
   }
 
   .title {

@@ -48,7 +48,14 @@
 .headerSquareBtn:hover,
 .headerSquareBtn:active {
   background: var(--color-bg-hover, #e2e8f0);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .headerSquareBtn:hover,
+.headerSquareBtn:active {
   transform: none !important;
+  }
 }
 
 :global([data-theme="dark"]) .headerSquareBtn {
@@ -60,7 +67,14 @@
 :global([data-theme="dark"]) .headerSquareBtn:hover,
 :global([data-theme="dark"]) .headerSquareBtn:active {
   background: rgba(255, 255, 255, 0.22);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  :global([data-theme="dark"]) .headerSquareBtn:hover,
+:global([data-theme="dark"]) .headerSquareBtn:active {
   transform: none !important;
+  }
 }
 
 .title {
@@ -99,7 +113,14 @@
 .tabBtn:active {
   color: var(--color-text-main, #0f172a);
   border-color: var(--color-text-muted, #94a3b8);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .tabBtn:hover,
+.tabBtn:active {
   transform: none !important;
+  }
 }
 
 .tabBtn.active {
@@ -158,7 +179,14 @@
 .viewToggleBtn:hover,
 .viewToggleBtn:active {
   color: var(--color-text-main);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .viewToggleBtn:hover,
+.viewToggleBtn:active {
   transform: none !important;
+  }
 }
 
 .viewToggleBtn.active {
@@ -243,7 +271,13 @@
 
 .removeExpandedBtn:hover {
   background: rgba(220, 38, 38, 0.8);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .removeExpandedBtn:hover {
   transform: scale(1.05);
+  }
 }
 
 /* Compact Layout */

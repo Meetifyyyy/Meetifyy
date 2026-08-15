@@ -256,8 +256,11 @@
   }
 }
 
-.journeyCard:hover {
+@media (hover: hover) and (pointer: fine) {
+
+  .journeyCard:hover {
   transform: translateY(-12px);
+  }
 }
 
 .cardA {
@@ -302,7 +305,13 @@
 
 .cardA:hover .cardEmojiBadge {
   background: rgba(244, 63, 94, 0.2);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .cardA:hover .cardEmojiBadge {
   transform: scale(1.05);
+  }
 }
 
 .cardEmojiBadgeB {
@@ -312,7 +321,13 @@
 
 .cardB:hover .cardEmojiBadgeB {
   background: rgba(92, 71, 250, 0.35);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .cardB:hover .cardEmojiBadgeB {
   transform: scale(1.05);
+  }
 }
 
 .cardEyebrow, .cardEyebrowB {
@@ -735,8 +750,14 @@
 }
 
 .modalSubmitBtn:hover:not(:disabled) {
-  transform: translateY(-1px);
   box-shadow: 0 12px 30px rgba(92, 71, 250, 0.35);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .modalSubmitBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  }
 }
 
 .modalSubmitBtn:disabled {

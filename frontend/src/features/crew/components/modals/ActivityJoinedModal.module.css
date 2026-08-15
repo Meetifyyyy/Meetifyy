@@ -133,7 +133,12 @@
 }
 .btnOkay.primaryBtn:hover {
   filter: brightness(1.1);
+}
+@media (hover: hover) and (pointer: fine) {
+
+  .btnOkay.primaryBtn:hover {
   transform: translateY(-1px);
+  }
 }
 
 .btnOpen {
@@ -145,5 +150,11 @@
 
 .btnOpen:hover {
   filter: brightness(1.1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .btnOpen:hover {
   transform: translateY(-1px);
+  }
 }

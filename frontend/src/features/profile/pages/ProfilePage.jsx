@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { messagesApi, usersApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useProfile, PROFILE_KEYS } from '@shared/hooks/useProfile';
 
@@ -246,7 +247,13 @@ export default function ProfilePage() {
   }
 
   const isOwnProfile = !profileUsername || profileUsername === currentUserUsername || profileUser?.id === authUser?.id || profileUser?.username === currentUserUsername;
-  const effectiveUser = isOwnProfile ? { ...profileUser, ...authUser } : profileUser;
+  const effectiveUser = isOwnProfile 
+    ? { 
+        ...authUser, 
+        ...profileUser, 
+        isCampusRep: Boolean(profileUser?.isCampusRep ?? authUser?.isCampusRep)
+      } 
+    : profileUser;
 
   // Build dynamic user tags list
   const userTags = [];
@@ -418,6 +425,7 @@ export default function ProfilePage() {
 
               <h1 className={s.name}>
                 {effectiveUser.displayName || effectiveUser.name || effectiveUser.username}
+                <CollegeRepresentativeBadge isCampusRep={effectiveUser.isCampusRep} collegeName={universityName} size="lg" />
               </h1>
               <p className={s.username}>@{effectiveUser.username}</p>
               {effectiveUser.bio && <p className={s.bio}>{effectiveUser.bio}</p>}

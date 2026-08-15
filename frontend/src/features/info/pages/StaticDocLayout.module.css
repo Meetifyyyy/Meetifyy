@@ -1,5 +1,5 @@
 .pageWrapper {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   background-color: #ffffff;
@@ -515,7 +515,13 @@
 
 .emailBtn:hover {
   background: #c2410c;
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .emailBtn:hover {
   transform: translateY(-1px);
+  }
 }
 
 @media (max-width: 640px) {

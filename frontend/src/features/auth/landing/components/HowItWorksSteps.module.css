@@ -107,9 +107,15 @@
 }
 
 .card:hover {
-  transform: translateY(-16px);
   box-shadow: 0 20px 40px rgba(92, 71, 250, 0.05);
   border-color: rgba(92, 71, 250, 0.3);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .card:hover {
+  transform: translateY(-16px);
+  }
 }
 
 [data-theme="dark"] .card {

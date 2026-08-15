@@ -113,10 +113,11 @@ export default function MessageContextMenu({
     x = Math.max(edgeMargin, Math.min(x, window.innerWidth - width - edgeMargin));
 
     let y = position.y + gap;
-    if (y + height > window.innerHeight - edgeMargin) {
-      y = position.y - gap - height;
+    const vh = window.visualViewport?.height || window.innerHeight;
+    if (y + height > vh - edgeMargin) {
+      y = y - height;
     }
-    y = Math.max(edgeMargin, Math.min(y, window.innerHeight - height - edgeMargin));
+    y = Math.max(edgeMargin, Math.min(y, vh - height - edgeMargin));
 
     setCoords({ x, y, ready: true });
   }, [position.x, position.y, visibleActions.length]);

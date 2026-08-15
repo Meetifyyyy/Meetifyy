@@ -778,7 +778,13 @@
 .postShareCard:hover {
   border-color: var(--color-secondary);
   box-shadow: 0 8px 24px rgba(124, 58, 237, 0.15), 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .postShareCard:hover {
   transform: translateY(-2px);
+  }
 }
 
 .postShareLeft {
@@ -918,8 +924,11 @@
   box-shadow: 0 4px 8px rgba(124, 58, 237, 0.25);
 }
 
-.postShareCard:hover .postShareBtn svg {
+@media (hover: hover) and (pointer: fine) {
+
+  .postShareCard:hover .postShareBtn svg {
   transform: translateX(2px);
+  }
 }
 
 .msgBubbleTransparent {
@@ -1169,8 +1178,11 @@
   transition: all 0.15s ease;
 }
 
-.msgRecordingSendBtn:hover {
+@media (hover: hover) and (pointer: fine) {
+
+  .msgRecordingSendBtn:hover {
   transform: scale(1.05);
+  }
 }
 
 @keyframes pulse {

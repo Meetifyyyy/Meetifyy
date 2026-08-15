@@ -134,7 +134,13 @@
 
 .msgNewBtn:hover {
   background: var(--color-primary-hover);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .msgNewBtn:hover {
   transform: scale(1.05);
+  }
 }
 
 .msgConvSearch {

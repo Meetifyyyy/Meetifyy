@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { UserX, Ban, Flag } from 'lucide-react';
-import { isImageUrl } from '@shared/utils/avatar';
+import { isImageUrl } from "@shared/utils/avatar";
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import styles from './CommunityMembersModal.module.css';
 import { useData } from '@shared/hooks/useData';
 import { usersApi, communitiesApi, getMediaUrl } from '@shared/api/apiClient';
@@ -32,13 +33,14 @@ function MemberActionMenu({ member, communityId, isCurrentUser, isAdmin, onRemov
     e.stopPropagation();
     if (!open && btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
+      const vh = window.visualViewport?.height || window.innerHeight;
+      const spaceBelow = vh - rect.bottom;
       const openUp = spaceBelow < 180;
 
       setCoords({
         right: window.innerWidth - rect.right,
         top: openUp ? 'auto' : rect.bottom + 4,
-        bottom: openUp ? window.innerHeight - rect.top + 4 : 'auto'
+        bottom: openUp ? vh - rect.top + 4 : 'auto'
       });
     }
     setOpen(!open);
@@ -53,7 +55,11 @@ function MemberActionMenu({ member, communityId, isCurrentUser, isAdmin, onRemov
       setOpen(false);
     };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    window.visualViewport?.addEventListener('resize', handler);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      window.visualViewport?.removeEventListener('resize', handler);
+    };
   }, [open, member.id]);
 
   if (isCurrentUser) return null;
@@ -276,6 +282,7 @@ export default function CommunityMembersModal({ members: initialMembers, title, 
                       <span className={styles.userName} onClick={(e) => handleNameClick(e, member.name)}>
                         {member.name}
                       </span>
+                      <CollegeRepresentativeBadge isCampusRep={matchedUser?.isCampusRep} size="sm" />
                       {isOwner ? (
                         <span className={styles.userBadge} style={{ background: 'rgba(236, 72, 153, 0.1)', color: '#EC4899' }}>
                           Owner

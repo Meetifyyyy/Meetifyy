@@ -15,13 +15,14 @@ export default function CustomSelect({ value, options, onChange, style, placehol
   const toggleOpen = () => {
     if (!isOpen && containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
+      const vh = window.visualViewport?.height || window.innerHeight;
+      const spaceBelow = vh - rect.bottom;
       const isTop = spaceBelow < 220; // open upward if not enough space
       
       setDropdownStyle({
         position: 'fixed',
         top: isTop ? 'auto' : `${rect.bottom + 4}px`,
-        bottom: isTop ? `${window.innerHeight - rect.top + 4}px` : 'auto',
+        bottom: isTop ? `${vh - rect.top + 4}px` : 'auto',
         left: `${rect.left}px`,
         width: `${rect.width}px`,
         zIndex: 9999
@@ -52,11 +53,13 @@ export default function CustomSelect({ value, options, onChange, style, placehol
       document.addEventListener('mousedown', handleClickOutside);
       window.addEventListener('scroll', handleScroll, true); // capture phase
       window.addEventListener('resize', handleScroll);
+      window.visualViewport?.addEventListener('resize', handleScroll);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       window.removeEventListener('scroll', handleScroll, true);
       window.removeEventListener('resize', handleScroll);
+      window.visualViewport?.removeEventListener('resize', handleScroll);
     };
   }, [isOpen]);
 

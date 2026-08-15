@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
 import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import RichText from '@shared/components/mentions/RichText';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities } from '@shared/hooks/useCommunities';
@@ -235,8 +236,9 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
           )}
         </div>
         <div className={styles.postUser}>
-          <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }} onClick={(e) => e.stopPropagation()}>
+          <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }} onClick={(e) => e.stopPropagation()}>
             <div className={`hover-underline ${styles.postName}`}>{author.displayName}</div>
+            <CollegeRepresentativeBadge isCampusRep={author.isCampusRep} collegeName={authorCollege?.name} size="md" />
 
             {authorCollege && (
               <img

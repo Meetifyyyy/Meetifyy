@@ -540,7 +540,8 @@ const MessageBubble = memo(function MessageBubble({
     
     // Fallbacks if all else fails
     clientX = clientX ?? window.innerWidth / 2;
-    clientY = clientY ?? window.innerHeight / 2;
+    const vh = window.visualViewport?.height || window.innerHeight;
+    clientY = clientY ?? vh / 2;
 
     const mockEvent = {
       clientX,

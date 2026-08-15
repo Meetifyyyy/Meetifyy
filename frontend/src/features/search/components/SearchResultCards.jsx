@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import Avatar from '@shared/components/avatar/Avatar';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { getRelativeDateLabel } from '@shared/utils/time';
 import styles from './SearchResultCards.module.css';
 
@@ -113,8 +114,9 @@ export function UserResult({ result, isSelected, onClick }) {
     >
       <Avatar src={item.avatar} name={item.displayName} size="40px" disableHover />
       <div className={styles.content}>
-        <div className={styles.title}>
+        <div className={styles.title} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <HighlightedText text={item.displayName} matches={matches} keyName="displayName" />
+          <CollegeRepresentativeBadge isCampusRep={item.isCampusRep} size="sm" />
         </div>
         <div className={styles.subtitle}>
           @{item.username}

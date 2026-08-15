@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useCallback, memo } from 
 import { createPortal } from 'react-dom';
 import { MessageCircle, X, Send, ChevronUp } from 'lucide-react';
 import Avatar from '@shared/components/avatar/Avatar';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { useAuth } from '@shared/context/AuthContext';
 import { timeAgo } from '@shared/utils/time';
 import { useActivityDiscussion } from '../hooks/useActivityDiscussion';
@@ -197,6 +198,7 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
                           m.user?.username ||
                           'Member'}
                     </span>
+                    <CollegeRepresentativeBadge isCampusRep={m.user?.isCampusRep} size="sm" />
                     <span className={styles.msgTime}>
                       {timeAgo(m.createdAt)}
                     </span>

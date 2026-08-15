@@ -620,7 +620,7 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
         const isLeft = touch.clientX < window.innerWidth / 2;
         seekBy(isLeft ? -10 : 10);
         triggerRipple(isLeft ? 'left' : 'right');
-        lastTapRef.current = { time: 0, x: 0 };
+        lastTapRef.current = { time: 0, x: 0, doubleTapTime: now };
       } else {
         // First tap → schedule play/pause after double-tap window
         lastTapRef.current = { time: now, x: touch.clientX };
@@ -675,13 +675,26 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
     }
   }, [togglePlay, triggerTapFeedback, playing, onControlsChange, onStageClick]);
 
-  // ─── Double-click on wrap → fullscreen ─────────────────────────────────────
+  // ─── Double-click on wrap → seek 10s ─────────────────────────────────────
   const handleWrapDoubleClick = useCallback((e) => {
     if (e.target.closest('[data-controls]')) return;
     e.stopPropagation();
     clearTimeout(clickTimerRef.current);
-    toggleFullscreen();
-  }, [toggleFullscreen]);
+
+    // If a recent touch handled this via custom double-tap, skip duplicate action
+    if (Date.now() - (lastTapRef.current.doubleTapTime || 0) < 500) {
+      return;
+    }
+
+    const isVideoElement = videoRef.current && (e.target === videoRef.current || videoRef.current.contains(e.target));
+    if (isVideoElement) {
+      const rect = videoRef.current.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const isLeft = clickX < rect.width / 2;
+      seekBy(isLeft ? -10 : 10);
+      triggerRipple(isLeft ? 'left' : 'right');
+    }
+  }, [seekBy, triggerRipple]);
 
   // ─── Volume display helpers ───────────────────────────────────────────────
   const effectiveVolume = muted ? 0 : volume;

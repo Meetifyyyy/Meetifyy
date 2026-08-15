@@ -55,7 +55,12 @@
 
 .backBtn:hover {
   background: var(--color-bg-soft);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .backBtn:hover {
   transform: scale(1.05);
+  }
 }
 
 .backBtn:active {
@@ -114,8 +119,13 @@
 }
 
 .editInterestsHeaderBtn:hover {
-  transform: scale(1.08);
   opacity: 0.8;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .editInterestsHeaderBtn:hover {
+  transform: scale(1.08);
+  }
 }
 
 .editInterestsHeaderBtn:active {
@@ -179,8 +189,13 @@
 }
 
 .row:hover .rowIcon {
-  transform: scale(1.06);
   background: var(--color-border-light);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .row:hover .rowIcon {
+  transform: scale(1.06);
+  }
 }
 
 .rowLabel {
@@ -198,8 +213,10 @@
   transition: transform 0.2s ease;
 }
 
-.row:hover .rowChev {
+@media (hover: hover) and (pointer: fine) {
+  .row:hover .rowChev {
   transform: translateX(2px);
+  }
 }
 
 .rowDanger .rowLabel {
@@ -372,7 +389,12 @@ input:checked+.slider::before {
 .saveBtn:hover {
   background: var(--color-primary-hover);
   box-shadow: 0 6px 20px rgba(var(--color-primary-rgb), 0.35);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .saveBtn:hover {
   transform: translateY(-1.5px);
+  }
 }
 
 .saveBtn:active {
@@ -659,7 +681,12 @@ input:checked+.slider::before {
 .editInterestsBtn:hover {
   background: var(--color-primary);
   color: white;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .editInterestsBtn:hover {
   transform: scale(1.08);
+  }
 }
 
 .editInterestsBtn:active {
@@ -814,8 +841,10 @@ input:checked+.slider::before {
   box-shadow: 0 8px 30px rgba(var(--color-primary-rgb), 0.35) !important;
 }
 
-.floatingSaveBtn:hover {
+@media (hover: hover) and (pointer: fine) {
+  .floatingSaveBtn:hover {
   transform: translateX(-50%) translateY(-1.5px) !important;
+  }
 }
 
 .floatingSaveBtn:active {

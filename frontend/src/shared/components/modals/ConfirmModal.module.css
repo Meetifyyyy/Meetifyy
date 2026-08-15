@@ -1,6 +1,9 @@
 .confirmOverlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100dvh;
   z-index: 1000000;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
@@ -128,7 +131,13 @@
 
 .confirmBtnLeave:hover {
   filter: brightness(1.08);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .confirmBtnLeave:hover {
   transform: translateY(-1px);
+  }
 }
 
 .confirmBtnPrimary {
@@ -139,5 +148,11 @@
 
 .confirmBtnPrimary:hover {
   filter: brightness(1.15);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .confirmBtnPrimary:hover {
   transform: translateY(-1px);
+  }
 }

@@ -130,9 +130,15 @@
 }
 
 .card:hover {
-  transform: translateY(-12px) scale(1.01);
   box-shadow: 0 20px 40px rgba(92, 71, 250, 0.05);
   border-color: rgba(92, 71, 250, 0.3);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .card:hover {
+  transform: translateY(-12px) scale(1.01);
+  }
 }
 
 [data-theme="dark"] .card:hover {
@@ -154,8 +160,11 @@
   transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-.card:hover .sparkle {
+@media (hover: hover) and (pointer: fine) {
+
+  .card:hover .sparkle {
   transform: scale(1.25) rotate(12deg);
+  }
 }
 
 .sparkleTopLeft {

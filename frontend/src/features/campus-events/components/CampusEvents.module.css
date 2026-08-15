@@ -83,6 +83,18 @@
   }
 }
 
+@media (max-width: 768px) {
+  .card:active {
+    transform: scale(0.98) !important;
+  }
+}
+
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .card:active {
+    transform: none !important;
+  }
+}
+
 /* Aspect ratio 3/4 frame */
 .posterWrap {
   position: relative;

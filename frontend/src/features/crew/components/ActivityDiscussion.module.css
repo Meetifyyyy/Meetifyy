@@ -38,7 +38,7 @@
   width: 380px;
   max-width: calc(100vw - 32px);
   height: 520px;
-  max-height: calc(100vh - 135px);
+  max-height: calc(100dvh - 135px);
   z-index: 99999;
   box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.15);
   animation: discPopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
@@ -271,7 +271,11 @@
   cursor: pointer;
   transition: opacity 0.15s ease, transform 0.1s ease;
 }
-.sendBtn:hover:not(:disabled) { transform: translateY(-1px); }
+@media (hover: hover) and (pointer: fine) {
+
+  .sendBtn:hover:not(:disabled) { transform: translateY(-1px);
+  }
+}
 .sendBtn:disabled { opacity: 0.4; cursor: default; }
 
 /* ── Desktop launcher button ───────────────────────────────────── */
@@ -295,6 +299,11 @@
   transition: transform 0.12s ease, box-shadow 0.15s ease;
 }
 .launcherBtn:hover {
-  transform: translateY(-2px);
   box-shadow: 0 16px 36px -8px rgba(79, 70, 229, 0.7);
+}
+@media (hover: hover) and (pointer: fine) {
+
+  .launcherBtn:hover {
+  transform: translateY(-2px);
+  }
 }

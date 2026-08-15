@@ -286,13 +286,14 @@ export default function MentionInput({
           // Fall back to editor element rect when caret rect collapses to zero (empty field)
           const refRect = (rect.height > 0) ? rect : editorRef.current?.getBoundingClientRect();
           if (refRect) {
-            const spaceBelow = window.innerHeight - refRect.bottom;
-            const shouldOpenUpwards = singleLine || spaceBelow < 280;
+            const vh = window.visualViewport?.height || window.innerHeight;
+            const spaceBelow = vh - refRect.bottom;
+            const shouldOpenUpwards = singleLine || spaceBelow < 250;
 
             if (shouldOpenUpwards) {
               setDropdownPos({
-                bottom: window.innerHeight - refRect.top + 6,
-                left: refRect.left,
+                bottom: vh - refRect.top + 6,
+                left: Math.max(16, refRect.left),
                 top: 'auto',
                 fixed: true
               });

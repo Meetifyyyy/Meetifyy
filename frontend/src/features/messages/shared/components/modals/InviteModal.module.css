@@ -214,7 +214,13 @@
 
 .sendBtn:hover:not(:disabled) {
   opacity: 0.9;
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .sendBtn:hover:not(:disabled) {
   transform: scale(1.02);
+  }
 }
 
 .sendBtn:active:not(:disabled) {

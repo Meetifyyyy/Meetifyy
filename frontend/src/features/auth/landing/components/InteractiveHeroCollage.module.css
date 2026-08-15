@@ -139,7 +139,13 @@
 
 .polaroid:hover .photo {
   filter: grayscale(0%);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .polaroid:hover .photo {
   transform: scale(1.05);
+  }
 }
 
 .photoOverlay {

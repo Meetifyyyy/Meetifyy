@@ -1,6 +1,9 @@
 .overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100dvh;
   z-index: 1000000;
   display: flex;
   align-items: center;
@@ -20,7 +23,7 @@
 .modal {
   width: 100%;
   max-width: 480px;
-  max-height: 85vh;
+  max-height: 85dvh;
   display: flex;
   flex-direction: column;
   background: rgba(18, 20, 26, 0.95);
@@ -262,8 +265,14 @@
 }
 
 .sendBtn:hover:not(:disabled) {
-  transform: translateY(-1px);
   box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .sendBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  }
 }
 
 .sendBtn:disabled {

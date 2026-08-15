@@ -10,8 +10,11 @@
   transition: opacity 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.instant-match-fab-container:hover {
+@media (hover: hover) and (pointer: fine) {
+
+  .instant-match-fab-container:hover {
   transform: scale(1.1);
+  }
 }
 
 .instant-match-fab-container:active {
@@ -41,8 +44,11 @@
   transition: transform 0.3s ease;
 }
 
-.instant-match-fab:hover svg {
+@media (hover: hover) and (pointer: fine) {
+
+  .instant-match-fab:hover svg {
   transform: rotate(15deg) scale(1.1);
+  }
 }
 
 @keyframes pulse-glow {

@@ -335,8 +335,11 @@
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.createCardBtn:hover .createCardBtnIcon {
+@media (hover: hover) and (pointer: fine) {
+
+  .createCardBtn:hover .createCardBtnIcon {
   transform: rotate(90deg);
+  }
 }
 
 .btnAsterisk {
@@ -379,7 +382,13 @@
   opacity: 1;
   width: 16px;
   margin-right: 14px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .createCardBtn:hover .createCardBtnArrow {
   transform: translateX(0);
+  }
 }
 
 @media (max-width: 768px) {
@@ -390,8 +399,11 @@
     transition: none !important;
   }
 
-  .createCardBtn:hover .createCardBtnIcon {
+  @media (hover: hover) and (pointer: fine) {
+
+    .createCardBtn:hover .createCardBtnIcon {
     transform: none !important;
+    }
   }
 
   .createCardBtn:hover .createCardBtnText {
@@ -402,6 +414,12 @@
     opacity: 0 !important;
     width: 0 !important;
     margin-right: 12px !important;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+
+    .createCardBtn:hover .createCardBtnArrow {
     transform: translateX(-12px) !important;
+    }
   }
 }

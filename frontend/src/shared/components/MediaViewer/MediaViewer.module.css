@@ -579,7 +579,13 @@
 
 .centerReplayBtn:hover {
   background: #27272a;
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .centerReplayBtn:hover {
   transform: translate(-50%, -50%) scale(1.08);
+  }
 }
 
 .centerReplayBtn:active {
@@ -720,7 +726,13 @@
 .videoProgressTrack:hover .videoProgressThumb {
   width: 14px;
   height: 14px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .videoProgressTrack:hover .videoProgressThumb {
   transform: translate(-50%, -50%) scale(1);
+  }
 }
 
 /* ── Controls row ────────────────────────────────────────────────────────── */

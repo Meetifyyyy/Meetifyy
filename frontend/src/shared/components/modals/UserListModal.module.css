@@ -1,6 +1,9 @@
 .overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100dvh;
   background: rgba(0, 0, 0, 0.65);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -19,7 +22,7 @@
   width: 100%;
   max-width: 440px;
   height: 520px;
-  max-height: 85vh;
+  max-height: 85dvh;
   display: flex;
   flex-direction: column;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
@@ -225,8 +228,8 @@
   .modal {
     width: 100% !important;
     max-width: 100% !important;
-    height: 85vh !important;
-    max-height: 85vh !important;
+    height: 85dvh !important;
+    max-height: 85dvh !important;
     border-bottom-left-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
     border-top-left-radius: 24px !important;

@@ -3,7 +3,7 @@
   top: 0;
   left: 0;
   right: 0;
-  bottom: 0;
+  height: 100dvh;
   background: rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -20,7 +20,7 @@
   border-radius: var(--radius-lg);
   width: 100%;
   max-width: 400px;
-  max-height: 80vh;
+  max-height: 80dvh;
   display: flex;
   flex-direction: column;
   box-shadow:(--shadow-sm);
@@ -157,8 +157,8 @@
   .modal {
     width: 100% !important;
     max-width: 100% !important;
-    height: 85vh !important;
-    max-height: 85vh !important;
+    height: 85dvh !important;
+    max-height: 85dvh !important;
     border-radius: 24px 24px 0 0 !important;
     margin: 0 !important;
     animation: slideUpMobile 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;

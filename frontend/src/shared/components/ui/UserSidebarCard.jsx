@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useProfile } from '@shared/hooks/useProfile';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import FollowButton from '@shared/components/ui/FollowButton';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { getCollegeName } from '@shared/utils/user';
@@ -262,6 +263,7 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
         <div className={s.identity} onClick={handleProfileClick}>
           <div className={s.nameRow}>
             <h2 className={s.displayName}>{effectiveUser.displayName || effectiveUser.username || 'User'}</h2>
+            <CollegeRepresentativeBadge isCampusRep={Boolean(effectiveUser.isCampusRep ?? initialUser?.isCampusRep ?? profile?.isCampusRep)} collegeName={universityName} size="md" />
             {isVerified && (
               <span className={s.verifiedBadge} title="Verified user">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">

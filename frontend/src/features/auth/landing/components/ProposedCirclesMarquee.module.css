@@ -89,7 +89,11 @@
   transition: transform 0.2s;
 }
 
-.tag:hover { transform: scale(1.05); }
+@media (hover: hover) and (pointer: fine) {
+
+  .tag:hover { transform: scale(1.05);
+  }
+}
 
 [data-theme="dark"] .tag {
   background: #111118;

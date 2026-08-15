@@ -6,6 +6,7 @@ import { useCampusCommunities } from '@shared/hooks/useCommunities';
 import { useCampusEvents, useDeleteCampusEvent } from '@shared/hooks/useCampusEvents';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './CampusPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
@@ -76,7 +77,10 @@ export default function CampusPage() {
       {/* HEADER SECTION */}
       <div className={styles.headerBanner}>
         <header className={styles.header}>
-          <h1 className={styles.collegeTitle}>{collegeName}</h1>
+          <h1 className={styles.collegeTitle} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', lineHeight: 1 }}>
+            <span>{collegeName}</span>
+            <CollegeRepresentativeBadge isCampusRep={isCampusRep} collegeName={collegeName} size="inherit" />
+          </h1>
 
           <div className={`${styles.headerActions} ${styles.headerActionsRelative}`} ref={menuRef}>
             <button
@@ -143,21 +147,6 @@ export default function CampusPage() {
               </button>
             )}
           </div>
-
-          {isCampusRep && (
-            <div className={eventStyles.repBanner}>
-              <div className={eventStyles.repBannerText}>
-                <span className={eventStyles.repBannerTitle}>
-                  <Megaphone size={15} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                  You're a Campus Representative
-                </span>
-                <span className={eventStyles.repBannerSub}>Publish official events for {collegeName}.</span>
-              </div>
-              <button className={eventStyles.repCreateCta} onClick={() => setEventFormState({})}>
-                <img src="/icons/tear-off_calendar_color.svg" width={18} height={18} alt="" /> Create event
-              </button>
-            </div>
-          )}
 
           <CampusEventSection
             scope="upcoming"

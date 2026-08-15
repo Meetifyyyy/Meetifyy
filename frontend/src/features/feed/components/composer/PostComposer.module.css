@@ -171,7 +171,13 @@
 
 .composerSendBtn:hover {
   background: var(--color-primary-hover);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .composerSendBtn:hover {
   transform: scale(1.05);
+  }
 }
 
 .composerSendBtn:active {

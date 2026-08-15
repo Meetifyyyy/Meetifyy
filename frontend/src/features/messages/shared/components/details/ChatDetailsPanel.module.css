@@ -811,7 +811,13 @@
 
 .galleryHeader:hover .galleryChevron {
   color: var(--color-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .galleryHeader:hover .galleryChevron {
   transform: translateX(4px);
+  }
 }
 
 .galleryRow {
@@ -1079,5 +1085,11 @@ input:checked+.slider:before {
 .viewActivityBtn:hover {
   background: var(--color-bg-soft, rgba(255, 255, 255, 0.06));
   border-color: var(--color-primary, #3b82f6);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .viewActivityBtn:hover {
   transform: translateY(-1px);
+  }
 }

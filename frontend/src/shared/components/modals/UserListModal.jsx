@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { usersApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import FollowButton from '../ui/FollowButton';
 import Avatar from '../avatar/Avatar';
@@ -150,7 +151,10 @@ export default function UserListModal({ type, profileUsername, onClose }) {
                     <Avatar src={user.avatar} name={user.displayName || user.username} size="42px" />
                   </div>
                   <div className={styles.userInfo}>
-                    <div className={styles.userName}>{user.displayName || user.username}</div>
+                    <div className={styles.userName} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {user.displayName || user.username}
+                      <CollegeRepresentativeBadge isCampusRep={user.isCampusRep} size="sm" />
+                    </div>
                     <div className={styles.userUsername}>@{user.username}</div>
                   </div>
                   <div className={styles.followBtnWrap} onClick={(e) => e.stopPropagation()}>

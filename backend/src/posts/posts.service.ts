@@ -135,6 +135,7 @@ export class PostsService {
             id: true,
             username: true,
             displayName: true,
+            isCampusRep: true,
             avatar: true,
           },
         },
@@ -288,7 +289,9 @@ export class PostsService {
           'id', u.id,
           'username', u.username,
           'displayName', u."displayName",
-          'avatar', u.avatar
+          'avatar', u.avatar,
+          'isCampusRep', u."isCampusRep",
+          'collegeId', u."collegeId"
         ) AS author,
         COALESCE(
           (
@@ -491,6 +494,7 @@ export class PostsService {
             id: true,
             username: true,
             displayName: true,
+            isCampusRep: true,
             avatar: true,
           },
         },
@@ -890,6 +894,7 @@ export class PostsService {
     id: true,
     username: true,
     displayName: true,
+    isCampusRep: true,
     avatar: true,
   } as const;
 
@@ -1039,7 +1044,7 @@ export class PostsService {
       this.prisma.post.findUnique({
         where: { id: postId, deletedAt: null },
         include: {
-          author: { select: { id: true, username: true, displayName: true, avatar: true } },
+          author: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true } },
           community: { select: { id: true, name: true, deletedAt: true } },
           pollOptions: { include: { _count: { select: { votes: true } } } },
           pollVotes: userId ? { where: { userId } } : false,
@@ -1185,7 +1190,7 @@ export class PostsService {
       include: {
         post: {
           include: {
-            author: { select: { id: true, username: true, displayName: true, avatar: true } },
+            author: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true } },
             media: true,
             pollOptions: { include: { _count: { select: { votes: true } } } },
             pollVotes: userId ? { where: { userId } } : false,

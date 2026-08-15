@@ -19,7 +19,25 @@
   background: var(--color-bg-white);
   border-color: var(--color-primary, #2563eb);
   box-shadow: 0 8px 24px rgba(37, 99, 235, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .card:hover {
   transform: translateY(-2px);
+  }
+}
+
+@media (max-width: 768px) {
+  .card:active {
+    transform: scale(0.98) !important;
+  }
+}
+
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .card:active {
+    transform: none !important;
+  }
 }
 
 .coverCol {
@@ -236,8 +254,14 @@
 .joinBtn:hover {
   background: var(--color-primary-hover, #1d4ed8);
   border-color: var(--color-primary-hover, #1d4ed8);
-  transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .joinBtn:hover {
+  transform: translateY(-1px);
+  }
 }
 
 .joinBtn:active {
@@ -254,7 +278,13 @@
 .joinedBtn:hover {
   background: rgba(37, 99, 235, 0.15) !important;
   border-color: rgba(37, 99, 235, 0.3) !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .joinedBtn:hover {
   transform: none !important;
+  }
 }
 
 .saveBtn {

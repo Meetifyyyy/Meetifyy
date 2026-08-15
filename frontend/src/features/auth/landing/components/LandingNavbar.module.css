@@ -153,8 +153,11 @@
   z-index: 50;
 }
 
-.hamburger:hover {
+@media (hover: hover) and (pointer: fine) {
+
+  .hamburger:hover {
   transform: scale(1.05);
+  }
 }
 
 .hamburger:active {

@@ -155,7 +155,13 @@
 
 .publishBtn.publishOn:hover {
   background: var(--color-primary-hover);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .publishBtn.publishOn:hover {
   transform: translateY(-1px);
+  }
 }
 
 /* ═══════════════
@@ -371,8 +377,11 @@
   transition: transform var(--transition-fast);
 }
 
-.isResultBtn:hover {
+@media (hover: hover) and (pointer: fine) {
+
+  .isResultBtn:hover {
   transform: scale(0.97);
+  }
 }
 
 .isResultBtn img {
@@ -672,12 +681,24 @@
 
 .reminderOpt:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .reminderOpt:hover {
   transform: translateX(3px);
+  }
 }
 
 .reminderOpt:hover {
   background: rgba(128, 128, 128, 0.1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .reminderOpt:hover {
   transform: translateX(3px);
+  }
 }
 
 .reminderOptOn {
@@ -689,7 +710,13 @@
 
 .reminderOptOn:hover {
   background: var(--color-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .reminderOptOn:hover {
   transform: translateX(3px);
+  }
 }
 
 /* ── Warn ── */
@@ -1012,7 +1039,13 @@
 
 .dtDone:hover {
   background: var(--color-primary-hover);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .dtDone:hover {
   transform: translateY(-1px);
+  }
 }
 
 /* ── Capacity Modal ── */
@@ -1129,7 +1162,13 @@
 
 .capModal .dtDone:hover {
   background: var(--color-primary-hover);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .capModal .dtDone:hover {
   transform: translateY(-1px);
+  }
 }
 
 .capResetBtn:hover {

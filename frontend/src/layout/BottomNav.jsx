@@ -63,11 +63,12 @@ export default function BottomNav({ hidden }) {
   const isCrewActive = location.pathname.startsWith('/crew');
   const isProfileActive = location.pathname.startsWith('/profile');
 
-  // Note: an open chat thread no longer hides the nav — the messages layout
-  // reserves space for it and the keyboard case is handled in CSS
-  // (html[data-keyboard-open]). Post detail still hides it.
+  // Note: an open chat thread completely hides the nav on mobile to allow edge-to-edge chat.
   const isPostOpen = location.pathname.startsWith('/post/');
-  const isHidden = hidden || isPostOpen;
+  const isMessageChatOpen = location.pathname.startsWith('/messages/') && location.pathname.length > '/messages/'.length;
+  const isInboxChatOpen = location.pathname.startsWith('/inbox/') && location.pathname.length > '/inbox/'.length;
+  const isChatOpen = isMessageChatOpen || isInboxChatOpen;
+  const isHidden = hidden || isPostOpen || isChatOpen;
 
   return (
     <div className={`app-bottom-nav ${styles.bottomNav} ${isHidden ? styles.hiddenNav : ''}`}>

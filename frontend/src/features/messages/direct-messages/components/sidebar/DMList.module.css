@@ -66,7 +66,13 @@
 
 .newDMBtn:hover {
   background: var(--color-primary-dark, #4f46e5);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .newDMBtn:hover {
   transform: scale(1.05);
+  }
 }
 
 .listBody {

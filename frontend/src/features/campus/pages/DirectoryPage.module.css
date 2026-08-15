@@ -125,9 +125,15 @@
 }
 
 .gridCard:hover {
-  transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
   border-color: var(--color-border);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .gridCard:hover {
+  transform: translateY(-2px);
+  }
 }
 
 .headerSelect {
@@ -205,9 +211,27 @@
 }
 
 .directoryCard:hover {
-  transform: translateY(-2px);
   border-color: #cbd5e1;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.04);
+}
+
+@media (max-width: 768px) {
+  .directoryCard:active {
+    transform: scale(0.98) !important;
+  }
+}
+
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .directoryCard:active {
+    transform: none !important;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .directoryCard:hover {
+  transform: translateY(-2px);
+  }
 }
 
 :global([data-theme="dark"]) .directoryCard {

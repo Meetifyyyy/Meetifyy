@@ -581,7 +581,13 @@
   background: rgba(28, 28, 35, 0.85);
   border-color: rgba(255, 255, 255, 0.22);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .joinBtn:hover {
   transform: translateY(-2px);
+  }
 }
 
 .btnSpinner {
@@ -660,7 +666,13 @@
 .leaveBtn:hover {
   background: rgba(0, 0, 0, 0.7);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .leaveBtn:hover {
   transform: translateY(-2px);
+  }
 }
 
 /* Modals and Overlays (re-used from previous styling) */
@@ -781,12 +793,23 @@
     padding-bottom: 13rem !important;
   }
 
+  .mapOverlay {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    height: 100dvh !important;
+    z-index: 9999 !important;
+    border-radius: 0 !important;
+  }
+
   .root {
     position: fixed !important;
     top: 0 !important;
     left: 0 !important;
     width: 100vw !important;
-    height: 100vh !important;
+    height: 100dvh !important;
     z-index: 9999 !important;
     border-radius: 0 !important;
   }

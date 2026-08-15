@@ -62,8 +62,11 @@
   transition: transform 0.2s ease;
 }
 
-.logoBtn:hover .logoImg {
+@media (hover: hover) and (pointer: fine) {
+
+  .logoBtn:hover .logoImg {
   transform: scale(1.04);
+  }
 }
 
 .sectionLabel {
@@ -102,7 +105,13 @@
 
 .socialIcon:hover {
   background: rgba(255, 255, 255, 0.22);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .socialIcon:hover {
   transform: translateY(-2px);
+  }
 }
 
 /* Right Nav Grid */

@@ -63,7 +63,6 @@ const SearchableMajorSelect = ({ value, onChange }) => {
           <div className={styles.customDropdownSearch}>
             <Search size={14} color="var(--color-icon-base)" />
             <input
-              autoFocus
               type="text"
               placeholder="Search major..."
               value={search}
@@ -272,8 +271,8 @@ export default function DirectoryPage() {
 
       <div className={styles.campusBody}>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <CustomClassYearSelect value={dirYear} onChange={setDirYear} years={classYears} />
           <SearchableMajorSelect value={dirBranch} onChange={setDirBranch} />
+          <CustomClassYearSelect value={dirYear} onChange={setDirYear} years={classYears} />
         </div>
 
 

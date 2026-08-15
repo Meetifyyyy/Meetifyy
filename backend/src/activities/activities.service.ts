@@ -494,10 +494,10 @@ export class ActivitiesService implements OnModuleInit {
         where: { id: cleanId },
         include: {
           members: {
-            include: { user: { select: { id: true, username: true, displayName: true, avatar: true } } }
+            include: { user: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true } } }
           },
           invitations: { select: { inviteeId: true, status: true } },
-          creator: { select: { id: true, username: true, displayName: true, avatar: true } },
+          creator: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true } },
         },
       }),
       userId ? this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }) : Promise.resolve(null),

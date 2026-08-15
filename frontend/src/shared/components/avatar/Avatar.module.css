@@ -100,8 +100,14 @@
 }
 
 .clickable:hover {
-  transform: scale(1.04);
   filter: brightness(0.95);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .clickable:hover {
+  transform: scale(1.04);
+  }
 }
 
 .onlineDot {

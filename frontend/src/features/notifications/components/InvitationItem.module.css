@@ -97,7 +97,13 @@
 
 .acceptBtn:hover {
   background: var(--color-primary-hover, #1d4ed8);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .acceptBtn:hover {
   transform: translateY(-1px);
+  }
 }
 
 .declineBtn,

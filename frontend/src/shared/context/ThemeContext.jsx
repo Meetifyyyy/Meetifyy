@@ -12,7 +12,9 @@ const ThemeContext = createContext();
 function getThemeOrigin(options) {
   const isDesktop = typeof window !== 'undefined' && window.innerWidth > 768;
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280;
-  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 844;
+  const viewportHeight = typeof window !== 'undefined' 
+    ? (window.visualViewport?.height || window.innerHeight) 
+    : 844;
 
   // 1. Desktop layout: Origin is the profile picture avatar in the top-right header
   if (isDesktop) {
@@ -125,7 +127,7 @@ export function ThemeProvider({ children }) {
     // Measure live source element coordinates immediately at the moment of click
     const origin = getThemeOrigin(options);
     const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
+    const viewportHeight = window.visualViewport?.height || window.innerHeight;
 
     /*
      * `::view-transition-new(root)` is a replaced snapshot. Some Chromium

@@ -74,7 +74,13 @@
   background: #10b981;
   color: #ffffff;
   border-color: #10b981;
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .approveBtn:hover {
   transform: scale(1.05);
+  }
 }
 
 .rejectBtn {
@@ -95,7 +101,13 @@
   background: #ef4444;
   color: #ffffff;
   border-color: #ef4444;
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .rejectBtn:hover {
   transform: scale(1.05);
+  }
 }
 
 .noRequestsContainer {

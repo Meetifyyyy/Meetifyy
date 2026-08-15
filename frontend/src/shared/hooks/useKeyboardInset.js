@@ -3,15 +3,7 @@ import { useEffect } from 'react';
 /**
  * Tracks the on-screen keyboard via the visualViewport API and exposes its
  * height to CSS as `--kb-inset` on <html>, plus a `data-keyboard-open`
- * attribute. Mobile browsers do NOT shrink `100dvh` when the soft keyboard
- * opens (the keyboard is an overlay), so a fixed-height chat layout would let
- * the keyboard cover the input. Reading `visualViewport.height` lets us shrink
- * the chat container by exactly the keyboard's height so the input stays just
- * above it and the header stays pinned at the top.
- *
- * Writes are rAF-batched and value-deduped so a keyboard animation (which fires
- * many resize events) causes at most one style write per frame — no flicker,
- * no re-render (this only touches a CSS custom property, never React state).
+ * attribute.
  */
 export function useKeyboardInset() {
   useEffect(() => {

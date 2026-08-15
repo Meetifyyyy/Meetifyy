@@ -3,6 +3,7 @@ import { UsersIcon, TrendingUp, Sparkles, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@shared/hooks/useData';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { isImageUrl } from '@shared/utils/avatar';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -95,7 +96,10 @@ export default function SearchSidebar({ popularCommunities = [] }) {
               <div key={u.id} className={styles.personRow} onClick={() => navigate(`/profile/${u.username}`)}>
                 <Avatar src={u.avatar} name={u.displayName} size="36px" disableHover />
                 <div className={styles.personInfo}>
-                  <span className={styles.personName}>{u.displayName}</span>
+                  <span className={styles.personName} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    {u.displayName}
+                    <CollegeRepresentativeBadge isCampusRep={u.isCampusRep} size="sm" />
+                  </span>
                   <span className={styles.personHandle}>@{u.username}</span>
                 </div>
                 <FollowButton targetUsername={u.username} initialFollowing={u.isFollowing} size="sm" />

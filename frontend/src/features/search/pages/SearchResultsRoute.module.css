@@ -608,6 +608,11 @@
 }
 
 .crewCardWrapper > div:hover {
-  transform: none !important;
   box-shadow: none !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .crewCardWrapper > div:hover {
+  transform: none !important;
+  }
 }

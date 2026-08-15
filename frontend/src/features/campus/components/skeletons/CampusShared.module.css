@@ -125,7 +125,13 @@
 .headerSquareBtn:hover {
   background: rgba(0, 0, 0, 0.4);
   border-color: rgba(255, 255, 255, 0.2);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .headerSquareBtn:hover {
   transform: translateY(-1px);
+  }
 }
 
 .headerSquareBtn:active {

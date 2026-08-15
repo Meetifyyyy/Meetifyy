@@ -314,7 +314,7 @@ export default function MediaViewer() {
           
           const dampen = (val) => val * 0.85;
           const dragY = dampen(dy);
-          const windowHeight = window.innerHeight;
+          const windowHeight = window.visualViewport?.height || window.innerHeight;
           const progress = Math.min(Math.abs(dragY) / (windowHeight * 0.7), 1);
           
           const scale = 1 - (progress * 0.25);
@@ -343,11 +343,12 @@ export default function MediaViewer() {
           const dy = dragState.current.currentY - dragState.current.startY;
           const dt = Date.now() - dragState.current.startTime;
           const velocity = Math.abs(dy) / dt;
-          const threshold = window.innerHeight * 0.18;
+          const vh = window.visualViewport?.height || window.innerHeight;
+          const threshold = vh * 0.18;
           
           if (Math.abs(dy) > threshold || velocity > 0.65) {
             const sign = dy > 0 ? 1 : -1;
-            const finishY = sign * window.innerHeight;
+            const finishY = sign * vh;
             
             if (stageRef.current) {
               stageRef.current.style.transition = 'transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94)';

@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { Search, Clock, X, RefreshCw, AlertCircle, Calendar, ArrowLeft, Loader2, Sparkles, Users, Compass, Globe2, FileText } from 'lucide-react';
 import { useGlobalSearch } from '@features/search/hooks/useGlobalSearch';
 import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
+import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
@@ -81,7 +82,10 @@ const UserRow = React.memo(function UserRow({ data, onOpen }) {
     <div className={styles.resultCard} onClick={() => onOpen('user', data)}>
       <Avatar src={data.avatar} name={data.displayName} size="44px" disableHover />
       <div className={styles.feedInfo}>
-        <span className={styles.feedName}>{data.displayName}</span>
+        <span className={styles.feedName} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          {data.displayName}
+          <CollegeRepresentativeBadge isCampusRep={data.isCampusRep} size="sm" />
+        </span>
         <span className={styles.feedSub}>@{data.username}</span>
       </div>
       <div onClick={(e) => e.stopPropagation()}>

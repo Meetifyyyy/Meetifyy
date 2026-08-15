@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="ring-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2892FF" />
+      <stop offset="100%" stop-color="#054BC0" />
+    </linearGradient>
+
+    <linearGradient id="dark-bg-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#222326" />
+      <stop offset="100%" stop-color="#0A0B0C" />
+    </linearGradient>
+
+    <linearGradient id="blue-arc-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3FA0FF" />
+      <stop offset="100%" stop-color="#0456DF" />
+    </linearGradient>
+  </defs>
+
+  <!-- Outer Blue Ring (radius 230) -->
+  <circle cx="256" cy="256" r="230" fill="url(#ring-grad)" />
+
+  <!-- Inner Dark Circle - Reduced radius to 216 to increase outer blue ring width -->
+  <circle cx="256" cy="256" r="216" fill="url(#dark-bg-grad)" />
+
+  <!-- Arcs and sparkles - Scaled out by 10% to prevent overlap with the larger center mascot -->
+  <g transform="translate(256, 256) scale(1.12) translate(-256, -256)">
+    <!-- Divided Arc 1 (Blue, 6 ratio) -->
+    <!-- Using non-scaling-stroke to keep the 4px width constant despite scaling -->
+    <path d="M 134.4,377.6 A 172,172 0 0 1 162.3,111.7" fill="none" stroke="url(#blue-arc-grad)" stroke-width="4" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+
+    <!-- Divided Arc 2 (White, 4 ratio) -->
+    <path d="M 188.8,97.7 A 172,172 0 0 1 377.6,134.4" fill="none" stroke="#F5F7FA" stroke-width="4" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+    
+    <!-- White Arc -->
+    <path d="M 396.9,157.3 A 172,172 0 0 1 157.3,396.9" fill="none" stroke="#F5F7FA" stroke-width="4" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+
+    <!-- Sparkle Stars -->
+    <path d="M152,144 Q152,160 168,160 Q152,160 152,176 Q152,160 136,160 Q152,160 152,144 Z" fill="url(#blue-arc-grad)" />
+    <path d="M356,336 Q356,356 376,356 Q356,356 356,376 Q356,356 336,356 Q356,356 356,336 Z" fill="#FFFFFF" />
+
+    <!-- Dots (Placed exactly in the gaps on the circumference r=172) -->
+    <!-- Top-Right Gap (320 deg) -->
+    <circle cx="387.7" cy="145.5" r="7" fill="url(#blue-arc-grad)" />
+    <!-- Bottom-Left Gap (130 deg) -->
+    <circle cx="145.5" cy="387.7" r="7" fill="#FFFFFF" />
+    <!-- Top-Left Gap (242 deg) -->
+    <circle cx="175.3" cy="104.2" r="7" fill="url(#blue-arc-grad)" />
+  </g>
+
+  <!-- Center Mascot - Scaled up by 15% -->
+  <g transform="translate(256, 256) scale(1.15) translate(-256, -256)">
+    <!-- Blue extrusion base -->
+    <g transform="translate(0, 14)">
+      <polygon points="256.0,156.0 276.7,178.7 306.0,169.4 312.6,199.4 342.6,206.0 333.3,235.3 356.0,256.0 333.3,276.7 342.6,306.0 312.6,312.6 306.0,342.6 276.7,333.3 256.0,356.0 235.3,333.3 206.0,342.6 199.4,312.6 169.4,306.0 178.7,276.7 156.0,256.0 178.7,235.3 169.4,206.0 199.4,199.4 206.0,169.4 235.3,178.7" fill="#0456DF" stroke="#0456DF" stroke-width="24" stroke-linejoin="round" />
+    </g>
+    
+    <!-- Main white spiky shape -->
+    <g>
+      <polygon points="256.0,156.0 276.7,178.7 306.0,169.4 312.6,199.4 342.6,206.0 333.3,235.3 356.0,256.0 333.3,276.7 342.6,306.0 312.6,312.6 306.0,342.6 276.7,333.3 256.0,356.0 235.3,333.3 206.0,342.6 199.4,312.6 169.4,306.0 178.7,276.7 156.0,256.0 178.7,235.3 169.4,206.0 199.4,199.4 206.0,169.4 235.3,178.7" fill="#F8FAFC" stroke="#F8FAFC" stroke-width="24" stroke-linejoin="round" />
+    </g>
+
+    <!-- Test Tubes in the center -->
+    <g fill="#121314" stroke="#121314" stroke-width="5" stroke-linejoin="round">
+      <path d="M 200,226 H 232 V 234 H 226 V 270 A 10,10 0 0 1 206,270 V 234 H 200 Z" />
+      <path d="M 280,226 H 312 V 234 H 306 V 270 A 10,10 0 0 1 286,270 V 234 H 280 Z" />
+    </g>
+  </g>
+</svg>

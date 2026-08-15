@@ -66,14 +66,15 @@ export default function CustomTimePicker({
       const rect = containerRef.current.getBoundingClientRect();
       const popoverWidth = 200;
       const popoverHeight = 190;
-      const spaceBelow = window.innerHeight - rect.bottom;
+      const vh = window.visualViewport?.height || window.innerHeight;
+      const spaceBelow = vh - rect.bottom;
 
       let top = rect.bottom + 6;
       if (spaceBelow < popoverHeight && rect.top > spaceBelow) {
         top = rect.top - popoverHeight - 6;
       }
 
-      top = Math.max(12, Math.min(top, window.innerHeight - popoverHeight - 12));
+      top = Math.max(12, Math.min(top, vh - popoverHeight - 12));
       const left = Math.max(12, Math.min(rect.left, window.innerWidth - popoverWidth - 12));
 
       setPopoverStyle({
@@ -107,6 +108,7 @@ export default function CustomTimePicker({
       document.addEventListener('mousedown', handleClickOutside);
       window.addEventListener('scroll', handleScroll, true);
       window.addEventListener('resize', handleScroll);
+      window.visualViewport?.addEventListener('resize', handleScroll);
 
       setTimeout(() => {
         const selH = hoursColRef.current?.querySelector(`.${styles.selectedItem}`);
@@ -119,6 +121,7 @@ export default function CustomTimePicker({
       document.removeEventListener('mousedown', handleClickOutside);
       window.removeEventListener('scroll', handleScroll, true);
       window.removeEventListener('resize', handleScroll);
+      window.visualViewport?.removeEventListener('resize', handleScroll);
     };
   }, [isOpen]);
 
