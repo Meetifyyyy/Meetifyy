@@ -127,13 +127,19 @@ export function ThemeProvider({ children }) {
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
-    // Dynamically calculate the maximum distance from origin to all 4 viewport corners
-    const maxRadius = Math.ceil(
-      Math.hypot(
-        Math.max(origin.x, viewportWidth - origin.x),
-        Math.max(origin.y, viewportHeight - origin.y)
-      )
-    );
+    /*
+     * `::view-transition-new(root)` is a replaced snapshot. Some Chromium
+     * configurations resolve a pixel clip-path against that snapshot's raster
+     * box, rather than the CSS viewport that `getBoundingClientRect()` uses.
+     * Normalize the measured CSS-pixel point to its viewport fraction before
+     * handing it to the snapshot. Percentages are then resolved against the
+     * snapshot's own reference box, preserving the same visual location at
+     * every browser zoom and display scale.
+     */
+    const transitionOrigin = {
+      x: `${(origin.x / viewportWidth) * 100}%`,
+      y: `${(origin.y / viewportHeight) * 100}%`,
+    };
 
     const prefersReducedMotion =
       typeof window !== 'undefined' &&
@@ -148,8 +154,8 @@ export function ThemeProvider({ children }) {
 
     // Pre-bind origin coordinates to CSS custom properties before transition begins
     // to guarantee frame 0 renders at the exact origin before WAAPI executes
-    document.documentElement.style.setProperty('--vt-origin-x', `${origin.x}px`);
-    document.documentElement.style.setProperty('--vt-origin-y', `${origin.y}px`);
+    document.documentElement.style.setProperty('--vt-origin-x', transitionOrigin.x);
+    document.documentElement.style.setProperty('--vt-origin-y', transitionOrigin.y);
 
     document.documentElement.classList.add('theme-transitioning');
     isTransitioningRef.current = true;
@@ -166,8 +172,10 @@ export function ThemeProvider({ children }) {
       transition.ready
         .then(() => {
           const clipPathFrames = [
-            `circle(0px at ${origin.x}px ${origin.y}px)`,
-            `circle(${maxRadius}px at ${origin.x}px ${origin.y}px)`,
+            `circle(0px at ${transitionOrigin.x} ${transitionOrigin.y})`,
+            // Deliberately exceeds the farthest viewport corner without relying
+            // on the snapshot's pixel dimensions for radius calculation.
+            `circle(200vmax at ${transitionOrigin.x} ${transitionOrigin.y})`,
           ];
 
           const anim = document.documentElement.animate(
@@ -175,8 +183,8 @@ export function ThemeProvider({ children }) {
               clipPath: clipPathFrames,
             },
             {
-              duration: 520,
-              easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+              duration: 800,
+              easing: 'cubic-bezier(0.42, 0, 0.58, 1)',
               fill: 'forwards',
               pseudoElement: '::view-transition-new(root)',
             }

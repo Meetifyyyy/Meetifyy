@@ -709,14 +709,40 @@ html.hide-window-scrollbar::-webkit-scrollbar {
 }
 
 /* === Circular Expanding View Transition Theme Transition === */
-::view-transition-group(root) {
-  animation: none !important;
+/*
+ * getBoundingClientRect() returns viewport-relative CSS pixels. Keep the
+ * generated transition tree in that exact coordinate space: the root snapshot
+ * must be a fixed viewport layer, rather than inheriting a document/content
+ * sized box (which shifts a pixel-based clip-path at browser zoom levels).
+ */
+::view-transition {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
 }
 
+::view-transition-group(root) {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  animation: none !important;
+  transform: none !important;
+  transform-origin: 0 0 !important;
+}
+
+::view-transition-image-pair(root),
 ::view-transition-old(root),
 ::view-transition-new(root) {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   animation: none !important;
   mix-blend-mode: normal !important;
+  transform: none !important;
+  transform-origin: 0 0 !important;
 }
 
 ::view-transition-old(root) {
