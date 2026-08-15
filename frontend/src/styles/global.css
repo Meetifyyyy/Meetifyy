@@ -484,36 +484,6 @@ nav a.active {
   transition: opacity var(--transition-normal), transform var(--transition-normal);
 }
 
-/* ---------- Theme Radial Transition ---------- */
-/* Freeze CSS transitions on the real page while the overlay animates */
-.theme-transitioning,
-.theme-transitioning * {
-  transition: none !important;
-}
-
-:root {
-  --vt-x: 50%;
-  --vt-y: 50%;
-}
-
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
-}
-
-::view-transition-image-pair(root) {
-  isolation: auto;
-}
-
-::view-transition-old(root) {
-  z-index: 1;
-}
-
-::view-transition-new(root) {
-  z-index: 2;
-  clip-path: circle(0px at var(--vt-x) var(--vt-y));
-}
 
 .dropdown.open {
   opacity: 1;
@@ -738,14 +708,15 @@ html.hide-window-scrollbar::-webkit-scrollbar {
   flex-shrink: 0;
 }
 
-/* === Top-to-Bottom View Transition Theme Curtain === */
+/* === Circular Expanding View Transition Theme Transition === */
+::view-transition-group(root) {
+  animation: none !important;
+}
+
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none !important;
   mix-blend-mode: normal !important;
-  will-change: clip-path;
-  transform: translateZ(0);
-  backface-visibility: hidden;
 }
 
 ::view-transition-old(root) {
@@ -754,9 +725,16 @@ html.hide-window-scrollbar::-webkit-scrollbar {
 
 ::view-transition-new(root) {
   z-index: 9999 !important;
+  will-change: clip-path;
+  clip-path: circle(0px at var(--vt-origin-x, -9999px) var(--vt-origin-y, -9999px));
+}
+
+::view-transition-image-pair(root) {
+  isolation: auto !important;
 }
 
 /* Disable element-level CSS transitions during View Transition to prevent double fading/flashing */
+html.theme-transitioning,
 html.theme-transitioning *,
 html.theme-transitioning *::before,
 html.theme-transitioning *::after {

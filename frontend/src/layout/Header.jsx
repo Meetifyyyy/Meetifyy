@@ -252,9 +252,11 @@ export default function Header({ variant = 'dashboard' }) {
           
           <button
             className={styles.drawerThemeToggleBtn}
+            data-theme-toggle="true"
             onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              toggleTheme({ clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
+              e.stopPropagation();
+              const btn = e.currentTarget;
+              toggleTheme({ originElement: btn });
             }}
             aria-label="Toggle theme"
             title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
@@ -280,6 +282,7 @@ export default function Header({ variant = 'dashboard' }) {
           <div className={`${styles.avatarWrap} ${styles.desktopOnlyAvatar}`}>
             <div
               ref={avatarRef}
+              data-header-avatar="true"
               className={styles.userAvatar}
               onClick={(e) => { e.stopPropagation(); setDropdownOpen(!dropdownOpen); setNotifOpen(false); }}
               role="button"
@@ -337,7 +340,7 @@ export default function Header({ variant = 'dashboard' }) {
                 onClick={(e) => {
                   e.stopPropagation();
                   setDropdownOpen(false);
-                  toggleTheme();
+                  toggleTheme({ originElement: avatarRef.current });
                 }}
               >
                 {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
