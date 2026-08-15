@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useWindowVirtualizer } from '@tanstack/react-virtual';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { EmptyState } from '@shared/components/ui/StateViews';
 import NotificationItem from './NotificationItem';
 import { useData } from '@shared/hooks/useData';
@@ -10,7 +10,8 @@ export default function NotificationList({
   onNotifClick,
   onAcceptJoinRequest,
   onRejectJoinRequest,
-  pageStyles
+  pageStyles,
+  scrollRef
 }) {
   const { users, getUserById } = useData();
 
@@ -87,8 +88,9 @@ export default function NotificationList({
     return list;
   }, [groupedNotifications]);
 
-  const virtualizer = useWindowVirtualizer({
+  const virtualizer = useVirtualizer({
     count: flatItems.length,
+    getScrollElement: () => scrollRef?.current,
     estimateSize: (index) => (flatItems[index]?.type === 'header' ? (index === 0 ? 38 : 52) : 68),
     overscan: 6,
   });

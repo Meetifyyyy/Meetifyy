@@ -23,6 +23,7 @@ import styles from './Header.module.css';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, getMediaUrl } from '@shared/api/apiClient';
+import dashboardStyles from './DashboardLayout.module.css';
 
 const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
   const location = useLocation();
@@ -57,7 +58,7 @@ const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
   );
 };
 
-export default function Header({ variant = 'dashboard' }) {
+export default function Header({ variant = 'dashboard', wide = false }) {
   const { loading, logout, currentUser } = useAuth();
   const queryClient = useQueryClient();
   const { communities: communitiesDataMap } = useCommunities();
@@ -269,9 +270,19 @@ export default function Header({ variant = 'dashboard' }) {
 
       {/* Center Search Bar */}
       {variant === 'dashboard' && (
-        <div className={styles.headerSearch}>
-          <GlobalSearch />
-        </div>
+        wide ? (
+          <div className={styles.headerSearchLegacy}>
+            <GlobalSearch />
+          </div>
+        ) : (
+          <div className={`${dashboardStyles.dashboard} ${styles.headerGridAbsolute}`}>
+            <div className={styles.gridEmptyCol} />
+            <div className={styles.headerSearchGridMode}>
+              <GlobalSearch />
+            </div>
+            <div className={styles.gridEmptyCol} />
+          </div>
+        )
       )}
 
       {variant === 'dashboard' ? (

@@ -6,7 +6,7 @@ import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar'
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
-import PageLayout from '@layout/PageLayout';
+import RightPanel, { NotificationsActivity, OnlineFriends, UpcomingEvents } from '@layout/RightPanel';
 import FollowButton from '@shared/components/ui/FollowButton';
 import { useData } from '@shared/hooks/useData';
 import { useDebouncedState } from '@shared/hooks/useDebounce';
@@ -452,8 +452,9 @@ export default function SearchResultsRoute() {
     : 'Suggested for you';
 
   return (
-    <PageLayout containerRef={containerRef} className="centre--search">
-      <div className={styles.searchShell}>
+    <>
+      <main ref={containerRef} className="centre animate-in">
+        <div className={styles.searchShell}>
         {/* Sticky Search Header */}
         <div className={styles.header} role="search">
           <div className={styles.topRow}>
@@ -620,6 +621,12 @@ export default function SearchResultsRoute() {
           )}
         </div>
       </div>
-    </PageLayout>
+      </main>
+      <RightPanel className="animate-in">
+        <OnlineFriends />
+        <NotificationsActivity />
+        <UpcomingEvents />
+      </RightPanel>
+    </>
   );
 }

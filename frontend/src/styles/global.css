@@ -37,7 +37,8 @@ video,
 
 body {
   font-family: var(--font-family-sans);
-  background: var(--color-bg-main);
+  background: radial-gradient(circle at center, var(--bg-gradient-center) 0%, var(--bg-gradient-mid) 45%, var(--bg-gradient-edge) 100%) fixed;
+  background-color: var(--bg-gradient-mid, #f0f5fc);
   color: var(--color-text-main);
   min-height: 100dvh;
   display: flex;
@@ -341,6 +342,8 @@ html {
      doesn't trigger that promotion, and overflow-y stays genuinely `visible` —
      restoring the window as the one true scroll container app-wide. */
   overflow-x: clip;
+  background: radial-gradient(circle at center, var(--bg-gradient-center) 0%, var(--bg-gradient-mid) 45%, var(--bg-gradient-edge) 100%) fixed;
+  background-color: var(--bg-gradient-mid, #f0f5fc);
 }
 
 #root {
@@ -443,10 +446,16 @@ nav a.active {
   top: 0;
   left: 0;
   width: 100vw;
-  height: 100dvh;
-  background: var(--color-bg-main);
+  height: 100%;
+  min-height: 100dvh;
+  background: radial-gradient(circle at center, var(--bg-gradient-center) 0%, var(--bg-gradient-mid) 45%, var(--bg-gradient-edge) 100%);
   z-index: -1;
   pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .header-search {

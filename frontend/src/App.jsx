@@ -313,7 +313,7 @@ export default function App() {
               element: <DashboardLayoutWrapper />,
               children: [
             { path: '/home',                       element: withBoundary(<FeedRoute />, <HomeSkeleton />) },
-            { path: '/search',                     element: withBoundary(<SearchResultsRoute />, <SearchSkeleton />), handle: { wide: true } },
+            { path: '/search',                     element: withBoundary(<SearchResultsRoute />, <SearchSkeleton />) },
             { path: '/communities',                element: withBoundary(<CommunitiesRoute />, <CommunitiesSkeleton />), handle: { wide: true } },
             { path: '/communities/:id',            element: withBoundary(<CommunityDetailRoute />, null), handle: { wide: true } },
             { path: '/messages/:param1?/:param2?', element: withBoundary(<MessagesRoute />, null), handle: { wide: true } },

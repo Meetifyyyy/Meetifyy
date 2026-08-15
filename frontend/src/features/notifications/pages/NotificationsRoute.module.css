@@ -1,17 +1,58 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  padding: 1.5rem 1.75rem;
   width: 100%;
-  height: calc(100dvh - 60px - 0.5rem);
   max-height: calc(100dvh - 60px - 0.5rem);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   box-sizing: border-box;
   background: var(--color-bg-white, #ffffff);
   border-radius: var(--radius-xl, 20px);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-dark, rgba(0, 0, 0, 0.2)) transparent;
+}
+
+.page::-webkit-scrollbar {
+  width: 6px;
+  display: block;
+}
+
+.page::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.page::-webkit-scrollbar-thumb {
+  background: var(--color-border-dark, rgba(0, 0, 0, 0.2));
+  border-radius: var(--radius-full, 9999px);
+}
+
+.page::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-light, rgba(0, 0, 0, 0.4));
+}
+
+:global([data-theme="dark"]) .page {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+:global([data-theme="dark"]) .page::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+:global([data-theme="dark"]) .page::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.headerArea {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: inherit;
+  padding: 1.5rem 1.75rem 0.5rem;
+  flex-shrink: 0;
 }
 
 .header {
@@ -103,11 +144,8 @@
 .list {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
+  gap: 1.25rem;
+  padding: 0.5rem 1.75rem 2.5rem;
 }
 
 .group {
@@ -210,8 +248,8 @@
 
 @media (max-width: 768px) {
   .page {
-    padding: 0rem 0rem 90px;
-    gap: 1rem;
+    padding: 0;
+    gap: 0;
     background: transparent;
     border: none;
     box-shadow: none;
@@ -221,8 +259,14 @@
     overflow: visible;
   }
 
+  .headerArea {
+    position: static;
+    background: transparent;
+    padding: 0.5rem 0.5rem 0.25rem;
+  }
+
   .list {
-    overflow-y: visible;
+    padding: 0.5rem 0.5rem 90px;
   }
 
   .title {

@@ -1,11 +1,8 @@
-/* ─── Shell ──────────────────────────────────────────────────────────────── */
 .searchShell {
   display: flex;
   flex-direction: column;
   width: 100%;
   max-width: 100%;
-  height: 100%;
-  min-height: 0;
   margin: 0 auto;
   background: var(--color-bg-white);
   border: 1px solid var(--color-border);
@@ -21,11 +18,10 @@
   z-index: 20;
   flex-shrink: 0;
   background: var(--color-bg-white);
-  padding: 1.1rem 1.25rem 0.9rem;
-  border-bottom: 1px solid var(--color-border-light);
+  padding: 0.5rem 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .topRow {
@@ -253,23 +249,14 @@
 /* ─── Results Body ───────────────────────────────────────────────────────── */
 .body {
   flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  /* Scrollable but with the scrollbar hidden (Firefox / IE / WebKit). */
-  scrollbar-width: none;
-  -ms-overflow-style: none;
   background: var(--color-bg-white);
-}
-
-.body::-webkit-scrollbar {
-  display: none;
 }
 
 .resultsList {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.85rem;
+  gap: 0.5rem;
+  padding: 0.5rem;
 }
 
 .sectionLabel {
@@ -278,7 +265,7 @@
   color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 0.3rem 0.35rem 0.1rem;
+  padding: 0.5rem 0.35rem 0.25rem;
 }
 
 /* ─── Result Card ─────────────────────────────────────────────────────────── */
@@ -549,13 +536,11 @@
     border: none;
     border-radius: 0;
     box-shadow: none;
-    height: 100dvh;
-    max-height: 100dvh;
   }
 
   .header {
-    padding: 0.75rem 0.75rem 0.65rem;
-    padding-top: max(0.75rem, env(safe-area-inset-top));
+    padding: 0.5rem 0.75rem;
+    padding-top: max(0.5rem, env(safe-area-inset-top));
   }
 
   .searchPill {
@@ -565,8 +550,8 @@
   }
 
   .resultsList {
-    padding: 0.6rem;
-    padding-bottom: calc(0.6rem + env(safe-area-inset-bottom));
+    padding: 0.5rem 0.6rem;
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
   }
 
   .resultCard {
@@ -588,13 +573,6 @@
 
   .feedName {
     font-size: 0.89rem;
-  }
-
-  /* Momentum scrolling + isolate the scroll container so the sticky header and
-     result rows don't repaint the whole shell while flinging. */
-  .body {
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
   }
 
   /* Keep the header the same height whether the "no query" (recent searches, two lines)

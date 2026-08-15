@@ -23,7 +23,6 @@ export default function DashboardLayoutWrapper() {
     match.pathname.startsWith('/post') ||
     match.pathname.startsWith('/saved') ||
     match.pathname.startsWith('/settings') ||
-    match.pathname.startsWith('/search') ||
     /^\/communities\/.+/.test(match.pathname)
   );
   // The BottomNav stays visible with a conversation open: the messages layout
@@ -34,7 +33,6 @@ export default function DashboardLayoutWrapper() {
   const hideBottomNav = matches.some(match =>
     match.pathname.startsWith('/saved') ||
     match.pathname.startsWith('/settings') ||
-    match.pathname.startsWith('/search') ||
     match.pathname.startsWith('/communities/')
   );
 
@@ -56,7 +54,7 @@ export default function DashboardLayoutWrapper() {
   return (
     <InstantMatchProvider>
       <Background />
-      <Header variant="dashboard" />
+      <Header variant="dashboard" wide={isWide} />
       <DashboardLayout wide={isWide} noPaddingMobile={noPadding}>
         <Sidebar onCommunityClick={handleCommunityClick} />
         <Outlet />

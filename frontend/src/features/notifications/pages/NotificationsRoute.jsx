@@ -34,6 +34,7 @@ export default function NotificationsRoute() {
   const navigate = useNavigate();
   const loadMoreRef = useRef(null);
   const hasMarkedReadRef = useRef(false);
+  const pageRef = useRef(null);
 
   // Automatically mark all notifications as read once when opening notifications page
   useEffect(() => {
@@ -261,15 +262,17 @@ export default function NotificationsRoute() {
 
   return (
     <main className="centre centre-wide animate-in">
-      <div className={styles.page}>
-        <PageHeader
-          title="Notifications"
-          subtitle="Stay updated with your connections and activities."
-          backPath="/home"
-          tabs={headerTabs}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-        />
+      <div className={styles.page} ref={pageRef}>
+        <div className={styles.headerArea}>
+          <PageHeader
+            title="Notifications"
+            subtitle="Stay updated with your connections and activities."
+            backPath="/home"
+            tabs={headerTabs}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+          />
+        </div>
 
         <div className={styles.list}>
           {isLoading ? (
@@ -308,6 +311,7 @@ export default function NotificationsRoute() {
               }}
               getUserById={getUserById}
               pageStyles={styles}
+              scrollRef={pageRef}
             />
           )}
           {activeTab !== 'invitations' && isFetchingNextPage && !isLoading && (
