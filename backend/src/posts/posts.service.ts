@@ -137,6 +137,8 @@ export class PostsService {
             displayName: true,
             isCampusRep: true,
             avatar: true,
+            collegeId: true,
+            college: { select: { id: true, name: true } },
           },
         },
         media: true,
@@ -291,7 +293,9 @@ export class PostsService {
           'displayName', u."displayName",
           'avatar', u.avatar,
           'isCampusRep', u."isCampusRep",
-          'collegeId', u."collegeId"
+          'collegeId', u."collegeId",
+          'collegeName', col.name,
+          'college', CASE WHEN col.id IS NOT NULL THEN JSON_BUILD_OBJECT('id', col.id, 'name', col.name) ELSE NULL END
         ) AS author,
         COALESCE(
           (
@@ -335,6 +339,7 @@ export class PostsService {
         ELSE NULL END AS "userVotedOptionId"
       FROM "Post" p
       JOIN "User" u ON p."authorId" = u.id
+      LEFT JOIN "College" col ON u."collegeId" = col.id
       LEFT JOIN "Community" c ON p."communityId" = c.id
       WHERE p."deletedAt" IS NULL
         AND (p."communityId" IS NULL OR c."deletedAt" IS NULL)
@@ -496,6 +501,8 @@ export class PostsService {
             displayName: true,
             isCampusRep: true,
             avatar: true,
+            collegeId: true,
+            college: { select: { id: true, name: true } },
           },
         },
         media: {
@@ -896,6 +903,8 @@ export class PostsService {
     displayName: true,
     isCampusRep: true,
     avatar: true,
+    collegeId: true,
+    college: { select: { id: true, name: true } },
   } as const;
 
   /**
@@ -1044,7 +1053,7 @@ export class PostsService {
       this.prisma.post.findUnique({
         where: { id: postId, deletedAt: null },
         include: {
-          author: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true } },
+          author: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
           community: { select: { id: true, name: true, deletedAt: true } },
           pollOptions: { include: { _count: { select: { votes: true } } } },
           pollVotes: userId ? { where: { userId } } : false,
@@ -1190,7 +1199,7 @@ export class PostsService {
       include: {
         post: {
           include: {
-            author: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true } },
+            author: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
             media: true,
             pollOptions: { include: { _count: { select: { votes: true } } } },
             pollVotes: userId ? { where: { userId } } : false,

@@ -104,16 +104,20 @@ function getThemeOrigin(options) {
 
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved) return saved;
+    try {
+      const saved = localStorage.getItem('theme');
+      if (saved) return saved;
+    } catch (_) {}
     return 'light';
   });
 
   const isTransitioningRef = useRef(false);
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
+    try {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('theme', theme);
+    } catch (_) {}
   }, [theme]);
 
   const toggleTheme = (options) => {
@@ -121,7 +125,9 @@ export function ThemeProvider({ children }) {
       return;
     }
 
-    localStorage.setItem('theme_preference_set', 'true');
+    try {
+      localStorage.setItem('theme_preference_set', 'true');
+    } catch (_) {}
     const newTheme = theme === 'light' ? 'dark' : 'light';
 
     // Measure live source element coordinates immediately at the moment of click

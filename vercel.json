@@ -16,7 +16,7 @@
     { "source": "/registerSW.js", "destination": "/registerSW.js" },
     { "source": "/manifest.webmanifest", "destination": "/manifest.webmanifest" },
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/|fonts/|icons/|favicon\\.png|.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }
   ],

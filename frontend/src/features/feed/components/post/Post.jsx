@@ -4,6 +4,7 @@ import { isImageUrl } from '@shared/utils/avatar';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
 import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
+import { getCollegeName } from '@shared/utils/user';
 import RichText from '@shared/components/mentions/RichText';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities } from '@shared/hooks/useCommunities';
@@ -179,6 +180,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
 
   const author = postData.author || { id: authorId, displayName: 'User', username: 'user', avatar: null };
   const authorCollege = (author.collegeId && communities) ? communities[author.collegeId] : null;
+  const authorCollegeName = getCollegeName(author, '') || authorCollege?.name || '';
 
   const formatExactDate = (timestamp) => {
     if (!timestamp) return '';
@@ -238,7 +240,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
         <div className={styles.postUser}>
           <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }} onClick={(e) => e.stopPropagation()}>
             <div className={`hover-underline ${styles.postName}`}>{author.displayName}</div>
-            <CollegeRepresentativeBadge isCampusRep={author.isCampusRep} collegeName={authorCollege?.name} size="md" />
+            <CollegeRepresentativeBadge isCampusRep={author.isCampusRep} collegeName={authorCollegeName} user={author} size="md" />
 
             {authorCollege && (
               <img

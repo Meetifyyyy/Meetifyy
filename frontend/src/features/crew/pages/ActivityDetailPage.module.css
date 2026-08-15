@@ -448,6 +448,12 @@
   font-weight: 400;
 }
 
+.hostNameRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .hostName {
   font-size: 1rem;
   font-weight: 400;
@@ -755,6 +761,12 @@
 .attendeeMeta {
   display: flex;
   flex-direction: column;
+}
+
+.attendeeNameRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .attendeeName {

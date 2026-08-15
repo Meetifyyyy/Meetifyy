@@ -25,21 +25,31 @@ import SavedPageSkeleton from './features/feed/components/skeletons/SavedPageSke
 
 function lazyWithRetry(componentImport) {
   return lazy(async () => {
-    const pageHasAlreadyBeenReloaded = JSON.parse(
-      window.sessionStorage.getItem('page_reloaded_on_chunk_error') || 'false'
-    );
+    let pageHasAlreadyBeenReloaded = false;
+    try {
+      pageHasAlreadyBeenReloaded = JSON.parse(
+        window.sessionStorage.getItem('page_reloaded_on_chunk_error') || 'false'
+      );
+    } catch (_) {}
+
     try {
       const component = await componentImport();
-      window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'false');
+      try { window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'false'); } catch (_) {}
       return component;
     } catch (error) {
+      const msg = error?.message || '';
       const isChunkError =
         error?.name === 'ChunkLoadError' ||
-        error?.message?.includes('Failed to fetch dynamically imported module') ||
-        error?.message?.includes('Importing a module script failed');
+        msg.includes('Failed to fetch dynamically imported module') ||
+        msg.includes('Importing a module script failed') ||
+        msg.includes('Failed to load module script') ||
+        msg.includes('MIME type') ||
+        msg.includes('Strict MIME type checking') ||
+        msg.includes('dynamically imported module') ||
+        msg.includes('Loading chunk');
 
       if (isChunkError && !pageHasAlreadyBeenReloaded) {
-        window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'true');
+        try { window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'true'); } catch (_) {}
         try {
           if ('serviceWorker' in navigator) {
             const registrations = await navigator.serviceWorker.getRegistrations();
@@ -52,11 +62,13 @@ function lazyWithRetry(componentImport) {
         } catch {
           // ignore
         }
-        window.location.reload();
+        const url = new URL(window.location.href);
+        url.searchParams.set('_v', Date.now().toString());
+        window.location.replace(url.toString());
         return new Promise(() => {}); // Hold until reload finishes
       }
 
-      window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'false');
+      try { window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'false'); } catch (_) {}
       throw error;
     }
   });

@@ -209,6 +209,24 @@ export class UploadsController {
       // Fallback below
     }
 
+    // If a thumbnail variant was requested but does not exist, try to fall back to the original image
+    if (/_thumb\.(webp|jpe?g|png)$/i.test(key)) {
+      const baseKey = key.replace(/_thumb\.(webp|jpe?g|png)$/i, '');
+      const candidateExts = ['webp', 'jpg', 'jpeg', 'png', 'gif'];
+      for (const ext of candidateExts) {
+        const origKey = `${baseKey}.${ext}`;
+        try {
+          if (await this.storageService.exists(origKey)) {
+            const origUrl = await this.storageService.getResolvedPublicUrl(origKey);
+            if (origUrl) {
+              res.setHeader('Cache-Control', 'public, max-age=3600');
+              return res.redirect(origUrl);
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     if (folder === 'avatars' || folder === 'avatar' || folder === 'users' || key.includes('avatar')) {
       res.setHeader('Content-Type', 'image/svg+xml');
       res.setHeader('Cache-Control', 'public, max-age=86400');

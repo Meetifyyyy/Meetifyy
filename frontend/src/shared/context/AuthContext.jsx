@@ -22,15 +22,15 @@ function isValidUser(u) {
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(() => {
-    const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) {
-      try {
+    try {
+      const savedUser = localStorage.getItem('currentUser');
+      if (savedUser) {
         const parsed = JSON.parse(savedUser);
         if (isValidUser(parsed)) {
           return parsed;
         }
-      } catch (e) {}
-    }
+      }
+    } catch (e) {}
     return null;
   });
   
@@ -77,7 +77,7 @@ export function AuthProvider({ children }) {
               preferences: syncedUser.settings || prev?.preferences || prev?.settings,
               isNewUser: syncedUser.profileCompleted !== true
             };
-            localStorage.setItem('currentUser', JSON.stringify(mergedUser));
+            try { localStorage.setItem('currentUser', JSON.stringify(mergedUser)); } catch (_) {}
             return mergedUser;
           });
 
@@ -125,8 +125,14 @@ export function AuthProvider({ children }) {
        return;
      }
 
+    // Safety timeout: Ensure loading is never permanently true on slow/offline mobile devices
+    const authTimeout = setTimeout(() => {
+      setLoading(false);
+    }, 3000);
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      clearTimeout(authTimeout);
       // ─── Recovery session guard ────────────────────────────────────────
       // If this tab was opened from a password recovery link, supabase.js
       // wrote 'sb-pwreset-pending' to sessionStorage BEFORE createClient()
@@ -148,11 +154,14 @@ export function AuthProvider({ children }) {
 
       if (!session) {
         setCurrentUser(null);
-        localStorage.removeItem('currentUser');
+        try { localStorage.removeItem('currentUser'); } catch (_) {}
       }
       if (!isLoggingOutRef.current) {
         setSession(session);
       }
+      setLoading(false);
+    }).catch(() => {
+      clearTimeout(authTimeout);
       setLoading(false);
     });
 

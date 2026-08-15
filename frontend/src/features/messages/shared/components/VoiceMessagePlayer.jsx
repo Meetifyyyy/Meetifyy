@@ -107,27 +107,31 @@ export default function VoiceMessagePlayer({ src, audioUrl, fromMe, isMe }) {
   const progressPercent = activeDuration > 0 ? Math.min(100, Math.max(0, (currentTime / activeDuration) * 100)) : 0;
 
   const [isInvalidBlob, setIsInvalidBlob] = useState(false);
+  const isValidSource = Boolean(audioSrc && !isInvalidBlob);
 
   return (
     <div className={`${styles.voicePlayerContainer} ${isFromMe ? styles.voicePlayerMe : ''}`}>
-      <audio
-        ref={audioRef}
-        src={isInvalidBlob ? null : audioSrc}
-        preload="none"
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        onDurationChange={handleDurationChange}
-        onEnded={handleEnded}
-        onError={() => {
-          setIsPlaying(false);
-          setIsInvalidBlob(true);
-        }}
-      />
+      {isValidSource && (
+        <audio
+          ref={audioRef}
+          src={audioSrc}
+          preload="none"
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onDurationChange={handleDurationChange}
+          onEnded={handleEnded}
+          onError={() => {
+            setIsPlaying(false);
+            setIsInvalidBlob(true);
+          }}
+        />
+      )}
       <button
         type="button"
         className={styles.voicePlayBtn}
         onClick={togglePlay}
-        title={isPlaying ? 'Pause' : 'Play'}
+        disabled={!isValidSource}
+        title={!isValidSource ? 'Audio unavailable' : isPlaying ? 'Pause' : 'Play'}
       >
         {isPlaying ? (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">

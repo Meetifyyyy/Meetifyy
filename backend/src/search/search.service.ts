@@ -163,6 +163,9 @@ export class SearchService {
               displayName: true,
               avatar: true,
               bio: true,
+              isCampusRep: true,
+              collegeId: true,
+              college: { select: { id: true, name: true } },
               followers: { select: { followerId: true } },
             },
             take: isDiscovery ? 6 : limit * 2,
@@ -213,7 +216,7 @@ export class SearchService {
               createdAt: true,
               likeCount: true,
               commentCount: true,
-              author: { select: { id: true, username: true, displayName: true, avatar: true } },
+              author: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
               media: {
                 select: {
                   id: true,
@@ -259,10 +262,10 @@ export class SearchService {
               members: {
                 select: {
                   userId: true,
-                  user: { select: { id: true, username: true, displayName: true, avatar: true } },
+                  user: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
                 },
               },
-              creator: { select: { id: true, username: true, displayName: true, avatar: true } },
+              creator: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
             },
             take: activityFetchLimit,
             orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
@@ -439,7 +442,7 @@ export class SearchService {
           deletedAt: null,
           ...(suggestionExcludedUserIds.length > 0 ? { id: { notIn: suggestionExcludedUserIds } } : {}),
         },
-        select: { id: true, username: true, displayName: true, avatar: true },
+        select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } },
         take: 5,
       }),
       this.prisma.community.findMany({

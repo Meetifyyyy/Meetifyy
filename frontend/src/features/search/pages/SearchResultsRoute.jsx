@@ -84,7 +84,7 @@ const UserRow = React.memo(function UserRow({ data, onOpen }) {
       <div className={styles.feedInfo}>
         <span className={styles.feedName} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
           {data.displayName}
-          <CollegeRepresentativeBadge isCampusRep={data.isCampusRep} size="sm" />
+          <CollegeRepresentativeBadge isCampusRep={data.isCampusRep} user={data} size="sm" />
         </span>
         <span className={styles.feedSub}>@{data.username}</span>
       </div>

@@ -243,6 +243,7 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
 
 function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = null, height = null, isInline = false, hasText = false, onOpenMediaModal }) {
   const videoRef = useRef(null);
+  const [videoError, setVideoError] = useState(false);
   const resolvedSrc = src ? getMediaUrl(src) : '';
   const resolvedPoster = poster ? getMediaUrl(poster) : '';
   const aspect = (width && height) ? (width / height) : (16 / 9);
@@ -252,6 +253,7 @@ function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = n
 
   const handlePlayClick = (e) => {
     e.stopPropagation();
+    if (videoError || !resolvedSrc) return;
     if (onOpenMediaModal) {
       onOpenMediaModal(resolvedSrc, 'video');
     } else if (videoRef.current) {
@@ -266,6 +268,15 @@ function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = n
   const handleLoadedMetadata = () => {
     // Media dimension resizing is removed; sizing is purely CSS + --aspect now.
   };
+
+  if (videoError || !resolvedSrc) {
+    return (
+      <div className={`${styles.msgMediaErrorCard} ${!isInline ? styles.msgMediaErrorStandalone : ''}`}>
+        <AlertCircle size={24} style={{ opacity: 0.5 }} />
+        <span style={{ fontSize: '0.72rem', opacity: 0.6, marginTop: '4px' }}>Video unavailable</span>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -289,6 +300,7 @@ function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = n
         onLoadedMetadata={handleLoadedMetadata}
         onLoadedData={handleLoadedMetadata}
         onCanPlay={handleLoadedMetadata}
+        onError={() => setVideoError(true)}
         className={styles.msgMediaImgVisible}
         style={{
           display: 'block',

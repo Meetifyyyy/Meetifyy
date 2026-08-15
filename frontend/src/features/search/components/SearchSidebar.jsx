@@ -98,7 +98,7 @@ export default function SearchSidebar({ popularCommunities = [] }) {
                 <div className={styles.personInfo}>
                   <span className={styles.personName} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     {u.displayName}
-                    <CollegeRepresentativeBadge isCampusRep={u.isCampusRep} size="sm" />
+                    <CollegeRepresentativeBadge isCampusRep={u.isCampusRep} user={u} size="sm" />
                   </span>
                   <span className={styles.personHandle}>@{u.username}</span>
                 </div>

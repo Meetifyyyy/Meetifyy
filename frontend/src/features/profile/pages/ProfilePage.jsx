@@ -425,7 +425,7 @@ export default function ProfilePage() {
 
               <h1 className={s.name}>
                 {effectiveUser.displayName || effectiveUser.name || effectiveUser.username}
-                <CollegeRepresentativeBadge isCampusRep={effectiveUser.isCampusRep} collegeName={universityName} size="lg" />
+                <CollegeRepresentativeBadge isCampusRep={effectiveUser.isCampusRep} collegeName={universityName} user={effectiveUser} size="lg" />
               </h1>
               <p className={s.username}>@{effectiveUser.username}</p>
               {effectiveUser.bio && <p className={s.bio}>{effectiveUser.bio}</p>}

@@ -145,8 +145,8 @@
 
 .msgMeta {
   display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
+  align-items: center;
+  gap: 0.35rem;
 }
 .msgName {
   font-size: 0.74rem;

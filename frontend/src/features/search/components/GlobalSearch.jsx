@@ -359,7 +359,7 @@ function renderSection(label, items, type, selectedIndex, activeSuggestions, goT
             <div className={styles.dropdownItemText}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                 {type === 'user' ? (entity.displayName || entity.username) : (entity.name || entity.title)}
-                {type === 'user' && <CollegeRepresentativeBadge isCampusRep={entity.isCampusRep} size="sm" />}
+                {type === 'user' && <CollegeRepresentativeBadge isCampusRep={entity.isCampusRep} user={entity} size="sm" />}
               </span>
               {type === 'user' && <span className={styles.dropdownItemSub}>@{entity.username}</span>}
               {type === 'activity' && entity.location && <span className={styles.dropdownItemSub}>{entity.location}</span>}

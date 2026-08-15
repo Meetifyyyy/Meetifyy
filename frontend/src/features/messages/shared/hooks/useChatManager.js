@@ -501,7 +501,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       clientId,
       conversationId: targetConvId,
       text: payloadText,
-      mediaUrl: finalMediaUrl,
+      mediaUrl: (finalMediaUrl && !String(finalMediaUrl).startsWith('blob:')) ? finalMediaUrl : undefined,
       thumbnailUrl: (finalThumbnailUrl && !String(finalThumbnailUrl).startsWith('blob:')) ? finalThumbnailUrl : undefined,
       mediaType,
       width: finalWidth || undefined,

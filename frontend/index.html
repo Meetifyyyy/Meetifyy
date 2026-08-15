@@ -26,10 +26,9 @@
 <body>
   <div id="root"></div>
   <script>
-    // Cache breaker — runs before React. Nukes stale SWs and caches on version change.
-    // Increment this value on any SW architecture change to force a clean slate.
+    // Cache breaker — runs before React. Nukes stale SWs and caches on version change asynchronously.
     (function(){
-      var SW_VERSION = '4';
+      var SW_VERSION = '5';
       var key = 'meetifyy_sw_v';
       try {
         if (localStorage.getItem(key) !== SW_VERSION) {
@@ -44,13 +43,42 @@
               names.forEach(function(n) { caches.delete(n); });
             });
           }
-          if (performance.navigation && performance.navigation.type !== 1) {
-            location.reload();
-            return;
-          }
         }
       } catch(e) {}
     })();
+
+    // Auto-recovery handler: catches module script load / MIME type / chunk errors early
+    window.addEventListener('error', function(e) {
+      var msg = (e && (e.message || (e.error && e.error.message))) || '';
+      var isMimeOrChunkError =
+        msg.indexOf('Failed to load module script') !== -1 ||
+        msg.indexOf('MIME type') !== -1 ||
+        msg.indexOf('Strict MIME type checking') !== -1 ||
+        msg.indexOf('Loading chunk') !== -1 ||
+        msg.indexOf('dynamically imported module') !== -1;
+
+      if (isMimeOrChunkError) {
+        try {
+          var reloadKey = 'meetifyy_reloaded_mime_error';
+          if (!sessionStorage.getItem(reloadKey)) {
+            sessionStorage.setItem(reloadKey, '1');
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.getRegistrations().then(function(regs) {
+                regs.forEach(function(r) { r.unregister(); });
+              });
+            }
+            if ('caches' in window) {
+              caches.keys().then(function(names) {
+                names.forEach(function(n) { caches.delete(n); });
+              });
+            }
+            var url = new URL(window.location.href);
+            url.searchParams.set('_v', Date.now().toString());
+            window.location.replace(url.toString());
+          }
+        } catch(_) {}
+      }
+    }, true);
   </script>
   <script type="module" src="/src/main.jsx"></script>
 </body>

@@ -53,16 +53,33 @@ export async function migrateHistoricalFailedMessages() {
         const isFailed = item.status === 'failed' || item.status === 'FAILED' || item.isFailed || item.deliveryStatus === 'failed';
         const sendTime = new Date(item.createdAt || item.storedAt || item.sendingAt || now).getTime();
         const isStaleSending = item.status === 'sending' && !isNaN(sendTime) && (now - sendTime > 5000);
+        const hasBlobUrl = (typeof item.mediaUrl === 'string' && item.mediaUrl.startsWith('blob:')) ||
+          (item.payload && typeof item.payload.mediaUrl === 'string' && item.payload.mediaUrl.startsWith('blob:'));
 
-        if (isFailed || isStaleSending) {
+        if (isFailed || isStaleSending || hasBlobUrl) {
           const updated = {
             ...item,
-            status: 'failed',
+            status: (isFailed || isStaleSending) ? 'failed' : item.status,
             isFailed: false,
-            deliveryStatus: 'failed',
+            deliveryStatus: (isFailed || isStaleSending) ? 'failed' : item.deliveryStatus,
             retryCount: 0,
             pendingRetry: false,
           };
+          if (typeof updated.mediaUrl === 'string' && updated.mediaUrl.startsWith('blob:')) {
+            updated.mediaUrl = null;
+          }
+          if (updated.payload) {
+            updated.payload = { ...updated.payload };
+            if (typeof updated.payload.mediaUrl === 'string' && updated.payload.mediaUrl.startsWith('blob:')) {
+              updated.payload.mediaUrl = null;
+            }
+            if (typeof updated.payload.thumbnailUrl === 'string' && updated.payload.thumbnailUrl.startsWith('blob:')) {
+              updated.payload.thumbnailUrl = null;
+            }
+            if (typeof updated.payload.localPreviewUrl === 'string' && updated.payload.localPreviewUrl.startsWith('blob:')) {
+              updated.payload.localPreviewUrl = null;
+            }
+          }
           delete updated.retryAt;
           delete updated.nextRetry;
           store.put(updated);
@@ -75,7 +92,7 @@ export async function migrateHistoricalFailedMessages() {
 }
 
 /**
- * Strips decrypted fields before storing.
+ * Strips decrypted fields and transient blob URLs before storing.
  */
 function sanitizeMessageForStorage(msg) {
   const safeMsg = { ...msg };
@@ -97,6 +114,32 @@ function sanitizeMessageForStorage(msg) {
   } else if (isResetting && (safeMsg.state === 'UNSENT' || safeMsg.isUnsent)) {
     safeMsg.state = 'SENT';
     safeMsg.isUnsent = false;
+  }
+
+  // Strip transient blob: URLs before storing to disk (blob URLs expire when window/session closes)
+  if (typeof safeMsg.mediaUrl === 'string' && safeMsg.mediaUrl.startsWith('blob:')) {
+    safeMsg.mediaUrl = null;
+  }
+  if (safeMsg.payload) {
+    safeMsg.payload = { ...safeMsg.payload };
+    if (typeof safeMsg.payload.mediaUrl === 'string' && safeMsg.payload.mediaUrl.startsWith('blob:')) {
+      safeMsg.payload.mediaUrl = null;
+    }
+    if (typeof safeMsg.payload.thumbnailUrl === 'string' && safeMsg.payload.thumbnailUrl.startsWith('blob:')) {
+      safeMsg.payload.thumbnailUrl = null;
+    }
+    if (typeof safeMsg.payload.localPreviewUrl === 'string' && safeMsg.payload.localPreviewUrl.startsWith('blob:')) {
+      safeMsg.payload.localPreviewUrl = null;
+    }
+  }
+  if (Array.isArray(safeMsg.media)) {
+    safeMsg.media = safeMsg.media.map((m) => {
+      if (typeof m === 'string' && m.startsWith('blob:')) return null;
+      if (m && typeof m === 'object' && typeof m.url === 'string' && m.url.startsWith('blob:')) {
+        return { ...m, url: null };
+      }
+      return m;
+    }).filter(Boolean);
   }
 
   return safeMsg;
@@ -181,12 +224,40 @@ export async function idbGetMessages(conversationId) {
       }
     }
 
-    // Sanitize and reconcile unsent & historical failed states for messages stored in IDB
+    // Sanitize and reconcile unsent, dead blob: URLs & historical failed states for messages stored in IDB
     const sanitized = deduped.map((msg) => {
-      const isUnsent = msg.state === 'UNSENT' || msg.isUnsent || msg.text === 'This message was unsent' || msg.payload?.text === 'This message was unsent';
+      let cleanMsg = { ...msg };
+
+      // Strip dead blob: URLs that cannot be loaded across sessions
+      if (typeof cleanMsg.mediaUrl === 'string' && cleanMsg.mediaUrl.startsWith('blob:')) {
+        cleanMsg.mediaUrl = null;
+      }
+      if (cleanMsg.payload) {
+        cleanMsg.payload = { ...cleanMsg.payload };
+        if (typeof cleanMsg.payload.mediaUrl === 'string' && cleanMsg.payload.mediaUrl.startsWith('blob:')) {
+          cleanMsg.payload.mediaUrl = null;
+        }
+        if (typeof cleanMsg.payload.thumbnailUrl === 'string' && cleanMsg.payload.thumbnailUrl.startsWith('blob:')) {
+          cleanMsg.payload.thumbnailUrl = null;
+        }
+        if (typeof cleanMsg.payload.localPreviewUrl === 'string' && cleanMsg.payload.localPreviewUrl.startsWith('blob:')) {
+          cleanMsg.payload.localPreviewUrl = null;
+        }
+      }
+      if (Array.isArray(cleanMsg.media)) {
+        cleanMsg.media = cleanMsg.media.map((m) => {
+          if (typeof m === 'string' && m.startsWith('blob:')) return null;
+          if (m && typeof m === 'object' && typeof m.url === 'string' && m.url.startsWith('blob:')) {
+            return { ...m, url: null };
+          }
+          return m;
+        }).filter(Boolean);
+      }
+
+      const isUnsent = cleanMsg.state === 'UNSENT' || cleanMsg.isUnsent || cleanMsg.text === 'This message was unsent' || cleanMsg.payload?.text === 'This message was unsent';
       if (isUnsent) {
         return {
-          ...msg,
+          ...cleanMsg,
           state: 'UNSENT',
           isUnsent: true,
           text: 'This message was unsent',
@@ -199,14 +270,14 @@ export async function idbGetMessages(conversationId) {
       }
 
       // Reconcile all historical and active failed/stale-sending messages to normalized status: 'failed'
-      const isTempMsg = !msg.id || String(msg.id).startsWith('temp_') || String(msg.id).startsWith('c_temp_');
-      const isFailedState = msg.status === 'failed' || msg.status === 'FAILED' || msg.isFailed || msg.deliveryStatus === 'failed';
-      const sendTime = new Date(msg.createdAt || msg.storedAt || msg.sendingAt || Date.now()).getTime();
-      const isStaleSending = isTempMsg && msg.status === 'sending' && !isNaN(sendTime) && (Date.now() - sendTime > 5000);
+      const isTempMsg = !cleanMsg.id || String(cleanMsg.id).startsWith('temp_') || String(cleanMsg.id).startsWith('c_temp_');
+      const isFailedState = cleanMsg.status === 'failed' || cleanMsg.status === 'FAILED' || cleanMsg.isFailed || cleanMsg.deliveryStatus === 'failed';
+      const sendTime = new Date(cleanMsg.createdAt || cleanMsg.storedAt || cleanMsg.sendingAt || Date.now()).getTime();
+      const isStaleSending = isTempMsg && cleanMsg.status === 'sending' && !isNaN(sendTime) && (Date.now() - sendTime > 5000);
 
       if (isFailedState || isStaleSending) {
-        const cleanMsg = {
-          ...msg,
+        cleanMsg = {
+          ...cleanMsg,
           status: 'failed',
           isFailed: false,
           deliveryStatus: 'failed',
@@ -217,7 +288,7 @@ export async function idbGetMessages(conversationId) {
         return cleanMsg;
       }
 
-      return msg;
+      return cleanMsg;
     });
 
     // Deterministic sort using unified compareMessages

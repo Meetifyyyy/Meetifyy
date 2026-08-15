@@ -198,7 +198,7 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
                           m.user?.username ||
                           'Member'}
                     </span>
-                    <CollegeRepresentativeBadge isCampusRep={m.user?.isCampusRep} size="sm" />
+                    <CollegeRepresentativeBadge isCampusRep={m.user?.isCampusRep} user={m.user} size="sm" />
                     <span className={styles.msgTime}>
                       {timeAgo(m.createdAt)}
                     </span>

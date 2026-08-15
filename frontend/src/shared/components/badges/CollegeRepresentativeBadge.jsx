@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { getCollegeName } from '@shared/utils/user';
 import styles from './CollegeRepresentativeBadge.module.css';
 
 /** Detects if the primary pointer can hover (mouse/trackpad), not touch */
@@ -15,16 +16,25 @@ const POPUP_MARGIN = 12; // safe margin from screen edges in px
  * - Touch devices  → popup appears on tap, dismisses on outside-tap or Escape
  * - Popup auto-flips (top/bottom) and stays 100% visible inside viewport bounds
  */
-export const CollegeRepresentativeBadge = ({ isCampusRep, collegeName, size = 'sm', className = '' }) => {
+export const CollegeRepresentativeBadge = ({ isCampusRep, collegeName, user, size = 'sm', className = '' }) => {
   const [open, setOpen] = useState(false);
   const [popupPos, setPopupPos] = useState({ top: -9999, left: -9999, arrowLeft: 0, placement: 'top' });
   const badgeRef = useRef(null);
   const popupRef = useRef(null);
   const hoverTimeout = useRef(null);
 
-  if (!isCampusRep) return null;
+  const resolvedIsCampusRep = Boolean(isCampusRep ?? user?.isCampusRep);
 
-  const label = collegeName ? `${collegeName} Representative` : 'College Representative';
+  // Resolve the actual college name from collegeName prop or user object
+  let resolvedCollegeName = collegeName;
+  if (!resolvedCollegeName && user) {
+    resolvedCollegeName = getCollegeName(user, '');
+  }
+  if (!resolvedCollegeName && typeof collegeName === 'string') {
+    resolvedCollegeName = collegeName.trim();
+  }
+
+  const label = resolvedCollegeName ? `${resolvedCollegeName} Representative` : 'Campus Representative';
 
   const updatePosition = useCallback(() => {
     if (!badgeRef.current || !popupRef.current) return;
@@ -72,6 +82,7 @@ export const CollegeRepresentativeBadge = ({ isCampusRep, collegeName, size = 's
   }, []);
 
   const openPopup = () => {
+    if (!resolvedIsCampusRep) return;
     setOpen(true);
   };
 
@@ -79,7 +90,7 @@ export const CollegeRepresentativeBadge = ({ isCampusRep, collegeName, size = 's
 
   // Position calculation on open & on window resize/scroll
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open || !resolvedIsCampusRep) return;
     updatePosition();
 
     const handleResize = () => updatePosition();
@@ -89,7 +100,7 @@ export const CollegeRepresentativeBadge = ({ isCampusRep, collegeName, size = 's
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('scroll', handleResize, true);
     };
-  }, [open, updatePosition]);
+  }, [open, resolvedIsCampusRep, updatePosition]);
 
   // Mouse device handlers
   const handleMouseEnter = () => {
@@ -144,6 +155,8 @@ export const CollegeRepresentativeBadge = ({ isCampusRep, collegeName, size = 's
 
   useEffect(() => () => clearTimeout(hoverTimeout.current), []);
 
+  if (!resolvedIsCampusRep) return null;
+
   const popup = open ? (
     <div
       ref={popupRef}
@@ -191,7 +204,7 @@ export const CollegeRepresentativeBadge = ({ isCampusRep, collegeName, size = 's
       >
         <img
           src="/icons/representative_badge.webp"
-          alt="College Representative"
+          alt={label}
           className={styles.svg}
           draggable={false}
         />

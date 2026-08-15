@@ -116,7 +116,7 @@ export function UserResult({ result, isSelected, onClick }) {
       <div className={styles.content}>
         <div className={styles.title} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <HighlightedText text={item.displayName} matches={matches} keyName="displayName" />
-          <CollegeRepresentativeBadge isCampusRep={item.isCampusRep} size="sm" />
+          <CollegeRepresentativeBadge isCampusRep={item.isCampusRep} user={item} size="sm" />
         </div>
         <div className={styles.subtitle}>
           @{item.username}

@@ -219,7 +219,15 @@ export class StorageService {
 
     for (const key of keys) {
       const item = mediaMap.get(key);
-      // Public media or unregistered keys return public URL instantly (0ms network overhead)
+      const isThumbnailKey = /_thumb\.[a-z0-9]+$/i.test(key);
+
+      // If this is a derived thumbnail key and no media record exists, it was never created;
+      // do not return a speculative 404 URL.
+      if (!item && isThumbnailKey) {
+        continue;
+      }
+
+      // Public media or unregistered non-thumbnail keys return public URL instantly (0ms network overhead)
       if (!item || item.visibility === 'public') {
         if (item?.provider === 'supabase') {
           result[key] = this.getSupabasePublicUrl(item.bucket, item.objectKey);

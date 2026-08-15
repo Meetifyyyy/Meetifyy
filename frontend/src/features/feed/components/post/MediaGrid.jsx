@@ -229,6 +229,7 @@ export function MediaGrid({ media, onMediaClick }) {
         ]);
         return {
           ...item,
+          thumbKey,
           url: thumbUrl || fullUrl || item.rawSrc,
           fullUrl: fullUrl || item.rawSrc,
         };
@@ -261,7 +262,16 @@ export function MediaGrid({ media, onMediaClick }) {
   const handleImageError = (index, e) => {
     const target = e?.target;
     if (!target) return;
-    const full = mediaList[index]?.fullUrl;
+    const item = mediaList[index];
+    const full = item?.fullUrl;
+
+    if (item?.thumbKey) {
+      mediaCache.invalidate(item.thumbKey);
+    }
+    if (item?.url) {
+      mediaCache.invalidate(item.url);
+    }
+
     if (full && target.src !== full && target.getAttribute('data-fellback') !== '1') {
       target.setAttribute('data-fellback', '1');
       target.src = full;

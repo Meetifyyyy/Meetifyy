@@ -3,11 +3,16 @@ import CriticalErrorScreen from './ui/CriticalErrorScreen';
 import RouteErrorScreen from './ui/RouteErrorScreen';
 
 function isChunkError(error) {
+  const msg = error?.message || '';
   return (
     error?.name === 'ChunkLoadError' ||
-    error?.message?.includes('Failed to fetch dynamically imported module') ||
-    error?.message?.includes('Importing a module script failed') ||
-    error?.message?.includes('dynamically imported module')
+    msg.includes('Failed to fetch dynamically imported module') ||
+    msg.includes('Importing a module script failed') ||
+    msg.includes('Failed to load module script') ||
+    msg.includes('MIME type') ||
+    msg.includes('Strict MIME type checking') ||
+    msg.includes('dynamically imported module') ||
+    msg.includes('Loading chunk')
   );
 }
 
@@ -17,7 +22,7 @@ function silentReload() {
       window.sessionStorage.getItem('page_reloaded_on_chunk_error') || 'false'
     );
     if (!alreadyReloaded) {
-      window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'true');
+      try { window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'true'); } catch (_) {}
       Promise.resolve().then(async () => {
         try {
           if ('serviceWorker' in navigator) {
@@ -29,7 +34,9 @@ function silentReload() {
             await Promise.all(keys.map(k => caches.delete(k)));
           }
         } catch { /* ignore */ }
-        window.location.reload();
+        const url = new URL(window.location.href);
+        url.searchParams.set('_v', Date.now().toString());
+        window.location.replace(url.toString());
       });
       return true;
     }

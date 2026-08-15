@@ -88,6 +88,11 @@ class MediaCacheManager {
       return cached.url;
     }
 
+    // For derived thumbnail variants not yet confirmed in cache, return null so callers use the original full URL
+    if (/_thumb\.[a-z0-9]+$/i.test(key)) {
+      return null;
+    }
+
     return getMediaUrl(rawKey);
   }
 
@@ -175,8 +180,13 @@ class MediaCacheManager {
           if (stable) persistedAny = true;
           resolve(url);
         } else {
-          // Use absolute backend URL so avatars work on Vercel (frontend-only deployments)
-          resolve(getMediaUrl(key));
+          // For derived thumbnail keys with no server URL, resolve to null so callers fallback to full image
+          if (/_thumb\.[a-z0-9]+$/i.test(key)) {
+            resolve(null);
+          } else {
+            // Use absolute backend URL so avatars work on Vercel (frontend-only deployments)
+            resolve(getMediaUrl(key));
+          }
         }
         this.pendingRequests.delete(key);
       });
@@ -184,7 +194,11 @@ class MediaCacheManager {
     } catch (error) {
       console.warn('Bulk signed URL fetch fallback triggered:', error?.message || error);
       resolversToProcess.forEach(({ resolve, key }) => {
-        resolve(getMediaUrl(key));
+        if (/_thumb\.[a-z0-9]+$/i.test(key)) {
+          resolve(null);
+        } else {
+          resolve(getMediaUrl(key));
+        }
         this.pendingRequests.delete(key);
       });
     }
@@ -196,19 +210,32 @@ class MediaCacheManager {
   invalidate(key) {
     if (key) {
       // If full url is passed, extract key
-      const match = key.match(/\/api\/media\/(.+)$/);
+      let cleanKey = key;
+      const match = cleanKey.match(/\/api\/media\/(.+)$/);
       if (match) {
-        key = match[1].split('?')[0];
+        cleanKey = match[1].split('?')[0];
       }
       // Also check if it's a full supabase URL to extract key
-      if (key.includes('/object/sign/')) {
-        const parts = key.split('/object/sign/');
+      if (cleanKey.includes('/object/sign/')) {
+        const parts = cleanKey.split('/object/sign/');
         if (parts.length > 1) {
-          key = parts[1].split('?')[0].split('/').slice(1).join('/'); // remove bucket name
+          cleanKey = parts[1].split('?')[0].split('/').slice(1).join('/'); // remove bucket name
         }
       }
+      // Also check if it's an R2 public URL
+      if (cleanKey.includes('.r2.dev/')) {
+        const parts = cleanKey.split('.r2.dev/');
+        if (parts.length > 1) {
+          cleanKey = parts[1].split('?')[0];
+        }
+      }
+      cleanKey = cleanKey.replace(/^\/+/, '');
+
+      this.cache.delete(cleanKey);
       this.cache.delete(key);
+      this.pendingRequests.delete(cleanKey);
       this.pendingRequests.delete(key);
+      this._persistStable();
     }
   }
 

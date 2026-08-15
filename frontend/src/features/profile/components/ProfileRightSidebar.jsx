@@ -223,7 +223,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
               <div className={s.personInfo}>
                 <div className={s.personName} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   {u.displayName || u.username}
-                  <CollegeRepresentativeBadge isCampusRep={u.isCampusRep} size="sm" />
+                  <CollegeRepresentativeBadge isCampusRep={u.isCampusRep} user={u} size="sm" />
                 </div>
                 <div className={s.personSub}>@{u.username}</div>
               </div>

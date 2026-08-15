@@ -511,8 +511,10 @@ export default function ActivityDetailPage() {
                           className={styles.attendeeAvatar}
                         />
                         <div className={styles.attendeeMeta}>
-                          <span className={styles.attendeeName}>{pUser.displayName || pUser.username}</span>
-                          <CollegeRepresentativeBadge isCampusRep={pUser.isCampusRep} size="sm" />
+                          <div className={styles.attendeeNameRow}>
+                            <span className={styles.attendeeName}>{pUser.displayName || pUser.username}</span>
+                            <CollegeRepresentativeBadge isCampusRep={pUser.isCampusRep} user={pUser} size="md" />
+                          </div>
                           <span className={styles.attendeeRole}>@{pUser.username}{isThisHost ? ' (Host)' : ''}</span>
                         </div>
                       </div>
@@ -561,8 +563,15 @@ export default function ActivityDetailPage() {
                   />
                   <div className={styles.hostMeta}>
                     <span className={styles.hostedBy}>Hosted by</span>
-                    <span className={styles.hostName}>{hostName}</span>
-                    <CollegeRepresentativeBadge isCampusRep={hostIsCampusRep} size="md" />
+                    <div className={styles.hostNameRow}>
+                      <span className={styles.hostName}>{hostName}</span>
+                      <CollegeRepresentativeBadge 
+                        isCampusRep={hostIsCampusRep} 
+                        collegeName={activity.hostCollege?.name || activity.hostCollege || activity.collegeName || activity.college?.name} 
+                        user={activity.creator} 
+                        size="md" 
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -616,8 +625,10 @@ export default function ActivityDetailPage() {
                           className={styles.attendeeAvatar}
                         />
                         <div className={styles.attendeeMeta}>
-                          <span className={styles.attendeeName}>{pUser.displayName || pUser.username}</span>
-                          <CollegeRepresentativeBadge isCampusRep={pUser.isCampusRep} size="sm" />
+                          <div className={styles.attendeeNameRow}>
+                            <span className={styles.attendeeName}>{pUser.displayName || pUser.username}</span>
+                            <CollegeRepresentativeBadge isCampusRep={pUser.isCampusRep} user={pUser} size="md" />
+                          </div>
                           <span className={styles.attendeeRole}>@{pUser.username}{isThisHost ? ' (Host)' : ''}</span>
                         </div>
                       </div>

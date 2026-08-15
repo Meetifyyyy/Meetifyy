@@ -15,8 +15,17 @@ export function getCollegeName(user, defaultFallback = 'College') {
   if (typeof user.college === 'object' && user.college?.name) {
     return user.college.name;
   }
+  if (typeof user.collegeName === 'string' && user.collegeName.trim()) {
+    return user.collegeName.trim();
+  }
+  if (typeof user.college_name === 'string' && user.college_name.trim()) {
+    return user.college_name.trim();
+  }
   if (typeof user.college === 'string' && user.college.trim()) {
     return user.college.trim();
+  }
+  if (typeof user.universityName === 'string' && user.universityName.trim()) {
+    return user.universityName.trim();
   }
   if (typeof user.university === 'string' && user.university.trim()) {
     return user.university.trim();

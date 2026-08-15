@@ -44,32 +44,52 @@ self.addEventListener('activate', (event) => {
 
 const navigationHandler = createHandlerBoundToURL('/index.html');
 const navigationRoute = new NavigationRoute(navigationHandler, {
-  denylist: [/^\/api\//, /^\/version\.json/],
+  denylist: [/^\/api\//, /^\/version\.json/, /^\/assets\//, /\.[a-zA-Z0-9]+$/],
 });
 registerRoute(navigationRoute);
 
 // ─── Static Asset Caching ───────────────────────────────────────────────────
 
-// Hashed JS chunks — StaleWhileRevalidate
+// Hashed JS chunks — StaleWhileRevalidate (reject text/html responses from SPA fallback)
 registerRoute(
   /\/assets\/.*\.js$/,
   new StaleWhileRevalidate({
     cacheName: 'js-chunks-cache',
     plugins: [
       new ExpirationPlugin({ maxEntries: 100, maxAgeSeconds: 30 * 24 * 60 * 60 }),
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
+      {
+        cacheWillUpdate: async ({ response }) => {
+          if (!response || response.status !== 200) return null;
+          const contentType = response.headers.get('content-type') || '';
+          // Never cache HTML as a JavaScript chunk
+          if (contentType.includes('text/html') || (!contentType.includes('javascript') && !contentType.includes('ecmascript'))) {
+            return null;
+          }
+          return response;
+        },
+      },
     ],
   })
 );
 
-// CSS chunks
+// CSS chunks — StaleWhileRevalidate (reject text/html responses from SPA fallback)
 registerRoute(
   /\/assets\/.*\.css$/,
   new StaleWhileRevalidate({
     cacheName: 'css-chunks-cache',
     plugins: [
       new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 30 * 24 * 60 * 60 }),
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
+      {
+        cacheWillUpdate: async ({ response }) => {
+          if (!response || response.status !== 200) return null;
+          const contentType = response.headers.get('content-type') || '';
+          // Never cache HTML as a CSS chunk
+          if (contentType.includes('text/html') || !contentType.includes('css')) {
+            return null;
+          }
+          return response;
+        },
+      },
     ],
   })
 );

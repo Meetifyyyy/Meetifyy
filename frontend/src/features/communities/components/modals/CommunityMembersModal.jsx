@@ -282,7 +282,7 @@ export default function CommunityMembersModal({ members: initialMembers, title, 
                       <span className={styles.userName} onClick={(e) => handleNameClick(e, member.name)}>
                         {member.name}
                       </span>
-                      <CollegeRepresentativeBadge isCampusRep={matchedUser?.isCampusRep} size="sm" />
+                      <CollegeRepresentativeBadge isCampusRep={matchedUser?.isCampusRep || member?.isCampusRep} user={matchedUser || member} size="sm" />
                       {isOwner ? (
                         <span className={styles.userBadge} style={{ background: 'rgba(236, 72, 153, 0.1)', color: '#EC4899' }}>
                           Owner

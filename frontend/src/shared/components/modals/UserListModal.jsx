@@ -153,7 +153,7 @@ export default function UserListModal({ type, profileUsername, onClose }) {
                   <div className={styles.userInfo}>
                     <div className={styles.userName} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       {user.displayName || user.username}
-                      <CollegeRepresentativeBadge isCampusRep={user.isCampusRep} size="sm" />
+                      <CollegeRepresentativeBadge isCampusRep={user.isCampusRep} user={user} size="sm" />
                     </div>
                     <div className={styles.userUsername}>@{user.username}</div>
                   </div>

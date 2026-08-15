@@ -17,6 +17,7 @@ import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
+import { getCollegeName } from '@shared/utils/user';
 import Avatar from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
@@ -284,6 +285,7 @@ export default function CommentNode({
 
   const author = comment.author || { displayName: 'Unknown', username: 'unknown', avatar: '?' };
   const authorCollege = (author.collegeId && communities) ? communities[author.collegeId] : null;
+  const authorCollegeName = getCollegeName(author, '') || authorCollege?.name || '';
   const initialLiked = comment.hasLiked !== undefined ? comment.hasLiked : (comment.likedBy ? comment.likedBy.includes(currentUser?.id) : false);
   const initialLikes = comment.likeCount !== undefined ? comment.likeCount : (comment.likes || 0);
 
@@ -526,7 +528,7 @@ export default function CommentNode({
               <div className={styles.replyIdentity}>
                 <button onClick={handleProfileClick} className={`hover-underline ${styles.nameButton}`}>
                   <span className={styles.username}>{author.displayName}</span>
-                  <CollegeRepresentativeBadge isCampusRep={author.isCampusRep} collegeName={authorCollege?.name} size="sm" />
+                  <CollegeRepresentativeBadge isCampusRep={author.isCampusRep} collegeName={authorCollegeName} user={author} size="sm" />
                   {authorCollege && (
                     <img
                       src={getProcessedAvatarUrl(authorCollege.avatar)}

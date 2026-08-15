@@ -21,15 +21,29 @@ export default function PullToRefresh({ onRefresh, children, disabled = false })
   const containerRef = useRef(null);
   const startYRef = useRef(null);
   const pullingRef = useRef(false);
-  const isMobileRef = useRef(typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches);
+  const isMobileRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(max-width: 768px)');
-    const update = () => { isMobileRef.current = mq.matches; };
-    update();
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    try {
+      const mq = window.matchMedia('(max-width: 768px)');
+      const update = () => { isMobileRef.current = mq.matches; };
+      update();
+
+      if (typeof mq.addEventListener === 'function') {
+        mq.addEventListener('change', update);
+      } else if (typeof mq.addListener === 'function') {
+        mq.addListener(update);
+      }
+
+      return () => {
+        if (typeof mq.removeEventListener === 'function') {
+          mq.removeEventListener('change', update);
+        } else if (typeof mq.removeListener === 'function') {
+          mq.removeListener(update);
+        }
+      };
+    } catch (_) {}
   }, []);
 
   const isAtTop = () => (window.scrollY || document.documentElement.scrollTop || 0) <= 0;

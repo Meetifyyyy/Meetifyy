@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Pencil, Trash2 } from 'lucide-react';
 import { getMediaUrl, deriveThumbnailKey } from '@shared/api/apiClient';
+import { mediaCache } from '@shared/utils/MediaCacheManager';
 import styles from './CampusEvents.module.css';
 
 const STATUS_LABELS = {
@@ -25,8 +26,8 @@ export default function CampusEventCard({ event, scope, canManage = false, onEdi
   const badge = (badgeKey !== 'upcoming' && STATUS_LABELS[badgeKey]) || null;
 
   const thumbKey = event.posterUrl ? deriveThumbnailKey(event.posterUrl) : null;
-  const posterSrc = thumbKey ? getMediaUrl(thumbKey) : (event.posterUrl ? getMediaUrl(event.posterUrl) : '');
   const fullSrc = event.posterUrl ? getMediaUrl(event.posterUrl) : '';
+  const posterSrc = (thumbKey && mediaCache.getSyncUrl(thumbKey)) || fullSrc;
 
   const openDetail = () => navigate(`/campus/events/${event.id}`);
 
@@ -41,6 +42,7 @@ export default function CampusEventCard({ event, scope, canManage = false, onEdi
             loading="lazy"
             decoding="async"
             onError={(e) => {
+              if (thumbKey) mediaCache.invalidate(thumbKey);
               if (fullSrc && e.currentTarget.src !== fullSrc) {
                 e.currentTarget.src = fullSrc;
               } else {
