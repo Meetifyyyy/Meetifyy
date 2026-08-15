@@ -32,15 +32,54 @@ export async function getCroppedImg(
   imageSrc,
   pixelCrop,
   rotation = 0,
-  flip = { horizontal: false, vertical: false }
+  flip = { horizontal: false, vertical: false },
+  maxOutputDimension = 1920,
 ) {
   const image = await createImage(imageSrc)
+  if (!pixelCrop || !pixelCrop.width || !pixelCrop.height) {
+    throw new Error('The crop area was not ready. Please try the image again.')
+  }
+
+  // Event posters never expose rotation controls. Drawing the source crop
+  // directly avoids allocating a full-resolution intermediate canvas (often
+  // hundreds of MB for modern phone photos), which was causing crop failures
+  // before the upload pipeline ever started.
+  if (rotation === 0 && !flip.horizontal && !flip.vertical) {
+    const scale = Math.min(1, maxOutputDimension / Math.max(pixelCrop.width, pixelCrop.height))
+    const outputWidth = Math.max(1, Math.round(pixelCrop.width * scale))
+    const outputHeight = Math.max(1, Math.round(pixelCrop.height * scale))
+    const croppedCanvas = document.createElement('canvas')
+    const croppedCtx = croppedCanvas.getContext('2d')
+    if (!croppedCtx) throw new Error('Image cropping is not supported by this browser.')
+
+    croppedCanvas.width = outputWidth
+    croppedCanvas.height = outputHeight
+    croppedCtx.drawImage(
+      image,
+      pixelCrop.x,
+      pixelCrop.y,
+      pixelCrop.width,
+      pixelCrop.height,
+      0,
+      0,
+      outputWidth,
+      outputHeight,
+    )
+
+    return new Promise((resolve, reject) => {
+      croppedCanvas.toBlob((blob) => {
+        if (!blob || blob.size === 0) {
+          reject(new Error('The browser could not create the cropped image. Please try another image.'))
+          return
+        }
+        resolve(blob)
+      }, 'image/webp', 0.92)
+    })
+  }
+
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
-
-  if (!ctx) {
-    return null
-  }
+  if (!ctx) throw new Error('Image cropping is not supported by this browser.')
 
   const rotRad = getRadianAngle(rotation)
 
@@ -67,9 +106,7 @@ export async function getCroppedImg(
   const croppedCanvas = document.createElement('canvas')
   const croppedCtx = croppedCanvas.getContext('2d')
 
-  if (!croppedCtx) {
-    return null
-  }
+  if (!croppedCtx) throw new Error('Image cropping is not supported by this browser.')
 
   // Set the size of the cropped canvas
   croppedCanvas.width = pixelCrop.width
@@ -90,8 +127,12 @@ export async function getCroppedImg(
 
   // As a blob (WebP — matches the compressImage target format; avoids double-encode)
   return new Promise((resolve, reject) => {
-    croppedCanvas.toBlob((file) => {
-      resolve(file)
+    croppedCanvas.toBlob((blob) => {
+      if (!blob || blob.size === 0) {
+        reject(new Error('The browser could not create the cropped image. Please try another image.'))
+        return
+      }
+      resolve(blob)
     }, 'image/webp', 0.92)
   })
 }

@@ -235,22 +235,29 @@
   backdrop-filter: blur(3px);
 }
 
-/* Upload-failed overlay — amber, always visible (not just on hover) */
+/* Upload-failed overlay — red/amber badge at bottom of preview, clickable to retry */
 .uploadFailedOverlay {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(180, 83, 9, 0.88);
+  background: rgba(220, 38, 38, 0.92);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  padding: 0.45rem 0.6rem;
-  font-size: 0.75rem;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.78rem;
   font-weight: 700;
-  pointer-events: none;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 0.15s ease;
+  z-index: 2;
+}
+
+.uploadFailedOverlay:hover {
+  background: rgba(185, 28, 28, 0.98);
 }
 
 .uploadFailedIcon {

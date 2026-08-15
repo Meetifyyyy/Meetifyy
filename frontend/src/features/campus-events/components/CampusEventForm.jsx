@@ -1,11 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, ImagePlus, CalendarRange, AlertCircle } from 'lucide-react';
+import { X, ImagePlus, CalendarRange } from 'lucide-react';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import { showToast } from '@shared/utils/toast';
 import { useCreateCampusEvent, useUpdateCampusEvent, usePublishCampusEvent } from '@shared/hooks/useCampusEvents';
 import { toLocalDate, toLocalTime, combineDateTime, isSafeRegistrationUrl, formatCardDate } from '../utils/formatEvent';
-import MediaCropper from '@shared/components/media/MediaCropper';
 import CustomDatePicker from '@shared/components/ui/CustomDatePicker';
 import CustomTimePicker from '@shared/components/ui/CustomTimePicker';
 import styles from './CampusEventForm.module.css';
@@ -19,11 +18,20 @@ const PHASE_LABELS = {
   done: 'Done',
 };
 
+// Stage-specific diagnostics for tracing event-poster uploads in browser console.
+const logUploadStage = (stage, detail = {}) => {
+  console.info(`[campus-event-upload] ${stage}`, detail);
+};
+
 /**
- * Create / edit modal for Campus Representatives. Image selection opens the
- * shared MediaCropper first; the cropped WebP blob then flows through
- * processAndUploadImage (compress → presigned-upload → confirm). No raw file
- * reaches the backend uncropped.
+ * Create / edit modal for Campus Events.
+ *
+ * UX Flow:
+ *  1. File selected -> immediate local object URL preview in the upload box.
+ *  2. Background pipeline -> compression & direct presigned upload with real-time progress.
+ *  3. On success -> store authoritative storage key, preserve preview.
+ *  4. On failure -> keep local preview visible, surface immediate error toast & retry badge.
+ *  5. On submit -> wait for any active upload to complete, block on error, or save event.
  */
 export default function CampusEventForm({ event = null, onClose, onSaved }) {
   const isEdit = Boolean(event?.id);
@@ -37,7 +45,6 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
     hostedBy: event?.hostedBy || '',
     venue: event?.venue || '',
     registrationUrl: event?.registrationUrl || '',
-    // Split into separate date + time fields for cleaner UX.
     startDate:     toLocalDate(event?.startTime) || '',
     startTimeOnly: toLocalTime(event?.startTime) || '',
     endDate:       toLocalDate(event?.endTime) || '',
@@ -45,30 +52,36 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
     posterUrl: event?.posterUrl || '',
   });
 
-  // posterPreview holds a safe-to-display URL (blob or media URL).
-  // cropTarget holds the raw File waiting to be cropped.
+  // posterPreview holds a displayable URL (blob URL or backend media URL).
   const [posterPreview, setPosterPreview] = useState(
     event?.posterUrl ? getMediaUrl(event.posterUrl) : '',
   );
-  const [cropTarget, setCropTarget] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadPhase, setUploadPhase] = useState('preparing');
   const [error, setError] = useState('');
 
-  // Refs for cleanup, body scrolling and abort
+  // Refs for tracking active object URL, upload controller, selected raw file, and confirmed key
   const abortRef = useRef(null);
   const bodyRef = useRef(null);
-  const activeBlobUrlRef = useRef(null); // Tracks the local blob URL shown in posterPreview
-  // Authoritative uploaded poster key (immune to any React state-timing) + the
-  // in-flight upload promise, so submit can await/verify it before saving and a
-  // selected poster is never dropped from the payload.
+  const activeBlobUrlRef = useRef(null);
+  const selectedFileRef = useRef(null);
   const posterKeyRef = useRef(event?.posterUrl || '');
   const posterUploadRef = useRef(null);
 
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
-  // Abort any in-flight upload on unmount, cleanup object URLs, and lock background scroll
+  // Synchronize when event prop changes
+  useEffect(() => {
+    if (event?.id) {
+      posterKeyRef.current = event.posterUrl || '';
+      if (!activeBlobUrlRef.current) {
+        setPosterPreview(event.posterUrl ? getMediaUrl(event.posterUrl) : '');
+      }
+    }
+  }, [event]);
+
+  // Clean up object URLs and abort in-flight uploads on unmount
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -76,62 +89,20 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
     return () => {
       abortRef.current?.abort();
       if (activeBlobUrlRef.current) {
-        URL.revokeObjectURL(activeBlobUrlRef.current);
+        try { URL.revokeObjectURL(activeBlobUrlRef.current); } catch (_) {}
+        activeBlobUrlRef.current = null;
       }
       document.body.style.overflow = originalOverflow;
     };
   }, []);
 
-  // ── Step 1: File selected → open cropper ──────────────────────────────────
-  const handleFileSelect = (e) => {
-    const file = e.target.files?.[0];
-    // Reset so the same file can be re-selected after a cancel
-    e.target.value = '';
-    if (!file) return;
-
-    // Double-guard: MIME type AND extension — blocks spoofed files, SVG,
-    // TIFF, HEIC, BMP and anything that slips past accept="image/..."
-    const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    const ALLOWED_EXT  = /\.(jpe?g|png|webp|gif)$/i;
-    if (!ALLOWED_MIME.includes(file.type) || !ALLOWED_EXT.test(file.name)) {
-      const errMsg = 'Only JPG, PNG, WebP, or GIF images are allowed.';
-      setError(errMsg);
-      setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
-      return;
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      const errMsg = 'Image must be under 20 MB.';
-      setError(errMsg);
-      setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
-      return;
-    }
-
-    setError('');
-
-    // Abort any previous in-flight upload first
+  // ── Background Upload Runner ───────────────────────────────────────────────
+  const startPosterUpload = (file, previewUrl) => {
+    // Abort previous in-flight upload
     abortRef.current?.abort();
-    abortRef.current = null;
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-    // Open the cropper with the raw file. MediaCropper handles its own object URL lifecycle.
-    setCropTarget(file);
-  };
-
-  // ── Step 2: Crop applied → compress + upload ──────────────────────────────
-  const handleCropComplete = async (croppedFile) => {
-    setCropTarget(null);
-
-    // Show the cropped result immediately so the user sees it right away.
-    // croppedFile.previewUrl is set by MediaCropper; fall back to creating one.
-    const previewUrl = croppedFile.previewUrl || URL.createObjectURL(croppedFile);
-
-    // Revoke previous blob URL if we created one earlier to prevent memory leak
-    if (activeBlobUrlRef.current) {
-      URL.revokeObjectURL(activeBlobUrlRef.current);
-    }
-    activeBlobUrlRef.current = previewUrl;
-    setPosterPreview(previewUrl);
-
-    // Clear stale error, start progress. A new upload invalidates any prior key.
     setError('');
     setUploading(true);
     setUploadProgress(0);
@@ -139,38 +110,39 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
     posterKeyRef.current = '';
     set({ posterUrl: '' });
 
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    // Store the in-flight upload as a promise so submit() can await/verify it —
-    // this guarantees the resolved storage key is captured before the event is
-    // saved, so a poster can never be silently dropped from the payload.
     const uploadPromise = (async () => {
       try {
+        logUploadStage('UPLOAD_STARTED', { folder: 'events', type: file.type, size: file.size });
         const result = await processAndUploadImage(
-          croppedFile,
+          file,
           'events',
-          {},
-          (p, phase) => { setUploadProgress(p); if (phase) setUploadPhase(phase); },
+          { maxWidthOrHeight: 1920 },
+          (p, phase) => {
+            setUploadProgress(p);
+            if (phase) setUploadPhase(phase);
+          },
           controller.signal,
         );
-        const uploadedKey = result?.key;
-        if (!uploadedKey) throw new Error('Image upload failed. Tap to try again.');
 
-        // Clear blob URL tracking now that we have a real backend key
-        if (activeBlobUrlRef.current) {
-          URL.revokeObjectURL(activeBlobUrlRef.current);
-          activeBlobUrlRef.current = null;
+        const uploadedKey = result?.key;
+        if (!uploadedKey) {
+          throw new Error('Image upload failed. Please try again.');
         }
+
+        logUploadStage('UPLOAD_SUCCESS', { key: uploadedKey });
         posterKeyRef.current = uploadedKey;
         set({ posterUrl: uploadedKey });
-        setPosterPreview(getMediaUrl(uploadedKey));
+        logUploadStage('URL_RETURNED', { key: uploadedKey, url: getMediaUrl(uploadedKey) });
         return uploadedKey;
       } catch (err) {
-        // Abort is expected when the user replaces the image mid-upload.
-        if (err?.name === 'AbortError') throw err;
-        const errMsg = err?.message || 'Image upload failed. Tap to try again.';
+        if (err?.name === 'AbortError') {
+          logUploadStage('UPLOAD_ABORTED');
+          throw err;
+        }
+        const errMsg = err?.message || 'Image upload failed. Please try again.';
+        logUploadStage('UPLOAD_FAILED', { message: errMsg });
         setError(errMsg);
+        showToast(errMsg, 'error');
         setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
         throw err;
       } finally {
@@ -181,16 +153,64 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
     })();
 
     posterUploadRef.current = uploadPromise;
-    uploadPromise.catch(() => {}); // avoid unhandled-rejection; submit awaits it
+    uploadPromise.catch(() => {}); // prevent unhandled promise rejection
   };
 
+  // ── Step 1: File selected → instant preview + background upload ────────────
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    // Reset file input value so selecting the same file after an error triggers onChange
+    e.target.value = '';
+    if (!file) return;
+    logUploadStage('SELECTED', { name: file.name, type: file.type, size: file.size });
 
-  // ── Step 2 alt: Crop cancelled ─────────────────────────────────────────────
-  const handleCropCancel = () => {
-    setCropTarget(null);
+    // Double-guard validation: MIME type AND extension
+    const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    const ALLOWED_EXT  = /\.(jpe?g|png|webp|gif)$/i;
+    if (!ALLOWED_MIME.includes(file.type) || !ALLOWED_EXT.test(file.name)) {
+      const errMsg = 'Only JPG, PNG, WebP, or GIF images are allowed.';
+      setError(errMsg);
+      showToast(errMsg, 'error');
+      setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      const errMsg = 'Image must be under 20 MB.';
+      setError(errMsg);
+      showToast(errMsg, 'error');
+      setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
+      return;
+    }
+
+    logUploadStage('VALIDATED', { type: file.type, size: file.size });
+
+    // Revoke previous blob URL if exists
+    if (activeBlobUrlRef.current) {
+      try { URL.revokeObjectURL(activeBlobUrlRef.current); } catch (_) {}
+    }
+
+    // Create immediate local preview URL
+    const localPreviewUrl = URL.createObjectURL(file);
+    activeBlobUrlRef.current = localPreviewUrl;
+    selectedFileRef.current = file;
+
+    // Display the preview immediately inside the upload box
+    setPosterPreview(localPreviewUrl);
+
+    // Kick off the upload in the background
+    startPosterUpload(file, localPreviewUrl);
   };
 
-  // ── Date/Time synchronization helpers ────────────────────────────────────
+  // ── Retry Upload ───────────────────────────────────────────────────────────
+  const handleRetryUpload = (e) => {
+    e?.stopPropagation?.();
+    e?.preventDefault?.();
+    if (selectedFileRef.current && !uploading) {
+      startPosterUpload(selectedFileRef.current, posterPreview);
+    }
+  };
+
+  // ── Date/Time synchronization helpers ──────────────────────────────────────
   const handleStartDateChange = (val) => {
     setForm((prev) => {
       const next = { ...prev, startDate: val };
@@ -214,7 +234,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
     const end   = combineDateTime(form.endDate, form.endTimeOnly);
     if (!start) return 'Start date or time is invalid.';
     if (!end)   return 'End date or time is invalid.';
-    
+
     const now = new Date();
     if (new Date(start) < new Date(now.getTime() - 5 * 60 * 1000)) {
       return 'Event start date and time cannot be in the past.';
@@ -239,8 +259,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
       eventDate: startISO,
       startTime: startISO,
       endTime: endISO,
-      // Prefer the ref — it holds the authoritative uploaded key regardless of
-      // any state-update timing, so the poster is never lost from the payload.
+      // Prefer the authoritative ref holding the confirmed uploaded key
       posterUrl: posterKeyRef.current || form.posterUrl || undefined,
     };
   };
@@ -249,23 +268,32 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
     const v = validate();
     if (v) {
       setError(v);
+      showToast(v, 'error');
       setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
       return;
     }
 
-    // Never save while a poster upload is still in flight — await it so the
-    // resolved key is in the payload. A failed upload blocks the save so the
-    // user can retry instead of silently publishing a poster-less event.
+    // Await any in-flight poster upload
     if (posterUploadRef.current) {
       try {
         await posterUploadRef.current;
       } catch (err) {
         if (err?.name !== 'AbortError') {
-          setError('Poster upload failed. Retry the image or remove it before saving.');
+          const errMsg = 'Poster upload failed. Retry the image or remove it before saving.';
+          setError(errMsg);
+          showToast(errMsg, 'error');
           setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
           return;
         }
       }
+    }
+
+    // Block submit if a new image was selected but upload failed and was not resolved
+    if (activeBlobUrlRef.current && !posterKeyRef.current) {
+      const errMsg = 'Poster image upload failed. Tap to retry before saving.';
+      setError(errMsg);
+      showToast(errMsg, 'error');
+      return;
     }
 
     setError('');
@@ -283,12 +311,14 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
           saved = await publishMut.mutateAsync(saved.id);
         }
       }
+      logUploadStage('DB_SAVED', { eventId: saved?.id, posterUrl: saved?.posterUrl || payload.posterUrl || null });
       showToast(isEdit ? 'Event updated' : 'Event published', 'success');
       onSaved?.(saved);
       onClose?.();
     } catch (err) {
       const errMsg = err?.message || 'Something went wrong. Please try again.';
       setError(errMsg);
+      showToast(errMsg, 'error');
       setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
     }
   };
@@ -296,187 +326,194 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
   const busy = uploading || createMut.isPending || updateMut.isPending || publishMut.isPending;
 
   return (
-    <>
-      <div className={styles.overlay} onClick={onClose}>
-        <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-          <div className={styles.header}>
-            <h2 className={styles.title}>{isEdit ? 'Edit event' : 'Create campus event'}</h2>
-            <button className={styles.closeBtn} onClick={onClose} aria-label="Close"><X size={20} /></button>
-          </div>
+    <div className={styles.overlay} onClick={onClose}>
+      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.header}>
+          <h2 className={styles.title}>{isEdit ? 'Edit event' : 'Create campus event'}</h2>
+          <button className={styles.closeBtn} onClick={onClose} aria-label="Close"><X size={20} /></button>
+        </div>
 
-          <div className={styles.body} ref={bodyRef}>
-            
-            {/* ── Poster upload ───────────────────────────────────────────── */}
-            <div className={styles.field}>
-              <span className={styles.label}>Event poster image</span>
-              <label
-                className={`${styles.posterUpload}${uploading ? ` ${styles.posterBusy}` : ''}`}
-                aria-label="Upload event poster"
-              >
-                {posterPreview ? (
-                  <div className={styles.previewContainer}>
-                    <img className={styles.posterPreview} src={posterPreview} alt="Poster preview" />
-                    {/* Progress overlay while uploading */}
-                    {uploading && (
-                      <div className={styles.uploadOverlay}>
-                        <div className={styles.progressTrack}>
-                          <div
-                            className={styles.progressBar}
-                            style={{ width: `${uploadProgress}%` }}
-                          />
-                        </div>
-                        <span className={styles.uploadLabel}>
-                          {PHASE_LABELS[uploadPhase] || 'Uploading'} · {uploadProgress}%
-                        </span>
+        <div className={styles.body} ref={bodyRef}>
+
+          {/* ── Poster upload ───────────────────────────────────────────── */}
+          <div className={styles.field}>
+            <span className={styles.label}>Event poster image</span>
+            <label
+              className={`${styles.posterUpload}${uploading ? ` ${styles.posterBusy}` : ''}`}
+              aria-label="Upload event poster"
+            >
+              {posterPreview ? (
+                <div className={styles.previewContainer}>
+                  <img
+                    className={styles.posterPreview}
+                    src={posterPreview}
+                    alt="Poster preview"
+                    onLoad={() => {
+                      if (posterKeyRef.current) logUploadStage('UI_RENDERED', { key: posterKeyRef.current, surface: 'form-preview' });
+                    }}
+                    onError={() => {
+                      if (posterKeyRef.current) {
+                        const message = 'The poster uploaded, but could not be displayed. Please retry the image.';
+                        logUploadStage('UI_RENDER_FAILED', { key: posterKeyRef.current, message });
+                        setError(message);
+                        showToast(message, 'error');
+                      }
+                    }}
+                  />
+                  {/* Progress overlay while uploading */}
+                  {uploading && (
+                    <div className={styles.uploadOverlay}>
+                      <div className={styles.progressTrack}>
+                        <div
+                          className={styles.progressBar}
+                          style={{ width: `${uploadProgress}%` }}
+                        />
                       </div>
-                    )}
-                    {/* Upload-failed overlay — visible when there's an error and upload is idle */}
-                    {!uploading && error && !form.posterUrl && (
-                      <div className={styles.uploadFailedOverlay}>
-                        <span className={styles.uploadFailedIcon}>!</span>
-                        <span className={styles.uploadFailedText}>Not saved — tap to retry</span>
-                      </div>
-                    )}
-                    {/* Change overlay on hover (only when not uploading or errored) */}
-                    {!uploading && (
-                      <div className={styles.changeOverlay}>
-                        <ImagePlus size={18} />
-                        <span>{error && !form.posterUrl ? 'Retry upload' : 'Change poster'}</span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <span className={styles.posterHint}>
-                    <ImagePlus size={28} />
-                    <span>
-                      {uploading
-                        ? `${PHASE_LABELS[uploadPhase] || 'Uploading'} · ${uploadProgress}%`
-                        : 'Click to upload event poster'}
-                    </span>
-                    {uploading && (
-                      <div className={styles.progressTrackBare}>
-                        <div className={styles.progressBar} style={{ width: `${uploadProgress}%` }} />
-                      </div>
-                    )}
+                      <span className={styles.uploadLabel}>
+                        {PHASE_LABELS[uploadPhase] || 'Uploading'} · {uploadProgress}%
+                      </span>
+                    </div>
+                  )}
+                  {/* Upload-failed overlay — visible when there's an error and upload is idle */}
+                  {!uploading && error && !posterKeyRef.current && (
+                    <div
+                      className={styles.uploadFailedOverlay}
+                      onClick={handleRetryUpload}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <span className={styles.uploadFailedIcon}>!</span>
+                      <span className={styles.uploadFailedText}>Upload failed — tap to retry</span>
+                    </div>
+                  )}
+                  {/* Change overlay on hover (when idle and not failed) */}
+                  {!uploading && (!error || Boolean(posterKeyRef.current)) && (
+                    <div className={styles.changeOverlay}>
+                      <ImagePlus size={18} />
+                      <span>Change poster</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <span className={styles.posterHint}>
+                  <ImagePlus size={28} />
+                  <span>
+                    {uploading
+                      ? `${PHASE_LABELS[uploadPhase] || 'Uploading'} · ${uploadProgress}%`
+                      : 'Click to upload event poster'}
                   </span>
-                )}
-                <input
-                  className={styles.hiddenFile}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  disabled={uploading}
-                  onChange={handleFileSelect}
-                />
-              </label>
-            </div>
-
-            {/* ── Text fields ─────────────────────────────────────────────── */}
-            <div className={styles.field}>
-              <span className={styles.label}>Event title *</span>
-              <input className={styles.input} value={form.title} maxLength={50}
-                onChange={(e) => set({ title: e.target.value })} placeholder="e.g. Hackathon 2026" />
-            </div>
-
-            <div className={styles.field}>
-              <span className={styles.label}>Hosted by (organizer) *</span>
-              <input className={styles.input} value={form.hostedBy} maxLength={50}
-                onChange={(e) => set({ hostedBy: e.target.value })} placeholder="e.g. GLA Coding Club" />
-            </div>
-
-            <div className={styles.field}>
-              <span className={styles.label}>Description</span>
-              <textarea className={styles.textarea} value={form.description} maxLength={500}
-                onChange={(e) => set({ description: e.target.value })} placeholder="What's this event about?" />
-            </div>
-
-            {/* ── Date & time ─────────────────────────────────────────────── */}
-            {/* Starts row */}
-            <div className={styles.dateTimeGroup}>
-              <span className={styles.dateTimeGroupLabel}>Starts *</span>
-              <div className={styles.dateTimeRow}>
-                <div className={styles.dateBox}>
-                  <CustomDatePicker
-                    value={form.startDate}
-                    min={new Date().toISOString().split('T')[0]}
-                    onChange={(val) => handleStartDateChange(val)}
-                  />
-                </div>
-                <div className={styles.timeBox}>
-                  <CustomTimePicker
-                    value={form.startTimeOnly}
-                    onChange={(val) => set({ startTimeOnly: val })}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Ends row */}
-            <div className={styles.dateTimeGroup}>
-              <span className={styles.dateTimeGroupLabel}>Ends *</span>
-              <div className={styles.dateTimeRow}>
-                <div className={styles.dateBox}>
-                  <CustomDatePicker
-                    value={form.endDate}
-                    min={form.startDate || new Date().toISOString().split('T')[0]}
-                    onChange={(val) => set({ endDate: val })}
-                  />
-                </div>
-                <div className={styles.timeBox}>
-                  <CustomTimePicker
-                    value={form.endTimeOnly}
-                    onChange={(val) => set({ endTimeOnly: val })}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Multi-day badge — visible when start and end are on different dates */}
-            {form.startDate && form.endDate && form.startDate !== form.endDate && (
-              <div className={styles.multiDayBadge}>
-                <CalendarRange size={14} />
-                <span>
-                  Multi-day · 
-                  {formatCardDate(
-                    combineDateTime(form.startDate, form.startTimeOnly || '00:00'),
-                    combineDateTime(form.endDate,   form.endTimeOnly   || '23:59'),
+                  {uploading && (
+                    <div className={styles.progressTrackBare}>
+                      <div className={styles.progressBar} style={{ width: `${uploadProgress}%` }} />
+                    </div>
                   )}
                 </span>
+              )}
+              <input
+                className={styles.hiddenFile}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                disabled={uploading}
+                onChange={handleFileSelect}
+              />
+            </label>
+          </div>
+
+          {/* ── Text fields ─────────────────────────────────────────────── */}
+          <div className={styles.field}>
+            <span className={styles.label}>Event title *</span>
+            <input className={styles.input} value={form.title} maxLength={50}
+              onChange={(e) => set({ title: e.target.value })} placeholder="e.g. Hackathon 2026" />
+          </div>
+
+          <div className={styles.field}>
+            <span className={styles.label}>Hosted by (organizer) *</span>
+            <input className={styles.input} value={form.hostedBy} maxLength={50}
+              onChange={(e) => set({ hostedBy: e.target.value })} placeholder="e.g. GLA Coding Club" />
+          </div>
+
+          <div className={styles.field}>
+            <span className={styles.label}>Description</span>
+            <textarea className={styles.textarea} value={form.description} maxLength={500}
+              onChange={(e) => set({ description: e.target.value })} placeholder="What's this event about?" />
+          </div>
+
+          {/* ── Date & time ─────────────────────────────────────────────── */}
+          {/* Starts row */}
+          <div className={styles.dateTimeGroup}>
+            <span className={styles.dateTimeGroupLabel}>Starts *</span>
+            <div className={styles.dateTimeRow}>
+              <div className={styles.dateBox}>
+                <CustomDatePicker
+                  value={form.startDate}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={(val) => handleStartDateChange(val)}
+                />
               </div>
-            )}
-
-            <div className={styles.field}>
-              <span className={styles.label}>Venue *</span>
-              <input className={styles.input} value={form.venue} maxLength={100}
-                onChange={(e) => set({ venue: e.target.value })} placeholder="e.g. Main Auditorium" />
+              <div className={styles.timeBox}>
+                <CustomTimePicker
+                  value={form.startTimeOnly}
+                  onChange={(val) => set({ startTimeOnly: val })}
+                />
+              </div>
             </div>
-
-            <div className={styles.field}>
-              <span className={styles.label}>Registration link</span>
-              <input className={styles.input} value={form.registrationUrl} type="url" maxLength={2048}
-                onChange={(e) => set({ registrationUrl: e.target.value })} placeholder="https://forms.gle/…" />
-            </div>
-
-            {error && <p className={styles.error}>{error}</p>}
           </div>
 
-          <div className={styles.footer}>
-            <button className={styles.btnPrimary} onClick={submit} disabled={busy}>
-              {isEdit ? 'Save changes' : 'Publish event'}
-            </button>
+          {/* Ends row */}
+          <div className={styles.dateTimeGroup}>
+            <span className={styles.dateTimeGroupLabel}>Ends *</span>
+            <div className={styles.dateTimeRow}>
+              <div className={styles.dateBox}>
+                <CustomDatePicker
+                  value={form.endDate}
+                  min={form.startDate || new Date().toISOString().split('T')[0]}
+                  onChange={(val) => set({ endDate: val })}
+                />
+              </div>
+              <div className={styles.timeBox}>
+                <CustomTimePicker
+                  value={form.endTimeOnly}
+                  onChange={(val) => set({ endTimeOnly: val })}
+                />
+              </div>
+            </div>
           </div>
+
+          {/* Multi-day badge — visible when start and end are on different dates */}
+          {form.startDate && form.endDate && form.startDate !== form.endDate && (
+            <div className={styles.multiDayBadge}>
+              <CalendarRange size={14} />
+              <span>
+                Multi-day · 
+                {formatCardDate(
+                  combineDateTime(form.startDate, form.startTimeOnly || '00:00'),
+                  combineDateTime(form.endDate,   form.endTimeOnly   || '23:59'),
+                )}
+              </span>
+            </div>
+          )}
+
+          <div className={styles.field}>
+            <span className={styles.label}>Venue *</span>
+            <input className={styles.input} value={form.venue} maxLength={100}
+              onChange={(e) => set({ venue: e.target.value })} placeholder="e.g. Main Auditorium" />
+          </div>
+
+          <div className={styles.field}>
+            <span className={styles.label}>Registration link</span>
+            <input className={styles.input} value={form.registrationUrl} type="url" maxLength={2048}
+              onChange={(e) => set({ registrationUrl: e.target.value })} placeholder="https://forms.gle/…" />
+          </div>
+
+          {error && <p className={styles.error}>{error}</p>}
+        </div>
+
+        <div className={styles.footer}>
+          <button className={styles.btnPrimary} onClick={submit} disabled={busy}>
+            {isEdit ? 'Save changes' : 'Publish event'}
+          </button>
         </div>
       </div>
-
-      {/* Crop editor — rendered outside the form modal via portal */}
-      {cropTarget && (
-        <MediaCropper
-          imageFile={cropTarget}
-          aspect={3 / 4}
-          cropShape="rect"
-          onCropComplete={handleCropComplete}
-          onCancel={handleCropCancel}
-        />
-      )}
-    </>
+    </div>
   );
 }

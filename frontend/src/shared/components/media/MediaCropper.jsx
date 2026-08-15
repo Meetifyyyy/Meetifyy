@@ -4,7 +4,7 @@ import Cropper from 'react-easy-crop';
 import { getCroppedImg } from './cropImageUtils';
 import { X, Check, Loader2 } from 'lucide-react';
 
-export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', onCropComplete, onCancel }) {
+export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', onCropComplete, onCancel, onError }) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
@@ -42,6 +42,9 @@ export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', on
     const startTime = Date.now();
     try {
       const croppedBlob = await getCroppedImg(imageSrc, croppedAreaPixels);
+      if (!croppedBlob || croppedBlob.size === 0) {
+        throw new Error('The browser could not create the cropped image. Please try another image.');
+      }
       const fileName = (typeof imageFile === 'object' && imageFile?.name)
         ? imageFile.name.replace(/\.[^.]+$/, '.webp')
         : 'cropped.webp';
@@ -59,8 +62,14 @@ export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', on
 
       handleSmoothClose(() => onCropComplete(croppedFile));
     } catch (e) {
-      console.error('Cropping error:', e);
-      handleSmoothClose(onCancel);
+      const error = e instanceof Error
+        ? e
+        : new Error('Could not prepare this image. Please try another JPG, PNG, WebP, or GIF.');
+      console.error('[media-cropper] crop failed:', error);
+      handleSmoothClose(() => {
+        if (onError) onError(error);
+        else onCancel();
+      });
     } finally {
       setIsProcessing(false);
     }

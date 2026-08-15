@@ -368,7 +368,9 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
   return JSON.parse(sanitizedText);
 }
 
-window.__api_redirecting = false;
+if (typeof window !== 'undefined') {
+  window.__api_redirecting = false;
+}
 
 /**
  * Current access token (synchronous). Exposed so raw XHR/fetch flows that bypass
