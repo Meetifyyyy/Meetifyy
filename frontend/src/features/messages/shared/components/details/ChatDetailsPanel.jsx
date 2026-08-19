@@ -247,7 +247,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   const isMember = isGroup ? (conversation.isMember !== false && Boolean(memberMap[currentUser?.id] || conversation.isMember || isOwner || isAdmin)) : true;
   const isClosed = conversation.status === 'Closed';
   const canEditGroupInfo = isAdmin || (editGroupPermission || '').toUpperCase() === 'EVERYONE';
-  const rawParticipants = isGroup ? (groupDetails?.memberDetails || []) : (conversation.members || conversation.participants || (activity ? activity.participants : []) || []);
+  const rawParticipants = isGroup ? (groupDetails?.memberDetails || []) : (conversation.members || conversation.participants || []);
   const sortedParticipants = useMemo(() => {
     return sortGroupMembers(rawParticipants, {
       ownerId: isGroup ? groupDetails?.ownerId : conversation.ownerId,
@@ -765,10 +765,10 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         {/* 2. GROUP & EVENT CHAT DETAILS */}
         {isGroup && (
           <div className={styles.detailsList}>
-            {(conversation.description || activity?.description) && (
+            {conversation.description && (
               <div className={styles.section}>
                 <h3 className={styles.sectionTitle}>Description</h3>
-                <p className={styles.sectionValue}>{conversation.description || activity?.description}</p>
+                <p className={styles.sectionValue}>{conversation.description}</p>
               </div>
             )}
 
@@ -826,7 +826,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                   if (!userObj) return null;
                   
                   const isMe = uid === currentUser?.id;
-                  const isUserOwner = uid === conversation.ownerId || (activity && (uid === activity.hostId || uid === activity.creatorId));
+                  const isUserOwner = uid === conversation.ownerId || uid === conversation.hostId;
                   const isUserAdmin = (conversation.admins || []).includes(uid);
                   
                   const canPromote = isOwner && !isMe && !isUserOwner && !isUserAdmin;

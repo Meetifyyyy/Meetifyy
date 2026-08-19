@@ -12,6 +12,7 @@ export default function DMChatArea({
   onBack,
   showChatOnMobile,
   isLoading,
+  notFound,
   hasMore,
   isLoadingMore,
   onLoadMore,
@@ -29,6 +30,7 @@ export default function DMChatArea({
       conversation={conversation}
       showChatOnMobile={showChatOnMobile}
       isLoading={isLoading}
+      notFound={notFound}
       hasMore={hasMore}
       isLoadingMore={isLoadingMore}
       onLoadMore={onLoadMore}

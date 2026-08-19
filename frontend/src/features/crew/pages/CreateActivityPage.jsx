@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useSmartBack } from '@shared/hooks/useSmartBack';
 import styles from './CreateActivityPage.module.css';
 
 import ImageSearchModal from '@shared/components/modals/ImageSearchModal';
@@ -668,6 +669,7 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
 
 export default function CreateActivityPage() {
   const navigate = useNavigate();
+  const goBack = useSmartBack();
   const location = useLocation();
   const prefill = location.state?.prefill || {};
   const returnTo = location.state?.returnTo || '/crew';
@@ -973,7 +975,7 @@ export default function CreateActivityPage() {
         {/* ── Top bar ── */}
         <header className={styles.topBar}>
           <div className={styles.headerLeft}>
-            <button className={styles.backBtn} onClick={() => navigate(returnTo, { replace: true })} aria-label="Go back">
+            <button className={styles.backBtn} onClick={() => goBack(returnTo)} aria-label="Go back">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                 <line x1="19" y1="12" x2="5" y2="12" />
                 <polyline points="12 19 5 12 12 5" />

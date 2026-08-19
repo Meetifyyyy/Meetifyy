@@ -348,7 +348,7 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
             <>
               <button 
                 className={s.primaryBtn} 
-                onClick={() => navigate('/settings', { state: { panel: 'profile' } })}
+                onClick={() => navigate('/settings/profile')}
                 style={{ height: '44px' }}
               >
                 Edit Profile

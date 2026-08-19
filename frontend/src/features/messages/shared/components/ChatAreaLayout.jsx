@@ -9,6 +9,7 @@ import ChatInputArea from './ChatInputArea';
 import MessageContextMenu from './MessageContextMenu';
 import ChatDetailsPanel from './details/ChatDetailsPanel';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
+import NotFoundState from '@shared/components/ui/NotFoundState';
 import styles from './ChatAreaLayout.module.css';
 
 const ForwardMessageModal = lazy(() => import('./modals/ForwardMessageModal'));
@@ -20,6 +21,7 @@ export default function ChatAreaLayout({
   conversations,
   showChatOnMobile,
   isLoading,
+  notFound,
   hasMore,
   isLoadingMore,
   onLoadMore,
@@ -78,6 +80,14 @@ export default function ChatAreaLayout({
   );
   const typingAvatar = typingParticipant?.avatar || typingParticipant?.profileImage || null;
   const typingName = firstTypingUserName || typingParticipant?.name || '';
+
+  if (notFound) {
+    return (
+      <div className={`${styles.chatArea} ${showChatOnMobile ? styles.chatAreaVisible : ''}`}>
+        <NotFoundState type="chat" coverPage={false} onAction={onBack} actionLabel="Back to Messages" />
+      </div>
+    );
+  }
 
   if (!conversation) {
     return (

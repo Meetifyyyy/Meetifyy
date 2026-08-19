@@ -36,6 +36,10 @@ const CONFIG_BY_TYPE = {
     title: 'Community not found',
     message: "This community doesn't exist or may have been deleted.",
   },
+  chat: {
+    title: 'Chat not found',
+    message: "This conversation doesn't exist or you no longer have access to it.",
+  },
   page: {
     title: 'Page not found',
     message: "That page doesn't exist or has been moved.",

@@ -136,6 +136,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     data: historyPages,
     isLoading,
     isFetching,
+    isError,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage
@@ -825,6 +826,10 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     messages: allMessages,
     rawPages: historyPages?.pages,
     isLoading: isLoadingMessages,
+    // True once the server has authoritatively rejected this conversation id
+    // (doesn't exist, or the current user isn't a participant — the backend
+    // collapses both into the same 403 so this signal never distinguishes them).
+    isError,
     hasMore: hasNextPage,
     isLoadingMore: isFetchingNextPage,
     onLoadMore: fetchNextPage,

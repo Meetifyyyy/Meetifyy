@@ -1,4 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useSmartBack } from '@shared/hooks/useSmartBack';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import pageStyles from '../pages/ActivityDetailPage.module.css';
 import styles from './skeletons/ActivityDetailSkeleton.module.css';
@@ -13,6 +14,7 @@ import styles from './skeletons/ActivityDetailSkeleton.module.css';
  */
 export default function ActivityDetailSkeleton() {
   const navigate  = useNavigate();
+  const goBack = useSmartBack();
   const location  = useLocation();
 
   return (
@@ -27,7 +29,7 @@ export default function ActivityDetailSkeleton() {
           <div className={pageStyles.headerLeft}>
             <button
               className={pageStyles.backBtn}
-              onClick={() => navigate(location.state?.from ?? '/crew', { replace: true })}
+              onClick={() => goBack('/crew')}
               aria-label="Go back"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>

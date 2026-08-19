@@ -5,8 +5,9 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/hooks/useData';
 import { useChatManager } from '../../shared/hooks/useChatManager';
 import { matchesConversationId } from '../../shared/utils/cacheUtils';
-import { generateConversationUrl, correctConversationUrl } from '@shared/utils/conversationUrl';
+import { generateConversationUrl, correctConversationUrl, parseConversationRoute } from '@shared/utils/conversationUrl';
 import { showToast } from '@shared/utils/toast';
+import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { MessageSquarePlus, Search } from 'lucide-react';
 
 import DMItem from '../../direct-messages/components/sidebar/DMItem';
@@ -24,11 +25,17 @@ import ConversationSkeleton from '../../shared/components/skeletons/Conversation
 import styles from './MessagesLayout.module.css';
 import sidebarStyles from '../../shared/components/sidebar/ConversationList.module.css';
 
+// One canonical prefix for every conversation URL. /inbox/* still resolves —
+// the router redirects it here — so old links keep working without the module
+// having to carry two parallel URL shapes around.
+const MESSAGES_BASE = '/messages';
+
 export default function MessagesLayout() {
   const { param1, param2 } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const goBack = useSmartBack();
   const { currentUser } = useAuth();
 
   const {
@@ -48,36 +55,43 @@ export default function MessagesLayout() {
     deleteConversation,
   } = useData();
 
-  const routeChatId = param2 || param1 || null;
+  // parseConversationRoute understands both the canonical /messages/:slug/:publicId
+  // format and legacy 2-segment links where the id comes first — a naive
+  // `param2 || param1` misreads legacy links (id, slug) as (slug, id) and ends up
+  // treating the slug string as the conversation id, which can never match.
+  const { publicId: routeChatId } = parseConversationRoute(param1, param2);
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const draftUserId = searchParams.get('user') || location.state?.targetUser?.id;
   const isDraftRoute = routeChatId === 'new' || (routeChatId && String(routeChatId).startsWith('draft_'));
 
-  const routeChatIdCalculated = isDraftRoute ? (draftUserId ? `draft_${draftUserId}` : 'new') : routeChatId;
-  const [activeChatId, setActiveChatId] = useState(routeChatIdCalculated);
-  const [showChatOnMobile, setShowChatOnMobile] = useState(!!routeChatIdCalculated);
+  // The URL owns which conversation is open. Nothing mirrors it in component
+  // state: a mirrored copy is what made reloads and Back drop out of the chat,
+  // because the copy and the URL could disagree about what was on screen.
+  const activeChatId = isDraftRoute
+    ? (draftUserId ? `draft_${draftUserId}` : 'new')
+    : (routeChatId || null);
+  // Mobile shows the list and the thread as two screens of one stack; which one
+  // is visible is purely a function of whether the URL names a conversation.
+  const showChatOnMobile = !!activeChatId;
 
   const handleBack = () => {
-    const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
-    if (activeChatId || showChatOnMobile) {
-      setShowChatOnMobile(false);
-      setActiveChatId(null);
-      navigate(basePath, { replace: true, state: location.state });
-    } else {
-      const fromPath = location.state?.from;
-      navigate(fromPath && fromPath !== location.pathname ? fromPath : '/home', { replace: true });
-    }
+    // Closing a thread is a real back step, so pop the history entry that
+    // opening it pushed. goBack falls back to the conversation list when there
+    // is nothing behind us (deep link, refresh, new tab).
+    goBack(MESSAGES_BASE);
   };
 
   const handleSelectChat = (id, selectedConv) => {
     const targetConv = selectedConv || conversations.find(c => String(c.id) === String(id) || String(c.publicId) === String(id));
     const targetId = targetConv?.publicId || targetConv?.id || id;
-    setActiveChatId(targetId);
-    setShowChatOnMobile(true);
 
-    const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
-    const targetPath = generateConversationUrl(targetConv || { id: targetId }, currentUser?.id, basePath);
-    navigate(targetPath, { replace: true, state: location.state });
+    const targetPath = generateConversationUrl(targetConv || { id: targetId }, currentUser?.id, MESSAGES_BASE);
+    if (targetPath === location.pathname) return;
+
+    // PUSH, not replace. Opening a conversation is a navigation the user can
+    // back out of; replacing here is what made browser Back leave Messages
+    // entirely instead of returning to the conversation list.
+    navigate(targetPath, { state: location.state });
   };
 
   const [activeFilter, setActiveFilter] = useState('All');
@@ -85,28 +99,42 @@ export default function MessagesLayout() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
 
-  useEffect(() => {
-    if (routeChatIdCalculated) {
-      setActiveChatId(routeChatIdCalculated);
-      setShowChatOnMobile(true);
-    } else {
-      setActiveChatId(null);
-      setShowChatOnMobile(false);
-    }
-  }, [routeChatIdCalculated]);
-
-  const { 
+  const {
     messages: allMessages,
     rawPages,
-    isLoading: isMessagesLoading, 
-    hasMore: hasNextPage, 
-    isLoadingMore: isFetchingNextPage, 
+    isLoading: isMessagesLoading,
+    isError: isMessagesError,
+    hasMore: hasNextPage,
+    isLoadingMore: isFetchingNextPage,
     onLoadMore: fetchNextPage,
     sendMessageOptimistically,
     retryUpload,
     cancelUpload,
     markSeenIfEligible
   } = useChatManager(activeChatId, 'messages', currentUser);
+
+  const isKnownConversation = useMemo(() => {
+    if (!activeChatId || isDraftRoute) return true;
+    return conversations.some((c) => matchesConversationId(c, activeChatId));
+  }, [conversations, activeChatId, isDraftRoute]);
+
+  // useChatManager never fetches history for ids carrying the temp_/c_temp_
+  // prefixes reserved for not-yet-synced local records — matches its `enabled`
+  // guard. Those ids can never resolve, so there's no fetch to wait on.
+  const canFetchMessages = !!activeChatId && !String(activeChatId).startsWith('temp_') && !String(activeChatId).startsWith('c_temp_');
+
+  // True once we can say with certainty that the id in the URL is not a real,
+  // accessible conversation: the sidebar's own conversation list has finished
+  // loading and doesn't contain it, AND either the backend has authoritatively
+  // rejected it (404/403, collapsed into the same error by design) or the id
+  // is shaped such that it was never going to be fetched at all.
+  const isChatInvalid = (
+    !!activeChatId &&
+    !isDraftRoute &&
+    !isKnownConversation &&
+    !isConversationsLoading &&
+    (canFetchMessages ? (!isMessagesLoading && isMessagesError) : true)
+  );
 
   // Find active conversation and merge history messages
   const baseConv = useMemo(() => {
@@ -160,7 +188,7 @@ export default function MessagesLayout() {
   // URL sync
   useEffect(() => {
     if (!activeChatId || !activeConv || activeConv.isDraft) return;
-    const targetPath = correctConversationUrl(activeConv, currentUser?.id, location.pathname);
+    const targetPath = correctConversationUrl(activeConv, currentUser?.id, MESSAGES_BASE);
     if (location.pathname !== targetPath && targetPath !== location.pathname) {
       navigate(targetPath, { replace: true, state: location.state });
     }
@@ -175,11 +203,12 @@ export default function MessagesLayout() {
           const res = await dmApi.startDM(targetId);
           const realId = res?.publicId || res?.id;
           if (realId) {
-            setActiveChatId(realId);
             queryClient.invalidateQueries({ queryKey: ['conversations'] });
+            // REPLACE: the draft URL was never a place worth returning to, so
+            // the real conversation takes its slot in the stack rather than
+            // adding one Back press that lands on an empty draft.
+            navigate(`${MESSAGES_BASE}/${realId}`, { replace: true, state: location.state });
             await sendMessageOptimistically(realId, text, replyTo, mentions, mediaUrl, mediaType, explicitLinkPreview, explicitInviteData, options);
-            const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
-            navigate(`${basePath}/${realId}`, { replace: true, state: location.state });
             return;
           }
         } catch (err) {
@@ -237,8 +266,7 @@ export default function MessagesLayout() {
     if (existing?.publicId || existing?.id) {
       handleSelectChat(existing.publicId || existing.id);
     } else {
-      const basePath = location.pathname.startsWith('/inbox') ? '/inbox' : '/messages';
-      navigate(`${basePath}/new?user=${targetUser.id}`, { state: { targetUser } });
+      navigate(`${MESSAGES_BASE}/new?user=${targetUser.id}`, { state: { targetUser } });
     }
   };
 
@@ -376,6 +404,7 @@ export default function MessagesLayout() {
                 onBack={handleBack}
                 showChatOnMobile={showChatOnMobile}
                 isLoading={isConversationsLoading || (isMessagesLoading && allMessages.length === 0)}
+                notFound={isChatInvalid}
                 {...paginationProps}
               />
             );
@@ -392,6 +421,7 @@ export default function MessagesLayout() {
               onBack={handleBack}
               showChatOnMobile={showChatOnMobile}
               isLoading={activeConv?.isDraft ? false : (isConversationsLoading || (isMessagesLoading && allMessages.length === 0))}
+              notFound={isChatInvalid}
               {...paginationProps}
             />
           );

@@ -174,7 +174,7 @@ export class UploadsController {
 
   private async handleGetMedia(key: string, folder: string | undefined, res: Response) {
     if (!this.storageService.isSafeStorageKey(key)) {
-      return res.status(400).json({ error: 'Invalid media key' });
+      return this.sendMediaMiss(res, 400);
     }
     const cwd = process.cwd();
     
@@ -243,7 +243,28 @@ export class UploadsController {
       return res.redirect('https://images.unsplash.com/photo-1517842645767-c639042777db?w=800&auto=format&fit=crop&q=80');
     }
 
-    return res.status(404).json({ error: 'Media file not found' });
+    return this.sendMediaMiss(res, 404);
+  }
+
+  /**
+   * Ends a failed media request without a body.
+   *
+   * Every URL under /api/media is consumed as an <img>/<video> source, and the
+   * API is served from a different origin than the app. A JSON error body on
+   * such a request trips Chrome's Cross-Origin Read Blocking, which reports it
+   * as a blocked response in DevTools and gives the element nothing useful
+   * anyway. An empty body has no MIME type to sniff, so the browser simply
+   * fires the element's `error` event and the UI falls back as intended.
+   *
+   * Nothing reads this endpoint as JSON, so no caller loses information.
+   */
+  private sendMediaMiss(res: Response, status: number) {
+    res.status(status);
+    res.removeHeader('Content-Type');
+    // Don't let a miss get cached as though it were the image: thumbnails are
+    // uploaded asynchronously and a key that 404s now may exist in a moment.
+    res.setHeader('Cache-Control', 'no-store');
+    return res.end();
   }
 
   /**

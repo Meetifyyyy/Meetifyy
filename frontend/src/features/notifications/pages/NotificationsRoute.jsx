@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useUrlState } from '@shared/hooks/useUrlState';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNotifications } from '@shared/hooks/useNotifications';
 import { useAuth } from '@shared/context/AuthContext';
@@ -18,7 +19,12 @@ import { useData } from '@shared/hooks/useData';
 import { NotifRowSkeleton } from '../components/skeletons/NotificationsSkeleton';
 
 export default function NotificationsRoute() {
-  const [activeTab, setActiveTab] = useState('all');
+  // ?tab=invitations survives a reload and gives Back a step inside the module
+  // instead of dropping the user straight out of Notifications.
+  const [activeTab, setActiveTab] = useUrlState('tab', 'all', {
+    allowed: ['all', 'invitations'],
+    push: true,
+  });
   const { currentUser } = useAuth();
   const {
     notifications,

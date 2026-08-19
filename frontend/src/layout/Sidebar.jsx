@@ -140,7 +140,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname === '/home' ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/home', { replace: true }); }}
+            onClick={(e) => { e.preventDefault(); navigate('/home'); }}
             onMouseEnter={() => import('@features/feed/pages/FeedRoute')}
           >
             {location.pathname === '/home' ? (
@@ -156,11 +156,11 @@ export default function Sidebar({ onCommunityClick }) {
             className={`${styles.sidebarLink}${location.pathname.startsWith('/messages') ? ` ${styles.active}` : ''}`}
             onClick={(e) => { 
               e.preventDefault(); 
-              if (location.pathname.startsWith('/messages') || location.pathname.startsWith('/inbox')) {
-                navigate('/messages', { replace: true, state: location.state });
-              } else {
-                navigate('/messages', { state: { from: location.pathname } });
-              }
+              // smartNavigate already replaces when the target is the page we
+              // are on, so re-tapping Messages never duplicates an entry —
+              // while stepping out of an open thread stays a real push the
+              // user can back out of.
+              navigate('/messages', { state: { from: location.pathname } });
             }}
             onMouseEnter={() => import('@features/messages/pages/MessagesRoute')}
           >
@@ -180,7 +180,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/campus') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/campus', { replace: true }); }}
+            onClick={(e) => { e.preventDefault(); navigate('/campus'); }}
             onMouseEnter={() => import('@features/campus/pages/CampusPage')}
           >
             {location.pathname.startsWith('/campus') ? (
@@ -194,7 +194,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/crew') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/crew', { replace: true }); }}
+            onClick={(e) => { e.preventDefault(); navigate('/crew'); }}
             onMouseEnter={() => import('@features/crew/pages/FindYourCrewPage')}
           >
             {location.pathname.startsWith('/crew') ? (
@@ -208,7 +208,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/notifications') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/notifications', { replace: true }); }}
+            onClick={(e) => { e.preventDefault(); navigate('/notifications'); }}
           >
             {location.pathname.startsWith('/notifications') ? (
               <BellSolid />
@@ -221,7 +221,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/profile') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate(`/profile/${username}`, { replace: true }); }}
+            onClick={(e) => { e.preventDefault(); navigate(`/profile/${username}`); }}
             onMouseEnter={() => import('@features/profile/pages/ProfilePage')}
           >
             {location.pathname.startsWith('/profile') ? (
@@ -235,7 +235,7 @@ export default function Sidebar({ onCommunityClick }) {
           <a
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/settings') ? ` ${styles.active}` : ''}`}
-            onClick={(e) => { e.preventDefault(); navigate('/settings', { replace: true }); }}
+            onClick={(e) => { e.preventDefault(); navigate('/settings'); }}
             onMouseEnter={() => import('@features/settings/pages/SettingsRoute')}
           >
             {location.pathname.startsWith('/settings') ? (

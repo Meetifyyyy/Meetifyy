@@ -1,4 +1,5 @@
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useUrlState } from '@shared/hooks/useUrlState';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { messagesApi, usersApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
@@ -93,23 +94,19 @@ export default function ProfilePage() {
   const { username: currentUserUsername, logout, currentUser: authUser, updateProfile } = useAuth();
   const targetUsername = profileUsername || currentUserUsername;
 
-  const [modalType, setModalType] = useState(null);
-
-  useEffect(() => {
-    const tab = searchParams.get('tab');
-    if (tab === 'followers' || tab === 'following') {
-      setModalType(tab);
-    }
-  }, [searchParams]);
+  // The followers/following list is a sub-view of the profile, so the URL owns
+  // it: /profile/:username?tab=followers is linkable and survives a reload, and
+  // because opening it pushes an entry, Back closes the list rather than
+  // leaving the profile. Previously the param was read once and then stripped,
+  // which left the open list invisible to reload, deep links and Back alike.
+  const [modalType, setModalType] = useUrlState('tab', '', {
+    allowed: ['followers', 'following'],
+    push: true,
+  });
 
   const handleCloseUserListModal = useCallback(() => {
-    setModalType(null);
-    if (searchParams.get('tab')) {
-      const newParams = new URLSearchParams(searchParams);
-      newParams.delete('tab');
-      setSearchParams(newParams, { replace: true });
-    }
-  }, [searchParams, setSearchParams]);
+    goBack(`/profile/${targetUsername}`);
+  }, [goBack, targetUsername]);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -348,7 +345,7 @@ export default function ProfilePage() {
                   Edit cover
                 </button>
               )}
-              <button className={s.mobileBackBtn} onClick={() => navigate(location.state?.from ?? '/home', { replace: true })} aria-label="Go back">
+              <button className={s.mobileBackBtn} onClick={() => goBack('/home')} aria-label="Go back">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="19" y1="12" x2="5" y2="12" />
                   <polyline points="12 19 5 12 12 5" />
@@ -485,7 +482,7 @@ export default function ProfilePage() {
                 </div>
               ) : (
                 <div className={s.actionButtons}>
-                  <button className={s.primaryBtn} onClick={() => navigate('/settings', { state: { panel: 'profile' } })}>
+                  <button className={s.primaryBtn} onClick={() => navigate('/settings/profile')}>
                     Edit Profile
                   </button>
                   <button className={s.secondaryBtn} onClick={() => setShareModalOpen(true)}>

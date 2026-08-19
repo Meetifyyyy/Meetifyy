@@ -3,10 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X } from 'lucide-react';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
+import { useAuth } from '@shared/context/AuthContext';
 import styles from './LandingNavbar.module.css';
 
 export default function LandingNavbar() {
   const navigate = useNavigate();
+  // This navbar is also used on info/footer pages (About, Terms, Privacy,
+  // Contact, etc. — see StaticDocLayout), which stay reachable while logged
+  // in, unlike the landing page itself. Reading live auth state here (not a
+  // one-time snapshot) means the CTA swaps immediately on login/logout with
+  // no refresh needed, everywhere this navbar is mounted.
+  const { isLoggedIn, loading: authLoading } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -32,12 +39,22 @@ export default function LandingNavbar() {
 
           {/* Desktop CTAs */}
           <div className={styles.desktopActions}>
-            <button className={styles.signInBtn} onClick={() => navigate('/login')}>
-              Sign In
-            </button>
-            <button className={styles.ctaBtn} onClick={() => navigate('/signup')}>
-              Create Account
-            </button>
+            {!authLoading && (
+              isLoggedIn ? (
+                <button className={styles.ctaBtn} onClick={() => navigate('/home')}>
+                  Continue
+                </button>
+              ) : (
+                <>
+                  <button className={styles.signInBtn} onClick={() => navigate('/login')}>
+                    Sign In
+                  </button>
+                  <button className={styles.ctaBtn} onClick={() => navigate('/signup')}>
+                    Create Account
+                  </button>
+                </>
+              )
+            )}
           </div>
 
           {/* Mobile hamburger */}
@@ -71,18 +88,31 @@ export default function LandingNavbar() {
               <div className={styles.mobileLogo}>
                 <img src={wordmark} alt="Meetifyy" className={styles.mobileWordmarkImg} />
               </div>
-              <button
-                onClick={() => { navigate('/login'); setMenuOpen(false); }}
-                className={styles.mobileSignIn}
-              >
-                Sign In
-              </button>
-              <button
-                onClick={() => { navigate('/signup'); setMenuOpen(false); }}
-                className={styles.mobileCta}
-              >
-                Create Account
-              </button>
+              {!authLoading && (
+                isLoggedIn ? (
+                  <button
+                    onClick={() => { navigate('/home'); setMenuOpen(false); }}
+                    className={styles.mobileCta}
+                  >
+                    Continue
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => { navigate('/login'); setMenuOpen(false); }}
+                      className={styles.mobileSignIn}
+                    >
+                      Sign In
+                    </button>
+                    <button
+                      onClick={() => { navigate('/signup'); setMenuOpen(false); }}
+                      className={styles.mobileCta}
+                    >
+                      Create Account
+                    </button>
+                  </>
+                )
+              )}
             </motion.div>
           </motion.div>
         )}

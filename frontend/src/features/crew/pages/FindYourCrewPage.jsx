@@ -5,6 +5,7 @@ import { ChevronRight } from 'lucide-react';
 import { useAuth } from '@shared/context/AuthContext';
 import { useActivities, useCrewDiscover, useSavedActivitiesQuery, useMyActivitiesQuery } from '@shared/hooks/useCrew';
 import { useDebounce } from '@shared/hooks/useDebounce';
+import { useUrlState } from '@shared/hooks/useUrlState';
 import { prefetchActivity } from '@shared/hooks/prefetch';
 import PageLayout from '@layout/PageLayout';
 import PageHeader from '@layout/PageHeader';
@@ -31,13 +32,38 @@ function SectionHeader({ title, onSeeAll }) {
   );
 }
 
+// Fixed URL slugs for the crew tabs. The college tab's visible label comes from
+// the user's college and can change, so it is addressed as `college` rather than
+// by its label.
+const CREW_TAB_SLUGS = ['for-you', 'college', '1-on-1', 'my-activities', 'saved'];
+const STATIC_TAB_BY_SLUG = {
+  'for-you': 'For You',
+  '1-on-1': '1 on 1',
+  'my-activities': 'My Activities',
+  saved: 'Saved',
+};
+
+function slugToTab(slug, collegeTab) {
+  if (slug === 'college') return collegeTab || 'For You';
+  return STATIC_TAB_BY_SLUG[slug] || 'For You';
+}
+
+function tabToSlug(tab, collegeTab) {
+  if (collegeTab && tab === collegeTab) return 'college';
+  const found = Object.entries(STATIC_TAB_BY_SLUG).find(([, label]) => label === tab);
+  return found ? found[0] : 'for-you';
+}
+
 export default function FindYourCrewPage() {
   const { currentUser, collegeName: authCollegeName } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [selectedTab, setSelectedTab] = useState(location.state?.selectedTab || 'For You');
+  // The tab lives in the URL (?tab=saved), so a refresh, a shared link and the
+  // Back button all agree on which list is showing. Slugs are fixed even though
+  // the college pill's label is dynamic, so its address never shifts.
+  const [tabSlug, setTabSlug] = useUrlState('tab', 'for-you', { allowed: CREW_TAB_SLUGS, push: true });
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 200);
 
@@ -50,6 +76,9 @@ export default function FindYourCrewPage() {
   // The dynamic college pill uses the authoritative name from discover, falling
   // back to the auth-derived name so the tab renders before discover resolves.
   const collegeTab = (discCollegeName || (hasCollege ? authCollegeName : null)) || null;
+
+  const selectedTab = slugToTab(tabSlug, collegeTab);
+  const setSelectedTab = (tab) => setTabSlug(tabToSlug(tab, collegeTab));
 
   const isCollegeTab = Boolean(collegeTab) && selectedTab === collegeTab;
 

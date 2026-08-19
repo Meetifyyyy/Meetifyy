@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import logo from '@assets/images/meetify_logo.webp';
 import { searchApi } from '@shared/api/apiClient';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
@@ -12,6 +13,7 @@ import styles from './GlobalSearch.module.css';
 
 export default function GlobalSearch() {
   const navigate = useNavigate();
+  const { smartNavigate } = useSmartNavigation();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const isMobile = useIsMobile();
@@ -114,7 +116,10 @@ export default function GlobalSearch() {
 
     if (isMobile && val.trim()) {
       setIsFocused(false);
-      navigate(`/search?q=${encodeURIComponent(val.trim())}`, { state: { autoFocus: true } });
+      // smartNavigate replaces once we are already on /search, so a five-letter
+      // query leaves one history entry instead of five — otherwise Back would
+      // walk the user back through every keystroke before leaving the page.
+      smartNavigate(`/search?q=${encodeURIComponent(val.trim())}`, { state: { autoFocus: true } });
     }
   };
 

@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
+import { useUrlState } from '@shared/hooks/useUrlState';
 import { Search, Clock, X, RefreshCw, AlertCircle, Calendar, ArrowLeft, Loader2, Sparkles, Users, Compass, Globe2, FileText } from 'lucide-react';
 import { useGlobalSearch } from '@features/search/hooks/useGlobalSearch';
 import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
@@ -239,7 +240,13 @@ export default function SearchResultsRoute() {
     setImmediateValue: setImmediateInputVal,
   } = useDebouncedState(rawQ, 200);
 
-  const [activeChip, setActiveChip] = useState('all');
+  // The result-type filter is part of what the URL describes, so a shared or
+  // reloaded /search link comes back showing the same filtered results.
+  // Replace rather than push: a filter is a refinement of the same search, not
+  // a separate place to press Back to.
+  const [activeChip, setActiveChip] = useUrlState('type', 'all', {
+    allowed: ['all', 'people', 'activities', 'communities', 'posts'],
+  });
 
   // Arrived here via the mobile header hand-off (first keystroke there navigates here).
   const [shouldAutoFocus] = useState(() => Boolean(location.state?.autoFocus));

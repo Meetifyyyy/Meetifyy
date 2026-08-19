@@ -302,7 +302,11 @@ export default function SignupJourneyCTA() {
         >
           <form onSubmit={handleOpenModal} className={styles.form}>
             <input
+              id="cta-college"
+              name="college"
               type="text"
+              autoComplete="organization"
+              aria-label="College name"
               value={collegeInput}
               onChange={(e) => setCollegeInput(e.target.value)}
               placeholder="Enter your college name"
@@ -376,9 +380,12 @@ export default function SignupJourneyCTA() {
                   {errorMsg && <div className={styles.errorBox}>{errorMsg}</div>}
 
                   <div className={styles.fieldGroup}>
-                    <label className={styles.fieldLabel}>Full Name</label>
+                    <label className={styles.fieldLabel} htmlFor="cta-name">Full Name</label>
                     <input
+                      id="cta-name"
+                      name="name"
                       type="text"
+                      autoComplete="name"
                       required
                       minLength={2}
                       maxLength={80}
@@ -389,9 +396,12 @@ export default function SignupJourneyCTA() {
                   </div>
 
                   <div className={styles.fieldGroup}>
-                    <label className={styles.fieldLabel}>College / University Name</label>
+                    <label className={styles.fieldLabel} htmlFor="cta-college-name">College / University Name</label>
                     <input
+                      id="cta-college-name"
+                      name="collegeName"
                       type="text"
+                      autoComplete="organization"
                       required
                       minLength={3}
                       maxLength={120}
@@ -402,9 +412,12 @@ export default function SignupJourneyCTA() {
                   </div>
 
                   <div className={styles.fieldGroup}>
-                    <label className={styles.fieldLabel}>Personal Email</label>
+                    <label className={styles.fieldLabel} htmlFor="cta-personal-email">Personal Email</label>
                     <input
+                      id="cta-personal-email"
+                      name="personalEmail"
                       type="email"
+                      autoComplete="email"
                       required
                       maxLength={100}
                       value={personalEmail}
@@ -414,9 +427,12 @@ export default function SignupJourneyCTA() {
                   </div>
 
                   <div className={styles.fieldGroup}>
-                    <label className={styles.fieldLabel}>College Email</label>
+                    <label className={styles.fieldLabel} htmlFor="cta-college-email">College Email</label>
                     <input
+                      id="cta-college-email"
+                      name="collegeEmail"
                       type="email"
+                      autoComplete="email"
                       required
                       maxLength={100}
                       value={collegeEmail}

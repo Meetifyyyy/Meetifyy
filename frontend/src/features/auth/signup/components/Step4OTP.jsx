@@ -140,7 +140,10 @@ export default function Step4OTP() {
             {code.map((digit, idx) => (
               <input
                 key={idx}
+                id={`otp-digit-${idx + 1}`}
+                name={`otp-${idx + 1}`}
                 ref={(el) => (inputsRef.current[idx] = el)}
+                autoComplete={idx === 0 ? 'one-time-code' : 'off'}
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"

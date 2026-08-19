@@ -2,105 +2,152 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation, useNavigationType } from 'react-router-dom';
 import { overlayManager } from '@shared/services/OverlayManager';
 
-const SESSION_KEY = 'smartHistoryStack_v2';
+/**
+ * Back-navigation core.
+ *
+ * The browser's own history is the single source of truth. React Router stamps
+ * every entry it creates with a monotonic `history.state.idx`; this module only
+ * keeps a *label cache* (idx -> path) so `goBack` can tell whether the entry
+ * behind us is a different page or a duplicate of the current one. The cache is
+ * never consulted to decide *whether* we can go back — that comes from `idx`
+ * alone — so a stale or missing cache degrades to correct-but-dumber behaviour
+ * instead of the desynced stack the previous implementation could produce.
+ */
+
+const SESSION_KEY = 'smartHistoryEntries_v3';
+const ORIGIN_KEY = 'smartHistoryOrigin_v3';
 
 const _state = {
-  stack: [], // Array of path strings e.g. ['/home', '/crew', '/messages']
+  // Sparse array of path strings, indexed by history.state.idx.
+  entries: [],
+  // The idx this SPA session started at. Anything at or below it belongs to
+  // whatever the user was doing before the app loaded (another site, a fresh
+  // tab), so Back from there must leave the app rather than be simulated.
+  originIdx: null,
 };
 
-try {
-  const stored = sessionStorage.getItem(SESSION_KEY);
-  if (stored) {
-    const parsed = JSON.parse(stored);
-    if (Array.isArray(parsed)) _state.stack = parsed;
-  }
-} catch (e) {
-  /* ignore */
+function currentIdx() {
+  const idx = window.history.state?.idx;
+  return typeof idx === 'number' ? idx : null;
 }
 
-function saveStack() {
+try {
+  const storedEntries = sessionStorage.getItem(SESSION_KEY);
+  if (storedEntries) {
+    const parsed = JSON.parse(storedEntries);
+    if (Array.isArray(parsed)) _state.entries = parsed;
+  }
+  const storedOrigin = sessionStorage.getItem(ORIGIN_KEY);
+  if (storedOrigin !== null) {
+    const parsed = Number(storedOrigin);
+    if (Number.isFinite(parsed)) _state.originIdx = parsed;
+  }
+} catch (e) {
+  /* sessionStorage unavailable (private mode / disabled) — run cacheless */
+}
+
+function persist() {
   try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(_state.stack));
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(_state.entries));
+    if (_state.originIdx !== null) {
+      sessionStorage.setItem(ORIGIN_KEY, String(_state.originIdx));
+    }
   } catch (e) {
     /* ignore */
   }
 }
 
 /**
- * Extracts base meaningful path without transient search parameters
- * unless search is a distinct search route (/search?q=...).
+ * Normalizes a location to the identity we compare entries by. Query strings
+ * are deliberately excluded: `/crew?tab=saved` and `/crew?tab=hosting` are the
+ * same page, and Back between them should still land on the previous *page*.
  */
 export function getMeaningfulPath(pathname, search = '') {
-  // If search query is non-empty on /search, keep path clean or normalized
-  if (pathname === '/search') {
-    return pathname;
-  }
   return pathname;
 }
 
 /**
- * SmartBackTracker component — mount once at router root.
- * Synchronizes history stack with meaningful route changes, eliminating duplicate entries.
+ * SmartBackTracker — mount once at the router root.
+ *
+ * Records the path at each history index. Because entries are keyed by the
+ * router's own idx rather than pushed/popped in parallel, PUSH/POP/REPLACE all
+ * self-correct: a POP simply reads the idx it landed on, and a forward
+ * navigation after a POP truncates the entries the browser itself discarded.
  */
 export function SmartBackTracker() {
   const location = useLocation();
   const navType = useNavigationType();
 
   useEffect(() => {
-    const currentPath = getMeaningfulPath(location.pathname, location.search);
-    const idx = window.history.state?.idx;
+    const path = getMeaningfulPath(location.pathname, location.search);
+    const idx = currentIdx();
 
-    if (typeof idx === 'number') {
-      _state.stack.splice(idx);
-      _state.stack[idx] = currentPath;
-    } else {
-      if (navType === 'PUSH') {
-        const lastEntry = _state.stack[_state.stack.length - 1];
-        if (lastEntry !== currentPath) {
-          _state.stack.push(currentPath);
-        }
-      } else if (navType === 'POP') {
-        if (_state.stack.length > 1) {
-          _state.stack.pop();
-        }
-      } else if (navType === 'REPLACE') {
-        if (_state.stack.length > 0) {
-          _state.stack[_state.stack.length - 1] = currentPath;
-        } else {
-          _state.stack.push(currentPath);
-        }
-      }
+    if (idx === null) {
+      // No router-managed history state (very old browsers, or an entry pushed
+      // outside the router). Nothing reliable to key on; leave the cache alone.
+      return;
     }
 
-    // Home is the navigation root — collapse all prior in-app history.
-    // After this point, browser Back exits the app rather than re-entering
-    // previously visited in-app pages.
-    if (currentPath === '/home') {
-      _state.stack = ['/home'];
+    if (_state.originIdx === null) {
+      _state.originIdx = idx;
+    } else if (idx < _state.originIdx) {
+      // The user went back past where this session started (possible when the
+      // tab was restored). Re-anchor so we never simulate Back into entries we
+      // know nothing about.
+      _state.originIdx = idx;
     }
 
-    saveStack();
+    if (navType === 'PUSH') {
+      // A push invalidates every forward entry the browser just discarded.
+      _state.entries.length = idx;
+    }
+    _state.entries[idx] = path;
+
+    persist();
   }, [location.pathname, location.search, navType]);
 
   return null;
 }
 
-export function getLastNonMessagePath() {
-  for (let i = _state.stack.length - 1; i >= 0; i--) {
-    const p = _state.stack[i];
-    if (p && !p.startsWith('/messages') && !p.startsWith('/inbox')) {
-      return p;
-    }
-  }
-  return null;
+/**
+ * True when there is at least one in-app history entry behind the current one.
+ * Used to decide between a real `navigate(-1)` and a synthetic "up" navigation.
+ */
+export function canGoBackInApp() {
+  const idx = currentIdx();
+  if (idx === null) return false;
+  const origin = _state.originIdx ?? 0;
+  return idx > origin;
 }
 
 /**
- * Centralized production-grade navigation hook.
+ * Number of history steps back to the nearest entry whose path differs from the
+ * current one, or null when there is no such entry within this app session.
+ * Guards against the duplicate entries that repeated same-path pushes can leave
+ * behind, so one Back press never appears to do nothing.
+ */
+function stepsToPreviousDistinctEntry(currentPath) {
+  const idx = currentIdx();
+  if (idx === null) return null;
+  const origin = _state.originIdx ?? 0;
+
+  let target = idx - 1;
+  while (target >= origin && _state.entries[target] === currentPath) {
+    target -= 1;
+  }
+  if (target < origin) return null;
+  // An unknown (never-cached) entry is still a real entry — stepping to it is
+  // correct; we just can't say what it was.
+  return idx - target;
+}
+
+/**
+ * Centralized navigation hook.
  *
- * Provides:
- *  - `goBack(fallbackPath, options)`: Intelligently handles back navigation, overlay dismissal, and fallback paths.
- *  - `smartNavigate(target, options)`: Wrapper around `navigate` that replaces duplicate routes to prevent stack pollution.
+ *  - `goBack(fallbackPath, options)` — dismisses an open overlay, otherwise
+ *    pops the real history stack, otherwise navigates up to `fallbackPath`.
+ *  - `smartNavigate(to, options)` — `navigate` that replaces instead of pushing
+ *    when the target is the page we are already on.
  */
 export function useSmartNavigation() {
   const navigate = useNavigate();
@@ -109,86 +156,48 @@ export function useSmartNavigation() {
 
   const goBack = useCallback(
     (fallbackPath = '/home', options = { replace: true }) => {
-      // 0. Home is the navigation root — never navigate further back in-app.
-      //    Let the browser handle Back naturally from here (exit to external,
-      //    close tab, or do nothing depending on how the user arrived).
-      if (location.pathname === '/home') return;
-
-      // 1. Check if any overlay (modal/drawer/sheet) is open and close it first
+      // 1. An open overlay owns Back before the route does.
       if (overlayManager.hasOpenOverlays()) {
         overlayManager.closeTop();
         return;
       }
 
-      // 2. Debounce double clicks
+      // 2. Debounce double taps.
       if (isNavigating.current) return;
       isNavigating.current = true;
       setTimeout(() => {
         isNavigating.current = false;
       }, 350);
 
-      // Check explicit state.from origin first
-      if (location.state?.from && location.state.from !== location.pathname) {
-        navigate(location.state.from, { replace: true });
-        return;
-      }
-
-      const isMessagesRoute = location.pathname.startsWith('/messages') || location.pathname.startsWith('/inbox');
-      if (isMessagesRoute) {
-        const lastNonMsg = getLastNonMessagePath();
-        if (lastNonMsg && lastNonMsg !== location.pathname) {
-          navigate(lastNonMsg, { replace: true });
+      // 3. Real history first. This is what makes Back behave identically
+      //    whether it comes from the browser chrome, the hardware key, or an
+      //    in-app back button: all three pop the same stack.
+      if (canGoBackInApp()) {
+        const steps = stepsToPreviousDistinctEntry(
+          getMeaningfulPath(location.pathname, location.search)
+        );
+        if (steps) {
+          navigate(-steps);
           return;
         }
-        navigate(fallbackPath, { replace: true });
-        return;
       }
 
-      const idx = window.history.state?.idx;
-      const currentPath = getMeaningfulPath(location.pathname);
-
-      if (typeof idx === 'number' && idx > 0) {
-        // Find previous distinct path in history
-        const prevPath = _state.stack[idx - 1];
-        if (prevPath && prevPath !== currentPath) {
-          navigate(-1);
-        } else if (_state.stack.length > 1) {
-          // Find first distinct previous path
-          let targetIdx = idx - 1;
-          while (targetIdx >= 0 && _state.stack[targetIdx] === currentPath) {
-            targetIdx--;
-          }
-          if (targetIdx >= 0) {
-            const stepsBack = idx - targetIdx;
-            navigate(-stepsBack);
-          } else {
-            navigate(fallbackPath, { replace: true });
-          }
-        } else {
-          navigate(fallbackPath, { replace: true });
-        }
-      } else {
-        // Direct URL entry, refresh, or no in-app history available
-        if (_state.stack.length > 1) {
-          const previousUrl = _state.stack[_state.stack.length - 2];
-          _state.stack.pop();
-          saveStack();
-          navigate(previousUrl, { replace: true });
-        } else {
-          navigate(fallbackPath, options);
-        }
-      }
+      // 4. No in-app history behind us — this is a deep link, a new tab, or a
+      //    reload at the session's first entry. Navigate *up* to the parent
+      //    instead, replacing so we don't grow a stack the user never walked.
+      if (location.pathname === fallbackPath) return;
+      navigate(fallbackPath, { replace: true, ...options });
     },
-    [navigate, location.pathname, location.state]
+    [navigate, location.pathname, location.search]
   );
 
   const smartNavigate = useCallback(
     (to, options = {}) => {
-      const targetPath = typeof to === 'string' ? to.split('?')[0] : (to.pathname || '');
-      const currentPath = location.pathname;
+      const target = typeof to === 'string' ? to : to?.pathname || '';
+      const targetPath = target.split('?')[0].split('#')[0];
 
-      // If navigating to the current path, use replace to avoid pushing duplicate entries
-      const shouldReplace = options.replace || targetPath === currentPath;
+      // Re-navigating to the page we're already on should never grow history.
+      const shouldReplace = options.replace || targetPath === location.pathname;
 
       navigate(to, { ...options, replace: shouldReplace });
     },

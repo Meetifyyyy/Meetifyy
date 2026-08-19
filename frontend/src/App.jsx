@@ -6,6 +6,9 @@ import { useVersionCheck } from './shared/hooks/useVersionCheck';
 import DashboardLayoutWrapper from './layout/DashboardLayoutWrapper';
 import ErrorBoundary, { RouteErrorBoundary } from './shared/components/ErrorBoundary';
 import SocketManager from './shared/components/SocketManager';
+import OverlayHistoryBridge from './shared/components/OverlayHistoryBridge';
+import LegacyPathRedirect from './shared/components/LegacyPathRedirect';
+import { setRedirectIntent, consumeRedirectIntent, clearRedirectIntent } from './shared/utils/redirectIntent';
 // DEV PREVIEW — remove before shipping
 import CriticalErrorScreen from './shared/components/ui/CriticalErrorScreen';
 const NotificationPlayground = import.meta.env.DEV
@@ -145,7 +148,13 @@ function ProtectedRoute({ children }) {
   const { isLoggedIn, currentUser, loading } = useAuth();
   const location = useLocation();
   if (loading) return null;
-  if (!isLoggedIn) return <Navigate to="/" replace state={{ from: location }} />;
+  if (!isLoggedIn) {
+    // Remember the deep link so signing in returns the user to the page they
+    // actually asked for. History state can't carry it: the user walks through
+    // the landing page and login before it is needed.
+    setRedirectIntent(location.pathname + location.search + location.hash);
+    return <Navigate to="/" replace state={{ from: location }} />;
+  }
   if (currentUser?.isNewUser && location.pathname !== '/onboarding') {
     return <Navigate to="/onboarding" replace />;
   }
@@ -161,9 +170,13 @@ function PublicRoute({ children }) {
       if (location.pathname === '/signup') {
         return children;
       }
+      // The pending deep link is for a finished account; onboarding takes
+      // priority and the stale intent must not fire later.
+      clearRedirectIntent();
       return <Navigate to="/onboarding" replace />;
     }
-    return <Navigate to="/home" replace />;
+    // Land on the page the user originally asked for, if there was one.
+    return <Navigate to={consumeRedirectIntent() || '/home'} replace />;
   }
   return children;
 }
@@ -215,6 +228,7 @@ export default function App() {
       element: (
         <ErrorBoundary>
           <SmartBackTracker />
+          <OverlayHistoryBridge />
           <WindowScrollbarToggle />
           <ScrollRestoration />
           <SocketManager />
@@ -329,10 +343,14 @@ export default function App() {
             { path: '/communities',                element: withBoundary(<CommunitiesRoute />, <CommunitiesSkeleton />), handle: { wide: true } },
             { path: '/communities/:id',            element: withBoundary(<CommunityDetailRoute />, null), handle: { wide: true } },
             { path: '/messages/:param1?/:param2?', element: withBoundary(<MessagesRoute />, null), handle: { wide: true } },
-            { path: '/inbox/:param1?/:param2?',    element: withBoundary(<MessagesRoute />, null), handle: { wide: true } },
+            // /inbox was the old prefix for the same screens. It stays routable
+            // for existing links but redirects, so Messages has exactly one
+            // canonical URL per conversation.
+            { path: '/inbox/*',                    element: <LegacyPathRedirect from="/inbox" to="/messages" /> },
             { path: '/post/:id',                   element: withBoundary(<PostDetailRoute />, null) },
             { path: '/profile/:profileUsername?',  element: withBoundary(<ProfilePage />, <ProfilePageSkeleton />) },
             { path: '/settings',                   element: withBoundary(<SettingsRoute />, <SettingsSkeleton />), handle: { wide: true } },
+            { path: '/settings/:panel',            element: withBoundary(<SettingsRoute />, <SettingsSkeleton />), handle: { wide: true } },
             { path: '/notifications',              element: withBoundary(<NotificationsRoute />, <NotificationsSkeleton />), handle: { wide: true } },
             { path: '/campus',                     element: withBoundary(<CampusPage />, <CampusSkeleton />), handle: { wide: true } },
             { path: '/campus/directory',           element: withBoundary(<DirectoryPage />, null), handle: { wide: true } },
@@ -350,7 +368,11 @@ export default function App() {
     },
   ],
 },
-{ path: '*', element: <Navigate to="/" replace /> },
+// No sibling catch-all here: the root layout route already matches every path,
+// so an unmatched URL is handled by the '*' child inside the dashboard shell
+// above. A second catch-all at this level is unreachable, and having one
+// invited the assumption that unknown URLs bounce to the landing page — they
+// don't, and shouldn't: they render Not Found with the shell intact.
 ], {
   future: {
     v7_startTransition: true,

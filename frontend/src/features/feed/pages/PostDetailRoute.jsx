@@ -17,7 +17,7 @@ export default function PostDetailRoute() {
   const { getUserById } = useData();
 
   const handleBack = () => {
-    navigate(location.state?.from ?? '/home', { replace: true });
+    goBack('/home');
   };
 
   // A post opened from the feed already carries its full card data via router

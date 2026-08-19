@@ -6,6 +6,7 @@ import { useTypingIndicator } from './useTypingIndicator';
 import { removeMessageFromCache, updateMessageInCache, updateConversationPreview } from '../utils/cacheUtils';
 import { messagesApi } from '@shared/api/apiClient';
 import { toast } from 'sonner';
+import { useUrlState } from '@shared/hooks/useUrlState';
 
 /**
  * Shared state + handlers for all ChatArea variants (DM, Group).
@@ -20,7 +21,20 @@ export function useChatAreaState(conversation) {
   const [contextMenuState, setContextMenuState] = useState(null);
   const [unsendConfirmMsg, setUnsendConfirmMsg] = useState(null);
   const [forwardingMsg, setForwardingMsg] = useState(null);
-  const [showDetails, setShowDetails] = useState(false);
+  // The details panel is a full screen of its own on mobile, so it is addressed
+  // as ?view=details. That makes Back close the panel and return to the thread
+  // instead of closing the thread outright, and keeps the panel open across a
+  // reload. Selecting another conversation navigates to a path without the
+  // param, so the panel closes on its own — no manual reset needed.
+  const [detailsView, setDetailsView] = useUrlState('view', '', {
+    allowed: ['details'],
+    push: true,
+  });
+  const showDetails = detailsView === 'details';
+  const setShowDetails = useCallback(
+    (next) => setDetailsView(next ? 'details' : ''),
+    [setDetailsView]
+  );
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -33,7 +47,6 @@ export function useChatAreaState(conversation) {
     setReplyingTo(null);
     setUnsendConfirmMsg(null);
     setForwardingMsg(null);
-    setShowDetails(false);
     setShowSearch(false);
     setSearchQuery('');
   }, [conversation?.id]);

@@ -19,6 +19,7 @@ export default function GroupChatArea({
   onBack,
   showChatOnMobile,
   isLoading,
+  notFound,
   hasMore,
   isLoadingMore,
   onLoadMore,
@@ -32,7 +33,7 @@ export default function GroupChatArea({
   const { data: groupDetails } = useQuery({
     queryKey: ['groupDetails', convId],
     queryFn: () => groupApi.getDetails(convId),
-    enabled: Boolean(isGroup && convId && conversation?.isMember !== false && conversation?.myMembershipStatus !== 'KICKED'),
+    enabled: Boolean(isGroup && convId && !notFound && conversation?.isMember !== false && conversation?.myMembershipStatus !== 'KICKED'),
     staleTime: 1000 * 15,
   });
 
@@ -80,6 +81,7 @@ export default function GroupChatArea({
       conversation={effectiveConv}
       showChatOnMobile={showChatOnMobile}
       isLoading={isLoading}
+      notFound={notFound}
       hasMore={hasMore}
       isLoadingMore={isLoadingMore}
       onLoadMore={onLoadMore}

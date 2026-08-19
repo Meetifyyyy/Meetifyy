@@ -79,11 +79,14 @@ export default function ContactPage() {
         ) : (
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '36rem' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.35rem', fontFamily: 'Inter, sans-serif' }}>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.35rem', fontFamily: 'Inter, sans-serif' }} htmlFor="contact-name">
                 Your Name
               </label>
               <input
+                id="contact-name"
+                name="name"
                 type="text"
+                autoComplete="name"
                 required
                 placeholder="Rahul Sharma"
                 value={form.name}
@@ -102,11 +105,14 @@ export default function ContactPage() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.35rem', fontFamily: 'Inter, sans-serif' }}>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.35rem', fontFamily: 'Inter, sans-serif' }} htmlFor="contact-email">
                 Email Address
               </label>
               <input
+                id="contact-email"
+                name="email"
                 type="email"
+                autoComplete="email"
                 required
                 placeholder="student@university.edu"
                 value={form.email}
@@ -125,10 +131,12 @@ export default function ContactPage() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.35rem', fontFamily: 'Inter, sans-serif' }}>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.35rem', fontFamily: 'Inter, sans-serif' }} htmlFor="contact-subject">
                 Topic
               </label>
               <select
+                id="contact-subject"
+                name="subject"
                 value={form.subject}
                 onChange={(e) => setForm({ ...form, subject: e.target.value })}
                 style={{
@@ -152,10 +160,12 @@ export default function ContactPage() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.35rem', fontFamily: 'Inter, sans-serif' }}>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.35rem', fontFamily: 'Inter, sans-serif' }} htmlFor="contact-message">
                 Message
               </label>
               <textarea
+                id="contact-message"
+                name="message"
                 required
                 rows={4}
                 placeholder="How can we help you today?"

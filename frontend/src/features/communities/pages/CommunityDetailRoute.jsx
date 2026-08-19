@@ -1,10 +1,12 @@
 import { useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
+import { useSmartBack } from '@shared/hooks/useSmartBack';
 import CommunityView from '../components/view/CommunityView';
 import { useCommunities } from '@shared/hooks/useCommunities';
 import NotFoundState from '@shared/components/ui/NotFoundState';
 
 export default function CommunityDetailRoute() {
   const navigate = useNavigate();
+  const goBack = useSmartBack();
   const location = useLocation();
   const { id } = useParams();
   const { communities } = useCommunities();
@@ -16,7 +18,7 @@ export default function CommunityDetailRoute() {
   }
 
   const handleBack = () => {
-    navigate(location.state?.from ?? '/communities', { replace: true });
+    goBack('/communities');
   };
 
   const handlePostClick = (post, sourceContext, communityId) => {
