@@ -13,13 +13,13 @@ import {
 } from '@react-email/components';
 
 import { SITE_CONFIG } from '../../common/config/site.config';
+import * as S from './_shared-styles';
 
 interface VerificationOtpEmailProps {
   name?: string;
   otp?: string;
   frontendUrl?: string;
-  logoUrl?: string;
-  logoWhiteUrl?: string;
+  logoIconUrl?: string;
   instagramUrl?: string;
   twitterUrl?: string;
   linkedinUrl?: string;
@@ -29,8 +29,7 @@ export const VerificationOtpEmail = ({
   name = 'there',
   otp = '',
   frontendUrl = SITE_CONFIG.frontendUrl,
-  logoUrl = SITE_CONFIG.logoUrl,
-  logoWhiteUrl = SITE_CONFIG.logoWhiteUrl,
+  logoIconUrl = SITE_CONFIG.logoIconUrl,
   instagramUrl = SITE_CONFIG.instagramUrl,
   twitterUrl = SITE_CONFIG.twitterUrl,
   linkedinUrl = SITE_CONFIG.linkedinUrl,
@@ -41,71 +40,53 @@ export const VerificationOtpEmail = ({
   return (
     <Html>
       <Head>
-        <meta name="color-scheme" content="only light" />
-        <meta name="supported-color-schemes" content="only light" />
-        <style>{`
-          :root {
-            color-scheme: light !important;
-            supported-color-schemes: light !important;
-          }
-          html, body, .body {
-            background-color: transparent !important;
-            color-scheme: light !important;
-          }
-          .light-container {
-            background-color: #ffffff !important;
-          }
-          @media (prefers-color-scheme: dark) {
-            html, body, .body {
-              background-color: transparent !important;
-            }
-            .light-container {
-              background-color: #ffffff !important;
-            }
-          }
-          u + .body {
-            background-color: transparent !important;
-          }
-          u + .body .light-container {
-            background-color: #ffffff !important;
-          }
-          [data-ogsc] body,
-          body[data-outlook-cycle] {
-            background-color: transparent !important;
-          }
-          [data-ogsc] .light-container {
-            background-color: #ffffff !important;
-          }
-        `}</style>
+        <meta name="color-scheme" content="light dark" />
+        <meta name="supported-color-schemes" content="light dark" />
+        <style>{S.SHARED_HEAD_CSS}</style>
       </Head>
-      <Preview>Your verification code: {otp}</Preview>
-      <Body style={main}>
-        <Container style={container} className="light-container">
-          {/* Top Header with Dark Wordmark Logo */}
-          <Section style={header}>
-            <a href={frontendUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', display: 'inline-block' }}>
-              <Img
-                src={logoUrl}
-                width="170"
-                alt="Meetifyy"
-                style={logoImg}
-              />
+      <Preview>Your Meetifyy verification code: {otp}</Preview>
+      <Body style={S.main} className="email-body">
+        <Container style={S.container} className="email-container">
+
+          {/* ── Header: icon + HTML text wordmark ── */}
+          <Section style={S.header}>
+            <a href={frontendUrl} target="_blank" rel="noopener noreferrer" style={S.headerLink}>
+              <table role="presentation" border={0} cellPadding={0} cellSpacing={0} style={S.logoTable}>
+                <tbody>
+                  <tr>
+                    <td style={S.logoIconCell}>
+                      <Img
+                        src={logoIconUrl}
+                        width="36"
+                        height="36"
+                        alt="Meetifyy"
+                        style={S.logoIconImg}
+                      />
+                    </td>
+                    <td style={S.logoTextCell}>
+                      <span style={S.wordmarkText}>
+                        MEETIF<span style={S.wordmarkAccent}>YY</span>
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </a>
           </Section>
 
-          <Section style={content}>
-            {/* Title with Clean Typography (No heavy bolding) */}
-            <Heading style={heading}>
-              Your <span style={highlightText}>verification code</span>
+          {/* ── Body ── */}
+          <Section style={S.content}>
+            <Heading style={S.heading}>
+              Your <span style={S.highlightText}>verification code</span>
             </Heading>
 
-            <Text style={greeting}>Hi {name}! 👋</Text>
-            <Text style={subtext}>
+            <Text style={S.greeting}>Hi {name}! 👋</Text>
+            <Text style={S.subtext}>
               We received a request to verify your email address.<br />
-              Use the OTP below to complete the verification.
+              Enter the code below to complete verification.
             </Text>
 
-            {/* Separated 6-Digit Grid Box or Template Placeholder Box */}
+            {/* OTP Grid */}
             <Section style={otpContainer}>
               {isTemplate ? (
                 <div style={templateOtpBox}>
@@ -138,26 +119,26 @@ export const VerificationOtpEmail = ({
               )}
             </Section>
 
-            {/* Expiry Warning with Proper Clock Icon */}
-            <Section style={expirySection}>
-              <Text style={expiryText}>
-                <span style={clockIcon}>⏱</span> This code will expire in <span style={expiryHighlight}>10 minutes</span>.
+            {/* Expiry */}
+            <Section style={S.expirySection}>
+              <Text style={S.expiryText}>
+                ⏱ This code expires in <span style={S.expiryHighlight}>10 minutes</span>
               </Text>
             </Section>
 
-            {/* Security Notice Card with PNG Shield Icon */}
-            <Section style={securityCard}>
+            {/* Security card */}
+            <Section style={S.securityCard}>
               <table role="presentation" border={0} cellPadding={0} cellSpacing={0} style={{ width: '100%' }}>
                 <tbody>
                   <tr>
-                    <td style={shieldIconCell}>
-                      <div style={shieldBadge}>
-                        <Img src={SITE_CONFIG.iconShieldUrl} width="20" height="20" alt="Shield" style={{ display: 'block', margin: '7px auto' }} />
+                    <td style={S.shieldIconCell}>
+                      <div style={S.shieldBadge}>
+                        <Img src={SITE_CONFIG.iconShieldUrl} width="18" height="18" alt="Shield" style={{ display: 'block', margin: '7px auto' }} />
                       </div>
                     </td>
-                    <td style={securityTextCell}>
-                      <Text style={securityTitle}>Keep your code safe</Text>
-                      <Text style={securityBody}>
+                    <td style={S.securityTextCell}>
+                      <Text style={S.securityTitle}>Keep your code private</Text>
+                      <Text style={S.securityBody}>
                         Never share this code with anyone.<br />
                         Meetifyy will never ask for it.
                       </Text>
@@ -167,51 +148,43 @@ export const VerificationOtpEmail = ({
               </table>
             </Section>
 
-            <Text style={ignoreText}>
+            <Text style={S.ignoreText}>
               If you didn't request this code, you can safely ignore this email.
             </Text>
 
-            <Text style={signoff}>
+            <Text style={S.signoff}>
               Thanks,<br />
-              The Meetifyy Team
+              <strong>The Meetifyy Team</strong>
             </Text>
           </Section>
 
-          <Hr style={hr} />
+          <Hr style={S.hr} />
 
-          {/* Footer with Dynamic Social Links from ENV (PNG Icons Only) */}
-          <Section style={footer}>
-            <table role="presentation" border={0} cellPadding={0} cellSpacing={0} style={socialTable}>
+          {/* ── Footer ── */}
+          <Section style={S.footer}>
+            <table role="presentation" border={0} cellPadding={0} cellSpacing={0} style={S.socialTable}>
               <tbody>
                 <tr>
-                  {/* Instagram */}
-                  <td style={socialTd}>
-                    <a href={instagramUrl} target="_blank" rel="noopener noreferrer" style={socialBubble} title="Instagram">
-                      <Img src={SITE_CONFIG.iconInstagramUrl} width="20" height="20" alt="Instagram" style={iconImg} />
+                  <td style={S.socialTd}>
+                    <a href={instagramUrl} target="_blank" rel="noopener noreferrer" style={S.socialBubble} title="Instagram">
+                      <Img src={SITE_CONFIG.iconInstagramUrl} width="20" height="20" alt="Instagram" style={S.iconImg} />
                     </a>
                   </td>
-                  {/* LinkedIn */}
-                  <td style={socialTd}>
-                    <a href={linkedinUrl} target="_blank" rel="noopener noreferrer" style={socialBubble} title="LinkedIn">
-                      <Img src={SITE_CONFIG.iconLinkedinUrl} width="20" height="20" alt="LinkedIn" style={{ ...iconImg, borderRadius: '50%' }} />
+                  <td style={S.socialTd}>
+                    <a href={linkedinUrl} target="_blank" rel="noopener noreferrer" style={S.socialBubble} title="LinkedIn">
+                      <Img src={SITE_CONFIG.iconLinkedinUrl} width="20" height="20" alt="LinkedIn" style={{ ...S.iconImg, borderRadius: '50%' }} />
                     </a>
                   </td>
-                  {/* Website */}
-                  <td style={socialTd}>
-                    <a href={frontendUrl} target="_blank" rel="noopener noreferrer" style={socialBubble} title="Website">
-                      <Img src={SITE_CONFIG.iconWebsiteUrl} width="20" height="20" alt="Website" style={iconImg} />
+                  <td style={S.socialTd}>
+                    <a href={frontendUrl} target="_blank" rel="noopener noreferrer" style={S.socialBubble} title="Website">
+                      <Img src={SITE_CONFIG.iconWebsiteUrl} width="20" height="20" alt="Website" style={S.iconImg} />
                     </a>
                   </td>
                 </tr>
               </tbody>
             </table>
-
-            <Text style={copyright}>
-              © {new Date().getFullYear()} Meetifyy. All rights reserved.
-            </Text>
-            <Text style={subFooter}>
-              Meetifyy Inc, Building adventures, connecting people.
-            </Text>
+            <Text style={S.copyright}>© {new Date().getFullYear()} Meetifyy. All rights reserved.</Text>
+            <Text style={S.subFooter}>Meetifyy Inc — Building adventures, connecting people.</Text>
           </Section>
         </Container>
       </Body>
@@ -219,83 +192,18 @@ export const VerificationOtpEmail = ({
   );
 };
 
-// Clean, Un-exaggerated Styles (Balanced font weights & proper spacing)
-const main = {
-  backgroundColor: 'transparent',
-  fontFamily:
-    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Ubuntu, sans-serif',
-  padding: '44px 0',
-};
-
-const container = {
-  backgroundColor: '#ffffff',
-  margin: '0 auto',
-  padding: '0',
-  borderRadius: '24px',
-  boxShadow: '0 10px 30px rgba(15, 23, 42, 0.04)',
-  overflow: 'hidden',
-  maxWidth: '460px',
-  border: '1px solid #f1f5f9',
-};
-
-const header = {
-  backgroundColor: '#ffffff',
-  padding: '44px 40px 16px',
-  textAlign: 'center' as const,
-};
-
-const logoImg = {
-  margin: '0 auto',
-  display: 'block',
-  maxWidth: '190px',
-  width: '170px',
-  height: 'auto',
-};
-
-const content = {
-  padding: '36px 40px 32px',
-  textAlign: 'center' as const,
-};
-
-const heading = {
-  fontSize: '26px',
-  fontWeight: '600',
-  letterSpacing: '-0.4px',
-  color: '#1e293b',
-  margin: '12px 0 16px',
-  textAlign: 'center' as const,
-};
-
-const highlightText = {
-  color: '#4f46e5',
-  fontWeight: '600',
-};
-
-const greeting = {
-  fontSize: '15px',
-  fontWeight: '500',
-  color: '#475569',
-  margin: '0 0 6px',
-};
-
-const subtext = {
-  fontSize: '14px',
-  lineHeight: '22px',
-  color: '#64748b',
-  fontWeight: '400',
-  margin: '0 0 28px',
-};
+// ── OTP-specific styles ──────────────────────────────────────────────────────
 
 const otpContainer = {
-  margin: '0 0 20px',
+  margin: '0 0 16px',
 };
 
 const templateOtpBox = {
   width: '100%',
   border: '1px solid #e2e8f0',
-  borderRadius: '16px',
-  backgroundColor: '#ffffff',
-  padding: '16px 0',
+  borderRadius: '14px',
+  backgroundColor: '#f8f7ff',
+  padding: '18px 0',
   textAlign: 'center' as const,
 };
 
@@ -304,170 +212,25 @@ const digitTable = {
   borderCollapse: 'separate' as const,
   borderSpacing: '0',
   border: '1px solid #e2e8f0',
-  borderRadius: '16px',
-  backgroundColor: '#ffffff',
+  borderRadius: '14px',
+  backgroundColor: '#f8f7ff',
   overflow: 'hidden',
 };
 
 const digitCell = {
   width: '16.66%',
-  height: '64px',
+  height: '68px',
   textAlign: 'center' as const,
   verticalAlign: 'middle' as const,
-  borderRight: '1px solid #f1f5f9',
+  borderRight: '1px solid #e2e8f0',
+  backgroundColor: '#f8f7ff',
 };
 
 const digitChar = {
-  fontSize: '32px',
+  fontSize: '30px',
   fontWeight: '700',
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
   color: '#4f46e5',
-};
-
-const expirySection = {
-  margin: '0 0 24px',
-  textAlign: 'center' as const,
-};
-
-const expiryText = {
-  fontSize: '13px',
-  color: '#64748b',
-  fontWeight: '400',
-  margin: '0',
-};
-
-const clockIcon = {
-  display: 'inline-block',
-  marginRight: '4px',
-  fontSize: '14px',
-  verticalAlign: 'middle',
-};
-
-const expiryHighlight = {
-  color: '#4f46e5',
-  fontWeight: '500',
-};
-
-const securityCard = {
-  backgroundColor: '#f5f3ff',
-  borderRadius: '16px',
-  padding: '16px 20px',
-  margin: '0 0 24px',
-  textAlign: 'left' as const,
-};
-
-const shieldIconCell = {
-  width: '44px',
-  verticalAlign: 'top' as const,
-};
-
-const shieldBadge = {
-  width: '36px',
-  height: '36px',
-  borderRadius: '50%',
-  backgroundColor: '#e0e7ff',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  textAlign: 'center' as const,
-};
-
-const securityTextCell = {
-  verticalAlign: 'top' as const,
-  paddingLeft: '8px',
-};
-
-const securityTitle = {
-  fontSize: '14px',
-  fontWeight: '600',
-  color: '#1e1b4b',
-  margin: '0 0 2px',
-};
-
-const securityBody = {
-  fontSize: '13px',
-  lineHeight: '19px',
-  color: '#64748b',
-  fontWeight: '400',
-  margin: '0',
-};
-
-const ignoreText = {
-  fontSize: '13px',
-  color: '#94a3b8',
-  fontWeight: '400',
-  margin: '0 0 24px',
-  textAlign: 'center' as const,
-};
-
-const signoff = {
-  fontSize: '14px',
-  lineHeight: '22px',
-  color: '#475569',
-  fontWeight: '400',
-  margin: '0',
-  textAlign: 'center' as const,
-};
-
-const brandText = {
-  color: '#4f46e5',
-  fontWeight: '500',
-};
-
-const hr = {
-  borderColor: '#f1f5f9',
-  margin: '0',
-  borderWidth: '1px',
-};
-
-const footer = {
-  padding: '24px 40px 32px',
-  backgroundColor: '#ffffff',
-  textAlign: 'center' as const,
-};
-
-const socialTable = {
-  margin: '0 auto 16px',
-};
-
-const socialTd = {
-  padding: '0 8px',
-  textAlign: 'center' as const,
-  verticalAlign: 'middle' as const,
-};
-
-const socialBubble = {
-  display: 'inline-block',
-  width: '36px',
-  height: '36px',
-  borderRadius: '50%',
-  backgroundColor: '#f8fafc',
-  border: '1px solid #f1f5f9',
-  textAlign: 'center' as const,
-  verticalAlign: 'middle' as const,
-  textDecoration: 'none',
-};
-
-const iconImg = {
-  display: 'block',
-  margin: '7px auto',
-  width: '20px',
-  height: '20px',
-  border: '0',
-};
-
-const copyright = {
-  fontSize: '12px',
-  color: '#94a3b8',
-  fontWeight: '400',
-  margin: '0 0 4px',
-};
-
-const subFooter = {
-  fontSize: '12px',
-  color: '#cbd5e1',
-  fontWeight: '400',
-  margin: '0',
 };
 
 export default VerificationOtpEmail;

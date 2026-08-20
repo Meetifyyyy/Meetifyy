@@ -4,7 +4,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { RateLimitGuard } from './common/guards/ratelimit.guard';
 import { NoCacheInterceptor } from './common/interceptors/no-cache.interceptor';
-import { appConfig, supabaseConfig, redisConfig, r2Config, resendConfig } from './common/config/configuration';
+import { appConfig, supabaseConfig, redisConfig, r2Config, resendConfig, emailConfig } from './common/config/configuration';
 import { SupabaseModule } from './supabase/supabase.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { LinkPreviewModule } from './link-preview/link-preview.module';
@@ -44,7 +44,7 @@ import { DomainValidatorModule } from './common/services/domain-validator.module
     DomainValidatorModule,
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, supabaseConfig, redisConfig, r2Config, resendConfig],
+      load: [appConfig, supabaseConfig, redisConfig, r2Config, resendConfig, emailConfig],
     }),
     LoggerModule.forRoot({
       pinoHttp: {

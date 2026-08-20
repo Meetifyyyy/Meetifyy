@@ -201,3 +201,6 @@ update_*.ts
 inspect_*.ts
 send_*.ts
 test_svc.ts
+
+# Mailpit binary (dev-only, not committed)
+local/bin/mailpit

@@ -12,6 +12,10 @@ export const SITE_CONFIG = {
   get logoUrl(): string {
     return process.env.LOGO_URL || 'https://pub-8cd64731b2bc47deb8a54acbbbfa9c4b.r2.dev/email-assets/meetifyy_wordmark_dark.png';
   },
+  get logoIconUrl(): string {
+    // The icon-only logo (512x512 PNG), used in emails alongside a CSS text wordmark
+    return process.env.LOGO_ICON_URL || `${this.frontendUrl}/logo.png`;
+  },
   get logoWhiteUrl(): string {
     return process.env.LOGO_WHITE_URL || 'https://pub-8cd64731b2bc47deb8a54acbbbfa9c4b.r2.dev/email-assets/meetifyy_wordmark_white.png';
   },

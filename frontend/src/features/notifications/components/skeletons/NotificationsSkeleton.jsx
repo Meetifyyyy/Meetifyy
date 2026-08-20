@@ -41,7 +41,6 @@ export default function NotificationsSkeleton() {
       <div className={styles.page}>
         <PageHeader
           title="Notifications"
-          subtitle="Stay updated with your connections and activities."
           backPath="/home"
           tabs={headerTabs}
           activeTab="all"

@@ -272,7 +272,6 @@ export default function NotificationsRoute() {
         <div className={styles.headerArea}>
           <PageHeader
             title="Notifications"
-            subtitle="Stay updated with your connections and activities."
             backPath="/home"
             tabs={headerTabs}
             activeTab={activeTab}

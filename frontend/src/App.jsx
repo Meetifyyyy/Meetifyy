@@ -14,6 +14,10 @@ import CriticalErrorScreen from './shared/components/ui/CriticalErrorScreen';
 const NotificationPlayground = import.meta.env.DEV
   ? lazy(() => import('./local/NotificationPlayground').catch(() => ({ default: () => null })))
   : null;
+// DEV — logo animation experiment (remove before shipping)
+const LogoAnimationPage = import.meta.env.DEV
+  ? lazy(() => import('./local/LogoAnimation').catch(() => ({ default: () => null })))
+  : null;
 
 import HomeSkeleton from './features/feed/components/skeletons/HomeSkeleton';
 import ProfilePageSkeleton from './features/profile/components/skeletons/ProfilePageSkeleton';
@@ -324,6 +328,13 @@ export default function App() {
           {
             path: '/dev/notifications',
             element: <Suspense fallback={null}><NotificationPlayground /></Suspense>,
+          }
+        ] : []),
+        // DEV — logo animation experiment
+        ...(import.meta.env.DEV && LogoAnimationPage ? [
+          {
+            path: '/logo-animation',
+            element: <StaticRoute><Suspense fallback={null}><LogoAnimationPage /></Suspense></StaticRoute>,
           }
         ] : []),
         // ----------------------------------------------------------------------

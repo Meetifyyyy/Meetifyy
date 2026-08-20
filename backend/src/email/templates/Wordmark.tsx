@@ -1,0 +1,42 @@
+import * as React from 'react';
+
+/**
+ * Pixel-perfect SVG Wordmark for Meetifyy emails.
+ * Vector-rendered code containing the exact letter geometries and cyan-blue gradient on YY.
+ */
+export const Wordmark = ({ width = 147, height = 16 }: { width?: number; height?: number }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="-4 -4 995 108"
+    width={width}
+    height={height}
+    style={{ display: 'block', verticalAlign: 'middle' }}
+    role="img"
+    aria-label="MEETIFYY"
+  >
+    <defs>
+      <linearGradient id="meetifyy-y-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#00C3FF" />
+        <stop offset="100%" stopColor="#0022FF" />
+      </linearGradient>
+    </defs>
+    <g fill="#050F24" className="wordmark-fill">
+      {/* M */}
+      <path d="M 0,100 L 0,0 L 16,0 L 55,60 L 94,0 L 110,0 L 110,100 L 94,100 L 94,30 L 55,90 L 16,30 L 16,100 Z" />
+      {/* E1 */}
+      <path d="M 155,0 H 245 V 18 H 155 Z M 155,41 H 245 V 59 H 155 Z M 155,82 H 245 V 100 H 155 Z" />
+      {/* E2 */}
+      <path d="M 290,0 H 380 V 18 H 290 Z M 290,41 H 380 V 59 H 290 Z M 290,82 H 380 V 100 H 290 Z" />
+      {/* T */}
+      <path d="M 425,0 H 515 V 18 H 478 V 100 H 462 V 18 H 425 Z" />
+      {/* I */}
+      <path d="M 560,0 H 576 V 100 H 560 Z" />
+      {/* F */}
+      <path d="M 629,0 H 697 V 18 H 637 V 41 H 691 V 59 H 637 V 100 H 621 V 8 A 8 8 0 0 1 629 0 Z" />
+    </g>
+    {/* Y1 */}
+    <path fill="url(#meetifyy-y-gradient)" d="M 742,0 H 762 L 792,39 L 822,0 H 842 L 800,55 V 100 H 784 V 55 Z" />
+    {/* Y2 */}
+    <path fill="url(#meetifyy-y-gradient)" d="M 887,0 H 907 L 937,39 L 967,0 H 987 L 945,55 V 100 H 929 V 55 Z" />
+  </svg>
+);
