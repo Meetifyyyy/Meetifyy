@@ -143,7 +143,7 @@ export function useFollowMutation(targetUsername) {
     }
   }, [queryClient, cleanTarget, cleanCurrent, currentUser, targetUsername, updateCurrentUser]);
 
-  const scheduleRequest = useCallback((intentFollow) => {
+  const scheduleRequest = useCallback((intentFollow, mutationId) => {
     if (!cleanTarget) return;
 
     // --- Step 1: Cancel any pending timer for this entity ---
@@ -181,7 +181,7 @@ export function useFollowMutation(targetUsername) {
         // Only reconcile if this is still the latest sequence
         if (seq === mutationSeqRef.current) {
           activeControllers.delete(entityKey);
-          toggleRegistry.clearIfLatest(entityKey, toggleRegistry.activeMutations.get(entityKey));
+          toggleRegistry.clearIfLatest(entityKey, mutationId);
           // ONE silent background sync — does not update UI (staleTime guard prevents flicker)
           queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(cleanTarget), refetchType: 'none' });
           queryClient.invalidateQueries({ queryKey: ['followers', cleanTarget] });
@@ -194,13 +194,19 @@ export function useFollowMutation(targetUsername) {
       } catch (err) {
         activeControllers.delete(entityKey);
         // If aborted, it means a newer request took over — don't do anything
-        if (err?.name === 'AbortError' || err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return;
+        if (err?.name === 'AbortError' || err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') {
+          toggleRegistry.clearIfLatest(entityKey, mutationId);
+          return;
+        }
         // If this isn't the latest sequence, swallow the error silently
-        if (seq !== mutationSeqRef.current) return;
+        if (seq !== mutationSeqRef.current) {
+          toggleRegistry.clearIfLatest(entityKey, mutationId);
+          return;
+        }
 
         // Rollback optimistic update for latest-sequence errors
         applyOptimisticUpdate(!finalIntent);
-        toggleRegistry.clearIfLatest(entityKey, toggleRegistry.activeMutations.get(entityKey));
+        toggleRegistry.clearIfLatest(entityKey, mutationId);
         showToast('Action failed', 'error');
       }
     }, DEBOUNCE_MS);
@@ -211,13 +217,16 @@ export function useFollowMutation(targetUsername) {
   const toggle = useCallback((intentFollow) => {
     if (!entityKey) return;
     // Register intent for UI display (FollowButton reads this via getLatestIntent)
-    toggleRegistry.register(entityKey, intentFollow);
+    // Capture the id so cleanup is scoped to THIS mutation — passing
+    // activeMutations.get(key) back in compared the value to itself, so a
+    // superseded request could clear a newer request's entry.
+    const mutationId = toggleRegistry.register(entityKey, intentFollow);
 
     // Step 1: Instant 0ms optimistic UI update
     applyOptimisticUpdate(intentFollow);
 
     // Step 2: Schedule debounced HTTP request (coalescing)
-    scheduleRequest(intentFollow);
+    scheduleRequest(intentFollow, mutationId);
   }, [entityKey, applyOptimisticUpdate, scheduleRequest]);
 
   return {

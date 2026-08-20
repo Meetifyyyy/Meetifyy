@@ -1,13 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import styles from './ImageSearchModal.module.css';
 import { X, Search, Upload, Loader2 } from 'lucide-react';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import { compressAndCacheDraftImage } from '@shared/utils/draftImageCache';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { showToast } from '@shared/utils/toast';
 
-export default function ImageSearchModal({ onClose, onSelect }) {
+/**
+ * `theme` re-applies a colour scope to the portalled content. Portalling to
+ * <body> escapes any `data-theme` wrapper at the call site, so a caller that
+ * forces its own scheme (e.g. the always-dark Create Activity page) must say so
+ * explicitly or the modal would render with the app's default tokens.
+ */
+export default function ImageSearchModal({ onClose, onSelect, theme }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -15,8 +23,14 @@ export default function ImageSearchModal({ onClose, onSelect }) {
   const [activeTab, setActiveTab] = useState('images'); // 'images' or 'gifs'
   const [cropTarget, setCropTarget] = useState(null);
   const fileInputRef = useRef(null);
+  // Only the most recent selection may call onSelect. Without this, picking
+  // image A then quickly picking image B lets A's slower compression resolve
+  // last and clobber B.
+  const selectionTokenRef = useRef(0);
+  const isCurrent = (token) => token === selectionTokenRef.current;
 
   useOverlayBack(true, onClose, { pushHistoryState: false });
+  useScrollLock(true);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -159,15 +173,20 @@ export default function ImageSearchModal({ onClose, onSelect }) {
         return;
       }
       if (file.type === 'image/gif') {
+        const token = ++selectionTokenRef.current;
         setIsCompressingRemote(true);
         compressAndCacheDraftImage(file).then(({ previewUrl }) => {
-          onSelect(previewUrl || URL.createObjectURL(file));
+          if (!isCurrent(token)) return;
+          if (!previewUrl) throw new Error('No preview produced');
+          onSelect(previewUrl);
           onClose();
         }).catch(() => {
-          onSelect(URL.createObjectURL(file));
-          onClose();
+          if (!isCurrent(token)) return;
+          // Don't hand back a raw object URL — that bypasses the media pipeline
+          // and would later be persisted as a dead blob: reference.
+          showToast('Could not process that GIF. Please try another.', 'error');
         }).finally(() => {
-          setIsCompressingRemote(false);
+          if (isCurrent(token)) setIsCompressingRemote(false);
         });
       } else {
         setCropTarget(file);
@@ -183,15 +202,20 @@ export default function ImageSearchModal({ onClose, onSelect }) {
 
   const handleSelectItem = async (itemUrl) => {
     if (activeTab === 'gifs' || isGifUrl(itemUrl)) {
+      const token = ++selectionTokenRef.current;
       setIsCompressingRemote(true);
       try {
         const { previewUrl } = await compressAndCacheDraftImage(itemUrl);
+        if (!isCurrent(token)) return;
+        // previewUrl may be absent when the remote fetch failed; the raw remote
+        // URL is still a valid cover source that commitDraftImage can upload.
         onSelect(previewUrl || itemUrl);
-      } catch (_) {
-        onSelect(itemUrl);
-      } finally {
-        setIsCompressingRemote(false);
         onClose();
+      } catch (_) {
+        if (!isCurrent(token)) return;
+        showToast('Could not load that GIF. Please try another.', 'error');
+      } finally {
+        if (isCurrent(token)) setIsCompressingRemote(false);
       }
     } else {
       setCropTarget(itemUrl);
@@ -199,24 +223,29 @@ export default function ImageSearchModal({ onClose, onSelect }) {
   };
 
   const handleCropComplete = async (croppedFile) => {
+    const token = ++selectionTokenRef.current;
     setIsCompressingRemote(true);
     try {
       const { previewUrl } = await compressAndCacheDraftImage(croppedFile, { maxWidthOrHeight: 1280 });
-      if (previewUrl) {
-        onSelect(previewUrl);
-      }
-    } catch (e) {
-      console.error('Failed to compress image:', e);
-      showToast('Image processing failed', 'error');
-    } finally {
-      setIsCompressingRemote(false);
+      if (!isCurrent(token)) return;
+      if (!previewUrl) throw new Error('No preview produced');
+      onSelect(previewUrl);
       setCropTarget(null);
       onClose();
+    } catch (e) {
+      if (!isCurrent(token)) return;
+      console.error('Failed to compress image:', e);
+      // Stay open with the cropper dismissed so the user can retry or pick
+      // something else, rather than closing on a failure that selected nothing.
+      showToast('Image processing failed. Please try again.', 'error');
+      setCropTarget(null);
+    } finally {
+      if (isCurrent(token)) setIsCompressingRemote(false);
     }
   };
 
-  return (
-    <>
+  return createPortal(
+    <div data-theme={theme} style={{ display: 'contents' }}>
       <div className={styles.modalOverlay} onClick={onClose}>
         <div className={styles.isModal} onClick={e => e.stopPropagation()}>
           <div className={styles.isHeader}>
@@ -301,6 +330,7 @@ export default function ImageSearchModal({ onClose, onSelect }) {
           onCancel={() => setCropTarget(null)}
         />
       )}
-    </>
+    </div>,
+    document.body,
   );
 }

@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean, MaxLength, IsDateString, IsNumber } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MaxLength, IsDateString, IsNumber, Matches } from 'class-validator';
 
 export class CreateActivityDto {
   @IsString()
@@ -13,6 +13,20 @@ export class CreateActivityDto {
   @IsString()
   @IsOptional()
   coverImage?: string;
+
+  /** Media row id produced by the media pipeline for an uploaded cover. */
+  @IsString()
+  @IsOptional()
+  coverMediaId?: string;
+
+  /**
+   * Solid-colour cover, as `#RRGGBB`. Mutually exclusive with coverImage —
+   * the service clears the image fields whenever this is set.
+   */
+  @IsString()
+  @IsOptional()
+  @Matches(/^#[0-9a-fA-F]{6}$/, { message: 'coverColor must be a #RRGGBB hex colour' })
+  coverColor?: string;
 
   @IsDateString()
   @IsOptional()

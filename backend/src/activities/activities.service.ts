@@ -275,6 +275,7 @@ export class ActivitiesService implements OnModuleInit {
           maxMembers: true,
           createdAt: true,
           coverImage: true,
+          coverColor: true,
           coverMediaId: true,
           deletedAt: true,
           endDate: true,
@@ -376,6 +377,7 @@ export class ActivitiesService implements OnModuleInit {
     maxMembers: true,
     createdAt: true,
     coverImage: true,
+    coverColor: true,
     coverMediaId: true,
     endDate: true,
     latitude: true,
@@ -550,6 +552,15 @@ export class ActivitiesService implements OnModuleInit {
       if (end <= start) {
         throw new BadRequestException('End date must be after start date');
       }
+      // An activity may not be created for a slot that has already begun. The
+      // client disables Publish once the start lapses, but a stale tab, a
+      // replayed request or a non-browser client can still submit one — and a
+      // past-dated activity is immediately "ENDED" and unjoinable.
+      // The grace window absorbs clock skew between client and server.
+      const CLOCK_SKEW_GRACE_MS = 2 * 60 * 1000;
+      if (start.getTime() < Date.now() - CLOCK_SKEW_GRACE_MS) {
+        throw new BadRequestException('Start date must be in the future');
+      }
       const maxDurationMs = 30 * 24 * 60 * 60 * 1000; // 30 days
       if (end.getTime() - start.getTime() > maxDurationMs) {
         throw new BadRequestException('Activity duration cannot exceed 30 days');
@@ -571,7 +582,16 @@ export class ActivitiesService implements OnModuleInit {
       creatorId,
       title: data.title,
       description: data.description,
-      coverImage: data.coverImage,
+      // Cover is either an image or a solid colour, never both. Normalising here
+      // keeps the mutually-exclusive invariant in one place instead of trusting
+      // the client to send a consistent trio.
+      ...(data.coverColor
+        ? { coverColor: data.coverColor, coverImage: null, coverMediaId: null }
+        : {
+            coverColor: null,
+            coverImage: data.coverImage ?? null,
+            coverMediaId: data.coverMediaId ?? null,
+          }),
       startDate: data.startDate ? new Date(data.startDate) : null,
       endDate: data.endDate ? new Date(data.endDate) : null,
       location: data.location,
@@ -592,6 +612,7 @@ export class ActivitiesService implements OnModuleInit {
         title: true,
         description: true,
         coverImage: true,
+        coverColor: true,
         startDate: true,
         endDate: true,
         location: true,
@@ -684,13 +705,21 @@ export class ActivitiesService implements OnModuleInit {
     }
 
     // ── Atomic idempotent upsert — safe under concurrent requests ──────────────
-    // If two requests race, the second one hits the unique constraint and the
-    // ON CONFLICT DO NOTHING clause makes it a silent no-op instead of an error.
-    await this.prisma.$executeRaw`
+    // If two requests race, the second one hits the composite-PK conflict and the
+    // ON CONFLICT clause makes it a silent no-op instead of an error.
+    //
+    // `xmax = 0` is the standard Postgres test for "this row was genuinely
+    // INSERTed rather than updated by the conflict path". It's what makes the
+    // host notification below exactly-once at the database level: two concurrent
+    // joins that both pass the membership pre-check still yield only one `true`,
+    // so only one notification is created.
+    const upsertResult = await this.prisma.$queryRaw<Array<{ inserted: boolean }>>`
       INSERT INTO "CrewActivityMember" ("userId", "activityId", "status", "joinedAt")
       VALUES (${userId}, ${activityId}, 'MEMBER', NOW())
       ON CONFLICT ("userId", "activityId") DO UPDATE SET "status" = 'MEMBER'
+      RETURNING (xmax = 0) AS inserted
     `;
+    const isNewMember = upsertResult?.[0]?.inserted === true;
 
     // Await cache clearing BEFORE responding to prevent the frontend's 
     // post-mutation refetch from racing and hitting stale Redis data.
@@ -704,7 +733,43 @@ export class ActivitiesService implements OnModuleInit {
       this.domainEventService.emit('activity.memberJoined', { activityId, userId });
     });
 
+    // ── Host notification ─────────────────────────────────────────────────────
+    // Only on a real membership transition (isNewMember), and never to yourself.
+    // Dispatched off the response path so a slow notification write can't delay
+    // the join returning.
+    if (isNewMember && activityRow.creatorId && activityRow.creatorId !== userId) {
+      setImmediate(() => {
+        this.notifyHostOfJoin(activityId, userId, activityRow.creatorId).catch((err) => {
+          this.logger.warn(`Failed to notify host of activity join: ${err?.message}`);
+        });
+      });
+    }
+
     return { success: true };
+  }
+
+  /**
+   * "<User> joined your activity" — uses the shared NotificationFactory payload
+   * so it renders and routes exactly like every other activity notification.
+   */
+  private async notifyHostOfJoin(activityId: string, userId: string, creatorId: string) {
+    const [actor, activity] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, displayName: true, username: true, avatar: true },
+      }),
+      this.prisma.crewActivity.findUnique({
+        where: { id: activityId },
+        select: { id: true, title: true },
+      }),
+    ]);
+    if (!actor || !activity) return;
+
+    // Respects the recipient's blocklist, notification preferences and
+    // real-time delivery, same as every other notification path.
+    await this.notificationsService.createNotification(
+      this.notificationFactory.createActivityJoin(actor, activity, creatorId),
+    );
   }
 
   async leaveActivity(activityId: string, userId: string) {
@@ -1005,6 +1070,7 @@ export class ActivitiesService implements OnModuleInit {
         endDate: act.endDate,
         status: act.status,
         coverImage: act.coverImage,
+        coverColor: act.coverColor,
         participationType: act.participationType,
         shareToCampus: act.shareToCampus,
         collegeId: act.collegeId,
@@ -1039,6 +1105,7 @@ export class ActivitiesService implements OnModuleInit {
         title: true,
         location: true,
         coverImage: true,
+        coverColor: true,
         startDate: true,
         endDate: true,
         members: { select: { userId: true } },
@@ -1147,6 +1214,7 @@ export class ActivitiesService implements OnModuleInit {
             activityTitle: activity.title,
             activityLocation: activity.location,
             activityCoverImage: activity.coverImage,
+            activityCoverColor: activity.coverColor,
             startDate: activity.startDate,
             endDate: activity.endDate,
             inviter: {
@@ -1212,6 +1280,7 @@ export class ActivitiesService implements OnModuleInit {
       description: inv.activity.description,
       location: inv.activity.location,
       coverImage: inv.activity.coverImage,
+      coverColor: inv.activity.coverColor,
       startDate: inv.activity.startDate,
       endDate: inv.activity.endDate,
       status: inv.status,

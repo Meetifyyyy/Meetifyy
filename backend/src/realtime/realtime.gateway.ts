@@ -235,6 +235,18 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       return;
     }
 
+    // Membership changes fan out to everyone currently viewing the activity
+    // (joined `activity_<id>` via 'activity:join'), so attendee counts and
+    // avatars update live instead of waiting for a refetch. Previously these
+    // carried no targetUserIds and were dropped with a warning.
+    if (payload.type === 'activity.memberJoined' || payload.type === 'activity.memberLeft') {
+      const activityScopeId = payload.data?.activityId || payload.activityId;
+      if (activityScopeId) {
+        this.server.to(`activity_${activityScopeId}`).emit('domainEvent', payload);
+      }
+      return;
+    }
+
     const isLegacyEvent = payload.type?.includes(':');
     let targets: string[] = [];
 

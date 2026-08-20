@@ -886,3 +886,11 @@
     height: 60px !important;
   }
 }
+
+/* Subtle in-flight affordance for Join/Leave. Deliberately does not disable the
+   button — the user must stay able to flip intent mid-request; the mutation
+   layer coalesces rapid clicks and the latest intent wins. */
+.joinBtn[data-pending='true'] {
+  opacity: 0.82;
+  transition: opacity 0.15s ease;
+}

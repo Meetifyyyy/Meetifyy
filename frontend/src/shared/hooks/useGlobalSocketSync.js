@@ -132,7 +132,7 @@ export function useGlobalSocketSync() {
 
           // Check if current user has an active optimistic toggle pending
           const entityKey = `follow:${cleanTarget}`;
-          const hasPendingLocalIntent = toggleRegistry.latestIntents.has(entityKey);
+          const hasPendingLocalIntent = toggleRegistry.isPending(entityKey);
 
           // Skip websocket state overwrite if current user triggered this and is mid-toggle
           if (isCurrentUserFollower && hasPendingLocalIntent) {
@@ -319,7 +319,7 @@ export function useGlobalSocketSync() {
           const cPostId = event.data?.postId;
           const commentId = event.data?.commentId;
           const likeCount = event.data?.likeCount;
-          const hasPendingLocal = toggleRegistry.latestIntents?.has?.(`likeComment:${commentId}`);
+          const hasPendingLocal = toggleRegistry.isPending(`likeComment:${commentId}`);
           if (cPostId && commentId && typeof likeCount === 'number' && !hasPendingLocal) {
             queryClient.setQueryData(['post', cPostId], (old) => {
               if (!old || !Array.isArray(old.comments)) return old;
@@ -342,7 +342,7 @@ export function useGlobalSocketSync() {
           // the viewer's own in-flight optimistic like.
           const likedPostId = event.data?.postId || event.postId;
           const likeCount = event.data?.likeCount;
-          const hasPendingLocal = toggleRegistry.latestIntents?.has?.(`likePost:${likedPostId}`);
+          const hasPendingLocal = toggleRegistry.isPending(`likePost:${likedPostId}`);
           if (likedPostId && typeof likeCount === 'number' && !hasPendingLocal) {
             const patchCount = (p) => (p && p.id === likedPostId ? { ...p, likeCount, likesCount: likeCount } : p);
             const updater = (old) => {
@@ -443,7 +443,7 @@ export function useGlobalSocketSync() {
           // Guard: if THIS device triggered the event (current user's own action),
           // the optimistic update is already in place. Skip to avoid races.
           const entityKey = `joinActivity:${actId}`;
-          const hasPendingLocalIntent = toggleRegistry.latestIntents.has(entityKey);
+          const hasPendingLocalIntent = toggleRegistry.isPending(entityKey);
           if (eventUserId === currentUser?.id && hasPendingLocalIntent) {
             break;
           }

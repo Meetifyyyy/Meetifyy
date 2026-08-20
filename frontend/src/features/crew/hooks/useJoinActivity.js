@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useToggleMutation } from '@shared/hooks/useToggleMutation';
 import { activitiesApi } from '@shared/api/apiClient';
 import { idbDelete } from '@shared/lib/idb';
@@ -141,19 +141,36 @@ export function useJoinActivity() {
     } catch (err) {
       // Swallow benign "already joined / not a member" conflicts — the optimistic
       // state is already correct; treat as a no-op rather than rolling back UI.
-      const msg = err?.response?.data?.message || err?.message || '';
-      if (
-        msg.toLowerCase().includes('already a member') ||
-        msg.toLowerCase().includes('not a member') ||
-        err?.response?.status === 400
-      ) {
-        return; // silent no-op
+      // Only genuinely idempotent conflicts are no-ops. The old code also
+      // swallowed every 400, which would hide real refusals like "Activity has
+      // already started" or "not authorized" behind a UI that looked successful.
+      // (`err.response` was always undefined anyway — apiClient is fetch-based
+      // and throws a plain Error, so that branch could never match.)
+      const msg = (err?.message || '').toLowerCase();
+      if (msg.includes('already a member') || msg.includes('not a member')) {
+        return; // silent no-op — optimistic state already matches reality
       }
       throw err;
     }
   }, []);
 
-  const { mutate } = useToggleMutation({
+  // Real in-flight tracking so callers can render a "Joining…" state. The
+  // registry alone can't drive this: it's a plain Map read during render, so
+  // mutating it never schedules a re-render.
+  const [pendingIds, setPendingIds] = useState(() => new Set());
+
+  const markSettled = useCallback((_entityKey, variables) => {
+    const id = variables?.activityId ? String(variables.activityId).replace(/^(act_)+/, '') : null;
+    if (!id) return;
+    setPendingIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const { mutate: baseMutate } = useToggleMutation({
     entityKey: (vars) => `joinActivity:${vars.activityId}`,
     applyOptimistic,
     applyRollback,
@@ -166,7 +183,22 @@ export function useJoinActivity() {
       // `joinActivity` awaits `clearActivityFeedCaches()` BEFORE returning success.
       return [['activities'], ['activity', cleanId]];
     },
+    onSettled: markSettled,
   });
 
-  return { mutate, isLoading: false };
+  const mutate = useCallback((variables) => {
+    const id = variables?.activityId ? String(variables.activityId).replace(/^(act_)+/, '') : null;
+    if (id) setPendingIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    baseMutate(variables);
+  }, [baseMutate]);
+
+  const isJoinPending = useCallback(
+    (activityId) => {
+      if (!activityId) return false;
+      return pendingIds.has(String(activityId).replace(/^(act_)+/, ''));
+    },
+    [pendingIds],
+  );
+
+  return { mutate, isJoinPending };
 }

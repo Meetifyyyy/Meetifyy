@@ -302,8 +302,37 @@ async function request(method, path, body, signal) {
   return _doFetch(cleanUrl, options);
 }
 
+// Requests had no timeout at all: if the API stalled (server down, mid-restart,
+// dead connection) the promise never settled, so every screen sat on its loading
+// state indefinitely with no error and no way to retry.
+const DEFAULT_TIMEOUT_MS = 30_000;
+const UPLOAD_TIMEOUT_MS = 5 * 60_000; // large media needs a far longer window
+
 async function _doFetch(cleanUrl, options, isRetry = false) {
-  const res = await fetch(cleanUrl, options);
+  const isUpload = typeof FormData !== 'undefined' && options?.body instanceof FormData;
+  const timeoutMs = options?.timeoutMs ?? (isUpload ? UPLOAD_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
+
+  // A caller-supplied signal means the caller owns cancellation (e.g. the media
+  // pipeline) — don't layer our own abort on top of it.
+  let signal = options?.signal;
+  let timeoutId;
+  if (!signal && timeoutMs > 0 && typeof AbortController !== 'undefined') {
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    signal = controller.signal;
+  }
+
+  let res;
+  try {
+    res = await fetch(cleanUrl, { ...options, signal });
+  } catch (err) {
+    if (err?.name === 'AbortError' && !options?.signal) {
+      throw new Error('Request timed out. Please check your connection and try again.');
+    }
+    throw err;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 
   // Store ETag from successful GET responses for future If-None-Match requests
   if (options.method === 'GET' && res.ok) {

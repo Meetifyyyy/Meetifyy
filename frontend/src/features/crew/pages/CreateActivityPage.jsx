@@ -2,17 +2,19 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import styles from './CreateActivityPage.module.css';
 
 import ImageSearchModal from '@shared/components/modals/ImageSearchModal';
-import { commitDraftImage } from '@shared/utils/draftImageCache';
+import { commitDraftImage, removeDraftImage } from '@shared/utils/draftImageCache';
 
 import { getRelativeDateLabel } from '@shared/utils/time';
 import {
   ArrowLeft, Send, ImageIcon,
   MapPin, Users, Pencil, Bell, CalendarClock,
   ChevronLeft, ChevronRight, ChevronDown, X, Search, GraduationCap,
-  BellOff, ChevronsUpDown, Eye, Link, Check
+  BellOff, ChevronsUpDown, Eye, Link, Check, Loader2
 } from 'lucide-react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { activitiesApi, usersApi, getMediaUrl } from '@shared/api/apiClient';
@@ -47,6 +49,16 @@ const REMINDER_OPTIONS = [
 function DateTimeModal({ formData, set, onClose }) {
   const [activeTab, setActiveTab] = useState('start'); // 'start' or 'end'
   const isStart = activeTab === 'start';
+
+  // Previously unwired: hardware/browser Back navigated away from the page
+  // instead of dismissing the sheet, and Escape did nothing.
+  useOverlayBack(true, onClose);
+  useScrollLock(true);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const today = new Date();
   const [viewYear, setViewYear] = useState(isStart ? (formData.startDateYear || today.getFullYear()) : (formData.endDateYear || today.getFullYear()));
@@ -220,23 +232,23 @@ function DateTimeModal({ formData, set, onClose }) {
   for (let i = 0; i < firstDay; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-  return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.dateTimeModal} onClick={e => e.stopPropagation()}>
+  return createPortal(
+    <div data-theme="dark" className={styles.modalOverlay} onClick={onClose}>
+      <div className={styles.dateTimeModal} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Date and time">
         <div className={styles.dtHeader}>
           <span className={styles.dtTitle}>Date &amp; Time</span>
-          <button className={styles.dtClose} onClick={onClose}><X size={16} /></button>
+          <button type="button" className={styles.dtClose} onClick={onClose}><X size={16} /></button>
         </div>
 
         <div className={styles.dtRangeRow}>
-          <button className={`${styles.dtRangeBox} ${isStart ? styles.dtRangeBoxActive : ''}`} onClick={() => setActiveTab('start')}>
+          <button type="button" className={`${styles.dtRangeBox} ${isStart ? styles.dtRangeBoxActive : ''}`} onClick={() => setActiveTab('start')}>
             <span className={styles.dtRangeDate}>{fmtDate(true)}</span>
             <span className={styles.dtRangeTime}>{fmtTime(true)}</span>
           </button>
           
           <ChevronRight size={16} className={styles.dtRangeArrow} />
           
-          <button className={`${styles.dtRangeBox} ${!isStart ? styles.dtRangeBoxActive : ''}`} onClick={() => setActiveTab('end')}>
+          <button type="button" className={`${styles.dtRangeBox} ${!isStart ? styles.dtRangeBoxActive : ''}`} onClick={() => setActiveTab('end')}>
             <span className={styles.dtRangeDate}>{fmtDate(false)}</span>
             <span className={styles.dtRangeTime}>{fmtTime(false)}</span>
           </button>
@@ -247,14 +259,14 @@ function DateTimeModal({ formData, set, onClose }) {
             <div className={styles.calNav}>
               <span className={styles.calLabel}>{MONTHS[viewMonth]} {viewYear}</span>
               <div className={styles.calBtns}>
-                <button className={styles.calBtn} onClick={prevMonth}><ChevronLeft size={14} /></button>
-                <button className={styles.calBtn} onClick={nextMonth}><ChevronRight size={14} /></button>
+                <button type="button" className={styles.calBtn} onClick={prevMonth}><ChevronLeft size={14} /></button>
+                <button type="button" className={styles.calBtn} onClick={nextMonth}><ChevronRight size={14} /></button>
               </div>
             </div>
             <div className={styles.calGrid}>
               {DAYS_OF_WEEK.map((d, i) => <span key={i} className={styles.calDow}>{d}</span>)}
               {cells.map((day, i) => (
-                <button key={i}
+                <button key={i} type="button"
                   className={`${styles.calDay} ${day && isSelected(day) ? styles.calDaySel : ''} ${day && isDayDisabled(day) ? styles.calDayOff : ''}`}
                   onClick={() => day && !isDayDisabled(day) && pickDay(day)}
                   disabled={!day || isDayDisabled(day)}
@@ -266,7 +278,7 @@ function DateTimeModal({ formData, set, onClose }) {
           <div className={styles.timeCol}>
             <div className={styles.timeList} ref={timeListRef}>
               {TIME_SLOTS.map((slot, i) => (
-                <button key={i}
+                <button key={i} type="button"
                   className={`${styles.timeSlot} ${hasTimeSelected && slot.h === selectedH && slot.m === selectedM ? styles.timeSlotOn : ''}`}
                   onClick={() => pickSlot(slot)}
                 >{slot.label}</button>
@@ -276,10 +288,11 @@ function DateTimeModal({ formData, set, onClose }) {
         </div>
 
         <div className={styles.dtFooter}>
-          <button className={styles.dtDone} onClick={onClose}>Done</button>
+          <button type="button" className={styles.dtDone} onClick={onClose}>Done</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -290,18 +303,26 @@ function CapacityModal({ value, onSave, onClose }) {
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  useOverlayBack(true, onClose);
+  useScrollLock(true);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const save = () => {
     const n = parseInt(input, 10);
     onSave((!n || n <= 0) ? 999 : n);
     onClose();
   };
 
-  return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.capModal} onClick={e => e.stopPropagation()}>
+  return createPortal(
+    <div data-theme="dark" className={styles.modalOverlay} onClick={onClose}>
+      <div className={styles.capModal} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Capacity">
         <div className={styles.dtHeader}>
           <span className={styles.dtTitle}>Capacity</span>
-          <button className={styles.dtClose} onClick={onClose}><X size={16} /></button>
+          <button type="button" className={styles.dtClose} onClick={onClose}><X size={16} /></button>
         </div>
         <div className={styles.capBody}>
           <p className={styles.capHint}>Leave empty for unlimited</p>
@@ -317,11 +338,12 @@ function CapacityModal({ value, onSave, onClose }) {
           />
         </div>
         <div className={styles.dtFooter}>
-          <button className={styles.capResetBtn} onClick={() => { onSave(2); onClose(); }}>One-on-one</button>
-          <button className={styles.dtDone} onClick={save}>Save</button>
+          <button type="button" className={styles.capResetBtn} onClick={() => { onSave(2); onClose(); }}>One-on-one</button>
+          <button type="button" className={styles.dtDone} onClick={save}>Save</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -370,7 +392,41 @@ const RANDOM_COVERS = [
   'https://images.unsplash.com/photo-1528605248644-14dd04022da1?q=80&w=800&auto=format&fit=crop', // Workshop
   'https://images.unsplash.com/photo-1551818255-e6e10975bc17?q=80&w=800&auto=format&fit=crop', // Tech event
 ];
-const getRandomCover = () => RANDOM_COVERS[Math.floor(Math.random() * RANDOM_COVERS.length)];
+/**
+ * Solid-colour covers used when the user explicitly removes the cover image.
+ * Mid-tone hues that stay legible under the white overlay text.
+ */
+const COVER_COLORS = [
+  '#2563eb', '#7c3aed', '#db2777', '#dc2626',
+  '#ea580c', '#ca8a04', '#16a34a', '#0d9488',
+  '#0284c7', '#4f46e5',
+];
+
+/**
+ * Picks a random entry, avoiding an immediate repeat of `previous` whenever the
+ * list has an alternative. `lastCoverPick` persists for the tab so consecutive
+ * Create Activity sessions don't open on the same image twice in a row.
+ */
+function pickRandom(list, previous) {
+  if (!list.length) return undefined;
+  if (list.length === 1) return list[0];
+  const pool = list.filter((item) => item !== previous);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+const LAST_COVER_KEY = 'meetifyy_last_cover_pick';
+
+const readLastCover = () => {
+  try { return sessionStorage.getItem(LAST_COVER_KEY) || undefined; } catch (_) { return undefined; }
+};
+
+const getRandomCover = () => {
+  const picked = pickRandom(RANDOM_COVERS, readLastCover());
+  try { sessionStorage.setItem(LAST_COVER_KEY, picked); } catch (_) {}
+  return picked;
+};
+
+const getRandomCoverColor = (previous) => pickRandom(COVER_COLORS, previous);
 
 /* ─── Post-publish Invite Modal ─── */
 function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creationPromise, onDone }) {
@@ -380,12 +436,18 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
   const [isSending, setIsSending] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const { data: friendsList = [], isLoading } = useQuery({
+  useScrollLock(true);
+
+  const { data: friendsList = [], isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['user-following-friends', currentUser?.username],
     queryFn: () => usersApi.getFollowing(currentUser?.username, 100, 0),
     enabled: !!currentUser?.username,
     staleTime: 30_000,
   });
+
+  // Without an explicit username the query never runs, so it would otherwise sit
+  // on the empty state forever with no explanation.
+  const cannotLoadFriends = !currentUser?.username;
 
   const filtered = useMemo(() => {
     if (!Array.isArray(friendsList)) return [];
@@ -402,26 +464,54 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
   );
 
   // Awaits the in-flight creation promise, then sends invites
+  // Creation failure and invite failure are different outcomes and must not both
+  // report success. The previous version toasted "Activity published" from every
+  // branch — including the catch — so a rolled-back creation still told the user
+  // it worked, and invite errors were swallowed by a bare `.catch(() => {})`.
   const handleSend = async () => {
+    if (isSending) return; // guard against double-submit
     setIsSending(true);
+
+    let activity;
     try {
-      const activity = await creationPromise;
-      if (selectedIds.length > 0 && activity?.id) {
-        await activitiesApi.inviteFriends(activity.id, selectedIds).catch(() => {});
-        showToast('Activity published', 'success');
-      } else {
-        showToast('Activity published', 'success');
-      }
+      activity = await creationPromise;
     } catch {
+      setIsSending(false);
+      showToast('Could not publish the activity. Please try again.', 'error');
+      return; // stay open so the user keeps their selection
+    }
+
+    if (selectedIds.length > 0 && activity?.id) {
+      try {
+        const res = await activitiesApi.inviteFriends(activity.id, selectedIds);
+        const results = res?.results ?? [];
+        const sent = results.filter((r) => r.status === 'INVITED').length;
+        const skipped = results.length - sent;
+        showToast(
+          skipped > 0
+            ? `Activity published · ${sent} invite${sent === 1 ? '' : 's'} sent, ${skipped} skipped`
+            : 'Activity published · invites sent',
+          'success',
+        );
+      } catch {
+        // The activity exists — only the invites failed. Say so accurately.
+        showToast('Activity published, but invites could not be sent.', 'error');
+      }
+    } else {
       showToast('Activity published', 'success');
     }
+
     onDone();
   };
 
   const handleSkip = async () => {
     // still await so the cache is populated before we navigate
-    await creationPromise.catch(() => {});
-    showToast('Activity published', 'success');
+    try {
+      await creationPromise;
+      showToast('Activity published', 'success');
+    } catch {
+      showToast('Could not publish the activity. Please try again.', 'error');
+    }
     onDone();
   };
 
@@ -436,31 +526,12 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
   };
 
   return createPortal(
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-        animation: 'fadeIn 0.2s ease',
-      }}
-      onClick={handleSkip}
-    >
+    <div className={styles.inviteOverlay} onClick={handleSkip}>
       <div
-        style={{
-          background: 'var(--color-bg-white)',
-          color: 'var(--color-text-main)',
-          border: '1px solid var(--color-border-light)',
-          borderRadius: '20px 20px 0 0',
-          width: '100%',
-          maxWidth: '500px',
-          height: '500px',
-          maxHeight: '85vh',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          boxShadow: '0 -8px 40px rgba(0, 0, 0, 0.15)',
-          animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-        }}
+        className={styles.inviteSheet}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Invite friends"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -569,6 +640,30 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
           {isLoading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
               <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0 }}>Loading…</p>
+            </div>
+          ) : (isError || cannotLoadFriends) ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.6rem', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
+              <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0 }}>
+                Couldn't load your friends
+              </p>
+              {!cannotLoadFriends && (
+                <button
+                  type="button"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                  style={{
+                    background: 'var(--color-bg-soft)', color: 'var(--color-text-main)',
+                    border: '1px solid var(--color-border)', borderRadius: '999px',
+                    padding: '0.35rem 0.9rem', fontSize: '0.8rem', fontWeight: 600,
+                    cursor: isFetching ? 'default' : 'pointer', opacity: isFetching ? 0.6 : 1,
+                  }}
+                >
+                  {isFetching ? 'Retrying…' : 'Retry'}
+                </button>
+              )}
+              <p style={{ textAlign: 'center', color: 'var(--color-text-light)', fontSize: '0.75rem', margin: 0 }}>
+                You can still publish and share the link.
+              </p>
             </div>
           ) : filtered.length === 0 ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
@@ -685,25 +780,107 @@ export default function CreateActivityPage() {
   const [showWhoCanJoin, setShowWhoCanJoin] = useState(false);
   const [hasInteractedWithDT, setHasInteractedWithDT] = useState(true);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  const [publishHint, setPublishHint] = useState('');
   const creationPromiseRef = useRef(null); // holds the in-flight create promise
   const reminderRef = useRef(null);
   const whoCanJoinRef = useRef(null);
   const containerRef = useRef(null);
 
-  const [formData, setFormData] = useState({
+  // Cover state is split by concern rather than crammed into one string:
+  //   coverMode   — 'image' | 'color', the single source of truth for which branch renders
+  //   coverImage  — the URL currently previewed (default asset, picker URL, or blob: draft)
+  //   coverColor  — solid-colour fallback, only meaningful in 'color' mode
+  //   coverStatus — 'idle' | 'processing' | 'error', drives the spinner/error affordance
+  // A lazy initialiser keeps the random pick to one per mount: re-renders never
+  // re-roll it, and a fresh navigation to the page mounts a new component.
+  const [formData, setFormData] = useState(() => ({
     title: prefill.title || '',
     description: '',
-    coverImage: prefill.coverImage || '',
+    coverImage: prefill.coverImage || getRandomCover() || '',
+    coverMode: 'image',
+    coverColor: '',
+    coverStatus: 'idle',
+    coverIsDefaultAsset: !prefill.coverImage,
     ...getInitialDates(),
     location: '',
     slotsNeeded: 999,
     reminder: 'None',
     whoCanJoin: prefill.whoCanJoin || (isFromCampus ? 'College' : 'Anyone'),
-  });
+  }));
 
   const set = p => setFormData(prev => ({ ...prev, ...p }));
 
+  // Monotonic token for cover selection. Every user action that changes the
+  // cover bumps it; any async result carrying a stale token is discarded. This
+  // is what stops a slow Image A from overwriting a later Image B, and stops a
+  // completing upload from resurrecting a cover the user already removed.
+  const coverTokenRef = useRef(0);
+  // blob: previews we minted and still owe a revoke to.
+  const ownedPreviewsRef = useRef(new Set());
+
+  const releasePreview = (url) => {
+    if (url && ownedPreviewsRef.current.has(url)) {
+      ownedPreviewsRef.current.delete(url);
+      removeDraftImage(url);
+    }
+  };
+
+  // Revoke any outstanding blob previews when the page unmounts.
   useEffect(() => {
+    const owned = ownedPreviewsRef.current;
+    return () => { owned.forEach((url) => removeDraftImage(url)); owned.clear(); };
+  }, []);
+
+  const handleCoverSelect = (url) => {
+    coverTokenRef.current += 1;
+    setFormData((prev) => {
+      // Drop the previous draft preview so blob URLs don't accumulate.
+      if (prev.coverImage && prev.coverImage !== url) releasePreview(prev.coverImage);
+      return {
+        ...prev,
+        coverMode: 'image',
+        coverImage: url,
+        coverColor: '',
+        coverStatus: 'idle',
+        coverIsDefaultAsset: RANDOM_COVERS.includes(url),
+      };
+    });
+    if (typeof url === 'string' && url.startsWith('blob:')) ownedPreviewsRef.current.add(url);
+    setShowImageSearch(false);
+  };
+
+  const handleCoverRemove = () => {
+    // Bumping the token invalidates any in-flight processing for the image
+    // being removed, so a late result can't restore it.
+    coverTokenRef.current += 1;
+    setFormData((prev) => {
+      releasePreview(prev.coverImage);
+      return {
+        ...prev,
+        coverMode: 'color',
+        coverImage: '',
+        coverColor: getRandomCoverColor(prev.coverColor) || COVER_COLORS[0],
+        coverStatus: 'idle',
+        coverIsDefaultAsset: false,
+      };
+    });
+  };
+
+  useEffect(() => {
+    // Solid-colour mode feeds the ambient tint directly — no decode needed.
+    if (formData.coverMode === 'color') {
+      const hex = formData.coverColor || '';
+      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+      if (m && containerRef.current) {
+        containerRef.current.style.setProperty(
+          '--extracted-rgb',
+          `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}`,
+        );
+      }
+      return;
+    }
+
     const coverImage = formData.coverImage;
     if (!coverImage) return;
 
@@ -747,22 +924,55 @@ export default function CreateActivityPage() {
       active = false;
       clearTimeout(timer);
     };
-  }, [formData.coverImage]);
+  }, [formData.coverImage, formData.coverMode, formData.coverColor]);
+
+  // Re-evaluate "is the start time in the past" on a timer, and immediately on
+  // tab focus — a form left open for a while would otherwise keep offering a
+  // Publish button for a slot that has already lapsed.
+  useEffect(() => {
+    const tick = () => setNowTs(Date.now());
+    const id = setInterval(tick, 20_000);
+    const onVisible = () => { if (!document.hidden) tick(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', tick);
+    };
+  }, []);
+
+  // The hint is transient; it also clears as soon as the blocking issue is fixed.
+  useEffect(() => {
+    if (!publishHint) return undefined;
+    const id = setTimeout(() => setPublishHint(''), 4000);
+    return () => clearTimeout(id);
+  }, [publishHint]);
 
   // close reminder dropdown on outside click
   useEffect(() => {
     if (!showReminder) return;
     const handler = (e) => { if (reminderRef.current && !reminderRef.current.contains(e.target)) setShowReminder(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setShowReminder(false); };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [showReminder]);
 
   // close who can join dropdown on outside click
   useEffect(() => {
     if (!showWhoCanJoin) return;
     const handler = (e) => { if (whoCanJoinRef.current && !whoCanJoinRef.current.contains(e.target)) setShowWhoCanJoin(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setShowWhoCanJoin(false); };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [showWhoCanJoin]);
 
   const getStartDateTime = () => {
@@ -832,11 +1042,45 @@ export default function CreateActivityPage() {
   const isTitleValid = formData.title.trim().length > 0 && formData.title.trim().length <= 30;
   const isDescriptionValid = formData.description.length <= 500;
   const isLocationValid = formData.location.trim().length > 0 && formData.location.length <= 100;
-  // Note: We don't block canPublish on isPast because we will auto-correct it on publish
-  const canPublish = !!(isTitleValid && isDescriptionValid && isLocationValid && hasInteractedWithDT && startD && endD && !isEndBeforeStart && !isDurationOver30Days);
+  // `nowTs` ticks so a start time that lapses while the form sits open disables
+  // Publish on its own, rather than only being caught on the next render.
+  const isStartInPast = !!(startD && startD.getTime() <= nowTs);
+
+  const canPublish = !!(
+    isTitleValid && isDescriptionValid && isLocationValid &&
+    hasInteractedWithDT && startD && endD &&
+    !isStartInPast && !isEndBeforeStart && !isDurationOver30Days
+  );
+
+  // First failing rule, in the order a user would naturally fix them.
+  const publishBlockReason = (() => {
+    if (canPublish) return '';
+    if (!formData.title.trim()) return 'Add a title to publish';
+    if (formData.title.trim().length > 30) return 'Title must be 30 characters or less';
+    if (!formData.location.trim()) return 'Add a location to publish';
+    if (formData.location.length > 100) return 'Location must be 100 characters or less';
+    if (!isDescriptionValid) return 'Description must be 500 characters or less';
+    if (!hasInteractedWithDT || !startD || !endD) return 'Choose a date and time';
+    if (isStartInPast) return 'Start time has passed - pick a new time';
+    if (isEndBeforeStart) return 'End time must be after the start time';
+    if (isDurationOver30Days) return 'An activity can run for at most 30 days';
+    return 'Complete the form to publish';
+  })();
+
+  // Clear a stale hint as soon as the blocking issue is resolved. Declared here,
+  // after canPublish — a dep array referencing it earlier would hit the TDZ,
+  // because dep arrays are evaluated during render, not deferred like the body.
+  useEffect(() => {
+    if (canPublish) setPublishHint('');
+  }, [canPublish]);
 
   const handlePublish = () => {
-    if (!canPublish) return;
+    if (!canPublish) {
+      // The button stays clickable (aria-disabled, not disabled) so tapping it
+      // can explain itself — a truly disabled button swallows the event.
+      setPublishHint(publishBlockReason);
+      return;
+    }
     const { startD: finalStart, endD: finalEnd, fd } = getCorrectedDates();
     if (finalEnd <= finalStart) return;
 
@@ -850,7 +1094,8 @@ export default function CreateActivityPage() {
       title: formData.title,
       description: formData.description,
       location: fd.location,
-      coverImage: formData.coverImage,
+      coverImage: formData.coverMode === 'color' ? null : formData.coverImage,
+      coverColor: formData.coverMode === 'color' ? formData.coverColor : null,
       startDate: finalStart.toISOString(),
       endDate: finalEnd.toISOString(),
       createdAt: new Date().toISOString(),
@@ -881,20 +1126,34 @@ export default function CreateActivityPage() {
 
     // ── Background API call ─────────────────────────────────────────────────
     creationPromiseRef.current = (async () => {
-      let uploadedCoverUrl = formData.coverImage;
-      if (uploadedCoverUrl) {
-        try {
-          uploadedCoverUrl = await commitDraftImage(uploadedCoverUrl, 'covers');
-        } catch (commitErr) {
-          console.warn('Failed to commit cover image, proceeding with current reference:', commitErr);
+      // Solid-colour covers carry no media at all; image covers must resolve to a
+      // durable storage URL before the payload is built. A failed commit is fatal
+      // to the publish — previously it fell through and persisted the blob: URL,
+      // which produced activities whose cover 404'd on the next page load.
+      let coverPayload;
+      if (formData.coverMode === 'color') {
+        coverPayload = { coverColor: formData.coverColor };
+      } else if (formData.coverIsDefaultAsset && RANDOM_COVERS.includes(formData.coverImage)) {
+        // Built-in default cover the user never replaced. It's already a stable
+        // remote asset URL, so re-uploading it would just duplicate a shipped
+        // asset into user storage on every activity created.
+        coverPayload = { coverImage: formData.coverImage };
+      } else if (formData.coverImage) {
+        const committed = await commitDraftImage(formData.coverImage, 'activities');
+        if (!committed || String(committed).startsWith('blob:')) {
+          throw new Error('Cover image upload did not return a durable URL');
         }
+        coverPayload = { coverImage: committed };
+      } else {
+        coverPayload = {};
       }
+
       return await activitiesApi.create({
         title: formData.title,
         description: formData.description,
         location: fd.location,
         maxMembers: fd.slotsNeeded === 999 ? null : fd.slotsNeeded,
-        coverImage: uploadedCoverUrl,
+        ...coverPayload,
         visibility: fd.whoCanJoin === 'College' ? 'COLLEGE_ONLY' : fd.whoCanJoin === 'No one' ? 'PRIVATE' : 'PUBLIC',
         shareToCampus: fd.whoCanJoin === 'College',
         startDate: finalStart.toISOString(),
@@ -920,6 +1179,19 @@ export default function CreateActivityPage() {
       // Rollback — remove the optimistic entry
       queryClient.setQueryData(['activities'], previousCache);
       console.error('Failed to create activity', err);
+      const raw = String(err?.message || '');
+      // Surface the server's own validation text (e.g. "Start date must be in
+      // the future") instead of burying it under a generic message — these are
+      // exactly the conditions the user can act on.
+      const isValidationError = /must be|cannot exceed|Invalid |not open|already/i.test(raw);
+      showToast(
+        raw.includes('durable URL')
+          ? 'Cover image upload failed. Please reselect the image and try again.'
+          : isValidationError
+            ? raw
+            : 'Could not create the activity. Please try again.',
+        'error',
+      );
       throw err;
     });
   };
@@ -950,6 +1222,9 @@ export default function CreateActivityPage() {
     }
   };
 
+  const isColorCover = formData.coverMode === 'color';
+  const hasCoverImage = formData.coverMode === 'image' && !!formData.coverImage;
+
   if (showInviteModal) {
     return (
       <ActivityCreatedModal
@@ -965,11 +1240,17 @@ export default function CreateActivityPage() {
   return (
     <main ref={containerRef} data-theme="dark" className={styles.root}>
       {/* Blurred ambient background from cover image */}
-      {formData.coverImage && (
-        <div className={styles.ambientBg}>
+      {/* Ambient cover wash. Renders in both cover modes so the page always
+          reflects the current cover — a solid colour bleeds into the backdrop
+          exactly the way an image does, instead of falling back to flat black. */}
+      <div className={styles.ambientBg} aria-hidden="true">
+        {hasCoverImage ? (
           <img src={formData.coverImage} alt="" className={styles.ambientImg} />
-        </div>
-      )}
+        ) : isColorCover ? (
+          <div className={styles.ambientColor} style={{ background: formData.coverColor }} />
+        ) : null}
+        <div className={styles.ambientGlass} />
+      </div>
       
       <div className={styles.glass}>
         {/* ── Top bar ── */}
@@ -988,11 +1269,17 @@ export default function CreateActivityPage() {
             <button
               className={`${styles.publishBtn} ${canPublish ? styles.publishOn : ''}`}
               onClick={handlePublish}
-              disabled={!canPublish}
+              aria-disabled={!canPublish}
+              aria-describedby={publishHint ? 'publish-hint' : undefined}
             >
               <Send size={13} />
               <span>Publish</span>
             </button>
+            {publishHint && (
+              <span id="publish-hint" className={styles.publishHint} role="status">
+                {publishHint}
+              </span>
+            )}
           </div>
         </header>
 
@@ -1013,15 +1300,39 @@ export default function CreateActivityPage() {
 
           {/* LEFT — 1:1 image */}
           <div className={styles.imgCol}>
-            <div className={styles.imgSquare}>
-              {formData.coverImage
-                ? <img src={formData.coverImage} alt="Cover" className={styles.coverImg} />
-                : <div className={styles.imgEmpty}><ImageIcon size={28} /><span>Add cover</span></div>
-              }
-              <button className={styles.changeBtn} onClick={() => setShowImageSearch(true)}>
-                <Pencil size={11} />
-                <span>{formData.coverImage ? 'Change' : 'Add'}</span>
-              </button>
+            <div
+              className={styles.imgSquare}
+              style={isColorCover ? { background: formData.coverColor } : undefined}
+            >
+              {hasCoverImage && (
+                <img src={formData.coverImage} alt="Cover" className={styles.coverImg} />
+              )}
+              {formData.coverStatus === 'processing' && (
+                <div className={styles.coverBusy} role="status" aria-live="polite">
+                  <Loader2 size={20} className={styles.coverSpinner} />
+                </div>
+              )}
+              <div className={styles.coverActions}>
+                <button
+                  type="button"
+                  className={styles.changeBtn}
+                  onClick={() => setShowImageSearch(true)}
+                >
+                  <Pencil size={11} />
+                  <span>{hasCoverImage ? 'Change' : 'Add'}</span>
+                </button>
+                {hasCoverImage && (
+                  <button
+                    type="button"
+                    className={styles.removeBtn}
+                    onClick={handleCoverRemove}
+                    aria-label="Remove cover image"
+                    title="Remove cover image"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1085,6 +1396,8 @@ export default function CreateActivityPage() {
                 type="button"
                 className={styles.reminderRow} 
                 onClick={() => setShowReminder(!showReminder)}
+                aria-haspopup="listbox"
+                aria-expanded={showReminder}
               >
                 <div className={styles.rowLeft}>
                   {formData.reminder === 'None' ? (
@@ -1100,9 +1413,10 @@ export default function CreateActivityPage() {
                 </div>
               </button>
               {showReminder && (
-                <div className={styles.reminderDrop}>
+                <div className={styles.reminderDrop} role="listbox" aria-label="Reminder">
                   {REMINDER_OPTIONS.map(o => (
-                    <button key={o.value}
+                    <button key={o.value} type="button" role="option"
+                      aria-selected={formData.reminder === o.value}
                       className={`${styles.reminderOpt} ${formData.reminder === o.value ? styles.reminderOptOn : ''}`}
                       onClick={() => { set({ reminder: o.value }); setShowReminder(false); }}
                     >{o.label}</button>
@@ -1117,6 +1431,8 @@ export default function CreateActivityPage() {
                 type="button"
                 className={styles.reminderRow} 
                 onClick={() => setShowWhoCanJoin(!showWhoCanJoin)}
+                aria-haspopup="listbox"
+                aria-expanded={showWhoCanJoin}
               >
                 <div className={styles.rowLeft}>
                   <Eye size={16} className={styles.rowIcon} />
@@ -1128,12 +1444,13 @@ export default function CreateActivityPage() {
                 </div>
               </button>
               {showWhoCanJoin && (
-                <div className={styles.reminderDrop}>
+                <div className={styles.reminderDrop} role="listbox" aria-label="Who can see this activity">
                   {['Anyone', 'College', 'No one'].map(opt => {
                     let label = opt;
                     if (opt === 'College') label = collegeName;
                     return (
-                      <button key={opt}
+                      <button key={opt} type="button" role="option"
+                        aria-selected={formData.whoCanJoin === opt}
                         className={`${styles.reminderOpt} ${formData.whoCanJoin === opt ? styles.reminderOptOn : ''}`}
                         onClick={() => { set({ whoCanJoin: opt }); setShowWhoCanJoin(false); }}
                       >{label}</button>
@@ -1165,8 +1482,9 @@ export default function CreateActivityPage() {
       {/* Modals */}
       {showImageSearch && (
         <ImageSearchModal 
+          theme="dark"
           onClose={() => setShowImageSearch(false)}
-          onSelect={(url) => { set({ coverImage: url }); setShowImageSearch(false); }}
+          onSelect={handleCoverSelect}
         />
       )}
       {showDT && <DateTimeModal formData={formData} set={set} onClose={() => setShowDT(false)} />}

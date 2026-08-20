@@ -259,6 +259,7 @@ export class SearchService {
               createdAt: true,
               maxMembers: true,
               coverImage: true,
+              coverColor: true,
               members: {
                 select: {
                   userId: true,

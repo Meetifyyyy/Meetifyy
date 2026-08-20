@@ -86,7 +86,7 @@ export async function compressAndCacheDraftImage(fileOrUrl, options = {}) {
  * Uploads a cached draft image (or remote URL) to database storage when user submits/creates activity.
  * Removes the draft from local cache after successful upload.
  */
-export async function commitDraftImage(imageSource, folder = 'covers') {
+export async function commitDraftImage(imageSource, folder = 'general') {
   if (!imageSource) return null;
 
   // 1. Check if imageSource is in activeDrafts memory or IndexedDB

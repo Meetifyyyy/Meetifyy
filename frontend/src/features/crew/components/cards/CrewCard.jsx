@@ -169,6 +169,9 @@ export default function CrewCard({ activity, onClick }) {
   };
 
   const filled = Math.min(slotsFilled || 0, slotsNeeded || 0);
+  // A solid-colour cover is an explicit choice, so it must win over the
+  // deterministic default-image fallback.
+  const coverColor = activity.coverColor || null;
   const coverImgUrl = activity.coverImage || getDefaultCover(title || activity.id);
 
   return (
@@ -182,15 +185,24 @@ export default function CrewCard({ activity, onClick }) {
       
       {/* Left Column: Cover Image & Calendar Badge */}
       <div className={styles.coverCol}>
-        <img 
-          src={coverImgUrl} 
-          alt={title || 'Activity'} 
-          className={styles.coverImg} 
-          onError={(e) => {
-            e.target.onerror = null;
-            e.target.src = DEFAULT_COVERS[0];
-          }}
-        />
+        {coverColor ? (
+          <div
+            className={styles.coverImg}
+            style={{ background: coverColor }}
+            role="img"
+            aria-label={title || 'Activity'}
+          />
+        ) : (
+          <img 
+            src={coverImgUrl} 
+            alt={title || 'Activity'} 
+            className={styles.coverImg} 
+            onError={(e) => {
+              e.target.onerror = null;
+              e.target.src = DEFAULT_COVERS[0];
+            }}
+          />
+        )}
         
         {(activity.startDate || activity.date || activity.dateLabel || activity.createdAt) && (
           <div className={styles.calendarBadge}>

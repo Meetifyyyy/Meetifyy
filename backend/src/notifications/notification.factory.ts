@@ -161,27 +161,6 @@ export class NotificationFactory {
     };
   }
 
-  createActivityJoinRequest(actor: any, activity: any, activityCreatorId: string): CreateNotificationDto {
-    const actorName = actor?.displayName || actor?.username || 'Someone';
-    const actorUsername = actor?.username || '';
-    return {
-      recipientId: activityCreatorId,
-      actorId: actor?.id,
-      type: NotificationType.JOIN_REQUEST,
-      entityType: NotificationEntityType.ACTIVITY,
-      entityId: activity.id,
-      title: 'Join Request',
-      body: `${actorName} requested to join your activity "${activity.title}".`,
-      metadata: {
-        version: 1,
-        actorName,
-        actorUsername,
-        actorAvatar: actor?.avatar || null,
-        activityName: activity.title,
-      },
-    };
-  }
-
   createMessage(actor: any, conversation: any, targetUserId: string, messageText?: string): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
     const actorUsername = actor?.username || '';

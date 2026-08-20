@@ -296,7 +296,10 @@ export class StorageService {
   }
 
   private normalizeFolder(folder = 'general'): string {
-    const allowedFolders = ['avatars', 'profile-covers', 'posts', 'communities', 'chat', 'groups', 'voice', 'temp', 'general', 'events'];
+    // 'activities' backs CrewActivity cover images. Folders are only key
+    // prefixes within the single configured bucket, so adding one needs no
+    // storage provisioning.
+    const allowedFolders = ['avatars', 'profile-covers', 'posts', 'communities', 'chat', 'groups', 'voice', 'temp', 'general', 'events', 'activities'];
     if (!allowedFolders.includes(folder)) {
       throw new BadRequestException(`Invalid upload folder. Allowed: ${allowedFolders.join(', ')}`);
     }

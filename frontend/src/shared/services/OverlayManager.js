@@ -104,7 +104,8 @@ class OverlayManager {
       this.navigator(url, { state: { __overlayId: id }, preventScrollReset: true });
     }
 
-    return () => this.close(id);
+    // Unmount must not re-fire onClose — see dispose().
+    return () => this.dispose(id);
   }
 
   /**
@@ -127,6 +128,33 @@ class OverlayManager {
     if (popCount > 0 && this.navigator) {
       // A single go(-n) fires exactly one popstate, however many entries it
       // spans — so we expect one self-pop, not `popCount` of them.
+      this.pendingSelfPops += 1;
+      this.navigator(-popCount);
+    }
+  }
+
+  /**
+   * Unregister an unmounting overlay: drop it from the stack and rebalance
+   * history, but do NOT fire onClose.
+   *
+   * This is the disposer `open()` hands back. It must stay distinct from
+   * `close()`: by the time React runs an effect cleanup the component is
+   * already going away, so calling its onClose would be a re-entrant request
+   * to close something that no longer exists. Under StrictMode's
+   * mount→cleanup→mount double-invoke that turned every overlay into a
+   * single-frame flash — it opened, its own cleanup told the parent to close
+   * it, and it unmounted before painting.
+   */
+  dispose(id) {
+    const index = this.stack.findIndex((item) => item.id === id);
+    if (index === -1) return;
+
+    const removed = this.stack.splice(index, this.stack.length - index).reverse();
+
+    if (this.isHandlingPopstate) return;
+
+    const popCount = removed.filter((e) => e.options?.pushHistoryState).length;
+    if (popCount > 0 && this.navigator) {
       this.pendingSelfPops += 1;
       this.navigator(-popCount);
     }

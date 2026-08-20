@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNotifications } from '@shared/hooks/useNotifications';
 import { useAuth } from '@shared/context/AuthContext';
 import { activitiesApi } from '@shared/api/apiClient';
+import { showToast } from '@shared/utils/toast';
 import { timeAgo } from '@shared/utils/time';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import Skeleton from '@shared/components/skeletons/Skeleton';
@@ -80,23 +81,51 @@ export default function NotificationsRoute() {
     enabled: !!currentUser?.id,
   });
 
+  // Both mutations drop the invitation from the pending list immediately rather
+  // than waiting on a refetch, so Accept/Decline feel instant. The snapshot is
+  // restored if the request fails, and the authoritative refetch still runs on
+  // settle.
+  const removeInvitationOptimistically = async (invitationId) => {
+    await queryClient.cancelQueries({ queryKey: ['activity-pending-invitations'] });
+    const previous = queryClient.getQueryData(['activity-pending-invitations']);
+    queryClient.setQueryData(['activity-pending-invitations'], (old) =>
+      Array.isArray(old) ? old.filter((i) => i.id !== invitationId) : old,
+    );
+    return { previous };
+  };
+
+  const restoreInvitations = (_err, _vars, ctx) => {
+    if (ctx?.previous !== undefined) {
+      queryClient.setQueryData(['activity-pending-invitations'], ctx.previous);
+    }
+    showToast('Something went wrong. Please try again.', 'error');
+  };
+
   const acceptMutation = useMutation({
     mutationFn: (invitationId) => activitiesApi.acceptInvitation(invitationId),
+    onMutate: removeInvitationOptimistically,
+    onError: restoreInvitations,
     onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
       queryClient.invalidateQueries({ queryKey: ['activities'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       if (res?.activityId) {
         navigate(`/crew/${res.activityId}`, { state: { from: '/notifications' } });
       }
     },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
+    },
   });
 
   const declineMutation = useMutation({
     mutationFn: (invitationId) => activitiesApi.declineInvitation(invitationId),
+    onMutate: removeInvitationOptimistically,
+    onError: restoreInvitations,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
     },
   });
 

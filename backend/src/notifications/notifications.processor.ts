@@ -23,6 +23,7 @@ export interface ActivityInvitationsJob {
   activityTitle: string;
   activityLocation?: string | null;
   activityCoverImage?: string | null;
+  activityCoverColor?: string | null;
   startDate?: Date | null;
   endDate?: Date | null;
   inviter: {
@@ -84,7 +85,7 @@ export class NotificationsProcessor extends WorkerHost {
   }
 
   private async handleActivityInvitations(data: ActivityInvitationsJob) {
-    const { activityId, inviterId, invitations, activityTitle, activityLocation, activityCoverImage, startDate, endDate, inviter } = data;
+    const { activityId, inviterId, invitations, activityTitle, activityLocation, activityCoverImage, activityCoverColor, startDate, endDate, inviter } = data;
 
     for (const item of invitations) {
       const { inviteeId, invitationId } = item;
@@ -105,6 +106,9 @@ export class NotificationsProcessor extends WorkerHost {
           startDate,
           endDate,
           coverImage: activityCoverImage,
+          // Solid-colour covers have no image; carry the colour so the
+          // notification renders the same cover the activity shows.
+          coverColor: activityCoverColor,
           hostId: inviterId,
           hostName: inviter.name,
           hostAvatar: inviter.avatar,
@@ -131,6 +135,7 @@ export class NotificationsProcessor extends WorkerHost {
           startDate,
           endDate,
           coverImage: activityCoverImage,
+          coverColor: activityCoverColor,
         },
         inviter: {
           id: inviter.id,

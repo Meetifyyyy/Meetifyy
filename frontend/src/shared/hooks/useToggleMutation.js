@@ -36,6 +36,8 @@ function scheduleCoalescedRequest({
   errorMessage = 'Action failed',
   debounceMs = DEBOUNCE_MS,
   seqRef,
+  mutationId,
+  onSettled,
 }) {
   // Cancel pending timer
   if (_timers.has(entityKey)) {
@@ -61,29 +63,49 @@ function scheduleCoalescedRequest({
     const controller = new AbortController();
     _controllers.set(entityKey, controller);
 
+    // Every exit path below must release the registry entry for THIS mutation.
+    // Previously the abort and stale-sequence paths returned without clearing, so
+    // an entry could outlive its request and pin the UI to a stale intent — the
+    // cause of the "first click does nothing" bug. clearIfLatest is id-scoped, so
+    // a superseded mutation can never clear a newer one's entry.
+    const release = () => {
+      if (toggleRegistry.clearIfLatest(entityKey, mutationId)) {
+        onSettled?.(entityKey, variables);
+      }
+    };
+
     try {
       await callApi(finalIntent, controller.signal, variables);
 
       if (seq === seqRef.current) {
         _controllers.delete(entityKey);
-        // Clear the registry entry now that the final request settled
-        toggleRegistry.clearIfLatest(entityKey, toggleRegistry.activeMutations.get(entityKey));
+        release();
         // Active refetch — triggers immediate background sync on all mounted queries
         invalidateKeys.forEach(key => {
           queryClient.invalidateQueries({ queryKey: key, refetchType: 'active' });
         });
+      } else {
+        release();
       }
     } catch (err) {
       _controllers.delete(entityKey);
 
-      // Aborted = newer request took over, ignore silently
-      if (err?.name === 'AbortError' || err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return;
+      // Aborted = newer request took over. It owns the registry entry now, so
+      // release() is a no-op here by design (id mismatch) — but still call it so
+      // an abort with no successor cannot strand the entry.
+      if (err?.name === 'AbortError' || err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') {
+        release();
+        return;
+      }
 
       // Stale sequence = newer request completed, ignore silently
-      if (seq !== seqRef.current) return;
+      if (seq !== seqRef.current) {
+        release();
+        return;
+      }
 
       // Latest request failed — roll back optimistic update and clear registry
-      toggleRegistry.clearIfLatest(entityKey, toggleRegistry.activeMutations.get(entityKey));
+      release();
       applyRollback(queryClient, finalIntent);
       showToast(errorMessage);
     }
@@ -103,6 +125,7 @@ export function useToggleMutation({
   invalidateKeys = [],
   errorMessage = 'Action failed',
   debounceMs = DEBOUNCE_MS,
+  onSettled,
 }) {
   const queryClient = useQueryClient();
   const seqRefs = useRef({}); // map of entityKey -> sequence number
@@ -117,8 +140,9 @@ export function useToggleMutation({
     }
     const seqRef = seqRefs.current[entityKey];
 
-    // Register intent so UI reads latest intent via toggleRegistry.getLatestIntent()
-    toggleRegistry.register(entityKey, intent);
+    // Register intent so UI reads latest intent via toggleRegistry.getLatestIntent().
+    // The returned id scopes cleanup to this exact mutation.
+    const mutationId = toggleRegistry.register(entityKey, intent);
 
     // Instant 0ms optimistic update
     applyOptimistic(queryClient, intent, variables);
@@ -136,8 +160,10 @@ export function useToggleMutation({
       errorMessage,
       debounceMs,
       seqRef,
+      mutationId,
+      onSettled,
     });
-  }, [getEntityKey, queryClient, applyOptimistic, applyRollback, callApi, invalidateKeys, errorMessage, debounceMs]);
+  }, [getEntityKey, queryClient, applyOptimistic, applyRollback, callApi, invalidateKeys, errorMessage, debounceMs, onSettled]);
 
   return { mutate };
 }

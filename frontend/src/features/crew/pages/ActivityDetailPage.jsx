@@ -185,7 +185,7 @@ export default function ActivityDetailPage() {
     };
   }, [rawActivity, location.state]);
 
-  const { mutate: toggleJoin } = useJoinActivity();
+  const { mutate: toggleJoin, isJoinPending } = useJoinActivity();
 
   const requestMutation = useMutation({
     mutationFn: (actId) => activitiesApi.requestToJoinActivity(actId),
@@ -225,6 +225,18 @@ export default function ActivityDetailPage() {
   const containerRef = useRef(null);
 
   useEffect(() => {
+    const solid = activity?.coverColor;
+    if (solid) {
+      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(solid);
+      if (m && containerRef.current) {
+        containerRef.current.style.setProperty(
+          '--extracted-rgb',
+          `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}`,
+        );
+      }
+      return;
+    }
+
     const coverImage = activity?.coverImage;
     if (!coverImage) return;
 
@@ -268,7 +280,7 @@ export default function ActivityDetailPage() {
       active = false;
       clearTimeout(timer);
     };
-  }, [activity?.coverImage]);
+  }, [activity?.coverImage, activity?.coverColor]);
 
   const [hasRequested, setHasRequested] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -317,6 +329,9 @@ export default function ActivityDetailPage() {
   const cacheIsJoined = rawActivity?.isJoined ?? false;
   const isJoined = toggleRegistry.getLatestIntent(entityKey, cacheIsJoined);
   const wasOriginallyJoined = cacheIsJoined;
+  // Purely an affordance: the button stays clickable so the user can flip intent
+  // mid-flight — useToggleMutation coalesces and the latest intent wins.
+  const isJoinBusy = isJoinPending(activity?.id);
   const slotsFilledAdjusted = slotsFilled + (isJoined && !wasOriginallyJoined ? 1 : (!isJoined && wasOriginallyJoined ? -1 : 0));
   const spotsLeft = slotsNeeded - slotsFilledAdjusted;
   const isFull = spotsLeft <= 0;
@@ -380,21 +395,26 @@ export default function ActivityDetailPage() {
     toggleSaveActivity(activity.id);
   };
 
+  const coverColor = activity?.coverColor || null;
   const coverImgUrl = activity?.coverImage || getDefaultCover(title || cleanId);
 
   return (
     <div ref={containerRef} data-theme="dark" className={styles.root}>
       {/* Ambient Blurred Background */}
       <div className={styles.ambientBg}>
-        <img 
-          src={coverImgUrl} 
-          alt="" 
-          className={styles.ambientImg} 
-          onError={(e) => {
-            e.target.onerror = null;
-            e.target.src = DEFAULT_COVERS[0];
-          }}
-        />
+        {coverColor ? (
+          <div className={styles.ambientImg} style={{ background: coverColor }} />
+        ) : (
+          <img 
+            src={coverImgUrl} 
+            alt="" 
+            className={styles.ambientImg} 
+            onError={(e) => {
+              e.target.onerror = null;
+              e.target.src = DEFAULT_COVERS[0];
+            }}
+          />
+        )}
       </div>
 
       <div className={styles.glass}>
@@ -454,15 +474,24 @@ export default function ActivityDetailPage() {
             <div className={styles.imgCol}>
               <h1 className={styles.mainTitle}>{title?.length > 30 ? title.slice(0, 30) + '...' : title}</h1>
               <div className={styles.imgSquare}>
-                <img 
-                  src={coverImgUrl} 
-                  alt={title || 'Activity'} 
-                  className={styles.coverImg} 
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = DEFAULT_COVERS[0];
-                  }}
-                />
+                {coverColor ? (
+                  <div
+                    className={styles.coverImg}
+                    style={{ background: coverColor }}
+                    role="img"
+                    aria-label={title || 'Activity'}
+                  />
+                ) : (
+                  <img 
+                    src={coverImgUrl} 
+                    alt={title || 'Activity'} 
+                    className={styles.coverImg} 
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = DEFAULT_COVERS[0];
+                    }}
+                  />
+                )}
               </div>
 
               <div className={`${styles.attendeesSection} ${styles.desktopOnlyAttendees}`}>
@@ -686,8 +715,11 @@ export default function ActivityDetailPage() {
               </div>
             ) : isJoined ? (
               <button 
+                type="button"
                 className={`${styles.joinBtn} ${styles.joinedBtn}`} 
                 onClick={handleLeave}
+                aria-busy={isJoinBusy}
+                data-pending={isJoinBusy ? 'true' : undefined}
               >
                 <span className={styles.imInContent}>
                   <img src="/thumbs_up_3d.png" alt="" className={`${styles.thumbsEmoji} ${styles.thumbsEmojiJoined}`} />
@@ -704,9 +736,12 @@ export default function ActivityDetailPage() {
               </button>
             ) : (
               <button 
+                type="button"
                 className={styles.joinBtn} 
                 onClick={handleJoin} 
                 disabled={isFull || activity?.canJoin === false}
+                aria-busy={isJoinBusy}
+                data-pending={isJoinBusy ? 'true' : undefined}
               >
                 {isFull ? (
                   'Activity Full'

@@ -65,4 +65,33 @@ describe('MutationRegistry Stress & Concurrency Tests', () => {
     expect(toggleRegistry.activeMutations.has(key)).toBe(false);
     expect(toggleRegistry.latestIntents.has(key)).toBe(false);
   });
+
+  it('does not let a stranded intent hijack the first click (first-click bug)', () => {
+    const key = 'joinActivity:act-1';
+
+    // A mutation is registered but never settles — the request was aborted, or
+    // the user navigated away mid-flight. The singleton outlives the unmount.
+    toggleRegistry.register(key, true);
+    toggleRegistry.activeMutations.delete(key); // request no longer in flight
+
+    // Server truth: the user is NOT joined. The stranded intent must not win,
+    // otherwise the UI renders "Joined" and the next click computes `!true`
+    // => leave, which the server rejects as a no-op. That is the click that
+    // "does nothing"; only the second click would then join.
+    expect(toggleRegistry.getLatestIntent(key, false)).toBe(false);
+    expect(toggleRegistry.getNextToggleIntent(key, false)).toBe(true);
+  });
+
+  it('only the still-current mutation may clear the entry', () => {
+    const key = 'joinActivity:act-2';
+    const stale = toggleRegistry.register(key, true);
+    const current = toggleRegistry.register(key, false);
+
+    // A superseded request settling must not wipe the newer intent.
+    expect(toggleRegistry.clearIfLatest(key, stale)).toBe(false);
+    expect(toggleRegistry.getLatestIntent(key, true)).toBe(false);
+
+    expect(toggleRegistry.clearIfLatest(key, current)).toBe(true);
+    expect(toggleRegistry.getLatestIntent(key, true)).toBe(true); // falls back to server state
+  });
 });

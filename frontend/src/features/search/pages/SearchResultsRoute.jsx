@@ -135,6 +135,7 @@ const CommunityRow = React.memo(function CommunityRow({ data, onOpen }) {
 
 const ActivityRow = React.memo(function ActivityRow({ data, storeActivity, usersById, onOpen }) {
   const activityData = storeActivity || data;
+  const coverColor = activityData.coverColor || null;
   const coverUrl = activityData.coverImage || getDefaultCover(activityData.title || activityData.id);
   const timeFormatted = formatDateTime(activityData);
 
@@ -175,14 +176,23 @@ const ActivityRow = React.memo(function ActivityRow({ data, storeActivity, users
   return (
     <div className={styles.resultCard} onClick={() => onOpen('activity', activityData)}>
       <div className={styles.activityCoverThumb}>
-        <img
-          src={coverUrl}
-          alt={activityData.title || 'Activity'}
-          className={styles.activityCoverImg}
-          loading="lazy"
-          decoding="async"
-          onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_COVERS[0]; }}
-        />
+        {coverColor ? (
+          <div
+            className={styles.activityCoverImg}
+            style={{ background: coverColor }}
+            role="img"
+            aria-label={activityData.title || 'Activity'}
+          />
+        ) : (
+          <img
+            src={coverUrl}
+            alt={activityData.title || 'Activity'}
+            className={styles.activityCoverImg}
+            loading="lazy"
+            decoding="async"
+            onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_COVERS[0]; }}
+          />
+        )}
       </div>
       <div className={styles.feedInfo}>
         <div className={styles.rowHeaderTitle}>
