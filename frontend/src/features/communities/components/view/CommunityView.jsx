@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@shared/hooks/useData';
@@ -817,6 +817,14 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
     return () => observer.disconnect();
   }, [hasMorePosts]);
 
+  // Must stay above the early returns below: when the component bails out on the
+  // loading / error branches this hook was being skipped, so the hook count
+  // changed between renders ("Rendered more hooks than during the previous
+  // render") once the data arrived.
+  const handleCommunityPostClick = useCallback((post) => {
+    if (onPostClick) onPostClick(post, 'community', comm?.id);
+  }, [onPostClick, comm?.id]);
+
   if (isLoading) {
     return (
       <div className={styles.wrapper}>
@@ -970,10 +978,6 @@ function DeletedCommunityView({ onBack }) {
       setShowDeleteConfirm(false);
     }
   };
-
-  const handleCommunityPostClick = useCallback((post) => {
-    if (onPostClick) onPostClick(post, 'community', comm?.id);
-  }, [onPostClick, comm?.id]);
 
   return (
     <div className={styles.wrapper}>
