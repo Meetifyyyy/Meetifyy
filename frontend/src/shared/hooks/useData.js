@@ -116,6 +116,10 @@ export function useData() {
     updateMessagesCache,
     sendDirectMessage,
     start24HrInstantChat,
+    toggleMuteConversation,
+    deleteConversation,
+    clearChat,
+    toggleBlockUser,
     reactToMessage,
     startConversation,
     createGroupConversation,
@@ -129,65 +133,6 @@ export function useData() {
     declineGroupJoinRequest,
   } = useGroupActions();
 
-  const toggleMuteConversation = async (convId, currentMuted) => {
-    queryClient.setQueryData(['conversations'], (old) => {
-      if (!Array.isArray(old)) return old;
-      return old.map(c => c.id === convId || c.publicId === convId ? { ...c, isMuted: !currentMuted } : c);
-    });
-    try {
-      await messagesApi.muteConversation(convId, !currentMuted);
-    } catch (e) {
-      queryClient.setQueryData(['conversations'], (old) => {
-        if (!Array.isArray(old)) return old;
-        return old.map(c => c.id === convId || c.publicId === convId ? { ...c, isMuted: currentMuted } : c);
-      });
-    }
-  };
-
-  const deleteConversation = async (convId) => {
-    queryClient.setQueryData(['conversations'], (old) => {
-      if (!Array.isArray(old)) return old;
-      return old.filter(c => c.id !== convId && c.publicId !== convId);
-    });
-    try {
-      await messagesApi.deleteConversation(convId);
-    } catch (e) {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    }
-  };
-
-  const clearChat = async (convId) => {
-    queryClient.setQueryData(['messages', convId], () => ({ pages: [], pageParams: [] }));
-    try {
-      await messagesApi.clearChat(convId);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-  const toggleBlockUser = async (targetUserId, currentlyBlocked) => {
-    queryClient.setQueryData(['conversations'], (old) => {
-      if (!Array.isArray(old)) return old;
-      return old.map(c => {
-        if (c.targetUser?.id === targetUserId || c.userId === targetUserId) {
-          return {
-            ...c,
-            blocked: !currentlyBlocked,
-            isBlockedByMe: !currentlyBlocked,
-            isBlockedByThem: false,
-          };
-        }
-        return c;
-      });
-    });
-
-    if (currentlyBlocked) {
-      await usersApi.unblockUser(targetUserId).catch(() => {});
-    } else {
-      await usersApi.blockUser(targetUserId).catch(() => {});
-    }
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    queryClient.invalidateQueries({ queryKey: ['users'] });
-  };
 
   const joinCrewActivity = (id) => activitiesApi.join(id).then(() => queryClient.invalidateQueries({ queryKey: ['activities'] }));
   const leaveCrewActivity = (id) => leaveActivityMutation.mutateAsync(id);
