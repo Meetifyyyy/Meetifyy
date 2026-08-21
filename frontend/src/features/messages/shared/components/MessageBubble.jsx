@@ -16,7 +16,7 @@ import { SharedActivityPreview } from '../previews/SharedActivityPreview';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import styles from './ChatMessageList.module.css';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { checkIsMe, getMsgTimestamp } from '../utils/cacheUtils';
 import { getMediaUrl } from '@shared/api/apiClient';
 
@@ -528,7 +528,7 @@ const MessageBubble = memo(function MessageBubble({
   onCancelUpload
 }) {
   const navigate = useNavigate();
-  const { getUserById, users: storeUsers } = useData();
+  const storeUsers = useUsersMap();
   const allUsers = users || storeUsers || {};
   const longPressTimer = useRef(null);
   const touchHandled = useRef(false);
@@ -948,7 +948,8 @@ const MessageBubble = memo(function MessageBubble({
   const handleSenderProfileClick = (e) => {
     e.stopPropagation();
     const senderId = msg.senderId || msg.sender?.id || (msg.from !== 'me' ? msg.from : null);
-    const liveUser = (senderId && getUserById) ? getUserById(senderId) : null;
+    // was getUserById(senderId), which is defined as exactly `users[id] || null`
+    const liveUser = senderId ? (storeUsers[senderId] || null) : null;
     const target = liveUser?.username || msg.senderUsername || msg.sender?.username || senderId;
     if (target) {
       navigate(`/profile/${target}`, { state: { from: window.location.pathname } });
