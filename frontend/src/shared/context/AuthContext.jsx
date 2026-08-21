@@ -47,6 +47,9 @@ export function AuthProvider({ children }) {
   // Suppresses the spurious SIGNED_IN that signInWithPassword fires during
   // the current-password verification step inside changePassword.
   const isChangingPasswordRef = useRef(false);
+  // Counts back-to-back 401s from /api/auth/sync so a token the backend will
+  // never accept can't spin forever (see performSync's catch block).
+  const consecutiveSyncAuthFailuresRef = useRef(0);
   // Suppresses the SIGNED_OUT that signOut({ scope: 'others' }) may fire
   // locally on this device during the changePassword session-revocation step.
   const isRevokingSessionsRef = useRef(false);
@@ -61,6 +64,7 @@ export function AuthProvider({ children }) {
         const syncRes = await apiClient.post('/api/auth/sync');
         const syncedUser = syncRes?.user || syncRes;
         lastSyncAtRef.current = Date.now();
+        consecutiveSyncAuthFailuresRef.current = 0;
         if (isValidUser(syncedUser)) {
           setCurrentUser(prev => {
             const sbEmail = supabaseSession?.user?.email;
@@ -108,7 +112,24 @@ export function AuthProvider({ children }) {
         }
         return syncRes;
       } catch (err) {
-        if (err?.status !== 401) {
+        if (err?.status === 401) {
+          // The backend rejected this token outright. Supabase-js will keep
+          // retrying a refresh it cannot complete, and every retry fires another
+          // auth event that lands back here — so swallowing the 401 span an
+          // endless sync loop (observed at ~2 req/s indefinitely) that never
+          // recovered and never let the user reach the login screen.
+          //
+          // Two consecutive failures, rather than one, so a transient blip
+          // while the backend is warming its token verification doesn't sign
+          // anyone out. Past that the credential is genuinely not accepted, and
+          // the only correct move is to drop it locally so the app falls back
+          // to the login screen.
+          consecutiveSyncAuthFailuresRef.current += 1;
+          if (consecutiveSyncAuthFailuresRef.current >= 2) {
+            consecutiveSyncAuthFailuresRef.current = 0;
+            try { await supabase.auth.signOut({ scope: 'local' }); } catch (_) {}
+          }
+        } else {
           console.error('Failed to sync profile on auth change', err);
         }
       } finally {
