@@ -6,14 +6,14 @@ import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import ProfilePreviewSkeleton from '@shared/components/skeletons/ProfilePreviewSkeleton';
 import { UserX } from 'lucide-react';
 import styles from './SharedProfilePreview.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
 
 export function SharedProfilePreview({
   profile,
   isLoading = false,
 }) {
   const navigate = useNavigate();
-  const { users } = useData();
+  const users = useUsersMap();
 
   if (isLoading) {
     return <ProfilePreviewSkeleton />;
