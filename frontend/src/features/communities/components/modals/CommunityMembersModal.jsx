@@ -6,7 +6,7 @@ import { isImageUrl } from "@shared/utils/avatar";
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import styles from './CommunityMembersModal.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useAuth } from '@shared/context/AuthContext';
 import { usersApi, communitiesApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
@@ -213,9 +213,7 @@ function MemberActionMenu({ member, communityId, isCurrentUser, isAdmin, onRemov
 
 export default function CommunityMembersModal({ members: initialMembers, title, onClose, communityId, isAdmin, ownerId }) {
   const navigate = useNavigate();
-  // `useData` sources currentUser straight from AuthContext, so this is the same
-  // value. `users` still comes from useData until the users-map hook lands.
-  const { users } = useData();
+  const users = useUsersMap();
   const { currentUser } = useAuth();
   const [members, setMembers] = useState(initialMembers || []);
 
