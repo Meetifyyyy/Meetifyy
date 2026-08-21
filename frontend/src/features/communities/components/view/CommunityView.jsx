@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useAuth } from '@shared/context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
@@ -47,9 +48,7 @@ function formatCount(n) {
 
 function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCommunities, onViewMembers, isAdmin, onOpenAdmin, onUpdateCommunity, isMuted, onMuteClick, onTitleClick, onShare }) {
   const navigate = useNavigate();
-  // `useData` sources currentUser straight from AuthContext, so this is the same
-  // value. `users` still comes from useData until the users-map hook lands.
-  const { users } = useData();
+  const users = useUsersMap();
   const { currentUser } = useAuth();
   const { openViewer } = useMediaViewer();
   const coverInputRef = useRef(null);
