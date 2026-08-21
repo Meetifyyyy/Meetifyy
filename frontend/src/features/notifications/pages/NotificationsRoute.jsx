@@ -15,7 +15,8 @@ import PageHeader from '@layout/PageHeader';
 import NotificationList from '../components/NotificationList';
 import InvitationList from '../components/InvitationList';
 import styles from './NotificationsRoute.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { useCrewActivities, useCrewActions } from '@shared/hooks/useCrew';
 
 import { NotifRowSkeleton } from '../components/skeletons/NotificationsSkeleton';
 
@@ -37,7 +38,11 @@ export default function NotificationsRoute() {
     isFetchingNextPage,
     isLoading
   } = useNotifications();
-  const { getUserById, crewActivities, joinCrewActivity, declineCrewInvitation, acceptJoinRequest, rejectJoinRequest } = useData();
+  // getUserById was defined as exactly `users[id] || null` over this same map.
+  const usersMap = useUsersMap();
+  const getUserById = (id) => usersMap[id] || null;
+  const crewActivities = useCrewActivities();
+  const { joinCrewActivity, declineCrewInvitation, acceptJoinRequest, rejectJoinRequest } = useCrewActions();
   const navigate = useNavigate();
   const loadMoreRef = useRef(null);
   const hasMarkedReadRef = useRef(false);
