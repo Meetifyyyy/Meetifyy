@@ -410,3 +410,37 @@ export function useCrewActivities() {
   const rawActivities = useActivitiesList();
   return useMemo(() => rawActivities.map(mapActivity), [rawActivities]);
 }
+
+/**
+ * The activity write actions `useData` used to define inline.
+ *
+ * Extracted verbatim -- same activitiesApi calls, each followed by the same
+ * ['activities'] invalidation. `endCrewActivity` remains an alias of
+ * `cancelCrewActivity`, exactly as useData had it.
+ */
+export function useCrewActions() {
+  const queryClient = useQueryClient();
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['activities'] });
+
+  const joinCrewActivity = (id) => activitiesApi.join(id).then(invalidate);
+  const leaveCrewActivity = (id) => activitiesApi.leave(id).then(invalidate);
+  const requestToJoinActivity = (id) => activitiesApi.requestToJoinActivity(id).then(invalidate);
+  const cancelCrewActivity = (id) => activitiesApi.cancelCrewActivity(id).then(invalidate);
+  const endCrewActivity = cancelCrewActivity;
+  const acceptJoinRequest = (id, userId) => activitiesApi.acceptJoinRequest(id, userId).then(invalidate);
+  const rejectJoinRequest = (id, userId) => activitiesApi.rejectJoinRequest(id, userId).then(invalidate);
+  const declineCrewInvitation = (id) => activitiesApi.declineCrewInvitation(id).then(invalidate);
+  const addCrewActivity = (data) => activitiesApi.create(data).then((res) => { invalidate(); return res; });
+
+  return {
+    joinCrewActivity,
+    leaveCrewActivity,
+    requestToJoinActivity,
+    cancelCrewActivity,
+    endCrewActivity,
+    acceptJoinRequest,
+    rejectJoinRequest,
+    declineCrewInvitation,
+    addCrewActivity,
+  };
+}
