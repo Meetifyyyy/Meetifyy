@@ -21,10 +21,19 @@ export const MESSAGE_KEYS = {
  * Fetches and transforms the conversation list.
  * Deliberately short staleTime — conversations should stay fresh (unread counts, last message).
  */
+// Stable identity for the "no data yet" case. A literal `= []` default builds a
+// fresh array on every render, which busts both the memo below and the shared
+// cache, so the map+sort re-ran constantly while the query was still loading.
+const EMPTY_CONVERSATIONS = [];
+
+let _convCacheRaw;
+let _convCacheUserId;
+let _convCacheResult = [];
+
 export function useConversations() {
   const { currentUser, isLoggedIn } = useAuth();
 
-  const { data: rawConversations = [], isLoading, error } = useQuery({
+  const { data: rawConversations = EMPTY_CONVERSATIONS, isLoading, error } = useQuery({
     queryKey: MESSAGE_KEYS.conversations,
     queryFn: () => messagesApi.getConversations(50, 0),
     enabled: Boolean(isLoggedIn || currentUser?.id),
@@ -33,7 +42,17 @@ export function useConversations() {
     refetchOnWindowFocus: false,
   });
 
+  // Shared across callers: the processed list is a pure function of
+  // (rawConversations, currentUser.id), but useConversations is now called from
+  // a dozen places -- several of them nested -- so a per-component useMemo ran
+  // this map+sort once per caller on every render pass. The module-level cache
+  // below means the first caller for a given input computes and everyone else
+  // gets the identical array back by reference, which also stops downstream
+  // memo boundaries from seeing a "new" array each time.
   const conversations = useMemo(() => {
+    if (_convCacheRaw === rawConversations && _convCacheUserId === currentUser?.id) {
+      return _convCacheResult;
+    }
     const list = (rawConversations || []).map((c) => {
       const pList = c.participants || c.members || [];
       const calculatedIsMember = (!c.type || c.type === 'DIRECT')
@@ -87,7 +106,11 @@ export function useConversations() {
       };
     });
 
-    return [...list].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    const sorted = [...list].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    _convCacheRaw = rawConversations;
+    _convCacheUserId = currentUser?.id;
+    _convCacheResult = sorted;
+    return sorted;
   }, [rawConversations, currentUser?.id]);
 
   return {

@@ -1,8 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { messagesApi, groupApi, communitiesApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
-import { useConversations } from './useMessages';
-import { useMessageActions } from './useMessageActions';
 import { showToast } from '../utils/toast';
 
 /**
@@ -14,8 +12,9 @@ import { showToast } from '../utils/toast';
 export function useGroupActions() {
   const queryClient = useQueryClient();
   const { currentUser } = useAuth();
-  const { conversations } = useConversations();
-  const { updateMessagesCache } = useMessageActions();
+  // Neither the processed conversation list nor updateMessagesCache is used in
+  // here -- every reference below is to the ['conversations'] query key, not to
+  // the array -- so this hook deliberately does not subscribe to either.
 
   const togglePinConversation = async (convId, currentPinned) => {
     let isPinnedNow = currentPinned;
