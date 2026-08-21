@@ -7,6 +7,10 @@ export default function GroupSettingsPage({
   isOwner,
   isAdmin,
   isMember,
+  // ChatDetailsPanel has always passed isClosed, but it was missing from this
+  // destructure, so the read below hit an undeclared identifier and threw
+  // "isClosed is not defined", taking the settings page to the error boundary.
+  isClosed,
   canEditGroupInfo,
   whoCanJoin,
   setWhoCanJoin,
