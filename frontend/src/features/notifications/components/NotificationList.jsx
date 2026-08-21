@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { EmptyState } from '@shared/components/ui/StateViews';
 import NotificationItem from './NotificationItem';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
 
 export default function NotificationList({
   groupedNotifications,
@@ -13,15 +13,16 @@ export default function NotificationList({
   pageStyles,
   scrollRef
 }) {
-  const { users, getUserById } = useData();
+  const users = useUsersMap();
 
   const resolveActor = (notif) => {
     const actorId = notif.actor?.id || notif.actorId || notif.metadata?.actorId;
     const actorUsername = notif.actor?.username || notif.metadata?.actorUsername;
 
+    // getUserById was defined as exactly `users[id] || null` over this same map.
     let liveUser = null;
-    if (actorId && getUserById) {
-      liveUser = getUserById(actorId);
+    if (actorId) {
+      liveUser = users[actorId] || null;
     }
     if (!liveUser && users) {
       if (actorId && users[actorId]) {
