@@ -5,7 +5,7 @@ import { getCollegeName } from '@shared/utils/user';
 import { showToast } from '@shared/utils/toast';
 
 import matchSocketClient from '../utils/matchSocketClient';
-import { useData } from '@shared/hooks/useData';
+import { useMessageActions } from '@shared/hooks/useMessageActions';
 
 
 const InstantMatchContext = createContext(null);
@@ -22,7 +22,7 @@ const initialFormData = {
 
 export function InstantMatchProvider({ children }) {
   const { currentUser } = useAuth();
-  const { start24HrInstantChat } = useData();
+  const { start24HrInstantChat } = useMessageActions();
   const navigate = useNavigate();
 
   const [sheetOpen, setSheetOpen] = useState(false);
