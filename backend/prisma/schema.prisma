@@ -141,7 +141,9 @@ model User {
   displayName                String
   email                      String                      @unique
   bio                        String?
-  major                      String?
+  course                     String?
+  branch                     String?
+  currentYear                Int?
   location                   String?
   createdAt                  DateTime                    @default(now())
   updatedAt                  DateTime                    @updatedAt
@@ -153,7 +155,6 @@ model User {
   coverMediaId               String?
   deletedAt                  DateTime?
   emailVerified              Boolean                     @default(false)
-  graduationYear             Int?
   birthday                   String?
   interests                  String[]
   lastSeenAt                 DateTime?
@@ -213,9 +214,10 @@ model User {
 
   @@index([collegeId])
   @@index([collegeId, createdAt(sort: Desc)])
-  // Campus directory filter patterns: WHERE collegeId=? AND major=? / graduationYear=?.
-  @@index([collegeId, major])
-  @@index([collegeId, graduationYear])
+  // Campus directory filter patterns: WHERE collegeId=? AND course=? / branch=? / currentYear=?.
+  @@index([collegeId, course])
+  @@index([collegeId, course, branch])
+  @@index([collegeId, currentYear])
   @@index([deletedAt, createdAt])
   @@index([lastSeenAt])
   @@index([createdAt])

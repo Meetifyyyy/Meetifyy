@@ -6,6 +6,7 @@ import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ChatDetailsPanel.module.css';
+import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
 import sidebarStyles from '../sidebar/ConversationList.module.css';
 import { Pin, Trash2, LogOut, ChevronRight, User, Search, Ban, UserPlus, UserCheck, Check, X, Image as ImageIcon, CalendarDays, Calendar, CalendarX, ArrowLeft, MoreVertical } from 'lucide-react';
 import InviteModal from '../modals/InviteModal';
@@ -371,10 +372,15 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       username: conversation.name ? conversation.name.toLowerCase().replace(/\s+/g, '') : 'user',
       avatar: conversation.avatar || '',
       bio: conversation.bio || null,
-      major: conversation.major || null,
+      course: conversation.course || null,
+      branch: conversation.branch || null,
+      currentYear: Number.isInteger(conversation.currentYear) ? conversation.currentYear : null,
       university: conversation.university || conversation.college || null
     };
   }, [isOneOnOne, conversation, users]);
+
+  // Must run before any early return so hook order stays stable across renders.
+  const targetAcademicSummary = useAcademicSummary(targetUser);
 
   if (showRequestsPage) {
     return (
@@ -736,10 +742,10 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
               </div>
             )}
 
-            {targetUser.major && (
+            {targetAcademicSummary && (
               <div className={styles.section}>
-                <h3 className={styles.sectionTitle}>Major</h3>
-                <p className={styles.sectionValue}>{targetUser.major}</p>
+                <h3 className={styles.sectionTitle}>Academics</h3>
+                <p className={styles.sectionValue}>{targetAcademicSummary}</p>
               </div>
             )}
 

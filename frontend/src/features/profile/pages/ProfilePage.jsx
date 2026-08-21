@@ -28,13 +28,7 @@ import { getCollegeName } from '@shared/utils/user';
 
 import RightPanel from '@layout/RightPanel';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
-
-function formatMajor(majorStr) {
-  if (!majorStr || typeof majorStr !== 'string') return '';
-  const parts = majorStr.split(/\s*-\s*/);
-  const uniqueParts = Array.from(new Set(parts.map(p => p.trim()).filter(Boolean)));
-  return uniqueParts.join(' - ');
-}
+import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
 
 function balanceTagsIntoTwoRows(tags) {
   if (!tags || tags.length === 0) return [[], []];
@@ -252,19 +246,20 @@ export default function ProfilePage() {
       } 
     : profileUser;
 
+  const academicSummary = useAcademicSummary(effectiveUser);
+
   // Build dynamic user tags list
   const userTags = [];
   const universityName = getCollegeName(effectiveUser);
-  const gradYear = effectiveUser.graduationYear || '';
-  if (universityName || gradYear) {
-    userTags.push({ icon: '🎓', label: `${universityName}${gradYear ? ` - ${gradYear}` : ''}` });
+  if (universityName) {
+    userTags.push({ icon: '🎓', label: universityName });
   }
 
-  if (effectiveUser.major) {
-    const cleanMajor = formatMajor(effectiveUser.major);
-    if (cleanMajor) {
-      userTags.push({ icon: '🤖', label: cleanMajor });
-    }
+  // "B.Tech • Computer Science & Engineering • 2nd Year". Null for accounts with
+  // no academic data yet (including legacy users cleared by the migration), in
+  // which case no tag is rendered at all.
+  if (academicSummary) {
+    userTags.push({ icon: '🎓', label: academicSummary });
   }
 
   if (effectiveUser.interests && Array.isArray(effectiveUser.interests)) {

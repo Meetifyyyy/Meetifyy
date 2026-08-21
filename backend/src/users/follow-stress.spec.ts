@@ -10,6 +10,7 @@ import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { BlocksService } from './blocks.service';
 import { PresenceService } from '../presence/presence.service';
+import { AcademicsService } from '../academics/academics.service';
 
 describe('Follow / Unfollow High Concurrency Stress Test', () => {
   let service: UsersService;
@@ -70,6 +71,9 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
         { provide: RedisService, useValue: mockRedisService },
         { provide: BlocksService, useValue: { isBlocked: jest.fn().mockResolvedValue(false) } },
         { provide: PresenceService, useValue: { getPresence: jest.fn(), getPresenceMany: jest.fn().mockResolvedValue(new Map()) } },
+        // Real instance: it is pure validation logic with no I/O, so exercising
+        // the actual catalogue here is more faithful than a stub.
+        AcademicsService,
         { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();

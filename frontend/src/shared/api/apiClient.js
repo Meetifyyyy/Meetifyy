@@ -616,11 +616,12 @@ export const usersApi = {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     return apiClient.get(`/api/users/campus?${params.toString()}`);
   },
-  // Server-side campus directory: search + major + year, keyset pagination.
-  getDirectory: ({ search, major, year, limit = 30, cursor } = {}) => {
+  // Server-side campus directory: search + course/branch/currentYear, keyset pagination.
+  getDirectory: ({ search, course, branch, year, limit = 30, cursor } = {}) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (search) params.set('search', search);
-    if (major && major !== 'All') params.set('major', major);
+    if (course && course !== 'All') params.set('course', course);
+    if (branch && branch !== 'All') params.set('branch', branch);
     if (year && year !== 'All') params.set('year', String(year));
     if (cursor) params.set('cursor', cursor);
     return apiClient.get(`/api/users/directory?${params.toString()}`);

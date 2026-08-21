@@ -38,6 +38,7 @@ import { AdminModule } from './admin/admin.module';
 import { RedisModule } from './redis/redis.module';
 import { EventsModule } from './events/events.module';
 import { DomainValidatorModule } from './common/services/domain-validator.module';
+import { AcademicsModule } from './academics/academics.module';
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { DomainValidatorModule } from './common/services/domain-validator.module
       },
     }),
     RedisModule,
+    AcademicsModule,
     SupabaseModule,
     PrismaModule,
     LinkPreviewModule,

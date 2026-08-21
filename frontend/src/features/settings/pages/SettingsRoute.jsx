@@ -7,7 +7,9 @@ import { apiClient } from '@shared/api/apiClient';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { validateDOB } from '@shared/utils/dateValidation';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
-import { MAJORS_LIST } from '@features/campus/data/majors';
+import AcademicSelection from '@shared/academics/AcademicSelection';
+import { useAcademicCatalog } from '@shared/academics/useAcademicCatalog';
+import { validateAcademicSelection } from '@shared/academics/academicCatalog';
 import {
   Pencil, Lock, Eye, EyeOff, AlertCircle, Trash2,
   User, GraduationCap, Shield, Bell, HelpCircle, LogOut,
@@ -207,17 +209,17 @@ export default function SettingsRoute() {
   const closePanel = () => goBack('/settings');
 
   // Account & Profile state
-  const getInitialMajor = (major) => {
-    if (!major) return '';
-    if (major.includes(' - ')) return major.split(' - ')[0];
-    return major;
-  };
-
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [bio, setBio] = useState(currentUser?.bio || '');
   const [birthday, setBirthday] = useState(currentUser?.birthday || '');
-  const [course, setCourse] = useState(getInitialMajor(currentUser?.major));
-  const [year, setYear] = useState(currentUser?.graduationYear ? String(currentUser.graduationYear) : '');
+  // Single controlled object, same shape the signup step uses.
+  const [academic, setAcademic] = useState(() => ({
+    course: currentUser?.course || '',
+    branch: currentUser?.branch || '',
+    currentYear: Number.isInteger(currentUser?.currentYear) ? currentUser.currentYear : null,
+  }));
+  const [academicAttempted, setAcademicAttempted] = useState(false);
+  const { courses: academicCourses } = useAcademicCatalog();
 
   // Interests state
   const [selectedInterests, setSelectedInterests] = useState(currentUser?.interests || []);
@@ -286,8 +288,11 @@ export default function SettingsRoute() {
             setDisplayName(user.displayName || '');
             setBio(user.bio || '');
             setBirthday(user.birthday || '');
-            setCourse(getInitialMajor(user.major));
-            setYear(user.graduationYear ? String(user.graduationYear) : '');
+            setAcademic({
+              course: user.course || '',
+              branch: user.branch || '',
+              currentYear: Number.isInteger(user.currentYear) ? user.currentYear : null,
+            });
             setSelectedInterests(user.interests || []);
             if (updateCurrentUser) {
               updateCurrentUser({ ...currentUser, ...user });
@@ -341,16 +346,32 @@ export default function SettingsRoute() {
         showToast(err?.message || "Couldn't save profile", 'error');
       });
     } else if (activePanel === 'academic') {
+      // Validate before closing: the panel stays open on an incomplete selection
+      // so the user can see which field is wrong, rather than being dropped back
+      // to the list with a toast. The server re-validates regardless.
+      setAcademicAttempted(true);
+      const academicError = validateAcademicSelection(academicCourses, academic);
+      if (academicError) {
+        showToast(academicError, 'error');
+        return;
+      }
+
       closePanel();
       showToast('Academic details updated', 'success');
-      const updatedUser = { ...currentUser, major: course, graduationYear: year ? parseInt(year, 10) : null };
+      const updatedUser = {
+        ...currentUser,
+        course: academic.course,
+        branch: academic.branch,
+        currentYear: academic.currentYear,
+      };
       if (updateCurrentUser) {
         updateCurrentUser(updatedUser);
       }
       queryClient.invalidateQueries({ queryKey: ['profile'] });
-      updateProfile({ 
-        major: course, 
-        graduationYear: year ? parseInt(year, 10) : null 
+      updateProfile({
+        course: academic.course,
+        branch: academic.branch,
+        currentYear: academic.currentYear,
       }).catch(err => {
         console.error('Failed to update academic info:', err);
         showToast(err?.message || "Couldn't save academic details", 'error');
@@ -736,34 +757,24 @@ export default function SettingsRoute() {
       </div>
 
       <div className={styles.group} style={{ overflow: 'visible', marginTop: '16px' }}>
-        <div className={styles.selectRow} style={{ overflow: 'visible' }}>
-          <div className={styles.toggleInfo}>
-            <span className={styles.inputLabel}>Major / Course</span>
-          </div>
-          <CustomSelect
-            value={course}
-            onChange={setCourse}
-            options={MAJORS_LIST}
-            placeholder="Select Major"
-            searchable={true}
-          />
-        </div>
-
-        <div className={styles.divider} />
-        <div className={styles.selectRow} style={{ overflow: 'visible' }}>
-          <div className={styles.toggleInfo}>
-            <span className={styles.inputLabel}>Year of Passing</span>
-          </div>
-          <CustomSelect
-            value={year}
-            onChange={setYear}
-            options={Array.from({ length: 9 }, (_, i) => {
-              const y = String(new Date().getFullYear() - 2 + i);
-              return { value: y, label: y };
-            })}
-            placeholder="Select Year"
-          />
-        </div>
+        <AcademicSelection
+          value={academic}
+          onChange={setAcademic}
+          Select={CustomSelect}
+          showErrors={academicAttempted}
+          errors={{
+            course: !academic.course ? 'Please select your course.' : null,
+            branch: academic.course && !academic.branch ? 'Please select your branch.' : null,
+            currentYear:
+              academic.course && !Number.isInteger(academic.currentYear)
+                ? 'Please select your current year.'
+                : null,
+          }}
+          classes={{
+            selectGroup: styles.selectRow,
+            selectLabel: styles.inputLabel,
+          }}
+        />
       </div>
       <button className={styles.saveBtn} onClick={handleSave}>Save Academic Info</button>
     </div>

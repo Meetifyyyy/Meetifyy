@@ -37,7 +37,9 @@ export interface MatchFoundPayload {
     username: string;
     displayName: string;
     avatar: string | null;
-    major: string | null;
+    course: string | null;
+    branch: string | null;
+    currentYear: number | null;
     interests: string[];
     bio: string | null;
   };
@@ -152,7 +154,7 @@ export class InstantMatchService implements OnModuleInit {
       },
       include: {
         user: {
-          select: { id: true, username: true, displayName: true, avatar: true, major: true, interests: true, bio: true },
+          select: { id: true, username: true, displayName: true, avatar: true, course: true, branch: true, currentYear: true, interests: true, bio: true },
         },
       },
     });
@@ -223,7 +225,9 @@ export class InstantMatchService implements OnModuleInit {
         username: candidate!.user.username,
         displayName: candidate!.user.displayName,
         avatar: candidate!.user.avatar,
-        major: candidate!.user.major,
+        course: candidate!.user.course,
+        branch: candidate!.user.branch,
+        currentYear: candidate!.user.currentYear,
         interests: candidate!.user.interests,
         bio: candidate!.user.bio,
       },
@@ -235,7 +239,7 @@ export class InstantMatchService implements OnModuleInit {
     // For userA (me), candidate is bestCandidate
     const meUser = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, displayName: true, avatar: true, major: true, interests: true, bio: true },
+      select: { id: true, username: true, displayName: true, avatar: true, course: true, branch: true, currentYear: true, interests: true, bio: true },
     });
 
     realtimeGatewayRef?.emitMatchFound(userId, buildPayload(bestCandidate));
@@ -246,7 +250,9 @@ export class InstantMatchService implements OnModuleInit {
         username: meUser!.username,
         displayName: meUser!.displayName,
         avatar: meUser!.avatar,
-        major: meUser!.major,
+        course: meUser!.course,
+        branch: meUser!.branch,
+        currentYear: meUser!.currentYear,
         interests: meUser!.interests,
         bio: meUser!.bio,
       },

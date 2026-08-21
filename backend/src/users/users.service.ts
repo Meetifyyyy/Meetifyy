@@ -12,6 +12,7 @@ import { Queue } from 'bullmq';
 import { NOTIFICATIONS_QUEUE, FollowNotifJob } from '../notifications/notifications.processor';
 import { clearAuthSyncCache } from '../auth/auth.service';
 import { validateBirthday } from '../common/utils/birthday-validation.util';
+import { AcademicsService } from '../academics/academics.service';
 
 @Injectable()
 export class UsersService {
@@ -24,6 +25,7 @@ export class UsersService {
     private readonly redisService: RedisService,
     private readonly blocksService: BlocksService,
     private readonly presenceService: PresenceService,
+    private readonly academicsService: AcademicsService,
     @InjectQueue(NOTIFICATIONS_QUEUE) private readonly notifQueue: Queue,
   ) {}
 
@@ -40,8 +42,9 @@ export class UsersService {
         bio: true,
         collegeId: true,
         college: { select: { id: true, name: true } },
-        major: true,
-        graduationYear: true,
+        course: true,
+        branch: true,
+        currentYear: true,
         settings: {
           select: {
             showOnlineStatus: true,
@@ -98,8 +101,9 @@ export class UsersService {
         avatar: true,
         bio: true,
         collegeId: true,
-        major: true,
-        graduationYear: true,
+        course: true,
+        branch: true,
+        currentYear: true,
         college: { select: { name: true } },
         settings: {
           select: {
@@ -127,7 +131,7 @@ export class UsersService {
   }
 
   /**
-   * Server-side campus directory: search + major + graduationYear filters with
+   * Server-side campus directory: search + course/branch/currentYear filters with
    * keyset (cursor) pagination on (createdAt desc, id desc). Scoped to the
    * caller's college so a directory can scale past the previous 50-row client
    * cap without ever downloading the whole college. Presence is batched.
@@ -137,7 +141,7 @@ export class UsersService {
    */
   async getDirectory(
     userId: string,
-    opts: { search?: string; major?: string; graduationYear?: number; limit?: number; cursor?: string } = {},
+    opts: { search?: string; course?: string; branch?: string; currentYear?: number; limit?: number; cursor?: string } = {},
   ): Promise<{ users: any[]; nextCursor?: string }> {
     if (!userId) return { users: [], nextCursor: undefined };
     const me = await this.prisma.user.findUnique({ where: { id: userId }, select: { collegeId: true } });
@@ -166,14 +170,15 @@ export class UsersService {
       id: { not: userId },
       accountStatus: 'ACTIVE',
       deletedAt: null,
-      ...(opts.major ? { major: opts.major } : {}),
-      ...(opts.graduationYear ? { graduationYear: opts.graduationYear } : {}),
+      ...(opts.course ? { course: opts.course } : {}),
+      ...(opts.branch ? { branch: opts.branch } : {}),
+      ...(opts.currentYear ? { currentYear: opts.currentYear } : {}),
       ...(search
         ? {
             OR: [
               { displayName: { contains: search, mode: 'insensitive' as const } },
               { username: { contains: search, mode: 'insensitive' as const } },
-              { major: { contains: search, mode: 'insensitive' as const } },
+
             ],
           }
         : {}),
@@ -191,8 +196,9 @@ export class UsersService {
         avatar: true,
         bio: true,
         collegeId: true,
-        major: true,
-        graduationYear: true,
+        course: true,
+        branch: true,
+        currentYear: true,
         createdAt: true,
         settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
       },
@@ -225,7 +231,9 @@ export class UsersService {
         avatar: true,
         bio: true,
         college: true,
-        major: true,
+        course: true,
+        branch: true,
+        currentYear: true,
         profileCompleted: true,
       }
     });
@@ -347,8 +355,9 @@ export class UsersService {
       college: targetUser.college?.name || null,
       collegeId: targetUser.collegeId,
       isCampusRep: targetUser.isCampusRep,
-      major: targetUser.major,
-      graduationYear: targetUser.graduationYear,
+      course: targetUser.course,
+      branch: targetUser.branch,
+      currentYear: targetUser.currentYear,
       location: targetUser.location,
       interests: targetUser.interests || [],
       verified: targetUser.emailVerified,
@@ -648,7 +657,7 @@ export class UsersService {
 
   async updateProfile(userId: string, data: any, userEmail?: string) {
     // Only allow updating valid user profile fields
-    const { displayName, username, bio, avatar, cover, major, graduationYear, location, profileCompleted, interests, birthday } = data;
+    const { displayName, username, bio, avatar, cover, location, profileCompleted, interests, birthday } = data;
     const updateData: any = {};
     if (displayName !== undefined) {
       const trimmedDisplayName = typeof displayName === 'string' ? displayName.trim() : '';
@@ -736,33 +745,33 @@ export class UsersService {
       }
     }
     
-    // Map major / course / branch cleanly
-    const computedMajor = major || [data.course, data.branch].filter(Boolean).join(' - ');
-    if (computedMajor) updateData.major = computedMajor;
-
-    // Parse graduationYear / year safely as integer
-    const rawYear = graduationYear !== undefined ? graduationYear : data.year;
-    if (rawYear !== undefined && rawYear !== null && rawYear !== '') {
-      const currentYear = new Date().getFullYear();
-      const maxGraduationYear = currentYear + 6;
-
-      let parsedYear = NaN;
-      if (typeof rawYear === 'number') {
-        parsedYear = Math.floor(rawYear);
-      } else if (typeof rawYear === 'string') {
-        parsedYear = parseInt(rawYear.replace(/\D/g, ''), 10);
-      }
-
-      if (!isNaN(parsedYear) && parsedYear >= 2026 && parsedYear <= maxGraduationYear) {
-        updateData.graduationYear = parsedYear;
-      } else if (typeof rawYear === 'string' && (rawYear.includes('1st') || rawYear.includes('2nd') || rawYear.includes('3rd') || rawYear.includes('4th'))) {
-        if (rawYear.includes('1st')) updateData.graduationYear = currentYear + 3;
-        else if (rawYear.includes('2nd')) updateData.graduationYear = currentYear + 2;
-        else if (rawYear.includes('3rd')) updateData.graduationYear = currentYear + 1;
-        else if (rawYear.includes('4th')) updateData.graduationYear = currentYear;
-      } else {
-        throw new BadRequestException(`Year of passing must be between 2026 and ${maxGraduationYear}.`);
-      }
+    // Academic information is validated against the official GLA catalogue on the
+    // server, so a handcrafted request cannot pair a course with another course's
+    // branch or a year beyond the course duration. Absent fields leave the stored
+    // values untouched, which lets a settings save that only edits a bio omit them.
+    let academic: { course: string; branch: string; currentYear: number } | null = null;
+    try {
+      academic = this.academicsService.validateIfPresent({
+        course: data.course,
+        branch: data.branch,
+        currentYear: data.currentYear,
+      });
+    } catch (err) {
+      // Log the rejected combination (ids only — no personal data) so an invalid
+      // pairing reaching the server is diagnosable without replaying the request.
+      this.logger.warn(
+        `[ACADEMIC] rejected for user=${userId} course=${data.course ?? '-'} branch=${data.branch ?? '-'} year=${data.currentYear ?? '-'}: ${(err as Error).message}`,
+      );
+      throw err;
+    }
+    if (academic) {
+      updateData.course = academic.course;
+      updateData.branch = academic.branch;
+      updateData.currentYear = academic.currentYear;
+      // Debug-level: useful while a user is completing onboarding, silent in prod.
+      this.logger.debug(
+        `[ACADEMIC] accepted for user=${userId} course=${academic.course} branch=${academic.branch} year=${academic.currentYear}`,
+      );
     }
 
     if (location !== undefined) updateData.location = location;
@@ -810,8 +819,9 @@ export class UsersService {
         cover: true,
         bio: true,
         birthday: true,
-        major: true,
-        graduationYear: true,
+        course: true,
+        branch: true,
+        currentYear: true,
         location: true,
         interests: true,
         profileCompleted: true,

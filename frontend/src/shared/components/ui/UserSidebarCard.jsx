@@ -13,6 +13,7 @@ import { dmApi, messagesApi, getMediaUrl } from '@shared/api/apiClient';
 import CoverImage from './CoverImage';
 import defaultCover from '@assets/images/default_cover.webp';
 import s from './UserSidebarCard.module.css';
+import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
 
 // Build emoji lookup map
 const emojiMap = {};
@@ -21,13 +22,6 @@ INTERESTS_BY_CATEGORY.forEach(category => {
     emojiMap[tag.label] = tag.emoji;
   });
 });
-
-function formatMajor(majorStr) {
-  if (!majorStr || typeof majorStr !== 'string') return '';
-  const parts = majorStr.split(/\s*-\s*/);
-  const uniqueParts = Array.from(new Set(parts.map(p => p.trim()).filter(Boolean)));
-  return uniqueParts.join(' - ');
-}
 
 function balanceTagsIntoTwoRows(tags) {
   if (!tags || tags.length === 0) return [[], []];
@@ -159,24 +153,17 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
     ?? effectiveUser.followingList?.length
     ?? 0;
 
+  const academicSummary = useAcademicSummary(effectiveUser);
+
   // Build tags cleanly without orphan hyphens
   const userTags = [];
   const universityName = getCollegeName(effectiveUser, '');
-  const gradYear = effectiveUser.graduationYear || '';
-
-  if (universityName && gradYear) {
-    userTags.push({ icon: '🎓', label: `${universityName} - ${gradYear}` });
-  } else if (universityName) {
+  if (universityName) {
     userTags.push({ icon: '🎓', label: universityName });
-  } else if (gradYear) {
-    userTags.push({ icon: '🎓', label: `College - ${gradYear}` });
   }
 
-  if (effectiveUser.major) {
-    const cleanMajor = formatMajor(effectiveUser.major);
-    if (cleanMajor) {
-      userTags.push({ icon: '🤖', label: cleanMajor });
-    }
+  if (academicSummary) {
+    userTags.push({ icon: '🎓', label: academicSummary });
   }
 
   if (effectiveUser.interests && Array.isArray(effectiveUser.interests)) {

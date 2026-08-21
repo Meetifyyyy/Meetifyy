@@ -18,7 +18,7 @@ const initialData = {
   university: '',
   course: '',
   branch: '',
-  year: '',
+  currentYear: null,
   email: '',
   password: '',
   avatar: '',
@@ -85,6 +85,40 @@ export const SignupProvider = ({ children }) => {
       if (saved) {
         const decoded = JSON.parse(saved);
         parsed = { ...initialData, ...decoded };
+
+        // Drop academic state written by the old Major / Year-of-Pass signup.
+        // Those keys carried a free-text major and a passing year, neither of
+        // which is a valid Course/Branch/Current Year, so restoring them would
+        // repopulate the form with values the server now rejects.
+        if ('major' in decoded || 'year' in decoded || 'yearOfPass' in decoded) {
+          delete parsed.major;
+          delete parsed.year;
+          delete parsed.yearOfPass;
+          parsed.course = '';
+          parsed.branch = '';
+          parsed.currentYear = null;
+          if (import.meta.env.DEV) {
+            console.info('[signup] cleared legacy Major/Year-of-Pass draft state on restore');
+          }
+        }
+
+        // currentYear must survive JSON round-tripping as a number; a stale
+        // string would fail Number.isInteger checks downstream and silently
+        // render the Year dropdown empty.
+        if (typeof parsed.currentYear === 'string') {
+          parsed.currentYear = /^\d+$/.test(parsed.currentYear) ? parseInt(parsed.currentYear, 10) : null;
+        } else if (!Number.isInteger(parsed.currentYear)) {
+          parsed.currentYear = null;
+        }
+
+        // A course without a branch (or a branch without a course) is never a
+        // valid resume point. AcademicSelection re-checks the pair against the
+        // live catalogue once it loads; this only removes the impossible states
+        // that don't need the catalogue to detect.
+        if (!parsed.course) {
+          parsed.branch = '';
+          parsed.currentYear = null;
+        }
       }
     } catch (e) {
       sessionStorage.removeItem(SESSION_KEY);

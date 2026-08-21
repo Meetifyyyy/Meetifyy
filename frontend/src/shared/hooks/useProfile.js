@@ -104,22 +104,22 @@ export function useCampusUsers(limit = 50, { enabled = true } = {}) {
 }
 
 /**
- * Server-driven campus directory: search + major + year filters with cursor-based
+ * Server-driven campus directory: search + course/branch/year filters with cursor-based
  * infinite scrolling. The filters are part of the query key, so each combination
  * is cached independently and a stale in-flight response for an old query can
  * never overwrite the active one (TanStack drops results for inactive keys).
  *
- * @param {{ search?: string, major?: string, year?: string }} filters
+ * @param {{ search?: string, course?: string, branch?: string, year?: string }} filters
  *        Pass an already-debounced `search` so typing doesn't storm the server.
  */
-export function useDirectory({ search = '', major = 'All', year = 'All' } = {}) {
+export function useDirectory({ search = '', course = 'All', branch = 'All', year = 'All' } = {}) {
   const { isLoggedIn } = useAuth();
   const normSearch = (search || '').trim();
 
   const query = useInfiniteQuery({
-    queryKey: ['directory', { search: normSearch, major, year }],
+    queryKey: ['directory', { search: normSearch, course, branch, year }],
     queryFn: ({ pageParam }) =>
-      usersApi.getDirectory({ search: normSearch, major, year, limit: 30, cursor: pageParam }),
+      usersApi.getDirectory({ search: normSearch, course, branch, year, limit: 30, cursor: pageParam }),
     enabled: Boolean(isLoggedIn),
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,

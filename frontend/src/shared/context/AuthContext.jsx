@@ -381,8 +381,9 @@ export function AuthProvider({ children }) {
           birthday: userData.birthday,
           firstName: userData.firstName,
           lastName: userData.lastName,
-          major: userData.major || userData.course || userData.branch,
-          year: userData.year,
+          // Academic info is NOT mirrored into Supabase user_metadata: Prisma is
+          // the source of truth for it, and metadata is client-writable, so a
+          // copy here could disagree with the validated record.
         }
       }
     });

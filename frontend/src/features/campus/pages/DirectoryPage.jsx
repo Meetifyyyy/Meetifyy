@@ -10,7 +10,9 @@ import Avatar from '@shared/components/avatar/Avatar';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './DirectoryPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
-import { MAJORS_LIST } from '../data/majors';
+import { useAcademicCatalog } from '@shared/academics/useAcademicCatalog';
+import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
+import { yearLabel } from '@shared/academics/academicCatalog';
 import { useDirectory } from '@shared/hooks/useProfile';
 import { useDebounce } from '@shared/hooks/useDebounce';
 
@@ -29,21 +31,27 @@ const SearchableMajorSelect = ({ value, onChange }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const { courses } = useAcademicCatalog();
+  const courseOptions = useMemo(
+    () => courses.map((c) => ({ value: c.id, label: c.name })),
+    [courses],
+  );
+
   const filteredMajors = useMemo(() => {
     const q = search.toLowerCase();
-    return MAJORS_LIST.filter(m => m.value.toLowerCase().includes(q) || m.label.toLowerCase().includes(q));
-  }, [search]);
+    return courseOptions.filter(m => m.label.toLowerCase().includes(q));
+  }, [search, courseOptions]);
 
   const groupedMajors = useMemo(() => {
-    return filteredMajors.reduce((acc, major) => {
-      const firstLetter = major.value[0].toUpperCase();
+    return filteredMajors.reduce((acc, course) => {
+      const firstLetter = course.label[0].toUpperCase();
       if (!acc[firstLetter]) acc[firstLetter] = [];
-      acc[firstLetter].push(major);
+      acc[firstLetter].push(course);
       return acc;
     }, {});
   }, [filteredMajors]);
 
-  const selectedLabel = value === 'All' ? 'Major' : MAJORS_LIST.find(m => m.value === value)?.label || 'Major';
+  const selectedLabel = value === 'All' ? 'Course' : courseOptions.find(m => m.value === value)?.label || 'Course';
 
   return (
     <div ref={dropdownRef} style={{ position: 'relative' }}>
@@ -64,7 +72,7 @@ const SearchableMajorSelect = ({ value, onChange }) => {
             <Search size={14} color="var(--color-icon-base)" />
             <input
               type="text"
-              placeholder="Search major..."
+              placeholder="Search course..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className={styles.customDropdownInput}
@@ -95,7 +103,7 @@ const SearchableMajorSelect = ({ value, onChange }) => {
 
             {filteredMajors.length === 0 && (
               <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-                No majors found.
+                No courses found.
               </div>
             )}
           </div>
@@ -119,7 +127,7 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const selectedLabel = value === 'All' ? 'Class Year' : `Class of ${value}`;
+  const selectedLabel = value === 'All' ? 'Year' : yearLabel(Number(value));
 
   return (
     <div ref={dropdownRef} style={{ position: 'relative' }}>
@@ -150,7 +158,7 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
                 className={`${styles.customDropdownOption} ${value === y.toString() ? styles.selected : ''}`}
                 onClick={() => { onChange(y.toString()); setIsOpen(false); }}
               >
-                Class of {y}
+                {yearLabel(y)}
               </div>
             ))}
           </div>
@@ -160,7 +168,17 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
   );
 };
 
-export default function DirectoryPage() {
+export default /**
+ * Academic line on a directory card. Falls back to "Campus Member" for accounts
+ * with no academic data — including legacy users whose Major / Year of Pass was
+ * removed by the migration — so a card never renders an empty line.
+ */
+function DirectorySubtitle({ user }) {
+  const summary = useAcademicSummary(user);
+  return <>{summary || 'Campus Member'}</>;
+}
+
+function DirectoryPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
@@ -181,7 +199,7 @@ export default function DirectoryPage() {
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
-  } = useDirectory({ search: debouncedSearch, major: dirBranch, year: dirYear });
+  } = useDirectory({ search: debouncedSearch, course: dirBranch, year: dirYear });
 
   // Infinite-scroll sentinel — loads the next page as it nears the viewport.
   const sentinelRef = useRef(null);
@@ -213,20 +231,18 @@ export default function DirectoryPage() {
         currentUser.displayName?.toLowerCase().includes(q) ||
         currentUser.username?.toLowerCase().includes(q) ||
         currentUser.bio?.toLowerCase().includes(q) ||
-        currentUser.major?.toLowerCase().includes(q);
+        currentUser.username?.toLowerCase().includes(q);
       if (!matches) return false;
     }
-    if (dirBranch !== 'All' && currentUser.major !== dirBranch) return false;
-    if (dirYear !== 'All' && String(currentUser.graduationYear || currentUser.year) !== dirYear) return false;
+    if (dirBranch !== 'All' && currentUser.course !== dirBranch) return false;
+    if (dirYear !== 'All' && String(currentUser.currentYear ?? '') !== dirYear) return false;
     return true;
   }, [currentUser, searchQuery, dirBranch, dirYear]);
 
-  const currentYear = new Date().getFullYear();
-  const maxYear = currentYear + 6;
-  const classYears = [];
-  for (let y = 2026; y <= maxYear; y++) {
-    classYears.push(y);
-  }
+  // Current academic year, not a year of passing. 6 covers the longest
+  // programme in the catalogue (Ph.D); shorter courses simply have no members
+  // in the higher buckets.
+  const classYears = [1, 2, 3, 4, 5, 6];
 
   return (
     <main className={`centre centre-wide ${styles.hubContainer}`}>
@@ -295,11 +311,7 @@ export default function DirectoryPage() {
                   {currentUser.displayName} (You)
                 </h4>
                 <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-                  {currentUser.graduationYear || currentUser.year
-                    ? `Class of ${currentUser.graduationYear || currentUser.year}`
-                    : currentUser.major
-                    ? currentUser.major
-                    : 'Campus Member'}
+                  <DirectorySubtitle user={currentUser} />
                 </p>
               </div>
             </div>
@@ -321,11 +333,7 @@ export default function DirectoryPage() {
                   {student.displayName}
                 </h4>
                 <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-                  {student.graduationYear || student.year
-                    ? `Class of ${student.graduationYear || student.year}`
-                    : student.major
-                    ? student.major
-                    : 'Campus Member'}
+                  <DirectorySubtitle user={student} />
                 </p>
               </div>
             </div>

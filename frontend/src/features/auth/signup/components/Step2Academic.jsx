@@ -3,7 +3,9 @@ import { AlertCircle, ArrowRight } from 'lucide-react';
 import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
 import CustomSelect from './CustomSelect';
-import { MAJORS_LIST } from '../../../campus/data/majors';
+import AcademicSelection from '@shared/academics/AcademicSelection';
+import { useAcademicCatalog } from '@shared/academics/useAcademicCatalog';
+import { validateAcademicSelection, ACADEMIC_ERRORS } from '@shared/academics/academicCatalog';
 import { apiClient } from '@shared/api/apiClient';
 import { useAvailabilityCheck } from '../hooks/useAvailabilityCheck';
 import { AuthHeading, AuthField, AuthButton, styles as s } from '../../shared/ui';
@@ -14,8 +16,13 @@ export default function Step2Academic() {
   const { signupData, updateData, nextStep } = useSignup();
 
   const [email, setEmail] = useState(signupData.email || '');
-  const [major, setMajor] = useState(signupData.course || signupData.branch || '');
-  const [year, setYear] = useState(signupData.year || '');
+  // One controlled object rather than three loose fields, so course/branch/year
+  // can never drift out of sync with each other.
+  const [academic, setAcademic] = useState(() => ({
+    course: signupData.course || '',
+    branch: signupData.branch || '',
+    currentYear: Number.isInteger(signupData.currentYear) ? signupData.currentYear : null,
+  }));
   const [attempted, setAttempted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hardBlockReason, setHardBlockReason] = useState('');
@@ -39,21 +46,21 @@ export default function Step2Academic() {
   });
   const emailStatus = rawEmailStatus === 'network-error' ? 'network' : rawEmailStatus;
 
-  const currentYear = new Date().getFullYear();
-  const maxPassingYear = currentYear + 6;
-  const years = useMemo(() => {
-    const list = [];
-    for (let y = 2026; y <= maxPassingYear; y++) list.push(String(y));
-    return list;
-  }, [maxPassingYear]);
+  const { courses: academicCourses } = useAcademicCatalog();
 
-  const majorError = !major.trim() ? 'Major / Course is required.' : null;
-  const yearError = useMemo(() => {
-    if (!year) return 'Year is required.';
-    const num = parseInt(year, 10);
-    if (isNaN(num) || num < 2026 || num > maxPassingYear) return `Must be 2026–${maxPassingYear}.`;
-    return null;
-  }, [year, maxPassingYear]);
+  // Per-field messages, derived from the one shared rule set so signup and
+  // settings can never disagree about what is valid.
+  const academicErrors = useMemo(() => ({
+    course: !academic.course ? ACADEMIC_ERRORS.COURSE_REQUIRED : null,
+    branch: academic.course && !academic.branch ? ACADEMIC_ERRORS.BRANCH_REQUIRED : null,
+    currentYear:
+      academic.course && !Number.isInteger(academic.currentYear) ? ACADEMIC_ERRORS.YEAR_REQUIRED : null,
+  }), [academic]);
+
+  const academicError = useMemo(
+    () => validateAcademicSelection(academicCourses, academic),
+    [academicCourses, academic],
+  );
 
   const isChecking = emailStatus === 'checking';
 
@@ -71,7 +78,7 @@ export default function Step2Academic() {
     setAttempted(true);
     setHardBlockReason('');
 
-    if (emailFormatError || majorError || yearError) return;
+    if (emailFormatError || academicError) return;
     if (emailStatus === 'taken') return;
 
     // If the live check hasn't confirmed 'available' yet, run one authoritative
@@ -96,7 +103,15 @@ export default function Step2Academic() {
     const domainPart = domain.split('.')[0];
     if (domainPart) university = domainPart.charAt(0).toUpperCase() + domainPart.slice(1) + ' University';
 
-    updateData({ email: normalizedEmail, course: major, branch: major, year, university });
+    // Persist the exact ids the backend validates against — no display strings,
+    // and no `year`/`major` legacy keys.
+    updateData({
+      email: normalizedEmail,
+      course: academic.course,
+      branch: academic.branch,
+      currentYear: academic.currentYear,
+      university,
+    });
     nextStep();
   };
 
@@ -119,47 +134,20 @@ export default function Step2Academic() {
           }}
         />
 
-        <div className={s.fieldRow}>
-          <div className={s.fieldRowMain}>
-            <div className={s.selectGroup}>
-              <span className={s.selectLabel}>Major / Course</span>
-              <CustomSelect
-                value={major}
-                onChange={setMajor}
-                placeholder="Select Major"
-                options={MAJORS_LIST}
-                searchable
-              />
-            </div>
-            <div className={s.messageSlot}>
-              {attempted && majorError ? (
-                <div className={`${s.message} ${s.messageError}`}>
-                  <AlertCircle size={13} /> {majorError}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className={s.fieldRowSide}>
-            <div className={s.selectGroup}>
-              <span className={s.selectLabel}>Year of Passing</span>
-              <CustomSelect
-                value={year}
-                onChange={setYear}
-                placeholder="Year"
-                options={years.map((y) => ({ value: y, label: y }))}
-                searchable
-              />
-            </div>
-            <div className={s.messageSlot}>
-              {attempted && yearError ? (
-                <div className={`${s.message} ${s.messageError}`}>
-                  <AlertCircle size={13} /> {yearError}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
+        <AcademicSelection
+          value={academic}
+          onChange={setAcademic}
+          Select={CustomSelect}
+          errors={academicErrors}
+          showErrors={attempted}
+          classes={{
+            selectGroup: s.selectGroup,
+            selectLabel: s.selectLabel,
+            messageSlot: s.messageSlot,
+            message: s.message,
+            messageError: s.messageError,
+          }}
+        />
 
         <AuthButton
           type="submit"
