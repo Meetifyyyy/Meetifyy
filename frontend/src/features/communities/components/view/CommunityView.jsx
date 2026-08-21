@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@shared/hooks/useData';
+import { useAuth } from '@shared/context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
@@ -46,7 +47,10 @@ function formatCount(n) {
 
 function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCommunities, onViewMembers, isAdmin, onOpenAdmin, onUpdateCommunity, isMuted, onMuteClick, onTitleClick, onShare }) {
   const navigate = useNavigate();
-  const { currentUser, users } = useData();
+  // `useData` sources currentUser straight from AuthContext, so this is the same
+  // value. `users` still comes from useData until the users-map hook lands.
+  const { users } = useData();
+  const { currentUser } = useAuth();
   const { openViewer } = useMediaViewer();
   const coverInputRef = useRef(null);
   const avatarInputRef = useRef(null);
@@ -659,7 +663,10 @@ function useSimulatedFetch(data, delay = 0, deps = []) {
 export default function CommunityView({ communityId, onBack, onPostClick }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { posts, communities: allCommunities, users, currentUser, requestToJoinGroup, addPost, updateCommunity } = useData();
+  // `allCommunities` and `requestToJoinGroup` were destructured but never
+  // referenced anywhere in this file -- dropped rather than migrated.
+  const { posts, users, addPost, updateCommunity } = useData();
+  const { currentUser } = useAuth();
   const { mutate: toggleJoin, isLoading: isJoining } = useJoinCommunity();
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
