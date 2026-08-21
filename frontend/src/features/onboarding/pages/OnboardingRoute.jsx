@@ -4,7 +4,7 @@ import { useAuth } from '@shared/context/AuthContext';
 
 import { INTERESTS_BY_CATEGORY } from '../constants/interestsData';
 import styles from './OnboardingRoute.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useCommunities } from '@shared/hooks/useCommunities';
 import { communitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -55,7 +55,7 @@ const FEATURED_INTERESTS = [
 
 export default function OnboardingRoute() {
   const { currentUser, completeOnboarding } = useAuth();
-  const { communities } = useData();
+  const { communities } = useCommunities();
   const navigate = useNavigate();
   
   const [step, setStep] = useState(() => (parseInt(sessionStorage.getItem(ONB_STEP_KEY), 10) === 2 ? 2 : 1));
