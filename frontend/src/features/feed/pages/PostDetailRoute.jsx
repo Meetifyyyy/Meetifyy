@@ -2,7 +2,7 @@ import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
 import PostView from '../components/post/PostView';
 import RightPanel from '@layout/RightPanel';
 import UserSidebarCard, { UserSidebarCardSkeleton } from '@shared/components/ui/UserSidebarCard';
@@ -14,7 +14,9 @@ export default function PostDetailRoute() {
   const goBack = useSmartBack();
   const location = useLocation();
   const { id } = useParams();
-  const { getUserById } = useData();
+  // getUserById was defined as exactly `users[id] || null` over this same map.
+  const usersMap = useUsersMap();
+  const getUserById = (id) => usersMap[id] || null;
 
   const handleBack = () => {
     goBack('/home');
