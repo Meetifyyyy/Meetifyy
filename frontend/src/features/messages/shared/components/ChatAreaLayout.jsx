@@ -1,7 +1,7 @@
 import { Suspense, lazy } from 'react';
 import { Search, X } from 'lucide-react';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
-import { useData } from '@shared/hooks/useData';
+import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import ChatMessageList from './ChatMessageList';
@@ -67,7 +67,7 @@ export default function ChatAreaLayout({
   showTypingAvatar = false,
 }) {
   const { openViewer } = useMediaViewer();
-  const { sendDirectMessage } = useData();
+  const { sendDirectMessage } = useMessageActions();
 
   const messages = conversation?.messages || [];
 
