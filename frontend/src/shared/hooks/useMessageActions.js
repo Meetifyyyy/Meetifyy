@@ -8,8 +8,7 @@ import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline'
  * The direct-message / conversation actions `useData` used to define inline.
  *
  * Extracted verbatim -- same optimistic cache writes, same API calls, same
- * error handling. `useData` consumes this hook so there is exactly one
- * implementation while both exist.
+ * error handling, carried over from the former `useData` mega-hook.
  */
 export function useMessageActions() {
   const queryClient = useQueryClient();

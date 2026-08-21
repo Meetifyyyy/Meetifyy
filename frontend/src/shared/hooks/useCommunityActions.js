@@ -6,8 +6,8 @@ import { showToast } from '../utils/toast';
  * The community / post write actions `useData` used to define inline.
  *
  * Extracted verbatim -- same mutation, same cache invalidations and seeding,
- * same toast-on-error behaviour. `useData` consumes this hook so there is
- * exactly one implementation while both exist.
+ * same toast-on-error behaviour, carried over from the former `useData`
+ * mega-hook.
  */
 export function useCommunityActions() {
   const queryClient = useQueryClient();

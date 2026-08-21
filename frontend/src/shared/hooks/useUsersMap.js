@@ -13,8 +13,8 @@ import { useCampusUsers } from './useProfile';
  *   2. campus users
  *   3. every participant / member / memberDetail of every conversation
  *
- * Extracted verbatim so there is a single implementation while `useData`
- * still exists — `useData` consumes this hook rather than duplicating it.
+ * Extracted from the former `useData` mega-hook, which built this map inline
+ * and re-exported it to every consumer.
  *
  * NOTE: this is an object map keyed by id, not an array. `usersMap[senderId]`
  * is the intended access pattern; the raw `['users']` query returns an array

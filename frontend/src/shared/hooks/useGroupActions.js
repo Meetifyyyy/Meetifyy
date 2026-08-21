@@ -9,8 +9,7 @@ import { showToast } from '../utils/toast';
  * The group-chat / conversation admin actions `useData` used to define inline.
  *
  * Extracted verbatim -- same optimistic cache writes, same rollbacks, same
- * toasts and invalidations. `useData` consumes this hook so there is exactly
- * one implementation while both exist.
+ * toasts and invalidations, carried over from the former `useData` mega-hook.
  */
 export function useGroupActions() {
   const queryClient = useQueryClient();
