@@ -114,6 +114,7 @@ export function useData() {
   const {
     updateMessagesCache,
     sendDirectMessage,
+    start24HrInstantChat,
     reactToMessage,
     startConversation,
     createGroupConversation,
@@ -596,11 +597,6 @@ const updatePollInCache = (oldData, postId, updatedPollOrIndices, currentUserId)
     }
   };
 
-  const start24HrInstantChat = async (candidate, activity) => {
-    const res = await messagesApi.startInstantMatchChat(candidate?.id, activity).catch(() => null);
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    return res?.id || null;
-  };
 
   return {
     currentUser,

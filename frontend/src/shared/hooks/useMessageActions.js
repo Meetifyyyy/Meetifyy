@@ -177,8 +177,15 @@ export function useMessageActions() {
 
 
 
+  const start24HrInstantChat = async (candidate, activity) => {
+    const res = await messagesApi.startInstantMatchChat(candidate?.id, activity).catch(() => null);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    return res?.id || null;
+  };
+
   return {
     updateMessagesCache,
+    start24HrInstantChat,
     sendDirectMessage,
     reactToMessage,
     startConversation,
