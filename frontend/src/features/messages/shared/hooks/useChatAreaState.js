@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { useConversations } from '@shared/hooks/useMessages';
 import { useTypingIndicator } from './useTypingIndicator';
 import { removeMessageFromCache, updateMessageInCache, updateConversationPreview } from '../utils/cacheUtils';
 import { messagesApi } from '@shared/api/apiClient';
@@ -15,7 +16,8 @@ import { useUrlState } from '@shared/hooks/useUrlState';
 export function useChatAreaState(conversation) {
   const queryClient = useQueryClient();
   const { currentUser } = useAuth();
-  const { users, conversations } = useData();
+  const users = useUsersMap();
+  const { conversations } = useConversations();
 
   const [replyingTo, setReplyingTo] = useState(null);
   const [contextMenuState, setContextMenuState] = useState(null);
