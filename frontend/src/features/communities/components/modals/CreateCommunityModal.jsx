@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { showToast } from '@shared/utils/toast';
 import styles from './CreateCommunityModal.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 
 const colors26 = [
@@ -71,7 +71,7 @@ const categories = [
 ];
 
 export default function CreateCommunityModal({ onClose, onCreated, isCampusCommunity = false }) {
-  const { addCommunity } = useData();
+  const { addCommunity } = useCommunityActions();
   useOverlayBack(true, onClose);
 
   // Wizard Steps state
