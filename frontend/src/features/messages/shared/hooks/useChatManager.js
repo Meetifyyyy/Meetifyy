@@ -3,8 +3,8 @@ import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { messagesApi, dmApi, groupApi } from '@shared/api/apiClient';
 import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
 import { processAndUploadImage, processAndUploadVideo, uploadFileDirect, getImageDimensions } from '@shared/utils/mediaPipeline';
-import { useData } from '@shared/hooks/useData';
 import { useAuth } from '@shared/context/AuthContext';
+import { useConversations } from '@shared/hooks/useMessages';
 import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, STATUS_RANK, checkIsMe } from '../utils/cacheUtils';
 
 import { idbGetMessages, idbSaveMessages, idbPatchMessage, idbDeleteMessage, migrateHistoricalFailedMessages, trimMessageCache } from '../utils/idbMessages';
@@ -45,10 +45,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
   // by clientId without duplicating the message. Value shape:
   // { file, mediaType, targetConvId, localPreviewUrl, abortController, sendArgs }
   const pendingUploadsRef = useRef(new Map());
-  const { conversations = [] } = useData() || {};
-  // `useData` sources currentUser straight from AuthContext, so this is the same
-  // value. useAuth() returns a populated default outside a provider, so the
-  // `currentUserParam || …` fallback below still behaves identically.
+  const { conversations = [] } = useConversations();
   const { currentUser: dataUser } = useAuth();
   const currentUser = currentUserParam || dataUser;
 
