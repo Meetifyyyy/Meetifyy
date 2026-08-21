@@ -894,9 +894,9 @@ function DeletedCommunityView({ onBack }) {
       title="Community not found"
       message="This community doesn't exist, has been deleted, or is no longer accessible."
       actionLabel="Back to Communities"
-      onAction={() => navigate('/communities')}
+      onAction={() => navigate('/communities', { replace: true })}
       secondaryActionLabel="Back to Home Feed"
-      onSecondaryAction={() => navigate('/home')}
+      onSecondaryAction={() => navigate('/home', { replace: true })}
       coverPage={true}
     />
   );
@@ -919,7 +919,7 @@ function DeletedCommunityView({ onBack }) {
         type="community"
         title="Community not found"
         message="This community doesn't exist, has been deleted, or is no longer accessible."
-        onAction={() => navigate('/home')}
+        onAction={() => navigate('/home', { replace: true })}
         coverPage={true}
       />
     );
@@ -977,8 +977,9 @@ function DeletedCommunityView({ onBack }) {
       await communitiesApi.delete(communityId);
       queryClient.invalidateQueries({ queryKey: ['communities'] });
       showToast('Community deleted', 'success');
+      // Replace: the community no longer exists, so Back must not return to it.
       if (onBack) onBack();
-      else navigate('/communities');
+      else navigate('/communities', { replace: true });
     } catch (err) {
       showToast(err?.message || "Couldn't delete community", 'error');
     } finally {

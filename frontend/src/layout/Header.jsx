@@ -89,7 +89,9 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   const handleLogout = () => {
     queryClient.clear();
     logout();
-    navigate('/');
+    // Replace, don't push: pushing left the authenticated page one entry behind
+    // the landing page, so Back after signing out walked straight back into it.
+    navigate('/', { replace: true });
   };
 
   // same value as communitiesDataMap above -- one useCommunities() call is enough
