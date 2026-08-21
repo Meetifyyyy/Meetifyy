@@ -153,7 +153,13 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
 
     messages.forEach(msg => {
       const text = msg.text || msg.payload?.text || '';
-      const mediaUrl = msg.mediaUrl || msg.payload?.mediaUrl || (msg.type === 'media' ? (msg.text || msg.payload?.text) : null) || '';
+      // Coerced to a string here: the `|| ''` fallback only covers falsy values, so
+      // a truthy non-string mediaUrl (an object payload, for instance) reached
+      // `mediaUrl.startsWith('data:audio/')` in the isAudio check below -- which runs
+      // before the `typeof mediaUrl === 'string'` guard further down -- and threw
+      // "mediaUrl.startsWith is not a function", taking the whole panel down.
+      const rawMediaUrl = msg.mediaUrl || msg.payload?.mediaUrl || (msg.type === 'media' ? (msg.text || msg.payload?.text) : null) || '';
+      const mediaUrl = typeof rawMediaUrl === 'string' ? rawMediaUrl : '';
       const mediaType = (msg.mediaType || msg.payload?.mediaType || msg.type || '').toLowerCase();
       const createdAt = msg.createdAt || msg.timestamp || new Date();
 
