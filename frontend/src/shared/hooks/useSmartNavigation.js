@@ -201,7 +201,32 @@ export function useSmartNavigation() {
       const targetPath = target.split('?')[0].split('#')[0];
 
       // Re-navigating to the page we're already on should never grow history.
-      const shouldReplace = options.replace || targetPath === location.pathname;
+      const isSamePage = targetPath === location.pathname;
+
+      // Neither should navigating *up* to a section we are already inside.
+      // Tapping "Messages" while a chat is open is a return to the tab root, not
+      // a new destination: pushing there left the chat stranded one entry behind
+      // the list, so a later Back re-opened the chat the user had just closed
+      // (and the same held for /campus/... -> /campus, /crew/:id -> /crew).
+      // Replacing discards the child entry instead, so Back from a tab root
+      // leaves the section, which is what the stack should look like.
+      const isAncestorOfCurrent =
+        targetPath !== '/' && location.pathname.startsWith(`${targetPath}/`);
+
+      const shouldReplace = options.replace || isSamePage || isAncestorOfCurrent;
+
+      // Going up when the entry directly behind us is already that section root:
+      // step back onto it instead of replacing. Replacing would leave two
+      // consecutive identical entries, so the next Back would land on the list
+      // again and look like it did nothing. Popping reuses the entry the user
+      // actually walked, so Back from the list leaves the section in one press.
+      if (isAncestorOfCurrent && !options.replace) {
+        const idx = currentIdx();
+        if (idx !== null && idx - 1 >= (_state.originIdx ?? 0) && _state.entries[idx - 1] === targetPath) {
+          navigate(-1);
+          return;
+        }
+      }
 
       navigate(to, { ...options, replace: shouldReplace });
     },
