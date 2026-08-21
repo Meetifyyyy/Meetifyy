@@ -3,14 +3,16 @@ import { createPortal } from 'react-dom';
 
 import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
 import styles from '@features/crew/components/modals/ShareActivityModal.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useConversations } from '@shared/hooks/useMessages';
+import { useMessageActions } from '@shared/hooks/useMessageActions';
 
 export default function ShareCommunityModal({ isOpen, onClose, community }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
   
-  const { conversations, sendDirectMessage } = useData();
+  const { conversations } = useConversations();
+  const { sendDirectMessage } = useMessageActions();
 
   const handleCopyLink = () => {
     const link = `${window.location.origin}/communities/${community.id}`;
