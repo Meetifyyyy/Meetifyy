@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { usersApi, activitiesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
 
 export default function RightPanel({ children, className = '' }) {
   return <aside className={`${styles.rightPanel} ${className}`.trim()}>{children}</aside>;
@@ -20,7 +21,7 @@ export default function RightPanel({ children, className = '' }) {
 
 export function NotificationsActivity() {
   const { notifications, isLoading } = useNotifications();
-  const { users } = useData();
+  const users = useUsersMap();
   const navigate = useNavigate();
 
   const displayNotifs = notifications.slice(0, 4);
