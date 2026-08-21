@@ -28,7 +28,11 @@ const _state = {
 
 function currentIdx() {
   const idx = window.history.state?.idx;
-  return typeof idx === 'number' ? idx : null;
+  // `typeof NaN === 'number'`, and a negative or fractional idx is equally
+  // unusable: both reach `_state.entries.length = idx` below, which throws
+  // RangeError: Invalid array length and takes out the root error boundary.
+  // Only a real, non-negative array index counts as usable here.
+  return Number.isSafeInteger(idx) && idx >= 0 ? idx : null;
 }
 
 try {
