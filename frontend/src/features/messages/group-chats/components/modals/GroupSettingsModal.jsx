@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { useGroupActions } from '@shared/hooks/useGroupActions';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
@@ -10,7 +11,8 @@ import styles from './GroupSettingsModal.module.css';
 
 export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup }) {
   const { currentUser } = useAuth();
-  const { users, updateGroupInfo, removeGroupMember } = useData();
+  const users = useUsersMap();
+  const { updateGroupInfo, removeGroupMember } = useGroupActions();
   const [editName, setEditName] = useState(conversation.name || '');
   const [editDesc, setEditDesc] = useState(conversation.description || '');
 
