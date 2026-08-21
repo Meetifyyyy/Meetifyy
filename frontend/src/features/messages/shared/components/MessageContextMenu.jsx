@@ -99,9 +99,14 @@ export default function MessageContextMenu({
 
   useLayoutEffect(() => {
     if (!menuRef.current) return;
-    const rect = menuRef.current.getBoundingClientRect();
-    const width = rect.width || 180;
-    const height = rect.height || 220;
+    // offsetWidth/offsetHeight, not getBoundingClientRect: the menu animates in
+    // from `transform: scale(0.92)`, and getBoundingClientRect reports the
+    // *scaled* box while that is still running. Positioning against a height
+    // ~8% short placed the menu about 14px off, which is why a flipped menu
+    // still landed on top of the message it belonged to. offsetHeight is the
+    // untransformed layout size, which is what this maths wants.
+    const width = menuRef.current.offsetWidth || 180;
+    const height = menuRef.current.offsetHeight || 220;
 
     const gap = 12;
     const edgeMargin = 12;
@@ -115,7 +120,10 @@ export default function MessageContextMenu({
     let y = position.y + gap;
     const vh = window.visualViewport?.height || window.innerHeight;
     if (y + height > vh - edgeMargin) {
-      y = y - height;
+      // Mirror the touch point the way the x axis does. This flipped the
+      // already-offset y instead of the original, landing the menu `2 * gap`
+      // too low so it sat over the message it belongs to.
+      y = position.y - gap - height;
     }
     y = Math.max(edgeMargin, Math.min(y, vh - height - edgeMargin));
 

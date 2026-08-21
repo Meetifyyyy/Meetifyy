@@ -20,6 +20,12 @@ import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { checkIsMe, getMsgTimestamp } from '../utils/cacheUtils';
 import { getMediaUrl } from '@shared/api/apiClient';
 
+// How long a finger must stay put before the message menu opens, and how far it
+// may drift while doing so. The drift budget is what separates a deliberate
+// press from the brief pause everyone makes mid-scroll.
+const LONG_PRESS_DELAY_MS = 600;
+const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+
 function MessageHoverActions({ msg, isMe, onReplyTo, onContextMenu }) {
   const handleReply = (e) => {
     e.stopPropagation();
@@ -588,11 +594,12 @@ const MessageBubble = memo(function MessageBubble({
     const syntheticEvent = { clientX, clientY };
 
     longPressTimer.current = setTimeout(() => {
+      longPressTimer.current = null;
       if (!isSwipingRef.current) {
         touchHandled.current = true;
         fireContextMenu(syntheticEvent, msg);
       }
-    }, 500);
+    }, LONG_PRESS_DELAY_MS);
   };
 
   const handleTouchMove = (e) => {
@@ -601,6 +608,15 @@ const MessageBubble = memo(function MessageBubble({
     const currentY = e.touches[0].clientY;
     const deltaX = currentX - touchStartPos.current.x;
     const deltaY = currentY - touchStartPos.current.y;
+
+    // Any real movement means this is a scroll or a swipe, not a long press.
+    // Only a horizontal swipe used to cancel the timer; a vertical drag hit the
+    // early return below and left it running, so pausing briefly while
+    // scrolling popped the menu open at the spot the finger started from.
+    if (longPressTimer.current && Math.hypot(deltaX, deltaY) > LONG_PRESS_MOVE_TOLERANCE_PX) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
 
     if (!isSwipingRef.current && Math.abs(deltaY) > Math.abs(deltaX)) {
       return;
@@ -627,9 +643,22 @@ const MessageBubble = memo(function MessageBubble({
   const handleTouchEnd = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
     }
     if (!isUnsent && swipeX >= 40 && replyHandler) {
       replyHandler(msg);
+    }
+    setSwipeX(0);
+    isSwipingRef.current = false;
+    vibratedRef.current = false;
+  };
+
+  // The browser fires touchcancel when it takes the gesture over for scrolling.
+  // Without this the timer survived that handover and fired mid-scroll.
+  const handleTouchCancel = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
     }
     setSwipeX(0);
     isSwipingRef.current = false;
@@ -962,6 +991,7 @@ const MessageBubble = memo(function MessageBubble({
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
       onContextMenu={handleContextMenuEvent}
       style={{ position: 'relative', overflow: 'hidden' }}
     >
