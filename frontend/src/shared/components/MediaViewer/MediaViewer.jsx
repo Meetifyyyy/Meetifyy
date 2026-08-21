@@ -11,7 +11,8 @@ import SharePostModal from '@features/feed/components/modals/SharePostModal';
 import { isSafeUrl } from '@shared/utils/urlSanitize';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import ForwardMessageModal from '@features/messages/shared/components/modals/ForwardMessageModal';
-import { useData } from '@shared/hooks/useData';
+import { useConversations } from '@shared/hooks/useMessages';
+import { useMessageActions } from '@shared/hooks/useMessageActions';
 
 /** Detect video items by explicit type field OR URL extension. */
 function isVideo(item) {
@@ -46,7 +47,8 @@ export default function MediaViewer() {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showForwardModal, setShowForwardModal] = useState(false);
-  const { conversations, sendDirectMessage } = useData();
+  const { conversations } = useConversations();
+  const { sendDirectMessage } = useMessageActions();
   const [savedUrls, setSavedUrls] = useState(() => new Set());
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
