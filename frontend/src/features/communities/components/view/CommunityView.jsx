@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { useData } from '@shared/hooks/useData';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { useAuth } from '@shared/context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
@@ -662,9 +662,11 @@ function useSimulatedFetch(data, delay = 0, deps = []) {
 export default function CommunityView({ communityId, onBack, onPostClick }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  // `allCommunities` and `requestToJoinGroup` were destructured but never
-  // referenced anywhere in this file -- dropped rather than migrated.
-  const { posts, users, addPost, updateCommunity } = useData();
+  // `posts` was always the literal [] the old hook returned, so it is inlined
+  // here rather than sourced from a hook.
+  const posts = [];
+  const users = useUsersMap();
+  const { addPost, updateCommunity } = useCommunityActions();
   const { currentUser } = useAuth();
   const { mutate: toggleJoin, isLoading: isJoining } = useJoinCommunity();
   const [showMembersModal, setShowMembersModal] = useState(false);
