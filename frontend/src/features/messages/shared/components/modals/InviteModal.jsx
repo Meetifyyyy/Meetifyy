@@ -6,7 +6,9 @@ import { useAuth } from '@shared/context/AuthContext';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
 import styles from './InviteModal.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { useConversations } from '@shared/hooks/useMessages';
+import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { toast } from 'sonner';
 import { generateConversationUrl } from '@shared/utils/conversationUrl';
 
@@ -17,7 +19,9 @@ export default function InviteModal({ isOpen, onClose, group }) {
   const [sendingIds, setSendingIds] = useState(new Set());
 
   const { currentUser } = useAuth();
-  const { users, conversations, startConversation, sendDirectMessage } = useData();
+  const users = useUsersMap();
+  const { conversations } = useConversations();
+  const { startConversation, sendDirectMessage } = useMessageActions();
   const modalRef = useRef(null);
   const copyLockRef = useRef(false);
 
