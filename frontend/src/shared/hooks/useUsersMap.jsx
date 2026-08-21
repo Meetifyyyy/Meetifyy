@@ -54,7 +54,11 @@ function useBuildUsersMap() {
     enabled: Boolean(currentUser?.id && isIdleLoaded),
     staleTime: 5 * 60_000,
   });
-  const { campusUsers: rawCampusUsers } = useCampusUsers(isIdleLoaded ? 50 : 0);
+  // Was `useCampusUsers(isIdleLoaded ? 50 : 0)`. The limit-0 form still issued a
+  // real GET /users/campus?limit=0 (plus its CORS preflight) that always came
+  // back `[]`, so it contributed nothing to the map. Holding the query disabled
+  // until idle keeps the same deferral without the wasted round trip.
+  const { campusUsers: rawCampusUsers } = useCampusUsers(50, { enabled: isIdleLoaded });
   const { conversations: processedConversations } = useConversations();
 
   return useMemo(() => {

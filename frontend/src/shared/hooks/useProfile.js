@@ -72,7 +72,7 @@ export function useProfile(username) {
  * Fetches campus users — limited to 50 (not 200) since the full list
  * is only needed for directory browsing, not sidebar lookups.
  */
-export function useCampusUsers(limit = 50) {
+export function useCampusUsers(limit = 50, { enabled = true } = {}) {
   const queryClient = useQueryClient();
   const { isLoggedIn } = useAuth();
 
@@ -83,7 +83,7 @@ export function useCampusUsers(limit = 50) {
       idbSet('profiles', 'campus_users', data);
       return data;
     },
-    enabled: Boolean(isLoggedIn),
+    enabled: Boolean(isLoggedIn) && enabled,
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
     placeholderData: (prev) => prev,
