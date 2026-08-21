@@ -12,8 +12,8 @@ import styles from './RightPanel.module.css';
 import { useQuery } from '@tanstack/react-query';
 import { usersApi, activitiesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/hooks/useData';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { useCrewActivities } from '@shared/hooks/useCrew';
 
 export default function RightPanel({ children, className = '' }) {
   return <aside className={`${styles.rightPanel} ${className}`.trim()}>{children}</aside>;
@@ -329,9 +329,7 @@ function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
 }
 
 export function UpcomingEvents() {
-  // `useData` sources currentUser straight from AuthContext, so this is the same
-  // value -- and this file already reads it that way elsewhere (see above).
-  const { crewActivities = [] } = useData();
+  const crewActivities = useCrewActivities();
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [nowTime, setNowTime] = React.useState(Date.now());
