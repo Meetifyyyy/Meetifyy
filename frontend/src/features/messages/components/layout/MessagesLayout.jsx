@@ -2,7 +2,9 @@ import { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/hooks/useData';
+import { useConversations } from '@shared/hooks/useMessages';
+import { useMessageActions } from '@shared/hooks/useMessageActions';
+import { useGroupActions } from '@shared/hooks/useGroupActions';
 import { useChatManager } from '../../shared/hooks/useChatManager';
 import { matchesConversationId } from '../../shared/utils/cacheUtils';
 import { generateConversationUrl, correctConversationUrl, parseConversationRoute } from '@shared/utils/conversationUrl';
@@ -38,22 +40,14 @@ export default function MessagesLayout() {
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
 
+  // `conversationsError`, `sendDirectMessage` and `startConversation` were
+  // destructured here but never referenced -- dropped rather than migrated.
+  const { conversations = [], isLoading: isConversationsLoading } = useConversations();
   const {
-    conversations = [],
-    isConversationsLoading,
-    conversationsError,
-    sendDirectMessage,
-    reactToMessage,
-    clearChat,
-    toggleBlockUser,
-    leaveGroup,
-    endGroup,
-    startConversation,
-    createGroupConversation,
-    togglePinConversation,
-    toggleMuteConversation,
-    deleteConversation,
-  } = useData();
+    reactToMessage, clearChat, toggleBlockUser, createGroupConversation,
+    toggleMuteConversation, deleteConversation,
+  } = useMessageActions();
+  const { leaveGroup, endGroup, togglePinConversation } = useGroupActions();
 
   // parseConversationRoute understands both the canonical /messages/:slug/:publicId
   // format and legacy 2-segment links where the id comes first — a naive
