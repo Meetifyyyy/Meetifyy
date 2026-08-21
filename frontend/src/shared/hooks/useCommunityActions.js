@@ -78,5 +78,17 @@ export function useCommunityActions() {
     }
   };
 
-  return { createCampusGroup, addCommunity, addPost, updateCommunity, createCommMutation };
+  // CommunityAdminModal has always called `kickMember(communityId, memberId)`,
+  // but useData never returned such a key -- the destructure yielded undefined
+  // and confirming a kick threw "kickMember is not a function". Implemented
+  // here against the endpoint the modal was clearly written for. The caller
+  // shows its own success/error toast, so this only does the call plus the
+  // cache invalidations the other community writes use.
+  const kickMember = async (communityId, memberId) => {
+    await communitiesApi.removeGroupMember(communityId, memberId);
+    queryClient.invalidateQueries({ queryKey: ['communities'] });
+    queryClient.invalidateQueries({ queryKey: ['community', communityId] });
+  };
+
+  return { createCampusGroup, addCommunity, addPost, updateCommunity, kickMember, createCommMutation };
 }
