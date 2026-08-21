@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useGlobalSocketStore } from '../stores/useGlobalSocketStore';
 import { useAuth } from '../context/AuthContext';
-import { useData } from '../hooks/useData';
+import { useConversations } from './useMessages';
 import { PROFILE_KEYS } from './useProfile';
 import { toggleRegistry } from '../utils/mutationRegistry';
 
@@ -13,7 +13,7 @@ export function useGlobalSocketSync() {
   const queryClient = useQueryClient();
   const { socket, isConnected } = useGlobalSocketStore();
   const { currentUser } = useAuth();
-  const { conversations } = useData() || {};
+  const { conversations } = useConversations();
   const conversationsRef = useRef(conversations);
 
   // Keep ref in sync so the reconnect handler always sees the latest conversations
