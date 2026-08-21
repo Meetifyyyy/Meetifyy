@@ -15,6 +15,7 @@ import { useActivitiesList } from './useCrew';
 import { mapActivity } from '../utils/mapActivity';
 import { useConversations } from './useMessages';
 import { useCampusUsers } from './useProfile';
+import { useUsersMap } from './useUsersMap';
 
 /**
  * Compatibility adapter — preserves the existing API surface while delegating
@@ -68,34 +69,9 @@ export function useData() {
   const communitiesWithLookup = rawCommunities;
   const campusGroups = rawCommunities;
 
-  // Users mapping (legacy support for { [id]: user })
-  const users = useMemo(() => {
-    const map = {};
-    (rawUsers || []).forEach(u => { if (u?.id) map[u.id] = u; });
-    (rawCampusUsers || []).forEach(u => { if (u?.id) map[u.id] = u; });
-    (processedConversations || []).forEach(c => {
-      if (c.targetUser?.id) map[c.targetUser.id] = c.targetUser;
-      if (c.otherUser?.id) map[c.otherUser.id] = c.otherUser;
-      if (Array.isArray(c.participants)) {
-        c.participants.forEach(p => {
-          if (p?.id && (p?.username || p?.displayName || p?.name)) map[p.id] = p;
-          else if (p?.user?.id) map[p.user.id] = p.user;
-        });
-      }
-      if (Array.isArray(c.members)) {
-        c.members.forEach(m => {
-          if (m?.id && (m?.username || m?.displayName || m?.name)) map[m.id] = m;
-          else if (m?.user?.id) map[m.user.id] = m.user;
-        });
-      }
-      if (Array.isArray(c.memberDetails)) {
-        c.memberDetails.forEach(m => {
-          if (m?.userId) map[m.userId] = { id: m.userId, displayName: m.displayName, username: m.username, avatar: m.avatar };
-        });
-      }
-    });
-    return map;
-  }, [rawUsers, rawCampusUsers, processedConversations]);
+  // Users mapping (legacy support for { [id]: user }) — the builder now lives
+  // in useUsersMap() so there is exactly one implementation while both exist.
+  const users = useUsersMap();
 
   const campusUsers = useMemo(() => {
     const map = {};
