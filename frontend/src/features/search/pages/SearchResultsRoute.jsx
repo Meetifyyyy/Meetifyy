@@ -10,7 +10,8 @@ import { isImageUrl } from '@shared/utils/avatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import RightPanel, { NotificationsActivity, OnlineFriends, UpcomingEvents } from '@layout/RightPanel';
 import FollowButton from '@shared/components/ui/FollowButton';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { useCrewActivities } from '@shared/hooks/useCrew';
 import { useDebouncedState } from '@shared/hooks/useDebounce';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { searchApi } from '@shared/api/apiClient';
@@ -232,7 +233,8 @@ const ActivityRow = React.memo(function ActivityRow({ data, storeActivity, users
 });
 
 export default function SearchResultsRoute() {
-  const { users, crewActivities } = useData();
+  const users = useUsersMap();
+  const crewActivities = useCrewActivities();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawQ = searchParams.get('q') || '';
   const navigate = useNavigate();
