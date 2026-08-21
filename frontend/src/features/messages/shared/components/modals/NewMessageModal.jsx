@@ -3,11 +3,11 @@ import { useAuth } from '@shared/context/AuthContext';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import styles from './NewMessageModal.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
 
 export default function NewMessageModal({ onClose, onStartChat, onCreateGroup }) {
   const { currentUser } = useAuth();
-  const { users } = useData();
+  const users = useUsersMap();
   const [searchQuery, setSearchQuery] = useState('');
   
   const [mode, setMode] = useState('single'); // 'single', 'multi_select', 'group_name'
