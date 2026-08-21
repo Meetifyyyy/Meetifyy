@@ -17,7 +17,9 @@ import GroupChangeOwnerPage from './GroupChangeOwnerPage';
 import GroupEditPage from './GroupEditPage';
 import GroupSettingsPage from './GroupSettingsPage';
 import GroupJoinRequestsPage from './GroupJoinRequestsPage';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { useCrewActivities, useCrewActions } from '@shared/hooks/useCrew';
+import { useGroupActions } from '@shared/hooks/useGroupActions';
 import { toast } from 'sonner';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import { commitDraftImage } from '@shared/utils/draftImageCache';
@@ -28,7 +30,14 @@ import { groupApi } from '@shared/api/apiClient';
 export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, onClearChat, onSearch, onLeaveActivity }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const { users, crewActivities, endCrewActivity, leaveGroup, updateGroupInfo, updateGroupEditPermission, updateGroupSettings, removeGroupMember, changeGroupOwner, promoteToAdmin, demoteFromAdmin, endGroup, acceptGroupJoinRequest, declineGroupJoinRequest, togglePinConversation } = useData();
+  const users = useUsersMap();
+  const crewActivities = useCrewActivities();
+  const { endCrewActivity } = useCrewActions();
+  const {
+    leaveGroup, updateGroupInfo, updateGroupEditPermission, updateGroupSettings,
+    removeGroupMember, changeGroupOwner, promoteToAdmin, demoteFromAdmin, endGroup,
+    acceptGroupJoinRequest, declineGroupJoinRequest, togglePinConversation,
+  } = useGroupActions();
 
   // General States
   const [showConfirm, setShowConfirm] = useState(false);
