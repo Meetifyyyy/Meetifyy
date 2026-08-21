@@ -265,6 +265,12 @@ export default function ActivityDetailPage() {
     };
   }, [rawActivity, location.state]);
 
+  // Attendees past the embedded first page load only when asked for.
+  // Declared here rather than further down because useActivityAttendees below
+  // and the attendeeList memo both read it -- when it lived below them the
+  // component threw "Cannot access 'showAllAttendees' before initialization".
+  const [showAllAttendees, setShowAllAttendees] = useState(false);
+
   const {
     attendees: fetchedAttendees,
     hasNextPage: hasMoreAttendees,
@@ -407,8 +413,6 @@ export default function ActivityDetailPage() {
   const renderDesktopAttendees = isNarrowLayout !== true;
   const renderMobileAttendees = isNarrowLayout !== false;
 
-  // Attendees past the embedded first page load only when asked for.
-  const [showAllAttendees, setShowAllAttendees] = useState(false);
   const discussionSlotRef = useRef(null);
   const [discussionVisible, setDiscussionVisible] = useState(false);
   useEffect(() => {
