@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { usersApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
@@ -19,8 +19,23 @@ import { useCampusUsers } from './useProfile';
  * NOTE: this is an object map keyed by id, not an array. `usersMap[senderId]`
  * is the intended access pattern; the raw `['users']` query returns an array
  * and is not a drop-in substitute.
+ *
+ * Built ONCE by <UsersMapProvider> at the app root and read through context.
+ * Consumers include MessageBubble and RichText, which mount per message (and
+ * per feed post and per comment) -- computing the map inside each of them
+ * meant rebuilding it a hundred-plus times per screen and registering a query
+ * observer and an idle timer for every instance. The old mega-hook built it
+ * once because it was itself mounted once; the provider restores that while
+ * keeping the narrow subscription.
  */
-export function useUsersMap() {
+const UsersMapContext = createContext(null);
+
+const EMPTY_USERS_MAP = {};
+// Stable identity so the map memo below is not busted by a fresh `[]` default
+// on every render while the query is still loading.
+const EMPTY_USERS = [];
+
+function useBuildUsersMap() {
   const { currentUser } = useAuth();
 
   // Deferred to idle time so a globally-mounted consumer doesn't fire this
@@ -33,7 +48,7 @@ export function useUsersMap() {
     return () => clearTimeout(timer);
   }, []);
 
-  const { data: rawUsers = [] } = useQuery({
+  const { data: rawUsers = EMPTY_USERS } = useQuery({
     queryKey: ['users'],
     queryFn: () => usersApi.getAll(20, 0),
     enabled: Boolean(currentUser?.id && isIdleLoaded),
@@ -69,4 +84,18 @@ export function useUsersMap() {
     });
     return map;
   }, [rawUsers, rawCampusUsers, processedConversations]);
+}
+
+export function UsersMapProvider({ children }) {
+  const value = useBuildUsersMap();
+  return <UsersMapContext.Provider value={value}>{children}</UsersMapContext.Provider>;
+}
+
+/**
+ * Read the shared users map. Returns a stable empty object when no provider is
+ * mounted, so a consumer rendered outside the tree degrades to "no known
+ * users" rather than throwing -- the same shape callers already handle.
+ */
+export function useUsersMap() {
+  return useContext(UsersMapContext) ?? EMPTY_USERS_MAP;
 }

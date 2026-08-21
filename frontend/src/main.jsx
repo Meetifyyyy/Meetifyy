@@ -6,6 +6,7 @@ import { Toaster } from 'sonner';
 import { ThemeProvider } from './shared/context/ThemeContext';
 import App from './App.jsx';
 import { MediaViewerProvider } from './shared/context/MediaViewerContext';
+import { UsersMapProvider } from './shared/hooks/useUsersMap';
 import MediaViewer from './shared/components/MediaViewer/MediaViewer';
 import './styles/variables.css';
 import './styles/global.css';
@@ -75,9 +76,11 @@ createRoot(document.getElementById('root')).render(
       <ThemeProvider>
         <AuthProvider>
           <MediaViewerProvider>
-            <Toaster position="bottom-center" duration={2500} />
-            <App />
-            <MediaViewer />
+            <UsersMapProvider>
+              <Toaster position="bottom-center" duration={2500} />
+              <App />
+              <MediaViewer />
+            </UsersMapProvider>
           </MediaViewerProvider>
         </AuthProvider>
       </ThemeProvider>
