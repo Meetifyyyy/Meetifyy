@@ -494,6 +494,15 @@ model CrewActivity {
   @@index([visibility, status, createdAt(sort: Desc)])
   @@index([deletedAt, status, visibility, createdAt(sort: Desc)])
   @@index([status, deletedAt, endDate, startDate])
+  // Upcoming-activity scans ordered by start time: the "For You" ranking pool
+  // and every "hasn't started yet" filter. The existing
+  // [status, deletedAt, endDate, startDate] index cannot serve the ORDER BY
+  // because endDate sits between the equality columns and startDate.
+  @@index([status, deletedAt, startDate])
+  // Same shape, scoped to one college (College tab and its preview).
+  @@index([collegeId, status, deletedAt, startDate])
+  // Same shape, scoped by capacity (the 1-on-1 tab and its preview).
+  @@index([maxMembers, status, deletedAt, startDate])
 }
 
 model CrewActivityMember {
@@ -1021,6 +1030,12 @@ model ActivityInvitation {
   createdAt   DateTime                 @default(now())
   updatedAt   DateTime                 @updatedAt
   respondedAt DateTime?
+  /// Optional hard expiry. A past `expiresAt` makes the invitation invalid for
+  /// authorization even while `status` is still PENDING.
+  expiresAt   DateTime?
+  /// Set when the host revokes the invitation. A revoked invitation never grants
+  /// access, regardless of `status`.
+  revokedAt   DateTime?
   activity    CrewActivity             @relation(fields: [activityId], references: [id], onDelete: Cascade)
   invitee     User                     @relation("ActivityInvitationsReceived", fields: [inviteeId], references: [id], onDelete: Cascade)
   inviter     User                     @relation("ActivityInvitationsSent", fields: [inviterId], references: [id], onDelete: Cascade)

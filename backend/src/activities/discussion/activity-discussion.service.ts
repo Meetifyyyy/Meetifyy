@@ -1,15 +1,17 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DomainEventService } from '../../events/domain-event.service';
+import { ActivityAuthorizationService } from '../activity-authorization.service';
 
 const MAX_MESSAGE_LENGTH = 2000;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
 
 /**
- * Lightweight, activity-scoped discussion. Unlike the old activity group chat,
- * there are no participants, roles, membership or conversation rows — anyone who
- * can view the activity can read and post. Messages are keyed directly by
+ * Lightweight, activity-scoped discussion. There are no participants, roles,
+ * membership or conversation rows: read/write permission is exactly "may this
+ * user view the activity?", resolved server-side by the shared access policy on
+ * every call — a restricted activity's discussion is itself restricted data. Messages are keyed directly by
  * activityId and retrieved newest-first via the
  * ([activityId, createdAt desc, id desc]) index for fast cursor pagination.
  */
@@ -18,6 +20,7 @@ export class ActivityDiscussionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly domainEventService: DomainEventService,
+    private readonly activityAuthorizationService: ActivityAuthorizationService,
   ) {}
 
   private static readonly messageSelect = {
@@ -44,12 +47,38 @@ export class ActivityDiscussionService {
     };
   }
 
-  private async assertActivityExists(activityId: string) {
-    const activity = await this.prisma.crewActivity.findFirst({
-      where: { id: activityId, deletedAt: null },
-      select: { id: true },
-    });
+  /**
+   * Loads the activity and asserts the caller may view it. Throws 404 when the
+   * activity does not exist and 403 (detail-free body) when it does but the
+   * caller is not authorized.
+   */
+  private async assertCanAccessDiscussion(activityId: string, userId?: string) {
+    const [activity, user] = await Promise.all([
+      this.prisma.crewActivity.findFirst({
+        where: { id: activityId, deletedAt: null },
+        select: {
+          id: true,
+          creatorId: true,
+          collegeId: true,
+          visibility: true,
+          status: true,
+          members: userId
+            ? { where: { userId }, select: { userId: true, status: true } }
+            : false,
+          invitations: userId
+            ? {
+                where: { inviteeId: userId },
+                select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
+              }
+            : false,
+        },
+      }),
+      userId
+        ? this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } })
+        : Promise.resolve(null),
+    ]);
     if (!activity) throw new NotFoundException('Activity not found');
+    this.activityAuthorizationService.assertCanView(user, activity as any);
   }
 
   /**
@@ -57,7 +86,8 @@ export class ActivityDiscussionService {
    * client can render/prepend directly. `nextCursor` is the id of the oldest
    * message returned; pass it back as `before` to load older messages.
    */
-  async getMessages(activityId: string, before?: string, limit: number = DEFAULT_PAGE_SIZE) {
+  async getMessages(activityId: string, userId: string, before?: string, limit: number = DEFAULT_PAGE_SIZE) {
+    await this.assertCanAccessDiscussion(activityId, userId);
     const take = Math.min(Math.max(limit, 1), MAX_PAGE_SIZE);
 
     let cursorFilter: any = {};
@@ -101,7 +131,7 @@ export class ActivityDiscussionService {
       throw new BadRequestException(`Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`);
     }
 
-    await this.assertActivityExists(activityId);
+    await this.assertCanAccessDiscussion(activityId, userId);
 
     const created = await this.prisma.activityDiscussionMessage.create({
       data: { activityId, userId, text: trimmed },

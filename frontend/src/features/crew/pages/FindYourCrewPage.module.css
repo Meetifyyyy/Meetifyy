@@ -363,3 +363,53 @@
   font-size: 0.88rem;
   text-align: center;
 }
+/* ── Empty section CTA ───────────────────────────────────────────────────────
+ * An empty list is an invitation to create, not a blank slate: a short line of
+ * context above the same Create Activity card used elsewhere on the page.
+ * ─────────────────────────────────────────────────────────────────────────── */
+.sectionEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.sectionEmptyLabel {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+/* The card keeps the same footprint it has as the page-level empty state. */
+.sectionEmpty > :not(.sectionEmptyLabel) {
+  width: 100%;
+  max-width: 480px;
+}
+
+/* Back affordance shown when a section is expanded in place ("See all"). */
+.sectionBackBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-right: 0.4rem;
+  padding: 0.2rem;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.sectionBackBtn:hover {
+  background: var(--color-bg-secondary, rgba(0, 0, 0, 0.04));
+  color: var(--color-text-main);
+}
+
+.sectionBackBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

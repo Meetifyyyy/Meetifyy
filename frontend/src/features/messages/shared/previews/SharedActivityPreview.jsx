@@ -2,15 +2,18 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './SharedActivityPreview.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useCachedActivity } from '@shared/hooks/useCrew';
 import { getMediaUrl } from '@shared/api/apiClient';
 
 export function SharedActivityPreview({ activity: passedActivity }) {
   const navigate = useNavigate();
-  const { crewActivities } = useData();
-
-  const dbActivity = (crewActivities || []).find(act => act.id === passedActivity?.id) || {};
-  const activity = { ...dbActivity, ...passedActivity };
+  // Enrichment from whatever the client already holds for this activity — no
+  // request, and no subscription to the global data hook. This card renders once
+  // per shared-activity message, so it previously pulled conversations, users,
+  // campus users and communities into every chat bubble, then scanned the public
+  // feed list to find one row.
+  const cachedActivity = useCachedActivity(passedActivity?.id);
+  const activity = { ...(cachedActivity || {}), ...passedActivity };
 
   if (!activity || (!activity.id && !activity.title)) return null;
 

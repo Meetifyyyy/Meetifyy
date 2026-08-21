@@ -45,6 +45,42 @@ const REMINDER_OPTIONS = [
   { value: '1 day', label: '1 day before' },
 ];
 
+/**
+ * The three activity visibility modes, in the order they are offered.
+ *
+ * These labels are presentation only — the backend stores and enforces the
+ * corresponding `visibility` value, which is the single authority on who can
+ * discover, view or join an activity.
+ */
+const VISIBILITY_OPTIONS = [
+  {
+    value: 'Anyone',
+    label: 'Anyone',
+    description: 'Anyone can discover, view, and join this activity.',
+  },
+  {
+    value: 'College',
+    label: 'College',
+    description:
+      'Only people from your college can discover and join. Invited people from other colleges can also join.',
+  },
+  {
+    value: 'Private',
+    label: 'Private',
+    description: 'Only people you invite can view and join this activity.',
+  },
+];
+
+const VISIBILITY_BY_OPTION = {
+  Anyone: 'PUBLIC',
+  College: 'COLLEGE_ONLY',
+  Private: 'PRIVATE',
+  // Retired label, still mapped: an unrecognised option falls back to PUBLIC,
+  // and silently publishing a would-be private activity to everyone is the one
+  // failure mode this selector must not have.
+  'No one': 'PRIVATE',
+};
+
 /* ─── Date & Time Modal ─── */
 function DateTimeModal({ formData, set, onClose }) {
   const [activeTab, setActiveTab] = useState('start'); // 'start' or 'end'
@@ -785,6 +821,13 @@ export default function CreateActivityPage() {
   const creationPromiseRef = useRef(null); // holds the in-flight create promise
   const reminderRef = useRef(null);
   const whoCanJoinRef = useRef(null);
+  // The College mode restricts an activity to the host's own college, so it is
+  // only offered to users who actually have one — otherwise the activity would
+  // be publishable but unreachable for everyone except the host.
+  const visibilityOptions = useMemo(
+    () => VISIBILITY_OPTIONS.filter(o => o.value !== 'College' || Boolean(collegeName)),
+    [collegeName],
+  );
   const containerRef = useRef(null);
 
   // Cover state is split by concern rather than crammed into one string:
@@ -806,7 +849,10 @@ export default function CreateActivityPage() {
     location: '',
     slotsNeeded: 999,
     reminder: 'None',
-    whoCanJoin: prefill.whoCanJoin || (isFromCampus ? 'College' : 'Anyone'),
+    // 'No one' is the retired label for 'Private' — a persisted draft or an
+    // older prefill can still carry it, so it is normalised on the way in.
+    whoCanJoin: (prefill.whoCanJoin === 'No one' ? 'Private' : prefill.whoCanJoin)
+      || (isFromCampus ? 'College' : 'Anyone'),
   }));
 
   const set = p => setFormData(prev => ({ ...prev, ...p }));
@@ -1154,7 +1200,7 @@ export default function CreateActivityPage() {
         location: fd.location,
         maxMembers: fd.slotsNeeded === 999 ? null : fd.slotsNeeded,
         ...coverPayload,
-        visibility: fd.whoCanJoin === 'College' ? 'COLLEGE_ONLY' : fd.whoCanJoin === 'No one' ? 'PRIVATE' : 'PUBLIC',
+        visibility: VISIBILITY_BY_OPTION[fd.whoCanJoin] || 'PUBLIC',
         shareToCampus: fd.whoCanJoin === 'College',
         startDate: finalStart.toISOString(),
         endDate: finalEnd.toISOString(),
@@ -1439,21 +1485,26 @@ export default function CreateActivityPage() {
                   <span className={styles.rowTitle}>Who can see this activity</span>
                 </div>
                 <div className={styles.rowRight}>
-                  <span>{formData.whoCanJoin === 'College' ? collegeName : formData.whoCanJoin}</span>
+                  <span>{formData.whoCanJoin === 'College' ? (collegeName || 'College') : formData.whoCanJoin}</span>
                   <ChevronsUpDown size={14} className={styles.selectIcon} />
                 </div>
               </button>
               {showWhoCanJoin && (
-                <div className={styles.reminderDrop} role="listbox" aria-label="Who can see this activity">
-                  {['Anyone', 'College', 'No one'].map(opt => {
-                    let label = opt;
-                    if (opt === 'College') label = collegeName;
+                <div className={`${styles.reminderDrop} ${styles.visibilityDrop}`} role="listbox" aria-label="Who can see this activity">
+                  {visibilityOptions.map(opt => {
+                    const isOn = formData.whoCanJoin === opt.value;
+                    // The College option shows the user's actual college name,
+                    // but its description still explains the rule generically.
+                    const label = opt.value === 'College' ? (collegeName || opt.label) : opt.label;
                     return (
-                      <button key={opt} type="button" role="option"
-                        aria-selected={formData.whoCanJoin === opt}
-                        className={`${styles.reminderOpt} ${formData.whoCanJoin === opt ? styles.reminderOptOn : ''}`}
-                        onClick={() => { set({ whoCanJoin: opt }); setShowWhoCanJoin(false); }}
-                      >{label}</button>
+                      <button key={opt.value} type="button" role="option"
+                        aria-selected={isOn}
+                        className={`${styles.reminderOpt} ${styles.visibilityOpt} ${isOn ? styles.reminderOptOn : ''}`}
+                        onClick={() => { set({ whoCanJoin: opt.value }); setShowWhoCanJoin(false); }}
+                      >
+                        <span className={styles.visibilityOptLabel}>{label}</span>
+                        <span className={styles.visibilityOptDesc}>{opt.description}</span>
+                      </button>
                     );
                   })}
                 </div>

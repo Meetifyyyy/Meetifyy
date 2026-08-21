@@ -1,110 +1,40 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './CrewRightPanel.module.css';
 
 import createActivityBackgroundCharacter from '@assets/images/createactivitybackgroundcharacter.webp';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
-import { useData } from '@shared/hooks/useData';
+import { useAuth } from '@shared/context/AuthContext';
+import { useMyActivitiesQuery } from '@shared/hooks/useCrew';
+import { mapActivity } from '@shared/utils/mapActivity';
 
 import CreateActivityCard from '../cards/CreateActivityCard';
 
-function getStartsInLabel(act, nowTime = Date.now()) {
-  if (!act) return 'Starts soon';
-
-  if (act.status === 'ENDED' || act.status === 'COMPLETED' || act.isEnded) {
-    return 'Ended';
-  }
-  if (act.status === 'CANCELLED') {
-    return 'Cancelled';
-  }
-
-  if (act.startsInLabel && !act.date && !act.startDate) return act.startsInLabel;
-
-  try {
-    const rawDate = act.startDate || act.date || act.createdAt;
-    if (rawDate) {
-      const targetDate = new Date(rawDate);
-      if (isNaN(targetDate.getTime())) return 'Starts soon';
-
-      if (act.time && typeof act.time === 'string') {
-        const match = act.time.match(/(\d+):(\d+)\s*(AM|PM)?/i);
-        if (match) {
-          let h = parseInt(match[1], 10);
-          const m = parseInt(match[2], 10);
-          const ampm = match[3] ? match[3].toUpperCase() : null;
-          if (ampm === 'PM' && h < 12) h += 12;
-          if (ampm === 'AM' && h === 12) h = 0;
-          targetDate.setHours(h, m, 0, 0);
-        }
-      }
-
-      const startTime = targetDate.getTime();
-
-      let endTime = null;
-      if (act.endDate) {
-        const parsedEnd = new Date(act.endDate).getTime();
-        if (!isNaN(parsedEnd)) endTime = parsedEnd;
-      }
-
-      if (!endTime) {
-        let durationHours = 2;
-        if (act.duration) {
-          const match = String(act.duration).match(/(\d+)/);
-          if (match) durationHours = parseInt(match[1], 10);
-        }
-        endTime = startTime + durationHours * 60 * 60 * 1000;
-      }
-
-      if (nowTime >= endTime) {
-        return 'Ended';
-      }
-
-      const diffMs = startTime - nowTime;
-
-      if (diffMs > 0) {
-        if (diffMs >= 24 * 60 * 60 * 1000) {
-          const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-          const hours = Math.floor((diffMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-          return `Starts in ${days}d ${hours}hr`;
-        } else if (diffMs >= 60 * 60 * 1000) {
-          const hours = Math.floor(diffMs / (60 * 60 * 1000));
-          const mins = Math.floor((diffMs % (60 * 60 * 1000)) / (60 * 1000));
-          return `Starts in ${hours}hr ${mins}m`;
-        } else {
-          const mins = Math.floor(diffMs / (60 * 1000));
-          const secs = Math.floor((diffMs % (60 * 1000)) / 1000);
-          const secsStr = String(secs).padStart(2, '0');
-          return `Starts in ${mins}m ${secsStr}s`;
-        }
-      } else {
-        return `Already started`;
-      }
-    }
-  } catch (e) {
-    // fallback
-  }
-  return `Starts soon`;
-}
 
 export default function CrewRightPanel({ onCreateActivity, onViewAll, showCreateCard = true }) {
-  const { crewActivities = [], currentUser } = useData();
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
-  const [nowTime, setNowTime] = useState(Date.now());
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNowTime(Date.now());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
+  // Reads the same ['activities','me'] entry the Crew page already loads, so the
+  // sidebar costs no extra request.
+  //
+  // It used to read the global data hook's activity list, which (a) subscribed
+  // this panel to conversations/users/communities, re-rendering it on unrelated
+  // traffic, (b) triggered a second GET /api/activities for the public feed on a
+  // page that no longer loads that scope, and (c) could only ever find the
+  // user's activities that happened to be inside those 20 public rows — their
+  // college-only and private ones never appeared here at all.
+  const { myActivitiesData } = useMyActivitiesQuery();
 
   const myActivities = useMemo(() => {
     if (!currentUser) return [];
     const now = new Date();
-    return crewActivities
+    // Membership is already guaranteed by the endpoint; only the "still to
+    // come" test is left to do here.
+    return (myActivitiesData || [])
+      .map(mapActivity)
+      .filter(Boolean)
       .filter(a => {
-        if (!a.participants?.includes(currentUser.id)) return false;
-        
         let hasEnded = a.status === 'ENDED' || a.status === 'CANCELLED' || a.status === 'CLOSED' || a.status === 'COMPLETED';
         const startRaw = a.startDate || a.date;
         const endRaw = a.endDate;
@@ -130,7 +60,7 @@ export default function CrewRightPanel({ onCreateActivity, onViewAll, showCreate
         return !hasEnded;
       })
       .sort((a, b) => new Date(a.startDate || a.createdAt) - new Date(b.startDate || b.createdAt));
-  }, [crewActivities, currentUser]);
+  }, [myActivitiesData, currentUser]);
 
   return (
     <aside className={styles.sidebar}>

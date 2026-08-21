@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { activitiesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
@@ -19,6 +19,7 @@ const PAGE_SIZE = 20;
 export function useActivityDiscussion(activityId, { enabled = true } = {}) {
   const { currentUser } = useAuth();
   const socket = useGlobalSocketStore((s) => s.socket);
+  const queryClient = useQueryClient();
 
   const [liveMessages, setLiveMessages] = useState([]);
   const [sendError, setSendError] = useState(null);
@@ -79,13 +80,28 @@ export function useActivityDiscussion(activityId, { enabled = true } = {}) {
       setLiveMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
     };
 
+    // The server authorizes room joins and can evict a subscriber whose access
+    // was revoked mid-session (e.g. the host switched the activity to Private).
+    // Both cases clear the buffer and re-validate the activity, which flips the
+    // page to the access-denied state instead of leaving stale content on screen.
+    const handleAccessLost = (payload) => {
+      if (payload?.activityId && String(payload.activityId) !== String(activityId)) return;
+      setLiveMessages([]);
+      queryClient.invalidateQueries({ queryKey: ['activity', activityId] });
+      queryClient.invalidateQueries({ queryKey: ['activity-discussion', activityId] });
+    };
+
     socket.on('activity_discussion:new', handleNew);
+    socket.on('activity:access_denied', handleAccessLost);
+    socket.on('activity:access_revoked', handleAccessLost);
 
     return () => {
       socket.off('activity_discussion:new', handleNew);
+      socket.off('activity:access_denied', handleAccessLost);
+      socket.off('activity:access_revoked', handleAccessLost);
       socket.emit('activity:leave', { activityId });
     };
-  }, [socket, activityId, enabled, currentUser?.id]);
+  }, [socket, activityId, enabled, currentUser?.id, queryClient]);
 
   const sendMessage = useCallback(
     async (text) => {

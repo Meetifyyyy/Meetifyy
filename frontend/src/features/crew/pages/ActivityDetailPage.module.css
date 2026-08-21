@@ -894,3 +894,41 @@
   opacity: 0.82;
   transition: opacity 0.15s ease;
 }
+
+/* Reserves the discussion panel's space before it mounts, so deferring it
+   cannot shift the content above it. */
+.discussionPlaceholder {
+  min-height: 220px;
+}
+
+/* Attendee list tail: expand / load-more control. */
+.attendeesMore {
+  padding: 0.6rem 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.attendeesMoreBtn {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  margin-top: 0.25rem;
+  background: none;
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  color: var(--color-text-main);
+  font-family: var(--font-family-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.attendeesMoreBtn:hover {
+  background: var(--color-bg-secondary, rgba(255, 255, 255, 0.06));
+}
+
+.attendeesMoreBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

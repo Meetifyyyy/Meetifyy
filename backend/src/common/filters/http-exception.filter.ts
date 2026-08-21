@@ -66,7 +66,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
       this.logger.warn(logMsg);
     }
 
-    // Format safe response structure
+    // Format safe response structure.
+    //
+    // A machine-readable `code` is passed through when the thrown exception
+    // carries one (e.g. the activity access policy's COLLEGE_RESTRICTED /
+    // PRIVATE), so clients can pick the right UI state without parsing the
+    // human-readable message. Nothing else from the thrown body is echoed.
+    const errorCode =
+      typeof message === 'object' && message !== null && typeof (message as any).code === 'string'
+        ? (message as any).code
+        : undefined;
+
     const errorResponse = {
       statusCode: status,
       timestamp: new Date().toISOString(),
@@ -75,6 +85,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         typeof message === 'object' && 'message' in message
           ? (message as any).message
           : message,
+      ...(errorCode ? { code: errorCode } : {}),
     };
 
     if (response.headersSent) {

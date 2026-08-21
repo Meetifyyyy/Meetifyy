@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -6,6 +6,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useIsMobile } from '@shared/hooks/useIsMobile';
+import { useMediaQuery } from '@shared/hooks/useMediaQuery';
 import { getRelativeDateLabel } from '@shared/utils/time';
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
@@ -17,11 +18,47 @@ import styles from './ActivityDetailPage.module.css';
 import { UserPlus, MessageCircle } from 'lucide-react';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import { useJoinActivity } from '../hooks/useJoinActivity';
-import { useActivityById } from '@shared/hooks/useCrew';
+import { useActivityById, useActivityAttendees } from '@shared/hooks/useCrew';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
-import { ActivityDiscussion } from '../components/ActivityDiscussion';
+// Deferred: the discussion pulls its own message page and joins a socket room.
+// Loading it with the route made the detail page wait on a module and a request
+// that nothing above the fold needs. It mounts once the core content has
+// painted and the panel is near the viewport.
+const ActivityDiscussion = lazy(() =>
+  import('../components/ActivityDiscussion').then(m => ({ default: m.ActivityDiscussion })),
+);
 import ActivityDetailSkeleton from '../components/ActivityDetailSkeleton';
 import NotFoundState from '@shared/components/ui/NotFoundState';
+
+/* ── Access denied ─────────────────────────────────────────────
+ * The server decides access and answers 403 with a code; these are the
+ * matching UI states. The copy is intentionally generic — the response the
+ * client receives carries no title, description, location, host or attendees
+ * for an activity the viewer may not see.
+ * ─────────────────────────────────────────────────────────── */
+const ACCESS_DENIED_COPY = {
+  COLLEGE_RESTRICTED: {
+    title: 'This activity is from another college',
+    message: "You can't access this activity because it's from another college. Ask the host for an invite if you'd like to join.",
+  },
+  PRIVATE: {
+    title: 'This activity is private',
+    message: 'This activity is private and you do not have access. Only people the host invites can view or join it.',
+  },
+  DEFAULT: {
+    title: "You don't have access to this activity",
+    message: 'You do not have permission to view this activity.',
+  },
+};
+
+function LockIcon() {
+  return (
+    <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
 
 /* ── Helpers ───────────────────────────────────────────────── */
 const DEFAULT_COVERS = [
@@ -90,6 +127,35 @@ function DetailsCard({ date, time, duration, actLocation, isOnline, slotsFilled,
   );
 }
 
+/**
+ * Tail control for the attendee list.
+ *
+ * The detail payload embeds only the first page of attendees, so a large
+ * activity opens fast; the rest are fetched here, on request, one cursor page
+ * at a time. Renders nothing when everything is already on screen.
+ */
+function AttendeesMore({ canExpand, total, shown, onExpand, hasNextPage, isFetching, onLoadMore }) {
+  if (isFetching) {
+    return <div className={styles.attendeesMore} aria-live="polite">Loading…</div>;
+  }
+  if (canExpand) {
+    const remaining = Math.max((total || 0) - shown, 0);
+    return (
+      <button type="button" className={styles.attendeesMoreBtn} onClick={onExpand}>
+        {remaining > 0 ? `Show all ${total} attendees` : 'Show all attendees'}
+      </button>
+    );
+  }
+  if (hasNextPage) {
+    return (
+      <button type="button" className={styles.attendeesMoreBtn} onClick={() => onLoadMore()}>
+        Load more
+      </button>
+    );
+  }
+  return null;
+}
+
 /* ── Main component ────────────────────────────────────────── */
 export default function ActivityDetailPage() {
   const { id } = useParams();
@@ -98,13 +164,21 @@ export default function ActivityDetailPage() {
   const { currentUser } = useAuth();
   const goBack = useSmartBack();
   const queryClient = useQueryClient();
-  const { data: rawActivity, isLoading: isActivityLoading } = useActivityById(cleanId);
+  const {
+    data: rawActivity,
+    isLoading: isActivityLoading,
+    isAccessDenied,
+    accessDeniedCode,
+    accessDeniedMessage,
+  } = useActivityById(cleanId);
 
   const activity = useMemo(() => {
     // rawActivity is the authoritative server data (patched optimistically by useJoinActivity).
     // location.state?.activity is only used as visual scaffolding (title, cover, etc.) while
-    // the network request is in-flight — it MUST NOT drive join-sensitive state.
-    const baseAct = rawActivity || location.state?.activity;
+    // the network request is in-flight — it MUST NOT drive join-sensitive state, and it is
+    // discarded outright once the server denies access, so navigation state can never be
+    // used to render a restricted activity.
+    const baseAct = isAccessDenied ? null : (rawActivity || location.state?.activity);
     if (!baseAct) return null;
 
     const hostUser = baseAct.creator || baseAct.members?.find(m => m.userId === baseAct.creatorId)?.user;
@@ -178,12 +252,41 @@ export default function ActivityDetailPage() {
       hostIsCampusRep,
       participants: participantIds,
       pendingRequests: baseAct.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
-      // slotsFilled = participants.length — single source of truth for count
-      slotsFilled: participantIds.length,
+      // The server is authoritative for the total: `members` in the detail
+      // payload is only the first page of attendees, so counting the ids we
+      // happen to hold would under-report a large activity.
+      slotsFilled: typeof baseAct.memberCount === 'number'
+        ? baseAct.memberCount
+        : participantIds.length,
+      memberCount: baseAct.memberCount,
+      hasMoreMembers: Boolean(baseAct.hasMoreMembers),
       slotsNeeded: baseAct.maxMembers || 999,
       _membersData: enrichedMembersData
     };
   }, [rawActivity, location.state]);
+
+  const {
+    attendees: fetchedAttendees,
+    hasNextPage: hasMoreAttendees,
+    isFetchingNextPage: isFetchingAttendees,
+    fetchNextPage: fetchMoreAttendees,
+  } = useActivityAttendees(cleanId, { enabled: showAllAttendees });
+
+  // Embedded first page until the user expands, then the paginated list. Both
+  // are host-first and share the server's ordering, so expanding does not
+  // reshuffle what is already on screen.
+  const attendeeList = useMemo(() => {
+    const embedded = activity?._membersData || [];
+    if (!showAllAttendees || fetchedAttendees.length === 0) return embedded;
+    const byId = new Map();
+    embedded.slice(0, 1).forEach(u => { if (u?.id) byId.set(String(u.id), u); }); // host leads
+    fetchedAttendees.forEach(u => { if (u?.id && !byId.has(String(u.id))) byId.set(String(u.id), u); });
+    embedded.forEach(u => { if (u?.id && !byId.has(String(u.id))) byId.set(String(u.id), u); });
+    return Array.from(byId.values());
+  }, [activity?._membersData, showAllAttendees, fetchedAttendees]);
+
+  const canExpandAttendees =
+    !showAllAttendees && Boolean(activity?.hasMoreMembers) && attendeeList.length < (activity?.slotsFilled || 0);
 
   const { mutate: toggleJoin, isJoinPending } = useJoinActivity();
 
@@ -290,11 +393,63 @@ export default function ActivityDetailPage() {
   const isSaved = savedActivities?.includes(activity?.id);
   const [showHeaderTitle, setShowHeaderTitle] = useState(false);
 
+  // The discussion is the heaviest module on the page (its own paginated fetch
+  // plus a realtime subscription), and it sits below the fold. An observer
+  // mounts it just before it scrolls into view; `rootMargin` gives it a head
+  // start so it is ready by the time it is actually visible.
+  // The attendee list exists twice — a desktop copy and a mobile copy, one of
+  // which the stylesheet always hides — so every attendee row was built twice.
+  // This gates each copy on the SAME 900px breakpoint the stylesheet switches
+  // at (NOT the app-wide 768px `useIsMobile`, which would blank the list
+  // between 769px and 900px). When the query can't be evaluated, both render,
+  // exactly as before.
+  const isNarrowLayout = useMediaQuery('(max-width: 900px)');
+  const renderDesktopAttendees = isNarrowLayout !== true;
+  const renderMobileAttendees = isNarrowLayout !== false;
+
+  // Attendees past the embedded first page load only when asked for.
+  const [showAllAttendees, setShowAllAttendees] = useState(false);
+  const discussionSlotRef = useRef(null);
+  const [discussionVisible, setDiscussionVisible] = useState(false);
+  useEffect(() => {
+    if (discussionVisible) return;
+    const node = discussionSlotRef.current;
+    if (!node) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setDiscussionVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some(e => e.isIntersecting)) setDiscussionVisible(true);
+      },
+      { rootMargin: '300px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [discussionVisible, activity?.id]);
+
   const handleScroll = (e) => {
     const scrolled = e.target.scrollTop > 50;
     setShowHeaderTitle(prev => prev !== scrolled ? scrolled : prev);
   };
 
+
+  if (isAccessDenied) {
+    const denied = ACCESS_DENIED_COPY[accessDeniedCode] || ACCESS_DENIED_COPY.DEFAULT;
+    return (
+      <main style={{ gridColumn: '2 / -1', width: '100%', maxWidth: 'none', margin: 0, padding: 0 }}>
+        <NotFoundState
+          type="activity"
+          title={denied.title}
+          message={accessDeniedMessage || denied.message}
+          icon={<LockIcon />}
+          onAction={() => goBack('/home')}
+          coverPage={true}
+        />
+      </main>
+    );
+  }
 
   if (isActivityLoading && !activity) {
     return <ActivityDetailSkeleton />;
@@ -494,6 +649,7 @@ export default function ActivityDetailPage() {
                 )}
               </div>
 
+              {renderDesktopAttendees && (
               <div className={`${styles.attendeesSection} ${styles.desktopOnlyAttendees}`}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
                   <h3 className={styles.attendeesTitle} style={{ margin: 0 }}>Attendees ({activity.slotsFilled || activity.participants?.length || 0})</h3>
@@ -524,7 +680,7 @@ export default function ActivityDetailPage() {
                 <div className={styles.attendeesList}>
                   {/* _membersData is always ordered: host first, then other members.
                       Both are patched atomically by patchActivity on join/leave. */}
-                  {activity._membersData?.map((pUser, idx) => {
+                  {attendeeList.map((pUser, idx) => {
                     if (!pUser) return null;
                     const isThisHost = pUser.id === activity.hostId;
                     return (
@@ -549,8 +705,18 @@ export default function ActivityDetailPage() {
                       </div>
                     );
                   })}
+                  <AttendeesMore
+                    canExpand={canExpandAttendees}
+                    total={activity.slotsFilled}
+                    shown={attendeeList.length}
+                    onExpand={() => setShowAllAttendees(true)}
+                    hasNextPage={showAllAttendees && hasMoreAttendees}
+                    isFetching={isFetchingAttendees}
+                    onLoadMore={fetchMoreAttendees}
+                  />
                 </div>
               </div>
+              )}
             </div>
 
             {/* Right: Details */}
@@ -610,6 +776,7 @@ export default function ActivityDetailPage() {
               )}
 
               {/* Mobile Attendees Section */}
+              {renderMobileAttendees && (
               <div className={`${styles.attendeesSection} ${styles.mobileOnlyAttendees}`}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
                   <h3 className={styles.attendeesTitle} style={{ margin: 0 }}>Attendees ({activity.slotsFilled || activity.participants?.length || 0})</h3>
@@ -638,7 +805,7 @@ export default function ActivityDetailPage() {
                 </div>
 
                 <div className={styles.attendeesList}>
-                  {activity._membersData?.map((pUser, idx) => {
+                  {attendeeList.map((pUser, idx) => {
                     if (!pUser) return null;
                     const isThisHost = pUser.id === activity.hostId;
                     return (
@@ -663,11 +830,27 @@ export default function ActivityDetailPage() {
                       </div>
                     );
                   })}
+                  <AttendeesMore
+                    canExpand={canExpandAttendees}
+                    total={activity.slotsFilled}
+                    shown={attendeeList.length}
+                    onExpand={() => setShowAllAttendees(true)}
+                    hasNextPage={showAllAttendees && hasMoreAttendees}
+                    isFetching={isFetchingAttendees}
+                    onLoadMore={fetchMoreAttendees}
+                  />
                 </div>
               </div>
+              )}
 
-              {/* Permanent Discussion Panel */}
-              <ActivityDiscussion variant="inline" activityId={activity.id} />
+              {/* Discussion — mounted only once it is near the viewport. */}
+              <div ref={discussionSlotRef}>
+                {discussionVisible && (
+                  <Suspense fallback={<div className={styles.discussionPlaceholder} aria-hidden="true" />}>
+                    <ActivityDiscussion variant="inline" activityId={activity.id} />
+                  </Suspense>
+                )}
+              </div>
             </div>
           </div>
         </div>

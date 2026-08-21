@@ -1,6 +1,7 @@
 import { describe, beforeEach, it, expect, jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SearchService } from './search.service';
+import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BlocksService } from '../users/blocks.service';
 import { RedisService } from '../redis/redis.service';
@@ -27,6 +28,7 @@ describe('SearchService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SearchService,
+        ActivityAuthorizationService,
         { provide: PrismaService, useValue: prismaMock },
         { provide: BlocksService, useValue: { getExcludedUserIds: (jest.fn() as any).mockResolvedValue([]) } },
         { provide: RedisService, useValue: { getClient: (jest.fn() as any).mockReturnValue(null) } },

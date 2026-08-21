@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean, MaxLength, IsDateString, IsNumber, Matches } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MaxLength, IsDateString, IsNumber, Matches, IsIn } from 'class-validator';
 
 export class CreateActivityDto {
   @IsString()
@@ -45,8 +45,15 @@ export class CreateActivityDto {
   @IsOptional()
   shareToCampus?: boolean;
 
+  /**
+   * Authorization mode. 'PUBLIC' = Anyone, 'COLLEGE_ONLY' = College,
+   * 'PRIVATE' = Private. Anything else is rejected rather than silently
+   * downgraded, so a malformed client can't publish an activity more openly
+   * than the user chose.
+   */
   @IsString()
   @IsOptional()
+  @IsIn(['PUBLIC', 'COLLEGE_ONLY', 'PRIVATE'])
   visibility?: string;
 
   @IsNumber()

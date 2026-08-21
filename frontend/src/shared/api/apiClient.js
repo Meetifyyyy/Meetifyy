@@ -373,13 +373,22 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
 
   if (!res.ok) {
     let errorMessage = `API error ${res.status}`;
+    let errorCode;
     try {
       const errorBody = await res.json();
       errorMessage = errorBody?.message || errorMessage;
+      // Authorization failures carry a machine-readable code (e.g.
+      // COLLEGE_RESTRICTED, PRIVATE) that callers use to pick the right UI
+      // state. The status is attached too so callers can tell "denied" from
+      // "missing" without string-matching the message.
+      errorCode = errorBody?.code;
     } catch {
       // Non-JSON error body
     }
-    throw new Error(errorMessage);
+    const err = new Error(errorMessage);
+    err.status = res.status;
+    if (errorCode) err.code = errorCode;
+    throw err;
   }
 
   // 204 No Content
@@ -569,6 +578,15 @@ export const activitiesApi = {
   acceptInvitation: (invitationId) => apiClient.post(`/api/activities/invitations/${invitationId}/accept`),
   declineInvitation: (invitationId) => apiClient.post(`/api/activities/invitations/${invitationId}/decline`),
   getInvitationStatuses: (id) => apiClient.get(`/api/activities/${id}/invitations/status`),
+  getAttendees: (id, { cursor, limit = 30 } = {}) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.set('cursor', cursor);
+    return apiClient.get(`/api/activities/${id}/attendees?${params.toString()}`);
+  },
+  /** Host-only. Accepts 'PUBLIC' | 'COLLEGE_ONLY' | 'PRIVATE'. */
+  updateVisibility: (id, visibility) => apiClient.patch(`/api/activities/${id}/visibility`, { visibility }),
+  /** Host-only: withdraw an outstanding invitation. */
+  revokeInvitation: (id, userId) => apiClient.delete(`/api/activities/${id}/invitations/${userId}`),
   bookmark: (id) => apiClient.post(`/api/activities/${id}/bookmark`),
   unbookmark: (id) => apiClient.delete(`/api/activities/${id}/bookmark`),
   getBookmarks: (limit = 20, cursor) => {

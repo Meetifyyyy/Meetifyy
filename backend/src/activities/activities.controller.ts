@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Delete, Query, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, Patch, Delete, Query, Body, UseGuards } from '@nestjs/common';
 import { ActivitiesService } from './activities.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -21,10 +21,16 @@ export class ActivitiesController {
   ) {
     const rawLimit = parseInt(limit || '', 10);
     const parsedLimit = !isNaN(rawLimit) && rawLimit > 0 ? rawLimit : 20;
-    const allowedScopes = ['public', 'college', 'one_on_one'] as const;
+    const allowedScopes = ['public', 'college', 'one_on_one', 'for_you'] as const;
     const parsedScope = (allowedScopes as readonly string[]).includes(scope || '')
-      ? (scope as 'public' | 'college' | 'one_on_one')
+      ? (scope as 'public' | 'college' | 'one_on_one' | 'for_you')
       : 'public';
+
+    // The personalized feed is ordered by relevance rather than recency, so it
+    // has its own ranked-offset pagination instead of the createdAt cursor.
+    if (parsedScope === 'for_you') {
+      return this.activitiesService.getForYouFeed(user.id, parsedLimit, cursor);
+    }
     return this.activitiesService.getAllActivities(user?.id, parsedLimit, cursor, parsedScope);
   }
 
@@ -86,6 +92,27 @@ export class ActivitiesController {
     return this.activitiesService.unbookmarkActivity(id, user.id);
   }
 
+  /**
+   * Attendees beyond the first page embedded in the detail payload.
+   * Cursor-paginated so a large activity never ships one huge list.
+   */
+  @Get(':id/attendees')
+  @CacheControl('no-store')
+  async getAttendees(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    const parsed = parseInt(limit || '', 10);
+    return this.activitiesService.getAttendees(
+      id,
+      user.id,
+      !isNaN(parsed) && parsed > 0 ? parsed : 30,
+      cursor,
+    );
+  }
+
   @Get(':id')
   @CacheControl('no-store')
   async getActivityById(@Param('id') id: string, @CurrentUser() user: any) {
@@ -95,6 +122,19 @@ export class ActivitiesController {
   @Post()
   async createActivity(@Body() data: CreateActivityDto, @CurrentUser() user: any) {
     return this.activitiesService.createActivity(data, user.id);
+  }
+
+  /**
+   * Host-only visibility change. Takes effect immediately for every surface —
+   * see ActivitiesService.updateActivityVisibility.
+   */
+  @Patch(':id/visibility')
+  async updateVisibility(
+    @Param('id') id: string,
+    @Body('visibility') visibility: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.activitiesService.updateActivityVisibility(id, user.id, visibility);
   }
 
   @Post(':id/join')
@@ -152,6 +192,16 @@ export class ActivitiesController {
     @CurrentUser() user: any
   ) {
     return this.activitiesService.inviteFriends(id, user.id, userIds);
+  }
+
+  /** Host-only: withdraw an outstanding invitation. Effective immediately. */
+  @Delete(':id/invitations/:userId')
+  async revokeInvitation(
+    @Param('id') id: string,
+    @Param('userId') inviteeId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.activitiesService.revokeInvitation(id, user.id, inviteeId);
   }
 
   @Get(':id/invitations/status')

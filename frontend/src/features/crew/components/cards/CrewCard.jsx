@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
@@ -8,7 +8,7 @@ import ShareActivityModal from '../modals/ShareActivityModal';
 import ActivityJoinedModal from '../modals/ActivityJoinedModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './CrewCard.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -69,7 +69,16 @@ function formatDateTime(activity) {
  * Never skip participants based on members.length — members is sparse in list-cache items.
  * Returns { list: Array<{id,avatar,displayName}>, count: number }.
  */
-function deriveAttendees(activity, users) {
+/**
+ * Builds the avatar stack for a card.
+ *
+ * Enrichment comes from the activity payload itself (the feed select ships
+ * `members[].user` for the handful of avatars a card shows). It used to fall
+ * back to the global user store, which meant an `Object.values(users).find()`
+ * scan per participant per card per render — O(participants x users) work on
+ * every list render, for data the payload already carried.
+ */
+function deriveAttendees(activity) {
   const rawParticipants = Array.isArray(activity?.participants) ? activity.participants : [];
   const rawMembers      = Array.isArray(activity?.members)      ? activity.members      : [];
 
@@ -98,13 +107,12 @@ function deriveAttendees(activity, users) {
     const uid = String(typeof p === 'object' ? (p.id || p.userId || p.user?.id || '') : (p || ''));
     if (!uid || seenIds.has(uid)) return;
 
-    const m         = memberMap.get(uid);
-    const storeUser = users ? (users[uid] || Object.values(users).find(u => String(u?.id) === uid)) : null;
+    const m = memberMap.get(uid);
 
     list.push({
       id: uid,
-      avatar:      storeUser?.avatar || storeUser?.profileImage || m?.user?.avatar || m?.avatar || (typeof p === 'object' ? p.avatar : null),
-      displayName: storeUser?.displayName || storeUser?.name || storeUser?.username || m?.user?.displayName || m?.displayName || (typeof p === 'object' ? p.displayName : 'Participant'),
+      avatar:      m?.user?.avatar || m?.avatar || (typeof p === 'object' ? p.avatar : null),
+      displayName: m?.user?.displayName || m?.displayName || (typeof p === 'object' ? p.displayName : 'Participant'),
     });
     seenIds.add(uid);
   });
@@ -115,11 +123,10 @@ function deriveAttendees(activity, users) {
     .forEach(m => {
       const uid = String(m.userId || m.id || m.user?.id || '');
       if (!uid || seenIds.has(uid)) return;
-      const storeUser = users ? (users[uid] || Object.values(users).find(u => String(u?.id) === uid)) : null;
       list.push({
         id: uid,
-        avatar:      storeUser?.avatar || m.user?.avatar || m.avatar,
-        displayName: storeUser?.displayName || m.user?.displayName || m.displayName || 'Participant',
+        avatar:      m.user?.avatar || m.avatar,
+        displayName: m.user?.displayName || m.displayName || 'Participant',
       });
       seenIds.add(uid);
     });
@@ -127,7 +134,7 @@ function deriveAttendees(activity, users) {
   return { list, count: Math.max(list.length, 1) };
 }
 
-export default function CrewCard({ activity, onClick }) {
+function CrewCard({ activity, onClick, onMouseEnter }) {
   const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -148,27 +155,44 @@ export default function CrewCard({ activity, onClick }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showMenu]);
 
+  const activityId = activity?.id;
+
+  // Two narrow store subscriptions instead of the global data hook. Selecting
+  // the boolean (not the array) means a card only re-renders when ITS OWN saved
+  // state flips, rather than whenever anyone's bookmark changes.
+  const isSaved = useSavedActivitiesStore(
+    (s) => Boolean(activityId) && s.savedActivities.includes(activityId),
+  );
+  const toggleSaveActivity = useSavedActivitiesStore((s) => s.toggleSaveActivity);
+
+  const attendees = useMemo(() => deriveAttendees(activity), [activity]);
+
+  const handleSave = useCallback((e) => {
+    e.stopPropagation();
+    if (activityId) toggleSaveActivity(activityId);
+  }, [activityId, toggleSaveActivity]);
+
+  const handleCardClick = useCallback(() => {
+    if (activityId) onClick?.(activityId);
+  }, [activityId, onClick]);
+
+  // Hover prefetch: the callers have always passed this, but the card never
+  // attached it, so the detail page was never warmed before the click.
+  const handleMouseEnter = useCallback(() => {
+    if (activityId) onMouseEnter?.(activityId);
+  }, [activityId, onMouseEnter]);
+
+  // Every hook above runs unconditionally — the guard has to come after them,
+  // or a card whose activity resolves late changes the hook count between
+  // renders and React throws.
   if (!activity) return null;
 
-  const { 
+  const {
     title = '', description, dateLabel, time, location,
     hostName, hostAvatar, hostUsername, slotsNeeded, slotsFilled,
     category
   } = activity;
 
-  const { savedActivities, toggleSaveActivity, joinCrewActivity, requestToJoinActivity, currentUser, users } = useData();
-  
-  const hasRequested = activity.pendingRequests?.includes(currentUser?.id);
-  const isSaved = savedActivities?.includes(activity.id);
-  const isJoined = activity.participants?.includes(currentUser?.id);
-  const isApproval = activity.participationType === 'approval';
-
-  const handleSave = (e) => {
-    e.stopPropagation();
-    if (activity.id) toggleSaveActivity(activity.id);
-  };
-
-  const filled = Math.min(slotsFilled || 0, slotsNeeded || 0);
   // A solid-colour cover is an explicit choice, so it must win over the
   // deterministic default-image fallback.
   const coverColor = activity.coverColor || null;
@@ -177,7 +201,8 @@ export default function CrewCard({ activity, onClick }) {
   return (
     <div 
       className={styles.card} 
-      onClick={() => onClick(activity.id)}
+      onClick={handleCardClick}
+      onMouseEnter={handleMouseEnter}
       style={{ 
         zIndex: showMenu ? 100 : 1
       }}
@@ -261,7 +286,7 @@ export default function CrewCard({ activity, onClick }) {
           <div className={styles.goingLine} style={{ cursor: 'default' }}>
             {/* Single derivation — count and avatars always come from the same list */}
             {(() => {
-              const { list, count } = deriveAttendees(activity, users);
+              const { list, count } = attendees;
               const visibleAvatars = list.slice(0, 5);
               const label = activity.status === 'ENDED' || activity.status === 'CANCELLED' ? 'participated' : 'going';
               return (
@@ -319,3 +344,10 @@ export default function CrewCard({ activity, onClick }) {
     </div>
   );
 }
+
+/**
+ * Memoized: the Crew list re-renders on every keystroke in the search box and on
+ * every tab change, and without this each of those re-rendered every card.
+ * Callers must pass a stable `onClick`.
+ */
+export default memo(CrewCard);

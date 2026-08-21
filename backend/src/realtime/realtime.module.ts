@@ -5,10 +5,11 @@ import { MessagesModule } from '../messages/messages.module';
 import { PresenceModule } from '../presence/presence.module';
 import { InstantMatchModule } from '../instant-match/instant-match.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ActivityAccessModule } from '../activities/activity-access.module';
 
 @Global()
 @Module({
-  imports: [SupabaseModule, MessagesModule, PresenceModule, InstantMatchModule, PrismaModule],
+  imports: [SupabaseModule, MessagesModule, PresenceModule, InstantMatchModule, PrismaModule, ActivityAccessModule],
   providers: [RealtimeGateway],
   exports: [RealtimeGateway],
 })

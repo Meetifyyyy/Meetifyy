@@ -1,8 +1,9 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ActivityVisibility, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { BlocksService } from '../users/blocks.service';
 import { RedisService } from '../redis/redis.service';
+import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 
 /** How long (seconds) search results are cached per (query, userId) pair. */
 const SEARCH_CACHE_TTL = 15;
@@ -37,9 +38,20 @@ export class SearchService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly blocksService: BlocksService,
+    private readonly activityPolicy: ActivityAuthorizationService,
     @Optional() private readonly redisService?: RedisService,
   ) {
     this.redis = this.redisService?.getClient() ?? null;
+  }
+
+  /** Trusted viewer context (id + collegeId) straight from the database. */
+  private async resolveViewer(userId?: string) {
+    if (!userId) return null;
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, collegeId: true },
+    });
+    return u ? { id: u.id, collegeId: u.collegeId } : null;
   }
 
   async globalSearch(query?: string, currentUserId?: string, limit = 15, type?: string, cursorParam?: string) {
@@ -85,7 +97,10 @@ export class SearchService {
       }
     }
 
-    const excludedUserIds = currentUserId ? await this.blocksService.getExcludedUserIds(currentUserId) : [];
+    const [excludedUserIds, viewer] = await Promise.all([
+      currentUserId ? this.blocksService.getExcludedUserIds(currentUserId) : Promise.resolve([]),
+      this.resolveViewer(currentUserId),
+    ]);
     const searchExcludedUserIds = currentUserId ? [...excludedUserIds, currentUserId] : excludedUserIds;
     const startTime = performance.now();
 
@@ -116,6 +131,9 @@ export class SearchService {
     ];
 
     const activityAndConditions: Prisma.CrewActivityWhereInput[] = [
+      // Search is a discovery surface: restricted activities are excluded by the
+      // shared policy at the query layer, never fetched-then-filtered.
+      this.activityPolicy.discoveryWhere(viewer),
       {
         OR: [
           { endDate: null },
@@ -245,7 +263,6 @@ export class SearchService {
             where: {
               status: 'OPEN',
               deletedAt: null,
-              visibility: ActivityVisibility.PUBLIC,
               ...(searchExcludedUserIds.length > 0 ? { creatorId: { notIn: searchExcludedUserIds } } : {}),
               AND: activityAndConditions,
             },
@@ -430,7 +447,10 @@ export class SearchService {
       }
     }
 
-    const excludedUserIds = currentUserId ? await this.blocksService.getExcludedUserIds(currentUserId) : [];
+    const [excludedUserIds, suggestionViewer] = await Promise.all([
+      currentUserId ? this.blocksService.getExcludedUserIds(currentUserId) : Promise.resolve([]),
+      this.resolveViewer(currentUserId),
+    ]);
     const suggestionExcludedUserIds = currentUserId ? [...excludedUserIds, currentUserId] : excludedUserIds;
 
     const [users, communities, activities] = await Promise.all([
@@ -455,12 +475,18 @@ export class SearchService {
         take: 5,
       }),
       this.prisma.crewActivity.findMany({
+        // Autocomplete leaks titles, so it runs the same discovery policy as the
+        // full search rather than a looser "public only" heuristic.
         where: {
-          title: { contains: searchQuery, mode: 'insensitive' },
-          status: 'OPEN',
-          visibility: ActivityVisibility.PUBLIC,
-          deletedAt: null,
-          ...(suggestionExcludedUserIds.length > 0 ? { creatorId: { notIn: suggestionExcludedUserIds } } : {}),
+          AND: [
+            {
+              title: { contains: searchQuery, mode: 'insensitive' },
+              status: 'OPEN',
+              deletedAt: null,
+              ...(suggestionExcludedUserIds.length > 0 ? { creatorId: { notIn: suggestionExcludedUserIds } } : {}),
+            },
+            this.activityPolicy.discoveryWhere(suggestionViewer),
+          ],
         },
         select: { id: true, title: true, location: true },
         take: 5,

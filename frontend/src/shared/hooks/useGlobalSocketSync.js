@@ -491,6 +491,23 @@ export function useGlobalSocketSync() {
                 };
               }
               if (Array.isArray(oldData)) return oldData.map(patchListEntry);
+              // Composed discover payload: { forYou: { items }, college: { items }, ... }.
+              // Its sections are plain arrays rather than pages, so without this
+              // the All tab's preview strips kept a stale attendee count until
+              // their next refetch.
+              if (oldData && typeof oldData === 'object') {
+                let touched = false;
+                const next = {};
+                for (const [key, value] of Object.entries(oldData)) {
+                  if (Array.isArray(value?.items)) {
+                    next[key] = { ...value, items: value.items.map(patchListEntry) };
+                    touched = true;
+                  } else {
+                    next[key] = value;
+                  }
+                }
+                return touched ? next : oldData;
+              }
               return oldData;
             });
           }

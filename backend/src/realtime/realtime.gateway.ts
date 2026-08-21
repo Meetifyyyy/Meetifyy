@@ -18,6 +18,7 @@ import { InstantMatchService, setRealtimeGatewayRef, MatchFoundPayload, QueueSta
 import { PrismaService } from '../prisma/prisma.service';
 import { checkPresenceVisibility, checkPresenceVisibilityBatch } from '../users/privacy.helper';
 import { RedisService } from '../redis/redis.service';
+import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 import { MentionDto } from '../common/dto/mention.dto';
 
 @WebSocketGateway({
@@ -53,6 +54,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     private readonly instantMatchService: InstantMatchService,
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
+    private readonly activityPolicy: ActivityAuthorizationService,
   ) {}
 
   afterInit() {
@@ -227,6 +229,23 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     // Activity discussion: fan out to everyone currently viewing the activity
     // (they joined `activity_<id>` via 'activity:join'). Purely room-scoped —
     // there is no participant set, so return once broadcast.
+    // A visibility change is authorization-relevant: re-run the policy for every
+    // socket in the room and evict the ones that just lost access. The event
+    // itself carries no activity details.
+    if (payload.type === 'activity.visibilityChanged') {
+      const changedId = payload.data?.activityId || payload.data?.id;
+      if (changedId) {
+        // Evict first, notify second — the surviving subscribers are exactly the
+        // ones still authorized when the event lands.
+        this.revalidateActivityRoom(changedId)
+          .then(() => {
+            this.server.to(`activity_${changedId}`).emit('domainEvent', payload);
+          })
+          .catch(() => {});
+      }
+      return;
+    }
+
     if (payload.type === 'activity_discussion.created') {
       const activityScopeId = payload.data?.activityId;
       if (activityScopeId) {
@@ -538,13 +557,94 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   // discussion messages; it leaves on unmount. Rooms are per-socket and
   // auto-cleaned on disconnect, so a missed 'activity:leave' can't leak.
   @SubscribeMessage('activity:join')
-  handleActivityJoin(
+  async handleActivityJoin(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { activityId?: string }
   ) {
     const userId = (client as any).userId;
     if (!userId || !data?.activityId) return;
+
+    // Room membership is an authorization decision, not a client preference:
+    // the room carries discussion messages, attendee changes and activity
+    // metadata, so a viewer who may not open the activity may not subscribe.
+    const decision = await this.checkActivityRoomAccess(userId, data.activityId);
+    if (!decision.allowed) {
+      client.emit('activity:access_denied', {
+        activityId: data.activityId,
+        code: decision.code,
+        message: decision.reason,
+      });
+      client.leave(`activity_${data.activityId}`);
+      return;
+    }
     client.join(`activity_${data.activityId}`);
+  }
+
+  /**
+   * Server-side authorization for the `activity_<id>` realtime room, resolved
+   * from the DB through the shared activity access policy.
+   */
+  private async checkActivityRoomAccess(userId: string, activityId: string) {
+    try {
+      const [activity, user] = await Promise.all([
+        this.prisma.crewActivity.findUnique({
+          where: { id: activityId },
+          select: {
+            id: true,
+            creatorId: true,
+            collegeId: true,
+            visibility: true,
+            status: true,
+            deletedAt: true,
+            members: { where: { userId }, select: { userId: true, status: true } },
+            invitations: {
+              where: { inviteeId: userId },
+              select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
+            },
+          },
+        }),
+        this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }),
+      ]);
+
+      if (!activity || activity.deletedAt) {
+        return { allowed: false, code: 'NOT_FOUND', reason: 'Activity not found' };
+      }
+      return this.activityPolicy.canView(user, activity as any);
+    } catch (err) {
+      this.logger.warn(`activity room access check failed: ${(err as any)?.message}`);
+      // Fail closed.
+      return { allowed: false, code: 'NOT_FOUND', reason: 'Activity not found' };
+    }
+  }
+
+  /**
+   * A visibility change re-runs authorization for everyone currently subscribed
+   * to the activity room and evicts whoever just lost access, so a socket opened
+   * while the activity was PUBLIC cannot keep streaming it after it turns
+   * COLLEGE_ONLY or PRIVATE.
+   */
+  private async revalidateActivityRoom(activityId: string) {
+    const room = this.server?.sockets?.adapter?.rooms?.get(`activity_${activityId}`);
+    if (!room || room.size === 0) return;
+
+    for (const socketId of Array.from(room)) {
+      const socket = this.server.sockets.sockets.get(socketId);
+      const userId = socket ? (socket as any).userId : null;
+      if (!socket) continue;
+      if (!userId) {
+        socket.leave(`activity_${activityId}`);
+        continue;
+      }
+      const decision = await this.checkActivityRoomAccess(userId, activityId);
+      if (!decision.allowed) {
+        socket.leave(`activity_${activityId}`);
+        socket.emit('activity:access_revoked', {
+          activityId,
+          code: decision.code,
+          message: decision.reason,
+        });
+      }
+    }
   }
 
   @SubscribeMessage('activity:leave')

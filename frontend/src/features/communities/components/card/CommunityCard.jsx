@@ -2,13 +2,16 @@ import { useState, useEffect, memo } from 'react';
 import styles from './CommunityCard.module.css';
 import { useQueryClient } from '@tanstack/react-query';
 import { isImageUrl } from '@shared/utils/avatar';
-import { useData } from '@shared/hooks/useData';
+import { useAuth } from '@shared/context/AuthContext';
 import { useJoinCommunity } from '../../hooks/useJoinCommunity';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 
 function CommunityCard({ comm, onClick }) {
-  const { currentUser } = useData(); 
+  // `useData` sources currentUser straight from AuthContext, so this is the same
+  // value without subscribing every card in the grid to conversations, users,
+  // campus users and communities.
+  const { currentUser } = useAuth();
   const queryClient = useQueryClient();
   const [imgError, setImgError] = useState(false);
   

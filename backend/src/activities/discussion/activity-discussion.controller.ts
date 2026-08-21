@@ -10,13 +10,14 @@ export class ActivityDiscussionController {
 
   @Get()
   async getMessages(
+    @CurrentUser() user: any,
     @Param('activityId') activityId: string,
     @Query('before') before?: string,
     @Query('limit') limit?: string,
   ) {
     const parsed = parseInt(limit || '', 10);
     const limitNum = !isNaN(parsed) && parsed > 0 ? parsed : 20;
-    return this.discussionService.getMessages(activityId, before, limitNum);
+    return this.discussionService.getMessages(activityId, user?.id, before, limitNum);
   }
 
   @Post()

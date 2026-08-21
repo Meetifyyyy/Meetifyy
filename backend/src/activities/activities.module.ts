@@ -1,7 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
-import { ActivityAuthorizationService } from './activity-authorization.service';
+import { ActivityAccessModule } from './activity-access.module';
 import { ActivityDiscussionController } from './discussion/activity-discussion.controller';
 import { ActivityDiscussionService } from './discussion/activity-discussion.service';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -17,6 +17,7 @@ import { PresenceModule } from '../presence/presence.module';
 @Module({
   imports: [
     PrismaModule,
+    ActivityAccessModule,
     SupabaseModule,
     NotificationsModule,
     UsersModule,
@@ -26,8 +27,8 @@ import { PresenceModule } from '../presence/presence.module';
     forwardRef(() => RealtimeModule),
   ],
   controllers: [ActivitiesController, ActivityDiscussionController],
-  providers: [ActivitiesService, ActivityAuthorizationService, ActivityDiscussionService],
-  exports: [ActivitiesService, ActivityAuthorizationService]
+  providers: [ActivitiesService, ActivityDiscussionService],
+  exports: [ActivitiesService, ActivityAccessModule]
 })
 export class ActivitiesModule {}
 

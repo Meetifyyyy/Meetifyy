@@ -7,7 +7,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
 import { DomainEventService } from '../events/domain-event.service';
-import { ActivityAuthorizationService } from './activity-authorization.service';
+import { ActivityAuthorizationService, UserAuthContext } from './activity-authorization.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { RedisService } from '../redis/redis.service';
 
@@ -150,11 +150,41 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   /**
+   * Resolves the trusted viewer context (id + collegeId straight from the DB).
+   * Never trust a college id supplied by the client.
+   */
+  private async getViewer(userId?: string): Promise<UserAuthContext | null> {
+    if (!userId) return null;
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, collegeId: true },
+    });
+    return u ? { id: u.id, collegeId: u.collegeId } : null;
+  }
+
+  /**
+   * Number of live invitations the viewer holds. Used only to decide whether a
+   * feed page may be served from the college-shared cache: a user holding an
+   * invitation can legitimately see activities their college-peers cannot, so
+   * their page must never be written into (or read from) the shared entry.
+   */
+  private async countLiveInvitations(userId: string): Promise<number> {
+    return this.prisma.activityInvitation.count({
+      where: this.activityAuthorizationService.validInvitationWhere(userId),
+    });
+  }
+
+  /**
    * Scoped feed. `scope` selects which slice of activities to return:
-   *   - 'public'      → visibility PUBLIC (default, the "Recent" feed)
-   *   - 'college'     → visibility COLLEGE_ONLY for the caller's own college
-   *   - 'one_on_one'  → public activities with exactly 2 slots
-   * All scopes only ever return OPEN, not-yet-started, non-deleted activities.
+   *   - 'public'      → everything the viewer may discover (the "Recent" feed)
+   *   - 'college'     → discoverable activities hosted by the viewer's college,
+   *                     which includes PUBLIC ones from that college as well as
+   *                     COLLEGE_ONLY ones
+   *   - 'one_on_one'  → discoverable activities with exactly 2 slots
+   *
+   * Every scope is intersected with the central discovery policy at the DATABASE
+   * layer, so a restricted activity is never fetched, never cached and therefore
+   * cannot leak through a later page, a serializer or a stale client cache.
    */
   async getAllActivities(
     userId?: string,
@@ -164,76 +194,63 @@ export class ActivitiesService implements OnModuleInit {
   ) {
     const startTime = performance.now();
 
-    // College scope needs the caller's collegeId to filter; resolve it up front.
-    // A user with no college has nothing to show in this scope.
-    let scopeCollegeId: string | null = null;
-    if (scope === 'college') {
-      if (!userId) return { activities: [], nextCursor: undefined };
-      const u = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { collegeId: true },
-      });
-      scopeCollegeId = u?.collegeId ?? null;
-      if (!scopeCollegeId) return { activities: [], nextCursor: undefined };
-    }
-
     // ── Tier 1: user-specific cache ──────────────────────────────────────────
-    const scopeTag = scope === 'college' ? `college:${scopeCollegeId}` : scope;
-    const userCacheKey = `activities:feed:${scopeTag}:${userId || 'anon'}:${limit}:${cursor || 'none'}`;
-    const baseCacheKey = `activities:feed:base:${scopeTag}:${limit}:${cursor || 'none'}`;
-    // Base-feed sharing across users is only sound for the anonymous public feed;
-    // scoped feeds always resolve per-user to keep membership/college correct.
-    const allowBaseCache = scope === 'public';
+    // Keyed by the caller's own id, which is what determines their college and
+    // their invitations — so this page is never reachable by anyone else, and
+    // the fast path stays a single Redis round-trip with no DB work.
+    const userCacheKey = `activities:feed:${scope}:${userId || 'anon'}:${limit}:${cursor || 'none'}`;
     let tCache = 0;
 
     if (this.redis) {
       const redisStart = performance.now();
       try {
-        // Fetch both user-specific and base cache in ONE round-trip
-        const [userCached, baseCached] = await this.redis.mget(userCacheKey, baseCacheKey);
+        const userCached = await this.redis.get(userCacheKey);
         tCache = performance.now() - redisStart;
-
         if (userCached) {
           this.logger.log(`[STAGE_TIMINGS] GET /api/activities (USER_HIT) - Total: ${(performance.now() - startTime).toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms`);
           return JSON.parse(userCached);
-        }
-
-        // If base cache exists and user has no blocks (we assume no-blocks for anon/fast path),
-        // we'll check blocks in parallel below — store baseCached for later.
-        if (baseCached && allowBaseCache) {
-          // Still need to check blocks before we can use it — fall through with a hint
-          (this as any)._cachedBase = baseCached;
         }
       } catch {
         tCache = performance.now() - redisStart;
       }
     }
 
-    // ── PreFetch: blocks + cursor resolution in ONE parallel round-trip ───────
+    // ── PreFetch: viewer + blocks + cursor + invitation count in parallel ─────
     const preFetchStart = performance.now();
-    const [excludedUserIds, cursorDate] = await Promise.all([
+    const [viewer, excludedUserIds, cursorDate, liveInvitationCount] = await Promise.all([
+      // Trusted viewer identity/college — resolved server-side, never from the client.
+      this.getViewer(userId),
       userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([]),
       this.resolveCursorDate(cursor),
+      userId ? this.countLiveInvitations(userId) : Promise.resolve(0),
     ]);
     const tPreFetch = performance.now() - preFetchStart;
 
-    // ── Tier 2: base feed cache (shared across users with no blocks) ──────────
+    // The college scope needs the caller's own college; a user with no college
+    // has nothing to show there.
+    const scopeCollegeId = viewer?.collegeId ?? null;
+    if (scope === 'college' && !scopeCollegeId) {
+      return { activities: [], nextCursor: undefined };
+    }
+
+    // The audience tag pins every SHARED page to the college allowed to see it,
+    // so a page built for one college can never be served to another.
+    const audienceTag = `aud:${viewer?.collegeId || 'none'}`;
+    const scopeTag = scope === 'college' ? `college:${scopeCollegeId}` : scope;
+
+    // A shared page is only sound for viewers with the same audience tag, no
+    // blocks and no invitation-derived extra visibility.
+    const allowBaseCache = excludedUserIds.length === 0 && liveInvitationCount === 0;
+    const baseCacheKeyFor = (d?: Date) =>
+      `activities:feed:base:${scopeTag}:${audienceTag}:${limit}:${d ? d.toISOString() : 'none'}`;
+
+    // ── Tier 2: audience-scoped shared feed cache ────────────────────────────
     let baseFeed: { activities: any[]; nextCursor: string | undefined } | null = null;
-    if (allowBaseCache && excludedUserIds.length === 0 && this.redis) {
-      const hint = (this as any)._cachedBase;
-      delete (this as any)._cachedBase;
-      if (hint) {
-        try { baseFeed = JSON.parse(hint); } catch {}
-      } else {
-        try {
-          // Key changed: use resolved cursorDate for correctness
-          const resolvedBaseKey = `activities:feed:base:${scopeTag}:${limit}:${cursorDate ? cursorDate.toISOString() : 'none'}`;
-          const cachedBase = await this.redis.get(resolvedBaseKey);
-          if (cachedBase) baseFeed = JSON.parse(cachedBase);
-        } catch {}
-      }
-    } else {
-      delete (this as any)._cachedBase;
+    if (allowBaseCache && this.redis) {
+      try {
+        const cachedBase = await this.redis.get(baseCacheKeyFor(cursorDate));
+        if (cachedBase) baseFeed = JSON.parse(cachedBase);
+      } catch {}
     }
 
     // ── Main DB fetch (skipped on base cache HIT) ─────────────────────────────
@@ -249,17 +266,28 @@ export class ActivitiesService implements OnModuleInit {
       setImmediate(() => { this.autoExpireActivities().catch(() => {}); });
 
       const now = new Date();
-      const whereClause: any = {
+      const scopeFilter: any = {
         deletedAt: null,
         status: 'OPEN',
         startDate: { gt: now },
-        ...(scope === 'college'
-          ? { visibility: 'COLLEGE_ONLY', collegeId: scopeCollegeId }
-          : { visibility: 'PUBLIC' }),
+        ...(scope === 'college' ? { collegeId: scopeCollegeId } : {}),
         ...(scope === 'one_on_one' ? { maxMembers: 2 } : {}),
         ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
         ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
       };
+
+      // AND-composed with the policy filter so no other condition can widen it.
+      //
+      // A page that will be written to the SHARED cache is built from the
+      // college-derived clauses only, so it stays correct for every viewer with
+      // the same audience tag. Viewers whose visibility is personal (they hold a
+      // live invitation, or they have blocks) get the full policy filter and a
+      // page that is never shared.
+      const policyWhere = allowBaseCache
+        ? this.activityAuthorizationService.sharedAudienceWhere(viewer)
+        : this.activityAuthorizationService.discoveryWhere(viewer);
+
+      const whereClause: any = { AND: [scopeFilter, policyWhere] };
 
       // Single Prisma query — Prisma resolves `members { user }` with a
       // batched sub-query (not per-row N+1) when `take` is set.
@@ -313,8 +341,8 @@ export class ActivitiesService implements OnModuleInit {
       activities = fetchedActivities;
 
       // Cache base feed in background
-      if (allowBaseCache && excludedUserIds.length === 0 && this.redis) {
-        const resolvedBaseKey = `activities:feed:base:${scopeTag}:${limit}:${cursorDate ? cursorDate.toISOString() : 'none'}`;
+      if (allowBaseCache && this.redis) {
+        const resolvedBaseKey = baseCacheKeyFor(cursorDate);
         this.redis.setex(resolvedBaseKey, 60, JSON.stringify({ activities, nextCursor })).catch(() => {});
         this.registerFeedCacheKey(resolvedBaseKey);
       }
@@ -409,6 +437,303 @@ export class ActivitiesService implements OnModuleInit {
    * intentionally NOT duplicated here. Each preview returns up to 3 rows so the
    * client can show 2 and decide whether to render a "See All".
    */
+  // ── "For You" personalization ──────────────────────────────────────────────
+  //
+  // Same shape as the mention-suggestion ranker in UsersService: a bounded,
+  // already-authorized candidate pool leaves the database, every signal is one
+  // batched indexed query, and scoring happens in memory. Nothing here widens
+  // access — the pool is produced by the discovery policy, and the page is
+  // re-filtered through it again at hydration time.
+
+  /** Upper bound on rows considered for a personalized ranking pass. */
+  private static readonly FOR_YOU_POOL = 120;
+  /** How long a user's ranked id list stays stable (also makes paging stable). */
+  private static readonly FOR_YOU_RANK_TTL = 60;
+  /** Recent conversations consulted for the "people you talk to" signal. */
+  private static readonly FOR_YOU_RECENT_CONVERSATIONS = 15;
+  /** Past memberships consulted for the "hosts you've joined before" signal. */
+  private static readonly FOR_YOU_HISTORY_LIMIT = 50;
+
+  /** Ranking weights, in one place so the ordering is readable and tunable. */
+  private static readonly FOR_YOU_WEIGHTS = {
+    hostIsMutual: 10000,
+    hostIsFollow: 7000,
+    hostRecentChat: 4000,
+    friendAttending: 2500,
+    friendAttendingCap: 3,
+    hostJoinedBefore: 2000,
+    sameCollege: 1500,
+    interestMatch: 1200,
+    interestMatchCap: 2,
+    startsSoonMax: 800,
+    startsSoonWindowDays: 14,
+    hasRoom: 300,
+  };
+
+  /**
+   * Ranks the activities this user may discover and returns the ordered ids.
+   *
+   * Ordering — not the rows — is what gets cached, which is what makes cursor
+   * paging stable across pages while keeping the returned rows fresh.
+   */
+  private async getForYouRankedIds(userId: string): Promise<string[]> {
+    const cacheKey = `activities:foryou:rank:${userId}`;
+    if (this.redis) {
+      try {
+        const cached = await this.redis.get(cacheKey);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+
+    const now = new Date();
+    const [viewer, excludedUserIds, followingRows, followerRows, recentConvs, historyRows] =
+      await Promise.all([
+        this.getViewer(userId),
+        this.blocksService.getExcludedUserIds(userId),
+        this.prisma.follow.findMany({ where: { followerId: userId }, select: { followingId: true } }),
+        this.prisma.follow.findMany({ where: { followingId: userId }, select: { followerId: true } }),
+        this.prisma.conversationParticipant.findMany({
+          where: { userId, deletedAt: null },
+          select: { conversationId: true },
+          orderBy: { conversation: { updatedAt: 'desc' } },
+          take: ActivitiesService.FOR_YOU_RECENT_CONVERSATIONS,
+        }),
+        this.prisma.crewActivityMember.findMany({
+          where: { userId, status: 'MEMBER' },
+          select: { activityId: true },
+          orderBy: { joinedAt: 'desc' },
+          take: ActivitiesService.FOR_YOU_HISTORY_LIMIT,
+        }),
+      ]);
+
+    const interests = viewer
+      ? (
+          await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { interests: true },
+          })
+        )?.interests ?? []
+      : [];
+
+    const candidates = await this.prisma.crewActivity.findMany({
+      where: {
+        AND: [
+          {
+            deletedAt: null,
+            status: 'OPEN',
+            startDate: { gt: now },
+            ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
+          },
+          this.activityAuthorizationService.discoveryWhere(viewer),
+        ],
+      },
+      take: ActivitiesService.FOR_YOU_POOL,
+      orderBy: { startDate: 'asc' },
+      select: {
+        id: true,
+        creatorId: true,
+        collegeId: true,
+        title: true,
+        description: true,
+        location: true,
+        startDate: true,
+        maxMembers: true,
+        _count: { select: { members: true } },
+      },
+    });
+
+    if (candidates.length === 0) {
+      if (this.redis) {
+        this.redis.setex(cacheKey, ActivitiesService.FOR_YOU_RANK_TTL, '[]').catch(() => {});
+        this.registerFeedCacheKey(cacheKey);
+      }
+      return [];
+    }
+
+    const candidateIds = candidates.map(c => c.id);
+    const followingIds = followingRows.map(f => f.followingId);
+    const followingSet = new Set(followingIds);
+    const followerSet = new Set(followerRows.map(f => f.followerId));
+    const convIds = recentConvs.map(c => c.conversationId);
+    const historyIds = historyRows.map(h => h.activityId);
+
+    // Remaining signals, all batched over the bounded candidate set.
+    const [chatPartners, friendsAttending, pastHosts] = await Promise.all([
+      convIds.length > 0
+        ? this.prisma.conversationParticipant.findMany({
+            where: { conversationId: { in: convIds }, userId: { not: userId } },
+            select: { userId: true },
+          })
+        : Promise.resolve([] as { userId: string }[]),
+      followingIds.length > 0
+        ? this.prisma.crewActivityMember.findMany({
+            where: {
+              activityId: { in: candidateIds },
+              userId: { in: followingIds },
+              status: 'MEMBER',
+            },
+            select: { activityId: true, userId: true },
+          })
+        : Promise.resolve([] as { activityId: string; userId: string }[]),
+      historyIds.length > 0
+        ? this.prisma.crewActivity.findMany({
+            where: { id: { in: historyIds } },
+            select: { creatorId: true },
+          })
+        : Promise.resolve([] as { creatorId: string }[]),
+    ]);
+
+    const chatPartnerSet = new Set(chatPartners.map(p => p.userId));
+    const pastHostSet = new Set(pastHosts.map(h => h.creatorId));
+    const friendCountByActivity = new Map<string, number>();
+    for (const row of friendsAttending) {
+      friendCountByActivity.set(row.activityId, (friendCountByActivity.get(row.activityId) || 0) + 1);
+    }
+
+    const normalizedInterests = interests
+      .map(i => (i || '').trim().toLowerCase())
+      .filter(i => i.length >= 3);
+
+    const W = ActivitiesService.FOR_YOU_WEIGHTS;
+    const soonWindowMs = W.startsSoonWindowDays * 24 * 60 * 60 * 1000;
+
+    const scored = candidates.map(a => {
+      let score = 0;
+
+      // Who is hosting matters most.
+      const isFollowing = followingSet.has(a.creatorId);
+      const isFollower = followerSet.has(a.creatorId);
+      if (isFollowing && isFollower) score += W.hostIsMutual;
+      else if (isFollowing || isFollower) score += W.hostIsFollow;
+
+      if (chatPartnerSet.has(a.creatorId)) score += W.hostRecentChat;
+      if (pastHostSet.has(a.creatorId)) score += W.hostJoinedBefore;
+
+      // Then who else is already going.
+      const friends = Math.min(friendCountByActivity.get(a.id) || 0, W.friendAttendingCap);
+      score += friends * W.friendAttending;
+
+      if (viewer?.collegeId && a.collegeId && viewer.collegeId === a.collegeId) {
+        score += W.sameCollege;
+      }
+
+      if (normalizedInterests.length > 0) {
+        const haystack = `${a.title || ''} ${a.description || ''} ${a.location || ''}`.toLowerCase();
+        let matches = 0;
+        for (const interest of normalizedInterests) {
+          if (haystack.includes(interest)) matches += 1;
+          if (matches >= W.interestMatchCap) break;
+        }
+        score += matches * W.interestMatch;
+      }
+
+      // A small freshness term so an empty signal profile still yields a sane,
+      // soonest-first ordering rather than an arbitrary one.
+      const msUntilStart = a.startDate ? new Date(a.startDate).getTime() - now.getTime() : soonWindowMs;
+      const proximity = Math.max(0, 1 - Math.max(msUntilStart, 0) / soonWindowMs);
+      score += Math.round(proximity * W.startsSoonMax);
+
+      const memberCount = a._count?.members ?? 0;
+      if (!a.maxMembers || memberCount < a.maxMembers) score += W.hasRoom;
+
+      return { id: a.id, score, startAt: a.startDate ? new Date(a.startDate).getTime() : Number.MAX_SAFE_INTEGER };
+    });
+
+    scored.sort((x, y) => {
+      if (y.score !== x.score) return y.score - x.score;
+      if (x.startAt !== y.startAt) return x.startAt - y.startAt;
+      return x.id.localeCompare(y.id);
+    });
+
+    const rankedIds = scored.map(s => s.id);
+    if (this.redis) {
+      this.redis
+        .setex(cacheKey, ActivitiesService.FOR_YOU_RANK_TTL, JSON.stringify(rankedIds))
+        .catch(() => {});
+      this.registerFeedCacheKey(cacheKey);
+    }
+    return rankedIds;
+  }
+
+  /**
+   * Hydrates ranked ids into full cards, preserving the ranked order.
+   *
+   * The hydration query re-applies the discovery policy and the "not started
+   * yet" rule, so an id that was rankable a moment ago but has since been
+   * restricted, cancelled or started simply drops out of the page.
+   */
+  private async hydrateRankedActivities(
+    ids: string[],
+    userId: string,
+    viewer: UserAuthContext | null,
+  ) {
+    if (ids.length === 0) return [];
+
+    const rows = await this.prisma.crewActivity.findMany({
+      where: {
+        AND: [
+          { id: { in: ids }, deletedAt: null, status: 'OPEN', startDate: { gt: new Date() } },
+          this.activityAuthorizationService.discoveryWhere(viewer),
+        ],
+      },
+      select: ActivitiesService.CARD_SELECT,
+    });
+
+    const memberships = await this.prisma.crewActivityMember.findMany({
+      where: { userId, activityId: { in: rows.map(r => r.id) } },
+      select: { activityId: true, status: true },
+    });
+    const membershipMap = new Map(memberships.map(m => [m.activityId, m.status]));
+
+    const byId = new Map(rows.map(r => [r.id, r]));
+    return ids
+      .map(id => byId.get(id))
+      .filter(Boolean)
+      .map((a: any) => {
+        const myStatus = membershipMap.get(a.id);
+        return { ...a, isJoined: myStatus === 'MEMBER', myStatus: myStatus || null };
+      });
+  }
+
+  /**
+   * The personalized "For You" feed, paginated over the cached ranking.
+   *
+   * The cursor is an offset into that ranking rather than a timestamp: the order
+   * is by relevance, not recency, so a date cursor could not express a position
+   * in it.
+   */
+  async getForYouFeed(userId: string, limit = 20, cursor?: string) {
+    const parsedOffset = cursor?.startsWith('off:') ? parseInt(cursor.slice(4), 10) : 0;
+    const offset = Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
+
+    const [rankedIds, viewer] = await Promise.all([
+      this.getForYouRankedIds(userId),
+      this.getViewer(userId),
+    ]);
+
+    const pageIds = rankedIds.slice(offset, offset + limit);
+    const activities = await this.hydrateRankedActivities(pageIds, userId, viewer);
+    const nextOffset = offset + limit;
+
+    return {
+      activities,
+      nextCursor: nextOffset < rankedIds.length ? `off:${nextOffset}` : undefined,
+    };
+  }
+
+  /** Cards shown per subsection on the "All" tab before "See all". */
+  private static readonly PREVIEW_SIZE = 5;
+
+  /**
+   * Composed payload for the Crew "All" tab: the three subsections — For You,
+   * From Your College, and 1-on-1 — in a single cached round-trip.
+   *
+   * Each subsection returns up to PREVIEW_SIZE items plus a `hasMore` flag for
+   * its "See all" affordance. Sections are de-duplicated in render order (For
+   * You first), so one activity never appears twice on the page; `hasMore`
+   * accounts for that, since an activity removed as a duplicate is still
+   * reachable from the section's own full list.
+   */
   async getCrewDiscover(userId: string) {
     const cacheKey = `activities:discover:${userId}`;
     if (this.redis) {
@@ -418,50 +743,54 @@ export class ActivitiesService implements OnModuleInit {
       } catch {}
     }
 
-    const [user, excludedUserIds] = await Promise.all([
+    const PREVIEW = ActivitiesService.PREVIEW_SIZE;
+    const [user, excludedUserIds, rankedIds] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
-        select: { collegeId: true, college: { select: { name: true } } },
+        select: { id: true, collegeId: true, college: { select: { name: true } } },
       }),
       this.blocksService.getExcludedUserIds(userId),
+      this.getForYouRankedIds(userId),
     ]);
 
+    const viewer: UserAuthContext | null = user ? { id: user.id, collegeId: user.collegeId } : null;
     const now = new Date();
     const creatorFilter = excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {};
     const collegeId = user?.collegeId ?? null;
 
-    const [collegeRows, oneOnOneRows] = await Promise.all([
+    // Every section is intersected with the same discovery policy, so PUBLIC
+    // ("Anyone") activities are eligible everywhere while COLLEGE_ONLY ones only
+    // reach same-college or invited viewers and PRIVATE ones reach no one.
+    const policyWhere = this.activityAuthorizationService.discoveryWhere(viewer);
+    const baseFilter = {
+      deletedAt: null,
+      status: 'OPEN' as const,
+      startDate: { gt: now },
+      ...creatorFilter,
+    };
+
+    // Over-fetch by one so each section can report `hasMore` without a count.
+    const [forYouRows, collegeRows, oneOnOneRows] = await Promise.all([
+      this.hydrateRankedActivities(rankedIds.slice(0, PREVIEW + 1), userId, viewer),
       collegeId
         ? this.prisma.crewActivity.findMany({
-            where: {
-              deletedAt: null,
-              status: 'OPEN',
-              startDate: { gt: now },
-              visibility: 'COLLEGE_ONLY',
-              collegeId,
-              ...creatorFilter,
-            },
-            take: 3,
+            where: { AND: [{ ...baseFilter, collegeId }, policyWhere] },
+            take: PREVIEW + 1,
+            // Same ordering as the full list behind "See all", so the preview
+            // reads as the top of that list rather than a different one.
             orderBy: { createdAt: 'desc' },
             select: ActivitiesService.CARD_SELECT,
           })
         : Promise.resolve([]),
       this.prisma.crewActivity.findMany({
-        where: {
-          deletedAt: null,
-          status: 'OPEN',
-          startDate: { gt: now },
-          visibility: 'PUBLIC',
-          maxMembers: 2,
-          ...creatorFilter,
-        },
-        take: 3,
+        where: { AND: [{ ...baseFilter, maxMembers: 2 }, policyWhere] },
+        take: PREVIEW + 1,
         orderBy: { createdAt: 'desc' },
         select: ActivitiesService.CARD_SELECT,
       }),
     ]);
 
-    // One membership query over the (≤6) collected ids to attach join state.
+    // One membership query over the collected ids to attach join state.
     const ids = [...collegeRows, ...oneOnOneRows].map(a => a.id);
     const memberships = ids.length > 0
       ? await this.prisma.crewActivityMember.findMany({
@@ -475,11 +804,28 @@ export class ActivitiesService implements OnModuleInit {
       return { ...a, isJoined: myStatus === 'MEMBER', myStatus: myStatus || null };
     };
 
+    // Sections are filled in render order and each one skips what is already on
+    // screen above it.
+    const shown = new Set<string>();
+    const section = (rows: any[], alreadyDecorated = false) => {
+      const fresh = rows.filter(a => !shown.has(a.id));
+      const items = fresh.slice(0, PREVIEW);
+      items.forEach(a => shown.add(a.id));
+      return {
+        items: items.map(a => (alreadyDecorated ? a : decorate(a))),
+        hasMore: rows.length > PREVIEW,
+      };
+    };
+
     const result = {
       collegeName: user?.college?.name || null,
       collegeId,
-      college: { items: collegeRows.slice(0, 2).map(decorate), hasMore: collegeRows.length > 2 },
-      oneOnOne: { items: oneOnOneRows.slice(0, 2).map(decorate), hasMore: oneOnOneRows.length > 2 },
+      // `hasMore` comes from the ranking itself, not the hydrated slice: a row
+      // can drop out during hydration (started, cancelled, restricted) while the
+      // ranked list still holds plenty more.
+      forYou: { ...section(forYouRows, true), hasMore: rankedIds.length > PREVIEW },
+      college: section(collegeRows),
+      oneOnOne: section(oneOnOneRows),
     };
 
     if (this.redis) {
@@ -489,44 +835,176 @@ export class ActivitiesService implements OnModuleInit {
     return result;
   }
 
+  /**
+   * Activity details for the direct link / detail page.
+   *
+   * The row is loaded, judged by the central policy and only then serialized —
+   * an unauthorized caller receives a 403 carrying a code and generic copy, and
+   * never the title, description, location, host or attendee list.
+   */
+  /** Attendees embedded in the detail payload; the rest load incrementally. */
+  private static readonly DETAIL_MEMBER_PAGE = 30;
+
   async getActivityById(id: string, userId?: string) {
     const cleanId = id ? id.replace(/^(act_)+/, '') : id;
-    const [activity, user, excludedUserIds] = await Promise.all([
+    const [activity, user, excludedUserIds, myMembership] = await Promise.all([
       this.prisma.crewActivity.findUnique({
         where: { id: cleanId },
         include: {
+          // Bounded: an activity can hold hundreds of attendees, and shipping
+          // every row (with a joined user each) made the detail payload grow
+          // without limit. The first page renders the avatar stack immediately;
+          // `memberCount` below stays authoritative for the count, and the full
+          // list is paged in from the attendees endpoint.
           members: {
+            take: ActivitiesService.DETAIL_MEMBER_PAGE,
+            orderBy: { joinedAt: 'asc' },
             include: { user: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } } }
           },
-          invitations: { select: { inviteeId: true, status: true } },
+          _count: { select: { members: true } },
+          // Only the caller's own invitation row is loaded: the full invitee list
+          // is host-only information (see getInvitationStatuses).
+          invitations: userId
+            ? { where: { inviteeId: userId }, select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true } }
+            : { where: { inviteeId: '' }, select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true } },
           creator: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
         },
       }),
       userId ? this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }) : Promise.resolve(null),
       userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([]),
+      // The caller's own membership, resolved by primary key in the same
+      // parallel round-trip. It must NOT be read off the `members` slice above:
+      // that slice is capped, so a member beyond the cap would otherwise fail
+      // the policy's membership test and be denied their own activity.
+      userId
+        ? this.prisma.crewActivityMember.findUnique({
+            where: { userId_activityId: { userId, activityId: cleanId } },
+            select: { userId: true, status: true },
+          })
+        : Promise.resolve(null),
     ]);
 
-    if (!activity || (excludedUserIds.length > 0 && excludedUserIds.includes(activity.creatorId))) {
+    if (!activity || activity.deletedAt || (excludedUserIds.length > 0 && excludedUserIds.includes(activity.creatorId))) {
       throw new NotFoundException('Activity not found');
     }
 
-    const viewDecision = this.activityAuthorizationService.canView(user, activity as any);
-    if (!viewDecision.allowed) {
-      throw new ForbiddenException(viewDecision.reason || 'Not authorized to view activity');
-    }
+    // Authorization target carries the caller's own membership row explicitly,
+    // independent of how many attendees the payload happens to embed.
+    const authTarget = {
+      ...(activity as any),
+      members: myMembership ? [myMembership] : [],
+    };
+
+    // Authorization boundary — throws 403 with a detail-free body.
+    this.activityAuthorizationService.assertCanView(user, authTarget);
 
     const joinDecision = user
-      ? this.activityAuthorizationService.canJoin(user, activity as any)
-      : { allowed: false, reason: 'Login required', code: 'NOT_FOUND' as const };
-
-    const myMembership = userId ? activity.members.find(m => m.userId === userId) : null;
+      ? this.activityAuthorizationService.canJoin(user, {
+          ...authTarget,
+          _count: { members: (activity as any)._count?.members ?? 0 },
+        })
+      : { allowed: false, reason: 'Login required', code: 'AUTH_REQUIRED' as const };
+    const { invitations, _count, ...activityFields } = activity as any;
     return {
-      ...activity,
+      ...activityFields,
+      // Authoritative attendee total — `members` is only the first page.
+      memberCount: _count?.members ?? activity.members.length,
+      hasMoreMembers: activity.members.length >= ActivitiesService.DETAIL_MEMBER_PAGE,
       isJoined: myMembership?.status === 'MEMBER',
       myStatus: myMembership?.status || null,
+      isInvited: this.activityAuthorizationService.hasValidInvitation(user, activity as any),
       canJoin: joinDecision.allowed,
       joinRestrictionReason: joinDecision.reason || null,
       joinRestrictionCode: joinDecision.code || 'ALLOWED',
+    };
+  }
+
+  /**
+   * Cursor-paginated attendees.
+   *
+   * The detail payload embeds only the first page (see DETAIL_MEMBER_PAGE); this
+   * serves the rest, so an activity with hundreds of attendees costs the same to
+   * open as one with three. Access is resolved through the same policy as the
+   * detail endpoint — an attendee list is restricted data.
+   */
+  async getAttendees(activityId: string, userId: string, limit = 30, cursor?: string) {
+    const take = Math.min(Math.max(limit, 1), 60);
+    const cleanId = activityId ? activityId.replace(/^(act_)+/, '') : activityId;
+
+    const [activity, user, myMembership] = await Promise.all([
+      this.prisma.crewActivity.findUnique({
+        where: { id: cleanId },
+        select: {
+          id: true,
+          creatorId: true,
+          collegeId: true,
+          visibility: true,
+          status: true,
+          deletedAt: true,
+          invitations: {
+            where: { inviteeId: userId },
+            select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
+          },
+        },
+      }),
+      this.getViewer(userId),
+      this.prisma.crewActivityMember.findUnique({
+        where: { userId_activityId: { userId, activityId: cleanId } },
+        select: { userId: true, status: true },
+      }),
+    ]);
+
+    if (!activity || activity.deletedAt) throw new NotFoundException('Activity not found');
+    this.activityAuthorizationService.assertCanView(user, {
+      ...(activity as any),
+      members: myMembership ? [myMembership] : [],
+    });
+
+    // Cursor is `joinedAt|userId` — joinedAt alone is not unique.
+    let cursorFilter: any = {};
+    if (cursor) {
+      const [joinedAtRaw, cursorUserId] = cursor.split('|');
+      const joinedAt = new Date(joinedAtRaw);
+      if (!isNaN(joinedAt.getTime()) && cursorUserId) {
+        cursorFilter = {
+          OR: [
+            { joinedAt: { gt: joinedAt } },
+            { joinedAt, userId: { gt: cursorUserId } },
+          ],
+        };
+      }
+    }
+
+    const rows = await this.prisma.crewActivityMember.findMany({
+      where: { activityId: cleanId, status: 'MEMBER', ...cursorFilter },
+      orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }],
+      take: take + 1,
+      select: {
+        userId: true,
+        status: true,
+        joinedAt: true,
+        user: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            isCampusRep: true,
+            collegeId: true,
+            college: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    const last = page[page.length - 1];
+
+    return {
+      attendees: page,
+      nextCursor: hasMore && last ? `${last.joinedAt.toISOString()}|${last.userId}` : null,
+      hasMore,
     };
   }
 
@@ -572,11 +1050,22 @@ export class ActivitiesService implements OnModuleInit {
       visibility = data.visibility;
     } else if (data.whoCanJoin === 'College' || data.shareToCampus) {
       visibility = 'COLLEGE_ONLY';
-    } else if (data.whoCanJoin === 'No one') {
+    } else if (data.whoCanJoin === 'Private' || data.whoCanJoin === 'No one') {
+      // 'No one' is the retired label for the same mode; still accepted so an
+      // older client build cannot silently create a PUBLIC activity instead.
       visibility = 'PRIVATE';
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: creatorId }, select: { collegeId: true } });
+
+    // A COLLEGE_ONLY activity whose host has no college can never satisfy its own
+    // restriction — it would be silently unreachable for everyone but the host.
+    // Reject it rather than publish something invisible.
+    if (visibility === 'COLLEGE_ONLY' && !user?.collegeId) {
+      throw new BadRequestException(
+        'Add your college to your profile before creating a college-only activity',
+      );
+    }
 
     const createData: any = {
       creatorId,
@@ -597,7 +1086,10 @@ export class ActivitiesService implements OnModuleInit {
       location: data.location,
       maxMembers: data.maxMembers ? parseInt(data.maxMembers, 10) : null,
       visibility,
-      shareToCampus: visibility === 'COLLEGE_ONLY' || Boolean(data.shareToCampus),
+      // `shareToCampus` is a presentation flag derived from visibility, never an
+      // independent restriction: a PUBLIC ("Anyone") activity must stay
+      // college-agnostic even if a client sends shareToCampus: true.
+      shareToCampus: visibility === 'COLLEGE_ONLY',
       collegeId: user?.collegeId || null,
       members: {
         create: [{ userId: creatorId, status: 'MEMBER' }],
@@ -643,6 +1135,95 @@ export class ActivitiesService implements OnModuleInit {
     return createdActivity;
   }
 
+  /**
+   * Host-only visibility change. Authorization is re-derived from the stored
+   * visibility on every subsequent request, so the switch takes effect
+   * immediately: this method only has to make sure nothing STALE survives it —
+   * cached feed pages, cached detail ETags and live realtime subscriptions are
+   * all invalidated before it returns.
+   *
+   *   Anyone  → College : other-college viewers lose access unless invited.
+   *   College → Private : discovery stops; invitation becomes the only way in.
+   *   Private → Anyone  : becomes organically discoverable again.
+   */
+  async updateActivityVisibility(
+    activityId: string,
+    hostId: string,
+    visibility: string,
+  ) {
+    const allowed = ['PUBLIC', 'COLLEGE_ONLY', 'PRIVATE'] as const;
+    if (!allowed.includes(visibility as any)) {
+      throw new BadRequestException('visibility must be one of PUBLIC, COLLEGE_ONLY, PRIVATE');
+    }
+    const next = visibility as 'PUBLIC' | 'COLLEGE_ONLY' | 'PRIVATE';
+
+    const [activity, host] = await Promise.all([
+      this.prisma.crewActivity.findUnique({
+        where: { id: activityId },
+        select: { id: true, creatorId: true, deletedAt: true, visibility: true, collegeId: true },
+      }),
+      this.prisma.user.findUnique({ where: { id: hostId }, select: { id: true, collegeId: true } }),
+    ]);
+
+    if (!activity || activity.deletedAt) {
+      throw new NotFoundException('Activity not found');
+    }
+    // 404 rather than 403: a non-host must not learn the id exists.
+    this.activityAuthorizationService.assertCanManage({ id: hostId }, activity as any);
+
+    if (next === 'COLLEGE_ONLY' && !activity.collegeId && !host?.collegeId) {
+      throw new BadRequestException(
+        'Add your college to your profile before restricting this activity to your college',
+      );
+    }
+
+    const updated = await this.prisma.crewActivity.update({
+      where: { id: activityId },
+      data: {
+        visibility: next,
+        shareToCampus: next === 'COLLEGE_ONLY',
+        // A college-restricted activity must always carry the host's college,
+        // otherwise the restriction could never be satisfied by anyone.
+        ...(next === 'COLLEGE_ONLY' && !activity.collegeId
+          ? { collegeId: host?.collegeId ?? null }
+          : {}),
+      },
+      select: { id: true, visibility: true, shareToCampus: true, collegeId: true },
+    });
+
+    // Purge every cached surface BEFORE returning so the client's post-mutation
+    // refetch cannot observe the pre-change authorization.
+    await this.clearActivityFeedCaches();
+    await this.purgeActivityEtags(activityId);
+
+    // Evicts newly-unauthorized sockets from the activity's realtime room.
+    await this.domainEventService.emit('activity.visibilityChanged', {
+      activityId,
+      id: activityId,
+      visibility: updated.visibility,
+    });
+
+    return { success: true, ...updated };
+  }
+
+  /**
+   * Drops any per-user ETag entries for an activity's endpoints so a viewer who
+   * has just lost access cannot be answered with a 304 for the body they were
+   * served while still authorized.
+   */
+  private async purgeActivityEtags(activityId: string) {
+    if (!this.redis) return;
+    try {
+      const pattern = `etag:*/api/activities/${activityId}*`;
+      let cursor = '0';
+      do {
+        const [next, keys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 200);
+        cursor = next;
+        if (keys.length > 0) await this.redis.del(...keys);
+      } while (cursor !== '0');
+    } catch {}
+  }
+
   async joinActivity(activityId: string, userId: string): Promise<any> {
     // ── Single targeted read: only the fields we need from the activity + one membership row ──
     // No more `include: { members: true }` (which fetched ALL member rows).
@@ -660,7 +1241,10 @@ export class ActivitiesService implements OnModuleInit {
           hostCollege: true,
           collegeId: true,
           visibility: true,
-          invitations: { where: { inviteeId: userId }, select: { inviteeId: true, status: true } },
+          invitations: {
+            where: { inviteeId: userId },
+            select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
+          },
           _count: { select: { members: true } },
         },
       }),
@@ -804,12 +1388,35 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   async requestToJoinActivity(activityId: string, userId: string): Promise<any> {
-    const activity = await this.prisma.crewActivity.findUnique({
-      where: { id: activityId },
-      include: { members: true }
-    });
-    if (!activity) throw new NotFoundException('Activity not found');
+    const [activity, user] = await Promise.all([
+      this.prisma.crewActivity.findUnique({
+        where: { id: activityId },
+        include: {
+          members: { where: { userId }, select: { userId: true, status: true } },
+          invitations: {
+            where: { inviteeId: userId },
+            select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
+          },
+          _count: { select: { members: true } },
+        },
+      }),
+      this.getViewer(userId),
+    ]);
+    if (!activity || activity.deletedAt) throw new NotFoundException('Activity not found');
     if (activity.status !== 'OPEN') throw new BadRequestException('Activity not open');
+
+    // A request to join is an access-granting action, so it runs the same
+    // authorization as a direct join — otherwise an unauthorized user could
+    // queue themselves up for host approval on a restricted activity.
+    const requestDecision = this.activityAuthorizationService.canJoin(user, activity as any);
+    if (!requestDecision.allowed) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        code: requestDecision.code,
+        message: requestDecision.reason || 'You are not authorized to join this activity',
+      });
+    }
 
     const startRaw = activity.startDate || (activity as any).date;
     if (startRaw && new Date(startRaw) <= new Date()) {
@@ -834,9 +1441,34 @@ export class ActivitiesService implements OnModuleInit {
 
   async acceptJoinRequest(activityId: string, currentUserId: string, requesterId: string) {
     const activity = await this.prisma.crewActivity.findUnique({
-      where: { id: activityId, creatorId: currentUserId }
+      where: { id: activityId, creatorId: currentUserId },
+      include: {
+        members: { where: { userId: requesterId }, select: { userId: true, status: true } },
+        invitations: {
+          where: { inviteeId: requesterId },
+          select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
+        },
+        _count: { select: { members: true } },
+      },
     });
     if (!activity) throw new NotFoundException('Activity not found or you are not creator');
+
+    // The requester must still satisfy the policy at approval time: a pending
+    // request made while the activity was PUBLIC must not survive a switch to
+    // COLLEGE_ONLY / PRIVATE. Approval is the host's call, but never a bypass.
+    const requester = await this.getViewer(requesterId);
+    const decision = this.activityAuthorizationService.canJoin(requester, {
+      ...(activity as any),
+      members: [],
+    });
+    if (!decision.allowed) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        code: decision.code,
+        message: 'This user is no longer eligible to join this activity',
+      });
+    }
 
     await this.prisma.crewActivityMember.update({
       where: { userId_activityId: { userId: requesterId, activityId } },
@@ -915,10 +1547,23 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   async bookmarkActivity(activityId: string, userId: string) {
-    const activity = await this.prisma.crewActivity.findUnique({
-      where: { id: activityId, deletedAt: null }
-    });
+    const [activity, user] = await Promise.all([
+      this.prisma.crewActivity.findUnique({
+        where: { id: activityId, deletedAt: null },
+        include: {
+          members: { where: { userId }, select: { userId: true, status: true } },
+          invitations: {
+            where: { inviteeId: userId },
+            select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
+          },
+        },
+      }),
+      this.getViewer(userId),
+    ]);
     if (!activity) throw new NotFoundException('Activity not found');
+    // Saving is a read-granting action: bookmarks are re-served later by
+    // getSavedActivities, so it must not become a back door.
+    this.activityAuthorizationService.assertCanView(user, activity as any);
 
     await this.prisma.activityBookmark.upsert({
       where: { userId_activityId: { userId, activityId } },
@@ -950,25 +1595,31 @@ export class ActivitiesService implements OnModuleInit {
     return bookmarks.map(b => b.activityId);
   }
 
+  /**
+   * The user's own activities — hosted or joined — for the Ongoing / Upcoming /
+   * Past split.
+   *
+   * One query, not two: this used to fetch every membership row, marshal the
+   * ids into the client, and send them back as an `IN (...)` list that grew with
+   * the user's history. The membership test is now a relation filter resolved in
+   * SQL, and the embedded member preview is capped and restricted to actual
+   * members (it previously included PENDING and DECLINED rows in the avatars).
+   */
   async getMyActivities(userId: string) {
-    const memberships = await this.prisma.crewActivityMember.findMany({
-      where: { userId, status: 'MEMBER' },
-      select: { activityId: true }
-    });
-    const memberActivityIds = memberships.map(m => m.activityId);
-
     const activities = await this.prisma.crewActivity.findMany({
       where: {
         deletedAt: null,
         OR: [
           { creatorId: userId },
-          { id: { in: memberActivityIds } }
-        ]
+          { members: { some: { userId, status: 'MEMBER' } } },
+        ],
       },
       include: {
         _count: { select: { members: true } },
         members: {
+          where: { status: 'MEMBER' },
           take: 5,
+          orderBy: { joinedAt: 'asc' },
           include: {
             user: {
               select: {
@@ -991,8 +1642,16 @@ export class ActivitiesService implements OnModuleInit {
     }));
   }
 
+  /**
+   * Bookmarked activities. A bookmark is a stale pointer: the activity may have
+   * been switched to COLLEGE_ONLY or PRIVATE after it was saved, so the list is
+   * re-filtered through the access policy at the query layer rather than trusted.
+   */
   async getSavedActivities(userId: string, limit = 20, cursor?: string) {
-    const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
+    const [excludedUserIds, viewer] = await Promise.all([
+      this.blocksService.getExcludedUserIds(userId),
+      this.getViewer(userId),
+    ]);
 
     let cursorDate: Date | undefined;
     if (cursor) {
@@ -1008,8 +1667,10 @@ export class ActivitiesService implements OnModuleInit {
         userId,
         ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
         activity: {
-          deletedAt: null,
-          creatorId: { notIn: excludedUserIds }
+          AND: [
+            { deletedAt: null, creatorId: { notIn: excludedUserIds } },
+            this.activityAuthorizationService.accessWhere(viewer),
+          ],
         }
       },
       take: limit + 1,
@@ -1102,6 +1763,8 @@ export class ActivitiesService implements OnModuleInit {
         creatorId: true,
         status: true,
         deletedAt: true,
+        visibility: true,
+        collegeId: true,
         title: true,
         location: true,
         coverImage: true,
@@ -1116,9 +1779,7 @@ export class ActivitiesService implements OnModuleInit {
       throw new NotFoundException('Activity not found');
     }
 
-    if (activity.creatorId !== inviterId) {
-      throw new BadRequestException('Only the activity creator can invite friends');
-    }
+    this.activityAuthorizationService.assertCanManage({ id: inviterId }, activity as any);
 
     if (activity.status !== 'OPEN') {
       throw new BadRequestException('Activity is not open for invitations');
@@ -1236,7 +1897,9 @@ export class ActivitiesService implements OnModuleInit {
   async getPendingInvitations(userId: string) {
     const invitations = await this.prisma.activityInvitation.findMany({
       where: {
-        inviteeId: userId,
+        // Same validity rules the access policy applies, so the list can never
+        // advertise an invitation that would be rejected on accept.
+        ...this.activityAuthorizationService.validInvitationWhere(userId),
         status: 'PENDING',
         activity: {
           deletedAt: null,
@@ -1301,10 +1964,18 @@ export class ActivitiesService implements OnModuleInit {
       include: { activity: true },
     });
 
-    if (!invitation || invitation.inviteeId !== userId || invitation.status !== 'PENDING') {
+    // Bound to the AUTHENTICATED user — the invitation id alone grants nothing.
+    if (
+      !invitation ||
+      invitation.inviteeId !== userId ||
+      invitation.status !== 'PENDING' ||
+      !this.activityAuthorizationService.isValidInvitation(invitation, userId)
+    ) {
       throw new NotFoundException('Invitation not found or no longer pending');
     }
 
+    // joinActivity re-runs the full policy independently; accepting an
+    // invitation is never a bypass of capacity/status/visibility rules.
     await this.joinActivity(invitation.activityId, userId);
 
     await this.prisma.activityInvitation.update({
@@ -1362,11 +2033,56 @@ export class ActivitiesService implements OnModuleInit {
     return { success: true };
   }
 
+  /**
+   * Host revokes an outstanding invitation. Revocation is immediate and total:
+   * `revokedAt` makes the row fail {@link ActivityAuthorizationService.isValidInvitation},
+   * so the invitee loses view/join/discovery access on the very next request and
+   * is evicted from the activity's realtime room.
+   *
+   * Revoking does NOT remove an already-joined member — use the member flow for
+   * that; it only withdraws the standing permission.
+   */
+  async revokeInvitation(activityId: string, hostId: string, inviteeId: string) {
+    const activity = await this.prisma.crewActivity.findUnique({
+      where: { id: activityId },
+      select: { id: true, creatorId: true, deletedAt: true, visibility: true, collegeId: true },
+    });
+    if (!activity || activity.deletedAt) {
+      throw new NotFoundException('Activity not found');
+    }
+    this.activityAuthorizationService.assertCanManage({ id: hostId }, activity as any);
+
+    const result = await this.prisma.activityInvitation.updateMany({
+      where: { activityId, inviteeId, revokedAt: null },
+      data: { revokedAt: new Date(), status: 'CANCELLED' },
+    });
+
+    if (result.count > 0) {
+      await this.clearActivityFeedCaches();
+      await this.purgeActivityEtags(activityId);
+      await this.domainEventService.emit('activity.visibilityChanged', {
+        activityId,
+        id: activityId,
+        reason: 'INVITATION_REVOKED',
+      });
+    }
+
+    return { success: true, revoked: result.count };
+  }
+
+  /**
+   * Who has been invited / is on cooldown. The full invitee list is host-only
+   * information — a participant or a stranger must not be able to enumerate it.
+   */
   async getInvitationStatuses(activityId: string, hostId: string) {
     const activity = await this.prisma.crewActivity.findUnique({
       where: { id: activityId },
       select: {
         id: true,
+        creatorId: true,
+        visibility: true,
+        status: true,
+        collegeId: true,
         members: { select: { userId: true } },
         invitations: { select: { inviteeId: true, status: true, respondedAt: true } },
       },
@@ -1375,6 +2091,8 @@ export class ActivitiesService implements OnModuleInit {
     if (!activity) {
       throw new NotFoundException('Activity not found');
     }
+
+    this.activityAuthorizationService.assertCanManage({ id: hostId }, activity as any);
 
     const memberSet = new Set(activity.members.map(m => m.userId));
     const fourHoursMs = 4 * 60 * 60 * 1000;

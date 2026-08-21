@@ -18,6 +18,41 @@ export const CREW_KEYS = {
   bookmarks: ['activities', 'bookmarks'],
 };
 
+/**
+ * Looks up an activity across every cached Crew list — the paginated feeds
+ * (whose data is `{ pages: [{ activities }] }`) and the composed discover
+ * payload (whose sections are `{ items }`). Purely a cache read: no network,
+ * no access decision, and the result is only ever used as a render placeholder.
+ */
+function findActivityInListCaches(queryClient, ...ids) {
+  const wanted = new Set(ids.filter(Boolean).map(String));
+  if (wanted.size === 0) return undefined;
+
+  const entries = queryClient.getQueriesData({ queryKey: CREW_KEYS.all });
+  for (const [, data] of entries) {
+    if (!data) continue;
+
+    const candidates = [];
+    if (Array.isArray(data?.pages)) {
+      for (const page of data.pages) {
+        if (Array.isArray(page?.activities)) candidates.push(...page.activities);
+        else if (Array.isArray(page)) candidates.push(...page);
+      }
+    } else if (Array.isArray(data)) {
+      candidates.push(...data);
+    } else if (data && typeof data === 'object') {
+      // Discover payload: { forYou: { items }, college: { items }, ... }
+      for (const section of Object.values(data)) {
+        if (Array.isArray(section?.items)) candidates.push(...section.items);
+      }
+    }
+
+    const hit = candidates.find((a) => a && wanted.has(String(a.id)));
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
 // ── Hooks ────────────────────────────────────────────────────────────────────
 
 /**
@@ -28,9 +63,9 @@ export function useActivities(scope = 'public', { enabled = true } = {}) {
   const queryClient = useQueryClient();
   const { isLoggedIn } = useAuth();
 
-  // Each scope ('public' | 'college' | 'one_on_one') gets its own cache entry so
-  // the College tab, 1-on-1 tab and Recent feed never clobber one another. The
-  // For You preview and the corresponding full-list tab share the same key, so
+  // Each scope ('public' | 'for_you' | 'college' | 'one_on_one') gets its own
+  // cache entry so the All, College and 1-on-1 lists never clobber one another.
+  // A section's preview and the full list behind its "See all" share a key, so
   // no duplicate fetching happens.
   const queryKey = scope === 'public' ? CREW_KEYS.all : [...CREW_KEYS.all, scope];
   const isPublic = scope === 'public';
@@ -90,8 +125,9 @@ export function useActivities(scope = 'public', { enabled = true } = {}) {
 }
 
 /**
- * Composed "For You" discovery payload: college + 1-on-1 previews in one request.
- * Recent is served by useActivities('public'), not this hook.
+ * Composed payload for the Crew "All" tab: the For You, college and 1-on-1
+ * previews in one request, each capped and de-duplicated server-side. The full
+ * lists behind each "See all" are served by useActivities(scope).
  */
 export function useCrewDiscover() {
   const { isLoggedIn } = useAuth();
@@ -107,6 +143,7 @@ export function useCrewDiscover() {
   return {
     collegeName: query.data?.collegeName || null,
     collegeId: query.data?.collegeId || null,
+    forYou: query.data?.forYou || empty,
     college: query.data?.college || empty,
     oneOnOne: query.data?.oneOnOne || empty,
     isLoading: query.isLoading,
@@ -186,24 +223,123 @@ export function useActivityById(id) {
   const queryClient = useQueryClient();
   const cleanId = id ? String(id).replace(/^(act_)+/, '') : id;
 
-  return useQuery({
+  const query = useQuery({
     queryKey: CREW_KEYS.byId(cleanId),
     queryFn: () => activitiesApi.getById(cleanId),
     enabled: !!cleanId,
-    // Always re-validate on mount so isJoined is always authoritative from the server.
-    // The optimistic update already has the cache showing the right state instantly;
-    // this background re-fetch just confirms it without any visible spinner.
-    staleTime: 0,
-    refetchOnMount: 'always',
-    // Try to seed from the list cache to avoid a spinner on first load.
-    // Note: list-cache entries may have isJoined missing (anonymous base cache),
-    // so we only use them as shape placeholders — the real query always fires.
-    placeholderData: () => {
-      const listCache = queryClient.getQueryData(CREW_KEYS.all);
-      const all = listCache?.pages?.flatMap((p) => (Array.isArray(p?.activities) ? p.activities : (Array.isArray(p) ? p : []))) ?? [];
-      return all.find((a) => a && (a.id === cleanId || a.id === id));
+    // Short freshness window rather than `staleTime: 0` + `refetchOnMount:
+    // 'always'`. The card prefetches this exact entry on hover, and a
+    // hover-to-click gap is well under a second, so re-firing on mount just
+    // duplicated a request that had already landed. Anything that can actually
+    // change membership — join/leave mutations and the activity's realtime
+    // events — invalidates this key explicitly, so the window costs no
+    // correctness.
+    staleTime: 15_000,
+    refetchOnMount: true,
+    // 403/404 are final answers from the authorization boundary — retrying them
+    // just repeats a denial. Everything else keeps the default retry behaviour.
+    retry: (failureCount, error) => {
+      const status = error?.status;
+      if (status === 403 || status === 404) return false;
+      return failureCount < 2;
     },
+    // Seed the detail shell from whichever list the user actually came from, so
+    // the page paints instantly instead of showing a spinner.
+    //
+    // This used to read only the public feed's cache entry. Every Crew section
+    // now has its own cache key (for_you / college / one_on_one / discover), so
+    // a card opened from any of them found nothing and fell back to a spinner.
+    // Scanning every ['activities', ...] entry restores the fast path from all
+    // of them. List entries are shape placeholders only — the query still
+    // resolves the authoritative payload.
+    placeholderData: () => findActivityInListCaches(queryClient, cleanId, id),
   });
+
+  // The server is the only authority on access. Once it denies the request, any
+  // locally cached copy of this activity — list card, placeholder, IndexedDB
+  // rehydration — is dropped so nothing can keep rendering behind the
+  // access-denied state.
+  const denied = query.error?.status === 403 || query.error?.status === 404;
+  useEffect(() => {
+    if (!denied || !cleanId) return;
+    queryClient.setQueryData(CREW_KEYS.byId(cleanId), undefined);
+    // Drop the persisted feed page too: it may still hold a card for an
+    // activity whose visibility has since been narrowed.
+    idbDelete('activities', 'all_page1');
+  }, [denied, cleanId, queryClient]);
+
+  return {
+    ...query,
+    // `data` is force-cleared on denial: placeholderData would otherwise keep
+    // serving the list-cache copy of a now-restricted activity.
+    data: denied ? undefined : query.data,
+    isAccessDenied: query.error?.status === 403,
+    accessDeniedCode: query.error?.status === 403 ? query.error?.code || 'FORBIDDEN' : null,
+    accessDeniedMessage: query.error?.status === 403 ? query.error?.message : null,
+  };
+}
+
+/**
+ * Reads an activity out of the client cache without ever fetching it.
+ *
+ * For places that already receive an activity payload and only want to enrich it
+ * — a shared-activity card in a chat, for instance — where firing a request per
+ * rendered item would be far worse than showing slightly thinner data.
+ *
+ * Subscribes to the detail cache (so it fills in live once the activity is
+ * opened or prefetched) and falls back to a one-shot read of the list caches.
+ */
+export function useCachedActivity(id) {
+  const queryClient = useQueryClient();
+  const cleanId = id ? String(id).replace(/^(act_)+/, '') : id;
+
+  // `enabled: false` means this never issues a request; it exists purely to
+  // subscribe this component to that one cache entry.
+  const { data: cachedDetail } = useQuery({
+    queryKey: CREW_KEYS.byId(cleanId),
+    queryFn: () => activitiesApi.getById(cleanId),
+    enabled: false,
+    staleTime: Infinity,
+  });
+
+  return useMemo(() => {
+    if (!cleanId) return null;
+    return cachedDetail || findActivityInListCaches(queryClient, cleanId, id) || null;
+  }, [cleanId, id, cachedDetail, queryClient]);
+}
+
+/**
+ * Attendees beyond the first page embedded in the detail payload.
+ *
+ * Disabled until the user actually asks for the full list, so opening an
+ * activity never pays for attendees it will not show. Cursor-paginated, so
+ * pages append cleanly and cannot duplicate or skip rows.
+ */
+export function useActivityAttendees(activityId, { enabled = false } = {}) {
+  const cleanId = activityId ? String(activityId).replace(/^(act_)+/, '') : activityId;
+
+  const query = useInfiniteQuery({
+    queryKey: ['activity', cleanId, 'attendees'],
+    queryFn: ({ pageParam }) => activitiesApi.getAttendees(cleanId, { cursor: pageParam }),
+    enabled: Boolean(cleanId) && enabled,
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
+    staleTime: 30_000,
+  });
+
+  const attendees = useMemo(
+    () => query.data?.pages?.flatMap((p) => p?.attendees ?? []).map((m) => m.user).filter(Boolean) ?? [],
+    [query.data],
+  );
+
+  return {
+    attendees,
+    isLoading: query.isLoading,
+    isFetchingNextPage: query.isFetchingNextPage,
+    hasNextPage: Boolean(query.hasNextPage),
+    fetchNextPage: query.fetchNextPage,
+    isError: query.isError,
+  };
 }
 
 // ── Mutations ────────────────────────────────────────────────────────────────
