@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities, useCampusCommunities } from '@shared/hooks/useCommunities';
-import { useData } from '@shared/hooks/useData';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { Sun, Moon } from 'lucide-react';
 
@@ -93,7 +92,8 @@ export default function Header({ variant = 'dashboard', wide = false }) {
     navigate('/');
   };
 
-  const { communities: allCommunitiesData } = useData();
+  // same value as communitiesDataMap above -- one useCommunities() call is enough
+  const allCommunitiesData = communitiesDataMap;
   const { campusCommunities } = useCampusCommunities();
 
   const username = currentUser?.username || '';
