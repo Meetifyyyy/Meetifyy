@@ -5,7 +5,8 @@
     "buildCommand": "npm --prefix backend install && npm --prefix backend run build"
   },
   "deploy": {
-    "startCommand": "cd backend && npx prisma db push && npm run start:prod",
+    "preDeployCommand": "cd backend && npx prisma migrate deploy",
+    "startCommand": "cd backend && npm run start:prod",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }

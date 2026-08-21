@@ -8,7 +8,7 @@
   "description": "Meetifyy Monorepo Root - Start backend, main frontend, and admin frontend in one command",
   "scripts": {
     "build": "npm --prefix backend install && npm --prefix backend run build",
-    "start": "cd backend && npx prisma db push && npm run start:prod",
+    "start": "cd backend && npx prisma migrate deploy && npm run start:prod",
     "dev": "./start.sh",
     "mailpit": "./local/bin/mailpit --smtp 127.0.0.1:1025 --listen 0.0.0.0:8025",
     "dev:services": "npx concurrently -k -p \"[{name}]\" -n \"MAILPIT,BACKEND,FRONTEND,ADMIN\" -c \"green.bold,blue.bold,magenta.bold,yellow.bold\" \"npm run mailpit\" \"npm --prefix backend run start:dev\" \"npm --prefix frontend run dev\" \"npm --prefix admin-frontend run dev\"",

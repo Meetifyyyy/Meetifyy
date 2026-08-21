@@ -1,1 +1,2 @@
-web: cd backend && npx prisma db push && npm run start:prod
+release: cd backend && npx prisma migrate deploy
+web: cd backend && npm run start:prod
