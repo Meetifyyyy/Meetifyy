@@ -8,7 +8,9 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import s from './ProfileRightSidebar.module.css';
 import { usersApi, activitiesApi } from '@shared/api/apiClient';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { useCrewActivities } from '@shared/hooks/useCrew';
+import { useCommunities } from '@shared/hooks/useCommunities';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
@@ -103,7 +105,9 @@ function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
 export default function ProfileRightSidebar({ embedded = false }) {
   const { currentUser } = useAuth();
   
-  const { users, crewActivities, communities } = useData();
+  const users = useUsersMap();
+  const crewActivities = useCrewActivities();
+  const { communities } = useCommunities();
   
   const { mutate: toggleJoin } = useJoinCommunity();
   
