@@ -15,6 +15,7 @@ import { useCrewActivities } from './useCrew';
 import { useConversations } from './useMessages';
 import { useCampusUsers } from './useProfile';
 import { useUsersMap } from './useUsersMap';
+import { usePostLookup } from './usePostLookup';
 
 /**
  * Compatibility adapter — preserves the existing API surface while delegating
@@ -119,43 +120,9 @@ export function useData() {
   const getUserByUsername = (username) => rawUsers.find(u => u.username === username) || null;
   const getUserById = (id) => users[id] || null;
 
-  // Query-key prefixes that can ever hold post objects — scanning is scoped to
-  // just these instead of the whole app cache (messages, notifications,
-  // communities, users, activities, ...). This is called on every render of
-  // every visible <Post>, so an unscoped scan was O(everything cached in the
-  // whole app) per post per render — a real jank source in a scrolling feed.
-  const POST_CACHE_PREFIXES = ['post', 'feed', 'posts', 'user-posts', 'bookmarks', 'community-posts'];
-  const getPostById = (id) => {
-    if (!id) return null;
-    // Fast path: the post's own dedicated cache entry, if present.
-    const direct = queryClient.getQueryData(['post', id]);
-    if (direct && direct.id === id) return direct;
+  // getPostById now lives in usePostLookup(); useData delegates to it.
+  const getPostById = usePostLookup();
 
-    const cachedQueries = queryClient.getQueriesData({
-      predicate: (query) => POST_CACHE_PREFIXES.includes(query.queryKey[0]),
-    });
-    for (const [, data] of cachedQueries) {
-      if (!data) continue;
-      if (data.id === id) return data;
-      if (Array.isArray(data.posts)) {
-        const found = data.posts.find((p) => p && p.id === id);
-        if (found) return found;
-      }
-      if (Array.isArray(data.pages)) {
-        for (const page of data.pages) {
-          const list = Array.isArray(page?.posts) ? page.posts : (Array.isArray(page?.items) ? page.items : []);
-          const found = list.find((p) => p && p.id === id);
-          if (found) return found;
-        }
-      }
-      if (Array.isArray(data)) {
-        const found = data.find((p) => p && p.id === id);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
-  
   const updateMessagesCache = (convId, updater) => {
     queryClient.setQueryData(['messages', convId], (old) => {
       if (!old) return old;
