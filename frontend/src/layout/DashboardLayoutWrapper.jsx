@@ -23,6 +23,7 @@ export default function DashboardLayoutWrapper() {
     match.pathname.startsWith('/post') ||
     match.pathname.startsWith('/saved') ||
     match.pathname.startsWith('/settings') ||
+    match.pathname.startsWith('/search') ||
     /^\/communities\/.+/.test(match.pathname)
   );
   // The BottomNav stays visible with a conversation open: the messages layout

@@ -791,11 +791,14 @@ nav a.active {
     box-sizing: border-box;
   }
 
-  /* Search goes edge-to-edge and full-height on mobile: Header is already
-     hidden on mobile for any non-home route, and BottomNav is hidden for
-     /search via DashboardLayoutWrapper's hideBottomNav list (it's `position:
-     fixed` + translateY, so it never reserves layout space anyway) — so the
-     page can claim the full viewport instead of the ambient scroll chain. */
+  /* Applies to the search *skeleton* only (SearchSkeleton's PageLayout); the
+     loaded page is `.centre centre--sheet`.
+
+     The previous comment here claimed the BottomNav is hidden for /search via
+     DashboardLayoutWrapper's hideBottomNav list. That is not true: /search has
+     never been in that list and its nav is visible. The nav is `position: fixed`
+     so it reserves no layout space either way, which is why claiming the full
+     viewport still works -- but the stated reason was wrong. */
   .centre--search {
     padding-bottom: 0 !important;
     overflow: hidden !important;
