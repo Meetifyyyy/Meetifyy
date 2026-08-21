@@ -476,7 +476,7 @@ export default function SearchResultsRoute() {
 
   return (
     <>
-      <main ref={containerRef} className="centre animate-in">
+      <main ref={containerRef} className="centre centre--sheet animate-in">
         <div className={styles.searchShell}>
         {/* Sticky Search Header */}
         <div className={styles.header} role="search">

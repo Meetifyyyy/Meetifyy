@@ -771,9 +771,25 @@ nav a.active {
     display: none !important;
   }
 
-  /* No .centre--post override: the post view keeps the base .centre bottom
-     padding so its last comment clears the fixed BottomNav. The override existed
-     only because the nav used to be hidden on this route. */
+  /* Full-bleed "sheet" pages (post view, settings, search) draw their own opaque
+     surface instead of sitting as cards on the body canvas. That surface only
+     grew to content height, so on a short page -- empty search results, a post
+     with one comment -- the canvas showed through underneath as a dark band, and
+     the base .centre bottom padding added a strip of it even on tall pages.
+
+     The sheet now fills the viewport and owns its own bottom clearance, so its
+     background runs behind the BottomNav and there is nothing left to see
+     through. .centre's padding is dropped here because the sheet reserves the
+     space internally -- keeping both would add a viewport's worth of dead
+     scroll. */
+  .centre--sheet {
+    padding-bottom: 0 !important;
+  }
+
+  .centre--sheet > * {
+    min-height: 100dvh;
+    box-sizing: border-box;
+  }
 
   /* Search goes edge-to-edge and full-height on mobile: Header is already
      hidden on mobile for any non-home route, and BottomNav is hidden for

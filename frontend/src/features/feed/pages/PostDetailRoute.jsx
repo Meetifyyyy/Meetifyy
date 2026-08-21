@@ -70,7 +70,7 @@ export default function PostDetailRoute() {
 
   return (
     <>
-      <main className="centre centre--post">
+      <main className="centre centre--post centre--sheet">
         <PostView post={displayPost} onBack={handleBack} />
       </main>
       <RightPanel>

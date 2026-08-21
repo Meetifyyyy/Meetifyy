@@ -197,7 +197,10 @@
 
 @media (max-width: 768px) {
   .postViewContainer {
-    padding-bottom: 0;
+    /* Clears the fixed BottomNav from inside the sheet, so the sheet's own
+       background still runs behind the nav rather than stopping short of it and
+       letting the body canvas show through (see .centre--sheet in global.css). */
+    padding-bottom: 60px;
     margin-bottom: 0;
     min-height: 100dvh;
     border: none;

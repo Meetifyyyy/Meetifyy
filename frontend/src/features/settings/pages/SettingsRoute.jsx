@@ -1013,7 +1013,7 @@ export default function SettingsRoute() {
   }
 
   return (
-    <main className="centre centre-wide animate-in">
+    <main className="centre centre-wide centre--sheet animate-in">
       <div className={styles.page}>
         {/* ── Sticky header ── */}
       <header className={styles.topBar}>
