@@ -3,7 +3,7 @@ import { ErrorState } from '@shared/components/ui/StateViews';
 import Avatar from '@shared/components/avatar/Avatar';
 import MessageBubble from './MessageBubble';
 import { timeAgo } from '@shared/utils/time';
-import { useData } from '@shared/hooks/useData';
+import { usePostLookup } from '@shared/hooks/usePostLookup';
 import styles from './ChatMessageList.module.css';
 import { getMsgTimestamp, compareMessages } from '../utils/cacheUtils';
 
@@ -151,7 +151,7 @@ export default function ChatMessageList({
   onCancelUpload,
   onOpenEmojiPicker,
 }) {
-  const { getPostById } = useData();
+  const getPostById = usePostLookup();
   const bodyRef = useRef(null);
 
   // Scroll position tracking
