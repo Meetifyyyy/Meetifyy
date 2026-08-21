@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { useData } from '@shared/hooks/useData';
 import { useAuth } from '@shared/context/AuthContext';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
@@ -88,11 +87,11 @@ const SidebarCommunityItem = ({ comm, navigate }) => {
 
 import { useUnreadCounts } from '@features/messages/hooks/useUnreadCounts';
 
-import { useCampusCommunities } from '@shared/hooks/useCommunities';
+import { useCommunities, useCampusCommunities } from '@shared/hooks/useCommunities';
 
 export default function Sidebar({ onCommunityClick }) {
   const { initial, currentUser } = useAuth();
-  const { communities } = useData();
+  const { communities } = useCommunities();
   const { campusCommunities } = useCampusCommunities();
   const { total: unreadMessagesCount } = useUnreadCounts();
   const { smartNavigate: navigate } = useSmartNavigation();
