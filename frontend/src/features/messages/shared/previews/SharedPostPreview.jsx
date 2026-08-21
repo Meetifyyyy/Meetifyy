@@ -4,12 +4,16 @@ import Avatar from '@shared/components/avatar/Avatar';
 import PostPreviewSkeleton from '@shared/components/skeletons/PostPreviewSkeleton';
 import { Image as ImageIcon, BarChart2, FileX } from 'lucide-react';
 import styles from './SharedPostPreview.module.css';
-import { useData } from '@shared/hooks/useData';
+import { usePostLookup } from '@shared/hooks/usePostLookup';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { getMediaUrl } from '@shared/api/apiClient';
 
 export function SharedPostPreview({ post, isLoading = false }) {
   const navigate = useNavigate();
-  const { getPostById, getUserById } = useData();
+  const getPostById = usePostLookup();
+  // getUserById was defined as exactly `users[id] || null` over this same map.
+  const usersMap = useUsersMap();
+  const getUserById = (id) => usersMap[id] || null;
   const [imgError, setImgError] = useState(false);
 
   if (isLoading) {
