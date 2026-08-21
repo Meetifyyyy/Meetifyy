@@ -11,6 +11,21 @@ import LegacyPathRedirect from './shared/components/LegacyPathRedirect';
 import { setRedirectIntent, consumeRedirectIntent, clearRedirectIntent } from './shared/utils/redirectIntent';
 // DEV PREVIEW — remove before shipping
 import CriticalErrorScreen from './shared/components/ui/CriticalErrorScreen';
+import useDevToolsStore from './shared/stores/devToolsStore';
+// Dev-only, and now off by default: the lab's floating button is fixed above
+// everything at the bottom-right, so leaving it always-on in dev meant it sat
+// on top of real controls (the chat Send button among them). Enable it from
+// Settings -> Developer.
+function NotificationLabMount() {
+  const enabled = useDevToolsStore((s) => s.notificationLabEnabled);
+  if (!import.meta.env.DEV || !NotificationPlayground || !enabled) return null;
+  return (
+    <Suspense fallback={null}>
+      <NotificationPlayground />
+    </Suspense>
+  );
+}
+
 const NotificationPlayground = import.meta.env.DEV
   ? lazy(() => import('./local/NotificationPlayground').catch(() => ({ default: () => null })))
   : null;
@@ -236,11 +251,7 @@ export default function App() {
           <WindowScrollbarToggle />
           <ScrollRestoration />
           <SocketManager />
-          {import.meta.env.DEV && NotificationPlayground && (
-            <Suspense fallback={null}>
-              <NotificationPlayground />
-            </Suspense>
-          )}
+          <NotificationLabMount />
           <Outlet />
         </ErrorBoundary>
       ),

@@ -16,6 +16,7 @@ import {
 import CustomDatePicker from '@shared/components/ui/CustomDatePicker';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import styles from './SettingsRoute.module.css';
+import useDevToolsStore from '@shared/stores/devToolsStore';
 
 // Large-device split layout only kicks in at this width — tablets and phones
 // keep the existing single-pane list/detail swap untouched.
@@ -186,6 +187,8 @@ function CustomSelect({ value, onChange, options, disabled, placeholder, searcha
 }
 
 export default function SettingsRoute() {
+  const notificationLabEnabled = useDevToolsStore((s) => s.notificationLabEnabled);
+  const setNotificationLabEnabled = useDevToolsStore((s) => s.setNotificationLabEnabled);
   const { currentUser, session, updateProfile, updateSettings, updateCurrentUser, changePassword, logout, collegeName } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -619,6 +622,33 @@ export default function SettingsRoute() {
           <span className={styles.rowLabel}>Log Out</span>
         </button>
       </div>
+
+      {/* Developer section — dev builds only. import.meta.env.DEV is statically
+          replaced at build time, so this whole block drops out in production. */}
+      {import.meta.env.DEV && (
+        <>
+          <div className={styles.sectionLabel}>Developer</div>
+          <div className={styles.group}>
+            <div className={styles.toggleRow}>
+              <div className={styles.toggleInfo}>
+                <span className={styles.rowLabel}>Notification Lab</span>
+                <span className={styles.toggleDesc}>
+                  Floating panel for triggering audited notifications. Off by default
+                  because it sits above the rest of the UI.
+                </span>
+              </div>
+              <label className={styles.toggle}>
+                <input
+                  type="checkbox"
+                  checked={notificationLabEnabled}
+                  onChange={(e) => setNotificationLabEnabled(e.target.checked)}
+                />
+                <span className={styles.slider} />
+              </label>
+            </div>
+          </div>
+        </>
+      )}
 
       <p className={styles.version}>Meetify · v1.0.0</p>
     </div>
