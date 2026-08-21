@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { activitiesApi } from '@shared/api/apiClient';
 import { idbGet, idbSet, idbDelete } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
+import { mapActivity } from '@shared/utils/mapActivity';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
 export const CREW_KEYS = {
@@ -395,4 +396,17 @@ export function usePrefetchActivity() {
       staleTime: 2 * 60 * 1000,
     });
   }, [queryClient]);
+}
+
+/**
+ * The mapped activity list `useData` exposed as `crewActivities`.
+ *
+ * Extracted verbatim: the flat list from the infinite-query cache, run through
+ * mapActivity, memoised on the raw list exactly as useData did. Kept here so
+ * the five consumers that read `crewActivities` share one implementation
+ * instead of each re-mapping every activity on every render.
+ */
+export function useCrewActivities() {
+  const rawActivities = useActivitiesList();
+  return useMemo(() => rawActivities.map(mapActivity), [rawActivities]);
 }

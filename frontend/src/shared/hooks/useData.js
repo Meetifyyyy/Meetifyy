@@ -11,8 +11,7 @@ import { showToast } from '../utils/toast';
 // This makes useData a thin compatibility adapter while the real caching logic lives in
 // the feature hooks with proper staleTime, IndexedDB hydration, and invalidation policies.
 import { useCommunities } from './useCommunities';
-import { useActivitiesList } from './useCrew';
-import { mapActivity } from '../utils/mapActivity';
+import { useCrewActivities } from './useCrew';
 import { useConversations } from './useMessages';
 import { useCampusUsers } from './useProfile';
 import { useUsersMap } from './useUsersMap';
@@ -50,7 +49,6 @@ export function useData() {
   // Call useCampusCommunities() directly in the Campus page / feature that needs it.
   const campusCommunities = [];
   // Activities: flat list from infinite query cache
-  const rawActivities = useActivitiesList();
   const { conversations: processedConversations, rawConversations, isLoading: isConversationsLoading, error: conversationsError } = useConversations();
   // Users: small general list (20) for mention lookups; deferred to idle time
   const { data: rawUsers = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll(20, 0), enabled: Boolean(currentUser?.id && isIdleLoaded), staleTime: 5 * 60_000 });
@@ -61,9 +59,8 @@ export function useData() {
     [processedConversations]
   );
 
-  // Memoized so consumers of this globally-mounted hook don't re-map every
-  // activity on every render (this hook re-renders on many unrelated changes).
-  const crewActivities = useMemo(() => rawActivities.map(mapActivity), [rawActivities]);
+  // Builder now lives in useCrewActivities() so there is one implementation.
+  const crewActivities = useCrewActivities();
 
   // Aliases for old properties — rawCommunities from useCommunities already has lookup keys
   const communitiesWithLookup = rawCommunities;
