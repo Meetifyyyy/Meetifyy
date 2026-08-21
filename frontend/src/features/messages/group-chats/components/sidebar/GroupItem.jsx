@@ -2,12 +2,13 @@ import Avatar from '@shared/components/avatar/Avatar';
 import { timeAgo } from '@shared/utils/time';
 import { Pin, VolumeX } from 'lucide-react';
 import { useAuth } from '@shared/context/AuthContext';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
 import styles from '../../../shared/components/sidebar/ConversationList.module.css';
 
 export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu }) {
   const { currentUser } = useAuth();
-  const { users = {} } = useData();
+  // useUsersMap() always returns an object, so the `= {}` default is no longer needed.
+  const users = useUsersMap();
   const isActive = Boolean(activeChatId) && (
     String(conv.id) === String(activeChatId) ||
     (Boolean(conv.publicId) && String(conv.publicId) === String(activeChatId))
