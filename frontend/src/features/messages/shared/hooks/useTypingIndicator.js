@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { useConversations } from '@shared/hooks/useMessages';
 
 export function useTypingIndicator(conversationId, currentUserId) {
   const { socket } = useGlobalSocketStore();
-  const { users = {}, conversations = [] } = useData() || {};
+  const users = useUsersMap();
+  const { conversations = [] } = useConversations();
   const [typingUsers, setTypingUsers] = useState(new Map());
   const isTypingRef = useRef(false);
   const stopTimerRef = useRef(null);
