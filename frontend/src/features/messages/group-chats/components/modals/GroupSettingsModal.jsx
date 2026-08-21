@@ -20,7 +20,16 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
 
   const isOwner = currentUser?.id === conversation.ownerId || currentUser?.id === conversation.hostId;
   const isAdmin = isOwner || (conversation.admins || []).includes(currentUser?.id);
-  const rawParticipants = conversation.members || conversation.participants || [];
+  // Groups carry their hydrated roster on `memberDetails`: GET /group-chats/:id
+  // returns it populated while `members` comes back empty, so reading `members`
+  // first showed "MEMBERS (0)" on a group whose header said 2 members. Prefer the
+  // first array that actually has entries, which keeps the old behaviour wherever
+  // `members` is populated. ChatDetailsPanel already sources groups this way.
+  const rawParticipants = (
+    conversation.memberDetails?.length ? conversation.memberDetails
+      : conversation.members?.length ? conversation.members
+        : conversation.participants
+  ) || [];
   const sortedParticipants = useMemo(() => {
     return sortGroupMembers(rawParticipants, {
       ownerId: conversation.ownerId,
