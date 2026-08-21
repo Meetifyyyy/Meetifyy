@@ -17,6 +17,7 @@ import { useCampusUsers } from './useProfile';
 import { useUsersMap } from './useUsersMap';
 import { usePostLookup } from './usePostLookup';
 import { useMessageActions } from './useMessageActions';
+import { useCommunityActions } from './useCommunityActions';
 
 /**
  * Compatibility adapter — preserves the existing API surface while delegating
@@ -84,10 +85,8 @@ export function useData() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['communities'] }),
   });
 
-  const createCommMutation = useMutation({
-    mutationFn: (data) => communitiesApi.create(data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['communities'] }),
-  });
+  // Community/post writes now live in useCommunityActions().
+  const { createCampusGroup, addCommunity, addPost, updateCommunity } = useCommunityActions();
 
   const createActivityMutation = useMutation({
     mutationFn: (data) => activitiesApi.create(data),
@@ -99,20 +98,6 @@ export function useData() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['activities'] }),
   });
 
-  const createCampusGroup = async (name, desc, avatar) => {
-    const res = await createCommMutation.mutateAsync({ name, description: desc, avatarKey: avatar });
-    return res.id;
-  };
-
-  const addCommunity = async (data) => {
-    const res = await createCommMutation.mutateAsync({
-      name: data.name,
-      description: data.desc,
-      avatarKey: data.avatar,
-      isCampusCommunity: data.isCampusCommunity
-    });
-    return res.id;
-  };
   
   const addCrewActivity = async (data) => {
     return createActivityMutation.mutateAsync(data);
@@ -615,52 +600,6 @@ const updatePollInCache = (oldData, postId, updatedPollOrIndices, currentUserId)
     const res = await messagesApi.startInstantMatchChat(candidate?.id, activity).catch(() => null);
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
     return res?.id || null;
-  };
-
-  const addPost = async (text, poll, communityId, media, mentions) => {
-    try {
-      const mediaKey = media?.url || (typeof media === 'string' ? media : undefined);
-      const newPost = await postsApi.createPost({
-        text,
-        communityId,
-        mediaKey,
-        mentions,
-        poll: poll || undefined,
-      });
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
-      queryClient.invalidateQueries({ queryKey: ['communities'] });
-      if (communityId) {
-        queryClient.invalidateQueries({ queryKey: ['community', communityId] });
-        queryClient.invalidateQueries({ queryKey: ['community-posts', communityId] });
-        queryClient.setQueryData(['community-posts', communityId], (old = []) => {
-          if (!newPost) return old;
-          const list = Array.isArray(old) ? old : (old?.posts || []);
-          if (list.some(p => p.id === newPost.id)) return old;
-          return [newPost, ...list];
-        });
-      }
-      return newPost;
-    } catch (err) {
-      showToast(err?.message || "Couldn't create post", 'error');
-      throw err;
-    }
-  };
-
-  const updateCommunity = async (id, data) => {
-    try {
-      const updated = await communitiesApi.updateGroupInfo(id, data);
-      // Seed the cache immediately so the UI reflects the change before the re-fetch lands
-      if (updated?.id) {
-        queryClient.setQueryData(['community', id], updated);
-      }
-      queryClient.invalidateQueries({ queryKey: ['communities'] });
-      queryClient.invalidateQueries({ queryKey: ['community', id] });
-      return updated;
-    } catch (err) {
-      showToast(err?.message || "Couldn't update community", 'error');
-      throw err;
-    }
   };
 
   return {
