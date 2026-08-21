@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { cleanUrlDisplay } from '@shared/utils/linkPreview';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
 import styles from './RichText.module.css';
-import { useData } from '@shared/hooks/useData';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
 
 
 export default function RichText({ content = '', mentions = [], className = '', urlLimit = 50 }) {
   const navigate = useNavigate();
-  const { users = {} } = useData();
+  // useUsersMap() always returns an object, so the `= {}` default is no longer needed.
+  const users = useUsersMap();
 
   if (!content) return null;
 
