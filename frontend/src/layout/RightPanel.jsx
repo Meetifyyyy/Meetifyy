@@ -328,7 +328,10 @@ function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
 }
 
 export function UpcomingEvents() {
-  const { crewActivities = [], currentUser } = useData();
+  // `useData` sources currentUser straight from AuthContext, so this is the same
+  // value -- and this file already reads it that way elsewhere (see above).
+  const { crewActivities = [] } = useData();
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [nowTime, setNowTime] = React.useState(Date.now());
 
