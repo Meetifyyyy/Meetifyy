@@ -236,6 +236,7 @@ export class SearchService {
               commentCount: true,
               author: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
               media: {
+                orderBy: [{ order: 'asc' }, { id: 'asc' }],
                 select: {
                   id: true,
                   objectKey: true,
@@ -246,6 +247,7 @@ export class SearchService {
                 },
               },
               pollOptions: {
+                orderBy: { id: 'asc' },
                 include: {
                   _count: { select: { votes: true } }
                 }

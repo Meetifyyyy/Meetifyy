@@ -506,6 +506,7 @@ export class PostsService {
           },
         },
         media: {
+          orderBy: [{ order: 'asc' }, { id: 'asc' }],
           select: {
             id: true,
             objectKey: true,
@@ -516,6 +517,7 @@ export class PostsService {
           },
         },
         pollOptions: {
+          orderBy: { id: 'asc' },
           include: {
             _count: {
               select: { votes: true }
@@ -1055,7 +1057,7 @@ export class PostsService {
         include: {
           author: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
           community: { select: { id: true, name: true, deletedAt: true } },
-          pollOptions: { include: { _count: { select: { votes: true } } } },
+          pollOptions: { orderBy: { id: 'asc' }, include: { _count: { select: { votes: true } } } },
           pollVotes: userId ? { where: { userId } } : false,
         },
       }),
@@ -1201,7 +1203,7 @@ export class PostsService {
           include: {
             author: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
             media: true,
-            pollOptions: { include: { _count: { select: { votes: true } } } },
+            pollOptions: { orderBy: { id: 'asc' }, include: { _count: { select: { votes: true } } } },
             pollVotes: userId ? { where: { userId } } : false,
           }
         }
@@ -1242,6 +1244,7 @@ export class PostsService {
         where: { id: postId },
         include: {
           pollOptions: {
+            orderBy: { id: 'asc' },
             include: {
               _count: { select: { votes: true } }
             }

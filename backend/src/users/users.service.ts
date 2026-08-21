@@ -6,7 +6,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from './blocks.service';
 import { PresenceService } from '../presence/presence.service';
-import { checkPresenceVisibility } from './privacy.helper';
+import { checkPresenceVisibility, resolvePresenceVisibilityForViewer } from './privacy.helper';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { NOTIFICATIONS_QUEUE, FollowNotifJob } from '../notifications/notifications.processor';
@@ -970,9 +970,28 @@ export class UsersService {
    * O(users) client-side loop.
    */
   async getMentionSuggestions(userId: string, query: string, communityId?: string, limit: number = 15) {
-    const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
-    const excludeSet = new Set([...excludedUserIds, userId]);
     const cleanQuery = (query || '').trim().toLowerCase();
+
+    // Stage 1 — everything that depends on nothing but `userId`. The block
+    // lookup used to be awaited on its own before this batch even started,
+    // adding a full round-trip to every request; only the candidate query
+    // actually needs its result, so it runs here alongside the rest.
+    const [excludedUserIds, followingRows, followerRows, communityMemberRows, recentConvs] = await Promise.all([
+      this.blocksService.getExcludedUserIds(userId),
+      this.prisma.follow.findMany({ where: { followerId: userId }, select: { followingId: true } }),
+      this.prisma.follow.findMany({ where: { followingId: userId }, select: { followerId: true } }),
+      communityId
+        ? this.prisma.communityMember.findMany({ where: { communityId }, select: { userId: true } })
+        : Promise.resolve([] as { userId: string }[]),
+      this.prisma.conversationParticipant.findMany({
+        where: { userId, deletedAt: null },
+        select: { conversationId: true },
+        orderBy: { conversation: { updatedAt: 'desc' } },
+        take: UsersService.MENTION_RECENT_CONVERSATIONS,
+      }),
+    ]);
+
+    const excludeSet = new Set([...excludedUserIds, userId]);
 
     const whereClause: any = {
       id: { notIn: Array.from(excludeSet) },
@@ -987,24 +1006,24 @@ export class UsersService {
         : {}),
     };
 
-    const [candidates, followingRows, followerRows, communityMemberRows, recentConvs] = await Promise.all([
+    const recentConvIds = recentConvs.map((c) => c.conversationId);
+
+    // Stage 2 — the candidate pool (needs the exclusion set) and the
+    // recent-chat partners (needs the conversation ids) both become available
+    // at the same moment, so they run together instead of one after the other.
+    const [candidates, recentParticipants] = await Promise.all([
       this.prisma.user.findMany({
         where: whereClause,
         take: UsersService.MENTION_CANDIDATE_POOL,
         select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.follow.findMany({ where: { followerId: userId }, select: { followingId: true } }),
-      this.prisma.follow.findMany({ where: { followingId: userId }, select: { followerId: true } }),
-      communityId
-        ? this.prisma.communityMember.findMany({ where: { communityId }, select: { userId: true } })
+      recentConvIds.length > 0
+        ? this.prisma.conversationParticipant.findMany({
+            where: { conversationId: { in: recentConvIds }, userId: { not: userId } },
+            select: { userId: true },
+          })
         : Promise.resolve([] as { userId: string }[]),
-      this.prisma.conversationParticipant.findMany({
-        where: { userId, deletedAt: null },
-        select: { conversationId: true },
-        orderBy: { conversation: { updatedAt: 'desc' } },
-        take: UsersService.MENTION_RECENT_CONVERSATIONS,
-      }),
     ]);
 
     if (candidates.length === 0) return [];
@@ -1014,13 +1033,6 @@ export class UsersService {
     const followerSet = new Set(followerRows.map((f) => f.followerId));
     const communityMemberSet = new Set(communityMemberRows.map((m) => m.userId));
 
-    const recentConvIds = recentConvs.map((c) => c.conversationId);
-    const recentParticipants = recentConvIds.length > 0
-      ? await this.prisma.conversationParticipant.findMany({
-          where: { conversationId: { in: recentConvIds }, userId: { not: userId } },
-          select: { userId: true },
-        })
-      : [];
     const recentChatUserIdSet = new Set(recentParticipants.map((p) => p.userId));
 
     // Mutual-connection count per candidate: how many people I follow also
@@ -1085,52 +1097,55 @@ export class UsersService {
    * viewer had online friends outside that arbitrary recent-signup window.
    */
   async getOnlineFriends(userId: string, limit: number = 6) {
-    const myFollowing = await this.prisma.follow.findMany({
-      where: { followerId: userId },
-      select: { followingId: true },
+    // Mutuals in ONE query. This used to be three sequential round-trips
+    // (my following → who of those follows me back → hydrate those users),
+    // where each step had to wait for the previous step's id list. Expressing
+    // "follows me AND I follow them" as two relation filters lets Postgres do
+    // the intersection with the existing Follow indexes and hands back the
+    // hydrated rows directly.
+    const candidates = await this.prisma.user.findMany({
+      where: {
+        accountStatus: 'ACTIVE',
+        followers: { some: { followerId: userId } },  // I follow them
+        following: { some: { followingId: userId } }, // they follow me
+      },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        isCampusRep: true,
+        collegeId: true,
+        college: { select: { id: true, name: true } },
+        avatar: true,
+        settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
+      },
     });
-    const followingIds = myFollowing.map((f) => f.followingId);
-    if (followingIds.length === 0) return [];
+    if (candidates.length === 0) return [];
 
-    const mutualRows = await this.prisma.follow.findMany({
-      where: { followerId: { in: followingIds }, followingId: userId },
-      select: { followerId: true },
-    });
-    const mutualIds = mutualRows.map((f) => f.followerId);
-    if (mutualIds.length === 0) return [];
-
-    const [candidates, presenceMap] = await Promise.all([
-      this.prisma.user.findMany({
-        where: { id: { in: mutualIds }, accountStatus: 'ACTIVE' },
-        select: {
-          id: true,
-          username: true,
-          displayName: true,
-          isCampusRep: true,
-          collegeId: true,
-          college: { select: { id: true, name: true } },
-          avatar: true,
-          settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
-        },
-      }),
-      this.presenceService.getPresenceMany(mutualIds),
-    ]);
+    const presenceMap = await this.presenceService.getPresenceMany(candidates.map((u) => u.id));
 
     // Only bother with a privacy check for users actually reporting online —
-    // avoids N checkPresenceVisibility calls for the (usually majority)
-    // offline mutuals.
+    // avoids doing visibility work for the (usually majority) offline mutuals.
     const onlineCandidates = candidates.filter((u) => presenceMap.get(u.id)?.status === 'online');
+    if (onlineCandidates.length === 0) return [];
+
+    // One batched visibility resolution instead of a sequential
+    // checkPresenceVisibility call per online mutual — that loop re-read the
+    // viewer's own userSettings row once per candidate and issued up to two
+    // more follow lookups each, all strictly serialized by the `await`.
+    const visibleIds = await resolvePresenceVisibilityForViewer(
+      userId,
+      onlineCandidates.map((u) => ({
+        userId: u.id,
+        rule: u.settings?.whoCanSeeOnline || 'everyone',
+        isEnabled: u.settings?.showOnlineStatus !== false,
+      })),
+      this.prisma,
+    );
 
     const results: Array<{ id: string; username: string; displayName: string; avatar: string | null; isOnline: true }> = [];
     for (const u of onlineCandidates) {
-      const canSee = await checkPresenceVisibility(
-        u.id,
-        userId,
-        u.settings?.whoCanSeeOnline || 'everyone',
-        u.settings?.showOnlineStatus !== false,
-        this.prisma,
-      );
-      if (!canSee) continue;
+      if (!visibleIds.has(u.id)) continue;
       results.push({ id: u.id, username: u.username, displayName: u.displayName, avatar: u.avatar, isOnline: true });
       if (results.length >= limit) break;
     }

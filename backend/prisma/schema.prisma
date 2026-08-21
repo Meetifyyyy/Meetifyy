@@ -1,5 +1,19 @@
 generator client {
   provider = "prisma-client-js"
+  // PERF: lets Prisma load nested relations with a LATERAL JOIN in a single
+  // statement instead of issuing one query per relation. Without it a profile
+  // feed page fanned out into 6 sequential round-trips (post, author, college,
+  // media, pollOptions, pollVotes) at ~60ms each — the relation count, not the
+  // row count, set the latency.
+  // `driverAdapters` lets Prisma talk to Postgres through node-postgres instead
+  // of its own Rust connection layer. That matters on Supabase's transaction
+  // pooler: the Rust path wraps every query in BEGIN / DEALLOCATE ALL / COMMIT
+  // when `pgbouncer=true`, turning one 31ms query into ~155ms, while dropping
+  // that flag makes it fail outright with "prepared statement does not exist".
+  // node-postgres uses unnamed prepared statements, which are safe under
+  // transaction pooling — so this is what allows transaction mode (many clients
+  // multiplexed over few server connections) without the amplification.
+  previewFeatures = ["relationJoins", "driverAdapters"]
 }
 
 datasource db {

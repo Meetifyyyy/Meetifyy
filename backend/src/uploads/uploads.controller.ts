@@ -6,9 +6,110 @@ import type { Response, Request } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
 
+/**
+ * Resolved-redirect cache for GET /api/media/*.
+ *
+ * PERF: resolving one media key costs an R2 HeadObject (~370ms measured) plus a
+ * `media` row lookup, and those were run back-to-back on every single request.
+ * Media keys are effectively immutable — the filename carries a content hash or
+ * a UUID, so a key that resolves to a URL today resolves to the same URL later —
+ * yet a real traffic sample showed 529 media requests covering only 35 distinct
+ * keys (one avatar alone was fetched 121 times). Every one of those repeats paid
+ * the full ~500ms resolution again.
+ *
+ * The TTL is a deletion backstop — if media is removed, the stale redirect is
+ * dropped within MEDIA_URL_TTL_MS rather than persisting for the process lifetime.
+ */
+const MEDIA_URL_TTL_MS = 5 * 60 * 1000;
+const MEDIA_URL_MAX_ENTRIES = 5_000;
+
+/**
+ * Misses are cached too, but only briefly. A key that is genuinely absent was
+ * otherwise re-probed against R2 on every single request — observed at ~417ms
+ * per attempt, repeatedly, for one missing message attachment.
+ *
+ * The short window preserves the reason misses weren't cached at all before:
+ * thumbnails are uploaded asynchronously, so a key that 404s now may exist
+ * moments later and must stay re-checkable. 15s bounds the wasted work without
+ * making a newly-arrived upload wait meaningfully longer than it already does.
+ * `sendMediaMiss` still sends `no-store`, so the browser never caches a miss.
+ */
+const MEDIA_MISS_TTL_MS = 15 * 1000;
+
 @Controller('api/media')
 export class UploadsController {
   constructor(private readonly storageService: StorageService) {}
+
+  /** `url: null` records a short-lived negative result. */
+  private static readonly mediaUrlCache = new Map<string, { url: string | null; expiresAt: number }>();
+
+  /**
+   * De-duplicates concurrent resolutions of the same key. A feed rendering the
+   * same avatar in twenty places would otherwise fire twenty parallel
+   * HeadObject calls for one answer; they now share a single in-flight promise.
+   */
+  private static readonly mediaUrlInFlight = new Map<string, Promise<string | null>>();
+
+  /**
+   * Returns `{ url }` on a cache hit (where `url` may be null for a cached
+   * miss), or `undefined` when nothing valid is cached. The wrapper object is
+   * what lets a cached negative be told apart from "not cached".
+   */
+  private static getCachedMediaUrl(key: string): { url: string | null } | undefined {
+    const hit = UploadsController.mediaUrlCache.get(key);
+    if (hit && hit.expiresAt > Date.now()) return { url: hit.url };
+    if (hit) UploadsController.mediaUrlCache.delete(key);
+    return undefined;
+  }
+
+  private static setCachedMediaUrl(key: string, url: string | null) {
+    const cache = UploadsController.mediaUrlCache;
+    if (cache.size >= MEDIA_URL_MAX_ENTRIES) {
+      const now = Date.now();
+      for (const [k, v] of cache) if (v.expiresAt <= now) cache.delete(k);
+      if (cache.size >= MEDIA_URL_MAX_ENTRIES) {
+        const oldest = cache.keys().next().value;
+        if (oldest) cache.delete(oldest);
+      }
+    }
+    const ttl = url === null ? MEDIA_MISS_TTL_MS : MEDIA_URL_TTL_MS;
+    cache.set(key, { url, expiresAt: Date.now() + ttl });
+  }
+
+  /**
+   * Resolves a storage key to its public URL, or null if it isn't in storage.
+   * The existence check and the URL resolution are independent lookups (one hits
+   * R2, the other the `media` table), so they run concurrently instead of
+   * sequentially — on a cache miss that saves a full DB round-trip of wall time.
+   */
+  private async resolveMediaUrl(key: string): Promise<string | null> {
+    const cached = UploadsController.getCachedMediaUrl(key);
+    if (cached) return cached.url;
+
+    const inFlight = UploadsController.mediaUrlInFlight.get(key);
+    if (inFlight) return inFlight;
+
+    const task = (async (): Promise<string | null> => {
+      const [existsInStorage, url] = await Promise.all([
+        this.storageService.exists(key),
+        this.storageService.getResolvedPublicUrl(key),
+      ]);
+      const resolved =
+        existsInStorage &&
+        url &&
+        (url.startsWith('http://') || url.startsWith('https://')) &&
+        !url.includes('/api/media/')
+          ? url
+          : null;
+      UploadsController.setCachedMediaUrl(key, resolved);
+      return resolved;
+    })().finally(() => {
+      UploadsController.mediaUrlInFlight.delete(key);
+    });
+
+    UploadsController.mediaUrlInFlight.set(key, task);
+    return task;
+  }
 
   /**
    * POST /api/media/upload
@@ -194,36 +295,35 @@ export class UploadsController {
     }
 
     try {
-      const existsInStorage = await this.storageService.exists(key);
-      if (existsInStorage) {
-        const url = await this.storageService.getResolvedPublicUrl(key);
-        if (url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('/api/media/')) {
-          // Let the browser/CDN cache the redirect destination for 1 hour.
-          // The client-side MediaCacheManager already handles signed-URL expiry;
-          // this header prevents redundant redirect hops on repeated loads.
-          res.setHeader('Cache-Control', 'public, max-age=3600');
-          return res.redirect(url);
-        }
+      const url = await this.resolveMediaUrl(key);
+      if (url) {
+        // Let the browser/CDN cache the redirect destination for 1 hour.
+        // The client-side MediaCacheManager already handles signed-URL expiry;
+        // this header prevents redundant redirect hops on repeated loads.
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        return res.redirect(url);
       }
     } catch (e) {
       // Fallback below
     }
 
-    // If a thumbnail variant was requested but does not exist, try to fall back to the original image
+    // If a thumbnail variant was requested but does not exist, try to fall back
+    // to the original image. The candidates are probed concurrently rather than
+    // one extension at a time — the old loop could serialize five R2 round-trips
+    // before admitting the original was a .gif. First match in preference order
+    // still wins, so the chosen fallback is unchanged.
     if (/_thumb\.(webp|jpe?g|png)$/i.test(key)) {
       const baseKey = key.replace(/_thumb\.(webp|jpe?g|png)$/i, '');
       const candidateExts = ['webp', 'jpg', 'jpeg', 'png', 'gif'];
-      for (const ext of candidateExts) {
-        const origKey = `${baseKey}.${ext}`;
-        try {
-          if (await this.storageService.exists(origKey)) {
-            const origUrl = await this.storageService.getResolvedPublicUrl(origKey);
-            if (origUrl) {
-              res.setHeader('Cache-Control', 'public, max-age=3600');
-              return res.redirect(origUrl);
-            }
-          }
-        } catch (_) {}
+      const resolved = await Promise.all(
+        candidateExts.map((ext) =>
+          this.resolveMediaUrl(`${baseKey}.${ext}`).catch(() => null),
+        ),
+      );
+      const origUrl = resolved.find((u) => !!u);
+      if (origUrl) {
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        return res.redirect(origUrl);
       }
     }
 
