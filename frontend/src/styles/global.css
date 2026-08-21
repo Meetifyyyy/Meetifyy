@@ -771,9 +771,9 @@ nav a.active {
     display: none !important;
   }
 
-  .centre--post {
-    padding-bottom: 0 !important;
-  }
+  /* No .centre--post override: the post view keeps the base .centre bottom
+     padding so its last comment clears the fixed BottomNav. The override existed
+     only because the nav used to be hidden on this route. */
 
   /* Search goes edge-to-edge and full-height on mobile: Header is already
      hidden on mobile for any non-home route, and BottomNav is hidden for

@@ -64,11 +64,14 @@ export default function BottomNav({ hidden }) {
   const isProfileActive = location.pathname.startsWith('/profile');
 
   // Note: an open chat thread completely hides the nav on mobile to allow edge-to-edge chat.
-  const isPostOpen = location.pathname.startsWith('/post/');
+  // The post view used to be hidden the same way, but unlike a chat it is an
+  // ordinary scrolling page with no composer pinned to the bottom edge, and it
+  // hides the global header too -- so dropping the nav left the in-page back
+  // arrow as the only way out of it.
   const isMessageChatOpen = location.pathname.startsWith('/messages/') && location.pathname.length > '/messages/'.length;
   const isInboxChatOpen = location.pathname.startsWith('/inbox/') && location.pathname.length > '/inbox/'.length;
   const isChatOpen = isMessageChatOpen || isInboxChatOpen;
-  const isHidden = hidden || isPostOpen || isChatOpen;
+  const isHidden = hidden || isChatOpen;
 
   return (
     <div className={`app-bottom-nav ${styles.bottomNav} ${isHidden ? styles.hiddenNav : ''}`}>
