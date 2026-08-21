@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useData } from '@shared/hooks/useData';
+import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { communitiesApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
@@ -11,7 +11,7 @@ import defaultCommunityCover from '@assets/images/default_community_cover.webp';
 import styles from './CommunityAdminModal.module.css';
 
 export default function CommunityAdminModal({ community, onClose, onDeleteCommunity }) {
-  const { updateCommunity, kickMember } = useData();
+  const { updateCommunity, kickMember } = useCommunityActions();
   const [activeTab, setActiveTab] = useState('details');
   const avatarInputRef = useRef(null);
   const coverInputRef = useRef(null);
