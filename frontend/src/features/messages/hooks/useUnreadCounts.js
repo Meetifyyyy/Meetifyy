@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
-import { useData } from '@shared/hooks/useData';
+import { useConversations } from '@shared/hooks/useMessages';
 
 export function useUnreadCounts() {
-  const { conversations = [] } = useData();
+  // The previous source returned a shallow copy of this same array; readers only iterate it.
+  const { conversations = [] } = useConversations();
 
   return useMemo(() => {
     let dm = 0;
