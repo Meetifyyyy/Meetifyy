@@ -9,6 +9,24 @@ import { sortGroupMembers } from '@shared/utils/memberSort';
 import { showToast } from '@shared/utils/toast';
 import styles from './GroupSettingsModal.module.css';
 
+/**
+ * The roster to show for a conversation.
+ *
+ * Groups carry their hydrated members on `memberDetails`: GET
+ * /api/group-chats/:id/details returns it populated while `members` comes back
+ * as an empty array. Reading `members` first therefore showed "MEMBERS (0)" on
+ * a group whose own header said 2 members. Take the first array that actually
+ * has entries, which leaves behaviour untouched wherever `members` is filled.
+ */
+export function pickGroupRoster(conversation) {
+  if (!conversation) return [];
+  return (
+    conversation.memberDetails?.length ? conversation.memberDetails
+      : conversation.members?.length ? conversation.members
+        : conversation.participants
+  ) || [];
+}
+
 export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup }) {
   const { currentUser } = useAuth();
   const users = useUsersMap();
@@ -20,16 +38,7 @@ export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup
 
   const isOwner = currentUser?.id === conversation.ownerId || currentUser?.id === conversation.hostId;
   const isAdmin = isOwner || (conversation.admins || []).includes(currentUser?.id);
-  // Groups carry their hydrated roster on `memberDetails`: GET /group-chats/:id
-  // returns it populated while `members` comes back empty, so reading `members`
-  // first showed "MEMBERS (0)" on a group whose header said 2 members. Prefer the
-  // first array that actually has entries, which keeps the old behaviour wherever
-  // `members` is populated. ChatDetailsPanel already sources groups this way.
-  const rawParticipants = (
-    conversation.memberDetails?.length ? conversation.memberDetails
-      : conversation.members?.length ? conversation.members
-        : conversation.participants
-  ) || [];
+  const rawParticipants = pickGroupRoster(conversation);
   const sortedParticipants = useMemo(() => {
     return sortGroupMembers(rawParticipants, {
       ownerId: conversation.ownerId,

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { overlayManager } from '../../services/OverlayManager';
-import { getMeaningfulPath } from '../useSmartNavigation';
+import { getMeaningfulPath, isAncestorPath } from '../useSmartNavigation';
 
 describe('useSmartNavigation & OverlayManager', () => {
   beforeEach(() => {
@@ -106,4 +106,36 @@ describe('OverlayManager history integrity', () => {
     // Two entries were pushed, so exactly two are popped, in one go(-2).
     expect(navigator).toHaveBeenLastCalledWith(-2);
   });
+
+  describe('isAncestorPath (up-navigation detection)', () => {
+    it('treats a section root as an ancestor of a page inside it', () => {
+      // tapping "Messages" while a chat is open is a return to the tab root:
+      // pushing there stranded the chat one entry behind the list, so a later
+      // Back re-opened the chat the user had just closed
+      expect(isAncestorPath('/messages', '/messages/campus-walk/act_1')).toBe(true);
+      expect(isAncestorPath('/campus', '/campus/communities')).toBe(true);
+      expect(isAncestorPath('/crew', '/crew/abc-123')).toBe(true);
+    });
+
+    it('does not treat the same page as its own ancestor', () => {
+      expect(isAncestorPath('/messages', '/messages')).toBe(false);
+    });
+
+    it('matches on a path boundary, not a bare prefix', () => {
+      expect(isAncestorPath('/messages', '/messagesX')).toBe(false);
+      expect(isAncestorPath('/crew', '/crewfinder/1')).toBe(false);
+    });
+
+    it('is false for sibling and unrelated sections', () => {
+      expect(isAncestorPath('/home', '/messages/jaadu')).toBe(false);
+      expect(isAncestorPath('/notifications', '/campus')).toBe(false);
+    });
+
+    it('never treats root as an ancestor, and tolerates missing input', () => {
+      expect(isAncestorPath('/', '/messages')).toBe(false);
+      expect(isAncestorPath(undefined, '/messages')).toBe(false);
+      expect(isAncestorPath('/messages', undefined)).toBe(false);
+    });
+  });
+
 });

@@ -2,6 +2,39 @@ import { useRef, useLayoutEffect, useState } from 'react';
 import { Reply, Copy, Forward, Trash2, Undo2 } from 'lucide-react';
 import styles from './MessageContextMenu.module.css';
 
+export const MENU_GAP = 12;
+export const MENU_EDGE_MARGIN = 12;
+
+/**
+ * Where to put the message context menu for a press at `position`.
+ *
+ * `size` must be the menu's *untransformed* layout size (offsetWidth /
+ * offsetHeight). The menu animates in from `transform: scale(0.92)`, and
+ * getBoundingClientRect reports the scaled box while that is running -- reading
+ * it there measured a height ~8% short and placed the menu ~14px off, which is
+ * how a flipped menu ended up on top of the message it belonged to.
+ *
+ * Both axes mirror the press point the same way: offset by MENU_GAP on the
+ * near side, and when that would overflow, flip to `position - gap - extent`.
+ * The vertical case used to flip the already-offset value instead of the press
+ * point, leaving it 2 * MENU_GAP too low.
+ */
+export function computeMenuPosition(position, size, viewport) {
+  const { width, height } = size;
+  const gap = MENU_GAP;
+  const edge = MENU_EDGE_MARGIN;
+
+  let x = position.x + gap;
+  if (x + width > viewport.width - edge) x = position.x - gap - width;
+  x = Math.max(edge, Math.min(x, viewport.width - width - edge));
+
+  let y = position.y + gap;
+  if (y + height > viewport.height - edge) y = position.y - gap - height;
+  y = Math.max(edge, Math.min(y, viewport.height - height - edge));
+
+  return { x, y };
+}
+
 export default function MessageContextMenu({
   msg,
   position,
@@ -99,36 +132,16 @@ export default function MessageContextMenu({
 
   useLayoutEffect(() => {
     if (!menuRef.current) return;
-    // offsetWidth/offsetHeight, not getBoundingClientRect: the menu animates in
-    // from `transform: scale(0.92)`, and getBoundingClientRect reports the
-    // *scaled* box while that is still running. Positioning against a height
-    // ~8% short placed the menu about 14px off, which is why a flipped menu
-    // still landed on top of the message it belonged to. offsetHeight is the
-    // untransformed layout size, which is what this maths wants.
-    const width = menuRef.current.offsetWidth || 180;
-    const height = menuRef.current.offsetHeight || 220;
-
-    const gap = 12;
-    const edgeMargin = 12;
-
-    let x = position.x + gap;
-    if (x + width > window.innerWidth - edgeMargin) {
-      x = position.x - gap - width;
-    }
-    x = Math.max(edgeMargin, Math.min(x, window.innerWidth - width - edgeMargin));
-
-    let y = position.y + gap;
-    const vh = window.visualViewport?.height || window.innerHeight;
-    if (y + height > vh - edgeMargin) {
-      // Mirror the touch point the way the x axis does. This flipped the
-      // already-offset y instead of the original, landing the menu `2 * gap`
-      // too low so it sat over the message it belongs to.
-      y = position.y - gap - height;
-    }
-    y = Math.max(edgeMargin, Math.min(y, vh - height - edgeMargin));
-
-    setCoords({ x, y, ready: true });
+    setCoords({
+      ...computeMenuPosition(
+        position,
+        { width: menuRef.current.offsetWidth || 180, height: menuRef.current.offsetHeight || 220 },
+        { width: window.innerWidth, height: window.visualViewport?.height || window.innerHeight }
+      ),
+      ready: true,
+    });
   }, [position.x, position.y, visibleActions.length]);
+
 
   return (
     <div 

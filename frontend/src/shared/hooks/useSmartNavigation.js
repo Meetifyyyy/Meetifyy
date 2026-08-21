@@ -66,6 +66,16 @@ function persist() {
  * are deliberately excluded: `/crew?tab=saved` and `/crew?tab=hosting` are the
  * same page, and Back between them should still land on the previous *page*.
  */
+/**
+ * True when `target` is a strict ancestor of `current` -- i.e. navigating to it
+ * is a move *up* into a section we are already inside, not a new destination.
+ * Matched on a `/` boundary so /messages never matches /messagesX.
+ */
+export function isAncestorPath(target, current) {
+  if (!target || !current || target === '/') return false;
+  return current.startsWith(`${target}/`);
+}
+
 export function getMeaningfulPath(pathname, search = '') {
   return pathname;
 }
@@ -210,8 +220,7 @@ export function useSmartNavigation() {
       // (and the same held for /campus/... -> /campus, /crew/:id -> /crew).
       // Replacing discards the child entry instead, so Back from a tab root
       // leaves the section, which is what the stack should look like.
-      const isAncestorOfCurrent =
-        targetPath !== '/' && location.pathname.startsWith(`${targetPath}/`);
+      const isAncestorOfCurrent = isAncestorPath(targetPath, location.pathname);
 
       const shouldReplace = options.replace || isSamePage || isAncestorOfCurrent;
 
