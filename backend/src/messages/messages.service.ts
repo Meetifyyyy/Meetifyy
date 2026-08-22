@@ -970,15 +970,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     return { success: true };
   }
 
-  async deleteConversationForUser(conversationId: string, userId: string) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
-      data: { deletedAt: new Date() }
-    });
-    return { success: true };
-  }
-
   async unsendMessage(messageId: string, userId: string) {
     return super.unsendMessage(messageId, userId);
   }

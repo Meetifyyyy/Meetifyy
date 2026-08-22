@@ -7,6 +7,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { messagesApi, activitiesApi, groupApi, communitiesApi, usersApi } from '@shared/api/apiClient';
+import { purgeConversationFromCaches } from '../../features/messages/shared/utils/cacheUtils';
+import { idbDeleteConversationMessages } from '../../features/messages/shared/utils/idbMessages';
 import { useAuth } from '@shared/context/AuthContext';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
@@ -182,9 +184,11 @@ export function useMessageMutations() {
   };
 
   const deleteConversation = async (convId) => {
-    queryClient.setQueryData(MESSAGE_KEYS.conversations, (old) =>
-      Array.isArray(old) ? old.filter((c) => c.id !== convId && c.publicId !== convId) : old
-    );
+    // One shared purge for every surface: the list row, every cached message
+    // history under any of the conversation's id aliases, and the offline
+    // mirror. Deletion is per-user — the other participant's copy is untouched.
+    const aliases = purgeConversationFromCaches(queryClient, convId, conversations);
+    idbDeleteConversationMessages(aliases).catch(() => {});
     try {
       await messagesApi.deleteConversation(convId);
     } catch {

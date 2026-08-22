@@ -3,6 +3,8 @@ import { messagesApi, dmApi, groupApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { useConversations } from './useMessages';
 import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline';
+import { purgeConversationFromCaches } from '../../features/messages/shared/utils/cacheUtils';
+import { idbDeleteConversationMessages } from '../../features/messages/shared/utils/idbMessages';
 
 /**
  * The direct-message / conversation actions `useData` used to define inline.
@@ -192,10 +194,11 @@ export function useMessageActions() {
   };
 
   const deleteConversation = async (convId) => {
-    queryClient.setQueryData(['conversations'], (old) => {
-      if (!Array.isArray(old)) return old;
-      return old.filter(c => c.id !== convId && c.publicId !== convId);
-    });
+    // One shared purge for every surface: the list row, every cached message
+    // history under any of the conversation's id aliases, and the offline
+    // mirror. Deletion is per-user — the other participant's copy is untouched.
+    const aliases = purgeConversationFromCaches(queryClient, convId, conversations);
+    idbDeleteConversationMessages(aliases).catch(() => {});
     try {
       await messagesApi.deleteConversation(convId);
     } catch (e) {
