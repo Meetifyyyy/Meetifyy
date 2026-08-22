@@ -1,7 +1,7 @@
 import { useState, useEffect, memo } from 'react';
 import styles from './CommunityCard.module.css';
 import { useQueryClient } from '@tanstack/react-query';
-import { isImageUrl } from '@shared/utils/avatar';
+import { resolveCommunityAvatar } from '@shared/utils/avatar';
 import { useAuth } from '@shared/context/AuthContext';
 import { useJoinCommunity } from '../../hooks/useJoinCommunity';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
@@ -32,18 +32,19 @@ function CommunityCard({ comm, onClick }) {
     setImgError(false);
   }, [comm.avatarKey, comm.avatar]);
 
-  const avatar = comm.avatarKey || comm.avatar;
+  // Resolved to a real media URL — a bare object key dropped into `src` would
+  // resolve relative to the current route and 404.
+  const avatar = resolveCommunityAvatar(comm);
+  const initial = comm.name ? comm.name.charAt(0).toUpperCase() : '';
 
   return (
     <div className={styles.card} onClick={onClick}>
       <div className={styles.cardHeader}>
-        <div className={styles.cardAvatar} style={{ background: (!isImageUrl(avatar) || imgError) ? (comm.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}>
-          {isImageUrl(avatar) && !imgError ? (
+        <div className={styles.cardAvatar} style={{ background: (!avatar || imgError) ? (comm.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}>
+          {avatar && !imgError ? (
             <img src={avatar} alt={comm.name} loading="lazy" className={styles.cardAvatarImg} onError={() => setImgError(true)} />
           ) : (
-            <span className={styles.cardLetter}>
-              {avatar || (comm.name ? comm.name.charAt(0).toUpperCase() : '')}
-            </span>
+            <span className={styles.cardLetter}>{initial}</span>
           )}
         </div>
         <button

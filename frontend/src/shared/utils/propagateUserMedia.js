@@ -91,11 +91,18 @@ export function propagateUserMedia(queryClient, { userId, username, avatar, cove
     let result = node;
     let changed = false;
 
-    // A user-shaped node for this user: same id, and it actually carries an
-    // image field. The field check prevents rewriting unrelated objects that
-    // merely happen to share the id (a post id equal to a user id, say).
+    // A user-shaped node for this user, and it actually carries an image field.
+    // The field check prevents rewriting unrelated objects that merely happen to
+    // share the id (a post id equal to a user id, say).
+    //
+    // `userId` counts as well as `id`. Several payloads identify a person by
+    // `userId` and inline their avatar beside it rather than nesting a `user`
+    // object — a group's `memberDetails: [{ userId, role, displayName, avatar }]`
+    // is the one that showed: those entries kept the old picture in Group
+    // Details and in the invite picker built from them.
+    const identifiesUser = node.id === userId || node.userId === userId;
     const isThisUser =
-      node.id === userId &&
+      identifiesUser &&
       ('avatar' in node || 'avatarUrl' in node || 'cover' in node);
 
     if (isThisUser) {

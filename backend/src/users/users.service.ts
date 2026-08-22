@@ -795,7 +795,7 @@ export class UsersService {
 
     clearAuthSyncCache(userId);
 
-    return this.prisma.user.upsert({
+    const updated = await this.prisma.user.upsert({
       where: { id: userId },
       update: updateData,
       create: {
@@ -829,6 +829,26 @@ export class UsersService {
         updatedAt: true,
       },
     });
+
+    // A changed avatar or cover has to reach everyone else, not just the person
+    // who changed it. Both are denormalised into most payloads the app renders
+    // — post authors, comment authors, chat participants, member lists, invite
+    // and share pickers — so without this every other client kept showing the
+    // old image until each of its queries happened to refetch. Fire-and-forget:
+    // the profile is already saved, and a realtime failure must not undo that.
+    if (avatar !== undefined || cover !== undefined) {
+      this.domainEventService.emit('user.updated', {
+        // Deliberately `id`, not `userId`: DomainEventService treats a `userId`
+        // field as "target only this user", which is the opposite of what this
+        // event needs.
+        id: updated.id,
+        username: updated.username,
+        avatar: updated.avatar ?? null,
+        cover: updated.cover ?? null,
+      }).catch((err) => this.logger.warn(`Failed to broadcast user.updated: ${err?.message}`));
+    }
+
+    return updated;
   }
 
   async getSettings(userId: string) {

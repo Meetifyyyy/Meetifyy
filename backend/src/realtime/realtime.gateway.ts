@@ -281,6 +281,17 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       return;
     }
 
+    // A user's avatar is denormalised into almost every payload the app
+    // renders — post authors, comment authors, chat participants, member lists,
+    // invite and share pickers. There is no room that corresponds to "everyone
+    // who can currently see this person", and a targeted emit would leave the
+    // old image on every other client until each of their queries happened to
+    // refetch. It is a tiny, infrequent payload, so it goes to everyone.
+    if (payload.type === 'user.updated') {
+      this.server.emit('domainEvent', payload);
+      return;
+    }
+
     const isLegacyEvent = payload.type?.includes(':');
     let targets: string[] = [];
 

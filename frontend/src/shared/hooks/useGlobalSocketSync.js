@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useConversations } from './useMessages';
 import { PROFILE_KEYS } from './useProfile';
 import { toggleRegistry } from '../utils/mutationRegistry';
+import { propagateUserMedia } from '../utils/propagateUserMedia';
 
 import { flushPendingQueue } from '../../features/messages/shared/utils/offlineSync';
 import { updateMessageInCache } from '../../features/messages/shared/utils/cacheUtils';
@@ -170,6 +171,24 @@ export function useGlobalSocketSync() {
             });
             queryClient.invalidateQueries({ queryKey: ['following', cleanCurrent] });
             queryClient.invalidateQueries({ queryKey: ['followers', cleanTarget] });
+          }
+          break;
+        }
+
+        case 'user.updated': {
+          // Someone changed their avatar or cover. The same in-place patch the
+          // owner's own device runs, so every payload that inlines their image
+          // — post authors, comment authors, chat participants, member lists,
+          // invite and share pickers — updates at the next paint instead of
+          // whenever each query next refetches.
+          const changed = event.data || {};
+          if (changed.id) {
+            propagateUserMedia(queryClient, {
+              userId: changed.id,
+              username: changed.username,
+              ...(changed.avatar !== undefined ? { avatar: changed.avatar } : {}),
+              ...(changed.cover !== undefined ? { cover: changed.cover } : {}),
+            });
           }
           break;
         }
