@@ -520,6 +520,7 @@ function MediaUploadOverlay({ progress = 0, failed = false, onRetry, onCancel })
 }
 
 const MessageBubble = memo(function MessageBubble({
+  onJumpToMessage,
   msg, 
   conversation, 
   currentUser,
@@ -919,7 +920,22 @@ const MessageBubble = memo(function MessageBubble({
       <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
         <div className={`${styles.msgBubble} ${isMe ? styles.msgBubbleMe : styles.msgBubbleThem}`}>
           {msg.replyTo && (
-            <div className={styles.msgBubbleReplyRef}>
+            <div
+              className={`${styles.msgBubbleReplyRef} ${onJumpToMessage && msg.replyTo.id ? styles.msgBubbleReplyRefClickable : ''}`}
+              role={onJumpToMessage && msg.replyTo.id ? 'button' : undefined}
+              tabIndex={onJumpToMessage && msg.replyTo.id ? 0 : undefined}
+              aria-label={onJumpToMessage && msg.replyTo.id ? `Go to message from ${msg.replyTo.senderName || 'sender'}` : undefined}
+              onClick={(e) => {
+                if (!onJumpToMessage || !msg.replyTo.id) return;
+                // Must not bubble into the bubble's own tap/context handlers.
+                e.stopPropagation();
+                onJumpToMessage(msg.replyTo.id);
+              }}
+              onKeyDown={(e) => {
+                if (!onJumpToMessage || !msg.replyTo.id) return;
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onJumpToMessage(msg.replyTo.id); }
+              }}
+            >
               <div className={styles.msgBubbleReplyRefHeader}>{msg.replyTo.senderName || 'Replying to'}</div>
               {/* Renders every message type — media, voice, shared entities,
                   invites — instead of only text, which left a blank quote for
@@ -992,6 +1008,10 @@ const MessageBubble = memo(function MessageBubble({
   return (
     <div 
       className={`${styles.msgBubbleContainer} ${isMe ? styles.msgBubbleContainerMe : styles.msgBubbleContainerThem}`}
+      /* Anchors used by jump-to-message. Both ids are emitted because a message
+         that is still sending only has a clientId, and a reply may target either. */
+      data-message-id={msg.id || undefined}
+      data-client-id={msg.clientId || msg.tempId || undefined}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}

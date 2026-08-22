@@ -107,17 +107,19 @@
 
 .msgBubbleThem {
   align-self: flex-start;
-  background: var(--color-bg-subtle, #f4f4f5);
-  border: 1px solid rgba(0, 0, 0, 0.04);
+  /* Solid rather than the near-transparent subtle token: against the chat
+     background the old value read as a faint wash instead of a bubble. */
+  background: #e8e8ee;
+  border: 1px solid rgba(0, 0, 0, 0.07);
   border-bottom-left-radius: 4px;
   color: var(--color-text-main, #18181b);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
 }
 
 [data-theme='dark'] .msgBubbleThem {
-  background: #27272a;
-  border-color: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  background: #33343a;
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.28);
 }
 
 .msgBubbleMe {
@@ -1147,3 +1149,58 @@
   line-height: 1;
 }
 
+
+
+/* ── Reply quote: clickable (jump to the original message) ───────────────── */
+.msgBubbleReplyRefClickable {
+  cursor: pointer;
+  transition: background-color 0.15s ease, filter 0.15s ease;
+  /* Tap target stays comfortable on touch without changing the visual box. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.msgBubbleReplyRefClickable:hover,
+.msgBubbleReplyRefClickable:focus-visible {
+  background: rgba(0, 0, 0, 0.11);
+  outline: none;
+}
+
+.msgBubbleMe .msgBubbleReplyRefClickable:hover,
+.msgBubbleMe .msgBubbleReplyRefClickable:focus-visible {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.msgBubbleReplyRefClickable:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-primary, #6366f1);
+}
+
+.msgBubbleReplyRefClickable:active {
+  filter: brightness(0.96);
+}
+
+/* ── Jump target highlight ───────────────────────────────────────────────── */
+/*
+ * Applied to the message container for ~1.8s after a jump. Animates a tinted
+ * overlay rather than the bubble's own background so it works for every message
+ * type — media, cards and shared entities included — without overriding their
+ * styling.
+ */
+.msgJumpHighlight {
+  position: relative;
+  animation: msgJumpPulse 1.8s ease-out;
+  border-radius: 14px;
+}
+
+@keyframes msgJumpPulse {
+  0%   { background-color: rgba(99, 102, 241, 0.00); }
+  12%  { background-color: rgba(99, 102, 241, 0.26); }
+  60%  { background-color: rgba(99, 102, 241, 0.18); }
+  100% { background-color: rgba(99, 102, 241, 0.00); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msgJumpHighlight {
+    animation: none;
+    background-color: rgba(99, 102, 241, 0.18);
+  }
+}

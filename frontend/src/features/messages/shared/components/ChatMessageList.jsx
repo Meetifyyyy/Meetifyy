@@ -91,9 +91,11 @@ const MessageRow = memo(function MessageRow({
   onOpenMediaModal,
   onRetryUpload,
   onCancelUpload,
+  onJumpToMessage,
 }) {
   return (
     <MessageBubble
+      onJumpToMessage={onJumpToMessage}
       index={index}
       isLatestMessage={isLatestMessage}
       msg={msg}
@@ -375,6 +377,106 @@ export default function ChatMessageList({
 
   // ── SCROLL EVENT HANDLER ─────────────────────────────────────────────────
 
+
+  // ── Jump to a quoted message ───────────────────────────────────────────────
+  //
+  // Reply quotes are clickable: clicking one scrolls to the original and flashes
+  // it. If the original is not in the DOM it lives further back in history, so
+  // older pages are requested until it appears.
+  //
+  // Deliberately DOM-driven rather than index-driven: the rendered list is the
+  // only thing that knows what is currently mounted, and querying it avoids
+  // duplicating the windowing/grouping rules that build the rows.
+  const jumpTokenRef = useRef(0);
+  const hasMoreRef = useRef(hasMore);
+  const loadingMoreRef = useRef(isLoadingMore);
+  useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
+  useEffect(() => { loadingMoreRef.current = isLoadingMore; }, [isLoadingMore]);
+  // Read through a ref so jumpToMessage keeps a stable identity: MessageRow's
+  // memo comparison ignores it, so a changing identity would leave rows holding
+  // the first closure and calling a stale loader.
+  const onLoadMoreRef = useRef(onLoadMore);
+  useEffect(() => { onLoadMoreRef.current = onLoadMore; }, [onLoadMore]);
+
+  const findMessageEl = useCallback((messageId) => {
+    const container = bodyRef.current;
+    if (!container || !messageId) return null;
+    const safe = (window.CSS && CSS.escape) ? CSS.escape(String(messageId)) : String(messageId).replace(/"/g, '\\"');
+    return container.querySelector(`[data-message-id="${safe}"]`)
+        || container.querySelector(`[data-client-id="${safe}"]`);
+  }, []);
+
+  const flashMessage = useCallback((el) => {
+    el.classList.remove(styles.msgJumpHighlight);
+    // Reflow so the animation restarts when the same message is targeted twice.
+    void el.offsetWidth;
+    el.classList.add(styles.msgJumpHighlight);
+    window.setTimeout(() => el.classList.remove(styles.msgJumpHighlight), 1800);
+  }, []);
+
+  const scrollToEl = useCallback((el) => {
+    // Suppress the "stick to bottom" behaviour for this scroll; the user is
+    // deliberately moving away from the latest message.
+    isAtBottomRef.current = false;
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+    flashMessage(el);
+  }, [flashMessage]);
+
+  const jumpToMessage = useCallback((messageId) => {
+    if (!messageId) return;
+    const token = ++jumpTokenRef.current;
+
+    const existing = findMessageEl(messageId);
+    if (existing) { scrollToEl(existing); return; }
+
+    // Not mounted — walk back through history. Capped so a reply pointing at a
+    // message that no longer exists cannot page forever.
+    const MAX_PAGES = 15;
+    const POLL_MS = 100;
+    const PAGE_TIMEOUT_MS = 4000;
+    let pages = 0;
+
+    const requestOlder = () => {
+      // A newer jump superseded this one, or the conversation changed.
+      if (token !== jumpTokenRef.current) return;
+
+      const el = findMessageEl(messageId);
+      if (el) {
+        // Let the prepend's scroll compensation settle before moving the
+        // viewport, otherwise the two fight and the jump lands short.
+        window.setTimeout(() => {
+          if (token !== jumpTokenRef.current) return;
+          const still = findMessageEl(messageId);
+          if (still) scrollToEl(still);
+        }, 60);
+        return;
+      }
+
+      if (!hasMoreRef.current || pages >= MAX_PAGES) {
+        showToast('Original message is no longer available', 'info');
+        return;
+      }
+
+      pages += 1;
+      if (!loadingMoreRef.current && onLoadMoreRef.current) onLoadMoreRef.current();
+
+      const startedAt = Date.now();
+      const poll = () => {
+        if (token !== jumpTokenRef.current) return;
+        if (findMessageEl(messageId)) { requestOlder(); return; }
+        if (Date.now() - startedAt > PAGE_TIMEOUT_MS) { requestOlder(); return; }
+        window.setTimeout(poll, POLL_MS);
+      };
+      window.setTimeout(poll, POLL_MS);
+    };
+
+    requestOlder();
+  }, [findMessageEl, scrollToEl]);
+
+  // Cancel any in-flight jump when the conversation changes.
+  useEffect(() => { jumpTokenRef.current += 1; }, [conversation?.id]);
+
   const handleScroll = useCallback(() => {
     const container = bodyRef.current;
     if (!container) return;
@@ -534,6 +636,7 @@ export default function ChatMessageList({
               onOpenMediaModal={onOpenMediaModal || openViewer}
               onRetryUpload={onRetryUpload}
               onCancelUpload={onCancelUpload}
+              onJumpToMessage={jumpToMessage}
             />
           );
         }

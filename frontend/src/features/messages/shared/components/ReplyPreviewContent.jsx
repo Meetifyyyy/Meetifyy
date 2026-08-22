@@ -4,6 +4,7 @@ import {
   FileImage, Calendar, Ban, AlertCircle, MessageSquare, Sticker,
 } from 'lucide-react';
 import { getMediaUrl } from '@shared/api/apiClient';
+import Avatar from '@shared/components/avatar/Avatar';
 import { resolveReplyPreview } from '../utils/replyPreview';
 
 /**
@@ -48,6 +49,13 @@ export default function ReplyPreviewContent({
   const preview = resolveReplyPreview(message);
   const Icon = preview.icon ? ICONS[preview.icon] : null;
 
+  // People and communities use the app's own avatar shapes rather than a generic
+  // line icon, so a quoted profile or community reads the same here as it does
+  // everywhere else in the product (round person / group treatment, same
+  // fallback behaviour).
+  const isPerson = preview.kind === 'profile';
+  const isGroupLike = preview.kind === 'community' || preview.kind === 'group_invite';
+
   // Only resolve a thumbnail through the media layer; an unusable key returns
   // null there, in which case the icon alone carries the meaning.
   const thumbSrc = preview.thumbnailKey ? getMediaUrl(preview.thumbnailKey) : null;
@@ -57,7 +65,15 @@ export default function ReplyPreviewContent({
       className={className}
       style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}
     >
-      {thumbSrc ? (
+      {isPerson || isGroupLike ? (
+        <Avatar
+          name={preview.text}
+          size="20px"
+          isGroup={isGroupLike}
+          disableHover
+          className={thumbClassName}
+        />
+      ) : thumbSrc ? (
         <img
           src={thumbSrc}
           alt=""
