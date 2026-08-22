@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
+import { isPostListQuery } from '../utils/postCache';
 
 const updatePollInCache = (oldData, postId, updatedPollOrIndices, currentUserId) => {
   if (!oldData) return oldData;
@@ -75,8 +76,6 @@ export function useVotePoll() {
     },
 
     onMutate: async ({ postId, indices, currentUserId }) => {
-      const POST_LIST_KEYS = ['feed', 'posts', 'user-posts', 'bookmarks', 'community-posts'];
-      const isPostListQuery = (query) => POST_LIST_KEYS.includes(query.queryKey[0]);
 
       // Snapshot caches for rollback
       const snapshots = queryClient.getQueriesData({ predicate: isPostListQuery });
@@ -105,8 +104,7 @@ export function useVotePoll() {
       // Reconcile with server response if server returned updated poll object
       if (result && (result.poll || result.options)) {
         const updater = (old) => updatePollInCache(old, postId, result.poll || result, currentUserId);
-        const POST_LIST_KEYS = ['feed', 'posts', 'user-posts', 'bookmarks', 'community-posts'];
-        queryClient.setQueriesData({ predicate: (q) => POST_LIST_KEYS.includes(q.queryKey[0]) }, updater);
+        queryClient.setQueriesData({ predicate: isPostListQuery }, updater);
         queryClient.setQueryData(['post', postId], updater);
       }
     },

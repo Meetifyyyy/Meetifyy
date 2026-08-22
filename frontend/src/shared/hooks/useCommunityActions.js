@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi } from '../api/apiClient';
 import { showToast } from '../utils/toast';
+import { addCreatedPostToCaches } from '../../features/feed/utils/postCache';
 
 /**
  * The community / post write actions `useData` used to define inline.
@@ -40,7 +41,10 @@ export function useCommunityActions() {
 
   const addPost = async (text, poll, communityId, media, mentions) => {
     try {
-      const mediaKey = media?.url || (typeof media === 'string' ? media : undefined);
+      // The verified storage key, not the display URL. `media.url` happened to
+      // round-trip because the server strips a `/api/media/` prefix back off it,
+      // which is an accident of that one URL shape rather than a contract.
+      const mediaKey = media?.mediaKey || media?.url || (typeof media === 'string' ? media : undefined);
       const newPost = await postsApi.createPost({
         text,
         communityId,
@@ -48,18 +52,12 @@ export function useCommunityActions() {
         mentions,
         poll: poll || undefined,
       });
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
+      // Same shared writer the home composer uses, so a community post shows up
+      // in the community view, the author's profile and the home feed together.
+      addCreatedPostToCaches(queryClient, newPost);
       queryClient.invalidateQueries({ queryKey: ['communities'] });
       if (communityId) {
         queryClient.invalidateQueries({ queryKey: ['community', communityId] });
-        queryClient.invalidateQueries({ queryKey: ['community-posts', communityId] });
-        queryClient.setQueryData(['community-posts', communityId], (old = []) => {
-          if (!newPost) return old;
-          const list = Array.isArray(old) ? old : (old?.posts || []);
-          if (list.some(p => p.id === newPost.id)) return old;
-          return [newPost, ...list];
-        });
       }
       return newPost;
     } catch (err) {
