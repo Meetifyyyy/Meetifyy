@@ -148,14 +148,20 @@
 }
 
 .msgTextTimeWrap {
-  display: inline-flex;
+  display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
   min-width: 0;
   max-width: 100%;
-  width: fit-content;
+  /* Fills the bubble's content box so the timestamp's `margin-left: auto` has
+     something to push against. With `fit-content` the row shrank to the text,
+     so the time sat immediately after it instead of at the bubble's right edge —
+     most visible on short messages inside a wide bubble (one with a reply quote
+     above it). The bubble still shrink-wraps: its width comes from the widest
+     child, and this row contributes its own text + time. */
+  width: 100%;
 }
 
 .msgImageCardContainer,
@@ -639,13 +645,16 @@
 
 /* Reply Reference Bubble */
 .msgBubbleReplyRef {
-  border-left: 3px solid currentColor;
-  padding: 4px 8px;
-  margin-bottom: 6px;
-  font-size: 0.78rem;
-  opacity: 0.9;
-  background: rgba(0, 0, 0, 0.06);
-  border-radius: 4px;
+  border-left: 4px solid currentColor;
+  padding: 8px 11px;
+  margin-bottom: 8px;
+  font-size: 0.83rem;
+  opacity: 0.95;
+  background: rgba(0, 0, 0, 0.07);
+  border-radius: 4px 10px 10px 4px;
+  /* Keeps a one-word quote from collapsing into a sliver next to its accent bar,
+     while staying inside the bubble on narrow screens. */
+  min-width: min(150px, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
@@ -653,13 +662,22 @@
 }
 
 .msgBubbleMe .msgBubbleReplyRef {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.17);
+}
+
+[data-theme='dark'] .msgBubbleThem .msgBubbleReplyRef {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .msgBubbleReplyRefHeader {
   font-weight: 600;
-  font-size: 0.72rem;
-  margin-bottom: 2px;
+  font-size: 0.77rem;
+  margin-bottom: 4px;
+  letter-spacing: 0.01em;
+  /* A long display name must not stretch the bubble. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Group Invite Card Styling */

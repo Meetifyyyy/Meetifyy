@@ -44,7 +44,7 @@ export default function ReplyPreviewContent({
   className = '',
   textClassName = '',
   thumbClassName = '',
-  iconSize = 13,
+  iconSize = 15,
 }) {
   const preview = resolveReplyPreview(message);
   const Icon = preview.icon ? ICONS[preview.icon] : null;
@@ -63,13 +63,13 @@ export default function ReplyPreviewContent({
   return (
     <div
       className={className}
-      style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}
     >
       {isPerson || isGroupLike ? (
         <Avatar
           src={preview.avatarKey || undefined}
           name={preview.text}
-          size="20px"
+          size="26px"
           isGroup={isGroupLike}
           disableHover
           className={thumbClassName}
@@ -80,7 +80,7 @@ export default function ReplyPreviewContent({
           alt=""
           aria-hidden="true"
           className={thumbClassName}
-          style={{ width: 28, height: 28, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }}
+          style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
           // A dead thumbnail must not leave a broken-image glyph in the quote;
           // hiding it falls back to the icon + label, which still describes the
           // message.
@@ -97,6 +97,7 @@ export default function ReplyPreviewContent({
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
+          lineHeight: 1.35,
           fontStyle: preview.isUnavailable ? 'italic' : undefined,
           opacity: preview.isUnavailable ? 0.75 : undefined,
         }}

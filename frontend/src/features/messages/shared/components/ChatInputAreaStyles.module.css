@@ -20,7 +20,8 @@
   border: 1px solid var(--color-border, #e4e4e7);
   border-bottom: none;
   border-radius: 14px 14px 0 0;
-  padding: 0.6rem 1rem;
+  /* Roomier, to match the quote shown inside the sent bubble. */
+  padding: 0.75rem 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
