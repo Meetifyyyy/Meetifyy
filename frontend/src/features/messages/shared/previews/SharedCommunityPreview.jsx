@@ -5,10 +5,25 @@ import { getMediaUrl } from '@shared/api/apiClient';
 import styles from './SharedCommunityPreview.module.css';
 
 function formatCount(n) {
-  if (!n) return '0';
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return n.toLocaleString();
+  // Coerce first. Messages already sent carry payloads where membersCount was
+  // mistakenly the members ARRAY, and those cannot be rewritten retroactively —
+  // an array reaching toLocaleString() below is what rendered
+  // "[object Object],[object Object],[object Object] Members".
+  const count = typeof n === 'number' && Number.isFinite(n) ? n : 0;
+  if (!count) return '0';
+  if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+  if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
+  return count.toLocaleString();
+}
+
+/** Member count from whichever shape the (possibly historical) payload used. */
+function resolveMemberCount(community) {
+  const direct = community?.membersCount ?? community?.memberCount;
+  if (typeof direct === 'number' && Number.isFinite(direct)) return direct;
+  // Older shares put the array here; and the detail shape uses `members`.
+  if (Array.isArray(direct)) return direct.length;
+  if (Array.isArray(community?.members)) return community.members.length;
+  return 0;
 }
 
 export function SharedCommunityPreview({ community }) {
@@ -24,8 +39,9 @@ export function SharedCommunityPreview({ community }) {
     }
   };
 
-  const membersCount = community.membersCount ?? (Array.isArray(community.members) ? community.members.length : 0);
-  const avatarSrc = community.avatar ? getMediaUrl(community.avatar) : '';
+  const membersCount = resolveMemberCount(community);
+  const rawAvatar = community.avatarKey || community.avatar;
+  const avatarSrc = rawAvatar ? getMediaUrl(rawAvatar) : '';
 
   return (
     <div className={styles.card} onClick={handleClick}>
@@ -48,7 +64,7 @@ export function SharedCommunityPreview({ community }) {
       </div>
       <div className={styles.details}>
         <div className={styles.name}>{community.name}</div>
-        <div className={styles.membersCount}>{formatCount(membersCount)} Members</div>
+        <div className={styles.membersCount}>{formatCount(membersCount)} {membersCount === 1 ? 'Member' : 'Members'}</div>
       </div>
     </div>
   );

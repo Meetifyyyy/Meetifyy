@@ -6,6 +6,18 @@ import styles from '@features/crew/components/modals/ShareActivityModal.module.c
 import { useConversations } from '@shared/hooks/useMessages';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 
+/**
+ * Member count for a community, whichever shape it arrived in: the list endpoint
+ * returns `memberCount`, some payloads carry `membersCount`, and the detail
+ * endpoint returns a `members` array.
+ */
+function toMemberCount(community) {
+  const direct = community?.memberCount ?? community?.membersCount;
+  if (typeof direct === 'number' && Number.isFinite(direct)) return direct;
+  if (Array.isArray(community?.members)) return community.members.length;
+  return 0;
+}
+
 export default function ShareCommunityModal({ isOpen, onClose, community }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
@@ -27,13 +39,20 @@ export default function ShareCommunityModal({ isOpen, onClose, community }) {
       text: '',
       inviteData: { 
         type: 'communityShare', 
-        community: { 
-          id: community.id, 
-          name: community.name, 
-          avatar: community.avatar,
+        community: {
+          id: community.id,
+          name: community.name,
+          // Community payloads carry the image under `avatarKey`; `avatar` is only
+          // set on some shapes. Reading just `avatar` meant a shared community
+          // almost always rendered the placeholder instead of its picture.
+          avatar: community.avatarKey || community.avatar || null,
           color: community.color,
           description: community.description || community.desc,
-          membersCount: community.members || 0
+          // A COUNT, not the member list. `community.members` is an array of
+          // member objects, and sending it here is what made the chat preview
+          // render "[object Object],[object Object],[object Object] Members" —
+          // the preview formats this value with toLocaleString().
+          membersCount: toMemberCount(community)
         } 
       }
     });
