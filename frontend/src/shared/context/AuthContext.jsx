@@ -64,9 +64,11 @@ export function AuthProvider({ children }) {
   // to that callback's deps would change its identity on every profile change
   // and re-render every consumer of the auth context.
   const currentUserIdRef = useRef(currentUser?.id ?? null);
+  const currentUsernameRef = useRef(currentUser?.username ?? null);
   useEffect(() => {
     currentUserIdRef.current = currentUser?.id ?? null;
-  }, [currentUser?.id]);
+    currentUsernameRef.current = currentUser?.username ?? null;
+  }, [currentUser?.id, currentUser?.username]);
 
   const performSync = useCallback(async (supabaseSession, event) => {
     if (syncPromiseRef.current) {
@@ -539,6 +541,7 @@ export function AuthProvider({ children }) {
 
   const updateProfile = useCallback(async (updatedData) => {
     const userId = currentUserIdRef.current;
+    const username = currentUsernameRef.current;
 
     // Avatar/cover live denormalised inside dozens of cached payloads (post
     // authors, comment authors, chat participants, search hits, directory
@@ -547,6 +550,7 @@ export function AuthProvider({ children }) {
     if (userId && (updatedData?.avatar !== undefined || updatedData?.cover !== undefined)) {
       propagateUserMedia(queryClient, {
         userId,
+        username,
         ...(updatedData.avatar !== undefined ? { avatar: updatedData.avatar } : {}),
         ...(updatedData.cover !== undefined ? { cover: updatedData.cover } : {}),
       });
@@ -575,6 +579,7 @@ export function AuthProvider({ children }) {
         if (userId && (syncedUser.avatar !== undefined || syncedUser.cover !== undefined)) {
           propagateUserMedia(queryClient, {
             userId,
+            username: syncedUser.username || username,
             ...(syncedUser.avatar !== undefined ? { avatar: syncedUser.avatar } : {}),
             ...(syncedUser.cover !== undefined ? { cover: syncedUser.cover } : {}),
           });

@@ -236,7 +236,15 @@ export default function ProfilePage() {
     ? {
         ...authUser,
         ...profileUser,
-        isCampusRep: Boolean(profileUser?.isCampusRep ?? authUser?.isCampusRep)
+        isCampusRep: Boolean(profileUser?.isCampusRep ?? authUser?.isCampusRep),
+        // On your OWN profile the signed-in user record is the fresher source for
+        // these two fields: AuthContext updates it the moment an upload succeeds,
+        // whereas the profile query can still be serving a body seeded from
+        // IndexedDB or an in-flight refetch. Because `...profileUser` spreads
+        // last, that stale value used to win and the page kept showing the old
+        // image while the navbar (which reads the auth user) showed the new one.
+        ...(authUser?.avatar != null ? { avatar: authUser.avatar } : {}),
+        ...(authUser?.cover != null ? { cover: authUser.cover } : {}),
       }
     : profileUser;
 

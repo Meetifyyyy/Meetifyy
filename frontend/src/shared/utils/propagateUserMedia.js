@@ -1,3 +1,5 @@
+import { idbGet, idbSet } from '@shared/lib/idb';
+
 /**
  * Pushes a user's new avatar/cover into every cached React Query payload that
  * embeds it, so the change is visible everywhere on the next paint.
@@ -20,11 +22,34 @@
  */
 
 /**
+ * Mirrors the patch into the IndexedDB `profiles` store.
+ *
+ * useProfile() writes every fetched profile there and re-seeds the query from it
+ * on a later mount. Patching only the in-memory query cache therefore fixed the
+ * current view but not the next one: navigating away and back re-hydrated the
+ * OLD avatar from disk and it reappeared. Fire-and-forget — a failure here costs
+ * a stale seed that the network response then corrects, never a broken render.
+ *
+ * @param {string|undefined} username
+ * @param {{ avatar?: string|null, cover?: string|null }} patch
+ */
+function patchStoredProfile(username, patch) {
+  if (!username) return;
+  const key = String(username).toLowerCase();
+  idbGet('profiles', key)
+    .then((cached) => {
+      if (!cached?.value || typeof cached.value !== 'object') return;
+      idbSet('profiles', key, { ...cached.value, ...patch });
+    })
+    .catch(() => {});
+}
+
+/**
  * @param {import('@tanstack/react-query').QueryClient} queryClient
- * @param {{ userId: string, avatar?: string|null, cover?: string|null }} change
+ * @param {{ userId: string, username?: string, avatar?: string|null, cover?: string|null }} change
  * @returns {number} how many embedded copies were patched (useful for debugging)
  */
-export function propagateUserMedia(queryClient, { userId, avatar, cover } = {}) {
+export function propagateUserMedia(queryClient, { userId, username, avatar, cover } = {}) {
   if (!queryClient || !userId) return 0;
 
   const setsAvatar = avatar !== undefined;
@@ -106,6 +131,13 @@ export function propagateUserMedia(queryClient, { userId, avatar, cover } = {}) 
   // Empty filters = every cached query. This is a rare, user-initiated action,
   // so a full pass is acceptable; it is far cheaper than refetching everything.
   queryClient.setQueriesData({}, (data) => (data === undefined ? data : walk(data)));
+
+  // The query cache is memory-only; without this the next mount re-seeds the old
+  // image straight back from IndexedDB.
+  patchStoredProfile(username, {
+    ...(setsAvatar ? { avatar } : {}),
+    ...(setsCover ? { cover } : {}),
+  });
 
   return patchedCount;
 }
