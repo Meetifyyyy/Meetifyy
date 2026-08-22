@@ -836,7 +836,7 @@ export class UsersService {
     // and share pickers — so without this every other client kept showing the
     // old image until each of its queries happened to refetch. Fire-and-forget:
     // the profile is already saved, and a realtime failure must not undo that.
-    if (avatar !== undefined || cover !== undefined) {
+    if (avatar !== undefined || cover !== undefined || displayName !== undefined) {
       this.domainEventService.emit('user.updated', {
         // Deliberately `id`, not `userId`: DomainEventService treats a `userId`
         // field as "target only this user", which is the opposite of what this
@@ -845,6 +845,7 @@ export class UsersService {
         username: updated.username,
         avatar: updated.avatar ?? null,
         cover: updated.cover ?? null,
+        displayName: updated.displayName ?? null,
       }).catch((err) => this.logger.warn(`Failed to broadcast user.updated: ${err?.message}`));
     }
 

@@ -188,6 +188,7 @@ export function useGlobalSocketSync() {
               username: changed.username,
               ...(changed.avatar !== undefined ? { avatar: changed.avatar } : {}),
               ...(changed.cover !== undefined ? { cover: changed.cover } : {}),
+              ...(changed.displayName !== undefined ? { displayName: changed.displayName } : {}),
             });
           }
           break;

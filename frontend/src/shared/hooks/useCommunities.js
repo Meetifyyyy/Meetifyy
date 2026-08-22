@@ -9,7 +9,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { communitiesApi } from '@shared/api/apiClient';
-import { idbGet, idbSet } from '@shared/lib/idb';
+import { idbGet, idbSet, idbDelete } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
@@ -157,11 +157,28 @@ export function useCommunityById(id) {
 
 // ── Mutations ────────────────────────────────────────────────────────────────
 
+/**
+ * Everything a community write has to touch, in one place.
+ *
+ * `COMMUNITY_KEYS.byId` is a different root from `COMMUNITY_KEYS.all`, so
+ * invalidating the list left an open community page showing the pre-join member
+ * count and Join button. And the list is mirrored into IndexedDB for instant
+ * first paint, so without dropping that mirror the next session rehydrated the
+ * state from before the write — the "it's stale again after I reopen the app"
+ * case, which no amount of query invalidation fixes.
+ */
+function invalidateCommunity(queryClient, id) {
+  queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.all });
+  if (id) queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.byId(id) });
+  idbDelete('communities', 'all').catch(() => {});
+  idbDelete('communities', 'campus').catch(() => {});
+}
+
 export function useJoinCommunity() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id) => communitiesApi.join(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.all }),
+    onSuccess: (_data, id) => invalidateCommunity(queryClient, id),
   });
 }
 
@@ -169,7 +186,7 @@ export function useLeaveCommunity() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id) => communitiesApi.leave(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.all }),
+    onSuccess: (_data, id) => invalidateCommunity(queryClient, id),
   });
 }
 
@@ -177,7 +194,7 @@ export function useCreateCommunity() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data) => communitiesApi.create(data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.all }),
+    onSuccess: (created) => invalidateCommunity(queryClient, created?.id),
   });
 }
 

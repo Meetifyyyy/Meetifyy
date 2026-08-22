@@ -1,14 +1,17 @@
 /**
- * useMessages — feature-scoped hook for conversation data.
+ * useMessages — the conversation list query, and the query keys for it.
  *
- * Owns the conversations list query and exposes all messaging mutations.
+ * Conversation *mutations* live in useMessageActions / useGroupActions. This
+ * module used to export a second, parallel set of them (useMessageMutations)
+ * that nothing imported: two implementations of delete, mute, pin, clear,
+ * block and leave, free to drift apart, with no way to tell from a call site
+ * which one was authoritative. It has been removed.
+ *
  * NOT persisted to IndexedDB (active chat state should never be stale across sessions).
  */
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { messagesApi, activitiesApi, groupApi, communitiesApi, usersApi } from '@shared/api/apiClient';
-import { purgeConversationFromCaches } from '../../features/messages/shared/utils/cacheUtils';
-import { idbDeleteConversationMessages } from '../../features/messages/shared/utils/idbMessages';
+import { messagesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
@@ -120,130 +123,5 @@ export function useConversations() {
     rawConversations,
     isLoading,
     error,
-  };
-}
-
-// ── Mutations ────────────────────────────────────────────────────────────────
-
-/**
- * All messaging mutations in one place. Components call these directly
- * instead of going through useData.
- */
-export function useMessageMutations() {
-  const queryClient = useQueryClient();
-
-  const invalidateConversations = () =>
-    queryClient.invalidateQueries({ queryKey: MESSAGE_KEYS.conversations });
-
-  function updateMessagesCache(convId, updater) {
-    queryClient.setQueryData(MESSAGE_KEYS.history(convId), (old) => {
-      if (!old) return old;
-      if (old.pages) {
-        return {
-          ...old,
-          pages: old.pages.map((p, idx) =>
-            idx === 0 ? { ...p, messages: updater(p.messages || []) } : p
-          ),
-        };
-      }
-      return { ...old, messages: updater(old.messages || []) };
-    });
-  }
-
-  const togglePinConversation = async (convId, currentPinned) => {
-    const nextPinned = !currentPinned;
-    queryClient.setQueryData(MESSAGE_KEYS.conversations, (old) =>
-      Array.isArray(old)
-        ? old.map((c) =>
-            c.id === convId || c.publicId === convId
-              ? { ...c, isPinned: nextPinned, pinned: nextPinned }
-              : c
-          )
-        : old
-    );
-    try {
-      await messagesApi.pinConversation(convId, nextPinned);
-    } catch {
-      invalidateConversations();
-    }
-  };
-
-  const toggleMuteConversation = async (convId, currentMuted) => {
-    queryClient.setQueryData(MESSAGE_KEYS.conversations, (old) =>
-      Array.isArray(old)
-        ? old.map((c) =>
-            c.id === convId || c.publicId === convId ? { ...c, isMuted: !currentMuted } : c
-          )
-        : old
-    );
-    try {
-      await messagesApi.muteConversation(convId, !currentMuted);
-    } catch {
-      invalidateConversations();
-    }
-  };
-
-  const deleteConversation = async (convId) => {
-    // One shared purge for every surface: the list row, every cached message
-    // history under any of the conversation's id aliases, and the offline
-    // mirror. Deletion is per-user — the other participant's copy is untouched.
-    const aliases = purgeConversationFromCaches(queryClient, convId, conversations);
-    idbDeleteConversationMessages(aliases).catch(() => {});
-    try {
-      await messagesApi.deleteConversation(convId);
-    } catch {
-      invalidateConversations();
-    }
-  };
-
-  const clearChat = async (convId) => {
-    queryClient.setQueryData(MESSAGE_KEYS.history(convId), () => ({ pages: [], pageParams: [] }));
-    await messagesApi.clearChat(convId).catch(console.error);
-  };
-
-  const toggleBlockUser = async (targetUserId, currentlyBlocked) => {
-    queryClient.setQueryData(MESSAGE_KEYS.conversations, (old) =>
-      Array.isArray(old)
-        ? old.map((c) =>
-            c.targetUser?.id === targetUserId || c.userId === targetUserId
-              ? { ...c, blocked: !currentlyBlocked, isBlockedByMe: !currentlyBlocked, isBlockedByThem: false }
-              : c
-          )
-        : old
-    );
-    if (currentlyBlocked) {
-      await usersApi.unblockUser(targetUserId).catch(() => {});
-    } else {
-      await usersApi.blockUser(targetUserId).catch(() => {});
-    }
-    invalidateConversations();
-  };
-
-  const leaveGroup = async (convId) => {
-    if (String(convId).startsWith('c_')) {
-      const actualId = convId.replace('c_', '');
-      return communitiesApi.leave(actualId)
-        .then(() => queryClient.invalidateQueries({ queryKey: ['communities'] }))
-        .catch(() => {});
-    }
-    await groupApi.leaveGroup(convId).catch(() => {});
-    invalidateConversations();
-  };
-
-  const endGroup = async (convId) => {
-    await messagesApi.endGroup(convId);
-    invalidateConversations();
-  };
-
-  return {
-    updateMessagesCache,
-    togglePinConversation,
-    toggleMuteConversation,
-    deleteConversation,
-    clearChat,
-    toggleBlockUser,
-    leaveGroup,
-    endGroup,
-    invalidateConversations,
   };
 }

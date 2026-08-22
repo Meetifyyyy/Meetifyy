@@ -547,12 +547,13 @@ export function AuthProvider({ children }) {
     // authors, comment authors, chat participants, search hits, directory
     // cards). Patch them all up front so the new image is on screen at the next
     // paint rather than whenever each query happens to refetch.
-    if (userId && (updatedData?.avatar !== undefined || updatedData?.cover !== undefined)) {
+    if (userId && (updatedData?.avatar !== undefined || updatedData?.cover !== undefined || updatedData?.displayName !== undefined)) {
       propagateUserMedia(queryClient, {
         userId,
         username,
         ...(updatedData.avatar !== undefined ? { avatar: updatedData.avatar } : {}),
         ...(updatedData.cover !== undefined ? { cover: updatedData.cover } : {}),
+        ...(updatedData.displayName !== undefined ? { displayName: updatedData.displayName } : {}),
       });
     }
 
@@ -576,12 +577,13 @@ export function AuthProvider({ children }) {
       if (syncedUser) {
         // Reconcile against what the server actually stored, in case it
         // normalised or rejected the key we optimistically applied.
-        if (userId && (syncedUser.avatar !== undefined || syncedUser.cover !== undefined)) {
+        if (userId && (syncedUser.avatar !== undefined || syncedUser.cover !== undefined || syncedUser.displayName !== undefined)) {
           propagateUserMedia(queryClient, {
             userId,
             username: syncedUser.username || username,
             ...(syncedUser.avatar !== undefined ? { avatar: syncedUser.avatar } : {}),
             ...(syncedUser.cover !== undefined ? { cover: syncedUser.cover } : {}),
+            ...(syncedUser.displayName !== undefined ? { displayName: syncedUser.displayName } : {}),
           });
         }
         setCurrentUser(prev => {
@@ -757,6 +759,19 @@ export function AuthProvider({ children }) {
     useSavedActivitiesStore.getState().clearAll?.();
     usePostStore.getState().clearAll?.();
     idbClearAll().catch(e => console.error('Failed to clear IDB on logout', e));
+    // The React Query cache is memory-only and dies with the page, but the
+    // service worker's API cache is not: it is keyed by URL with no regard for
+    // who was authenticated when the body was stored. On a shared device the
+    // next person to sign in could be served the previous user's cached
+    // response offline. Everything the worker holds is re-fetchable, so the
+    // safe thing is simply to drop all of it.
+    if (typeof caches !== 'undefined') {
+      caches.keys()
+        .then((names) => Promise.all(names.filter((n) => n.startsWith('meetifyy-api')).map((n) => caches.delete(n))))
+        .catch(() => {});
+    }
+    // Anything the API-origin failover learned belongs to the previous session.
+    try { sessionStorage.removeItem('meetifyy_api_failover'); } catch {}
 
     if (isSupabaseConfigured) {
       try {
