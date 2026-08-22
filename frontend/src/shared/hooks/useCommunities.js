@@ -149,7 +149,9 @@ export function useCommunityById(id) {
       }
       return failureCount < 2;
     },
-    placeholderData: (prev) => prev,
+    // No keep-previous here: the key IS the identity. Opening community B
+    // rendered community A's name, description and avatar until B's fetch
+    // landed, which read as "the community avatar loaded the wrong image".
   });
 }
 

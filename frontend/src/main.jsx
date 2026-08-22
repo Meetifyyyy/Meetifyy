@@ -19,7 +19,16 @@ const queryClient = new QueryClient({
       refetchOnWindowFocus: true,     // Refetch when switching back to tab
       refetchOnReconnect: true,
       retry: 1,
-      placeholderData: (prev) => prev, // SWR: show stale instantly, fetch in background
+      // NOTE: `placeholderData: (prev) => prev` is deliberately NOT a global
+      // default. As a default it applies when the *query key changes*, which
+      // means every keyed query renders the previous key's data as though it
+      // belonged to the new key — /profile/alice → /profile/bob showed alice's
+      // avatar, bio and follower counts under bob's name until his fetch
+      // landed. That is not staleness, it is the wrong record.
+      //
+      // It is the right behaviour for a query whose key varies over the *same*
+      // dataset — a search term, a filter, a page — so those opt in
+      // individually (useCrewDirectory, useGlobalSearch, useActivities).
     },
   },
 });
