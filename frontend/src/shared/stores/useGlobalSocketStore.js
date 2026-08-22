@@ -1,18 +1,24 @@
 import { create } from 'zustand';
 import { io } from 'socket.io-client';
-import { getBackendUrl } from '@shared/api/apiClient';
+import { getBackendUrl, isApiFailoverActive, API_PROXY_PREFIX } from '@shared/api/apiClient';
 
 export const useGlobalSocketStore = create((set, get) => ({
   socket: null,
   isConnected: false,
   reconnectCount: 0,
   _lastToken: null,
+  _lastOrigin: null,
+  _lastDeviceId: null,
 
   connect: (token, deviceId) => {
-    const { socket, _lastToken } = get();
+    const { socket, _lastToken, _lastOrigin } = get();
+    const targetOrigin = getBackendUrl();
 
-    // Singleton Guard: Skip if socket already exists and is active/connecting with the same token
-    if (socket && token === _lastToken && !socket.disconnected) {
+    // Singleton Guard: skip if a socket is already live for this token AND this
+    // origin. The origin is part of the guard because API failover can move the
+    // backend mid-session, and the existing socket is then pointed at a host
+    // this network cannot reach.
+    if (socket && token === _lastToken && targetOrigin === _lastOrigin && !socket.disconnected) {
       return;
     }
 
@@ -24,7 +30,13 @@ export const useGlobalSocketStore = create((set, get) => ({
     }
 
     const socketUrl = getBackendUrl();
+    // When the API has failed over to the same-origin proxy, realtime has to go
+    // with it — the direct host is unreachable on this network. The proxy is an
+    // HTTP rewrite, so the WebSocket upgrade will not complete through it and
+    // the connection stays on long-polling. Degraded, but live.
+    const viaProxy = isApiFailoverActive();
     const newSocket = io(socketUrl, {
+      path: viaProxy ? `${API_PROXY_PREFIX}/socket.io` : '/socket.io',
       auth: { token, deviceId },
       // Start on long-polling and let engine.io upgrade to WebSocket once it has
       // proved the upgrade actually completes.
@@ -60,7 +72,7 @@ export const useGlobalSocketStore = create((set, get) => ({
       set({ isConnected: false });
     });
 
-    set({ socket: newSocket, _lastToken: token });
+    set({ socket: newSocket, _lastToken: token, _lastOrigin: socketUrl, _lastDeviceId: deviceId });
   },
 
   disconnect: () => {
@@ -71,7 +83,26 @@ export const useGlobalSocketStore = create((set, get) => ({
         socket.disconnect();
         socket.close();
       } catch {}
-      set({ socket: null, isConnected: false, _lastToken: null, reconnectCount: 0 });
+      set({ socket: null, isConnected: false, _lastToken: null, _lastOrigin: null, _lastDeviceId: null, reconnectCount: 0 });
     }
   },
 }));
+
+// API failover moves the backend to the same-origin proxy mid-session. The
+// socket that is open at that moment is pointed at a host this network cannot
+// reach, and its own reconnect loop would retry that same host forever — so
+// rebuild it against the new origin.
+if (typeof window !== 'undefined') {
+  window.addEventListener('api:origin-changed', () => {
+    const { socket, _lastToken, _lastDeviceId, connect } = useGlobalSocketStore.getState();
+    if (!_lastToken) return;
+    if (socket) {
+      try {
+        socket.removeAllListeners();
+        socket.disconnect();
+      } catch {}
+      useGlobalSocketStore.setState({ socket: null, isConnected: false });
+    }
+    connect(_lastToken, _lastDeviceId);
+  });
+}

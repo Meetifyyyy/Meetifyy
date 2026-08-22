@@ -11,6 +11,7 @@
     }
   ],
   "rewrites": [
+    { "source": "/_api/:path*", "destination": "https://meetifyy-production.up.railway.app/:path*" },
     { "source": "/version.json", "destination": "/version.json" },
     { "source": "/sw.js", "destination": "/sw.js" },
     { "source": "/registerSW.js", "destination": "/registerSW.js" },

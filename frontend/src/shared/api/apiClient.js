@@ -30,7 +30,81 @@ if (supabase) {
   });
 }
 
-export const getBackendUrl = () => {
+// ── API origin failover ──────────────────────────────────────────────────────
+// The app and the API are on different hostnames (Vercel and Railway). Campus
+// and other filtered networks routinely blocklist Railway's shared
+// `*.up.railway.app` wildcard without blocking the app's own domain, which
+// leaves the shell loading and every request failing at the TCP level.
+//
+// `/_api/*` is a Vercel rewrite that proxies to the same backend from the app's
+// own origin, so it is reachable wherever the app itself is. We do NOT route
+// through it by default — that would put all API traffic through the edge for
+// everyone. It is armed only after a real connection-level failure, and only
+// once the proxy has been confirmed to work, then remembered for the session.
+export const API_PROXY_PREFIX = '/_api';
+const FAILOVER_FLAG = 'meetifyy_api_failover';
+
+let _useProxyOrigin = (() => {
+  try { return sessionStorage.getItem(FAILOVER_FLAG) === '1'; } catch { return false; }
+})();
+
+export const isApiFailoverActive = () => _useProxyOrigin;
+
+function sameOriginProxyBase() {
+  if (typeof window === 'undefined' || !window.location) return '';
+  return `${window.location.origin}${API_PROXY_PREFIX}`;
+}
+
+/**
+ * True when the same-origin proxy is a meaningful alternative: we are in a
+ * browser, on a real deployment, and the API currently lives on a different
+ * host. On localhost the API is already reachable or genuinely down, and there
+ * is no proxy to fall back to.
+ */
+function canFailOver() {
+  if (typeof window === 'undefined' || !window.location) return false;
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1') return false;
+  const direct = directBackendUrl();
+  if (!direct) return false;
+  try {
+    return new URL(direct).host !== window.location.host;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Confirms the proxy can actually reach the backend before committing the
+ * session to it — otherwise a network that blocks everything would flip the
+ * flag and make every later request take two failed round-trips instead of one.
+ */
+let _failoverProbe = null;
+function activateFailover() {
+  if (_useProxyOrigin) return Promise.resolve(true);
+  if (_failoverProbe) return _failoverProbe;
+
+  _failoverProbe = (async () => {
+    try {
+      const res = await fetch(`${sameOriginProxyBase()}/health`, { cache: 'no-store' });
+      if (!res.ok) return false;
+      _useProxyOrigin = true;
+      try { sessionStorage.setItem(FAILOVER_FLAG, '1'); } catch {}
+      // Realtime has to move with it; the socket store reads this event rather
+      // than polling the flag.
+      window.dispatchEvent(new Event('api:origin-changed'));
+      return true;
+    } catch {
+      return false;
+    } finally {
+      _failoverProbe = null;
+    }
+  })();
+
+  return _failoverProbe;
+}
+
+const directBackendUrl = () => {
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
     const host = window.location.hostname;
     const protocol = window.location.protocol;
@@ -64,6 +138,8 @@ export const getBackendUrl = () => {
 
   return 'http://127.0.0.1:4000';
 };
+
+export const getBackendUrl = () => (_useProxyOrigin ? sameOriginProxyBase() : directBackendUrl());
 
 const PASTEL_BG_COLORS = ['b6e3f4', 'c084fc', 'fde047', '86efac', 'fca5a5', 'fdba74', 'a5f3fc', 'f472b6'];
 
@@ -285,8 +361,25 @@ async function request(method, path, body, signal) {
     }
   }
 
-  const baseUrl = getBackendUrl();
-  const cleanUrl = `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+  // Rebuilt rather than captured, so a retry after failover targets the new
+  // origin instead of the one that just failed.
+  const buildUrl = () => `${getBackendUrl().replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+  const cleanUrl = buildUrl();
+
+  const send = async () => {
+    try {
+      return await _doFetch(buildUrl(), options);
+    } catch (err) {
+      // A TypeError out of fetch is the unambiguous "could not connect" signal:
+      // DNS failure, connection reset, blocked host. An HTTP error status is a
+      // response and never lands here, so this cannot mask a real 4xx/5xx.
+      const isConnectionFailure = err instanceof TypeError;
+      if (!isConnectionFailure || isApiFailoverActive() || !canFailOver()) throw err;
+      const proxied = await activateFailover();
+      if (!proxied) throw err;
+      return _doFetch(buildUrl(), options);
+    }
+  };
 
   // In-flight deduplication: GET requests only — share one promise per URL
   if (method === 'GET') {
@@ -294,12 +387,12 @@ async function request(method, path, body, signal) {
     if (_inflight.has(inflightKey)) {
       return _inflight.get(inflightKey);
     }
-    const promise = _doFetch(cleanUrl, options).finally(() => _inflight.delete(inflightKey));
+    const promise = send().finally(() => _inflight.delete(inflightKey));
     _inflight.set(inflightKey, promise);
     return promise;
   }
 
-  return _doFetch(cleanUrl, options);
+  return send();
 }
 
 // Requests had no timeout at all: if the API stalled (server down, mid-restart,
