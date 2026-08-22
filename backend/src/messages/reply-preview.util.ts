@@ -29,6 +29,12 @@ export type ReplyToSnapshot = {
   shareType: string | null;
   /** Human-readable name of the shared entity, for the quote label. */
   shareTitle: string | null;
+  /**
+   * The shared entity's own avatar, so a quoted profile or community shows its
+   * real picture rather than a placeholder. A reference only — the client
+   * resolves it through the media layer like any other avatar.
+   */
+  shareAvatar: string | null;
   /** True when the original was unsent/deleted, so the quote can say so. */
   isUnsent: boolean;
 };
@@ -42,7 +48,11 @@ type ReplyToRow = {
 };
 
 /** Pulls a display name out of whichever shared-entity shape is present. */
-function describeShare(payload: any): { shareType: string | null; shareTitle: string | null } {
+function describeShare(payload: any): {
+  shareType: string | null;
+  shareTitle: string | null;
+  shareAvatar: string | null;
+} {
   const invite = payload?.inviteData || {};
   const candidates: Array<[string, any]> = [
     ['profile', payload?.profile || invite.profile],
@@ -60,20 +70,35 @@ function describeShare(payload: any): { shareType: string | null; shareTitle: st
         entity.displayName ||
         entity.username ||
         null;
-      return { shareType: type, shareTitle: typeof title === 'string' ? title : null };
+      // Communities store the image under avatarKey, users under avatar; posts
+      // and activities may use a cover instead.
+      const avatar =
+        entity.avatarKey ||
+        entity.avatar ||
+        entity.avatarUrl ||
+        entity.coverKey ||
+        entity.image ||
+        null;
+      return {
+        shareType: type,
+        shareTitle: typeof title === 'string' ? title : null,
+        shareAvatar: typeof avatar === 'string' && avatar.trim() ? avatar : null,
+      };
     }
   }
 
   // Group invites carry no nested entity, only a type discriminator.
   const inviteType = typeof invite.type === 'string' ? invite.type : null;
   if (inviteType) {
+    const inviteAvatar = invite.groupAvatar || invite.avatarKey || invite.avatar || null;
     return {
       shareType: inviteType === 'group_invite' ? 'group_invite' : inviteType,
       shareTitle: typeof invite.groupName === 'string' ? invite.groupName : null,
+      shareAvatar: typeof inviteAvatar === 'string' && inviteAvatar.trim() ? inviteAvatar : null,
     };
   }
 
-  return { shareType: null, shareTitle: null };
+  return { shareType: null, shareTitle: null, shareAvatar: null };
 }
 
 /**
@@ -88,8 +113,8 @@ export function buildReplyToSnapshot(
 
   const payload = replyTo.payload || {};
   const isUnsent = replyTo.state === 'UNSENT';
-  const { shareType, shareTitle } = isUnsent
-    ? { shareType: null, shareTitle: null }
+  const { shareType, shareTitle, shareAvatar } = isUnsent
+    ? { shareType: null, shareTitle: null, shareAvatar: null }
     : describeShare(payload);
 
   return {
@@ -103,6 +128,7 @@ export function buildReplyToSnapshot(
     thumbnailUrl: isUnsent ? null : (payload.thumbnailUrl || null),
     shareType,
     shareTitle,
+    shareAvatar,
     isUnsent,
   };
 }

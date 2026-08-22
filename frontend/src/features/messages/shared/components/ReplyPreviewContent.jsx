@@ -67,6 +67,7 @@ export default function ReplyPreviewContent({
     >
       {isPerson || isGroupLike ? (
         <Avatar
+          src={preview.avatarKey || undefined}
           name={preview.text}
           size="20px"
           isGroup={isGroupLike}

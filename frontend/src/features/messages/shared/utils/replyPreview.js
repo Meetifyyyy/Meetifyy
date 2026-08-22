@@ -20,6 +20,7 @@
  *   text: string,
  *   icon: string|null,
  *   thumbnailKey: string|null,
+ *   avatarKey: string|null,
  *   isUnavailable: boolean,
  * }} ReplyPreview
  */
@@ -47,7 +48,11 @@ function firstText(...candidates) {
  */
 function resolveShare(msg) {
   if (msg.shareType) {
-    return { type: msg.shareType, title: firstText(msg.shareTitle) };
+    return {
+      type: msg.shareType,
+      title: firstText(msg.shareTitle),
+      avatar: firstText(msg.shareAvatar) || null,
+    };
   }
 
   const payload = msg.payload || {};
@@ -64,12 +69,18 @@ function resolveShare(msg) {
       return {
         type,
         title: firstText(entity.name, entity.title, entity.displayName, entity.username),
+        // Communities keep the image under avatarKey, users under avatar.
+        avatar: firstText(entity.avatarKey, entity.avatar, entity.avatarUrl, entity.coverKey, entity.image) || null,
       };
     }
   }
   if (typeof invite.type === 'string' && invite.type) {
     const type = invite.type === 'group_invite' ? 'group_invite' : invite.type;
-    return { type, title: firstText(invite.groupName, invite.name) };
+    return {
+      type,
+      title: firstText(invite.groupName, invite.name),
+      avatar: firstText(invite.groupAvatar, invite.avatarKey, invite.avatar) || null,
+    };
   }
   return null;
 }
@@ -119,7 +130,7 @@ export function resolveReplyPreview(msg) {
   // The quoted message could not be loaded (deleted upstream, failed fetch, or a
   // reply to something outside the fetched page). Never render an empty quote.
   if (!msg || typeof msg !== 'object') {
-    return { kind: 'unavailable', text: KIND_LABEL.unavailable, icon: 'alert', thumbnailKey: null, isUnavailable: true };
+    return { kind: 'unavailable', text: KIND_LABEL.unavailable, icon: 'alert', thumbnailKey: null, avatarKey: null, isUnavailable: true };
   }
 
   const payload = msg.payload || {};
@@ -130,7 +141,7 @@ export function resolveReplyPreview(msg) {
     msg.deleted === true ||
     msg.isDeleted === true;
   if (isDeleted) {
-    return { kind: 'deleted', text: KIND_LABEL.deleted, icon: 'ban', thumbnailKey: null, isUnavailable: true };
+    return { kind: 'deleted', text: KIND_LABEL.deleted, icon: 'ban', thumbnailKey: null, avatarKey: null, isUnavailable: true };
   }
 
   const bodyText = truncate(firstText(msg.text, payload.text, msg.content));
@@ -146,6 +157,9 @@ export function resolveReplyPreview(msg) {
       text: share.title || label,
       icon: share.type,
       thumbnailKey: null,
+      // The entity's real picture; the Avatar component falls back to its own
+      // placeholder when this is missing or unusable.
+      avatarKey: share.avatar,
       isUnavailable: false,
     };
   }
@@ -162,6 +176,7 @@ export function resolveReplyPreview(msg) {
       text: bodyText || KIND_LABEL[mediaKind],
       icon: mediaKind,
       thumbnailKey,
+      avatarKey: null,
       isUnavailable: false,
     };
   }
@@ -174,6 +189,7 @@ export function resolveReplyPreview(msg) {
       text: bodyText || KIND_LABEL.image,
       icon: 'image',
       thumbnailKey: firstText(payload.thumbnailUrl, anyMedia) || null,
+      avatarKey: null,
       isUnavailable: false,
     };
   }
@@ -185,13 +201,14 @@ export function resolveReplyPreview(msg) {
       text: bodyText,
       icon: isBareLink ? 'link' : null,
       thumbnailKey: null,
+      avatarKey: null,
       isUnavailable: false,
     };
   }
 
   // Nothing recognised. A generic label keeps the quote from collapsing, which is
   // the failure this module exists to prevent.
-  return { kind: 'unknown', text: KIND_LABEL.unknown, icon: null, thumbnailKey: null, isUnavailable: false };
+  return { kind: 'unknown', text: KIND_LABEL.unknown, icon: null, thumbnailKey: null, avatarKey: null, isUnavailable: false };
 }
 
 export { KIND_LABEL };
