@@ -155,6 +155,14 @@ function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name
         isGroup={isGroup}
         disableHover
         className={className}
+        // Circular, overriding the squared-off group shape Avatar applies when
+        // isGroup is set. In a quote every entity avatar is round — that is what
+        // the picture-less fallback below draws, and what the shared-community
+        // card uses — so a community WITH a picture was the odd one out, showing
+        // as a rounded square beside the same community drawn as a circle.
+        // Inline because .avatarGroup sets the radius through a class;
+        // .avatarClip inherits the radius and clips the image to match.
+        style={{ borderRadius: '50%' }}
       />
     );
   }
