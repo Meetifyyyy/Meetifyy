@@ -20,6 +20,8 @@ import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { activitiesApi, usersApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
+import { insertActivityIntoCache, replaceActivityInCache } from '@shared/utils/mapActivity';
+import { idbDelete } from '@shared/lib/idb';
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS_OF_WEEK = ['S','M','T','W','T','F','S'];
 
@@ -1152,20 +1154,16 @@ export default function CreateActivityPage() {
       maxMembers: fd.slotsNeeded === 999 ? null : fd.slotsNeeded,
     };
 
-    // Snapshot current cache for rollback
-    const previousCache = queryClient.getQueryData(['activities']);
+    // Snapshot every activities cache for rollback, not just the public feed:
+    // the Crew page renders the composed discover payload
+    // (['activities','discover']) and the per-scope lists
+    // (['activities','for_you'|'college'|'one_on_one']), so patching only
+    // ['activities'] left the new activity invisible on the page the user
+    // lands on right after publishing.
+    const previousCaches = queryClient.getQueriesData({ queryKey: ['activities'] });
 
-    queryClient.setQueryData(['activities'], (old) => {
-      if (!old?.pages) return old;
-      const newPages = old.pages.map((page, i) => {
-        if (i !== 0) return page;
-        const acts = page?.activities ?? page ?? [];
-        return Array.isArray(page?.activities)
-          ? { ...page, activities: [optimisticActivity, ...acts] }
-          : [optimisticActivity, ...acts];
-      });
-      return { ...old, pages: newPages };
-    });
+    queryClient.setQueriesData({ queryKey: ['activities'] }, (old) =>
+      insertActivityIntoCache(old, optimisticActivity));
 
     // Show modal immediately — user browses friends while API runs in background
     setShowInviteModal(true);
@@ -1206,24 +1204,20 @@ export default function CreateActivityPage() {
         endDate: finalEnd.toISOString(),
       });
     })().then((realActivity) => {
-      // Swap optimistic entry with real server data
-      queryClient.setQueryData(['activities'], (old) => {
-        if (!old?.pages) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page) => {
-            const acts = page?.activities ?? page ?? [];
-            const replaced = acts.map((a) => a.id === tempId ? realActivity : a);
-            return Array.isArray(page?.activities)
-              ? { ...page, activities: replaced }
-              : replaced;
-          }),
-        };
-      });
+      // Swap the optimistic entry for the real one everywhere it was inserted.
+      queryClient.setQueriesData({ queryKey: ['activities'] }, (old) =>
+        replaceActivityInCache(old, tempId, realActivity));
+
+      // The optimistic entry keeps the page from looking empty; the server is
+      // the authority on which section an activity belongs to under its
+      // visibility settings, so refetch rather than try to reproduce that
+      // scoping here. This covers every scope and the discover payload at once.
+      idbDelete('activities', 'all_page1');
+      queryClient.invalidateQueries({ queryKey: ['activities'] });
       return realActivity;
     }).catch((err) => {
-      // Rollback — remove the optimistic entry
-      queryClient.setQueryData(['activities'], previousCache);
+      // Rollback — restore every cache the optimistic entry was written into
+      previousCaches.forEach(([key, data]) => queryClient.setQueryData(key, data));
       console.error('Failed to create activity', err);
       const raw = String(err?.message || '');
       // Surface the server's own validation text (e.g. "Start date must be in

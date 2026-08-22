@@ -9,30 +9,7 @@ import PostSkeleton from './skeletons/PostSkeleton';
 import PullToRefresh from './PullToRefresh';
 import styles from './Feed.module.css';
 import { useAuth } from '@shared/context/AuthContext';
-
-// Prepend a freshly-created post to a cached feed, deduped by id so a subsequent
-// socket mark-stale or refetch can never render it twice. Handles the infinite-
-// query shape ({ pages: [{ posts, nextCursor }] }) plus flat array/{posts} shapes.
-function prependPost(old, post) {
-  if (!post?.id) return old;
-  if (!old) {
-    return { pages: [{ posts: [post], nextCursor: undefined }], pageParams: [undefined] };
-  }
-  if (old.pages) {
-    const pages = old.pages.map((pg) => {
-      if (Array.isArray(pg?.posts)) return { ...pg, posts: pg.posts.filter((p) => p?.id !== post.id) };
-      if (Array.isArray(pg?.items)) return { ...pg, items: pg.items.filter((p) => p?.id !== post.id) };
-      return pg;
-    });
-    const first = pages[0] || {};
-    const key = Array.isArray(first.items) && !Array.isArray(first.posts) ? 'items' : 'posts';
-    pages[0] = { ...first, [key]: [post, ...(first[key] || [])] };
-    return { ...old, pages };
-  }
-  if (Array.isArray(old.posts)) return { ...old, posts: [post, ...old.posts.filter((p) => p?.id !== post.id)] };
-  if (Array.isArray(old)) return [post, ...old.filter((p) => p?.id !== post.id)];
-  return old;
-}
+import { addCreatedPostToCaches } from '../utils/postCache';
 
 function Feed({ onPostClick }) {
   const { currentUser } = useAuth();
@@ -130,21 +107,9 @@ function Feed({ onPostClick }) {
       poll: pollData || undefined,
     });
 
-    if (created?.id) {
-      const normalized = {
-        ...created,
-        likeCount: created.likeCount ?? 0,
-        likesCount: created.likeCount ?? 0,
-        commentCount: created.commentCount ?? 0,
-        commentsCount: created.commentCount ?? 0,
-        hasLiked: false,
-        isLiked: false,
-        isLikedByMe: false,
-        hasBookmarked: false,
-        isBookmarked: false,
-      };
-      queryClient.setQueriesData({ queryKey: ['feed'] }, (old) => prependPost(old, normalized));
-    }
+    // Into every cached post list at once — the home feed, the author's own
+    // profile, bookmarks, the community view — rather than just ['feed'].
+    addCreatedPostToCaches(queryClient, created);
   }, [queryClient]);
 
   const handlePullToRefresh = useCallback(() => {

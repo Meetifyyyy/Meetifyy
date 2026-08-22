@@ -1,10 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
+import { isPostListQuery } from '../utils/postCache';
 
-// Every query-key prefix that can ever hold a list of post objects.
-const POST_LIST_KEYS = ['feed', 'posts', 'user-posts', 'bookmarks', 'community-posts'];
-const isPostListQuery = (query) => POST_LIST_KEYS.includes(query.queryKey[0]);
 
 function removePost(old, postId) {
   if (!old) return old;

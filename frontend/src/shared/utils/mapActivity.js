@@ -71,3 +71,63 @@ export function mapActivity(a) {
     _membersData: membersData,
   };
 }
+
+
+/**
+ * The three shapes an activities cache entry can take, handled in one place.
+ *
+ *   - infinite list:  { pages: [{ activities: [...] }] }  (or a bare array page)
+ *   - flat list:      [...]
+ *   - discover:       { forYou: { items }, college: { items }, oneOnOne: {...} }
+ *
+ * Every writer used to know only the first shape, so a freshly created activity
+ * landed in the public feed and nowhere else — including the composed payload
+ * the Crew page actually renders.
+ */
+function mapActivityCache(old, mapList) {
+  if (!old) return old;
+
+  if (Array.isArray(old?.pages)) {
+    return {
+      ...old,
+      pages: old.pages.map((page, i) => {
+        if (Array.isArray(page?.activities)) return { ...page, activities: mapList(page.activities, i) };
+        if (Array.isArray(page)) return mapList(page, i);
+        return page;
+      }),
+    };
+  }
+
+  if (Array.isArray(old)) return mapList(old, 0);
+
+  if (typeof old === 'object') {
+    let touched = false;
+    const next = {};
+    for (const [key, value] of Object.entries(old)) {
+      if (Array.isArray(value?.items)) {
+        next[key] = { ...value, items: mapList(value.items, 0) };
+        touched = true;
+      } else {
+        next[key] = value;
+      }
+    }
+    return touched ? next : old;
+  }
+
+  return old;
+}
+
+/** Prepend an activity to the first page/section of a cache, deduped by id. */
+export function insertActivityIntoCache(old, activity) {
+  if (!activity?.id) return old;
+  return mapActivityCache(old, (list, pageIndex) => {
+    const without = list.filter((a) => a?.id !== activity.id);
+    return pageIndex === 0 ? [activity, ...without] : without;
+  });
+}
+
+/** Swap a placeholder activity for the server's version, in place. */
+export function replaceActivityInCache(old, tempId, activity) {
+  if (!tempId || !activity?.id) return old;
+  return mapActivityCache(old, (list) => list.map((a) => (a?.id === tempId ? activity : a)));
+}
