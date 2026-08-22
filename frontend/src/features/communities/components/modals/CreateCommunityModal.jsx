@@ -266,7 +266,17 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
 
     setIsSubmitting(true);
     try {
-      let finalAvatar = name.trim().charAt(0).toUpperCase();
+      // Only ever a real uploaded media reference, never a placeholder.
+      //
+      // This used to be seeded with the community's initial letter
+      // (name.charAt(0)) and sent as `avatarKey`, so a community created without
+      // a picture stored "H" or "J" in a column meant to hold a storage object
+      // key. Every render then requested /api/media/H, which the backend
+      // correctly rejected as a malformed key (400) on each paint.
+      //
+      // The initial is presentation, not data: Avatar already derives it from
+      // `name` when there is no image, so nothing needs to be persisted.
+      let finalAvatar = null;
       let hasCustomAvatar = false;
 
       if (avatarPreview) {

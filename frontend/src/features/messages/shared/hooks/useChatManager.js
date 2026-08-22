@@ -470,6 +470,13 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
               ...(existing?.payload || {}),
               mediaUrl: finalMediaUrl,
               thumbnailUrl: finalThumbnailUrl,
+              // The local blob preview is revoked a few seconds after this, so it
+              // must not survive in the cache. MessageBubble prefers
+              // payload.localPreviewUrl over the real media URL, so leaving it set
+              // meant that once the blob was revoked every re-render requested a
+              // dead blob: URL — "Not allowed to load local resource", repeatedly,
+              // for the life of the conversation.
+              localPreviewUrl: null,
               width: finalWidth,
               height: finalHeight,
               duration: finalDuration,
@@ -478,7 +485,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
           idbPatchMessage(targetConvId, clientId, {
             mediaUrl: finalMediaUrl,
             uploadStatus: 'done',
-            payload: { ...tempMessage.payload, mediaUrl: finalMediaUrl, thumbnailUrl: finalThumbnailUrl, width: finalWidth, height: finalHeight, duration: finalDuration },
+            payload: { ...tempMessage.payload, mediaUrl: finalMediaUrl, thumbnailUrl: finalThumbnailUrl, localPreviewUrl: null, width: finalWidth, height: finalHeight, duration: finalDuration },
           }).catch(() => {});
         }
 

@@ -641,14 +641,38 @@ export class CommunitiesService implements OnModuleInit {
     });
   }
 
+  /**
+   * Accepts only values that can actually resolve to an image, and drops
+   * anything else.
+   *
+   * The create form used to seed this field with the community's initial letter
+   * when no picture was chosen, so rows were persisted with avatarKey "H" / "J".
+   * The client renders a bare string as /api/media/<value>, so every paint fired
+   * a request the media route rejected as a malformed key. A placeholder initial
+   * is presentation and is derived from the name at render time; it must never be
+   * stored here.
+   *
+   * Valid shapes: a storage object key ("communities/ab12.webp"), an
+   * /api/media/... path, or an absolute http(s) URL for external avatars.
+   */
+  private sanitizeMediaRef(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const v = value.trim();
+    if (!v) return null;
+    if (/^https?:\/\//i.test(v)) return v;
+    if (v.startsWith('/api/media/')) return v;
+    if (/^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+$/.test(v)) return v;
+    return null;
+  }
+
   async createCommunity(data: any, creatorId: string) {
     const rawSlug = (data.name || 'community').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const slug = rawSlug || `community-${Date.now()}`;
     const existing = await this.prisma.community.findUnique({ where: { slug } });
     const finalSlug = existing ? `${slug}-${Date.now()}` : slug;
 
-    const avatarVal = data.avatarKey || data.avatar;
-    const coverVal = data.coverKey || data.coverImage;
+    const avatarVal = this.sanitizeMediaRef(data.avatarKey ?? data.avatar);
+    const coverVal = this.sanitizeMediaRef(data.coverKey ?? data.coverImage);
     const descVal = data.description || data.desc;
 
     const createData: any = {
@@ -742,8 +766,12 @@ export class CommunitiesService implements OnModuleInit {
       updateData.isPrivate = data.privacy === 'private';
     }
     
-    const avatarInput = data.avatarKey !== undefined ? data.avatarKey : data.avatar;
-    if (avatarInput !== undefined) {
+    const rawAvatarInput = data.avatarKey !== undefined ? data.avatarKey : data.avatar;
+    // Clearing the avatar (null / '') is legitimate and must still be honoured;
+    // only a non-empty value that cannot be a media reference is discarded.
+    const avatarInput =
+      rawAvatarInput === null || rawAvatarInput === '' ? null : this.sanitizeMediaRef(rawAvatarInput);
+    if (rawAvatarInput !== undefined) {
       updateData.avatarKey = avatarInput;
       if (avatarInput && typeof avatarInput === 'string') {
         if (avatarInput.startsWith('/api/media/')) {

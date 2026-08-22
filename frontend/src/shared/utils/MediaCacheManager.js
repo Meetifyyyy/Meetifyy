@@ -83,6 +83,15 @@ class MediaCacheManager {
 
     key = key.replace(/^\/+/, '');
 
+    // A storage key is always "<folder>/<filename>". Anything else cannot resolve
+    // to an object, and requesting /api/media/<value> for it just produces a 400
+    // on every render — which is exactly what happened when a community was saved
+    // with its initial letter ("H") in avatarKey. Returning null lets the caller
+    // fall back to initials instead of firing a request that cannot succeed.
+    if (!/^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+$/.test(key)) {
+      return null;
+    }
+
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt > Date.now() + this.EXPIRY_BUFFER) {
       return cached.url;
@@ -120,6 +129,13 @@ class MediaCacheManager {
 
     // Clean leading slashes if any
     key = key.replace(/^\/+/, '');
+
+    // Same guard as getMediaUrl: only "<folder>/<filename>" can resolve to a
+    // stored object, so anything else is rejected here rather than turned into a
+    // request that is certain to 400.
+    if (!/^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+$/.test(key)) {
+      return null;
+    }
 
 
     const cached = this.cache.get(key);
