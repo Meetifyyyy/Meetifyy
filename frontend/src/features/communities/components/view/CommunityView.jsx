@@ -7,7 +7,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
-import { isImageUrl } from '@shared/utils/avatar';
+import { isImageUrl, resolveCommunityAvatar } from '@shared/utils/avatar';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
@@ -63,7 +63,12 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
 
   const [coverLoading, setCoverLoading] = useState(true);
   const [coverError, setCoverError] = useState(false);
-  const [avatarLoading, setAvatarLoading] = useState(isImageUrl(comm.avatar));
+  // One resolved URL for every avatar slot on this page. `comm.avatar` was
+  // being used raw: it is an object key, so it resolved relative to the current
+  // route and 404'd, and it also missed communities whose image is stored under
+  // `avatarKey` — which is where the server actually puts it.
+  const avatarUrl = resolveCommunityAvatar(comm);
+  const [avatarLoading, setAvatarLoading] = useState(Boolean(avatarUrl));
 
   useEffect(() => {
     setCoverLoading(true);
@@ -72,8 +77,8 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
 
   useEffect(() => {
     setImgError(false);
-    setAvatarLoading(isImageUrl(comm.avatar));
-  }, [comm.avatar]);
+    setAvatarLoading(Boolean(avatarUrl));
+  }, [avatarUrl]);
 
   useEffect(() => {
     if (!showDropdown) return;
@@ -164,15 +169,15 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
             <div className={styles.avatarWrapper}>
               <div 
                 className={`${styles.heroAvatar} ${isAdmin ? styles.heroAvatarEditable : ''}`} 
-                style={{ background: (!isImageUrl(comm.avatar) || imgError) ? (comm.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
+                style={{ background: (!avatarUrl || imgError) ? (comm.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
                 onClick={isAdmin ? () => avatarInputRef.current?.click() : undefined}
               >
-                {avatarLoading && isImageUrl(comm.avatar) && !imgError && (
+                {avatarLoading && avatarUrl && !imgError && (
                   <div className={styles.avatarSkeleton} />
                 )}
-                {isImageUrl(comm.avatar) && !imgError ? (
+                {avatarUrl && !imgError ? (
                   <img 
-                    src={comm.avatar} 
+                    src={avatarUrl} 
                     alt={comm.name} 
                     className={`${styles.heroAvatarImg} ${avatarLoading ? styles.imgHidden : styles.imgVisible}`} 
                     onLoad={() => setAvatarLoading(false)}
@@ -183,7 +188,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
                   />
                 ) : (
                   <span className={styles.heroLetter}>
-                    {comm.avatar || (comm.name ? comm.name.charAt(0).toUpperCase() : '')}
+                    {comm.name ? comm.name.charAt(0).toUpperCase() : ''}
                   </span>
                 )}
                 {isAdmin && (
@@ -412,14 +417,14 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
           <div className={styles.mobileHeroTopRow}>
             <div 
               className={styles.mobileAvatar}
-              style={{ background: (!isImageUrl(comm.avatar) || imgError) ? (comm.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
+              style={{ background: (!avatarUrl || imgError) ? (comm.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
             >
-              {avatarLoading && isImageUrl(comm.avatar) && !imgError && (
+              {avatarLoading && avatarUrl && !imgError && (
                 <div className={styles.avatarSkeleton} />
               )}
-              {isImageUrl(comm.avatar) && !imgError ? (
+              {avatarUrl && !imgError ? (
                 <img 
-                  src={comm.avatar} 
+                  src={avatarUrl} 
                   alt={comm.name} 
                   className={`${styles.heroAvatarImg} ${avatarLoading ? styles.imgHidden : styles.imgVisible}`} 
                   onLoad={() => setAvatarLoading(false)}
@@ -430,7 +435,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
                 />
               ) : (
                 <span className={styles.heroLetter}>
-                  {comm.avatar || (comm.name ? comm.name.charAt(0).toUpperCase() : '')}
+                  {comm.name ? comm.name.charAt(0).toUpperCase() : ''}
                 </span>
               )}
             </div>
