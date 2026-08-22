@@ -10,6 +10,8 @@ export default function InstantNotificationCard({
   groupName,
   actorName,
   bodyText,
+  subText,
+  thumbnail,
   time = 'just now',
   onClick,
   onDismiss,
@@ -139,7 +141,37 @@ export default function InstantNotificationCard({
             bodyText
           )}
         </div>
+
+        {subText ? (
+          <div
+            style={{
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              color: 'var(--color-text-light, #94a3b8)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {subText}
+          </div>
+        ) : null}
       </div>
+
+      {thumbnail ? (
+        <img
+          src={thumbnail}
+          alt=""
+          style={{
+            flexShrink: 0,
+            width: '38px',
+            height: '38px',
+            borderRadius: '8px',
+            objectFit: 'cover',
+            border: '1px solid var(--color-border, #e2e8f0)',
+          }}
+        />
+      ) : null}
     </motion.div>
   );
 }

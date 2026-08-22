@@ -251,7 +251,6 @@ export default function ActivityDetailPage() {
       hostAvatar,
       hostIsCampusRep,
       participants: participantIds,
-      pendingRequests: baseAct.members?.filter(m => m.status === 'PENDING').map(m => m.userId) || [],
       // The server is authoritative for the total: `members` in the detail
       // payload is only the first page of attendees, so counting the ids we
       // happen to hold would under-report a large activity.
@@ -296,11 +295,6 @@ export default function ActivityDetailPage() {
 
   const { mutate: toggleJoin, isJoinPending } = useJoinActivity();
 
-  const requestMutation = useMutation({
-    mutationFn: (actId) => activitiesApi.requestToJoinActivity(actId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['activities'] }),
-  });
-
   const endMutation = useMutation({
     mutationFn: (actId) => activitiesApi.cancelCrewActivity(actId),
     onMutate: async (actId) => {
@@ -325,7 +319,6 @@ export default function ActivityDetailPage() {
     },
   });
 
-  const requestToJoinActivity = (actId) => requestMutation.mutateAsync(actId);
   const endCrewActivity = (actId) => endMutation.mutateAsync(actId);
 
   const { savedActivities, toggleSaveActivity } = useSavedActivitiesStore();
@@ -391,7 +384,6 @@ export default function ActivityDetailPage() {
     };
   }, [activity?.coverImage, activity?.coverColor]);
 
-  const [hasRequested, setHasRequested] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showJoinedModal, setShowJoinedModal] = useState(false);
@@ -495,7 +487,6 @@ export default function ActivityDetailPage() {
   const spotsLeft = slotsNeeded - slotsFilledAdjusted;
   const isFull = spotsLeft <= 0;
   const isHost = !!(currentUser?.id && (activity.hostId === currentUser.id || activity.creatorId === currentUser.id));
-  const isRequested = activity.pendingRequests?.includes(currentUser?.id) || hasRequested;
   const isCancelled = activity.status === 'CANCELLED';
   let hasEnded = activity.status === 'ENDED' || isCancelled;
 

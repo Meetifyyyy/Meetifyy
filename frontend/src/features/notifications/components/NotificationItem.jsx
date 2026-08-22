@@ -8,16 +8,22 @@ export default function NotificationItem({
   actor,
   timeStr,
   onClick,
-  onAcceptJoinRequest,
-  onRejectJoinRequest
 }) {
   const navigate = useNavigate();
   const notifType = (notif.type || '').toLowerCase();
   const isFollow = notifType === 'follow';
   const targetUsername = actor?.username || notif.actor?.username || notif.metadata?.actorUsername || '';
 
-  const actorName = actor?.name || actor?.displayName || actor?.username || notif.actor?.displayName || notif.actor?.username || notif.metadata?.actorDisplayName || notif.metadata?.actorName || notif.metadata?.actorUsername || 'Someone';
-  const postMedia = notif.metadata?.postMedia || notif.metadata?.mediaUrl || notif.metadata?.postImage || notif.metadata?.thumbnailUrl || null;
+  const isActivityJoin = notifType === 'join_request' || notifType === 'activity_join';
+  // Activity joins name the joiner by username, matching how the host knows them.
+  const actorName = isActivityJoin
+    ? (actor?.username || notif.actor?.username || notif.metadata?.actorUsername || 'Someone')
+    : (actor?.name || actor?.displayName || actor?.username || notif.actor?.displayName || notif.actor?.username || notif.metadata?.actorDisplayName || notif.metadata?.actorName || notif.metadata?.actorUsername || 'Someone');
+  // The thumbnail slot on the right: a post's media, or — for an activity-join
+  // notification — the activity's own cover image.
+  const activityName = notif.metadata?.activityName || null;
+  const activityImage = notif.metadata?.activityImage || null;
+  const postMedia = notif.metadata?.postMedia || notif.metadata?.mediaUrl || notif.metadata?.postImage || notif.metadata?.thumbnailUrl || activityImage || null;
 
   let displayText = notif.body || notif.text || '';
   if (isFollow) {
@@ -42,8 +48,9 @@ export default function NotificationItem({
     displayText = 'mentioned you.';
   } else if (notifType === 'message') {
     displayText = 'sent you a message.';
-  } else if (notifType === 'join_request') {
-    displayText = 'requested to join your activity.';
+  } else if (notifType === 'join_request' || notifType === 'activity_join') {
+    // Joining is direct — there is no approval step to report.
+    displayText = 'joined your activity.';
   } else if (displayText.startsWith(actorName)) {
     displayText = displayText.substring(actorName.length).trim();
   }
@@ -87,27 +94,8 @@ export default function NotificationItem({
           <span className={styles.text}>{displayText}</span>
           <span className={styles.time}>• {timeStr}</span>
         </div>
-        {notifType === 'activity_join_request' && (
-          <div className={styles.joinBtnGroup}>
-            <button 
-              className={styles.joinAcceptBtn}
-              onClick={(e) => {
-                e.stopPropagation();
-                onAcceptJoinRequest(notif.activityId, notif.actorId, notif.id);
-              }}
-            >
-              Accept
-            </button>
-            <button 
-              className={styles.joinRejectBtn}
-              onClick={(e) => {
-                e.stopPropagation();
-                onRejectJoinRequest(notif.activityId, notif.actorId, notif.id);
-              }}
-            >
-              Reject
-            </button>
-          </div>
+        {isActivityJoin && activityName && (
+          <div className={styles.subText}>{activityName}</div>
         )}
       </div>
 

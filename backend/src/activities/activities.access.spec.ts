@@ -222,13 +222,6 @@ describe('Activity access enforcement (service level)', () => {
     });
   });
 
-  describe('POST /api/activities/:id/request', () => {
-    it('refuses to queue a join request on a restricted activity', async () => {
-      activityRow = baseActivity('PRIVATE');
-      await expect(service.requestToJoinActivity('act-1', 'user-other')).rejects.toBeInstanceOf(ForbiddenException);
-    });
-  });
-
   describe('POST /api/activities/:id/bookmark', () => {
     it('refuses to bookmark an activity the user may not view', async () => {
       activityRow = baseActivity('COLLEGE_ONLY');

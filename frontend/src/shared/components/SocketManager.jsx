@@ -122,7 +122,12 @@ export default function SocketManager() {
       } else if (!isMuted && window.location.pathname !== '/onboarding') {
         toast.custom((t) => {
           const isGroupMessage = Boolean(notification.metadata?.isGroup || notification.metadata?.conversationType === 'GROUP');
-          const actorName = notification.actor?.displayName || notification.actor?.username || notification.metadata?.actorDisplayName || notification.metadata?.actorName || notification.metadata?.actorUsername || 'Someone';
+          const notifTypeRaw = (notification.type || '').toLowerCase();
+          const isActivityJoin = notifTypeRaw === 'join_request' || notifTypeRaw === 'activity_join';
+          // Activity joins name the joiner by username, matching how the host knows them.
+          const actorName = isActivityJoin
+            ? (notification.actor?.username || notification.metadata?.actorUsername || 'Someone')
+            : (notification.actor?.displayName || notification.actor?.username || notification.metadata?.actorDisplayName || notification.metadata?.actorName || notification.metadata?.actorUsername || 'Someone');
           const actorAvatar = notification.actor?.avatar || notification.metadata?.actorAvatar || '';
           const groupName = notification.metadata?.conversationName || notification.title || 'Group';
           const groupAvatar = notification.metadata?.conversationAvatar || '';
@@ -157,8 +162,9 @@ export default function SocketManager() {
             } else {
               bodyText = textSnippet;
             }
-          } else if (notifType === 'join_request') {
-            bodyText = 'requested to join your activity.';
+          } else if (notifType === 'join_request' || notifType === 'activity_join') {
+            // Joining is direct — there is no approval step to report.
+            bodyText = 'joined your activity.';
           } else if (bodyText.startsWith(actorName)) {
             bodyText = bodyText.substring(actorName.length).trim();
           }
@@ -177,6 +183,13 @@ export default function SocketManager() {
                 return;
               }
             }
+            if (isActivityJoin) {
+              const activityId = notification.entityId || notification.metadata?.activityId;
+              if (activityId) {
+                navigate(`/crew/${activityId}`, { state: { from: window.location.pathname } });
+                return;
+              }
+            }
             navigate('/notifications');
           };
 
@@ -187,6 +200,8 @@ export default function SocketManager() {
               groupName={groupName}
               actorName={actorName}
               bodyText={isGroupMessage ? (notification.metadata?.messageText || '') : bodyText}
+              subText={isActivityJoin ? (notification.metadata?.activityName || null) : null}
+              thumbnail={isActivityJoin ? (notification.metadata?.activityImage || null) : null}
               time="just now"
               onClick={handleClick}
               onDismiss={() => toast.dismiss(t)}

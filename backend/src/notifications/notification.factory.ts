@@ -140,23 +140,34 @@ export class NotificationFactory {
     };
   }
 
+  /**
+   * "<username> joined your activity" — sent to the host the moment someone
+   * joins. Joining is direct (there is no approval queue), so this is a plain
+   * informational notification: no accept/reject affordance.
+   *
+   * The metadata carries everything the card needs to render without a second
+   * fetch: the joiner's username and avatar, plus the activity's name and
+   * cover image.
+   */
   createActivityJoin(actor: any, activity: any, activityCreatorId: string): CreateNotificationDto {
-    const actorName = actor?.displayName || actor?.username || 'Someone';
-    const actorUsername = actor?.username || '';
+    const actorUsername = actor?.username || actor?.displayName || 'Someone';
     return {
       recipientId: activityCreatorId,
       actorId: actor?.id,
       type: NotificationType.JOIN_REQUEST,
       entityType: NotificationEntityType.ACTIVITY,
       entityId: activity.id,
-      title: 'New Activity Member',
-      body: `${actorName} joined your activity "${activity.title}".`,
+      title: activity.title || 'Your activity',
+      body: `${actorUsername} joined your activity.`,
       metadata: {
         version: 1,
-        actorName,
+        actorName: actorUsername,
         actorUsername,
         actorAvatar: actor?.avatar || null,
-        activityName: activity.title,
+        activityId: activity.id,
+        activityName: activity.title || null,
+        activityImage: activity.coverImage || null,
+        activityColor: activity.coverColor || null,
       },
     };
   }

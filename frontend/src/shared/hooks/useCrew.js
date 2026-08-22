@@ -424,22 +424,16 @@ export function useCrewActions() {
 
   const joinCrewActivity = (id) => activitiesApi.join(id).then(invalidate);
   const leaveCrewActivity = (id) => activitiesApi.leave(id).then(invalidate);
-  const requestToJoinActivity = (id) => activitiesApi.requestToJoinActivity(id).then(invalidate);
   const cancelCrewActivity = (id) => activitiesApi.cancelCrewActivity(id).then(invalidate);
   const endCrewActivity = cancelCrewActivity;
-  const acceptJoinRequest = (id, userId) => activitiesApi.acceptJoinRequest(id, userId).then(invalidate);
-  const rejectJoinRequest = (id, userId) => activitiesApi.rejectJoinRequest(id, userId).then(invalidate);
   const declineCrewInvitation = (id) => activitiesApi.declineCrewInvitation(id).then(invalidate);
   const addCrewActivity = (data) => activitiesApi.create(data).then((res) => { invalidate(); return res; });
 
   return {
     joinCrewActivity,
     leaveCrewActivity,
-    requestToJoinActivity,
     cancelCrewActivity,
     endCrewActivity,
-    acceptJoinRequest,
-    rejectJoinRequest,
     declineCrewInvitation,
     addCrewActivity,
   };
