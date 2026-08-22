@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useToggleMutation } from '@shared/hooks/useToggleMutation';
 import { communitiesApi } from '@shared/api/apiClient';
+import { COMMUNITY_KEYS } from '@shared/hooks/useCommunities';
 
 export function useJoinCommunity() {
   const applyOptimistic = useCallback((queryClient, intent, variables) => {
@@ -17,10 +18,14 @@ export function useJoinCommunity() {
       return oldData;
     };
 
-    queryClient.setQueryData(['communities'], updater);
-    queryClient.setQueryData(['campusCommunities'], updater);
+    // Use the shared key definitions rather than re-typing them: the campus list
+    // was previously written to ['campusCommunities'], which is not a key any
+    // query uses (COMMUNITY_KEYS.campus is ['communities','campus']), so joining
+    // a campus community never updated that list optimistically.
+    queryClient.setQueryData(COMMUNITY_KEYS.all, updater);
+    queryClient.setQueryData(COMMUNITY_KEYS.campus, updater);
 
-    queryClient.setQueryData(['community', communityId], (old) => {
+    queryClient.setQueryData(COMMUNITY_KEYS.byId(communityId), (old) => {
       if (!old) return old;
       const current = old.memberCount || old.membersCount || 0;
       const newCount = Math.max(0, current + (intent ? 1 : -1));

@@ -133,7 +133,7 @@ const normalizePostText = (str) => {
 
 function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityTag = false }) {
   const { currentUser } = useAuth();
-  const { communities } = useCommunities();
+  const { communitiesById } = useCommunities();
   const { openViewer } = useMediaViewer();
   const [showMenu, setShowMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -179,7 +179,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
   const isSaved = toggleRegistry.getLatestIntent(`savePost:${id}`, rawIsSaved);
 
   const author = postData.author || { id: authorId, displayName: 'User', username: 'user', avatar: null };
-  const authorCollege = (author.collegeId && communities) ? communities[author.collegeId] : null;
+  const authorCollege = (author.collegeId && communitiesById) ? communitiesById[author.collegeId] : null;
   const authorCollegeName = getCollegeName(author, '') || authorCollege?.name || '';
 
   const formatExactDate = (timestamp) => {
@@ -210,7 +210,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
     setShowShareModal(true);
   };
 
-  const postCommunity = (!hideCommunityTag && postData.communityId && communities) ? communities[postData.communityId] : null;
+  const postCommunity = (!hideCommunityTag && postData.communityId && communitiesById) ? communitiesById[postData.communityId] : null;
 
   return (
     <div className={styles.post} onClick={handleCardClick} style={{ cursor: (!isDetailed && onClick) ? 'pointer' : 'default' }}>

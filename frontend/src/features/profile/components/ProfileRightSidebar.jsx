@@ -102,6 +102,15 @@ function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
  * When `embedded` is true the component renders its cards directly
  * (the parent <aside> in ProfilePage owns the container).
  */
+/**
+ * Member count for a community payload. The list endpoint returns `memberCount`;
+ * the optimistic join updater also maintains `membersCount`. Reading only
+ * `members` (as this file used to) always yielded undefined.
+ */
+function memberCountOf(c) {
+  return c?.memberCount ?? c?.membersCount ?? 0;
+}
+
 export default function ProfileRightSidebar({ embedded = false }) {
   const { currentUser } = useAuth();
   
@@ -183,8 +192,15 @@ export default function ProfileRightSidebar({ embedded = false }) {
   const displayActivities = myUpcoming.length > 0 ? myUpcoming.slice(0, 2) : popularActivities;
   const activitiesTitle = myUpcoming.length > 0 ? 'My Upcoming Activities' : 'Popular Activities';
 
-  const popularCommunities = Object.values(communities || {})
-    .sort((a, b) => (b.members || 0) - (a.members || 0))
+  // `communities` is a plain array. It used to be read with Object.values(),
+  // which returned every entry twice because the hook handed back an array that
+  // also carried id-keyed properties — that is what showed one community as two
+  // identical cards.
+  const popularCommunities = [...communities]
+    // The API field is `memberCount` (the backend even sorts by it); `members`
+    // does not exist on this payload, so the old read was always undefined and
+    // every card fell back to "0 members".
+    .sort((a, b) => memberCountOf(b) - memberCountOf(a))
     .slice(0, 3);
 
   const userCommunities = users?.[currentUser?.username]?.communities || currentUser?.communities || [];
@@ -268,7 +284,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
                 </div>
                 <div className={s.personInfo}>
                   <div className={s.personName}>{c.name}</div>
-                  <div className={s.personSub}>{c.members || 0} members</div>
+                  <div className={s.personSub}>{memberCountOf(c)} members</div>
                 </div>
                 <button
                   className={`${s.joinBtn} ${isJoined ? s.joinedBtn : ''}`}

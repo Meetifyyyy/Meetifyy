@@ -268,7 +268,7 @@ export default function CommentNode({
 
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const { communities } = useCommunities();
+  const { communitiesById } = useCommunities();
   const { mutate: deleteCommentMutate } = useDeleteComment();
   const { mutate: toggleLike, isLoading: isLiking } = useLikeComment();
   const { tier, expandedMap, toggleExpanded } = useContext(TreeDensityContext);
@@ -284,7 +284,7 @@ export default function CommentNode({
     : expandedMap[comment.id] === true;
 
   const author = comment.author || { displayName: 'Unknown', username: 'unknown', avatar: '?' };
-  const authorCollege = (author.collegeId && communities) ? communities[author.collegeId] : null;
+  const authorCollege = (author.collegeId && communitiesById) ? communitiesById[author.collegeId] : null;
   const authorCollegeName = getCollegeName(author, '') || authorCollege?.name || '';
   const initialLiked = comment.hasLiked !== undefined ? comment.hasLiked : (comment.likedBy ? comment.likedBy.includes(currentUser?.id) : false);
   const initialLikes = comment.likeCount !== undefined ? comment.likeCount : (comment.likes || 0);

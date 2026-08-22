@@ -56,14 +56,37 @@ export function useCommunities() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A plain, de-duplicated array.
+  //
+  // This used to be a hybrid: an array that ALSO had each community assigned
+  // onto it under its own id (`arr[c.id] = c`), so it could be read both as a
+  // list and as a lookup map. The cost was that `Object.values()` returned every
+  // community TWICE — once for its numeric index and once for its id key — which
+  // is what made the Discover Communities card render each entry twice.
+  //
+  // The two access patterns are now separate values, so neither can corrupt the
+  // other. The id de-duplication is belt-and-braces: it guarantees the list is
+  // unique even if a future endpoint or an optimistic update ever emits a
+  // repeated row.
   const communities = useMemo(() => {
-    const arr = [...(query.data || [])];
-    (query.data || []).forEach((c) => { if (c?.id) arr[c.id] = c; });
-    return arr;
+    const rows = Array.isArray(query.data) ? query.data : [];
+    const byId = new Map();
+    for (const c of rows) {
+      if (c && typeof c === 'object' && c.id) byId.set(c.id, c);
+    }
+    return Array.from(byId.values());
   }, [query.data]);
+
+  /** Lookup map for `communitiesById[id]` reads. */
+  const communitiesById = useMemo(() => {
+    const map = {};
+    for (const c of communities) map[c.id] = c;
+    return map;
+  }, [communities]);
 
   return {
     communities,
+    communitiesById,
     rawCommunities: query.data || [],
     isLoading: query.isLoading,
     isError: query.isError,

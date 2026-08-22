@@ -9,9 +9,9 @@ export default function CommunityDetailRoute() {
   const goBack = useSmartBack();
   const location = useLocation();
   const { id } = useParams();
-  const { communities } = useCommunities();
+  const { communitiesById } = useCommunities();
 
-  const comm = communities[id];
+  const comm = communitiesById[id];
 
   if (comm?.isUniversity) {
     return <Navigate to={`/campus`} replace />;
