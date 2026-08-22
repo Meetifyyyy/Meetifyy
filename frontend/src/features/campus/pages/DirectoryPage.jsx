@@ -168,7 +168,7 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
   );
 };
 
-export default /**
+/**
  * Academic line on a directory card. Falls back to "Campus Member" for accounts
  * with no academic data — including legacy users whose Major / Year of Pass was
  * removed by the migration — so a card never renders an empty line.
@@ -178,7 +178,7 @@ function DirectorySubtitle({ user }) {
   return <>{summary || 'Campus Member'}</>;
 }
 
-function DirectoryPage() {
+export default function DirectoryPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const { currentUser } = useAuth();

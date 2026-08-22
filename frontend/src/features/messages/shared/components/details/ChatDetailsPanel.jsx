@@ -222,6 +222,15 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
     return uniqueList.sort((a, b) => b.createdAt - a.createdAt);
   }, [galleryMessages]);
 
+  // Hooks must run on every render, so this sits ABOVE the early return below.
+  // It reads the DM partner's academic fields straight off the conversation
+  // rather than from the `targetUser` memo, which is computed further down.
+  const targetAcademicSummary = useAcademicSummary(
+    conversation && conversation.type !== 'GROUP' && conversation.type !== 'group'
+      ? conversation
+      : null,
+  );
+
   if (!conversation) return null;
 
   // Determine chat type
@@ -378,9 +387,6 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       university: conversation.university || conversation.college || null
     };
   }, [isOneOnOne, conversation, users]);
-
-  // Must run before any early return so hook order stays stable across renders.
-  const targetAcademicSummary = useAcademicSummary(targetUser);
 
   if (showRequestsPage) {
     return (

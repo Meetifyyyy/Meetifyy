@@ -217,6 +217,23 @@ export default function ProfilePage() {
     staleTime: 30000,
   });
 
+  // Derived above the early returns below, because useAcademicSummary must run on
+  // EVERY render. Placing it after `return <ProfilePageSkeleton />` meant the hook
+  // was skipped while loading and called once loaded, so React saw a different
+  // hook count between renders and threw "rendered more hooks than during the
+  // previous render" (#310). Spreading a null profileUser is a no-op, so this is
+  // safe to compute before the data has arrived.
+  const isOwnProfile = !profileUsername || profileUsername === currentUserUsername || profileUser?.id === authUser?.id || profileUser?.username === currentUserUsername;
+  const effectiveUser = isOwnProfile
+    ? {
+        ...authUser,
+        ...profileUser,
+        isCampusRep: Boolean(profileUser?.isCampusRep ?? authUser?.isCampusRep)
+      }
+    : profileUser;
+
+  const academicSummary = useAcademicSummary(effectiveUser);
+
   // Show skeleton on first load OR while fetching incomplete/different user data
   const isDataIncomplete = profileUser && !profileUser.stats;
   const isDifferentUser = profileUser && targetUsername && profileUser.username?.toLowerCase() !== targetUsername.toLowerCase();
@@ -236,17 +253,6 @@ export default function ProfilePage() {
       </main>
     );
   }
-
-  const isOwnProfile = !profileUsername || profileUsername === currentUserUsername || profileUser?.id === authUser?.id || profileUser?.username === currentUserUsername;
-  const effectiveUser = isOwnProfile 
-    ? { 
-        ...authUser, 
-        ...profileUser, 
-        isCampusRep: Boolean(profileUser?.isCampusRep ?? authUser?.isCampusRep)
-      } 
-    : profileUser;
-
-  const academicSummary = useAcademicSummary(effectiveUser);
 
   // Build dynamic user tags list
   const userTags = [];
