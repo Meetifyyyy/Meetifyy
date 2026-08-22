@@ -133,11 +133,29 @@ export function compareMessages(a, b) {
 // Shared status rank — higher = further along the delivery pipeline.
 export const STATUS_RANK = { failed: -1, sending: 0, sent: 1, delivered: 2, read: 3, seen: 3 };
 
-export function appendMessageToCache(queryClient, activeChatId, message) {
+/**
+ * `createIfMissing` decides what happens when there is no cached history under
+ * this key yet, and the default of `false` matters.
+ *
+ * Seeding `{ pages: [{ messages: [message], nextCursor: undefined }] }` from
+ * nothing looks to react-query like a fully-loaded conversation holding exactly
+ * one message with no older pages. Opening that chat afterwards — from a
+ * message toast, say — landed inside the query's staleTime, so it served the
+ * fabricated page instead of fetching, and `hasNextPage: false` meant the rest
+ * of the thread could never load either.
+ *
+ * So a background writer (the global socket handler, or an alias key for a chat
+ * that is not on screen) leaves a missing history missing: the thread's own
+ * fetch will bring this message down together with the rest of it. Only the
+ * chat the user is actually looking at — where an unseeded optimistic message
+ * would simply vanish — passes `createIfMissing: true`.
+ */
+export function appendMessageToCache(queryClient, activeChatId, message, { createIfMissing = false } = {}) {
   if (!queryClient || !activeChatId || !message) return;
 
   queryClient.setQueryData(['messages', activeChatId], (old) => {
     if (!old || !old.pages || old.pages.length === 0) {
+      if (!createIfMissing) return undefined;
       return {
         pages: [{ messages: [message], nextCursor: undefined }],
         pageParams: [undefined],
@@ -370,4 +388,37 @@ export function removeMessageFromCache(queryClient, activeChatId, messageId) {
 
     return { ...old, pages: newPages };
   });
+}
+
+
+/**
+ * Wipe every client-side trace of one conversation for the user who deleted it.
+ *
+ * Deletion is per-user on the server (the participant row is soft-deleted and
+ * watermarked), so this is purely the local mirror of that: the row leaves the
+ * conversation list, and every cached message history under any of the
+ * conversation's id aliases is dropped. Matching goes through
+ * matchesConversationId rather than a bare `c.id === convId`, because callers
+ * hand us whichever alias they happen to hold — publicId, internalId or the
+ * other user's username — and an unmatched alias left the row on screen.
+ *
+ * Returns the aliases that were purged, so the caller can clear the offline
+ * store for the same set.
+ */
+export function purgeConversationFromCaches(queryClient, convId, conversations = []) {
+  if (!queryClient || !convId) return [];
+
+  const conv = (conversations || []).find((c) => matchesConversationId(c, convId));
+  const aliases = new Set([String(convId), ...getConversationAliases(conv)]);
+
+  queryClient.setQueryData(['conversations'], (old) => {
+    if (!Array.isArray(old)) return old;
+    return old.filter((c) => ![...aliases].some((alias) => matchesConversationId(c, alias)));
+  });
+
+  aliases.forEach((alias) => {
+    queryClient.removeQueries({ queryKey: ['messages', alias], exact: true });
+  });
+
+  return [...aliases];
 }

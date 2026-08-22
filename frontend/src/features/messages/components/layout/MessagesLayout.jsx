@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
@@ -64,6 +64,19 @@ export default function MessagesLayout() {
   const activeChatId = isDraftRoute
     ? (draftUserId ? `draft_${draftUserId}` : 'new')
     : (routeChatId || null);
+  // Deleting the conversation that is currently open has to close it too: the
+  // route still names a conversation that no longer exists for this user, and
+  // leaving it mounted would refetch a 404 (or worse, keep rendering the
+  // history from cache). Navigating first means the thread unmounts before the
+  // purge lands, so nothing re-reads the caches on their way out.
+  const handleDeleteConversation = useCallback((conv) => {
+    if (!conv) return;
+    if (activeChatId && matchesConversationId(conv, activeChatId)) {
+      navigate('/messages', { replace: true });
+    }
+    deleteConversation(conv.id);
+  }, [activeChatId, navigate, deleteConversation]);
+
   // Mobile shows the list and the thread as two screens of one stack; which one
   // is visible is purely a function of whether the URL names a conversation.
   const showChatOnMobile = !!activeChatId;
@@ -445,7 +458,7 @@ export default function MessagesLayout() {
             onClose={() => setContextMenu(null)}
             onMute={() => toggleMuteConversation(contextMenu.conv.id)}
             onPin={() => togglePinConversation(contextMenu.conv.id)}
-            onDelete={() => deleteConversation(contextMenu.conv.id)}
+            onDelete={() => handleDeleteConversation(contextMenu.conv)}
           />
         );
       })()}

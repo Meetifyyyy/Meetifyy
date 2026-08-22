@@ -140,7 +140,13 @@ export class MessagingCoreService {
         publicId: true,
         name: true,
         participants: {
-          where: { deletedAt: null, leftAt: null },
+          // `deletedAt` is deliberately NOT filtered here. A participant who
+          // deleted this conversation is still a member of it — they simply
+          // hid it. New activity brings it back (see the revive below), so
+          // they must stay in the recipient set; filtering them out silently
+          // dropped every message sent to someone who had ever cleared the
+          // thread. `leftAt` is different: that user really is gone.
+          where: { leftAt: null },
           select: { userId: true, isMuted: true }
         }
       }
@@ -265,10 +271,18 @@ export class MessagingCoreService {
       }),
       ...(otherUserIds.length > 0 ? [
         this.prisma.conversationParticipant.updateMany({
-          where: { conversationId: realConvId, userId: { not: senderId }, leftAt: null, deletedAt: null },
+          where: { conversationId: realConvId, userId: { not: senderId }, leftAt: null },
           data: { unreadCount: { increment: 1 } }
         })
-      ] : [])
+      ] : []),
+      // New activity revives the conversation for anyone who had deleted it —
+      // sender included, since sending into a thread you deleted is an
+      // unambiguous request to have it back. `clearedAt` is deliberately left
+      // alone: the thread returns, its old messages do not.
+      this.prisma.conversationParticipant.updateMany({
+        where: { conversationId: realConvId, leftAt: null, deletedAt: { not: null } },
+        data: { deletedAt: null }
+      })
     ]);
 
     const isUnsent = message.state === 'UNSENT';
@@ -765,11 +779,26 @@ export class MessagingCoreService {
     return { success: true };
   }
 
+  /**
+   * Delete a conversation for one participant only.
+   *
+   * `clearedAt` moves with `deletedAt`, and that is the whole fix for history
+   * coming back. Deleting only hid the row; the moment the conversation was
+   * revived — by this user messaging the same person again, which resets
+   * `deletedAt` — the history query had no watermark to filter against and
+   * served every message the user thought they had deleted. Stamping
+   * `clearedAt` at the same instant means the revived conversation starts
+   * empty and stays that way.
+   *
+   * Both columns are per-participant, so the other user's row, their history
+   * and their copy of the conversation are untouched.
+   */
   async deleteConversationForUser(conversationId: string, userId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
+    const now = new Date();
     await this.prisma.conversationParticipant.update({
       where: { userId_conversationId: { userId, conversationId: realConvId } },
-      data: { deletedAt: new Date() }
+      data: { deletedAt: now, clearedAt: now }
     });
     return { success: true };
   }

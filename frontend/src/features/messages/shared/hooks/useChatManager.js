@@ -407,7 +407,9 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       createdAt: new Date().toISOString(),
     };
 
-    appendMessageToCache(queryClient, targetConvId, tempMessage);
+    // The chat on screen: an optimistic message has to show up even if this is
+    // the very first message in a brand-new conversation with no history yet.
+    appendMessageToCache(queryClient, targetConvId, tempMessage, { createIfMissing: true });
     const previewSnippet = payloadText || (explicitInviteData ? (explicitInviteData.groupName ? `Group invite: ${explicitInviteData.groupName}` : 'Group invite') : mediaType ? (mediaType === 'image' ? 'Photo' : mediaType === 'video' ? 'Video' : 'Audio') : mediaUrl ? 'Media' : '');
     updateConversationPreview(queryClient, targetConvId, previewSnippet, tempMessage.createdAt, 0);
     idbSaveMessages(targetConvId, [tempMessage]);
@@ -716,7 +718,11 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       );
 
       keysToUpdate.forEach((key) => {
-        appendMessageToCache(queryClient, key, msg);
+        // Only the key the open thread actually reads may be seeded from
+        // nothing. The other aliases are background mirrors — seeding those
+        // would leave a one-message stub behind for whichever alias the user
+        // navigates by next.
+        appendMessageToCache(queryClient, key, msg, { createIfMissing: key === activeChatId });
         idbSaveMessages(key, [msg]).catch(console.warn);
       });
 

@@ -335,6 +335,40 @@ export async function idbGetSyncMeta(conversationId) {
 }
 
 /**
+ * Drop every persisted message for one conversation (all of its id aliases).
+ *
+ * Deleting a conversation is per-user and permanent for that user, so the
+ * offline mirror has to go with it — otherwise the next visit rehydrates the
+ * very history that was just deleted.
+ */
+export async function idbDeleteConversationMessages(conversationId) {
+  const candidateIds = (Array.isArray(conversationId) ? conversationId : [conversationId]).filter(Boolean);
+  if (candidateIds.length === 0) return;
+  try {
+    const db = await openMessagesDB();
+    const tx = db.transaction([STORES.MESSAGES, STORES.SYNC_META], 'readwrite');
+    const store = tx.objectStore(STORES.MESSAGES);
+    const index = store.index('conversationId');
+
+    await Promise.all(candidateIds.map((cid) => new Promise((resolve) => {
+      const request = index.openKeyCursor(IDBKeyRange.only(cid));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return resolve();
+        store.delete(cursor.primaryKey);
+        cursor.continue();
+      };
+      request.onerror = () => resolve();
+    })));
+
+    const meta = tx.objectStore(STORES.SYNC_META);
+    candidateIds.forEach((cid) => meta.delete(cid));
+  } catch {
+    // silent
+  }
+}
+
+/**
  * Clear cache entirely (e.g. on logout)
  */
 export async function idbClearMessages() {
