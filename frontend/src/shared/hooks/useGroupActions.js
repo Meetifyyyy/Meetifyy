@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { messagesApi, groupApi, communitiesApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { showToast } from '../utils/toast';
+import { applyGroupRoleChange } from '../../features/messages/shared/utils/cacheUtils';
 
 /**
  * The group-chat / conversation admin actions `useData` used to define inline.
@@ -222,60 +223,54 @@ export function useGroupActions() {
       });
     });
 
+    applyGroupRoleChange(queryClient, convId, targetUserId, 'OWNER');
     try {
-      await messagesApi.changeOwner(convId, targetUserId);
+      await groupApi.changeOwner(convId, targetUserId);
     } finally {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
     }
   };
 
-  const promoteToAdmin = async (convId, targetUserId) => {
-    queryClient.setQueryData(['conversations'], (old) => {
-      if (!Array.isArray(old)) return old;
-      return old.map(c => {
-        const isMatch = c.id === convId || c.publicId === convId || c.internalId === convId || String(c.id) === String(convId);
-        if (isMatch) {
-          const currentAdmins = c.admins || [];
-          if (!currentAdmins.includes(targetUserId)) {
-            return { ...c, admins: [...currentAdmins, targetUserId] };
-          }
-        }
-        return c;
-      });
-    });
-    await messagesApi.promoteAdmin(convId, targetUserId);
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+  // `/api/group-chats/*` rather than the `/api/messages/*` mirror of the same
+  // operations. Both hit the same service, but only the group-chats controller
+  // emits `group:role_changed` to the other members and bumps the server-side
+  // group-details cache version — so promoting through the messages mirror
+  // updated nobody else and left the server serving a stale details payload.
+  const changeRole = async (convId, targetUserId, newRole, call) => {
+    // Optimistic, through the same patch the socket event uses, so the actor
+    // sees the new role immediately — in the list AND in Group Details.
+    applyGroupRoleChange(queryClient, convId, targetUserId, newRole);
+    try {
+      await call();
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+    }
   };
 
-  const demoteFromAdmin = async (convId, targetUserId) => {
-    queryClient.setQueryData(['conversations'], (old) => {
-      if (!Array.isArray(old)) return old;
-      return old.map(c => {
-        const isMatch = c.id === convId || c.publicId === convId || c.internalId === convId || String(c.id) === String(convId);
-        if (isMatch) {
-          const currentAdmins = c.admins || [];
-          return { ...c, admins: currentAdmins.filter(id => id !== targetUserId) };
-        }
-        return c;
-      });
-    });
-    await messagesApi.demoteAdmin(convId, targetUserId);
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
-  };
+  const promoteToAdmin = (convId, targetUserId) =>
+    changeRole(convId, targetUserId, 'ADMIN', () => groupApi.promoteAdmin(convId, targetUserId));
+
+  const demoteFromAdmin = (convId, targetUserId) =>
+    changeRole(convId, targetUserId, 'MEMBER', () => groupApi.demoteAdmin(convId, targetUserId));
 
   const endGroup = async (convId) => {
-    await messagesApi.endGroup(convId);
+    await groupApi.endGroup(convId);
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
   };
 
   const acceptGroupJoinRequest = async (convId, targetUserId) => {
-    await messagesApi.acceptJoinRequest(convId, targetUserId);
+    await groupApi.acceptJoinRequest(convId, targetUserId);
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
   };
 
   const declineGroupJoinRequest = async (convId, targetUserId) => {
-    await messagesApi.declineJoinRequest(convId, targetUserId);
+    await groupApi.declineJoinRequest(convId, targetUserId);
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
   };
 
   return {

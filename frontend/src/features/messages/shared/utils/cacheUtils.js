@@ -422,3 +422,48 @@ export function purgeConversationFromCaches(queryClient, convId, conversations =
 
   return [...aliases];
 }
+
+
+/**
+ * Apply a group role change to every cache that renders a role.
+ *
+ * There are two of them and they disagreed constantly: the conversation list
+ * row (`admins`, `ownerId`) and the group-details payload (`admins`,
+ * `members`, `memberDetails[].role`, `ownerId`). Promoting someone patched the
+ * first and left the second alone, so Group Details kept showing the old role
+ * until its 5-minute staleTime lapsed or the page was reloaded.
+ *
+ * One function, called from both the optimistic path and the `group:role_changed`
+ * socket handler, so the actor and every other member converge on the same
+ * state from the same code. Idempotent: applying it twice — optimistically and
+ * then again when the event echoes back — is a no-op.
+ */
+export function applyGroupRoleChange(queryClient, convId, targetUserId, newRole) {
+  if (!queryClient || !convId || !targetUserId) return;
+
+  const role = String(newRole || 'MEMBER').toUpperCase();
+  const uid = String(targetUserId);
+  const withoutUid = (ids) => (Array.isArray(ids) ? ids.filter((id) => String(id) !== uid) : []);
+  const nextAdmins = (ids) => (role === 'ADMIN' ? [...withoutUid(ids), uid] : withoutUid(ids));
+  const nextMembers = (ids) => (role === 'MEMBER' ? [...withoutUid(ids), uid] : withoutUid(ids));
+
+  queryClient.setQueryData(['conversations'], (old) => {
+    if (!Array.isArray(old)) return old;
+    return old.map((c) => (matchesConversationId(c, convId)
+      ? { ...c, admins: nextAdmins(c.admins), ...(role === 'OWNER' ? { ownerId: uid } : {}) }
+      : c));
+  });
+
+  queryClient.setQueriesData({ queryKey: ['groupDetails'] }, (old) => {
+    if (!old || !matchesConversationId(old, convId)) return old;
+    return {
+      ...old,
+      admins: nextAdmins(old.admins),
+      members: nextMembers(old.members),
+      memberDetails: Array.isArray(old.memberDetails)
+        ? old.memberDetails.map((m) => (String(m?.userId) === uid ? { ...m, role } : m))
+        : old.memberDetails,
+      ...(role === 'OWNER' ? { ownerId: uid } : {}),
+    };
+  });
+}
