@@ -24,7 +24,9 @@ const CURRENT_CACHES = new Set([
   'google-fonts-cache',
   'gstatic-fonts-cache',
   'meetifyy-images-v3',
-  'meetifyy-api-swr',
+  // 'meetifyy-api-swr' is deliberately absent. No route writes to it any more,
+  // and leaving it off the allowlist means the activate handler below deletes
+  // whatever stale bodies an existing installation is still holding.
   'meetifyy-api-network',
 ]);
 
@@ -135,30 +137,31 @@ registerRoute(
   })
 );
 
-// ─── API Caching — Stale While Revalidate ───────────────────────────────────
-
-const SWR_PATHS = [
+// ─── API Caching — Network First, for offline reads only ────────────────────
+//
+// These used to be split, with activities / communities / users / feed served
+// StaleWhileRevalidate for 10 minutes. That strategy returns the cached body
+// *and then* refreshes in the background — so the response the app actually
+// received was the stale one, and the fresh one only landed in the cache for
+// next time.
+//
+// Sitting underneath React Query, that shadowed every cache fix above it: a
+// refetch triggered right after a mutation was answered from the worker with a
+// pre-mutation body, and React Query accepted it as server truth. Create a post
+// and navigate back and it was gone again; create an activity and the Crew page
+// did not have it. Chrome's hard reload bypasses the service worker entirely,
+// which is a large part of why a force refresh appeared to fix so much.
+//
+// NetworkFirst keeps the offline benefit — a cached body is still there when
+// the network fails — without ever shadowing a live response while online.
+// React Query already provides stale-while-revalidate at the application layer,
+// where invalidation actually exists.
+const NETWORK_FIRST_PATHS = [
   '/api/activities',
   '/api/communities',
   '/api/users',
   '/api/posts/feed',
   '/api/posts/community/',
-];
-
-registerRoute(
-  ({ url }) => SWR_PATHS.some((p) => url.pathname.startsWith(p)),
-  new StaleWhileRevalidate({
-    cacheName: 'meetifyy-api-swr',
-    plugins: [
-      new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 10 * 60 }),
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
-    ],
-  })
-);
-
-// ─── API Caching — Network First (auth, messages, notifications) ────────────
-
-const NETWORK_FIRST_PATHS = [
   '/api/messages',
   '/api/notifications',
   '/api/presence',
@@ -169,8 +172,11 @@ registerRoute(
   new NetworkFirst({
     cacheName: 'meetifyy-api-network',
     plugins: [
-      new ExpirationPlugin({ maxEntries: 30, maxAgeSeconds: 5 * 60 }),
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
+      new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 5 * 60 }),
+      // 200 only. Status 0 is an opaque cross-origin response whose body cannot
+      // be read — caching one as though it were an API answer stores something
+      // no caller can use.
+      new CacheableResponsePlugin({ statuses: [200] }),
     ],
   })
 );

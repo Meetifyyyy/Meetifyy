@@ -1,10 +1,11 @@
 import { idbGet, idbSet } from '@shared/lib/idb';
 
 /**
- * Pushes a user's new avatar/cover into every cached React Query payload that
- * embeds it, so the change is visible everywhere on the next paint.
+ * Pushes a user's changed avatar, cover or display name into every cached React
+ * Query payload that embeds it, so the change is visible everywhere on the next
+ * paint.
  *
- * Why this exists: a user's avatar is denormalised across most responses —
+ * Why this exists: a user's identity fields are denormalised across most responses —
  * `post.author.avatar`, `comment.user.avatar`, `conversation.participants[].avatar`,
  * search hits, directory cards, activity members. Invalidating one profile query
  * fixes the profile page and nothing else, and invalidating everything means the
@@ -31,7 +32,7 @@ import { idbGet, idbSet } from '@shared/lib/idb';
  * a stale seed that the network response then corrects, never a broken render.
  *
  * @param {string|undefined} username
- * @param {{ avatar?: string|null, cover?: string|null }} patch
+ * @param {Record<string, unknown>} patch
  */
 function patchStoredProfile(username, patch) {
   if (!username) return;
@@ -46,15 +47,20 @@ function patchStoredProfile(username, patch) {
 
 /**
  * @param {import('@tanstack/react-query').QueryClient} queryClient
- * @param {{ userId: string, username?: string, avatar?: string|null, cover?: string|null }} change
+ * @param {{ userId: string, username?: string, avatar?: string|null, cover?: string|null, displayName?: string }} change
  * @returns {number} how many embedded copies were patched (useful for debugging)
  */
-export function propagateUserMedia(queryClient, { userId, username, avatar, cover } = {}) {
+export function propagateUserMedia(queryClient, { userId, username, avatar, cover, displayName } = {}) {
   if (!queryClient || !userId) return 0;
 
   const setsAvatar = avatar !== undefined;
   const setsCover = cover !== undefined;
-  if (!setsAvatar && !setsCover) return 0;
+  // `displayName` rides along for the same reason the images do: it is inlined
+  // into post authors, comment authors, chat participants and member lists, so
+  // renaming yourself otherwise left the old name on every one of them until
+  // each query happened to refetch.
+  const setsDisplayName = displayName !== undefined;
+  if (!setsAvatar && !setsCover && !setsDisplayName) return 0;
 
   let patchedCount = 0;
 
@@ -103,7 +109,7 @@ export function propagateUserMedia(queryClient, { userId, username, avatar, cove
     const identifiesUser = node.id === userId || node.userId === userId;
     const isThisUser =
       identifiesUser &&
-      ('avatar' in node || 'avatarUrl' in node || 'cover' in node);
+      ('avatar' in node || 'avatarUrl' in node || 'cover' in node || 'displayName' in node);
 
     if (isThisUser) {
       const merged = { ...node };
@@ -113,6 +119,7 @@ export function propagateUserMedia(queryClient, { userId, username, avatar, cove
         if ('avatarUrl' in node) merged.avatarUrl = avatar;
       }
       if (setsCover && 'cover' in node) merged.cover = cover;
+      if (setsDisplayName && 'displayName' in node) merged.displayName = displayName;
       result = merged;
       changed = true;
       patchedCount += 1;
@@ -144,6 +151,7 @@ export function propagateUserMedia(queryClient, { userId, username, avatar, cove
   patchStoredProfile(username, {
     ...(setsAvatar ? { avatar } : {}),
     ...(setsCover ? { cover } : {}),
+    ...(setsDisplayName ? { displayName } : {}),
   });
 
   return patchedCount;
