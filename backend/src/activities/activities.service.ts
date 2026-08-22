@@ -1194,7 +1194,6 @@ export class ActivitiesService implements OnModuleInit {
     // Purge every cached surface BEFORE returning so the client's post-mutation
     // refetch cannot observe the pre-change authorization.
     await this.clearActivityFeedCaches();
-    await this.purgeActivityEtags(activityId);
 
     // Evicts newly-unauthorized sockets from the activity's realtime room.
     await this.domainEventService.emit('activity.visibilityChanged', {
@@ -1204,24 +1203,6 @@ export class ActivitiesService implements OnModuleInit {
     });
 
     return { success: true, ...updated };
-  }
-
-  /**
-   * Drops any per-user ETag entries for an activity's endpoints so a viewer who
-   * has just lost access cannot be answered with a 304 for the body they were
-   * served while still authorized.
-   */
-  private async purgeActivityEtags(activityId: string) {
-    if (!this.redis) return;
-    try {
-      const pattern = `etag:*/api/activities/${activityId}*`;
-      let cursor = '0';
-      do {
-        const [next, keys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 200);
-        cursor = next;
-        if (keys.length > 0) await this.redis.del(...keys);
-      } while (cursor !== '0');
-    } catch {}
   }
 
   async joinActivity(activityId: string, userId: string): Promise<any> {
@@ -1308,9 +1289,6 @@ export class ActivitiesService implements OnModuleInit {
     // Await cache clearing BEFORE responding to prevent the frontend's 
     // post-mutation refetch from racing and hitting stale Redis data.
     await this.clearActivityFeedCaches();
-    if (this.redis) {
-      await this.redis.del(`etag:/api/activities/${activityId}:${userId}`);
-    }
 
     // Fire socket event side-effects in background
     setImmediate(() => {
@@ -1375,9 +1353,6 @@ export class ActivitiesService implements OnModuleInit {
     // Await cache clearing BEFORE responding to prevent the frontend's 
     // post-mutation refetch from racing and hitting stale Redis data.
     await this.clearActivityFeedCaches();
-    if (this.redis) {
-      await this.redis.del(`etag:/api/activities/${activityId}:${userId}`);
-    }
 
     // Fire socket event side-effects in background
     setImmediate(() => {
@@ -1951,8 +1926,7 @@ export class ActivitiesService implements OnModuleInit {
 
     if (result.count > 0) {
       await this.clearActivityFeedCaches();
-      await this.purgeActivityEtags(activityId);
-      await this.domainEventService.emit('activity.visibilityChanged', {
+        await this.domainEventService.emit('activity.visibilityChanged', {
         activityId,
         id: activityId,
         reason: 'INVITATION_REVOKED',

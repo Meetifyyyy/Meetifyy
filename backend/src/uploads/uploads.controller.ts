@@ -30,11 +30,16 @@ const MEDIA_URL_MAX_ENTRIES = 5_000;
  *
  * The short window preserves the reason misses weren't cached at all before:
  * thumbnails are uploaded asynchronously, so a key that 404s now may exist
- * moments later and must stay re-checkable. 15s bounds the wasted work without
- * making a newly-arrived upload wait meaningfully longer than it already does.
- * `sendMediaMiss` still sends `no-store`, so the browser never caches a miss.
+ * moments later and must stay re-checkable. `sendMediaMiss` still sends
+ * `no-store`, so the browser never caches a miss.
+ *
+ * 3s rather than 15s: the in-flight map below already collapses concurrent
+ * lookups of the same key into one HeadObject, so the negative cache is not
+ * what protects against a storm — it only spaces out sequential retries. At
+ * 15s a just-uploaded image stayed dark for a quarter of a minute after the
+ * post appeared, which is precisely when someone is looking at it.
  */
-const MEDIA_MISS_TTL_MS = 15 * 1000;
+const MEDIA_MISS_TTL_MS = 3 * 1000;
 
 @Controller('api/media')
 export class UploadsController {
