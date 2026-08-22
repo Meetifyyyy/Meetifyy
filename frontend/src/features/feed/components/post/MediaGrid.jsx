@@ -3,7 +3,13 @@ import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { deriveThumbnailKey } from '@shared/api/apiClient';
 import styles from './MediaGrid.module.css';
 
-const FALLBACK_POST_IMAGE = 'https://images.unsplash.com/photo-1517842645767-c639042777db?w=800&auto=format&fit=crop&q=80';
+// A post's image must never be replaced by an unrelated picture. This used to
+// point at a stock Unsplash photo, so any transient load failure — most often a
+// just-uploaded object that has not finished propagating, which is exactly the
+// moment a post is created — showed the author a completely different image and
+// left them convinced the wrong file had been attached. A failed load now shows
+// nothing but its own container, after one delayed retry of the real URL.
+const RETRY_DELAYS_MS = [1200, 4000];
 
 /**
  * Custom inline video player component for post feed cards.
@@ -272,14 +278,34 @@ export function MediaGrid({ media, onMediaClick }) {
       mediaCache.invalidate(item.url);
     }
 
+    // Step 1: the derived thumbnail may not exist (or not yet) — fall back to
+    // the original, which is always the real image for this post.
     if (full && target.src !== full && target.getAttribute('data-fellback') !== '1') {
       target.setAttribute('data-fellback', '1');
       target.src = full;
       return;
     }
-    setLoadedStates((prev) => ({ ...prev, [index]: true }));
+
+    // Step 2: the original itself failed. A freshly uploaded object can 404 for
+    // a beat, and the server caches that miss briefly, so retry the real URL
+    // once rather than giving up on the first attempt.
+    const attempts = Number(target.getAttribute('data-retries') || 0);
+    if (full && attempts < RETRY_DELAYS_MS.length) {
+      target.setAttribute('data-retries', String(attempts + 1));
+      const bustedUrl = `${full}${full.includes('?') ? '&' : '?'}r=${Date.now()}`;
+      setTimeout(() => {
+        if (target.isConnected) target.src = bustedUrl;
+      }, RETRY_DELAYS_MS[attempts]);
+      return;
+    }
+
+    // Step 3: genuinely unavailable. Hide the broken image rather than
+    // substituting a different one — an empty slot is honest, a stock photo is
+    // a lie about what the author posted.
     target.onerror = null;
-    target.src = FALLBACK_POST_IMAGE;
+    target.removeAttribute('src');
+    target.style.visibility = 'hidden';
+    setLoadedStates((prev) => ({ ...prev, [index]: true }));
   };
 
   const handleVideoLoaded = (index, e) => {
