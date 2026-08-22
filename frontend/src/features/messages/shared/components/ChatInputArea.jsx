@@ -5,6 +5,7 @@ import styles from './ChatInputAreaStyles.module.css';
 import { useVoiceRecorder } from '@features/messages/hooks/useVoiceRecorder';
 import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
 import { toast } from 'sonner';
+import ReplyPreviewContent from './ReplyPreviewContent';
 
 export default function ChatInputArea({
   conversation,
@@ -154,7 +155,9 @@ export default function ChatInputArea({
             <span className={styles.msgReplyPreviewLabel}>
               Replying to {replyingTo.from === 'me' ? 'yourself' : (replyingTo.senderName || conversation.name)}
             </span>
-            <span className={styles.msgReplyPreviewText}>{replyingTo.text}</span>
+            {/* Same resolver as the sent bubble, so the quote the sender sees
+                while typing matches what everyone sees afterwards. */}
+            <ReplyPreviewContent message={replyingTo} textClassName={styles.msgReplyPreviewText} />
           </div>
           <button className={styles.msgReplyPreviewClose} onClick={onCancelReply}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

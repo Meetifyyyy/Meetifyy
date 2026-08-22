@@ -6,6 +6,7 @@ import { DomainEventService } from '../../events/domain-event.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import { MessageResponseDto } from './dto/message-response.dto';
 import { MentionsService } from '../../mentions/mentions.service';
+import { buildReplyToSnapshot, REPLY_TO_SELECT } from '../reply-preview.util';
 
 @Injectable()
 export class MessagingCoreService {
@@ -249,14 +250,7 @@ export class MessagingCoreService {
           sender: {
             select: { id: true, username: true, displayName: true, avatar: true }
           },
-          replyTo: {
-            select: {
-              id: true,
-              senderId: true,
-              payload: true,
-              sender: { select: { displayName: true, username: true } }
-            }
-          }
+          replyTo: { select: REPLY_TO_SELECT }
         }
       }),
       this.prisma.conversation.update({
@@ -289,13 +283,7 @@ export class MessagingCoreService {
 
     let replyToObj: any = null;
     if (message.replyTo) {
-      const rPayload = (message.replyTo.payload as any) || {};
-      replyToObj = {
-        id: message.replyTo.id,
-        text: rPayload.text || '',
-        senderName: message.replyTo.sender?.displayName || message.replyTo.sender?.username || '',
-        from: message.replyTo.senderId === senderId ? 'me' : 'them'
-      };
+      replyToObj = buildReplyToSnapshot(message.replyTo, senderId);
     }
 
     const pubId = conv.publicId || conversationId;
@@ -451,14 +439,7 @@ export class MessagingCoreService {
         sender: {
           select: { id: true, username: true, displayName: true, avatar: true }
         },
-        replyTo: {
-          select: {
-            id: true,
-            senderId: true,
-            payload: true,
-            sender: { select: { displayName: true, username: true } }
-          }
-        }
+        replyTo: { select: REPLY_TO_SELECT }
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1
@@ -491,13 +472,7 @@ export class MessagingCoreService {
 
       let replyToObj: any = null;
       if (m.replyTo) {
-        const rPayload = (m.replyTo.payload as any) || {};
-        replyToObj = {
-          id: m.replyTo.id,
-          text: rPayload.text || '',
-          senderName: m.replyTo.sender?.displayName || m.replyTo.sender?.username || '',
-          from: currentUserId && m.replyTo.senderId === currentUserId ? 'me' : 'them'
-        };
+        replyToObj = buildReplyToSnapshot(m.replyTo, currentUserId);
       }
 
       const isRead = currentUserId && m.senderId === currentUserId && isAllRead && (minOtherLastReadAt + 5000 >= new Date(m.createdAt).getTime());

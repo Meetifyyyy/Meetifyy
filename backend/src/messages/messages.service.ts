@@ -12,6 +12,7 @@ import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { resolvePresenceVisibilityForViewer } from '../users/privacy.helper';
 import { MentionsService } from '../mentions/mentions.service';
+import { buildReplyToSnapshot, REPLY_TO_SELECT } from './reply-preview.util';
 
 @Injectable()
 export class MessagesService extends MessagingCoreService implements OnModuleInit, OnModuleDestroy {
@@ -244,7 +245,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         },
         include: {
           sender: { select: { id: true, username: true, displayName: true, avatar: true } },
-          replyTo: { select: { id: true, senderId: true, payload: true, sender: { select: { displayName: true, username: true } } } }
+          replyTo: { select: REPLY_TO_SELECT }
         }
       });
       if (existing) {
@@ -302,7 +303,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         },
         include: {
           sender: { select: { id: true, username: true, displayName: true, avatar: true } },
-          replyTo: { select: { id: true, senderId: true, payload: true, sender: { select: { displayName: true, username: true } } } }
+          replyTo: { select: REPLY_TO_SELECT }
         }
       });
 
@@ -358,13 +359,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     const msgPayload = (message.payload as any) || {};
     let replyToObj: any = null;
     if (message.replyTo) {
-      const rPayload = (message.replyTo.payload as any) || {};
-      replyToObj = {
-        id: message.replyTo.id,
-        text: rPayload.text || '',
-        senderName: message.replyTo.sender?.displayName || message.replyTo.sender?.username || '',
-        from: message.replyTo.senderId === senderId ? 'me' : 'them'
-      };
+      replyToObj = buildReplyToSnapshot(message.replyTo, senderId);
     }
 
     const pubId = publicIdOrId || realConvId;
@@ -437,7 +432,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       },
       include: {
         sender: { select: { id: true, username: true, displayName: true, avatar: true } },
-        replyTo: { select: { id: true, senderId: true, payload: true, sender: { select: { displayName: true, username: true } } } }
+        replyTo: { select: REPLY_TO_SELECT }
       },
       orderBy: { createdAt: 'asc' },
       take: 100
@@ -561,14 +556,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         sender: {
           select: { id: true, username: true, displayName: true, avatar: true }
         },
-        replyTo: {
-          select: {
-            id: true,
-            senderId: true,
-            payload: true,
-            sender: { select: { displayName: true, username: true } }
-          }
-        }
+        replyTo: { select: REPLY_TO_SELECT }
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1
@@ -597,13 +585,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
       let replyToObj: any = null;
       if (m.replyTo) {
-        const rPayload = (m.replyTo.payload as any) || {};
-        replyToObj = {
-          id: m.replyTo.id,
-          text: rPayload.text || '',
-          senderName: m.replyTo.sender?.displayName || m.replyTo.sender?.username || '',
-          from: currentUserId && m.replyTo.senderId === currentUserId ? 'me' : 'them'
-        };
+        replyToObj = buildReplyToSnapshot(m.replyTo, currentUserId);
       }
 
       const isRead = currentUserId && m.senderId === currentUserId && isAllRead && (minOtherLastReadAt + 5000 >= new Date(m.createdAt).getTime());

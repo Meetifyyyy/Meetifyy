@@ -12,6 +12,7 @@ import { generateConversationUrl } from '@shared/utils/conversationUrl';
 import { SharedPostPreview } from '../previews/SharedPostPreview';
 import { SharedProfilePreview } from '../previews/SharedProfilePreview';
 import { SharedCommunityPreview } from '../previews/SharedCommunityPreview';
+import ReplyPreviewContent from './ReplyPreviewContent';
 import { SharedActivityPreview } from '../previews/SharedActivityPreview';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import styles from './ChatMessageList.module.css';
@@ -920,7 +921,10 @@ const MessageBubble = memo(function MessageBubble({
           {msg.replyTo && (
             <div className={styles.msgBubbleReplyRef}>
               <div className={styles.msgBubbleReplyRefHeader}>{msg.replyTo.senderName || 'Replying to'}</div>
-              <div>{msg.replyTo.text || msg.replyTo.payload?.text}</div>
+              {/* Renders every message type — media, voice, shared entities,
+                  invites — instead of only text, which left a blank quote for
+                  anything without a text body. */}
+              <ReplyPreviewContent message={msg.replyTo} />
             </div>
           )}
 
