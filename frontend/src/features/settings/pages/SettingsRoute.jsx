@@ -756,7 +756,7 @@ export default function SettingsRoute() {
         </div>
       </div>
 
-      <div className={styles.group} style={{ overflow: 'visible', marginTop: '16px' }}>
+      <div className={styles.group} style={{ overflow: 'visible', marginTop: '12px' }}>
         <AcademicSelection
           value={academic}
           onChange={setAcademic}
@@ -773,6 +773,8 @@ export default function SettingsRoute() {
           classes={{
             selectGroup: styles.selectRow,
             selectLabel: styles.inputLabel,
+            messageSlot: styles.selectErrorSlot,
+            messageError: styles.errorText,
           }}
         />
       </div>

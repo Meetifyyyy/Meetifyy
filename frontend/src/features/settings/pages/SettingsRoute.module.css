@@ -83,25 +83,25 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 22px var(--settings-gutter) 10px;
+  padding: 16px var(--settings-gutter) 8px;
 }
 
 .sectionLabel {
   font-family: var(--font-family-display);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--color-text-muted);
-  padding: 22px var(--settings-gutter) 10px;
+  padding: 16px var(--settings-gutter) 8px;
 }
 
 .editInterestsHeaderBtn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   background: transparent;
   border: none;
   color: var(--color-primary);
@@ -118,8 +118,8 @@
 .group {
   background: var(--color-bg-white);
   border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-lg);
-  margin: 0 var(--settings-gutter) 16px;
+  border-radius: var(--radius-lg, 16px);
+  margin: 0 var(--settings-gutter) 14px;
   overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
@@ -133,11 +133,11 @@
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 15px var(--settings-gutter);
+  padding: 12px var(--settings-gutter);
   background: transparent;
   border: none;
   cursor: pointer;
-  gap: 14px;
+  gap: 12px;
   text-align: left;
   transition: background var(--transition-fast), transform var(--transition-fast);
 }
@@ -150,9 +150,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-lg);
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   background: var(--color-bg-soft);
   color: var(--color-icon-base);
   flex-shrink: 0;
@@ -167,7 +167,7 @@
 .rowLabel {
   flex: 1;
   font-family: var(--font-family-sans);
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   font-weight: 600;
   color: var(--color-text-main);
 }
@@ -202,18 +202,17 @@
 }
 
 /* ── Divider ──
-   Aligned to sit flush under the row label, not the icon: gutter + icon
-   width (40px) + row gap (14px). */
+   Aligned to sit flush under the row label: gutter + icon width (36px) + row gap (12px). */
 .divider {
   height: 1px;
   background: var(--color-border-light);
-  margin-left: calc(var(--settings-gutter) + 54px);
+  margin-left: calc(var(--settings-gutter) + 48px);
 }
 
 .nestedDivider {
   height: 1px;
   background: var(--color-border-light);
-  margin-left: 18px;
+  margin-left: var(--settings-gutter);
 }
 
 /* ── Version footer ── */
@@ -222,16 +221,16 @@
   font-family: var(--font-family-sans);
   font-size: 0.78rem;
   color: var(--color-text-light);
-  padding: 28px 0 16px;
+  padding: 20px 0 14px;
   font-weight: 500;
 }
 
 /* ── Input rows ── */
 .inputRow {
-  padding: 14px var(--settings-gutter);
+  padding: 12px var(--settings-gutter);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .inputLabel {
@@ -250,7 +249,7 @@
   outline: none;
   background: transparent;
   font-family: var(--font-family-sans);
-  font-size: 0.96rem;
+  font-size: 0.94rem;
   color: var(--color-text-main);
   padding: 4px 0;
   transition: border-color var(--transition-fast);
@@ -271,14 +270,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 15px var(--settings-gutter);
-  gap: 16px;
+  padding: 12px var(--settings-gutter);
+  gap: 14px;
 }
 
 .toggleInfo {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   flex: 1;
 }
 
@@ -293,8 +292,8 @@
 .toggle {
   position: relative;
   display: inline-block;
-  width: 46px;
-  height: 26px;
+  width: 44px;
+  height: 24px;
   flex-shrink: 0;
 }
 
@@ -316,8 +315,8 @@
 .slider::before {
   content: '';
   position: absolute;
-  height: 20px;
-  width: 20px;
+  height: 18px;
+  width: 18px;
   left: 3px;
   bottom: 3px;
   background: white;
@@ -338,14 +337,14 @@ input:checked + .slider::before {
 .saveBtn {
   display: block;
   width: calc(100% - (var(--settings-gutter) * 2));
-  margin: 26px var(--settings-gutter) 0;
-  padding: 13px 24px;
+  margin: 20px var(--settings-gutter) 0;
+  padding: 11px 20px;
   background: var(--color-primary);
   color: white;
   border: none;
   border-radius: var(--radius-full);
   font-family: var(--font-family-sans);
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(var(--color-primary-rgb), 0.22);
@@ -367,24 +366,37 @@ input:checked + .slider::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 15px var(--settings-gutter);
+  padding: 12px var(--settings-gutter);
   gap: 16px;
+  flex-wrap: wrap;
+  transition: background var(--transition-fast);
+}
+
+.selectRow:not(:last-child) {
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.selectErrorSlot {
+  width: 100%;
 }
 
 /* ── Custom Select Dropdown ── */
 .customSelectContainer {
   position: relative;
-  width: 145px;
-  flex-shrink: 0;
+  flex: 0 1 240px;
+  min-width: 150px;
+  max-width: 65%;
 }
 
 @media (max-width: 600px) {
   .customSelectContainer {
-    width: 130px;
+    flex: 0 1 180px;
+    min-width: 130px;
+    max-width: 65%;
   }
   .selectButton {
-    padding: 8px 10px;
-    font-size: 0.85rem;
+    padding: 7px 10px;
+    font-size: 0.84rem;
   }
 }
 
@@ -393,13 +405,13 @@ input:checked + .slider::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 9px 12px;
-  background: var(--color-bg-white);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  padding: 7px 12px;
+  background: var(--color-bg-soft);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md, 10px);
   font-family: var(--font-family-sans);
   font-size: 0.88rem;
-  font-weight: 600;
+  font-weight: 550;
   color: var(--color-text-main);
   cursor: pointer;
   transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
@@ -416,11 +428,18 @@ input:checked + .slider::before {
 }
 
 :global([data-theme="dark"]) .selectButton {
-  background: var(--color-bg-main);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .selectButton:hover:not(:disabled) {
   border-color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.04);
+}
+
+:global([data-theme="dark"]) .selectButton:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.12);
 }
 
 .selectChevron {
@@ -436,11 +455,11 @@ input:checked + .slider::before {
 
 .selectDropdown {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 4px);
   right: 0;
   width: max-content;
   min-width: 100%;
-  max-width: 260px;
+  max-width: 280px;
   background: var(--color-bg-white);
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-lg);
@@ -456,6 +475,7 @@ input:checked + .slider::before {
 
 :global([data-theme="dark"]) .selectDropdown {
   background: var(--color-bg-alt);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 @keyframes dropdownAnim {
@@ -741,7 +761,7 @@ input:checked + .slider::before {
   }
 
   .splitListPane {
-    width: 340px;
+    width: 320px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -752,8 +772,8 @@ input:checked + .slider::before {
   }
 
   .splitListPane .body {
-    padding-top: 16px;
-    padding-bottom: 24px;
+    padding-top: 12px;
+    padding-bottom: 20px;
   }
 
   .splitDetailPane {
@@ -773,8 +793,8 @@ input:checked + .slider::before {
   }
 
   .splitDetailPane .body {
-    padding-top: 24px;
-    padding-bottom: 32px;
+    padding-top: 16px;
+    padding-bottom: 28px;
   }
 }
 
@@ -785,8 +805,8 @@ input:checked + .slider::before {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
-  padding: 40px 32px;
+  gap: 20px;
+  padding: 32px 24px;
   text-align: center;
   overflow-y: auto;
 }
@@ -795,13 +815,18 @@ input:checked + .slider::before {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .welcomeWordmark {
   height: 32px;
   width: auto;
   opacity: 0.9;
+}
+
+:global([data-theme="dark"]) .welcomeWordmark {
+  filter: brightness(0) invert(1);
+  opacity: 0.95;
 }
 
 .welcomeTagline {
@@ -876,13 +901,13 @@ input:checked + .slider::before {
 /* ── Verified Identity locked card ── */
 .lockedInfoCard {
   background: rgba(var(--color-primary-rgb), 0.03);
-  border: 1.5px dashed var(--color-border-dark);
-  border-radius: var(--radius-lg);
-  padding: 16px;
-  margin: 20px var(--settings-gutter) 8px;
+  border: 1px dashed var(--color-border-dark);
+  border-radius: var(--radius-lg, 14px);
+  padding: 12px 16px;
+  margin: 12px var(--settings-gutter) 8px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 :global([data-theme="dark"]) .lockedInfoCard {
