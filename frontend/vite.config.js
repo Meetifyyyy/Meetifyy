@@ -43,30 +43,39 @@ export default defineConfig({
         scope: "/",
         display: "standalone",
         orientation: "portrait",
-        background_color: "#ffffff",
-        theme_color: "#7c3aed",
+        // Android composes the splash itself from exactly three things: this
+        // colour, the 512 icon, and `name`. #FDFDFD is the logo tile's own
+        // background — matching it exactly is what stops the tile showing as a
+        // faint square outline, so the mark reads as floating on the screen.
+        // Kept in step with LAUNCH_BG in scripts/generate-pwa-assets.mjs.
+        background_color: "#FDFDFD",
+        // Was #7c3aed, a purple the app uses nowhere. This tints the status bar
+        // and the Android task-switcher card, so the installed app was badged
+        // in a colour that appears in no other surface. Matches
+        // --color-primary now.
+        theme_color: "#2563EB",
         categories: ["social", "communication"],
         icons: [
           {
-            src: "/logo-192.png?v=2",
+            src: "/logo-192.png?v=3",
             sizes: "192x192",
             type: "image/png",
             purpose: "any"
           },
           {
-            src: "/logo-512.png?v=2",
+            src: "/logo-512.png?v=3",
             sizes: "512x512",
             type: "image/png",
             purpose: "any"
           },
           {
-            src: "/logo-192-maskable.png?v=2",
+            src: "/logo-192-maskable.png?v=3",
             sizes: "192x192",
             type: "image/png",
             purpose: "maskable"
           },
           {
-            src: "/logo-512-maskable.png?v=2",
+            src: "/logo-512-maskable.png?v=3",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable"
@@ -76,7 +85,11 @@ export default defineConfig({
       injectManifest: {
         maximumFileSizeToCacheInBytes: 10485760, // 10 MiB limit
         globPatterns: ['**/*.{js,css,html,png,webp,svg,woff2}'],
-        globIgnores: ['**/version.json', '**/stats.html'],
+        // The iOS startup images are read by Safari at launch, one per device,
+        // straight from the network or the HTTP cache — never through the
+        // worker. Precaching all fifteen would add ~1.2 MB to every install to
+        // hold fourteen images that device will never request.
+        globIgnores: ['**/version.json', '**/stats.html', 'splash/**'],
       },
     }),
     visualizer({ open: false, filename: 'stats.html', gzipSize: true, brotliSize: true })
