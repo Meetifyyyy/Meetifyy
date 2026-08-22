@@ -129,8 +129,6 @@ function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name
   const usersMap = useUsersMap();
   const { communitiesById } = useCommunities();
 
-  const isCommunity = kind === 'community';
-
   let live = null;
   let liveColor = null;
   if (entityId) {
@@ -146,44 +144,53 @@ function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name
 
   const src = live || fallbackAvatar || null;
 
-  // A community with no picture is shown across the app as a coloured circle
-  // carrying its initial (CommunityCard, SharedCommunityPreview). The generic
-  // group glyph used before did not identify WHICH community was quoted and
-  // looked nothing like the same community elsewhere on screen.
-  if (isCommunity && !src) {
-    const initial = (name || '').trim().charAt(0).toUpperCase() || 'C';
+  // With a real picture, render it through Avatar so it goes through the same
+  // media resolution, error handling and caching as every other avatar.
+  if (src) {
     return (
-      <span
+      <Avatar
+        src={src}
+        name={name}
+        size="26px"
+        isGroup={isGroup}
+        disableHover
         className={className}
-        aria-hidden="true"
-        style={{
-          width: 26,
-          height: 26,
-          borderRadius: 8,
-          flexShrink: 0,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: liveColor || fallbackColor || 'var(--color-primary, #2563eb)',
-          color: '#fff',
-          fontSize: 12,
-          fontWeight: 700,
-          lineHeight: 1,
-        }}
-      >
-        {initial}
-      </span>
+      />
     );
   }
 
+  // Without one, every quoted entity — person, community or group — gets the same
+  // treatment a picture-less community already gets elsewhere in the app
+  // (SharedCommunityPreview, CommunityCard): a filled circle carrying the first
+  // letter of its name. The generic person/group glyphs used before identified
+  // only the TYPE, so two different communities, or two different people, were
+  // indistinguishable in a quote.
+  const initial = (name || '').trim().charAt(0).toUpperCase() || '?';
   return (
-    <Avatar
-      src={src || undefined}
-      name={name}
-      size="26px"
-      isGroup={isGroup}
-      disableHover
+    <span
       className={className}
-    />
+      aria-hidden="true"
+      style={{
+        width: 26,
+        height: 26,
+        // Circular, matching .avatarFallback's border-radius: 50%.
+        borderRadius: '50%',
+        flexShrink: 0,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        // Communities carry a brand colour; people have none, so they fall back
+        // to the theme primary exactly as a colourless community would.
+        background: liveColor || fallbackColor || 'var(--color-primary, #2563eb)',
+        color: '#ffffff',
+        fontSize: 12,
+        fontWeight: 700,
+        lineHeight: 1,
+        fontFamily: 'var(--font-family-display, inherit)',
+        userSelect: 'none',
+      }}
+    >
+      {initial}
+    </span>
   );
 }
