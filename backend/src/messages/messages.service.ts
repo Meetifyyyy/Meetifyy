@@ -1238,13 +1238,20 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     userAId: string,
     userBId: string,
     activity: string,
-  ): Promise<{ id: string }> {
+  ): Promise<{ id: string; internalId: string }> {
+    if (!userAId || !userBId || userAId === userBId) {
+      throw new BadRequestException('Invalid instant match participants');
+    }
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+    // Only an instant-match DM that is still within its 24h window can be
+    // reused. Reusing an already-expired one would hand a freshly matched
+    // pair a conversation that the expiry cleanup is about to delete.
     const existing = await this.prisma.conversation.findFirst({
       where: {
         type: 'DM',
         isInstantMatch: true,
+        expiresAt: { gt: new Date() },
         AND: [
           { participants: { some: { userId: userAId } } },
           { participants: { some: { userId: userBId } } },
@@ -1254,7 +1261,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
     if (existing) {
       const pubId = (existing as any).publicId || existing.id;
-      return { id: pubId };
+      return { id: pubId, internalId: existing.id };
     }
 
     const newPubId = generatePublicId();
@@ -1282,7 +1289,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       },
     });
 
-    return { id: newPubId };
+    return { id: newPubId, internalId: conv.id };
   }
 
   async getConversationParticipantIds(conversationId: string): Promise<string[]> {

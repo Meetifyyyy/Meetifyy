@@ -333,10 +333,14 @@ export class DmService extends MessagingCoreService {
   async createInstantMatchDM(userAId: string, userBId: string, activity: string) {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+    // Mirrors MessagesService.createInstantMatchConversation: an expired
+    // instant-match DM must not be handed back, since the cleanup job is
+    // about to delete it out from under the newly matched pair.
     const existing = await this.prisma.conversation.findFirst({
       where: {
         type: 'DM',
         isInstantMatch: true,
+        expiresAt: { gt: new Date() },
         AND: [
           { participants: { some: { userId: userAId } } },
           { participants: { some: { userId: userBId } } },
@@ -346,7 +350,7 @@ export class DmService extends MessagingCoreService {
 
     if (existing) {
       const pubId = (existing as any).publicId || existing.id;
-      return { id: pubId };
+      return { id: pubId, internalId: existing.id };
     }
 
     const newPubId = generatePublicId();
@@ -374,6 +378,6 @@ export class DmService extends MessagingCoreService {
       },
     });
 
-    return { id: newPubId };
+    return { id: newPubId, internalId: conv.id };
   }
 }

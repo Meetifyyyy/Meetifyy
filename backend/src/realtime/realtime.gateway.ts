@@ -14,7 +14,21 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { SupabaseService } from '../supabase/supabase.service';
 import { MessagesService } from '../messages/messages.service';
 import { PresenceService } from '../presence/presence.service';
-import { InstantMatchService, setRealtimeGatewayRef, MatchFoundPayload, QueueStats } from '../instant-match/instant-match.service';
+import {
+  InstantMatchService,
+  setRealtimeGatewayRef,
+  MatchFoundPayload,
+  QueueStats,
+} from '../instant-match/instant-match.service';
+import { InstantMatchRateLimiter } from '../instant-match/instant-match.rate-limiter';
+import {
+  parseJoinQueuePayload,
+  parseMatchRespondPayload,
+} from '../instant-match/dto/join-queue.dto';
+import {
+  RATE_LIMIT_JOIN,
+  RATE_LIMIT_RESPOND,
+} from '../instant-match/instant-match.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { checkPresenceVisibility, checkPresenceVisibilityBatch } from '../users/privacy.helper';
 import { RedisService } from '../redis/redis.service';
@@ -52,6 +66,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     private readonly messagesService: MessagesService,
     private readonly presenceService: PresenceService,
     private readonly instantMatchService: InstantMatchService,
+    private readonly instantMatchLimiter: InstantMatchRateLimiter,
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
     private readonly activityPolicy: ActivityAuthorizationService,
@@ -970,6 +985,23 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
 
   // ─── Instant Match Socket Handlers ──────────────────────────────────────────
+  //
+  // Every handler returns an explicit ack. The client treats a missing or
+  // error ack as a failed action, which is what stops a dropped emit from
+  // leaving someone stuck on a "searching" screen that nothing will ever
+  // resolve. Payloads are validated here — never trusted from the UI.
+
+  private instantMatchAck(err: unknown, fallback: string) {
+    const status = (err as any)?.status;
+    const message = (err as any)?.response?.message ?? (err as any)?.message;
+    // Only surface messages we raised deliberately (4xx); anything else is an
+    // internal fault and gets a generic message.
+    if (typeof status === 'number' && status >= 400 && status < 500 && typeof message === 'string') {
+      return { status: 'error' as const, error: message, code: status };
+    }
+    this.logger.error(`${fallback}: ${(err as Error)?.message}`, (err as Error)?.stack);
+    return { status: 'error' as const, error: fallback, code: 500 };
+  }
 
   @SubscribeMessage('queue:join')
   async handleQueueJoin(
@@ -977,71 +1009,92 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @MessageBody() data: any,
   ) {
     const userId = (client as any).userId;
-    if (!userId) return { status: 'error', error: 'Unauthenticated' };
+    if (!userId) return { status: 'error', error: 'Unauthenticated', code: 401 };
+
+    if (!this.instantMatchLimiter.consume(`join:${userId}`, RATE_LIMIT_JOIN.points, RATE_LIMIT_JOIN.windowMs)) {
+      return { status: 'error', error: 'Slow down a moment before searching again', code: 429 };
+    }
+
     try {
-      await this.instantMatchService.joinQueue({
-        userId,
-        campus: data.campus || 'unknown',
-        activity: data.activity,
-        timePreference: data.timePreference,
-        optionalDetail: data.optionalDetail,
-        location: data.location,
-      });
+      const dto = parseJoinQueuePayload(userId, data);
+      await this.instantMatchService.joinQueue(dto);
       return { status: 'ok' };
     } catch (err) {
-      this.logger.error('queue:join error', err);
-      return { status: 'error', error: 'Failed to join queue' };
+      return this.instantMatchAck(err, 'Could not start your search');
     }
   }
 
   @SubscribeMessage('queue:cancel')
   async handleQueueCancel(@ConnectedSocket() client: Socket) {
     const userId = (client as any).userId;
-    if (!userId) return { status: 'error', error: 'Unauthenticated' };
+    if (!userId) return { status: 'error', error: 'Unauthenticated', code: 401 };
     try {
       await this.instantMatchService.cancelQueue(userId);
       return { status: 'ok' };
     } catch (err) {
-      this.logger.error('queue:cancel error', err);
-      return { status: 'error', error: 'Failed to cancel queue' };
+      return this.instantMatchAck(err, 'Could not cancel your search');
     }
   }
 
   @SubscribeMessage('match:respond')
   async handleMatchRespond(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { matchId: string; action: 'accept' | 'decline' },
+    @MessageBody() data: any,
   ) {
     const userId = (client as any).userId;
-    if (!userId) return { status: 'error', error: 'Unauthenticated' };
+    if (!userId) return { status: 'error', error: 'Unauthenticated', code: 401 };
+
+    if (!this.instantMatchLimiter.consume(`respond:${userId}`, RATE_LIMIT_RESPOND.points, RATE_LIMIT_RESPOND.windowMs)) {
+      return { status: 'error', error: 'Too many responses — try again shortly', code: 429 };
+    }
+
     try {
-      await this.instantMatchService.respondToMatch(userId, data.matchId, data.action);
+      const { matchId, action } = parseMatchRespondPayload(data);
+      await this.instantMatchService.respondToMatch(userId, matchId, action);
       return { status: 'ok' };
     } catch (err) {
-      this.logger.error('match:respond error', err);
-      return { status: 'error', error: 'Failed to respond to match' };
+      return this.instantMatchAck(err, 'Could not send your response');
+    }
+  }
+
+  /**
+   * Resync after a reload or a socket reconnect. The server is the source of
+   * truth for whether this user is still queued or has a live match waiting,
+   * so the client rebuilds from this rather than from its own stale memory.
+   */
+  @SubscribeMessage('queue:sync')
+  async handleQueueSync(@ConnectedSocket() client: Socket) {
+    const userId = (client as any).userId;
+    if (!userId) return { status: 'error', error: 'Unauthenticated', code: 401 };
+    try {
+      const state = await this.instantMatchService.getStateFor(userId);
+      return { status: 'ok', state };
+    } catch (err) {
+      return this.instantMatchAck(err, 'Could not restore your search');
     }
   }
 
   // ─── Instant Match Emit Helpers ──────────────────────────────────────────────
+  // Emits target the user's personal room, so every device and tab that user
+  // has open stays in step with the same match.
 
   emitMatchFound(userId: string, payload: MatchFoundPayload) {
-    this.server.to(userId).emit('match:found', payload);
+    this.server?.to(userId).emit('match:found', payload);
   }
 
   emitMatchAccepted(userId: string, payload: { chatId: string }) {
-    this.server.to(userId).emit('match:accepted', payload);
+    this.server?.to(userId).emit('match:accepted', payload);
   }
 
-  emitMatchDeclined(userId: string, payload: { reason: string }) {
-    this.server.to(userId).emit('match:declined', payload);
+  emitMatchDeclined(userId: string, payload: { reason: string; requeued: boolean }) {
+    this.server?.to(userId).emit('match:declined', payload);
   }
 
   emitSearchResumed(userId: string) {
-    this.server.to(userId).emit('search:resumed', {});
+    this.server?.to(userId).emit('search:resumed', {});
   }
 
   emitQueueStats(userId: string, stats: QueueStats) {
-    this.server.to(userId).emit('queue:stats', stats);
+    this.server?.to(userId).emit('queue:stats', stats);
   }
 }

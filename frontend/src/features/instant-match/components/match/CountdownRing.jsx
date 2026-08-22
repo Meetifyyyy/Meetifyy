@@ -1,33 +1,36 @@
 import React from 'react';
 
-export default function CountdownRing({ timeLeft, initialDuration }) {
-  const radius = 28;
-  const strokeWidth = 4;
-  const circumference = 2 * Math.PI * radius;
-  
-  // Calculate offset
-  const ratio = initialDuration > 0 ? timeLeft / initialDuration : 0;
-  const strokeDashoffset = circumference - ratio * circumference;
+const RADIUS = 26;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
+/**
+ * Accept-window countdown.
+ *
+ * Turns coral under ten seconds. The number is the accessible value; the ring
+ * is decoration, so the whole thing is exposed as one timer rather than as a
+ * graphic plus a stray digit.
+ */
+export default function CountdownRing({ timeLeft, total }) {
+  const safeTotal = Number.isFinite(total) && total > 0 ? total : 30;
+  const ratio = Math.max(0, Math.min(1, timeLeft / safeTotal));
+  const urgent = timeLeft <= 10;
 
   return (
-    <div className="countdown-timer-wrapper">
-      <svg className="countdown-svg" viewBox="0 0 64 64">
+    <div
+      className={`im-ring ${urgent ? 'is-urgent' : ''}`}
+      role="timer"
+      aria-label={`${timeLeft} seconds left to respond`}
+    >
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <circle className="im-ring-track" cx="32" cy="32" r={RADIUS} />
         <circle
-          className="countdown-circle-bg"
-          cx="32"
-          cy="32"
-          r={radius}
-        />
-        <circle
-          className="countdown-circle-progress"
-          cx="32"
-          cy="32"
-          r={radius}
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
+          className="im-ring-progress"
+          cx="32" cy="32" r={RADIUS}
+          strokeDasharray={CIRCUMFERENCE}
+          strokeDashoffset={CIRCUMFERENCE - ratio * CIRCUMFERENCE}
         />
       </svg>
-      <span className="countdown-number">{timeLeft}</span>
+      <span className="im-ring-value" aria-hidden="true">{timeLeft}</span>
     </div>
   );
 }

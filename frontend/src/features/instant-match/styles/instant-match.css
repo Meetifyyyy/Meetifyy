@@ -1,0 +1,372 @@
+/**
+ * Instant Match — scoped design language.
+ *
+ * Every token below is defined on `.im-scope` rather than `:root`, and every
+ * class is `im-` prefixed, so this feature can be as loud as it likes without
+ * a single declaration leaking into the rest of the app.
+ *
+ * The look: riso-print poster. Cream paper, heavy display type, flat colour
+ * blocks that sit slightly off-register, hard offset shadows instead of soft
+ * blur, and hand-drawn marks in the margins.
+ */
+
+.im-scope {
+  /* Paper + ink */
+  --im-paper: #FFFBF2;
+  --im-paper-deep: #F6EFE1;
+  --im-ink: #16130E;
+  --im-ink-soft: #4A4238;
+  --im-ink-faint: #7B7264;
+  --im-rule: #16130E;
+
+  /* Riso spot colours */
+  --im-violet: #6D3BEB;
+  --im-coral: #FF5A47;
+  /* Coral is bright enough that cream text on it fails AA, so anything filled
+     with it carries ink text. For coral *as text* on paper we need a deeper
+     shade — one value cannot serve both roles. */
+  --im-coral-ink: #C4321F;
+  --im-lime: #C6F04A;
+  --im-sun: #FFC44D;
+  --im-sky: #3EA9F5;
+  --im-mint: #23C69A;
+
+  /**
+   * Per-surface accent.
+   *
+   * Components inject the light *and* dark values as `--im-accent-l` /
+   * `--im-accent-d` and this resolves the right one per theme. Injecting
+   * `--im-accent` directly would freeze the light-mode value into dark mode,
+   * where a saturated ink like #2563EB has almost no contrast on near-black.
+   * The fallbacks apply before an activity has been chosen.
+   */
+  --im-accent: var(--im-accent-l, #6D3BEB);
+  --im-accent-wash: var(--im-accent-wash-l, #EDE7FF);
+
+  /* Type */
+  --im-display: 'Changa One', 'Changa', Impact, sans-serif;
+  --im-body: 'Inter', system-ui, sans-serif;
+
+  /**
+   * Depth comes from soft, low shadows and hairline edges rather than heavy
+   * outlines and hard offsets. The poster character now lives in the colour
+   * blocks, the display type and the decorative marks — the chrome stays
+   * quiet so those can carry it.
+   */
+  --im-line: rgba(22, 19, 14, 0.13);
+  --im-line-strong: rgba(22, 19, 14, 0.22);
+
+  --im-shadow-sm: 0 1px 2px rgba(22, 19, 14, 0.05), 0 2px 5px rgba(22, 19, 14, 0.04);
+  --im-shadow: 0 2px 6px rgba(22, 19, 14, 0.06), 0 8px 20px rgba(22, 19, 14, 0.07);
+  --im-shadow-lg: 0 6px 16px rgba(22, 19, 14, 0.09), 0 20px 48px rgba(22, 19, 14, 0.12);
+
+  --im-border: 1.5px solid var(--im-line);
+  --im-radius: 18px;
+  --im-radius-sm: 12px;
+  --im-radius-lg: 28px;
+
+  --im-ease: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --im-ease-out: cubic-bezier(0.22, 0.9, 0.3, 1);
+
+  font-family: var(--im-body);
+  color: var(--im-ink);
+}
+
+/* Dark mode keeps the poster logic but inverts the paper: the ink becomes the
+   ground and the spot colours stay saturated so the contrast holds. */
+[data-theme='dark'] .im-scope {
+  --im-paper: #1B1815;
+  --im-paper-deep: #12100E;
+  --im-ink: #FFF8EA;
+  --im-ink-soft: #D6CCBC;
+  --im-ink-faint: #A2988A;
+  --im-rule: #FFF8EA;
+
+  --im-violet: #A98BFF;
+  --im-coral: #FF8375;
+  --im-coral-ink: #FF8375;
+  --im-lime: #D7F778;
+  --im-sun: #FFD37A;
+  --im-sky: #74C4FF;
+  --im-mint: #5BDCB6;
+
+  --im-accent: var(--im-accent-d, #A98BFF);
+  --im-accent-wash: var(--im-accent-wash-d, #2D2545);
+
+  /* On a dark ground a black shadow is invisible, so depth is carried by a
+     lighter hairline plus a deeper ambient shadow. */
+  --im-line: rgba(255, 248, 234, 0.14);
+  --im-line-strong: rgba(255, 248, 234, 0.26);
+
+  --im-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --im-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 8px 22px rgba(0, 0, 0, 0.4);
+  --im-shadow-lg: 0 6px 18px rgba(0, 0, 0, 0.5), 0 22px 50px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Typography ──────────────────────────────────────────────────────────── */
+
+.im-display {
+  font-family: var(--im-display);
+  font-weight: 400;          /* Changa One ships a single weight */
+  letter-spacing: 0.01em;
+  line-height: 0.95;
+  text-transform: uppercase;
+  color: var(--im-ink);
+  margin: 0;
+}
+
+.im-display-xl { font-size: clamp(2.1rem, 8.5vw, 3.1rem); }
+.im-display-lg { font-size: clamp(1.7rem, 6.5vw, 2.3rem); }
+.im-display-md { font-size: clamp(1.35rem, 5vw, 1.7rem); }
+
+/* Body copy deliberately stays Inter and case-sensitive: the display face is
+   for impact, never for anything the user has to read carefully. */
+.im-lede {
+  font-family: var(--im-body);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--im-ink-soft);
+  margin: 0;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.im-eyebrow {
+  font-family: var(--im-body);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--im-ink-faint);
+}
+
+/* ── Decorative primitives ───────────────────────────────────────────────── */
+
+.im-decor { position: absolute; pointer-events: none; }
+.im-blob { width: 100%; height: 100%; }
+.im-halftone { width: 100%; height: 100%; }
+.im-starburst { width: 100%; height: 100%; }
+.im-arcs { width: 100%; height: 100%; }
+.im-ticks { width: 100%; height: 100%; }
+
+.im-squiggle {
+  position: static;
+  display: block;
+  width: 100%;
+  height: 0.7em;
+  color: var(--im-accent);
+}
+
+.im-grain {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.09;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+[data-theme='dark'] .im-grain { mix-blend-mode: screen; opacity: 0.06; }
+
+.im-bolt { width: 1em; height: 1em; display: block; }
+
+/* Layered poster backdrop */
+.im-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.im-backdrop-dots { inset: 0; color: var(--im-accent); opacity: 0.16; }
+.im-backdrop-blob-1 {
+  top: -32%; right: -22%; width: 62%; height: 62%;
+  color: var(--im-accent); opacity: 0.2;
+}
+.im-backdrop-blob-2 {
+  bottom: -30%; left: -26%; width: 55%; height: 55%;
+  color: var(--im-sun); opacity: 0.22;
+}
+.im-backdrop-burst {
+  top: 8%; left: 6%; width: 54px; height: 54px;
+  color: var(--im-coral); opacity: 0.3;
+}
+.im-backdrop-b .im-backdrop-blob-2 { color: var(--im-mint); }
+.im-backdrop-c .im-backdrop-blob-2 { color: var(--im-sky); }
+
+/* ── Stickers ────────────────────────────────────────────────────────────── */
+
+.im-sticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 13px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--im-sun);
+  color: #16130E;
+  font-family: var(--im-display);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: var(--im-shadow-sm);
+  transform: rotate(-2deg);
+  white-space: nowrap;
+}
+.im-sticker-coral { background: var(--im-coral); color: #16130E; }
+.im-sticker-lime { background: var(--im-lime); color: #16130E; }
+.im-sticker-violet { background: var(--im-violet); color: #FFF8EA; }
+
+/* In dark mode the violet is the light end of the palette, so its label has
+   to flip to ink too. (Coral already carries ink text in both themes.) */
+[data-theme='dark'] .im-sticker-violet { color: #16130E; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.im-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;                 /* comfortable touch target */
+  padding: 12px 20px;
+  border: var(--im-border);
+  border-radius: var(--im-radius-sm);
+  background: var(--im-paper);
+  color: var(--im-ink);
+  font-family: var(--im-display);
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: var(--im-shadow);
+  transition: transform 0.14s var(--im-ease), box-shadow 0.14s var(--im-ease),
+              background-color 0.14s linear;
+}
+
+.im-btn:hover:not(:disabled) { transform: translateY(-1.5px); box-shadow: var(--im-shadow-lg); }
+.im-btn:active:not(:disabled) { transform: translateY(1px); box-shadow: var(--im-shadow-sm); }
+
+.im-btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+.im-btn-primary { background: var(--im-accent); color: #FFF8EA; }
+[data-theme='dark'] .im-btn-primary { color: #16130E; }
+.im-btn-go { background: var(--im-lime); color: #16130E; }
+.im-btn-yes { background: var(--im-mint); color: #16130E; }
+.im-btn-ghost { background: transparent; box-shadow: var(--im-shadow-sm); }
+
+.im-btn-sm { min-height: 40px; padding: 8px 14px; font-size: 0.85rem; }
+
+/* ── Focus ───────────────────────────────────────────────────────────────── */
+/* A thick offset ring in the accent colour, visible on both papers. */
+.im-scope :focus-visible {
+  outline: 3px solid var(--im-accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+.im-scope :focus:not(:focus-visible) { outline: none; }
+
+/* ── Scrollbars ──────────────────────────────────────────────────────────── */
+
+/**
+ * Chrome is hidden across the whole feature — the poster surfaces read as
+ * printed panels and a scrollbar gutter breaks that. Scrolling itself is
+ * untouched: wheel, trackpad, touch and keyboard all still work, and every
+ * scrollable region is short enough that its content is reachable without a
+ * visible track.
+ */
+.im-scope,
+.im-scope * {
+  scrollbar-width: none;      /* Firefox */
+  -ms-overflow-style: none;   /* legacy Edge */
+}
+
+.im-scope::-webkit-scrollbar,
+.im-scope *::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+
+/* ── Emoji ───────────────────────────────────────────────────────────────── */
+
+/**
+ * Emoji carry their own ascender and descender metrics, so a glyph dropped
+ * into a centred box still sits low. Pinning the line box to the glyph and
+ * centring on both axes puts them in the actual middle of their circle.
+ */
+.im-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji',
+               'Twemoji Mozilla', sans-serif;
+  font-style: normal;
+  text-align: center;
+  /* Emoji fonts hang slightly low in their em box; nudge back to optical
+     centre rather than mathematical centre. */
+  transform: translateY(-0.02em);
+}
+
+/* ── Utility ─────────────────────────────────────────────────────────────── */
+
+.im-sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.im-rule {
+  height: 1px;
+  background: var(--im-line-strong);
+  border: 0;
+  margin: 0;
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────── */
+
+@keyframes im-pop-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes im-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50% { transform: translate3d(0, -8px, 0) rotate(3deg); }
+}
+@keyframes im-spin { to { transform: rotate(360deg); } }
+@keyframes im-pulse-ring {
+  0% { transform: scale(0.7); opacity: 0.85; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+@keyframes im-wiggle {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+@keyframes im-shimmer {
+  from { background-position: -180% 0; }
+  to { background-position: 180% 0; }
+}
+
+/**
+ * Reduced motion: the decoration stops moving, but nothing disappears and no
+ * transition is removed that carries meaning — buttons still respond, states
+ * still change, they just do it without travel.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .im-scope *,
+  .im-scope *::before,
+  .im-scope *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .im-scope .im-btn:hover:not(:disabled),
+  .im-scope .im-btn:active:not(:disabled) { transform: none; }
+}

@@ -33,6 +33,10 @@ const NotificationPlayground = import.meta.env.DEV
 const LogoAnimationPage = import.meta.env.DEV
   ? lazy(() => import('./local/LogoAnimation').catch(() => ({ default: () => null })))
   : null;
+// DEV — Instant Match visual harness (every state, no backend needed)
+const InstantMatchPreview = import.meta.env.DEV
+  ? lazy(() => import('./local/InstantMatchPreview').catch(() => ({ default: () => null })))
+  : null;
 
 import HomeSkeleton from './features/feed/components/skeletons/HomeSkeleton';
 import ProfilePageSkeleton from './features/profile/components/skeletons/ProfilePageSkeleton';
@@ -339,6 +343,12 @@ export default function App() {
           {
             path: '/dev/notifications',
             element: <Suspense fallback={null}><NotificationPlayground /></Suspense>,
+          }
+        ] : []),
+        ...(import.meta.env.DEV && InstantMatchPreview ? [
+          {
+            path: '/dev/instant-match',
+            element: <StaticRoute><Suspense fallback={null}><InstantMatchPreview /></Suspense></StaticRoute>,
           }
         ] : []),
         // DEV — logo animation experiment

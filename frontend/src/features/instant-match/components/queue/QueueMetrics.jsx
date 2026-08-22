@@ -1,51 +1,58 @@
 import React from 'react';
 import { useInstantMatch } from '../../context/InstantMatchContext';
+import { getActivityLabel } from '../../constants/matchConstants';
 
-export default function QueueMetrics() {
+function formatWait(secs) {
+  if (!Number.isFinite(secs) || secs <= 0) return null;
+  if (secs < 90) return `${Math.max(15, Math.round(secs / 15) * 15)}s`;
+  return `${Math.round(secs / 60)} min`;
+}
+
+/**
+ * Live queue depth for the bucket the user is waiting in.
+ *
+ * The server pushes a fresh count whenever anyone joins, cancels, matches or
+ * expires, so this is a real number rather than a decorative one — which is
+ * why the empty case says something honest instead of inventing a statistic.
+ */
+export default function QueueMetrics({ elapsed = 0 }) {
   const { queueStats, formData } = useInstantMatch();
-  const count = queueStats?.count || 0;
-  const activityLabel = formData?.activity || 'this activity';
 
-  if (count <= 1) {
-    return (
-      <div className="searching-stats-box">
-        <div className="searching-stat-row">
-          <span>You're first in line</span>
-        </div>
-        <div className="searching-stat-divider" />
-        <div className="searching-wait-row">
-          We'll notify you the moment someone joins.
-        </div>
-      </div>
-    );
-  }
+  const count = Number(queueStats?.count) || 0;
+  // The count includes this user, so "others" is what actually matters.
+  const others = Math.max(0, count - 1);
+  const activityLabel = getActivityLabel(formData.activity, 'this');
+  const wait = formatWait(queueStats?.avgWaitSecs);
 
   return (
-    <div className="searching-stats-box">
-      <div className="searching-stat-row">
-        <svg 
-          width="16" 
-          height="16" 
-          viewBox="0 0 24 24" 
-          fill="none" 
-          stroke="currentColor" 
-          strokeWidth="2.5" 
-          strokeLinecap="round" 
-          strokeLinejoin="round"
-        >
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        </svg>
-        <span>
-          {count} students searching for {activityLabel} right now
+    <div className="im-metrics">
+      <div className="im-metrics-row">
+        <span className="im-metrics-figure">{others}</span>
+        <span className="im-metrics-caption">
+          {others === 0
+            ? `first in line for ${activityLabel.toLowerCase()}`
+            : others === 1
+              ? `other student searching for ${activityLabel.toLowerCase()}`
+              : `others searching for ${activityLabel.toLowerCase()}`}
         </span>
       </div>
-      <div className="searching-stat-divider" />
-      <div className="searching-wait-row">
-        Average wait: ~{Math.ceil((queueStats.avgWaitSecs || 120) / 60)} minutes
-      </div>
+
+      <hr className="im-rule im-metrics-rule" />
+
+      <p className="im-metrics-note">
+        {others === 0
+          ? "You're at the front — we'll pair you the second someone joins."
+          : wait
+            ? `Typical wait here: about ${wait}.`
+            : 'Pairing you as soon as the best fit appears.'}
+      </p>
+
+      {elapsed >= 10 && (
+        <p className="im-metrics-elapsed">
+          <span className="im-sr-only">Time spent searching: </span>
+          {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
+        </p>
+      )}
     </div>
   );
 }

@@ -1,33 +1,39 @@
 import React from 'react';
-import { MATCH_ACTIVITIES } from '../../constants/matchConstants';
+import { MATCH_ACTIVITIES, accentVars } from '../../constants/matchConstants';
+import { Ticks } from '../decor/Decor';
 
+/**
+ * Activity picker. Each tile is its own little poster, coloured by the
+ * activity, so the grid reads as a set of options rather than a list of words.
+ */
 export default function ActivityStep({ selectedActivity, onSelect }) {
   return (
-    <div className="instant-match-step-container">
-      <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-        <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '0 0 4px 0' }}>
-          What are you up for?
-        </h3>
-        <p style={{ fontSize: '0.825rem', color: 'var(--color-text-light)', margin: 0 }}>
-          Select an activity to find someone on campus
-        </p>
-      </div>
+    <fieldset className="im-fieldset">
+      <legend className="im-sr-only">Choose an activity</legend>
 
-      <div className="activity-grid">
-        {MATCH_ACTIVITIES.map(activity => {
-          const isSelected = selectedActivity === activity.id;
+      <div className="im-activity-grid" role="radiogroup" aria-label="Activity">
+        {MATCH_ACTIVITIES.map((activity, i) => {
+          const selected = selectedActivity === activity.id;
           return (
             <button
               key={activity.id}
-              className={`activity-chip ${isSelected ? 'selected' : ''}`}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              className={`im-activity-tile ${selected ? 'is-selected' : ''}`}
+              style={accentVars(activity)}
               onClick={() => onSelect(activity.id)}
             >
-              <span className="activity-emoji">{activity.emoji}</span>
-              <span>{activity.label}</span>
+              {/* Every third tile gets a tick field, so the grid has rhythm
+                  without every cell being identically decorated. */}
+              {i % 3 === 1 && <Ticks className="im-activity-ticks" />}
+              <span className="im-activity-emoji im-emoji" aria-hidden="true">{activity.emoji}</span>
+              <span className="im-activity-label">{activity.label}</span>
+              {selected && <span className="im-activity-check" aria-hidden="true">✓</span>}
             </button>
           );
         })}
       </div>
-    </div>
+    </fieldset>
   );
 }

@@ -176,12 +176,6 @@ export function useMessageActions() {
 
 
 
-  const start24HrInstantChat = async (candidate, activity) => {
-    const res = await messagesApi.startInstantMatchChat(candidate?.id, activity).catch(() => null);
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    return res?.id || null;
-  };
-
   const toggleMuteConversation = async (convId, currentMuted) => {
     queryClient.setQueryData(['conversations'], (old) => {
       if (!Array.isArray(old)) return old;
@@ -249,7 +243,6 @@ export function useMessageActions() {
     deleteConversation,
     clearChat,
     toggleBlockUser,
-    start24HrInstantChat,
     sendDirectMessage,
     reactToMessage,
     startConversation,

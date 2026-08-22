@@ -1,86 +1,92 @@
 import React, { useState, useEffect } from 'react';
 import { useInstantMatch } from '../../context/InstantMatchContext';
+import { getActivityLabel, getTimePreference } from '../../constants/matchConstants';
 import QueueMetrics from './QueueMetrics';
+import SearchRadar from './SearchRadar';
 import '../../styles/searching-screen.css';
 
-const STATUS_MESSAGES = [
-  'Looking for students...',
-  'Checking availability...',
-  'Finding the best match...',
-  'Almost there...'
+const STATUS_LINES = [
+  'Scanning your campus…',
+  'Checking who is free…',
+  'Lining up the best fit…',
+  'Almost there…',
 ];
 
+/**
+ * The waiting room.
+ *
+ * Two jobs: make an indefinite wait feel deliberate rather than broken, and
+ * make it obvious the search survives minimising the sheet.
+ */
 export default function SearchingScreen() {
-  const { cancelSearch, closeSheet } = useInstantMatch();
-  const [msgIndex, setMsgIndex] = useState(0);
-  const [startY, setStartY] = useState(null);
+  const { cancelSearch, closeSheet, formData, busy, connected, status } = useInstantMatch();
+  const [line, setLine] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setMsgIndex(prev => (prev + 1) % STATUS_MESSAGES.length);
-    }, 3000);
-
-    return () => clearInterval(interval);
+    const id = window.setInterval(() => setLine((i) => (i + 1) % STATUS_LINES.length), 3200);
+    return () => window.clearInterval(id);
   }, []);
 
-  const handleStart = (e) => {
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    setStartY(clientY);
-  };
+  useEffect(() => {
+    const started = Date.now();
+    const id = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
-  const handleMove = (e) => {
-    if (startY === null) return;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const diffY = clientY - startY;
-    if (diffY > 40) { // Dragged down more than 40px
-      closeSheet();
-      setStartY(null);
-    }
-  };
+  const activityLabel = getActivityLabel(formData.activity, 'a hangout');
+  const when = getTimePreference(formData.timePreference);
 
-  const handleEnd = () => {
-    setStartY(null);
-  };
+  // After a couple of minutes, stop pretending it is imminent and say so.
+  const longWait = elapsed > 120;
 
   return (
-    <div className="searching-container">
-      <div 
-        className="searching-loader-wrapper"
-        onTouchStart={handleStart}
-        onTouchMove={handleMove}
-        onTouchEnd={handleEnd}
-        onMouseDown={handleStart}
-        onMouseMove={handleMove}
-        onMouseUp={handleEnd}
-        onMouseLeave={handleEnd}
-        style={{ cursor: 'grab' }}
-      >
-        <div className="searching-loader-ring" />
-        <div className="searching-loader-ring" />
-        <div className="searching-loader-ring" />
-        <div className="searching-loader-core">
-          <svg 
-            xmlns="http://www.w3.org/2000/svg" 
-            viewBox="0 0 24 24" 
-            fill="currentColor"
-          >
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-          </svg>
-        </div>
-      </div>
+    <div className="im-searching">
+      <SearchRadar />
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <h3 className="searching-title">Finding your match</h3>
-        <p className="searching-status-msg">
-          {STATUS_MESSAGES[msgIndex]}
+      <div className="im-searching-copy">
+        <span className="im-sticker im-sticker-coral">Searching</span>
+        <h3 className="im-display im-display-lg">
+          Finding someone
+          <br />
+          for {activityLabel.toLowerCase()}
+        </h3>
+        <p className="im-lede" role="status" aria-live="polite">
+          {connected ? STATUS_LINES[line] : 'Reconnecting — your place in the queue is held.'}
         </p>
+        {when && (
+          <p className="im-searching-when">
+            <span aria-hidden="true">{when.emoji}</span> {when.title}
+          </p>
+        )}
       </div>
 
-      <QueueMetrics />
+      <QueueMetrics elapsed={elapsed} />
 
-      <button className="cancel-search-btn" onClick={cancelSearch}>
-        Cancel Search
-      </button>
+      {longWait && (
+        <p className="im-searching-patience">
+          Quiet right now. We'll keep looking — you can close this and we'll
+          buzz you the moment someone turns up.
+        </p>
+      )}
+
+      <div className="im-searching-actions">
+        <button
+          type="button"
+          className="im-btn im-btn-ghost im-btn-sm"
+          onClick={closeSheet}
+        >
+          Keep searching in background
+        </button>
+        <button
+          type="button"
+          className="im-btn im-btn-sm im-searching-cancel"
+          onClick={cancelSearch}
+          disabled={busy || status !== 'searching'}
+        >
+          {busy ? 'Stopping…' : 'Cancel search'}
+        </button>
+      </div>
     </div>
   );
 }

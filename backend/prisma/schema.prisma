@@ -791,7 +791,8 @@ model MatchQueueEntry {
   expiresAt      DateTime
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([campus, activity, timePreference])
+  @@index([campus, activity, timePreference, expiresAt])
+  @@index([expiresAt])
 }
 
 model MatchSession {
@@ -805,11 +806,17 @@ model MatchSession {
   conversationId String?
   createdAt      DateTime    @default(now())
   expiresAt      DateTime
+  /// Snapshot of each side's original queue request, so the server can
+  /// re-queue the other user when a match is declined or times out without
+  /// depending on that client still being connected to replay it.
+  snapshotA      Json?
+  snapshotB      Json?
   userA          User        @relation("MatchUserA", fields: [userAId], references: [id])
   userB          User        @relation("MatchUserB", fields: [userBId], references: [id])
 
   @@index([userAId])
   @@index([userBId])
+  @@index([status, expiresAt])
 }
 
 model SuperAdmin {

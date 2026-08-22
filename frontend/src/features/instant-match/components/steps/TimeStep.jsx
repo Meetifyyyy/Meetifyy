@@ -1,76 +1,53 @@
 import React from 'react';
+import { TIME_PREFERENCES, accentVars } from '../../constants/matchConstants';
+import { Blob } from '../decor/Decor';
 
-const TIME_OPTIONS = [
-  { 
-    id: 'now', 
-    title: 'Right Now', 
-    desc: 'Find someone to meet immediately', 
-    icon: '⚡',
-    gradient: 'linear-gradient(135deg, rgba(249, 115, 22, 0.12), rgba(234, 88, 12, 0.12))',
-    selectedBg: 'rgba(249, 115, 22, 0.06)',
-    borderColor: 'var(--color-highlight)'
-  },
-  { 
-    id: '30min', 
-    title: 'Within 30 Minutes', 
-    desc: 'Planning to head out soon', 
-    icon: '⏰',
-    gradient: 'linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(29, 78, 216, 0.12))',
-    selectedBg: 'rgba(37, 99, 235, 0.06)',
-    borderColor: 'var(--color-primary)'
-  },
-  { 
-    id: 'today', 
-    title: 'Today', 
-    desc: 'Looking for partners later today', 
-    icon: '📅',
-    gradient: 'linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(109, 40, 217, 0.12))',
-    selectedBg: 'rgba(124, 58, 237, 0.06)',
-    borderColor: 'var(--color-secondary)'
-  }
-];
-
+/** When-do-you-want-to-meet picker: three stacked poster bands. */
 export default function TimeStep({ selectedTime, onSelect }) {
   return (
-    <div className="instant-match-step-container">
-      <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-        <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '0 0 4px 0' }}>
-          When do you want to meet?
-        </h3>
-        <p style={{ fontSize: '0.825rem', color: 'var(--color-text-light)', margin: 0 }}>
-          Set your matching window urgency
-        </p>
-      </div>
+    <fieldset className="im-fieldset">
+      <legend className="im-sr-only">Choose when you want to meet</legend>
 
-      <div className="time-options">
-        {TIME_OPTIONS.map(opt => {
-          const isSelected = selectedTime === opt.id;
+      <div className="im-time-stack" role="radiogroup" aria-label="When">
+        {TIME_PREFERENCES.map((opt) => {
+          const selected = selectedTime === opt.id;
           return (
             <button
               key={opt.id}
-              className={`time-option-card ${isSelected ? 'selected' : ''}`}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              className={`im-time-card ${selected ? 'is-selected' : ''}`}
+              style={accentVars(opt)}
               onClick={() => onSelect(opt.id)}
-              style={{ 
-                textAlign: 'left', 
-                background: isSelected ? opt.selectedBg : undefined,
-                borderColor: isSelected ? opt.borderColor : undefined,
-                width: '100%' 
-              }}
             >
-              <div 
-                className="time-option-icon-wrapper"
-                style={{ background: opt.gradient }}
-              >
-                {opt.icon}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <span className="time-option-title">{opt.title}</span>
-                <span className="time-option-desc">{opt.desc}</span>
-              </div>
+              <Blob className="im-time-blob" variant={2} />
+              <span className="im-time-badge im-emoji" aria-hidden="true">{opt.emoji}</span>
+              <span className="im-time-text">
+                <span className="im-time-title">{opt.title}</span>
+                <span className="im-time-desc">{opt.desc}</span>
+              </span>
+              {/* Drawn rather than typed: the arrow and tick glyphs render
+                  thin and inconsistently across platforms, which read as
+                  weak next to the display type. */}
+              <span className="im-time-mark" aria-hidden="true">
+                {selected ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="4" y1="12" x2="18" y2="12" />
+                    <polyline points="12 6 18 12 12 18" />
+                  </svg>
+                )}
+              </span>
             </button>
           );
         })}
       </div>
-    </div>
+    </fieldset>
   );
 }

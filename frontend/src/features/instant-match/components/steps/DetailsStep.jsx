@@ -1,36 +1,65 @@
-import React from 'react';
-import { ACTIVITY_DETAILS_CONFIG } from '../../constants/matchConstants';
+import React, { useRef, useEffect, useId } from 'react';
+import { ACTIVITY_DETAILS_CONFIG, OPTIONAL_DETAIL_MAX, getActivity } from '../../constants/matchConstants';
+import { Starburst } from '../decor/Decor';
 
-export default function DetailsStep({ activityId, value, onChange }) {
+/** Optional one-liner. Never blocks progress — an empty detail is valid. */
+export default function DetailsStep({ activityId, value, onChange, onSubmit }) {
   const config = ACTIVITY_DETAILS_CONFIG[activityId];
+  const activity = getActivity(activityId);
+  const inputRef = useRef(null);
+  const inputId = useId();
+  const hintId = `${inputId}-hint`;
 
-  // Fallback or empty if not configured (should be skipped by parent sheet anyway)
-  if (!config) {
-    return null;
-  }
+  useEffect(() => {
+    // Focus without scroll-jumping the sheet on mobile.
+    inputRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  if (!config) return null;
+
+  const remaining = OPTIONAL_DETAIL_MAX - value.length;
 
   return (
-    <div className="instant-match-step-container">
-      <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-        <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '0 0 4px 0' }}>
-          Add details
-        </h3>
-        <p style={{ fontSize: '0.825rem', color: 'var(--color-text-light)', margin: 0 }}>
-          Help others understand what you are looking for
-        </p>
-      </div>
+    <div className="im-detail-step">
+      <div className="im-detail-card">
+        <Starburst className="im-detail-burst" points={8} />
 
-      <div className="detail-input-wrapper">
-        <label htmlFor="details-step-input">{config.label}</label>
+        <label className="im-detail-label" htmlFor={inputId}>
+          {config.label}
+        </label>
+
         <input
-          id="details-step-input"
+          id={inputId}
+          ref={inputRef}
+          className="im-detail-input"
           type="text"
+          inputMode="text"
+          autoComplete="off"
           placeholder={config.placeholder}
           value={value}
+          maxLength={OPTIONAL_DETAIL_MAX}
+          aria-describedby={hintId}
           onChange={(e) => onChange(e.target.value)}
-          maxLength={60}
-          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              onSubmit?.();
+            }
+          }}
         />
+
+        <div className="im-detail-foot">
+          <p id={hintId} className="im-detail-hint">
+            Optional — skip it and we'll still find you someone for{' '}
+            {activity?.label.toLowerCase() ?? 'this'}.
+          </p>
+          <span
+            className={`im-detail-count ${remaining <= 10 ? 'is-low' : ''}`}
+            aria-live="polite"
+          >
+            {remaining}
+          </span>
+        </div>
       </div>
     </div>
   );
