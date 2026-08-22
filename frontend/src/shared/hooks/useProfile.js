@@ -37,7 +37,9 @@ export function useProfile(username) {
     enabled: !!username && username !== 'unknown',
     staleTime: 2 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
-    placeholderData: (prev) => prev,
+    // No keep-previous here: the key IS the identity. Carrying the last
+    // profile over showed one person's avatar, bio and counts under another
+    // person's username for the length of the fetch.
   });
 
   // If cached data is present but incomplete (missing stats), invalidate to fetch complete profile
