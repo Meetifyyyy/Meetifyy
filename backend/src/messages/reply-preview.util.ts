@@ -41,6 +41,12 @@ export type ReplyToSnapshot = {
    * resolves it through the media layer like any other avatar.
    */
   shareAvatar: string | null;
+  /**
+   * A community's brand colour. Communities without a picture are shown
+   * everywhere else in the app as a coloured circle bearing their initial, so the
+   * quote needs the colour to match rather than fall back to a generic icon.
+   */
+  shareColor: string | null;
   /** True when the original was unsent/deleted, so the quote can say so. */
   isUnsent: boolean;
 };
@@ -59,6 +65,7 @@ function describeShare(payload: any): {
   shareId: string | null;
   shareTitle: string | null;
   shareAvatar: string | null;
+  shareColor: string | null;
 } {
   const invite = payload?.inviteData || {};
   const candidates: Array<[string, any]> = [
@@ -91,6 +98,7 @@ function describeShare(payload: any): {
         shareId: typeof entity.id === 'string' && entity.id ? entity.id : null,
         shareTitle: typeof title === 'string' ? title : null,
         shareAvatar: typeof avatar === 'string' && avatar.trim() ? avatar : null,
+        shareColor: typeof entity.color === 'string' && entity.color.trim() ? entity.color : null,
       };
     }
   }
@@ -105,10 +113,11 @@ function describeShare(payload: any): {
       shareId: typeof inviteId === 'string' && inviteId ? inviteId : null,
       shareTitle: typeof invite.groupName === 'string' ? invite.groupName : null,
       shareAvatar: typeof inviteAvatar === 'string' && inviteAvatar.trim() ? inviteAvatar : null,
+      shareColor: typeof invite.color === 'string' && invite.color.trim() ? invite.color : null,
     };
   }
 
-  return { shareType: null, shareId: null, shareTitle: null, shareAvatar: null };
+  return { shareType: null, shareId: null, shareTitle: null, shareAvatar: null, shareColor: null };
 }
 
 /**
@@ -123,8 +132,8 @@ export function buildReplyToSnapshot(
 
   const payload = replyTo.payload || {};
   const isUnsent = replyTo.state === 'UNSENT';
-  const { shareType, shareId, shareTitle, shareAvatar } = isUnsent
-    ? { shareType: null, shareId: null, shareTitle: null, shareAvatar: null }
+  const { shareType, shareId, shareTitle, shareAvatar, shareColor } = isUnsent
+    ? { shareType: null, shareId: null, shareTitle: null, shareAvatar: null, shareColor: null }
     : describeShare(payload);
 
   return {
@@ -140,6 +149,7 @@ export function buildReplyToSnapshot(
     shareId,
     shareTitle,
     shareAvatar,
+    shareColor,
     isUnsent,
   };
 }

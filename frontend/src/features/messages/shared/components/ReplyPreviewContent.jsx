@@ -72,6 +72,7 @@ export default function ReplyPreviewContent({
           kind={preview.kind}
           entityId={preview.entityId}
           fallbackAvatar={preview.avatarKey}
+          fallbackColor={preview.entityColor}
           name={preview.text}
           isGroup={isGroupLike}
           className={thumbClassName}
@@ -124,11 +125,14 @@ export default function ReplyPreviewContent({
  * observer to every reply preview on screen, including plain text and media
  * quotes that can never use it.
  */
-function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, name, isGroup, className }) {
+function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name, isGroup, className }) {
   const usersMap = useUsersMap();
   const { communitiesById } = useCommunities();
 
+  const isCommunity = kind === 'community';
+
   let live = null;
+  let liveColor = null;
   if (entityId) {
     if (kind === 'profile') {
       const u = usersMap?.[entityId];
@@ -136,12 +140,45 @@ function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, name, isGroup, clas
     } else {
       const c = communitiesById?.[entityId];
       live = c?.avatarKey || c?.avatar || null;
+      liveColor = c?.color || null;
     }
+  }
+
+  const src = live || fallbackAvatar || null;
+
+  // A community with no picture is shown across the app as a coloured circle
+  // carrying its initial (CommunityCard, SharedCommunityPreview). The generic
+  // group glyph used before did not identify WHICH community was quoted and
+  // looked nothing like the same community elsewhere on screen.
+  if (isCommunity && !src) {
+    const initial = (name || '').trim().charAt(0).toUpperCase() || 'C';
+    return (
+      <span
+        className={className}
+        aria-hidden="true"
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: 8,
+          flexShrink: 0,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: liveColor || fallbackColor || 'var(--color-primary, #2563eb)',
+          color: '#fff',
+          fontSize: 12,
+          fontWeight: 700,
+          lineHeight: 1,
+        }}
+      >
+        {initial}
+      </span>
+    );
   }
 
   return (
     <Avatar
-      src={live || fallbackAvatar || undefined}
+      src={src || undefined}
       name={name}
       size="26px"
       isGroup={isGroup}
