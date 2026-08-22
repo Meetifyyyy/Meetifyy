@@ -1,0 +1,111 @@
+/**
+ * Pushes a user's new avatar/cover into every cached React Query payload that
+ * embeds it, so the change is visible everywhere on the next paint.
+ *
+ * Why this exists: a user's avatar is denormalised across most responses —
+ * `post.author.avatar`, `comment.user.avatar`, `conversation.participants[].avatar`,
+ * search hits, directory cards, activity members. Invalidating one profile query
+ * fixes the profile page and nothing else, and invalidating everything means the
+ * UI shows the old image until each refetch lands. Patching the cache in place
+ * updates all of them synchronously, with no network round-trip.
+ *
+ * Invalidation should still follow for eventual consistency; this only removes
+ * the visible lag.
+ *
+ * Note on image caching: upload keys are random per upload (`randomBytes(16)`),
+ * so a new avatar always has a new URL. There is deliberately no cache-busting
+ * query parameter here — the old URL is simply never referenced again, and
+ * appending one would defeat the long-lived caching of genuinely immutable
+ * media.
+ */
+
+/**
+ * @param {import('@tanstack/react-query').QueryClient} queryClient
+ * @param {{ userId: string, avatar?: string|null, cover?: string|null }} change
+ * @returns {number} how many embedded copies were patched (useful for debugging)
+ */
+export function propagateUserMedia(queryClient, { userId, avatar, cover } = {}) {
+  if (!queryClient || !userId) return 0;
+
+  const setsAvatar = avatar !== undefined;
+  const setsCover = cover !== undefined;
+  if (!setsAvatar && !setsCover) return 0;
+
+  let patchedCount = 0;
+
+  // Memo keyed by the ORIGINAL node: shared references inside one payload must
+  // resolve to the same patched object, and it doubles as a cycle guard.
+  const memo = new Map();
+
+  const walk = (node) => {
+    if (node === null || typeof node !== 'object') return node;
+    if (memo.has(node)) return memo.get(node);
+    // Seed with the original so a cycle resolves instead of recursing forever.
+    memo.set(node, node);
+
+    if (Array.isArray(node)) {
+      let changed = false;
+      const next = node.map((item) => {
+        const walked = walk(item);
+        if (walked !== item) changed = true;
+        return walked;
+      });
+      const result = changed ? next : node;
+      memo.set(node, result);
+      return result;
+    }
+
+    // Leave non-plain objects (Date, Map, File, class instances) alone — they are
+    // never user payloads and copying them would corrupt them.
+    const proto = Object.getPrototypeOf(node);
+    if (proto !== Object.prototype && proto !== null) {
+      memo.set(node, node);
+      return node;
+    }
+
+    let result = node;
+    let changed = false;
+
+    // A user-shaped node for this user: same id, and it actually carries an
+    // image field. The field check prevents rewriting unrelated objects that
+    // merely happen to share the id (a post id equal to a user id, say).
+    const isThisUser =
+      node.id === userId &&
+      ('avatar' in node || 'avatarUrl' in node || 'cover' in node);
+
+    if (isThisUser) {
+      const merged = { ...node };
+      if (setsAvatar) {
+        if ('avatar' in node) merged.avatar = avatar;
+        // Several components read `avatarUrl`; keep both spellings in step.
+        if ('avatarUrl' in node) merged.avatarUrl = avatar;
+      }
+      if (setsCover && 'cover' in node) merged.cover = cover;
+      result = merged;
+      changed = true;
+      patchedCount += 1;
+    }
+
+    for (const key of Object.keys(result)) {
+      const value = result[key];
+      const walked = walk(value);
+      if (walked !== value) {
+        if (!changed) {
+          result = { ...result };
+          changed = true;
+        }
+        result[key] = walked;
+      }
+    }
+
+    const final = changed ? result : node;
+    memo.set(node, final);
+    return final;
+  };
+
+  // Empty filters = every cached query. This is a rare, user-initiated action,
+  // so a full pass is acceptable; it is far cheaper than refetching everything.
+  queryClient.setQueriesData({}, (data) => (data === undefined ? data : walk(data)));
+
+  return patchedCount;
+}

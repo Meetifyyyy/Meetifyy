@@ -6,6 +6,8 @@ import usePostStore from '../stores/postStore';
 import { showToast } from '@shared/utils/toast';
 import { getCollegeName } from '@shared/utils/user';
 import { idbClearAll } from '@shared/lib/idb';
+import { useQueryClient } from '@tanstack/react-query';
+import { propagateUserMedia } from '@shared/utils/propagateUserMedia';
 
 import { supabase, isSupabaseConfigured } from '@shared/lib/supabase';
 export { supabase, isSupabaseConfigured };
@@ -21,6 +23,11 @@ function isValidUser(u) {
 }
 
 export function AuthProvider({ children }) {
+  // AuthProvider is mounted inside QueryClientProvider (see main.jsx), so the
+  // query cache is available here. This is what lets a profile-image change
+  // propagate from one place instead of every call site remembering to do it.
+  const queryClient = useQueryClient();
+
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const savedUser = localStorage.getItem('currentUser');
@@ -53,6 +60,13 @@ export function AuthProvider({ children }) {
   // Suppresses the SIGNED_OUT that signOut({ scope: 'others' }) may fire
   // locally on this device during the changePassword session-revocation step.
   const isRevokingSessionsRef = useRef(false);
+  // Read inside updateProfile without making it a dependency: adding currentUser
+  // to that callback's deps would change its identity on every profile change
+  // and re-render every consumer of the auth context.
+  const currentUserIdRef = useRef(currentUser?.id ?? null);
+  useEffect(() => {
+    currentUserIdRef.current = currentUser?.id ?? null;
+  }, [currentUser?.id]);
 
   const performSync = useCallback(async (supabaseSession, event) => {
     if (syncPromiseRef.current) {
@@ -524,6 +538,20 @@ export function AuthProvider({ children }) {
   }, []);
 
   const updateProfile = useCallback(async (updatedData) => {
+    const userId = currentUserIdRef.current;
+
+    // Avatar/cover live denormalised inside dozens of cached payloads (post
+    // authors, comment authors, chat participants, search hits, directory
+    // cards). Patch them all up front so the new image is on screen at the next
+    // paint rather than whenever each query happens to refetch.
+    if (userId && (updatedData?.avatar !== undefined || updatedData?.cover !== undefined)) {
+      propagateUserMedia(queryClient, {
+        userId,
+        ...(updatedData.avatar !== undefined ? { avatar: updatedData.avatar } : {}),
+        ...(updatedData.cover !== undefined ? { cover: updatedData.cover } : {}),
+      });
+    }
+
     setCurrentUser(prev => {
       if (!prev) return prev;
       const newAvatar = updatedData.avatar !== undefined ? updatedData.avatar : (updatedData.avatarUrl !== undefined ? updatedData.avatarUrl : prev.avatar);
@@ -542,6 +570,15 @@ export function AuthProvider({ children }) {
       const response = await usersApi.updateProfile(updatedData);
       const syncedUser = response?.user || response;
       if (syncedUser) {
+        // Reconcile against what the server actually stored, in case it
+        // normalised or rejected the key we optimistically applied.
+        if (userId && (syncedUser.avatar !== undefined || syncedUser.cover !== undefined)) {
+          propagateUserMedia(queryClient, {
+            userId,
+            ...(syncedUser.avatar !== undefined ? { avatar: syncedUser.avatar } : {}),
+            ...(syncedUser.cover !== undefined ? { cover: syncedUser.cover } : {}),
+          });
+        }
         setCurrentUser(prev => {
           const newAvatar = syncedUser.avatar !== undefined ? syncedUser.avatar : prev.avatar;
           const updated = {
@@ -560,7 +597,7 @@ export function AuthProvider({ children }) {
       console.error(e);
       return false;
     }
-  }, []);
+  }, [queryClient]);
 
   const updateSettings = useCallback(async (settingsData) => {
     setCurrentUser(prev => {

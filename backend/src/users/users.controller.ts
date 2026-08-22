@@ -9,7 +9,13 @@ export class UsersController {
 
   @Get()
   @UseGuards(JwtGuard)
-  @CacheControl('private, max-age=60, stale-while-revalidate=300')
+  // No max-age: these payloads embed avatar/cover keys, and a browser HTTP
+  // cache cannot be invalidated from JS — after changing a profile image the
+  // refetch was served the stale cached body and the old image persisted until
+  // the entry expired. `no-cache` still allows a conditional request, and the
+  // ETag interceptor answers unchanged bodies with a 304, so this costs a
+  // round-trip but not a payload. (Same reasoning as activities.controller.ts.)
+  @CacheControl('private, no-cache')
   async getAllUsers(@Query('limit') limit?: string, @Query('offset') offset?: string) {
     const limitNum = limit ? parseInt(limit, 10) : 20;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
@@ -18,7 +24,7 @@ export class UsersController {
 
   @Get('connections')
   @UseGuards(JwtGuard)
-  @CacheControl('private, max-age=30, stale-while-revalidate=120')
+  @CacheControl('private, no-cache')
   async getConnections(@Req() req: any, @Query('q') query?: string, @Query('limit') limit?: string) {
     const limitNum = limit ? Math.min(parseInt(limit, 10), 100) : 50;
     return this.usersService.getConnections(req.user.id, query, limitNum);
@@ -42,7 +48,7 @@ export class UsersController {
   // NOTE: same route-ordering requirement as mention-search above.
   @Get('online-friends')
   @UseGuards(JwtGuard)
-  @CacheControl('private, max-age=15, stale-while-revalidate=30')
+  @CacheControl('private, no-cache')
   async getOnlineFriends(@Req() req: any, @Query('limit') limit?: string) {
     const limitNum = limit ? Math.min(Math.max(parseInt(limit, 10) || 6, 1), 20) : 6;
     return this.usersService.getOnlineFriends(req.user.id, limitNum);
@@ -50,7 +56,7 @@ export class UsersController {
 
   @Get('campus')
   @UseGuards(JwtGuard)
-  @CacheControl('private, max-age=600, stale-while-revalidate=1800')
+  @CacheControl('private, no-cache')
   async getCampusUsers(@Req() req: any, @Query('limit') limit?: string, @Query('offset') offset?: string) {
     const limitNum = limit ? parseInt(limit, 10) : 100;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
@@ -61,7 +67,7 @@ export class UsersController {
   // Registered before the catch-all `:username` route below.
   @Get('directory')
   @UseGuards(JwtGuard)
-  @CacheControl('private, max-age=30, stale-while-revalidate=120')
+  @CacheControl('private, no-cache')
   async getDirectory(
     @Req() req: any,
     @Query('search') search?: string,
@@ -85,7 +91,7 @@ export class UsersController {
 
   @Get('id/:id')
   @UseGuards(JwtGuard)
-  @CacheControl('private, max-age=120, stale-while-revalidate=600')
+  @CacheControl('private, no-cache')
   async getUserById(@Param('id') id: string) {
     return this.usersService.getUserById(id);
   }
@@ -112,7 +118,7 @@ export class UsersController {
 
   @Get(':username')
   @UseGuards(JwtGuard)
-  @CacheControl('private, max-age=120, stale-while-revalidate=600')
+  @CacheControl('private, no-cache')
   async getProfile(@Param('username') username: string, @Req() req: any) {
     const currentUserId = req.user?.id; 
     return this.usersService.getProfileByUsername(username, currentUserId);
@@ -120,7 +126,7 @@ export class UsersController {
 
   @Get(':username/followers')
   @UseGuards(JwtGuard)
-  @CacheControl('private, max-age=60, stale-while-revalidate=300')
+  @CacheControl('private, no-cache')
   async getFollowers(
     @Param('username') username: string,
     @Req() req: any,
@@ -134,7 +140,7 @@ export class UsersController {
 
   @Get(':username/following')
   @UseGuards(JwtGuard)
-  @CacheControl('private, max-age=60, stale-while-revalidate=300')
+  @CacheControl('private, no-cache')
   async getFollowing(
     @Param('username') username: string,
     @Req() req: any,

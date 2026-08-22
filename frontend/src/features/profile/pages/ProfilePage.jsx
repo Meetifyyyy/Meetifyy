@@ -127,9 +127,11 @@ export default function ProfilePage() {
   const handleCoverGradient = useCallback(async (gradient) => {
     setSavingCover(true);
     try {
-      await usersApi.updateProfile({ cover: gradient });
+      // updateProfile() already PATCHes via usersApi; calling both sent the same
+      // request twice.
+      // updateProfile() propagates the new image into every cached payload.
       await updateProfile({ cover: gradient });
-      queryClient.invalidateQueries(PROFILE_KEYS.byUsername(targetUsername));
+      queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(targetUsername) });
       showToast('Cover updated', 'success');
       setShowCoverEditor(false);
     } catch {
@@ -175,9 +177,15 @@ export default function ProfilePage() {
       });
       
       const updateData = cropType === 'avatar' ? { avatar: publicUrl } : { cover: publicUrl };
-      await usersApi.updateProfile(updateData);
+      // updateProfile() performs the PATCH itself and updates the auth user, so
+      // the previous extra usersApi.updateProfile() call was a duplicate request.
+      // updateProfile() pushes the new image into every cached payload that
+      // embeds this user — feed posts, comments, chat rosters, search hits,
+      // directory cards — so it appears immediately rather than when each of
+      // those queries next refetches.
       await updateProfile(updateData);
-      queryClient.invalidateQueries(PROFILE_KEYS.byUsername(targetUsername));
+
+      queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(targetUsername) });
       showToast(`${cropType === 'avatar' ? 'Avatar' : 'Cover'} updated`, 'success');
       if (cropType === 'cover') setShowCoverEditor(false);
     } catch (e) {
