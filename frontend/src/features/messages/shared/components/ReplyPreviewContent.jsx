@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { getMediaUrl } from '@shared/api/apiClient';
 import Avatar from '@shared/components/avatar/Avatar';
+import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { useCommunities } from '@shared/hooks/useCommunities';
 import { resolveReplyPreview } from '../utils/replyPreview';
 
 /**
@@ -66,12 +68,12 @@ export default function ReplyPreviewContent({
       style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}
     >
       {isPerson || isGroupLike ? (
-        <Avatar
-          src={preview.avatarKey || undefined}
+        <ReplyEntityAvatar
+          kind={preview.kind}
+          entityId={preview.entityId}
+          fallbackAvatar={preview.avatarKey}
           name={preview.text}
-          size="26px"
           isGroup={isGroupLike}
-          disableHover
           className={thumbClassName}
         />
       ) : thumbSrc ? (
@@ -105,5 +107,46 @@ export default function ReplyPreviewContent({
         {preview.text}
       </span>
     </div>
+  );
+}
+
+/**
+ * Avatar for a quoted profile or community, resolved from LIVE app state.
+ *
+ * The avatar stored on a shared message is a snapshot from the moment it was
+ * shared, so it goes stale as soon as that person or community changes their
+ * picture. This looks the entity up by id and falls back to the snapshot only
+ * when it isn't in state — so a quote tracks the current avatar, including one
+ * changed seconds ago, since propagateUserMedia patches these same caches.
+ *
+ * Split into its own component so the lookups mount ONLY for quotes that are
+ * actually an entity. Doing it in the parent would attach a communities query
+ * observer to every reply preview on screen, including plain text and media
+ * quotes that can never use it.
+ */
+function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, name, isGroup, className }) {
+  const usersMap = useUsersMap();
+  const { communitiesById } = useCommunities();
+
+  let live = null;
+  if (entityId) {
+    if (kind === 'profile') {
+      const u = usersMap?.[entityId];
+      live = u?.avatar || u?.avatarUrl || null;
+    } else {
+      const c = communitiesById?.[entityId];
+      live = c?.avatarKey || c?.avatar || null;
+    }
+  }
+
+  return (
+    <Avatar
+      src={live || fallbackAvatar || undefined}
+      name={name}
+      size="26px"
+      isGroup={isGroup}
+      disableHover
+      className={className}
+    />
   );
 }

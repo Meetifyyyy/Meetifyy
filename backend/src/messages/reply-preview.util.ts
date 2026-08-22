@@ -27,6 +27,12 @@ export type ReplyToSnapshot = {
   thumbnailUrl: string | null;
   /** Semantic kind of any shared entity, e.g. 'profile' | 'community' | 'post'. */
   shareType: string | null;
+  /**
+   * The entity's own id. Lets the client look the entity up in live app state and
+   * render its CURRENT avatar rather than the one captured when it was shared —
+   * a snapshot goes stale the moment that user or community changes their picture.
+   */
+  shareId: string | null;
   /** Human-readable name of the shared entity, for the quote label. */
   shareTitle: string | null;
   /**
@@ -50,6 +56,7 @@ type ReplyToRow = {
 /** Pulls a display name out of whichever shared-entity shape is present. */
 function describeShare(payload: any): {
   shareType: string | null;
+  shareId: string | null;
   shareTitle: string | null;
   shareAvatar: string | null;
 } {
@@ -81,6 +88,7 @@ function describeShare(payload: any): {
         null;
       return {
         shareType: type,
+        shareId: typeof entity.id === 'string' && entity.id ? entity.id : null,
         shareTitle: typeof title === 'string' ? title : null,
         shareAvatar: typeof avatar === 'string' && avatar.trim() ? avatar : null,
       };
@@ -91,14 +99,16 @@ function describeShare(payload: any): {
   const inviteType = typeof invite.type === 'string' ? invite.type : null;
   if (inviteType) {
     const inviteAvatar = invite.groupAvatar || invite.avatarKey || invite.avatar || null;
+    const inviteId = invite.groupId || invite.conversationId || invite.communityId || null;
     return {
       shareType: inviteType === 'group_invite' ? 'group_invite' : inviteType,
+      shareId: typeof inviteId === 'string' && inviteId ? inviteId : null,
       shareTitle: typeof invite.groupName === 'string' ? invite.groupName : null,
       shareAvatar: typeof inviteAvatar === 'string' && inviteAvatar.trim() ? inviteAvatar : null,
     };
   }
 
-  return { shareType: null, shareTitle: null, shareAvatar: null };
+  return { shareType: null, shareId: null, shareTitle: null, shareAvatar: null };
 }
 
 /**
@@ -113,8 +123,8 @@ export function buildReplyToSnapshot(
 
   const payload = replyTo.payload || {};
   const isUnsent = replyTo.state === 'UNSENT';
-  const { shareType, shareTitle, shareAvatar } = isUnsent
-    ? { shareType: null, shareTitle: null, shareAvatar: null }
+  const { shareType, shareId, shareTitle, shareAvatar } = isUnsent
+    ? { shareType: null, shareId: null, shareTitle: null, shareAvatar: null }
     : describeShare(payload);
 
   return {
@@ -127,6 +137,7 @@ export function buildReplyToSnapshot(
     mediaUrl: isUnsent ? null : (payload.mediaUrl || null),
     thumbnailUrl: isUnsent ? null : (payload.thumbnailUrl || null),
     shareType,
+    shareId,
     shareTitle,
     shareAvatar,
     isUnsent,
