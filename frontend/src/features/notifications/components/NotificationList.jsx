@@ -8,8 +8,6 @@ export default function NotificationList({
   groupedNotifications,
   timeAgo,
   onNotifClick,
-  onAcceptJoinRequest,
-  onRejectJoinRequest,
   pageStyles,
   scrollRef
 }) {
@@ -158,8 +156,6 @@ export default function NotificationList({
                 actor={resolveActor(item.notif)}
                 timeStr={formatTimeStr(item.notif.createdAt)}
                 onClick={onNotifClick}
-                onAcceptJoinRequest={onAcceptJoinRequest}
-                onRejectJoinRequest={onRejectJoinRequest}
               />
             )}
           </div>

@@ -147,29 +147,6 @@ export class ActivitiesController {
     return this.activitiesService.leaveActivity(id, user.id);
   }
 
-  @Post(':id/request')
-  async requestToJoinActivity(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.activitiesService.requestToJoinActivity(id, user.id);
-  }
-
-  @Post(':id/requests/:userId/accept')
-  async acceptJoinRequest(
-    @Param('id') id: string,
-    @Param('userId') requesterId: string,
-    @CurrentUser() user: any
-  ) {
-    return this.activitiesService.acceptJoinRequest(id, user.id, requesterId);
-  }
-
-  @Post(':id/requests/:userId/reject')
-  async rejectJoinRequest(
-    @Param('id') id: string,
-    @Param('userId') requesterId: string,
-    @CurrentUser() user: any
-  ) {
-    return this.activitiesService.rejectJoinRequest(id, user.id, requesterId);
-  }
-
   @Post(':id/decline')
   async declineCrewInvitation(@Param('id') id: string, @CurrentUser() user: any) {
     return this.activitiesService.declineCrewInvitation(id, user.id);

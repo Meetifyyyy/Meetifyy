@@ -560,7 +560,6 @@ export const activitiesApi = {
   create: (data) => apiClient.post('/api/activities', data),
   join: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/join`, undefined, { signal }),
   leave: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/leave`, undefined, { signal }),
-  requestToJoinActivity: (id) => apiClient.post(`/api/activities/${id}/request`),
   getDiscussion: (id, { before, limit = 20 } = {}) => {
     const params = new URLSearchParams();
     if (before) params.set('before', before);
@@ -569,8 +568,6 @@ export const activitiesApi = {
     return apiClient.get(`/api/activities/${id}/discussion${qs ? `?${qs}` : ''}`);
   },
   sendDiscussionMessage: (id, text) => apiClient.post(`/api/activities/${id}/discussion`, { text }),
-  acceptJoinRequest: (id, userId) => apiClient.post(`/api/activities/${id}/requests/${userId}/accept`),
-  rejectJoinRequest: (id, userId) => apiClient.post(`/api/activities/${id}/requests/${userId}/reject`),
   cancelCrewActivity: (id) => apiClient.post(`/api/activities/${id}/cancel`),
   endCrewActivity: (id) => apiClient.post(`/api/activities/${id}/cancel`),
   inviteFriends: (id, userIds) => apiClient.post(`/api/activities/${id}/invite`, { userIds }),

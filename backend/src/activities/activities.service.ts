@@ -1270,9 +1270,9 @@ export class ActivitiesService implements OnModuleInit {
     if (existingMember?.status === 'MEMBER') {
       return { success: true };
     }
-    if (existingMember?.status === 'PENDING') {
-      throw new BadRequestException('Join request already pending');
-    }
+    // There is no approval queue any more — joining is direct, governed only by
+    // the activity's visibility rules. A legacy PENDING row is simply promoted
+    // to MEMBER by the ON CONFLICT upsert below.
 
     const startRaw = activityRow.startDate;
     if (startRaw && new Date(startRaw) <= new Date()) {
@@ -1344,7 +1344,7 @@ export class ActivitiesService implements OnModuleInit {
       }),
       this.prisma.crewActivity.findUnique({
         where: { id: activityId },
-        select: { id: true, title: true },
+        select: { id: true, title: true, coverImage: true, coverColor: true },
       }),
     ]);
     if (!actor || !activity) return;
@@ -1384,114 +1384,6 @@ export class ActivitiesService implements OnModuleInit {
       this.domainEventService.emit('activity.memberLeft', { activityId, userId });
     });
 
-    return { success: true };
-  }
-
-  async requestToJoinActivity(activityId: string, userId: string): Promise<any> {
-    const [activity, user] = await Promise.all([
-      this.prisma.crewActivity.findUnique({
-        where: { id: activityId },
-        include: {
-          members: { where: { userId }, select: { userId: true, status: true } },
-          invitations: {
-            where: { inviteeId: userId },
-            select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
-          },
-          _count: { select: { members: true } },
-        },
-      }),
-      this.getViewer(userId),
-    ]);
-    if (!activity || activity.deletedAt) throw new NotFoundException('Activity not found');
-    if (activity.status !== 'OPEN') throw new BadRequestException('Activity not open');
-
-    // A request to join is an access-granting action, so it runs the same
-    // authorization as a direct join — otherwise an unauthorized user could
-    // queue themselves up for host approval on a restricted activity.
-    const requestDecision = this.activityAuthorizationService.canJoin(user, activity as any);
-    if (!requestDecision.allowed) {
-      throw new ForbiddenException({
-        statusCode: 403,
-        error: 'Forbidden',
-        code: requestDecision.code,
-        message: requestDecision.reason || 'You are not authorized to join this activity',
-      });
-    }
-
-    const startRaw = activity.startDate || (activity as any).date;
-    if (startRaw && new Date(startRaw) <= new Date()) {
-      throw new BadRequestException('Activity has already started and cannot be joined');
-    }
-
-    if (activity.participationType === 'OPEN') {
-      return this.joinActivity(activityId, userId);
-    }
-
-    // participationType === 'APPROVAL'
-    await this.prisma.crewActivityMember.upsert({
-      where: { userId_activityId: { userId, activityId } },
-      update: { status: 'PENDING' },
-      create: { userId, activityId, status: 'PENDING' }
-    });
-
-    this.domainEventService.emit('activity.updated', { id: activityId });
-
-    return { success: true, pending: true };
-  }
-
-  async acceptJoinRequest(activityId: string, currentUserId: string, requesterId: string) {
-    const activity = await this.prisma.crewActivity.findUnique({
-      where: { id: activityId, creatorId: currentUserId },
-      include: {
-        members: { where: { userId: requesterId }, select: { userId: true, status: true } },
-        invitations: {
-          where: { inviteeId: requesterId },
-          select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
-        },
-        _count: { select: { members: true } },
-      },
-    });
-    if (!activity) throw new NotFoundException('Activity not found or you are not creator');
-
-    // The requester must still satisfy the policy at approval time: a pending
-    // request made while the activity was PUBLIC must not survive a switch to
-    // COLLEGE_ONLY / PRIVATE. Approval is the host's call, but never a bypass.
-    const requester = await this.getViewer(requesterId);
-    const decision = this.activityAuthorizationService.canJoin(requester, {
-      ...(activity as any),
-      members: [],
-    });
-    if (!decision.allowed) {
-      throw new ForbiddenException({
-        statusCode: 403,
-        error: 'Forbidden',
-        code: decision.code,
-        message: 'This user is no longer eligible to join this activity',
-      });
-    }
-
-    await this.prisma.crewActivityMember.update({
-      where: { userId_activityId: { userId: requesterId, activityId } },
-      data: { status: 'MEMBER' }
-    });
-
-    this.domainEventService.emit('activity.memberJoined', { activityId, userId: requesterId });
-    this.clearActivityFeedCaches();
-    return { success: true };
-  }
-
-  async rejectJoinRequest(activityId: string, currentUserId: string, requesterId: string) {
-    const activity = await this.prisma.crewActivity.findUnique({
-      where: { id: activityId, creatorId: currentUserId }
-    });
-    if (!activity) throw new NotFoundException('Activity not found or you are not creator');
-
-    await this.prisma.crewActivityMember.update({
-      where: { userId_activityId: { userId: requesterId, activityId } },
-      data: { status: 'DECLINED' }
-    });
-    
-    this.domainEventService.emit('activity.updated', { id: activityId });
     return { success: true };
   }
 

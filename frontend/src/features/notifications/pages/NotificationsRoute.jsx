@@ -42,7 +42,7 @@ export default function NotificationsRoute() {
   const usersMap = useUsersMap();
   const getUserById = (id) => usersMap[id] || null;
   const crewActivities = useCrewActivities();
-  const { joinCrewActivity, declineCrewInvitation, acceptJoinRequest, rejectJoinRequest } = useCrewActions();
+  const { joinCrewActivity, declineCrewInvitation } = useCrewActions();
   const navigate = useNavigate();
   const loadMoreRef = useRef(null);
   const hasMarkedReadRef = useRef(false);
@@ -216,12 +216,15 @@ export default function NotificationsRoute() {
         }
         break;
 
+      // Someone joined the recipient's activity — open that activity.
       case 'JOIN_REQUEST':
-      case 'ACTIVITY_JOIN_REQUEST':
-        if (notif.entityId) {
-          navigate(`/crew/${notif.entityId}?discussion=1`, { state: { from: '/notifications' } });
+      case 'ACTIVITY_JOIN': {
+        const activityId = notif.entityId || notif.metadata?.activityId;
+        if (activityId) {
+          navigate(`/crew/${activityId}`, { state: { from: '/notifications' } });
         }
         break;
+      }
 
       case 'ACTIVITY_INVITE':
         setActiveTab('invitations');
@@ -340,14 +343,6 @@ export default function NotificationsRoute() {
               groupedNotifications={groupedNotifications}
               timeAgo={timeAgo}
               onNotifClick={handleClick}
-              onAcceptJoinRequest={(activityId, actorId, notifId) => {
-                acceptJoinRequest(activityId, actorId);
-                dismissNotification(notifId);
-              }}
-              onRejectJoinRequest={(activityId, actorId, notifId) => {
-                rejectJoinRequest(activityId, actorId);
-                dismissNotification(notifId);
-              }}
               getUserById={getUserById}
               pageStyles={styles}
               scrollRef={pageRef}
