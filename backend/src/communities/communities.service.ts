@@ -684,6 +684,10 @@ export class CommunitiesService implements OnModuleInit {
       memberCount: 1,
       owner: { connect: { id: creatorId } },
       isPrivate: data.isPrivate !== undefined ? Boolean(data.isPrivate) : (data.privacy === 'private'),
+      // The colour picked at creation. It was never written, so every community
+      // fell back to the theme primary wherever it was drawn without a picture,
+      // and the palette choice made in the create dialog was silently discarded.
+      color: typeof data.color === 'string' && data.color.trim() ? data.color.trim().slice(0, 200) : null,
       members: {
         create: [{ userId: creatorId, role: 'OWNER' }]
       }

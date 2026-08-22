@@ -5,6 +5,7 @@ import { showToast } from '@shared/utils/toast';
 import styles from './CreateCommunityModal.module.css';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import { generateInitialAvatarFile } from '@shared/utils/generateAvatarImage';
 
 const colors26 = [
   'linear-gradient(135deg, #FF6B6B, #FF8E53)',
@@ -285,6 +286,30 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
           const { publicUrl } = await processAndUploadImage(croppedFile, 'communities', { maxWidthOrHeight: 512 });
           finalAvatar = publicUrl;
           hasCustomAvatar = true;
+        }
+      }
+
+      if (!finalAvatar) {
+        // No picture chosen: render the letter-and-gradient placeholder the user
+        // just previewed into a real image and store it like any upload, so the
+        // community owns an actual avatar URL from the moment it exists.
+        //
+        // Generated ONCE, here. Every surface then reads the stored URL, so the
+        // avatar cannot drift between screens or change on a refresh the way a
+        // per-render placeholder would. `gradient` is the same value shown in the
+        // preview above, so what was on screen is what gets saved.
+        //
+        // Best-effort: a canvas or upload failure must not stop the community
+        // being created. finalAvatar simply stays null and the existing
+        // coloured-initial fallback keeps rendering, exactly as before.
+        try {
+          const generated = await generateInitialAvatarFile(name.trim(), gradient, {
+            fileNameBase: 'community-default-avatar',
+          });
+          const { publicUrl } = await processAndUploadImage(generated, 'communities', { maxWidthOrHeight: 512 });
+          if (publicUrl) finalAvatar = publicUrl;
+        } catch (avatarErr) {
+          console.warn('Default community avatar could not be generated; falling back to the rendered initial', avatarErr);
         }
       }
 

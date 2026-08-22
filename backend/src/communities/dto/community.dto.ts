@@ -29,6 +29,16 @@ export class CreateCommunityDto {
   @IsString()
   @IsOptional()
   privacy?: string;
+
+  /**
+   * The community's brand colour, a CSS colour or gradient. Chosen at creation
+   * and used wherever the community is shown without a picture. Length-capped
+   * because it is echoed straight into a style attribute.
+   */
+  @IsString()
+  @IsOptional()
+  @MaxLength(200)
+  color?: string;
 }
 
 export class UpdateCommunityDto {

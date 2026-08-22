@@ -27,7 +27,13 @@ export function useCommunityActions() {
       name: data.name,
       description: data.desc,
       avatarKey: data.avatar,
-      isCampusCommunity: data.isCampusCommunity
+      isCampusCommunity: data.isCampusCommunity,
+      // Previously dropped here. The create dialog collects a palette colour and
+      // a privacy choice, and neither reached the API — every community was
+      // stored with a null colour and as public, regardless of what was picked.
+      color: data.color,
+      privacy: data.privacy,
+      isPrivate: data.isPrivate,
     });
     return res.id;
   };
