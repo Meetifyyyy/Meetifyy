@@ -9,7 +9,7 @@ import InstantNotificationCard from './InstantNotificationCard';
 import { parseConversationRoute } from '../utils/conversationUrl';
 import { messagesApi } from '../api/apiClient';
 import { useGlobalSocketSync } from '../hooks/useGlobalSocketSync';
-import { appendMessageToCache, matchesConversationId, getConversationAliases, updateConversationPreview } from '../../features/messages/shared/utils/cacheUtils';
+import { appendMessageToCache, matchesConversationId, getConversationAliases, updateConversationPreview, applyGroupRoleChange } from '../../features/messages/shared/utils/cacheUtils';
 
 export default function SocketManager() {
   const { session, isLoggedIn, currentUser } = useAuth();
@@ -446,6 +446,26 @@ export default function SocketManager() {
         }
         return oldData;
       });
+    };
+
+    // A role change is not a membership change. It used to run through the
+    // member-add/remove handler below, which bumped memberCount by one every
+    // time someone was promoted, and never touched the role fields any surface
+    // actually renders. It now goes through the same patch the optimistic path
+    // uses, so every member converges on the state the actor already sees.
+    const handleGroupRoleChanged = (payload) => {
+      if (!payload) return;
+      const convId = payload.conversationId || payload.id || payload.publicId || payload.data?.conversationId;
+      const targetUserId = payload.targetUserId || payload.data?.targetUserId;
+      const newRole = payload.newRole || payload.role || payload.data?.newRole;
+      if (!convId || !targetUserId) return;
+
+      applyGroupRoleChange(queryClient, convId, targetUserId, newRole);
+      // Reconcile against the server afterwards — the patch above is what makes
+      // it instant, this is what makes it correct.
+      queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+      queryClient.invalidateQueries({ queryKey: ['groupDetails', convId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
     };
 
     const handleGroupMemberChange = (payload) => {
@@ -929,7 +949,7 @@ export default function SocketManager() {
     socket.on('message:updated', handleMessageUpdated);
     socket.on('group:member_added', (data) => handleGroupMemberChange({ ...(data || {}), eventType: 'add' }));
     socket.on('group:member_removed', (data) => handleGroupMemberChange({ ...(data || {}), eventType: 'remove' }));
-    socket.on('group:role_changed', (data) => handleGroupMemberChange({ ...(data || {}), eventType: 'role_change' }));
+    socket.on('group:role_changed', handleGroupRoleChanged);
     socket.on('community:memberCount', handleCommunityUpdate);
     socket.on('community:updated', handleCommunityUpdate);
 
@@ -942,7 +962,7 @@ export default function SocketManager() {
       socket.off('message:updated', handleMessageUpdated);
       socket.off('group:member_added', handleGroupMemberChange);
       socket.off('group:member_removed', handleGroupMemberChange);
-      socket.off('group:role_changed', handleGroupMemberChange);
+      socket.off('group:role_changed', handleGroupRoleChanged);
       socket.off('community:memberCount', handleCommunityUpdate);
       socket.off('community:updated', handleCommunityUpdate);
     };

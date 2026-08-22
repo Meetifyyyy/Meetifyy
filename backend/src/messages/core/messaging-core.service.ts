@@ -919,9 +919,19 @@ export class MessagingCoreService {
       }
     });
 
+    // The denormalised last-message columns move with it. Bumping only
+    // `updatedAt` left the conversation list previewing the message *before*
+    // the system message: the socket patch showed the new line, then the next
+    // refetch of ['conversations'] read these columns and reverted it.
     await this.prisma.conversation.update({
       where: { id: realConvId },
-      data: { updatedAt: new Date() }
+      data: {
+        updatedAt: message.createdAt,
+        lastMessageText: text,
+        lastMessageType: 'SYSTEM',
+        lastMessageAt: message.createdAt,
+        lastMessageSenderId: senderId,
+      }
     });
 
     return {

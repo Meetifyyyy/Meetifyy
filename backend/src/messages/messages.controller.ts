@@ -259,6 +259,24 @@ export class MessagesController {
     return this.messagesService.deleteConversationForUser(conversationId, userId);
   }
 
+  /**
+   * These group-management endpoints mirror `/api/group-chats/*`, which is the
+   * canonical path the web client uses. The mirror was emitting the system
+   * message but not `group:role_changed`, so a role change made through it
+   * reached nobody in real time. Kept in sync here rather than left as a quiet
+   * trap for any client still on this route.
+   */
+  private async emitRoleChanged(conversationId: string, targetUserId: string, newRole: string) {
+    try {
+      const participantIds = await this.messagesService.getConversationParticipantIds(conversationId);
+      if (participantIds.length > 0) {
+        this.domainEventService.emit('group:role_changed', { conversationId, targetUserId, newRole }, participantIds);
+      }
+    } catch {
+      // Never let a realtime emit fail the mutation that already committed.
+    }
+  }
+
   private async broadcastSystemMessage(conversationId: string, senderId: string, text: string) {
     try {
       const message = await this.messagesService.createSystemMessage(conversationId, senderId, text);
@@ -450,6 +468,7 @@ export class MessagesController {
       this.messagesService.getUserHandle(userId)
     ]);
     const result = await this.messagesService.promoteToAdmin(conversationId, userId, targetUserId);
+    await this.emitRoleChanged(conversationId, targetUserId, 'ADMIN');
     this.broadcastSystemMessage(conversationId, userId, `${actorHandle} promoted ${targetHandle} to Admin`).catch(() => {});
     return result;
   }
@@ -463,6 +482,7 @@ export class MessagesController {
       this.messagesService.getUserHandle(userId)
     ]);
     const result = await this.messagesService.demoteFromAdmin(conversationId, userId, targetUserId);
+    await this.emitRoleChanged(conversationId, targetUserId, 'MEMBER');
     this.broadcastSystemMessage(conversationId, userId, `${actorHandle} demoted ${targetHandle} to Member`).catch(() => {});
     return result;
   }
