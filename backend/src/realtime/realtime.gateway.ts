@@ -17,6 +17,8 @@ import { PresenceService } from '../presence/presence.service';
 import {
   InstantMatchService,
   setRealtimeGatewayRef,
+  InstantMatchChatState,
+  MatchAcceptedPayload,
   MatchFoundPayload,
   QueueStats,
 } from '../instant-match/instant-match.service';
@@ -32,6 +34,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { checkPresenceVisibility, checkPresenceVisibilityBatch } from '../users/privacy.helper';
 import { RedisService } from '../redis/redis.service';
+import { CommunitiesService } from '../communities/communities.service';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 import { MentionDto } from '../common/dto/mention.dto';
 
@@ -70,6 +73,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
     private readonly activityPolicy: ActivityAuthorizationService,
+    private readonly communitiesService: CommunitiesService,
   ) {}
 
   afterInit() {
@@ -82,6 +86,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
     this.presenceService.onStatusChange(async (userId, status, lastSeen) => {
       await this.broadcastPresenceUpdate(userId, status, lastSeen);
+      void this.broadcastCommunityPresence(userId);
     });
 
     this.setupDomainEventSubscriber();
@@ -100,6 +105,37 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
         if (now - val.cachedAt > presenceTTL) this.userPresenceSettingsCache.delete(key);
       }
     }, 10 * 60 * 1000);
+  }
+
+  /**
+   * Refreshes the "active now" figure for every community this user belongs
+   * to, whenever they come online or go offline.
+   *
+   * `onStatusChange` fires only on an actual transition — not on every 25s
+   * heartbeat — so this costs one membership lookup per genuine connect or
+   * disconnect, not per tick. The count itself is deliberately recomputed
+   * server-side rather than incremented on the client: a client that
+   * incremented locally would drift out of step after any missed event, a
+   * reconnect, or a second tab.
+   *
+   * Emitted to `community_<id>`, so only people actually looking at that
+   * community pay for the update.
+   */
+  private async broadcastCommunityPresence(userId: string) {
+    try {
+      const communityIds = await this.communitiesService.getCommunityIdsForUser(userId);
+      if (communityIds.length === 0) return;
+
+      for (const communityId of communityIds) {
+        const room = `community_${communityId}`;
+        // Nobody is watching this community — recomputing would be wasted work.
+        if (!this.server?.sockets.adapter.rooms.get(room)) continue;
+        const online = await this.communitiesService.countOnlineMembers(communityId);
+        this.server.to(room).emit('community:presence', { communityId, online });
+      }
+    } catch (err) {
+      this.logger.warn(`Failed to broadcast community presence for ${userId}`);
+    }
   }
 
   private async broadcastPresenceUpdate(userId: string, status: string, lastSeen: string) {
@@ -975,12 +1011,22 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   }
 
   @SubscribeMessage('community:join_room')
-  handleJoinCommunityRoom(
+  async handleJoinCommunityRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { communityId: string }
   ) {
-    if (data?.communityId) {
-      client.join(`community_${data.communityId}`);
+    if (!data?.communityId) return;
+    client.join(`community_${data.communityId}`);
+
+    // Answer with the count as it stands right now. The community payload the
+    // page rendered from can be up to 60s stale (it is Redis-cached), and
+    // presence moves far faster than that — so without this the viewer sits
+    // on an old number until somebody happens to connect or disconnect.
+    try {
+      const online = await this.communitiesService.countOnlineMembers(data.communityId);
+      client.emit('community:presence', { communityId: data.communityId, online });
+    } catch {
+      // Non-fatal: the room join itself succeeded.
     }
   }
 
@@ -1085,6 +1131,56 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     }
   }
 
+  /**
+   * The authoritative state of this user's Instant Match chat.
+   *
+   * Every Instant Match screen calls this on mount, on reconnect, and on tab
+   * focus. Realtime events are an optimisation on top of it, never the only
+   * path to correctness — a user who was offline when the other person left
+   * learns about it here.
+   */
+  @SubscribeMessage('instant_match:chat_state')
+  async handleInstantMatchChatState(@ConnectedSocket() client: Socket) {
+    const userId = (client as any).userId;
+    if (!userId) return { status: 'error', error: 'Unauthenticated', code: 401 };
+    try {
+      const state = await this.instantMatchService.getChatStateFor(userId);
+      return { status: 'ok', state };
+    } catch (err) {
+      return this.instantMatchAck(err, 'Could not load your Instant Match');
+    }
+  }
+
+  /**
+   * "Find someone new": leave the current chat.
+   *
+   * Idempotent by construction — the service claims the transition with a
+   * conditional update, so a double tap, two tabs, or both users leaving at
+   * the same instant all converge on one ENDED_BY_USER row. A caller that
+   * lost the race still gets `ok` with the resulting state rather than an
+   * error, because from the user's point of view the chat did end.
+   */
+  @SubscribeMessage('instant_match:leave')
+  async handleInstantMatchLeave(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: any,
+  ) {
+    const userId = (client as any).userId;
+    if (!userId) return { status: 'error', error: 'Unauthenticated', code: 401 };
+
+    if (!this.instantMatchLimiter.consume(`leave:${userId}`, RATE_LIMIT_RESPOND.points, RATE_LIMIT_RESPOND.windowMs)) {
+      return { status: 'error', error: 'Too many requests — try again shortly', code: 429 };
+    }
+
+    try {
+      const matchId = typeof data?.matchId === 'string' ? data.matchId.trim() : undefined;
+      const result = await this.instantMatchService.leaveChatSession(userId, matchId || undefined);
+      return { status: 'ok', ended: result.ended, state: result.session };
+    } catch (err) {
+      return this.instantMatchAck(err, 'Could not leave this match');
+    }
+  }
+
   // ─── Instant Match Emit Helpers ──────────────────────────────────────────────
   // Emits target the user's personal room, so every device and tab that user
   // has open stays in step with the same match.
@@ -1093,7 +1189,21 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     this.server?.to(userId).emit('match:found', payload);
   }
 
-  emitMatchAccepted(userId: string, payload: { chatId: string }) {
+  emitMatchAccepted(userId: string, payload: MatchAcceptedPayload) {
+    // Join every one of this user's live sockets to the new conversation's
+    // rooms *before* announcing it. Room membership is otherwise established
+    // by the client replaying its conversation list, so without this the two
+    // freshly matched users sat in a chat that delivered nothing in real time
+    // until one of them reloaded.
+    const userSockets = this.server?.sockets.adapter.rooms.get(userId);
+    if (userSockets) {
+      for (const socketId of userSockets) {
+        const socket = this.server.sockets.sockets.get(socketId);
+        if (!socket) continue;
+        socket.join(`conv_${payload.internalId}`);
+        if (payload.chatId) socket.join(`conv_${payload.chatId}`);
+      }
+    }
     this.server?.to(userId).emit('match:accepted', payload);
   }
 
@@ -1107,5 +1217,19 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   emitQueueStats(userId: string, stats: QueueStats) {
     this.server?.to(userId).emit('queue:stats', stats);
+  }
+
+  /**
+   * A chat ended — because someone left, or because its 24h window closed.
+   *
+   * Targets the user's personal room, so every tab and device this person has
+   * open transitions together; a second tab left on the old screen was one of
+   * the ways stale state used to send a message into a dead chat. The payload
+   * is the same viewer-scoped state object the resync endpoint returns, so a
+   * client that receives this and a client that reloads land on identical
+   * state — and applying it twice is a no-op.
+   */
+  emitInstantMatchChatEnded(userId: string, state: InstantMatchChatState) {
+    this.server?.to(userId).emit('instant_match:chat_ended', state);
   }
 }

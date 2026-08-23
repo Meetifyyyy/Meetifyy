@@ -219,6 +219,23 @@ class MatchSocketClient {
   sync() {
     return this.request('queue:sync', {});
   }
+
+  /**
+   * The authoritative state of this user's Instant Match chat.
+   *
+   * Called on mount, on reconnect, and on tab focus. Realtime events are an
+   * optimisation on top of this — never the only path to it — so a user who
+   * was offline when the other person left still learns about it.
+   */
+  chatState() {
+    return this.request('instant_match:chat_state', {});
+  }
+
+  /** Leave the current match. Safe to call twice: the server claims the
+   *  transition once and answers both callers with the resulting state. */
+  leaveChat(matchId) {
+    return this.request('instant_match:leave', matchId ? { matchId } : {});
+  }
 }
 
 export default new MatchSocketClient();
