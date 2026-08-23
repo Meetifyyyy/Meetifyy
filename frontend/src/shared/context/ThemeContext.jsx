@@ -127,6 +127,19 @@ export function ThemeProvider({ children }) {
    *  instead of being discarded. */
   const activeTransitionRef = useRef(null);
 
+  /**
+   * The clip-path animation currently playing.
+   *
+   * Held so it can be cancelled. Each toggle starts a WAAPI animation with
+   * `fill: 'forwards'` on `::view-transition-new(root)`; left alone, those
+   * accumulate. A finished one keeps applying its end value — the fully
+   * revealed `circle(200vmax)` — and re-applies it to the pseudo-element the
+   * *next* transition creates, so every switch after the first appeared
+   * already complete and the 800ms reveal was only ever seen once, on the
+   * first click of a page load.
+   */
+  const activeAnimationRef = useRef(null);
+
   useEffect(() => {
     try {
       document.documentElement.setAttribute('data-theme', theme);
@@ -150,6 +163,14 @@ export function ThemeProvider({ children }) {
         activeTransitionRef.current.skipTransition?.();
       } catch (_) { /* already finished */ }
       activeTransitionRef.current = null;
+    }
+    // Drop the previous reveal's forwards-fill before starting another, or
+    // the new snapshot inherits its end state and skips straight to done.
+    if (activeAnimationRef.current) {
+      try {
+        activeAnimationRef.current.cancel();
+      } catch (_) { /* already gone */ }
+      activeAnimationRef.current = null;
     }
 
     try {
@@ -221,22 +242,32 @@ export function ThemeProvider({ children }) {
               clipPath: clipPathFrames,
             },
             {
-              // 800ms, decelerating rather than symmetric ease-in-out. The
-              // old curve started slow, which read as lag between the click
-              // and anything happening; this leaves immediately and settles
-              // at the edges. The shape and length of the reveal are as they
-              // were — only the distribution of time within it changed.
-              duration: 800,
+              // Decelerating rather than symmetric ease-in-out: the old
+              // curve started slow, which read as lag between the click and
+              // anything happening. This leaves immediately and settles at
+              // the edges, which matters more the longer the reveal runs.
+              duration: 1200,
               easing: 'cubic-bezier(0.22, 0.9, 0.3, 1)',
               fill: 'forwards',
               pseudoElement: '::view-transition-new(root)',
             }
           );
 
-          return anim.finished;
+          activeAnimationRef.current = anim;
+
+          // Release the forwards-fill as soon as the reveal is done. The
+          // pseudo-element is torn down with the transition, so nothing is
+          // left to hold — and nothing lingers to contaminate the next one.
+          return anim.finished.then(() => {
+            if (activeAnimationRef.current === anim) {
+              try { anim.cancel(); } catch (_) { /* already gone */ }
+              activeAnimationRef.current = null;
+            }
+          });
         })
-        .catch((err) => {
-          console.error('transition.ready error:', err);
+        .catch(() => {
+          // A skipped transition rejects `ready`; that is the normal path
+          // when a fast second click supersedes this one, not an error.
         });
 
       transition.finished

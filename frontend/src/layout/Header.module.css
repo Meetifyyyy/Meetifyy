@@ -915,8 +915,10 @@
   align-items: center;
   justify-content: center;
   /* Sun and moon rise from opposite sides, so the swap reads as one rotating
-     through to the other rather than a straight cross-fade. */
-  animation: themeIconSwap 0.42s cubic-bezier(0.22, 0.9, 0.3, 1) both;
+     through to the other rather than a straight cross-fade. Matched to the
+     page reveal's 1.2s so the button is not finished and sitting still while
+     the rest of the screen is still turning over. */
+  animation: themeIconSwap 1.2s cubic-bezier(0.22, 0.9, 0.3, 1) both;
 }
 
 @keyframes themeIconSwap {
