@@ -175,6 +175,22 @@
 .im-sheet-body-inner { display: flow-root; }
 
 /* Searching takes the space it needs; no cap, no scroll. */
+/**
+ * The matched and ended panels are self-contained: a fixed amount of content
+ * that is meant to be read in one go, not a scrollable list.
+ *
+ * The body's height cap exists for the step grids, where twelve activity
+ * tiles genuinely do need to scroll. Applying it to these panels made the
+ * matched screen scroll inside its own box — the "Find someone new" button
+ * sat below the fold on a 900px-tall display and had to be scrolled to. The
+ * sheet's own max-height still bounds the whole thing, so removing the inner
+ * cap cannot make the panel overflow the viewport.
+ */
+.im-sheet-body-panel {
+  max-height: none;
+  overflow: visible;
+}
+
 .im-sheet-searching .im-sheet-body {
   max-height: none;
   overflow: visible;
@@ -292,6 +308,7 @@
      against the viewport rather than a fixed 430px is what keeps the header
      and the footer actions on screen together on a short laptop window. */
   .im-sheet-body { max-height: min(52vh, 460px); }
+  .im-sheet-body-panel { max-height: none; }
 }
 
 @media (min-width: 1200px) {
@@ -840,4 +857,25 @@
   .im-matched-portrait,
   .im-matched-link { animation: none; opacity: 1; }
   .im-matched-portrait { transform: rotate(var(--im-tilt, 0deg)); }
+}
+
+/* ═══ Ended panel ═════════════════════════════════════════════════════════ */
+
+.im-ended {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 4px;
+  text-align: center;
+}
+
+.im-ended-title { margin: 0; }
+.im-ended-squiggle { width: 120px; margin: 0 0 2px; }
+.im-ended-lede { margin: 0; max-width: 32ch; }
+
+.im-ended-action {
+  width: 100%;
+  max-width: 300px;
+  margin-top: 6px;
 }

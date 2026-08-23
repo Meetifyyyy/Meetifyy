@@ -91,6 +91,7 @@ export function InstantMatchProvider({ children }) {
   const [leaving, setLeaving] = useState(false);
   const {
     chat, refresh: refreshChat, leave: leaveChatSession, onCountdownElapsed,
+    setChat,
   } = useInstantMatchChatState({ enabled: Boolean(currentUser?.id) });
 
   const statusRef = useRef(status);
@@ -511,6 +512,14 @@ export function InstantMatchProvider({ children }) {
       }
 
       // Local state follows the server's, then hands over to matching.
+      //
+      // Clearing `chat` matters as much as clearing `recentMatch`. The server
+      // answers a leave with the *ended* session — correct, and what the other
+      // person needs — but for the person who just walked away it is history,
+      // not state. Leaving it set kept the matched panel on screen (rendered
+      // from a partner it no longer knew, so the name read "THEM") instead of
+      // handing them the search form they asked for.
+      setChat(null);
       setChatOverlayOpen(false);
       setRecentMatch(null);
       setActiveMatch(null);
@@ -523,7 +532,7 @@ export function InstantMatchProvider({ children }) {
       leavingRef.current = false;
       setLeaving(false);
     }
-  }, [leaveChatSession]);
+  }, [leaveChatSession, setChat]);
 
   /** Clear the panel and drop the user back into a fresh search. */
   const dismissRecentMatch = useCallback(() => {

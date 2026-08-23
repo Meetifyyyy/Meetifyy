@@ -14,6 +14,8 @@ import DetailsStep from './steps/DetailsStep';
 import LocationStep from './steps/LocationStep';
 import SearchingScreen from './queue/SearchingScreen';
 import MatchedPanel from './match/MatchedPanel';
+import EndedPanel from './match/EndedPanel';
+import { resolveSheetPanel } from '../utils/sheetPanel';
 import { Bolt, PosterBackdrop, Squiggle } from './decor/Decor';
 import '../styles/instant-match.css';
 import '../styles/instant-match-sheet.css';
@@ -39,18 +41,11 @@ export default function InstantMatchSheet() {
   const searching = step === STEP_SEARCHING;
   // A fresh pairing outranks the form: reopening after a match should show
   // who you matched with, not step one again.
-  // `matched` is the state the user sits in for the life of the 24h chat;
-  // `idle` still qualifies because a reload restores the pairing before the
-  // status settles. Either way a live pairing outranks the form.
-  //
-  // A live chat alone is also enough. Tapping the Instant Match icon while
-  // matched must land on this panel — where the user chooses what to do —
-  // rather than dropping them straight into the conversation or, worse, onto
-  // a fresh search form the server would reject anyway.
-  const showingMatched =
-    (Boolean(recentMatch) || Boolean(chat))
-    && (status === 'matched' || status === 'idle')
-    && !searching;
+  // Which panel replaces the form. See resolveSheetPanel for why this keys on
+  // the chat being *live* rather than merely present.
+  const panel = resolveSheetPanel({ status, searching, chat, recentMatch });
+  const showingMatched = panel === 'matched';
+  const showingEnded = panel === 'ended';
 
   useScrollLock(sheetOpen);
   useFocusTrap(sheetRef, sheetOpen, closeSheet);
@@ -138,7 +133,7 @@ export default function InstantMatchSheet() {
     }
   };
 
-  const copy = showingMatched ? null : STEP_COPY[step];
+  const copy = (showingMatched || showingEnded) ? null : STEP_COPY[step];
 
   return createPortal(
     <div
@@ -208,9 +203,13 @@ export default function InstantMatchSheet() {
           )}
           {searching && <h2 id={titleId} className="im-sr-only">Searching for a match</h2>}
           {showingMatched && <h2 id={titleId} className="im-sr-only">You have a new match</h2>}
+          {showingEnded && <h2 id={titleId} className="im-sr-only">Your Instant Match has ended</h2>}
 
           <div
-            className={`im-sheet-body ${step === STEP_LOCATION ? 'im-sheet-body-open' : ''}`}
+            className={
+              `im-sheet-body ${step === STEP_LOCATION ? 'im-sheet-body-open' : ''} `
+              + `${showingMatched || showingEnded ? 'im-sheet-body-panel' : ''}`
+            }
             ref={bodyRef}
           >
             {/* The inner wrapper is what gets measured — the outer box is the
@@ -218,9 +217,11 @@ export default function InstantMatchSheet() {
             <div className="im-sheet-body-inner" ref={bodyContentRef}>
               {showingMatched
                 ? <MatchedPanel />
-                : restoring && step !== STEP_SEARCHING
-                  ? <SheetSkeleton />
-                  : renderStep()}
+                : showingEnded
+                  ? <EndedPanel />
+                  : restoring && step !== STEP_SEARCHING
+                    ? <SheetSkeleton />
+                    : renderStep()}
             </div>
           </div>
 
@@ -244,7 +245,7 @@ export default function InstantMatchSheet() {
             </div>
           )}
 
-          {!searching && !showingMatched && (
+          {!searching && !showingMatched && !showingEnded && (
             <footer className="im-sheet-foot">
               <ol className="im-steps" aria-label="Progress">
                 {visibleSteps.map((idx, i) => (
