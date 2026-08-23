@@ -232,14 +232,29 @@ export function ThemeProvider({ children }) {
         .then(() => {
           const clipPathFrames = [
             `circle(0px at ${transitionOrigin.x} ${transitionOrigin.y})`,
-            // Deliberately exceeds the farthest viewport corner without relying
-            // on the snapshot's pixel dimensions for radius calculation.
-            //
-            // Do not "optimise" this to a fitted radius. It was tried: the
-            // snapshot does not resolve lengths against the CSS viewport, so
-            // a computed exact radius left most of the screen uncovered and
-            // the reveal stopped short. The overshoot is the point.
-            `circle(200vmax at ${transitionOrigin.x} ${transitionOrigin.y})`,
+            /*
+             * A percentage radius, not a viewport unit.
+             *
+             * `vmax` was the whole problem. The snapshot does not resolve it
+             * against the CSS viewport the way the page does — it behaves as
+             * though the short side were the reference. On a laptop that is
+             * survivable: 200vmax landed at ~1640px against ~1594px needed,
+             * so it just covered. On a phone, which is far taller than it is
+             * wide, the same 200vmax landed at ~824px against ~864px needed
+             * — about 95% of the way. The last sliver then appeared in a
+             * single frame when the snapshot was torn down, which is why the
+             * snap showed up on mobile and never on desktop.
+             *
+             * A percentage inside `circle()` resolves against the reference
+             * box as sqrt(w^2 + h^2) / sqrt(2), so 141.4% always reaches the
+             * farthest corner whatever the aspect ratio — no measuring, no
+             * assumption about which side is longer. It also rides the exact
+             * mechanism the origin coordinates already use successfully, and
+             * those have always landed in the right place on both devices.
+             *
+             * 160% carries ~13% margin over the geometric worst case.
+             */
+            `circle(160% at ${transitionOrigin.x} ${transitionOrigin.y})`,
           ];
 
           const anim = document.documentElement.animate(
@@ -260,7 +275,7 @@ export function ThemeProvider({ children }) {
               // every pixel of its visible travel, so it cannot accelerate
               // into the edges. An easing curve on a clipped-off animation
               // shapes the part nobody sees.
-              duration: 1200,
+              duration: 800,
               easing: 'linear',
               fill: 'forwards',
               pseudoElement: '::view-transition-new(root)',

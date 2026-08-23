@@ -918,7 +918,7 @@
      through to the other rather than a straight cross-fade. Matched to the
      page reveal's 1.2s so the button is not finished and sitting still while
      the rest of the screen is still turning over. */
-  animation: themeIconSwap 1.2s cubic-bezier(0.22, 0.9, 0.3, 1) both;
+  animation: themeIconSwap 0.8s cubic-bezier(0.22, 0.9, 0.3, 1) both;
 }
 
 @keyframes themeIconSwap {
