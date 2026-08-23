@@ -16,10 +16,28 @@
   pointer-events: none;
 }
 
-.im-fab-wrap { position: relative; display: block; }
+/**
+ * The tilt lives here, on a wrapper, and NOT on the button.
+ *
+ * It used to sit on `.im-fab` itself, so every child — the bolt, the label —
+ * inherited the -3deg rotation and rendered on a skewed pixel grid: text with
+ * fringed, slightly wavy edges that read as "crooked" at every size. Worse,
+ * the hover/active/breathe rules each restated `rotate(-3deg)` alongside
+ * their own transform, so any one of them going out of step visibly jolted
+ * the button. Keeping the rotation one level up means the button's own
+ * transforms compose cleanly and its contents are never rotated at all.
+ */
+.im-fab-wrap {
+  position: relative;
+  display: block;
+  transform: rotate(-3deg);
+}
 
 .im-fab {
   position: relative;
+  /* Above both the halo and the countdown ring, so neither can paint over
+     the glyph or the label. */
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -34,15 +52,31 @@
   color: #16130E;
   cursor: pointer;
   box-shadow: var(--im-shadow);
-  transform: rotate(-3deg);
-  transition: transform 0.2s var(--im-ease), box-shadow 0.2s var(--im-ease);
+  transition: transform 0.2s var(--im-ease), box-shadow 0.2s var(--im-ease),
+    background-color 0.2s var(--im-ease);
+  /* Snap the label to whole pixels. Combined with the un-rotated children
+     above, this is what keeps the text crisp and perfectly horizontal. */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-.im-fab:hover { transform: rotate(-3deg) translateY(-2px); box-shadow: var(--im-shadow-lg); }
-.im-fab:active { transform: rotate(-3deg) scale(0.95); box-shadow: var(--im-shadow-sm); }
+.im-fab:hover { transform: translateY(-2px); box-shadow: var(--im-shadow-lg); }
+.im-fab:active { transform: scale(0.95); box-shadow: var(--im-shadow-sm); }
 
-.im-fab-face { display: grid; place-items: center; width: 30px; height: 30px; }
-.im-fab-bolt { width: 26px; height: 26px; color: #16130E; }
+.im-fab:focus-visible {
+  outline: 3px solid var(--im-ink, #16130E);
+  outline-offset: 3px;
+}
+
+.im-fab-face {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  /* Counter-rotate the wrapper's tilt so the glyph itself stands upright. */
+  transform: rotate(3deg);
+}
+.im-fab-bolt { width: 26px; height: 26px; color: currentColor; }
 
 .im-fab-tag {
   font-family: var(--im-display);
@@ -50,21 +84,106 @@
   letter-spacing: 0.09em;
   text-transform: uppercase;
   line-height: 1;
+  /* Same counter-rotation: the label reads dead horizontal in every state,
+     while the sticker itself keeps its poster tilt. */
+  transform: rotate(3deg);
+  white-space: nowrap;
 }
 
 /* ── Searching ───────────────────────────────────────────────────────────── */
 
 /* Ink on coral in both themes — cream on this coral fails AA. */
-.im-fab-searching {
+.im-fab-searching,
+.im-fab-reconnecting {
   background: var(--im-coral);
   color: #16130E;
   animation: im-fab-breathe 3.4s ease-in-out infinite;
 }
-.im-fab-searching .im-fab-bolt { color: #16130E; }
 
+/* Reconnecting is searching, held: same colour, but the motion stalls so the
+   difference is legible without inventing a third palette. */
+.im-fab-reconnecting {
+  animation-duration: 5.2s;
+  opacity: 0.85;
+}
+
+/* ── Countdown ring ──────────────────────────────────────────────────────── */
+
+/**
+ * Sits outside the button's own circle and above the dock, so the arc reads
+ * as a strip wrapped around the launcher rather than a border on it.
+ * `pointer-events: none` keeps the whole face tappable.
+ */
+.im-fab-ring {
+  position: absolute;
+  inset: -7px;
+  width: calc(100% + 14px);
+  height: calc(100% + 14px);
+  /* Start the arc at twelve o'clock and deplete clockwise. */
+  transform: rotate(-90deg);
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.im-fab-ring-track,
+.im-fab-ring-arc {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+.im-fab-ring-track {
+  stroke: color-mix(in srgb, var(--im-ink, #16130E) 12%, transparent);
+}
+
+.im-fab-ring-arc {
+  stroke: var(--im-lime);
+  /* Covers the 30s repaint interval, so the strip closes continuously
+     instead of stepping once every half minute. */
+  transition: stroke-dashoffset 1.2s linear;
+}
+
+/* ── Matched ─────────────────────────────────────────────────────────────── */
+
+/* Lime, the affirmative colour used by the accept button and the Matched
+   sticker, so the launcher and the panel agree at a glance. */
+.im-fab-matched {
+  background: var(--im-lime);
+  color: #16130E;
+  animation: im-fab-pop 0.42s var(--im-ease-out) 1;
+}
+
+/* No label in this state: the glyph centres on its own and grows into the
+   space the word used to take. */
+.im-fab-bare { gap: 0; }
+.im-fab-bare .im-fab-face { width: 34px; height: 34px; }
+.im-fab-bare .im-fab-bolt { width: 32px; height: 32px; }
+
+.im-fab-error {
+  background: var(--im-sun);
+  color: #16130E;
+}
+
+/* Ended: still clearly "you had a match", but spent — muted rather than
+   celebratory, so it does not read as a live chat waiting to be opened. */
+.im-fab-ended {
+  background: var(--im-paper-2, #e9e7e1);
+  color: #16130E;
+  box-shadow: var(--im-shadow-sm);
+}
+
+@keyframes im-fab-pop {
+  0%   { transform: scale(0.86); }
+  55%  { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+/* Scale only — the tilt is the wrapper's business, so this animation can no
+   longer fight it. */
 @keyframes im-fab-breathe {
-  0%, 100% { transform: rotate(-3deg) scale(1); }
-  50% { transform: rotate(-3deg) scale(1.035); }
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.035); }
 }
 
 /**
@@ -86,6 +205,11 @@
   animation: im-spin 2.6s linear infinite;
   pointer-events: none;
 }
+
+/* Held connection: the sweep slows almost to a stop rather than vanishing,
+   so "still working on it" stays distinguishable from "searching". */
+.im-fab-halo-idlewait,
+.im-fab-halo-idlewait::after { animation-duration: 7s; }
 
 /* A second, slower sweep on the opposite phase keeps the rim alive without
    the arc ever appearing to stall at the seam. */
@@ -118,7 +242,6 @@
   font-family: var(--im-display);
   font-size: 0.75rem;
   box-shadow: var(--im-shadow-sm);
-  transform: rotate(6deg);
   z-index: 2;
 }
 
@@ -126,12 +249,19 @@
   .im-fab-dock { bottom: max(28px, env(safe-area-inset-bottom)); right: 28px; }
   .im-fab { width: 74px; height: 74px; }
   .im-fab-bolt { width: 30px; height: 30px; }
+  .im-fab-bare .im-fab-bolt { width: 36px; height: 36px; }
+  .im-fab-bare .im-fab-face { width: 38px; height: 38px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .im-fab-searching { animation: none; }
+  .im-fab-searching,
+  .im-fab-reconnecting,
+  .im-fab-matched { animation: none; }
   .im-fab-halo,
   .im-fab-halo::after { animation: none; }
+  /* The ring still shows the remaining time — it just snaps to each new
+     value instead of sliding to it. */
+  .im-fab-ring-arc { transition: none; }
   /* Still clearly "active", just not moving. */
   .im-fab-halo { background: color-mix(in srgb, var(--im-coral) 45%, transparent); }
 }
