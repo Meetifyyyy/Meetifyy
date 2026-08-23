@@ -188,7 +188,12 @@ meetifyy-security-remediation-report.md
 # ------------------------------------------------------------------------------
 # 12. Documentation & Temporary Audit Scripts
 # ------------------------------------------------------------------------------
-docs/
+# Scratch docs and audit output stay out of the repo, but two are durable
+# engineering references and are tracked explicitly. A negation cannot re-include
+# a file whose parent directory is excluded, hence `docs/*` rather than `docs/`.
+docs/*
+!docs/network-reachability.md
+!docs/verification-checklist.md
 diff_*.txt
 all_files.txt
 git_files.txt
