@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, memo, useCallback } from 'react';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
-import { deriveThumbnailKey } from '@shared/api/apiClient';
+import { deriveThumbnailKey, getMediaUrl } from '@shared/api/apiClient';
 import styles from './MediaGrid.module.css';
 
 // A post's image must never be replaced by an unrelated picture. This used to
@@ -186,16 +186,26 @@ function normalizeMedia(mediaInput) {
     const height = Number(item.height || item.raw?.height || item.originalHeight) || null;
     const aspectRatio = Number(item.aspectRatio || item.raw?.aspectRatio) || (width && height ? width / height : null);
 
-    // Immediately usable URL if it's already a full or relative path
-    const isDirectUrl =
+    // The URL to paint on the very first render, before the async resolution
+    // below has had a chance to run.
+    //
+    // `/api/media/...` used to be treated as "already usable" and handed
+    // straight to `<img src>`. It is a *relative* path, so the browser resolved
+    // it against the page's own origin — dev.meetifyy.app, which is Vercel and
+    // has no such route — and every post image 404'd on first paint with
+    // `x-vercel-error: NOT_FOUND`. The API lives on a different host, and
+    // `getMediaUrl` is what knows that. Clicking the image still worked because
+    // the viewer resolves its source properly, which is exactly the "broken in
+    // the grid, fine in the viewer" split.
+    //
+    // Only genuinely absolute references are safe to pass through untouched.
+    const isAbsolute =
       rawSrc.startsWith('http://') ||
       rawSrc.startsWith('https://') ||
       rawSrc.startsWith('data:') ||
-      rawSrc.startsWith('blob:') ||
-      rawSrc.startsWith('/api/media/') ||
-      rawSrc.startsWith('/');
+      rawSrc.startsWith('blob:');
 
-    const initialUrl = isDirectUrl ? rawSrc : null;
+    const initialUrl = isAbsolute ? rawSrc : getMediaUrl(rawSrc);
 
     return {
       raw: item,
@@ -214,6 +224,10 @@ function normalizeMedia(mediaInput) {
 export function MediaGrid({ media, onMediaClick }) {
   const [mediaList, setMediaList] = useState(() => normalizeMedia(media));
   const [loadedStates, setLoadedStates] = useState({});
+  // Indices whose media could not be loaded after the retries below. Kept in
+  // state so a later-resolved URL clears it instead of being stuck behind an
+  // imperative DOM change.
+  const [failedStates, setFailedStates] = useState({});
   const [naturalAspects, setNaturalAspects] = useState({});
   const [inlinePlaying, setInlinePlaying] = useState({});
 
@@ -243,7 +257,11 @@ export function MediaGrid({ media, onMediaClick }) {
         return { ...item, url: item.rawSrc, fullUrl: item.rawSrc };
       }
     })).then(resolvedList => {
-      if (isMounted) setMediaList(resolvedList);
+      if (!isMounted) return;
+      setMediaList(resolvedList);
+      // These URLs are newly resolved, so any earlier failure was against a
+      // different (unresolved) src and should not suppress them.
+      setFailedStates({});
     });
 
     return () => {
@@ -299,12 +317,15 @@ export function MediaGrid({ media, onMediaClick }) {
       return;
     }
 
-    // Step 3: genuinely unavailable. Hide the broken image rather than
-    // substituting a different one — an empty slot is honest, a stock photo is
-    // a lie about what the author posted.
-    target.onerror = null;
-    target.removeAttribute('src');
-    target.style.visibility = 'hidden';
+    // Step 3: genuinely unavailable for now. Record it in state rather than
+    // reaching into the DOM.
+    //
+    // This previously did `removeAttribute('src')` and set `visibility: hidden`
+    // on the node directly. React does not know about either, so when the async
+    // URL resolution finished a moment later and re-rendered with a working
+    // src, the element stayed blank forever — the imperative hide outlived the
+    // reason for it. Driving it from state means a resolved URL simply renders.
+    setFailedStates((prev) => ({ ...prev, [index]: true }));
     setLoadedStates((prev) => ({ ...prev, [index]: true }));
   };
 
@@ -350,7 +371,7 @@ export function MediaGrid({ media, onMediaClick }) {
       const isLoaded = loadedStates[0];
       const isPlayingInline = Boolean(inlinePlaying[0]);
       const posterUrl = item.raw?.poster || item.raw?.thumbnail || item.raw?.thumbnailUrl;
-      const mediaSrc = item.url || (item.rawSrc ? `/api/media/${item.rawSrc.replace(/^\/?api\/media\//, '')}` : null);
+      const mediaSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
 
       if (isPlayingInline && mediaSrc) {
         return (
@@ -388,6 +409,7 @@ export function MediaGrid({ media, onMediaClick }) {
                 decoding="async"
                 onLoad={(e) => handleImageLoad(0, e)}
                 onError={(e) => handleImageError(0, e)}
+                style={{ visibility: failedStates[0] ? 'hidden' : undefined }}
                 ref={(imgEl) => {
                   if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[0]) {
                     handleImageLoad(0, { target: imgEl });
@@ -426,7 +448,7 @@ export function MediaGrid({ media, onMediaClick }) {
     }
 
     const isLoaded = loadedStates[0];
-    const imageSrc = item.url || (item.rawSrc ? `/api/media/${item.rawSrc.replace(/^\/?api\/media\//, '')}` : null);
+    const imageSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
 
     return (
       <div
@@ -447,6 +469,7 @@ export function MediaGrid({ media, onMediaClick }) {
               decoding="async"
               onLoad={(e) => handleImageLoad(0, e)}
               onError={(e) => handleImageError(0, e)}
+              style={{ visibility: failedStates[0] ? 'hidden' : undefined }}
               ref={(imgEl) => {
                 if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[0]) {
                   handleImageLoad(0, { target: imgEl });
@@ -469,7 +492,7 @@ export function MediaGrid({ media, onMediaClick }) {
       <div className={styles.mediaContainer}>
         <div className={styles.gridTwo}>
           {mediaList.map((item, index) => {
-            const imgSrc = item.url || (item.rawSrc ? `/api/media/${item.rawSrc.replace(/^\/?api\/media\//, '')}` : null);
+            const imgSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
             return (
               <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
                 {!loadedStates[index] && <div className={styles.skeleton} />}
@@ -481,6 +504,7 @@ export function MediaGrid({ media, onMediaClick }) {
                     decoding="async"
                     onLoad={(e) => handleImageLoad(index, e)}
                     onError={(e) => handleImageError(index, e)}
+                    style={{ visibility: failedStates[index] ? 'hidden' : undefined }}
                     className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
                   />
                 )}
@@ -494,7 +518,7 @@ export function MediaGrid({ media, onMediaClick }) {
 
   // Three Images (1 Main Left + 2 Stacked Right)
   if (mediaList.length === 3) {
-    const firstImgSrc = mediaList[0].url || (mediaList[0].rawSrc ? `/api/media/${mediaList[0].rawSrc.replace(/^\/?api\/media\//, '')}` : null);
+    const firstImgSrc = mediaList[0].url || (mediaList[0].rawSrc ? getMediaUrl(mediaList[0].rawSrc) : null);
     return (
       <div className={styles.mediaContainer}>
         <div className={styles.gridThree}>
@@ -508,6 +532,7 @@ export function MediaGrid({ media, onMediaClick }) {
                 decoding="async"
                 onLoad={(e) => handleImageLoad(0, e)}
                 onError={(e) => handleImageError(0, e)}
+                style={{ visibility: failedStates[0] ? 'hidden' : undefined }}
                 className={`${styles.gridImage} ${loadedStates[0] ? styles.loaded : styles.loading}`}
               />
             )}
@@ -515,7 +540,7 @@ export function MediaGrid({ media, onMediaClick }) {
           <div className={styles.gridThreeRight}>
             {mediaList.slice(1, 3).map((item, idx) => {
               const index = idx + 1;
-              const subSrc = item.url || (item.rawSrc ? `/api/media/${item.rawSrc.replace(/^\/?api\/media\//, '')}` : null);
+              const subSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
               return (
                 <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
                   {!loadedStates[index] && <div className={styles.skeleton} />}
@@ -527,6 +552,7 @@ export function MediaGrid({ media, onMediaClick }) {
                       decoding="async"
                       onLoad={(e) => handleImageLoad(index, e)}
                       onError={(e) => handleImageError(index, e)}
+                      style={{ visibility: failedStates[index] ? 'hidden' : undefined }}
                       className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
                     />
                   )}
@@ -548,7 +574,7 @@ export function MediaGrid({ media, onMediaClick }) {
       <div className={styles.gridFour}>
         {displayItems.map((item, index) => {
           const isLast = index === 3 && remainingCount > 0;
-          const subSrc = item.url || (item.rawSrc ? `/api/media/${item.rawSrc.replace(/^\/?api\/media\//, '')}` : null);
+          const subSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
           return (
             <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
               {!loadedStates[index] && <div className={styles.skeleton} />}
@@ -560,6 +586,7 @@ export function MediaGrid({ media, onMediaClick }) {
                   decoding="async"
                   onLoad={(e) => handleImageLoad(index, e)}
                   onError={(e) => handleImageError(index, e)}
+                  style={{ visibility: failedStates[index] ? 'hidden' : undefined }}
                   className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
                 />
               )}
