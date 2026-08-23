@@ -1114,7 +1114,19 @@ html.theme-transitioning *::after {
   transition: none !important;
 }
 
-/* Smooth color transitions for UI elements */
+/**
+ * Colour transitions for UI elements.
+ *
+ * These are suppressed for the duration of a theme switch (see
+ * `html.theme-transitioning` above), so in practice they govern interaction
+ * feedback — hover, focus, pressed — rather than theming.
+ *
+ * 400ms was tuned for the theme fade it no longer performs, and at that
+ * length a hover visibly trails the cursor. 180ms reads as a direct response
+ * to the pointer while still being a transition rather than a snap.
+ * Deliberately unrelated to the 1.2s theme reveal: one answers a hover, the
+ * other is a deliberate full-screen event.
+ */
 body,
 header,
 main,
@@ -1124,7 +1136,7 @@ button,
 input,
 textarea,
 select {
-  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out, border-color 0.4s ease-in-out, box-shadow 0.4s ease-in-out;
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 /* Accessibility: Prefers Reduced Motion */
