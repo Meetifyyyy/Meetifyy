@@ -2,93 +2,131 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { showToast } from '@shared/utils/toast';
 import { postsApi } from '@shared/api/apiClient';
 
+// Monotonic, so two comments posted inside the same millisecond cannot collide
+// on `temp_<Date.now()>` and have one silently overwrite the other.
+let tempCommentSeq = 0;
+const nextTempId = () => `temp_${Date.now()}_${++tempCommentSeq}`;
+
+/** +1 on the post's comment count, in whichever shape this cache holds posts. */
+function bumpCommentCount(postId, delta) {
+  const updatePost = (p) => {
+    if (!p || p.id !== postId) return p;
+    const current = p.commentsCount !== undefined ? p.commentsCount : (p.commentCount || 0);
+    const next = Math.max(0, current + delta);
+    return { ...p, commentCount: next, commentsCount: next };
+  };
+
+  return (oldData) => {
+    if (!oldData) return oldData;
+    if (Array.isArray(oldData)) return oldData.map(updatePost);
+    if (Array.isArray(oldData.posts)) return { ...oldData, posts: oldData.posts.map(updatePost) };
+    if (oldData.pages) {
+      return {
+        ...oldData,
+        pages: oldData.pages.map((page) => (page.posts ? { ...page, posts: page.posts.map(updatePost) } : page)),
+      };
+    }
+    return oldData;
+  };
+}
+
+const POST_LIST_KEYS = ['feed', 'posts', 'user-posts'];
+
 export function useAddComment() {
   const queryClient = useQueryClient();
+
   return useMutation({
-    mutationFn: async ({ postId, text, parentId, mentions }) => {
-      return postsApi.addComment(postId, { text, parentId, mentions });
-    },
+    mutationFn: ({ postId, text, parentId, mentions }) =>
+      postsApi.addComment(postId, { text, parentId, mentions }),
+
     onMutate: async ({ postId, text, parentId, currentUser }) => {
-      // currentUser should be passed from the component to construct the optimistic comment
-      
       const queryKey = ['post', postId];
       await queryClient.cancelQueries({ queryKey });
-      
-      // Update comment counts on feed/posts globally
-      const updatePostCommentCount = (p) => {
-        if (p.id !== postId) return p;
-        const currentCount = p.commentsCount !== undefined ? p.commentsCount : (p.commentCount || 0);
-        return {
-          ...p,
-          commentCount: currentCount + 1,
-          commentsCount: currentCount + 1,
-        };
-      };
 
-      const feedUpdater = (oldData) => {
-        if (!oldData) return oldData;
-        if (oldData.posts && Array.isArray(oldData.posts)) return { ...oldData, posts: oldData.posts.map(updatePostCommentCount) };
-        if (oldData.pages) return { ...oldData, pages: oldData.pages.map(page => page.posts ? { ...page, posts: page.posts.map(updatePostCommentCount) } : page) };
-        if (Array.isArray(oldData)) return oldData.map(updatePostCommentCount);
-        return oldData;
-      };
-
-      queryClient.setQueriesData({ queryKey: ['feed'] }, feedUpdater);
-      queryClient.setQueriesData({ queryKey: ['posts'] }, feedUpdater);
-      queryClient.setQueriesData({ queryKey: ['user-posts'] }, feedUpdater);
-
-      // Add actual comment to the post detail
       const previousPost = queryClient.getQueryData(queryKey);
+      const tempId = nextTempId();
+
+      POST_LIST_KEYS.forEach((key) =>
+        queryClient.setQueriesData({ queryKey: [key] }, bumpCommentCount(postId, 1)));
+
       if (previousPost) {
         const optimisticComment = {
-          id: `temp_${Date.now()}`,
+          id: tempId,
           postId,
           text,
           parentId: parentId || null,
           authorId: currentUser?.id,
           createdAt: new Date().toISOString(),
+          isDeleted: false,
           likeCount: 0,
           likesCount: 0,
+          hasLiked: false,
           isLiked: false,
           isLikedByMe: false,
           author: {
             id: currentUser?.id,
             username: currentUser?.username,
             displayName: currentUser?.displayName,
-            avatar: currentUser?.avatar
-          }
+            avatar: currentUser?.avatar,
+          },
         };
 
-        queryClient.setQueryData(queryKey, {
-          ...updatePostCommentCount(previousPost),
-          comments: [...(previousPost.comments || []), optimisticComment]
+        queryClient.setQueryData(queryKey, (old) => {
+          if (!old) return old;
+          const count = old.commentsCount !== undefined ? old.commentsCount : (old.commentCount || 0);
+          return {
+            ...old,
+            commentCount: count + 1,
+            commentsCount: count + 1,
+            comments: [...(old.comments || []), optimisticComment],
+          };
         });
       }
 
-      return () => {
-        // Simple invalidation strategy on rollback since rolling back multiple lists perfectly is complex
-        queryClient.invalidateQueries({ queryKey: ['feed'] });
-        queryClient.invalidateQueries({ queryKey: ['posts'] });
-        queryClient.invalidateQueries({ queryKey: ['user-posts'] });
-        if (previousPost) {
-          queryClient.setQueryData(queryKey, previousPost);
-        }
-      };
+      // A plain object, not a rollback closure. `onSuccess` needs the temp id to
+      // swap the placeholder for the real row, and a closure gave it nothing to
+      // work with.
+      return { previousPost, queryKey, tempId, postId };
     },
-    onError: (err, variables, rollback) => {
-      if (typeof rollback === 'function') rollback();
+
+    onError: (_err, _variables, context) => {
+      if (context?.previousPost) {
+        queryClient.setQueryData(context.queryKey, context.previousPost);
+      }
+      POST_LIST_KEYS.forEach((key) =>
+        queryClient.setQueriesData({ queryKey: [key] }, bumpCommentCount(context?.postId, -1)));
       showToast("Couldn't post comment", 'error');
     },
-    onSuccess: (result, variables) => {
-      // Refetch only the open post detail so the optimistic temp comment is
-      // swapped for the real server row (with its DB id). The feed's comment
-      // COUNT was already optimistically incremented by exactly 1 — which
-      // matches the backend's unconditional +1 — so we deliberately do NOT
-      // invalidate ['feed'] here; doing so would refetch every loaded feed
-      // page on every comment for a count that's already correct.
-      queryClient.invalidateQueries({ queryKey: ['post', variables.postId] });
-    }
+
+    onSuccess: (created, _variables, context) => {
+      // Swap the placeholder for the server's row in place, rather than relying
+      // on the invalidation below to do it. An invalidation-triggered refetch can
+      // be cancelled by the next add or delete (both call `cancelQueries`), and
+      // when it was, the temp comment was never reconciled — the real one arrived
+      // alongside it and the same comment rendered twice.
+      if (created?.id && context?.tempId) {
+        queryClient.setQueryData(context.queryKey, (old) => {
+          if (!old?.comments) return old;
+          const withoutTemp = old.comments.filter((c) => c.id !== context.tempId && c.id !== created.id);
+          return {
+            ...old,
+            comments: [...withoutTemp, {
+              ...created,
+              isDeleted: false,
+              likesCount: created.likeCount ?? 0,
+              hasLiked: false,
+              isLiked: false,
+              isLikedByMe: false,
+            }],
+          };
+        });
+      }
+
+      // Reconcile against the server afterwards. The count was already moved by
+      // exactly one, matching the backend's unconditional increment, so ['feed']
+      // is deliberately left alone — invalidating it would refetch every loaded
+      // feed page on every comment for a number that is already right.
+      queryClient.invalidateQueries({ queryKey: context?.queryKey ?? ['post'] });
+    },
   });
 }
-
-

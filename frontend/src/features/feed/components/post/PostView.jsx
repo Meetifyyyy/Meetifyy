@@ -79,12 +79,14 @@ function CommentsSkeleton() {
 
 export default function PostView({ post, onBack }) {
   const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
+  const [isPostingComment, setIsPostingComment] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const { currentUser } = useAuth();
-  const { mutate: addComment } = useAddComment();
+  const { mutateAsync: addComment } = useAddComment();
   const { socket, isConnected } = useGlobalSocketStore();
   const queryClient = useQueryClient();
   const loadMoreRef = useRef(null);
+  const composerRef = useRef(null);
 
   // Seed data from a feed-card click (passed via router state, so it already
   // has author/text/media/poll) lets the query start in a "success" state
@@ -157,18 +159,24 @@ export default function PostView({ post, onBack }) {
     return () => observer.disconnect();
   }, [commentsNextCursor, loadingMore, loadMoreComments]);
 
-  // Kept above any early return so hook order never changes across renders
-  // (incl. the moment `isPostError` flips true).
-  useEffect(() => {
-    if (!hasContent) return;
-    const el = document.getElementById('reply-composer');
-    if (el) el.focus();
-  }, [livePost?.id, hasContent]);
+  // There used to be an effect here that focused `#reply-composer` on open. No
+  // element has ever carried that id — MentionInput renders a plain
+  // contenteditable — so it had always been a no-op. Restoring it via the ref
+  // would mean popping the mobile keyboard every time a post is opened, which
+  // is not what anyone wants; the composer is one tap away. The tap-the-post
+  // shortcut below does use the ref, and now actually works.
 
   const replies = useMemo(() => {
     if (livePost?.comments) return buildCommentTree(livePost.comments);
     return livePost?.replies || [];
   }, [livePost?.comments, livePost?.replies]);
+
+  // Adding a reply to a specific comment. Returns the promise so CommentNode can
+  // await it and keep its own composer open if the post fails.
+  const handleCommentReplySubmit = useCallback((parentId, text, mentions) => {
+    if (!livePost) return Promise.resolve();
+    return addComment({ postId: livePost.id, text, parentId, mentions, currentUser });
+  }, [addComment, livePost, currentUser]);
 
   // A confirmed error (post deleted / doesn't exist) is the caller's problem —
   // PostDetailRoute owns the dedicated "Post not found" page and swaps this
@@ -176,18 +184,24 @@ export default function PostView({ post, onBack }) {
   // same error via the shared cache.
   if (isPostError) return null;
 
-  // Handles adding a reply to the main post
-  const handleMainReplySubmit = (e) => {
+  // Adding a top-level comment on the post.
+  //
+  // The composer is cleared only once the server has accepted it. It used to
+  // clear synchronously right after firing the mutation, so a comment that
+  // failed to post took the user's text with it and left an error toast with
+  // nothing to retry from.
+  const handleMainReplySubmit = async (e) => {
     if (e?.preventDefault) e.preventDefault();
-    if (!replyContent.text.trim() || !livePost) return;
-    addComment({ postId: livePost.id, text: replyContent.text, parentId: null, mentions: replyContent.mentions, currentUser });
-    setReplyContent({ text: '', mentions: [] });
-  };
-
-  // Handles adding a reply to a specific comment recursively
-  const handleCommentReplySubmit = (parentId, text, mentions) => {
-    if (!livePost) return;
-    addComment({ postId: livePost.id, text, parentId, mentions, currentUser });
+    if (!replyContent.text.trim() || !livePost || isPostingComment) return;
+    setIsPostingComment(true);
+    try {
+      await addComment({ postId: livePost.id, text: replyContent.text, parentId: null, mentions: replyContent.mentions, currentUser });
+      setReplyContent({ text: '', mentions: [] });
+    } catch {
+      // useAddComment surfaces its own toast; the draft stays put.
+    } finally {
+      setIsPostingComment(false);
+    }
   };
 
   return (
@@ -207,7 +221,7 @@ export default function PostView({ post, onBack }) {
           <Post
             postData={livePost}
             isDetailed={true}
-            onClick={() => document.getElementById('reply-composer')?.focus()}
+            onClick={() => composerRef.current?.focus()}
             onDeleted={onBack}
           />
         ) : (
@@ -222,6 +236,7 @@ export default function PostView({ post, onBack }) {
           <form onSubmit={handleMainReplySubmit} className={styles.replyForm}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <MentionInput
+                inputRef={composerRef}
                 placeholder="Post your reply..."
                 value={replyContent}
                 onChange={setReplyContent}
@@ -233,10 +248,10 @@ export default function PostView({ post, onBack }) {
             <div className={styles.replyActions}>
               <button
                 type="submit"
-                disabled={!replyContent.text.trim()}
-                className={`${styles.replyBtn} ${replyContent.text.trim() ? styles.replyBtnActive : styles.replyBtnDisabled}`}
+                disabled={!replyContent.text.trim() || isPostingComment}
+                className={`${styles.replyBtn} ${replyContent.text.trim() && !isPostingComment ? styles.replyBtnActive : styles.replyBtnDisabled}`}
               >
-                Reply
+                {isPostingComment ? 'Posting…' : 'Reply'}
               </button>
             </div>
           </form>

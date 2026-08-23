@@ -10,7 +10,7 @@
  * - All other data flow, props, and state management unchanged
  */
 
-import { useState, useCallback, useEffect, useRef, useContext, createContext } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, useContext, createContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { showToast } from '@shared/utils/toast';
@@ -32,7 +32,14 @@ import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 
 // ─── Shared tree context ─────────────────────────────────────────────────────
-const TreeDensityContext = createContext({ tier: 'small', expandedMap: {}, toggleExpanded: () => {} });
+const TreeDensityContext = createContext({
+  tier: 'small',
+  expandedMap: {},
+  toggleExpanded: () => {},
+  expand: () => {},
+  activeReplyId: null,
+  setActiveReplyId: () => {},
+});
 
 function countVisibleNodes(comment, expandedMap) {
   let count = 1;
@@ -56,6 +63,15 @@ function findAncestorsOf(comments, targetId, path = []) {
 // ─── Root wrapper ─────────────────────────────────────────────────────────────
 export function CommentTreeRoot({ postId, comments, onReplySubmit }) {
   const [expandedMap, setExpandedMap] = useState({});
+  /**
+   * Which comment's reply box is open — at most one, for the whole tree.
+   *
+   * Each node used to own an `isReplying` boolean, so every Reply button opened
+   * another composer and left the previous ones behind. A deep thread could end
+   * up with several open at once, each with its own draft and its own Comment
+   * button, and no indication which one a keystroke was going to.
+   */
+  const [activeReplyId, setActiveReplyId] = useState(null);
 
   useEffect(() => {
     if (window.location.hash.startsWith('#comment-')) {
@@ -84,11 +100,23 @@ export function CommentTreeRoot({ postId, comments, onReplySubmit }) {
     setExpandedMap(prev => ({ ...prev, [id]: !currentVal }));
   }, []);
 
+  // Nested threads are collapsed by default, so a reply posted to one landed
+  // somewhere the author could not see and read as "nothing happened". Whoever
+  // just replied gets that thread opened for them.
+  const expand = useCallback((id) => {
+    setExpandedMap(prev => (prev[id] === true ? prev : { ...prev, [id]: true }));
+  }, []);
+
   const totalVisible = comments.reduce((acc, c) => acc + countVisibleNodes(c, expandedMap), 0);
   const tier = totalVisible <= 5 ? 'small' : totalVisible <= 15 ? 'medium' : 'large';
 
+  const treeContext = useMemo(
+    () => ({ tier, expandedMap, toggleExpanded, expand, activeReplyId, setActiveReplyId }),
+    [tier, expandedMap, toggleExpanded, expand, activeReplyId],
+  );
+
   return (
-    <TreeDensityContext.Provider value={{ tier, expandedMap, toggleExpanded }}>
+    <TreeDensityContext.Provider value={treeContext}>
       <div className={`${styles.treeRoot} ${styles[`density_${tier}`]}`}>
         {comments.map((comment, idx) => (
           <CommentNode
@@ -252,7 +280,6 @@ export default function CommentNode({
   level = 0,
   isLastSibling = false,
 }) {
-  const [isReplying, setIsReplying]     = useState(false);
   const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
   const [showMenu, setShowMenu]         = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -271,7 +298,18 @@ export default function CommentNode({
   const { communitiesById } = useCommunities();
   const { mutate: deleteCommentMutate } = useDeleteComment();
   const { mutate: toggleLike, isLoading: isLiking } = useLikeComment();
-  const { tier, expandedMap, toggleExpanded } = useContext(TreeDensityContext);
+  const { tier, expandedMap, toggleExpanded, expand, activeReplyId, setActiveReplyId } = useContext(TreeDensityContext);
+
+  // At most one reply box is open across the whole tree, so this is derived
+  // rather than owned. Opening another node's box closes this one by definition.
+  const isReplying = activeReplyId === comment.id;
+
+  // Drop the draft whenever the box closes, however it closed — Cancel, a
+  // successful submit, or another node taking over. Without this a half-typed
+  // reply reappeared the next time the box was reopened.
+  useEffect(() => {
+    if (!isReplying) setReplyContent({ text: '', mentions: [] });
+  }, [isReplying]);
 
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
@@ -308,19 +346,23 @@ export default function CommentNode({
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleProfileClick = () => navigate(`/profile/${author.username}`, { state: { from: window.location.pathname } });
-  const handleReplyClick   = () => { setIsReplying(r => !r); setReplyContent({ text: '', mentions: [] }); };
-  const handleCancelReply  = () => { setIsReplying(false); setReplyContent({ text: '', mentions: [] }); };
+  const handleReplyClick   = () => setActiveReplyId(isReplying ? null : comment.id);
+  const handleCancelReply  = () => setActiveReplyId(null);
 
   const handleDelete = (e) => {
     e.stopPropagation();
     setShowMenu(false);
     if (isDeleting) return;
+    // `deleteCommentMutate` is fire-and-forget, so the previous try/finally set
+    // the flag and cleared it in the same tick — the guard never actually held
+    // and a double-click fired two deletes, the second of which 404s ("already
+    // deleted") and pops an error toast for a delete that worked. The flag is
+    // released by the mutation's own callbacks now.
     setIsDeleting(true);
-    try {
-      deleteCommentMutate({ postId, commentId: comment.id });
-    } finally {
-      setIsDeleting(false);
-    }
+    deleteCommentMutate(
+      { postId, commentId: comment.id },
+      { onSettled: () => setIsDeleting(false) },
+    );
   };
 
   const handleLike = (e) => {
@@ -332,10 +374,19 @@ export default function CommentNode({
   const handleSubmit = async () => {
     if (!replyContent.text.trim() || isSubmitting) return;
     setIsSubmitting(true);
-    await onReplySubmit(comment.id, replyContent.text, replyContent.mentions);
-    setIsSubmitting(false);
-    setIsReplying(false);
-    setReplyContent({ text: '', mentions: [] });
+    try {
+      await onReplySubmit(comment.id, replyContent.text, replyContent.mentions);
+      // Only close on success. This used to clear the draft unconditionally, so
+      // a reply that failed to post took the user's text with it and left
+      // nothing to retry from.
+      setActiveReplyId(null);
+      expand(comment.id);
+    } catch {
+      // The mutation surfaces its own toast; keep the composer open and the
+      // draft intact so the user can try again.
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCardClick = (e) => {
@@ -344,7 +395,20 @@ export default function CommentNode({
     toggleExpanded(comment.id, isExpanded);
   };
 
+  /**
+   * The card is a keyboard-activatable region, so Space and Enter toggle it —
+   * but only when the card itself is what is focused.
+   *
+   * This used to fire on any keydown that reached the card, and keydown
+   * bubbles. The reply composer is a descendant of the card, so on any comment
+   * that had replies, every Space typed into the reply box was swallowed by
+   * `preventDefault()` here and collapsed the thread instead. That is the
+   * "spaces sometimes don't work" report — "sometimes" because it only
+   * happened under comments that already had children. Enter was eaten the
+   * same way, so a reply could not be given a second line either.
+   */
   const handleCardKeyDown = (e) => {
+    if (e.target !== e.currentTarget) return;
     if ((e.key === 'Enter' || e.key === ' ') && hasChildren) {
       e.preventDefault();
       toggleExpanded(comment.id, isExpanded);

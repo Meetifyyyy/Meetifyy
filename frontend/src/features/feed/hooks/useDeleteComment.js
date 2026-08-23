@@ -3,32 +3,46 @@ import { postsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 
 /**
- * Recursively walks the flat comment array and returns a new array where
- * the comment matching `commentId` is replaced with a soft-deleted placeholder.
+ * Applies a delete to the flat comment array the way the server will.
+ *
+ * A deleted comment is kept as a scrubbed placeholder only while a live reply
+ * still hangs off it — dropping it would orphan those replies. A deleted leaf is
+ * removed outright, and removing it can turn its own deleted parent into a leaf,
+ * so the prune repeats to a fixed point.
+ *
+ * This used to always leave a placeholder, which disagreed with the count (also
+ * decremented below) and left threads accumulating "[deleted]" rows. Matching
+ * the server exactly is what stops the tree flickering when the refetch lands.
  */
-function applyOptimisticDelete(comments, commentId) {
-  return comments.map((c) => {
-    if (c.id === commentId) {
-      return {
-        // Preserve only structural fields
-        id: c.id,
-        postId: c.postId,
-        parentId: c.parentId,
-        createdAt: c.createdAt,
-        isDeleted: true,
-        deletedByUser: true,
-        // Scrub everything private
-        text: null,
-        author: null,
-        authorId: null,
-        likeCount: 0,
-        hasLiked: false,
-        isLiked: false,
-        isLikedByMe: false,
-      };
-    }
-    return c;
+export function applyOptimisticDelete(comments, commentId) {
+  const scrubbed = comments.map((c) => {
+    if (c.id !== commentId) return c;
+    return {
+      // Preserve only structural fields
+      id: c.id,
+      postId: c.postId,
+      parentId: c.parentId,
+      createdAt: c.createdAt,
+      isDeleted: true,
+      deletedByUser: true,
+      // Scrub everything private
+      text: null,
+      author: null,
+      authorId: null,
+      likeCount: 0,
+      hasLiked: false,
+      isLiked: false,
+      isLikedByMe: false,
+    };
   });
+
+  let survivors = scrubbed;
+  for (;;) {
+    const parentsWithChildren = new Set(survivors.map((c) => c.parentId).filter(Boolean));
+    const next = survivors.filter((c) => !c.isDeleted || parentsWithChildren.has(c.id));
+    if (next.length === survivors.length) return next;
+    survivors = next;
+  }
 }
 
 export function useDeleteComment() {

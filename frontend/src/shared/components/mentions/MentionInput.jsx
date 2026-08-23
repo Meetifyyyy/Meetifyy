@@ -180,22 +180,45 @@ export default function MentionInput({
     return { text: textString, mentions };
   }, []);
 
-  // Sync DOM html when incoming value changes externally (e.g. form reset or initial load)
+  /**
+   * Mirrors an externally-supplied value into the DOM — form resets, initial
+   * load, a draft restored from elsewhere.
+   *
+   * While the editor has focus the DOM is authoritative and this effect keeps
+   * its hands off, because rewriting `innerHTML` destroys the selection: the
+   * caret jumps to the start of the field mid-word.
+   *
+   * It used to guard on `lastParsedTextRef.current === text` instead, which
+   * held only while the parent's state was exactly in step with the DOM. Any
+   * re-render carrying a value that had not caught up yet — a post refetch
+   * landing after a comment was added or deleted, a `comment.created` socket
+   * event, anything asynchronous — failed that check and rewrote the field
+   * underneath the user. The character being typed was wiped and the caret was
+   * thrown to position zero, which is what made spaces "not work" and made the
+   * composer feel like it had stopped accepting input.
+   *
+   * The one external write worth honouring while focused is a clear, which is
+   * how every caller resets the field after a successful submit.
+   */
   useEffect(() => {
     const el = editorRef.current;
     if (!el) return;
 
     const { text, mentions = [] } = currentVal();
+    const isFocused = document.activeElement === el;
 
-    // Avoid overwriting DOM if user is actively typing and text matches
-    if (lastParsedTextRef.current === text && document.activeElement === el) {
+    if (isFocused && text) {
+      // Typing in progress. Whatever the parent is holding is at best an echo
+      // of what is already on screen, and at worst stale.
       return;
     }
 
     lastParsedTextRef.current = text;
 
     if (!text) {
-      el.innerHTML = '';
+      // Skip the DOM write when it is already empty, so a parent that re-renders
+      // on every keystroke cannot repeatedly reset a field the user just focused.
+      if (el.innerHTML !== '') el.innerHTML = '';
       el.setAttribute('data-empty', 'true');
       return;
     }
