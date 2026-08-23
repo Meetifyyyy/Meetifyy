@@ -518,18 +518,35 @@
   top: 0;
   left: 0;
   bottom: 0;
-  width: 280px;
+  width: min(300px, 84vw);
   background: var(--color-bg-white);
   border-right: 1px solid var(--color-border-light);
   z-index: 1000;
   transform: translateX(-100%);
-  transition: transform 0.3s ease;
+  /* Decelerating curve rather than `ease`: the panel arrives and settles
+     instead of easing in at both ends, which is what made it feel sluggish
+     opening and vague closing. Transform only, so it composites on the GPU. */
+  transition: transform 0.28s cubic-bezier(0.22, 0.9, 0.3, 1),
+              visibility 0.28s linear;
   display: flex;
   flex-direction: column;
+  /* Off-screen and inert: a closed drawer must not be a tab stop or an
+     invisible touch target over the page. */
+  visibility: hidden;
+  will-change: transform;
+  /* The notch and the home indicator. */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* Scrolling to the end of the drawer must not hand the remaining momentum
+     to the page underneath — the other half of the background-scroll bug the
+     scroll lock addresses, and the half that CSS can fix on its own. */
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .mobileDrawer.drawerOpen {
   transform: translateX(0);
+  visibility: visible;
 }
 
 .drawerOverlay {
@@ -538,8 +555,16 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.45);
   z-index: 999;
+  /* Fades in with the panel instead of appearing in one frame. */
+  animation: drawerScrimIn 0.28s cubic-bezier(0.22, 0.9, 0.3, 1) both;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@keyframes drawerScrimIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @media (min-width: 769px) {
@@ -594,6 +619,9 @@
   min-height: 0;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  /* Contain the scroll chain here too, and keep iOS momentum. */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .drawerContent::-webkit-scrollbar {
@@ -842,4 +870,30 @@
   .header {
     padding: 0 0.75rem;
   }
+}
+/* ── Auto-hiding chrome (mobile) ──────────────────────────────────────────
+   Driven by `data-chrome-hidden` on <html>, set by useAutoHideChrome from a
+   rAF-throttled scroll listener. Transform only — no layout, no repaint of
+   anything beneath it, and nothing re-renders in React to make it happen.
+   The header is sticky rather than fixed, so it also has to stop taking
+   pointer events once it has slid away. */
+@media (max-width: 768px) {
+  .header {
+    transition: transform 0.26s cubic-bezier(0.22, 0.9, 0.3, 1);
+    will-change: transform;
+  }
+
+  :global(html[data-chrome-hidden]) .header {
+    transform: translateY(-100%);
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header { transition: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobileDrawer { transition: none; }
+  .drawerOverlay { animation: none; }
 }

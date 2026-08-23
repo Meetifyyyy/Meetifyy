@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities, useCampusCommunities } from '@shared/hooks/useCommunities';
@@ -70,6 +71,19 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isCommunitiesMenuOpen, setIsCommunitiesMenuOpen] = useState(false);
+
+  // Freeze the page while the drawer is open. Without this, scrolling over
+  // the drawer scrolled the feed behind it — and closing the drawer left the
+  // user somewhere else entirely on the page they started from.
+  useScrollLock(drawerOpen);
+
+  // Escape closes it, like every other overlay in the app.
+  useEffect(() => {
+    if (!drawerOpen) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setDrawerOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [drawerOpen]);
   const navigate = useNavigate();
   const location = useLocation();
   const activeTab = location.pathname.startsWith('/messages') ? 'messages' : '';
@@ -154,8 +168,16 @@ export default function Header({ variant = 'dashboard', wide = false }) {
         />
       </div>
 
-      {/* Side Drawer */}
-      <div className={`${styles.mobileDrawer} ${drawerOpen ? styles.drawerOpen : ''}`}>
+      {/* Side Drawer.
+          `data-scroll-lock-ignore` keeps useScrollLock from freezing the
+          drawer's own scroll along with the page behind it — the drawer is
+          not portalled, so it sits inside the subtree the lock walks. */}
+      <div
+        className={`${styles.mobileDrawer} ${drawerOpen ? styles.drawerOpen : ''}`}
+        data-scroll-lock-ignore
+        aria-hidden={!drawerOpen}
+        inert={!drawerOpen ? '' : undefined}
+      >
         <div className={styles.drawerHeader}>
           <img 
             src={wordmark} 
@@ -268,7 +290,13 @@ export default function Header({ variant = 'dashboard', wide = false }) {
           </button>
         </div>
       </div>
-      {drawerOpen && <div className={styles.drawerOverlay} onClick={() => setDrawerOpen(false)} />}
+      {drawerOpen && (
+        <div
+          className={styles.drawerOverlay}
+          onClick={() => setDrawerOpen(false)}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Center Search Bar */}
       {variant === 'dashboard' && (

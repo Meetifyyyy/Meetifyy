@@ -245,6 +245,20 @@
   z-index: 2;
 }
 
+/* ── Auto-hiding chrome (mobile) ──────────────────────────────────────────
+   The launcher rides down with the bottom nav it sits above, so the two move
+   as one piece of furniture rather than the button hanging in mid-air over a
+   nav that has gone. Driven by the same `data-chrome-hidden` attribute; the
+   dock's existing hidden state still wins, since a live match card outranks
+   a scroll gesture. */
+@media (max-width: 768px) {
+  html[data-chrome-hidden] .im-fab-dock:not(.im-fab-dock-hidden) {
+    transform: translateY(calc(100% + 78px + env(safe-area-inset-bottom)));
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
 @media (min-width: 900px) {
   .im-fab-dock { bottom: max(28px, env(safe-area-inset-bottom)); right: 28px; }
   .im-fab { width: 74px; height: 74px; }

@@ -120,3 +120,22 @@
 .activeAvatarBorder {
   box-shadow: 0 0 0 2px var(--color-primary);
 }
+
+/* ── Auto-hiding chrome (mobile) ──────────────────────────────────────────
+   See Header.module.css. The nav slides its full height plus the safe-area
+   inset, so nothing peeks above the home indicator on a notched phone. */
+@media (max-width: 768px) {
+  .bottomNav {
+    transition: transform 0.26s cubic-bezier(0.22, 0.9, 0.3, 1);
+    will-change: transform;
+  }
+
+  :global(html[data-chrome-hidden]) .bottomNav {
+    transform: translateY(calc(100% + env(safe-area-inset-bottom, 0px)));
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bottomNav { transition: none; }
+}

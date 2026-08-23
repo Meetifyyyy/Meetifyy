@@ -14,6 +14,11 @@ const SCROLLABLE = /(auto|scroll|overlay)/;
  * Overlays are portalled to <body>, i.e. outside `#root`, so scoping the walk to
  * `#root` cannot freeze a modal's own scrollable regions (the time-slot list,
  * the image grid) — they keep working normally.
+ *
+ * An overlay that is NOT portalled — the mobile nav drawer lives inside the
+ * header — would otherwise have its own scroll frozen along with the page
+ * behind it. Marking its root with `data-scroll-lock-ignore` exempts that
+ * subtree, so the drawer scrolls while everything under it stays put.
  */
 export function useScrollLock(isActive = true) {
   useLayoutEffect(() => {
@@ -32,6 +37,7 @@ export function useScrollLock(isActive = true) {
     const root = document.getElementById('root');
     if (root) {
       root.querySelectorAll('*').forEach((el) => {
+        if (el.closest('[data-scroll-lock-ignore]')) return;
         const cs = getComputedStyle(el);
         const y = SCROLLABLE.test(cs.overflowY) && el.scrollHeight > el.clientHeight;
         const x = SCROLLABLE.test(cs.overflowX) && el.scrollWidth > el.clientWidth;

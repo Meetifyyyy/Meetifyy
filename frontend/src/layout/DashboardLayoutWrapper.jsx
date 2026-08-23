@@ -10,6 +10,7 @@ import InstantMatchFAB from '@features/instant-match/components/InstantMatchFAB'
 import InstantMatchSheet from '@features/instant-match/components/InstantMatchSheet';
 import MatchPopup from '@features/instant-match/components/match/MatchPopup';
 import InstantMatchChat from '@features/instant-match/components/chat/InstantMatchChat';
+import { useAutoHideChrome } from '@shared/hooks/useAutoHideChrome';
 
 export default function DashboardLayoutWrapper() {
   const matches = useMatches();
@@ -37,6 +38,13 @@ export default function DashboardLayoutWrapper() {
     match.pathname.startsWith('/settings') ||
     match.pathname.startsWith('/communities/')
   );
+
+  // Mobile chrome gets out of the way while reading and comes straight back
+  // on any upward scroll. Disabled where the page is not the scroll container
+  // — Messages runs its own bounded scroller and has no page scroll to react
+  // to, so the header would never come back.
+  const isMessages = matches.some((m) => m.pathname.startsWith('/messages'));
+  useAutoHideChrome({ enabled: !isMessages });
 
   useEffect(() => {
     const handleKeyDown = (e) => {
