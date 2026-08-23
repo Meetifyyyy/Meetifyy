@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MaxLength, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, MaxLength, IsBoolean, IsIn} from 'class-validator';
 
 export class CreateCommunityDto {
   @IsString()
@@ -74,7 +74,16 @@ export class UpdateCommunityDto {
 }
 
 export class UpdateMemberRoleDto {
-  @IsString()
-  @MaxLength(20)
+  /**
+   * Only these two. The TypeScript union said as much, but the validator
+   * accepted any string up to 20 characters and the service cast it with
+   * `as any` — so `role: "OWNER"` was accepted and written straight through,
+   * minting a second OWNER row. That row then satisfies every
+   * `member?.role === 'OWNER'` check in the service, granting the power to
+   * edit the community, delete it, and re-role anyone else.
+   *
+   * Ownership moves only by transferring it, never through this endpoint.
+   */
+  @IsIn(['MODERATOR', 'MEMBER'], { message: 'Role must be MODERATOR or MEMBER' })
   role: 'MODERATOR' | 'MEMBER';
 }

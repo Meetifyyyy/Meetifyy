@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { applyMembershipEvent, membershipPatch } from '../communityCache';
+import {
+  applyMembershipEvent, membershipPatch,
+  patchCommunityMemberRole, bumpCommunityPostCount,
+} from '../communityCache';
 
 /**
  * Membership changes must be surgical.
@@ -128,5 +131,87 @@ describe('membershipPatch', () => {
   it('ignores a missing or non-numeric count', () => {
     expect(membershipPatch({ memberCount: undefined })).toEqual({});
     expect(membershipPatch({ memberCount: NaN })).toEqual({});
+  });
+});
+
+describe('patchCommunityMemberRole', () => {
+  let qc;
+  beforeEach(() => {
+    qc = new QueryClient();
+    qc.setQueryData(['community', 'c1'], {
+      id: 'c1', userRole: 'MEMBER', members: [
+        { userId: 'u1', role: 'OWNER' },
+        { userId: 'u2', role: 'MEMBER' },
+      ],
+    });
+  });
+  const detail = () => qc.getQueryData(['community', 'c1']);
+
+  it('promotes exactly one member', () => {
+    patchCommunityMemberRole(qc, 'c1', 'u2', 'MODERATOR');
+    expect(detail().members).toEqual([
+      { userId: 'u1', role: 'OWNER' },
+      { userId: 'u2', role: 'MODERATOR' },
+    ]);
+  });
+
+  it('demotes back', () => {
+    patchCommunityMemberRole(qc, 'c1', 'u2', 'MODERATOR');
+    patchCommunityMemberRole(qc, 'c1', 'u2', 'MEMBER');
+    expect(detail().members[1].role).toBe('MEMBER');
+  });
+
+  it('updates the viewer’s own role when it is theirs', () => {
+    // Drives whether the moderator-only controls appear for them.
+    patchCommunityMemberRole(qc, 'c1', 'u2', 'MODERATOR', 'u2');
+    expect(detail().userRole).toBe('MODERATOR');
+  });
+
+  it('leaves the viewer’s role alone when it is somebody else’s', () => {
+    patchCommunityMemberRole(qc, 'c1', 'u2', 'MODERATOR', 'me');
+    expect(detail().userRole).toBe('MEMBER');
+  });
+
+  it('is a no-op when the role already matches', () => {
+    const before = detail();
+    patchCommunityMemberRole(qc, 'c1', 'u2', 'MEMBER');
+    expect(detail()).toBe(before);  // identical reference: no re-render
+  });
+
+  it('does nothing for a community that is not cached', () => {
+    patchCommunityMemberRole(qc, 'nope', 'u2', 'MODERATOR');
+    expect(qc.getQueryData(['community', 'nope'])).toBeUndefined();
+  });
+});
+
+describe('bumpCommunityPostCount', () => {
+  let qc;
+  beforeEach(() => {
+    qc = new QueryClient();
+    qc.setQueryData(['community', 'c1'], { id: 'c1', name: 'Chess', _count: { members: 3, posts: 7 } });
+  });
+
+  it('moves the post count without touching anything else', () => {
+    // This replaced a full invalidate of the community for one number.
+    const before = qc.getQueryData(['community', 'c1']);
+    bumpCommunityPostCount(qc, 'c1', 1);
+    const after = qc.getQueryData(['community', 'c1']);
+    expect(after._count).toEqual({ members: 3, posts: 8 });
+    expect(after.name).toBe(before.name);
+  });
+
+  it('decrements on delete and never goes below zero', () => {
+    bumpCommunityPostCount(qc, 'c1', -1);
+    expect(qc.getQueryData(['community', 'c1'])._count.posts).toBe(6);
+    qc.setQueryData(['community', 'c1'], { id: 'c1', _count: { posts: 0 } });
+    bumpCommunityPostCount(qc, 'c1', -1);
+    expect(qc.getQueryData(['community', 'c1'])._count.posts).toBe(0);
+  });
+
+  it('ignores a community with no count loaded', () => {
+    qc.setQueryData(['community', 'c2'], { id: 'c2' });
+    const before = qc.getQueryData(['community', 'c2']);
+    bumpCommunityPostCount(qc, 'c2', 1);
+    expect(qc.getQueryData(['community', 'c2'])).toBe(before);
   });
 });

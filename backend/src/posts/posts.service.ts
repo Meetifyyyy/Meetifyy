@@ -84,13 +84,7 @@ export class PostsService {
 
   async createPost(authorId: string, text: string, mediaKey?: string, communityId?: string, poll?: any, mentions?: MentionDto[]) {
     if (communityId) {
-      const comm = await this.prisma.community.findUnique({
-        where: { id: communityId },
-        select: { id: true, deletedAt: true },
-      });
-      if (!comm || comm.deletedAt) {
-        throw new NotFoundException('Community not found or has been deleted');
-      }
+      await this.assertCanPostInCommunity(authorId, communityId);
     }
 
     // Re-derive the true mention set from the actual text before it's ever
@@ -239,6 +233,60 @@ export class PostsService {
     this.domainEventService.emit('post.deleted', { postId, communityId: post.communityId || undefined }, [userId]);
 
     return { success: true };
+  }
+
+  /**
+   * Authorizes writing a post into a community.
+   *
+   * This used to check only that the community existed and was not deleted.
+   * Membership, privacy and campus eligibility were all enforced on the read
+   * path and nowhere on the write path, so passing a communityId straight to
+   * the API let anyone post into any community — including a private one they
+   * could not open, or a campus community they were not eligible to join.
+   * Their post would then be visible to that community's members while they
+   * could not read the community themselves.
+   *
+   * The UI never offered it, which is why it went unnoticed; it was reachable
+   * with a single API call regardless. The rules here deliberately mirror
+   * getFeed's, so what a user may write into is exactly what they may read.
+   */
+  private async assertCanPostInCommunity(userId: string, communityId: string): Promise<void> {
+    const community = await this.prisma.community.findUnique({
+      where: { id: communityId },
+      select: {
+        id: true, deletedAt: true, isPrivate: true,
+        isCampusCommunity: true, collegeId: true, ownerId: true,
+      },
+    });
+
+    if (!community || community.deletedAt) {
+      throw new NotFoundException('Community not found or has been deleted');
+    }
+
+    // The owner always may, whether or not a membership row exists for them —
+    // the same allowance every other owner check in the app makes.
+    if (community.ownerId && community.ownerId === userId) return;
+
+    const membership = await this.prisma.communityMember.findUnique({
+      where: { userId_communityId: { userId, communityId } },
+      select: { role: true },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('Join this community to post in it');
+    }
+
+    // Campus communities are restricted to their college even for members —
+    // a membership row predating a college change must not grant access.
+    if (community.isCampusCommunity && community.collegeId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { collegeId: true },
+      });
+      if (!user || user.collegeId !== community.collegeId) {
+        throw new ForbiddenException('This community is limited to verified students of its college');
+      }
+    }
   }
 
   async getFeed(userId: string, limit = 10, cursor?: string, communityId?: string) {

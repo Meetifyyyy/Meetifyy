@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi } from '../api/apiClient';
 import { showToast } from '../utils/toast';
 import { addCreatedPostToCaches } from '../../features/feed/utils/postCache';
+import { patchCommunityMemberRole } from '../utils/communityCache';
 
 /**
  * The community / post write actions `useData` used to define inline.
@@ -100,5 +101,39 @@ export function useCommunityActions() {
     queryClient.invalidateQueries({ queryKey: ['community', communityId] });
   };
 
-  return { createCampusGroup, addCommunity, addPost, updateCommunity, kickMember, createCommMutation };
+  /**
+   * Promote a member to moderator, or demote one back.
+   *
+   * Patched into the cache rather than invalidated, for the same reason
+   * membership changes are: only one member's badge moves, and reloading the
+   * community for it would swap the page for a skeleton. The realtime
+   * `community.roleUpdated` event applies the identical patch for everyone
+   * else in the room, so both paths converge on the same state.
+   *
+   * The server re-checks that the caller owns the community — this is a
+   * convenience, not the authorization.
+   */
+  const setMemberRole = async (communityId, memberId, role, currentUserId) => {
+    // Optimistic: the badge flips immediately.
+    patchCommunityMemberRole(queryClient, communityId, memberId, role, currentUserId);
+    try {
+      await communitiesApi.updateMemberRole(communityId, memberId, role);
+      return true;
+    } catch (err) {
+      // Put it back. Demoting from MODERATOR restores MEMBER and vice versa,
+      // which is the only pair this control can produce.
+      patchCommunityMemberRole(
+        queryClient, communityId, memberId,
+        role === 'MODERATOR' ? 'MEMBER' : 'MODERATOR',
+        currentUserId,
+      );
+      showToast(err?.message || "Couldn't update this member's role", 'error');
+      return false;
+    }
+  };
+
+  return {
+    createCampusGroup, addCommunity, addPost, updateCommunity, kickMember,
+    setMemberRole, createCommMutation,
+  };
 }

@@ -11,6 +11,7 @@ import {
   patchCommunityInLists,
   patchCommunityDetail,
   patchCommunityMemberRole,
+  bumpCommunityPostCount,
 } from '@shared/utils/communityCache';
 
 import { flushPendingQueue } from '../../features/messages/shared/utils/offlineSync';
@@ -280,7 +281,10 @@ export function useGlobalSocketSync() {
           queryClient.invalidateQueries({ queryKey: ['posts'], refetchType: 'none' });
           queryClient.invalidateQueries({ queryKey: ['feed'], refetchType: 'none' });
           if (commId) {
-            queryClient.invalidateQueries({ queryKey: ['community', commId] });
+            // The community detail is patched, not refetched: only its post
+            // count moved, and reloading the whole community for one number
+            // is the same pattern that made membership changes flicker.
+            bumpCommunityPostCount(queryClient, commId, 1);
             queryClient.invalidateQueries({ queryKey: ['community-posts', commId], refetchType: 'none' });
           }
           break;
@@ -318,7 +322,7 @@ export function useGlobalSocketSync() {
             queryClient.removeQueries({ queryKey: ['post', deletedId] });
           }
           if (commId) {
-            queryClient.invalidateQueries({ queryKey: ['community', commId] });
+            bumpCommunityPostCount(queryClient, commId, -1);
             queryClient.invalidateQueries({ queryKey: ['community-posts', commId], refetchType: 'none' });
           }
           break;

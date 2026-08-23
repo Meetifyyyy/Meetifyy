@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { UserX, Ban, Flag } from 'lucide-react';
+import { UserX, Ban, Flag, ShieldPlus, ShieldMinus } from 'lucide-react';
 import { isImageUrl } from "@shared/utils/avatar";
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
@@ -12,6 +12,7 @@ import { usersApi, communitiesApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { sortGroupMembers } from '@shared/utils/memberSort';
+import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 
 
 /**
@@ -20,14 +21,22 @@ import { sortGroupMembers } from '@shared/utils/memberSort';
  *   member        — the member object
  *   communityId   — community ID for remove-member
  *   isCurrentUser — hide actions on own row
- *   isAdmin       — show Remove option
+ *   isAdmin       — show Remove option (owner or moderator)
+ *   isOwner       — show promote/demote (owner only, mirroring the server)
+ *   isTargetOwner — the community owner's own row: never actionable
+ *   isTargetMod   — drives promote vs demote
  *   onRemoved     — callback after removing member
+ *   onRoleChanged — callback after a promote/demote
  */
-function MemberActionMenu({ member, communityId, isCurrentUser, isAdmin, onRemoved }) {
+function MemberActionMenu({
+  member, communityId, isCurrentUser, isAdmin, isOwner,
+  isTargetOwner, isTargetMod, onRemoved, onRoleChanged,
+}) {
   const [open, setOpen] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
   const [coords, setCoords] = useState(null);
+  const [roleBusy, setRoleBusy] = useState(false);
   const btnRef = useRef(null);
 
   const toggleOpen = (e) => {
@@ -81,8 +90,30 @@ function MemberActionMenu({ member, communityId, isCurrentUser, isAdmin, onRemov
       await communitiesApi.removeGroupMember(communityId, member.id);
       showToast(`${member.name} removed`, 'success');
       if (onRemoved) onRemoved(member.id);
-    } catch {
-      showToast("Couldn't remove member", 'error');
+    } catch (err) {
+      showToast(err?.message || "Couldn't remove member", 'error');
+    }
+  };
+
+  const handleRoleToggle = async () => {
+    if (roleBusy) return;
+    const nextRole = isTargetMod ? 'MEMBER' : 'MODERATOR';
+    setRoleBusy(true);
+    try {
+      // The cache patch lives in the caller so the member strip behind this
+      // modal updates too, not just the row under the cursor.
+      const ok = await onRoleChanged?.(member.id, nextRole);
+      if (ok !== false) {
+        showToast(
+          nextRole === 'MODERATOR'
+            ? `${member.name} is now a moderator`
+            : `${member.name} is no longer a moderator`,
+          'success',
+        );
+        setOpen(false);
+      }
+    } finally {
+      setRoleBusy(false);
     }
   };
 
@@ -118,7 +149,46 @@ function MemberActionMenu({ member, communityId, isCurrentUser, isAdmin, onRemov
             overflow: 'hidden'
           }}
         >
-          {isAdmin && (
+          {/* Promote / demote. Owner-only, matching the server rule that
+              "only the community owner can manage member roles" — showing it
+              to moderators would only produce a 403. The owner's own row is
+              never actionable: the server refuses to re-role them. */}
+          {isOwner && !isTargetOwner && (
+            <button
+              onClick={handleRoleToggle}
+              disabled={roleBusy}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg-soft)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: '0.6rem 0.75rem',
+                background: 'transparent',
+                border: 'none',
+                cursor: roleBusy ? 'default' : 'pointer',
+                fontSize: '0.85rem',
+                color: 'var(--color-text)',
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.6rem',
+                borderRadius: 'var(--radius-md, 8px)',
+                transition: 'background 0.15s ease',
+                opacity: roleBusy ? 0.6 : 1,
+              }}
+            >
+              {isTargetMod
+                ? <ShieldMinus size={16} color="var(--color-text-secondary)" />
+                : <ShieldPlus size={16} color="var(--color-text-secondary)" />}
+              <span>
+                {roleBusy
+                  ? 'Saving…'
+                  : isTargetMod ? 'Remove as moderator' : 'Make moderator'}
+              </span>
+            </button>
+          )}
+
+          {isAdmin && !isTargetOwner && (
             <button 
               onClick={handleRemove} 
               onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg-soft)'}
@@ -211,7 +281,9 @@ function MemberActionMenu({ member, communityId, isCurrentUser, isAdmin, onRemov
   );
 }
 
-export default function CommunityMembersModal({ members: initialMembers, title, onClose, communityId, isAdmin, ownerId }) {
+export default function CommunityMembersModal({
+  members: initialMembers, title, onClose, communityId, isAdmin, isOwner: viewerIsOwner, ownerId,
+}) {
   const navigate = useNavigate();
   const users = useUsersMap();
   const { currentUser } = useAuth();
@@ -234,8 +306,25 @@ export default function CommunityMembersModal({ members: initialMembers, title, 
     }
   };
 
+  const { setMemberRole } = useCommunityActions();
+
   const handleMemberRemoved = (removedId) => {
     setMembers(prev => prev.filter(m => m.id !== removedId));
+  };
+
+  /**
+   * Promote or demote, then reflect it in this modal's own copy of the list.
+   *
+   * `setMemberRole` patches the shared query cache — which is what updates
+   * the member strip on the page behind — but this modal keeps a local list
+   * so it can filter and sort, and that copy has to be told separately.
+   */
+  const handleRoleChanged = async (memberId, role) => {
+    const ok = await setMemberRole(communityId, memberId, role, currentUser?.id);
+    if (ok) {
+      setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, role } : m)));
+    }
+    return ok;
   };
 
   return createPortal(
@@ -309,6 +398,10 @@ export default function CommunityMembersModal({ members: initialMembers, title, 
                     communityId={communityId}
                     isCurrentUser={isSelf}
                     isAdmin={isAdmin}
+                    isOwner={Boolean(viewerIsOwner)}
+                    isTargetOwner={isOwner}
+                    isTargetMod={isMod}
+                    onRoleChanged={handleRoleChanged}
                     onRemoved={handleMemberRemoved}
                   />
                 </div>

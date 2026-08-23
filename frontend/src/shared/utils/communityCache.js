@@ -157,6 +157,29 @@ export function patchCommunityMemberRole(queryClient, communityId, memberId, new
 }
 
 /**
+ * Nudges a community's cached post count by one.
+ *
+ * A post being created or deleted used to invalidate ['community', id],
+ * refetching the entire community — hero, member strip, presence, the lot —
+ * to correct a single number. Nothing in the UI even renders `_count.posts`
+ * today; it is patched rather than dropped so it stays truthful if something
+ * ever does.
+ *
+ * A delta is acceptable here in a way it would not be for member counts: the
+ * value is cosmetic, unread, and reset by the next natural refetch, whereas a
+ * wrong member count is visible on every card.
+ */
+export function bumpCommunityPostCount(queryClient, communityId, delta) {
+  if (!communityId || !delta) return;
+  queryClient.setQueryData(['community', communityId], (prev) => {
+    if (!prev?._count || typeof prev._count.posts !== 'number') return prev;
+    const posts = Math.max(0, prev._count.posts + delta);
+    if (posts === prev._count.posts) return prev;
+    return { ...prev, _count: { ...prev._count, posts } };
+  });
+}
+
+/**
  * One membership event, applied everywhere it is visible.
  *
  * Deliberately performs no invalidation: nothing is refetched, no query

@@ -884,6 +884,14 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   async updateMemberRole(communityId: string, memberId: string, newRole: 'MODERATOR' | 'MEMBER', requestingUserId: string) {
+    // Re-checked here, not just in the DTO. This endpoint must never be able
+    // to grant ownership: an OWNER row satisfies every owner check in this
+    // service, so accepting it would hand over the community. The value was
+    // previously cast with `as any` straight into the update.
+    if (newRole !== 'MODERATOR' && newRole !== 'MEMBER') {
+      throw new ForbiddenException('Role must be MODERATOR or MEMBER');
+    }
+
     const community = await this.prisma.community.findUnique({
       where: { id: communityId },
       select: { ownerId: true }
@@ -910,7 +918,7 @@ export class CommunitiesService implements OnModuleInit {
 
     const updated = await this.prisma.communityMember.update({
       where: { userId_communityId: { userId: memberId, communityId } },
-      data: { role: newRole as any },
+      data: { role: newRole },
     });
 
     this.domainEventService.emit('community.roleUpdated', { communityId, memberId, newRole });

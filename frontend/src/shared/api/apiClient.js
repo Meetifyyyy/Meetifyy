@@ -633,6 +633,11 @@ export const communitiesApi = {
   delete: (id) => apiClient.delete(`/api/communities/${id}`),
   updateGroupInfo: (id, data) => apiClient.patch(`/api/communities/${id}`, data).then(normalizeCommunity),
   removeGroupMember: (id, memberId) => apiClient.delete(`/api/communities/${id}/members/${memberId}`),
+  // PATCH /:id/members/:userId/role has existed on the server since roles were
+  // added, but was never reachable from the client — there was no way to
+  // promote or demote a moderator anywhere in the UI.
+  updateMemberRole: (id, memberId, role) =>
+    apiClient.patch(`/api/communities/${id}/members/${memberId}/role`, { role }),
   getPendingRequests: (id) => apiClient.get(`/api/communities/${id}/requests`),
   getJoinRequests: (id) => apiClient.get(`/api/communities/${id}/requests`),
   acceptJoinRequest: (id, requestId) => apiClient.post(`/api/communities/${id}/requests/${requestId}/accept`),

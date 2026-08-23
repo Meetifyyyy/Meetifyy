@@ -1220,7 +1220,12 @@ function DeletedCommunityView({ onBack }) {
           })()}
           title="Members"
           communityId={comm.id}
-          isAdmin={isOwner}
+          /* Removing is owner-or-moderator on the server; the modal only
+             offered it to the owner, so moderators had no way to do the one
+             thing their role exists for. */
+          isAdmin={isOwner || isMod}
+          /* Promote/demote is owner-only, matching updateMemberRole. */
+          isOwner={isOwner}
           ownerId={comm.ownerId}
           onClose={() => setShowMembersModal(false)}
         />
