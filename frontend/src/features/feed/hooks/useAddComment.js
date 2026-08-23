@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { showToast } from '@shared/utils/toast';
 import { postsApi } from '@shared/api/apiClient';
+import { isPostListQuery } from '../utils/postCache';
 
 // Monotonic, so two comments posted inside the same millisecond cannot collide
 // on `temp_<Date.now()>` and have one silently overwrite the other.
@@ -30,8 +31,6 @@ function bumpCommentCount(postId, delta) {
   };
 }
 
-const POST_LIST_KEYS = ['feed', 'posts', 'user-posts'];
-
 export function useAddComment() {
   const queryClient = useQueryClient();
 
@@ -46,8 +45,10 @@ export function useAddComment() {
       const previousPost = queryClient.getQueryData(queryKey);
       const tempId = nextTempId();
 
-      POST_LIST_KEYS.forEach((key) =>
-        queryClient.setQueriesData({ queryKey: [key] }, bumpCommentCount(postId, 1)));
+      // Predicate rather than a key list: the list here was missing
+      // 'community-posts' and 'bookmarks', so a comment left from inside a
+      // community never moved the count on the card behind the modal.
+      queryClient.setQueriesData({ predicate: isPostListQuery }, bumpCommentCount(postId, 1));
 
       if (previousPost) {
         const optimisticComment = {
@@ -93,8 +94,7 @@ export function useAddComment() {
       if (context?.previousPost) {
         queryClient.setQueryData(context.queryKey, context.previousPost);
       }
-      POST_LIST_KEYS.forEach((key) =>
-        queryClient.setQueriesData({ queryKey: [key] }, bumpCommentCount(context?.postId, -1)));
+      queryClient.setQueriesData({ predicate: isPostListQuery }, bumpCommentCount(context?.postId, -1));
       showToast("Couldn't post comment", 'error');
     },
 

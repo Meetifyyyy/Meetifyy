@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { useAuth } from '@shared/context/AuthContext';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl, resolveCommunityAvatar } from '@shared/utils/avatar';
@@ -29,6 +29,10 @@ import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import ShareCommunityModal from '../modals/ShareCommunityModal';
 import defaultCommunityCover from '@assets/images/default_community_cover.webp';
 import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
+
+/** Posts fetched per page. Sized to fill roughly one screen plus a little,
+ *  so the first paint is cheap and the observer has room to prefetch. */
+const POSTS_PAGE_SIZE = 15;
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 
 function getActivityPhrase(comm) {
@@ -47,7 +51,7 @@ function formatCount(n) {
   return n.toLocaleString();
 }
 
-function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCommunities, onViewMembers, isAdmin, onOpenAdmin, onUpdateCommunity, isMuted, onMuteClick, onTitleClick, onShare }) {
+function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreatePost, userCommunities, onViewMembers, isAdmin, onOpenAdmin, onUpdateCommunity, isMuted, onMuteClick, onTitleClick, onShare }) {
   const navigate = useNavigate();
   const users = useUsersMap();
   const { currentUser } = useAuth();
@@ -412,7 +416,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
                     </span>
                     <span className={styles.heroCount}>
                       <span className={styles.onlineDot} />
-                      <strong>{formatCount(comm.online || 0)}</strong> active now
+                      <strong>{formatCount(onlineNow)}</strong> active now
                     </span>
                   </div>
                 </div>
@@ -465,7 +469,7 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
                     : (typeof comm.members === 'number'
                       ? comm.members
                       : (Array.isArray(comm.members) ? comm.members.length : (comm.memberList?.length || 0)));
-                  return `${formatCount(totalMembers)} members \u00a0 ${formatCount(comm.online || 0)} active`;
+                  return `${formatCount(totalMembers)} members \u00a0 ${formatCount(onlineNow)} active`;
                 })()}
               </div>
             </div>
@@ -725,10 +729,43 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
   }, [showMobileAbout, isMobileAboutClosing]);
 
   const { socket, isConnected } = useGlobalSocketStore();
+
+  /**
+   * Live "active now" count.
+   *
+   * Held in local state rather than read off `comm`, because the community
+   * payload is Redis-cached for a minute on the server and presence moves
+   * much faster than that. The server answers the room join with the current
+   * figure and pushes a new one on every member's connect or disconnect, so
+   * this stays right through reconnects and multiple tabs without the client
+   * ever having to guess at a delta.
+   *
+   * `null` means "not heard from the server yet" — distinct from a real zero,
+   * so the UI can fall back to whatever the payload carried instead of
+   * flashing 0 on mount.
+   */
+  const [liveOnline, setLiveOnline] = useState(null);
+
   useEffect(() => {
-    if (!socket || !isConnected || !communityId) return;
+    // A different community: drop the previous one's count rather than
+    // showing it under the new name until the first event lands.
+    setLiveOnline(null);
+  }, [communityId]);
+
+
+  useEffect(() => {
+    if (!socket || !isConnected || !communityId) return undefined;
     socket.emit('community:join_room', { communityId });
+
+    const handlePresence = (payload) => {
+      if (!payload || payload.communityId !== communityId) return;
+      if (typeof payload.online !== 'number') return;
+      setLiveOnline(payload.online);
+    };
+    socket.on('community:presence', handlePresence);
+
     return () => {
+      socket.off('community:presence', handlePresence);
       socket.emit('community:leave_room', { communityId });
     };
   }, [socket, isConnected, communityId]);
@@ -773,11 +810,15 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
   );
 
   const comm = apiComm;
+
+  // Prefer the live figure; fall back to whatever the (possibly cached)
+  // payload carried until the first socket update arrives. Declared after
+  // `apiComm` — reading it above its own declaration would throw.
+  const onlineNow = liveOnline ?? comm?.online ?? comm?.onlineCount ?? 0;
   const isLoading = isApiLoading || (!comm && !isDeletedError && !isApiError);
   const error = isApiError && !isDeletedError;
 
   const [joining, setJoining] = useState(false);
-  const [postLimit, setPostLimit] = useState(15);
   const loadMorePostsRef = useRef(null);
 
   const userCommunities = useMemo(() => {
@@ -790,48 +831,72 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
   const entityKey = `joinCommunity:${communityId}`;
   const joined = toggleRegistry.getLatestIntent(entityKey, rawJoined);
 
-  const { data: fetchedPostsData } = useQuery({
+  /**
+   * Community posts, paged.
+   *
+   * This was a single `getFeed(50)` — one request that made the server build
+   * fifty posts with their media, poll options and per-viewer like/bookmark
+   * flags before anything at all could paint, only for the component to slice
+   * the first fifteen off the front and throw the rest away until you
+   * scrolled. First paint now costs one page instead of fifty posts, and the
+   * observer below fetches the next page rather than merely revealing rows it
+   * already paid for.
+   */
+  const {
+    data: fetchedPostsData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['community-posts', communityId],
-    queryFn: async () => {
-      const res = await postsApi.getFeed(50, undefined, communityId);
-      return res?.posts || (Array.isArray(res) ? res : []);
+    queryFn: async ({ pageParam }) => {
+      const res = await postsApi.getFeed(POSTS_PAGE_SIZE, pageParam, communityId);
+      if (Array.isArray(res)) return { posts: res, nextCursor: undefined };
+      return { posts: res?.posts || [], nextCursor: res?.nextCursor };
     },
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     enabled: Boolean(communityId),
-    staleTime: 10_000,
+    staleTime: 30_000,
   });
 
   const communityPosts = useMemo(() => {
     if (!comm) return [];
-    const listFromApi = fetchedPostsData || [];
-    const listFromData = (posts || []).filter(p => p.communityId === comm.id);
-    const combined = [...listFromApi];
-    listFromData.forEach(p => {
-      if (!combined.some(existing => existing.id === p.id)) {
-        combined.unshift(p);
-      }
-    });
-    return combined;
+    const listFromApi = (fetchedPostsData?.pages || []).flatMap((pg) => pg.posts || []);
+    const seen = new Set(listFromApi.map((p) => p.id));
+    // Posts this session created locally that the server pages have not
+    // caught up with yet.
+    const pending = (posts || []).filter(
+      (p) => p.communityId === comm.id && !seen.has(p.id),
+    );
+    return [...pending, ...listFromApi];
   }, [comm, fetchedPostsData, posts]);
   const isOwner = isCommunityOwner(comm, currentUser);
   const isMod = comm ? (comm.userRole === 'MODERATOR' || (Array.isArray(comm.members) && comm.members.some(m => (m.userId === currentUser?.id || m.user?.id === currentUser?.id) && m.role === 'MODERATOR'))) : false;
   const isAdmin = isOwner;
 
-  const visibleCommunityPosts = useMemo(() => communityPosts.slice(0, postLimit), [communityPosts, postLimit]);
-  const hasMorePosts = communityPosts.length > visibleCommunityPosts.length;
+  // Every fetched post is rendered: paging is the server's job now, so there
+  // is no second client-side window to keep in step with it.
+  const visibleCommunityPosts = communityPosts;
+  const hasMorePosts = Boolean(hasNextPage);
 
   useEffect(() => {
-    if (!hasMorePosts) return;
+    if (!hasNextPage) return undefined;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
-          setPostLimit(prev => prev + 15);
+        // `isFetchingNextPage` is read through the ref-free closure on
+        // purpose: the effect re-runs whenever it flips, so the guard is
+        // always current and the sentinel cannot queue duplicate fetches
+        // while one is already in flight.
+        if (entries[0].isIntersecting && !isFetchingNextPage) {
+          fetchNextPage();
         }
       },
-      { threshold: 0.1, rootMargin: '200px' }
+      { threshold: 0.1, rootMargin: '400px' }
     );
     if (loadMorePostsRef.current) observer.observe(loadMorePostsRef.current);
     return () => observer.disconnect();
-  }, [hasMorePosts]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Must stay above the early returns below: when the component bails out on the
   // loading / error branches this hook was being skipped, so the hook count
@@ -1093,6 +1158,7 @@ function DeletedCommunityView({ onBack }) {
 
       <HeroSection
         comm={comm}
+        onlineNow={onlineNow}
         joined={joined}
         joining={joining}
         onToggleJoin={handleToggleJoin}

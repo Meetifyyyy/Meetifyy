@@ -351,7 +351,26 @@ export class PostsService {
         ELSE false END AS "isBookmarked",
         CASE WHEN ${userId ? userId : ''}::text != '' THEN
           (SELECT pv."optionId" FROM "PollVote" pv WHERE pv."postId" = p.id AND pv."userId" = ${userId || ''} LIMIT 1)
-        ELSE NULL END AS "userVotedOptionId"
+        ELSE NULL END AS "userVotedOptionId",
+        -- The community the post belongs to, taken from the join that was
+        -- already here for the deleted-community filter. Without it the
+        -- client had only a bare communityId and had to resolve the name
+        -- against its own cached community list -- which is paginated to 30
+        -- entries, so a post from the user's 31st community silently rendered
+        -- with no tag at all. Now the tag travels with the post.
+        CASE WHEN c.id IS NOT NULL THEN JSON_BUILD_OBJECT(
+          'id', c.id,
+          'name', c.name,
+          'slug', c.slug,
+          -- Both spellings: the column is avatarKey, but every community
+          -- consumer on the client reads .avatar, so a row carrying only
+          -- avatarKey rendered the letter placeholder instead of the picture.
+          'avatar', c."avatarKey",
+          'avatarKey', c."avatarKey",
+          'color', c.color,
+          'isPrivate', c."isPrivate",
+          'isCampusCommunity', c."isCampusCommunity"
+        ) ELSE NULL END AS community
       FROM "Post" p
       JOIN "User" u ON p."authorId" = u.id
       LEFT JOIN "College" col ON u."collegeId" = col.id
@@ -438,6 +457,7 @@ export class PostsService {
         id: post.id,
         authorId: post.authorId,
         communityId: post.communityId,
+        community: post.community || null,
         text: post.text,
         mentions: post.mentions || [],
         likeCount,

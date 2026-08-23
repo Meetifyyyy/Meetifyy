@@ -211,7 +211,16 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
     setShowShareModal(true);
   };
 
-  const postCommunity = (!hideCommunityTag && postData.communityId && communitiesById) ? communitiesById[postData.communityId] : null;
+  // The post now carries its own community from the API, which is the only
+  // source that is always right. `communitiesById` is a fallback for cached
+  // posts written before that field existed — it is built from the user's
+  // community list, which the API paginates to 30, so relying on it alone
+  // meant posts from a user's 31st community rendered with no tag at all.
+  const postCommunity = hideCommunityTag
+    ? null
+    : (postData.community
+        || (postData.communityId && communitiesById ? communitiesById[postData.communityId] : null)
+        || null);
 
   return (
     <div className={styles.post} onClick={handleCardClick} style={{ cursor: (!isDetailed && onClick) ? 'pointer' : 'default' }}>
@@ -533,6 +542,12 @@ function arePostPropsEqual(prevProps, nextProps) {
   if (!prev || !next) return false;
   if (prev.id !== next.id) return false;
   if (prev.text !== next.text) return false;
+  // The community tag is part of what this card renders, so a post that
+  // gains its community (a cached row refetched with the field populated)
+  // has to re-render — otherwise the tag never appears.
+  if (prev.communityId !== next.communityId) return false;
+  if (prev.community?.id !== next.community?.id) return false;
+  if (prev.community?.name !== next.community?.name) return false;
   if (prev.likeCount !== next.likeCount || prev.likesCount !== next.likesCount) return false;
   if (prev.commentCount !== next.commentCount || prev.commentsCount !== next.commentsCount) return false;
   if (prev.isLiked !== next.isLiked || prev.hasLiked !== next.hasLiked || prev.isLikedByMe !== next.isLikedByMe) return false;

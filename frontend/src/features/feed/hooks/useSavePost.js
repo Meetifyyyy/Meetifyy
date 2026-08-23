@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useToggleMutation } from '@shared/hooks/useToggleMutation';
 import { postsApi } from '@shared/api/apiClient';
+import { isPostListQuery } from '../utils/postCache';
 
 const setBookmarkState = (oldData, postId, nextSaved, postSnapshot) => {
   if (!oldData) return oldData;
@@ -63,8 +64,15 @@ export function useSavePost() {
       if (old.pages) return { ...old, pages: old.pages.map(pg => pg.posts ? { ...pg, posts: pg.posts.map(up) } : pg) };
       return old;
     };
-    queryClient.setQueriesData({ queryKey: ['feed'] }, flagUpdater);
-    queryClient.setQueriesData({ queryKey: ['posts'] }, flagUpdater);
+    // Every list that can hold posts — the hand-written pair here missed both
+    // 'community-posts' and 'user-posts', so bookmarking from inside a
+    // community or from a profile left the icon un-filled until a refetch.
+    // The 'bookmarks' cache is handled separately above because saving there
+    // inserts or removes the whole row, not just a flag.
+    queryClient.setQueriesData(
+      { predicate: (q) => isPostListQuery(q) && q.queryKey[0] !== 'bookmarks' },
+      flagUpdater,
+    );
   }, []);
 
   const applyRollback = useCallback((queryClient, intent, variables) => {

@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useToggleMutation } from '@shared/hooks/useToggleMutation';
 import { postsApi } from '@shared/api/apiClient';
+import { isPostListQuery } from '../utils/postCache';
 
 // Helper to update a post in any query structure
 const updatePostInCache = (oldData, postId, nextLiked) => {
@@ -39,27 +40,25 @@ const updatePostInCache = (oldData, postId, nextLiked) => {
 };
 
 export function useLikePost() {
-  const applyOptimistic = useCallback((queryClient, intent, variables) => {
-    const { postId } = variables;
-    const updater = (old) => updatePostInCache(old, postId, intent);
-
-    queryClient.setQueriesData({ queryKey: ['feed'] }, updater);
-    queryClient.setQueriesData({ queryKey: ['posts'] }, updater);
-    queryClient.setQueriesData({ queryKey: ['user-posts'] }, updater);
-    queryClient.setQueriesData({ queryKey: ['bookmarks'] }, updater);
+  // One predicate over every cache that can hold posts, rather than a
+  // hand-written key list. The old list omitted 'community-posts', so a like
+  // inside a community produced no optimistic update at all — the heart only
+  // moved once the request came back and the list refetched, which is exactly
+  // the "communities feel slow" complaint. Deleting and poll-voting already
+  // used this predicate; liking, saving and commenting had drifted.
+  const applyIntent = useCallback((queryClient, postId, liked) => {
+    const updater = (old) => updatePostInCache(old, postId, liked);
+    queryClient.setQueriesData({ predicate: isPostListQuery }, updater);
     queryClient.setQueryData(['post', postId], updater);
   }, []);
+
+  const applyOptimistic = useCallback((queryClient, intent, variables) => {
+    applyIntent(queryClient, variables.postId, intent);
+  }, [applyIntent]);
 
   const applyRollback = useCallback((queryClient, intent, variables) => {
-    const { postId } = variables;
-    const updater = (old) => updatePostInCache(old, postId, !intent);
-
-    queryClient.setQueriesData({ queryKey: ['feed'] }, updater);
-    queryClient.setQueriesData({ queryKey: ['posts'] }, updater);
-    queryClient.setQueriesData({ queryKey: ['user-posts'] }, updater);
-    queryClient.setQueriesData({ queryKey: ['bookmarks'] }, updater);
-    queryClient.setQueryData(['post', postId], updater);
-  }, []);
+    applyIntent(queryClient, variables.postId, !intent);
+  }, [applyIntent]);
 
   const callApi = useCallback((intent, signal, variables) => {
     const { postId } = variables;
