@@ -86,7 +86,14 @@ export class DefaultAssetsService implements OnModuleInit {
    * already filled no longer matches.
    */
   private async backfillExisting(): Promise<void> {
-    const missing = { in: [null, ''] as any };
+    // `{ in: [null, ''] }` looks like it matches both, and does not. Prisma
+    // compiles it to `IN (NULL, '')`, and SQL's three-valued logic means
+    // `x = NULL` is never true — so a NULL column never matched and the
+    // backfill silently updated nothing at all. An explicit OR is the only
+    // form that catches both.
+    const isMissing = (field: string) => ({
+      OR: [{ [field]: null }, { [field]: '' }],
+    }) as any;
 
     const communityAvatar = this.refFor('community-avatar');
     const communityCover = this.refFor('community-cover');
@@ -97,28 +104,28 @@ export class DefaultAssetsService implements OnModuleInit {
 
     if (communityAvatar) {
       const { count } = await this.prisma.community.updateMany({
-        where: { avatarKey: missing },
+        where: isMissing('avatarKey'),
         data: { avatarKey: communityAvatar },
       });
       if (count) results.push(`${count} community avatars`);
     }
     if (communityCover) {
       const { count } = await this.prisma.community.updateMany({
-        where: { coverKey: missing },
+        where: isMissing('coverKey'),
         data: { coverKey: communityCover },
       });
       if (count) results.push(`${count} community covers`);
     }
     if (profileAvatar) {
       const { count } = await this.prisma.user.updateMany({
-        where: { avatar: missing },
+        where: isMissing('avatar'),
         data: { avatar: profileAvatar },
       });
       if (count) results.push(`${count} profile avatars`);
     }
     if (profileCover) {
       const { count } = await this.prisma.user.updateMany({
-        where: { cover: missing },
+        where: isMissing('cover'),
         data: { cover: profileCover },
       });
       if (count) results.push(`${count} profile covers`);
