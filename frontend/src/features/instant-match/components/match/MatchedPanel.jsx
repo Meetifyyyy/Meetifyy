@@ -13,17 +13,31 @@ import LeaveMatchModal from '../modals/LeaveMatchModal';
  * portraits facing each other with the bolt struck between them. Coming back
  * to a blank activity grid made a successful match feel like it had never
  * happened.
+ *
+ * This panel is the hub: reaching Instant Match while matched lands here, and
+ * both choices — open the conversation, or walk away and search again — are
+ * made from this one screen. The chat itself is then only for chatting.
+ *
+ * Leaving is destructive and permanent, so it never fires on the first tap:
+ * the confirmation names the other person and states the consequence.
  */
 export default function MatchedPanel() {
   const {
-    recentMatch, openMatchChat, busy, chat, leaveMatch, leaving,
+    recentMatch, openMatchChat, busy, chat, matchPartner, leaveMatch, leaving,
   } = useInstantMatch();
   const [confirmLeave, setConfirmLeave] = React.useState(false);
   const { currentUser } = useAuth();
 
-  if (!recentMatch) return null;
+  // A live chat is reason enough to render this panel. `recentMatch` is the
+  // richer payload and is used when present, but it arrives from a different
+  // request than the chat state does — so on a slow resync, or a tab that
+  // reconnected mid-match, the chat can be known before the pairing is. The
+  // panel used to return null in that window and the sheet fell back to the
+  // activity grid, which read as "your match vanished".
+  if (!recentMatch && !chat) return null;
 
-  const { candidate, activity } = recentMatch;
+  const candidate = recentMatch?.candidate ?? matchPartner ?? null;
+  const activity = recentMatch?.activity ?? chat?.matchReason ?? chat?.activity ?? '';
   // The dedicated chat's own state is the authority on whether there is
   // anything to open — `recentMatch` describes the pairing, not the
   // conversation's lifecycle.
@@ -86,16 +100,6 @@ export default function MatchedPanel() {
           {busy ? 'Opening…' : 'Open chat'}
           {!busy && <Bolt className="im-btn-bolt" />}
         </button>
-        {!chatReady && !busy && (
-          <p className="im-matched-gone">
-            {chat && !chat.isActive
-              ? 'This chat has ended — open it to see what happened.'
-              : 'Getting your chat ready — tap above if it does not open.'}
-          </p>
-        )}
-        {/* Never leaves on the first tap: this ends the chat for both people,
-            permanently. The confirmation names the other person and states
-            the consequence. */}
         <button
           type="button"
           className="im-btn im-btn-ghost im-btn-sm"
@@ -104,6 +108,14 @@ export default function MatchedPanel() {
         >
           Find someone new
         </button>
+
+        {!chatReady && !busy && (
+          <p className="im-matched-gone">
+            {chat && !chat.isActive
+              ? 'This chat has ended — open it to see what happened.'
+              : 'Getting your chat ready — tap above if it does not open.'}
+          </p>
+        )}
       </div>
 
       {confirmLeave && (

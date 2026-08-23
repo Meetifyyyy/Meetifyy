@@ -28,7 +28,7 @@ const STEP_COPY = {
 export default function InstantMatchSheet() {
   const {
     sheetOpen, step, formData, status, error, busy, connected, restoring,
-    recentMatch, closeSheet, setStep, updateFormData, startSearch, dismissError,
+    recentMatch, chat, closeSheet, setStep, updateFormData, startSearch, dismissError,
   } = useInstantMatch();
 
   const sheetRef = useRef(null);
@@ -42,8 +42,15 @@ export default function InstantMatchSheet() {
   // `matched` is the state the user sits in for the life of the 24h chat;
   // `idle` still qualifies because a reload restores the pairing before the
   // status settles. Either way a live pairing outranks the form.
+  //
+  // A live chat alone is also enough. Tapping the Instant Match icon while
+  // matched must land on this panel — where the user chooses what to do —
+  // rather than dropping them straight into the conversation or, worse, onto
+  // a fresh search form the server would reject anyway.
   const showingMatched =
-    Boolean(recentMatch) && (status === 'matched' || status === 'idle') && !searching;
+    (Boolean(recentMatch) || Boolean(chat))
+    && (status === 'matched' || status === 'idle')
+    && !searching;
 
   useScrollLock(sheetOpen);
   useFocusTrap(sheetRef, sheetOpen, closeSheet);

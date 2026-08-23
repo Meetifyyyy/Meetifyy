@@ -300,8 +300,14 @@ export function InstantMatchProvider({ children }) {
   }, []);
 
   const closeSheet = useCallback(() => {
-    // A live match must be answered, not dismissed.
-    if (statusRef.current === 'match_found' || statusRef.current === 'matched') return;
+    // A live match card must be answered, not dismissed — that one is a
+    // decision with a countdown behind it.
+    //
+    // 'matched' is NOT in that set any more. It used to be a 1.6s celebration
+    // that closed itself, so blocking it was harmless; now it is the state a
+    // user sits in for the whole 24h chat, and this guard was leaving the
+    // close button permanently dead on the matched panel.
+    if (statusRef.current === 'match_found') return;
     setSheetOpen(false);
     setError(null);
     // Minimising while searching keeps the search alive — the connection is

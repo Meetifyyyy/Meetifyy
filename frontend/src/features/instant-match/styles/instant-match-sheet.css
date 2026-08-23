@@ -281,10 +281,17 @@
     border-radius: var(--im-radius-lg);
     box-shadow: var(--im-shadow-lg);
     animation-name: im-pop-in;
-    max-height: min(86vh, 800px);
+    /* Subtract the overlay's own padding so the sheet can never be taller
+       than the space it sits in — the previous 86vh plus 24px of padding
+       overflowed a short laptop window and pushed the actions off-screen. */
+    max-height: min(800px, calc(100vh - 48px));
   }
   .im-sheet-content { padding: 24px 28px; gap: 16px; }
-  .im-sheet-body { max-height: min(58vh, 500px); }
+  /* The body keeps its own scroll and its animated height (useAnimatedHeight
+     sets that inline, so it must not be handed to flex-grow here). Capping it
+     against the viewport rather than a fixed 430px is what keeps the header
+     and the footer actions on screen together on a short laptop window. */
+  .im-sheet-body { max-height: min(52vh, 460px); }
 }
 
 @media (min-width: 1200px) {
@@ -808,10 +815,13 @@
 .im-matched-actions {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 9px;
   width: 100%;
 }
-.im-matched-actions .im-btn { width: 100%; }
+/* One action now that leaving lives inside the chat, so it no longer needs to
+   share a row — a full-bleed lone button looked like a form submit. */
+.im-matched-actions .im-btn { width: 100%; max-width: 300px; }
 
 .im-matched-gone {
   margin: 0;
@@ -822,8 +832,7 @@
 
 @media (min-width: 520px) {
   .im-matched-portrait { width: 104px; height: 104px; }
-  .im-matched-actions { flex-direction: row; justify-content: center; }
-  .im-matched-actions .im-btn { flex: 1; max-width: 220px; }
+  .im-matched-actions .im-btn { max-width: 280px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -16,7 +16,6 @@ import {
   STARTERS_MESSAGE_THRESHOLD,
 } from '../../constants/conversationStarters';
 import { Bolt } from '../decor/Decor';
-import LeaveMatchModal from '../modals/LeaveMatchModal';
 import '../../styles/instant-match.css';
 import '../../styles/instant-match-chat.css';
 
@@ -35,6 +34,12 @@ import '../../styles/instant-match-chat.css';
  * are excluded from that list. It degrades to using the id it was given,
  * which is the one the server already joined both sockets to when the match
  * was accepted, so realtime works without the chat ever being listed.
+ *
+ * There is deliberately no way to leave the match from in here while it is
+ * live. Ending the conversation is a decision, and it belongs on the matched
+ * panel that Instant Match opens on — the hub where the user picks what to
+ * do. This screen is for talking, and a destructive action sitting under the
+ * composer was only ever going to be mis-tapped.
  */
 export default function InstantMatchChat() {
   const {
@@ -44,7 +49,6 @@ export default function InstantMatchChat() {
   const { currentUser } = useAuth();
 
   const [replyingTo, setReplyingTo] = useState(null);
-  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [startersDismissed, setStartersDismissed] = useState(false);
 
   const open = chatOverlayOpen && Boolean(chat);
@@ -58,8 +62,6 @@ export default function InstantMatchChat() {
       currentUser={currentUser}
       replyingTo={replyingTo}
       setReplyingTo={setReplyingTo}
-      showLeaveConfirm={showLeaveConfirm}
-      setShowLeaveConfirm={setShowLeaveConfirm}
       startersDismissed={startersDismissed}
       setStartersDismissed={setStartersDismissed}
       onClose={closeChatOverlay}
@@ -77,7 +79,7 @@ export default function InstantMatchChat() {
  */
 function InstantMatchChatSurface({
   chat, partner, currentUser, replyingTo, setReplyingTo,
-  showLeaveConfirm, setShowLeaveConfirm, startersDismissed, setStartersDismissed,
+  startersDismissed, setStartersDismissed,
   onClose, onLeave, leaving,
 }) {
   const conversationId = chat.conversationId;
@@ -104,13 +106,13 @@ function InstantMatchChatSurface({
   const activityMeta = getActivity(chat.matchReason || chat.activity);
   const partnerName = partner?.displayName || partner?.username || 'Your match';
 
-  // Escape closes the chat but never leaves the match — walking away is a
-  // decision that always goes through the confirmation below.
+  // Escape closes the chat. It never leaves the match — that decision is not
+  // reachable from this screen at all.
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape' && !showLeaveConfirm) onClose(); };
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, showLeaveConfirm]);
+  }, [onClose]);
 
   /** A synthetic conversation for the shared components, which expect one. */
   const conversation = useMemo(() => ({
@@ -156,7 +158,20 @@ function InstantMatchChatSurface({
   const endedCopy = describeEnding(chat, partnerName);
 
   return createPortal(
-    <div className="im-scope im-chat-root" role="dialog" aria-modal="true" aria-label="Instant Match chat">
+    <div
+      className="im-scope im-chat-root"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Instant Match chat"
+      onMouseDown={(e) => {
+        // On desktop the chat is a window on a dimmed backdrop, so clicking
+        // the backdrop closes it — the expected gesture for a window. The
+        // scrim does not exist on mobile, where the root is the surface
+        // itself, so this can only ever fire on the desktop layout.
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+     <div className="im-chat-window">
       <header className="im-chat-head">
         <button
           type="button"
@@ -251,25 +266,17 @@ function InstantMatchChatSurface({
             onTyping={handleKeystroke}
             stopTypingNow={stopTypingNow}
           />
-          <button
-            type="button"
-            className="im-btn im-btn-ghost im-btn-sm im-chat-leave"
-            onClick={() => setShowLeaveConfirm(true)}
-          >
-            Find someone new
-          </button>
         </div>
       ) : (
         /* An ended chat is never left as an empty room with a dead input.
            The thread stays readable above; this replaces the composer with
            the one action that still makes sense. */
         <div className="im-chat-ended" role="status">
-          <span className="im-sticker im-sticker-coral">{endedCopy.badge}</span>
           <p className="im-chat-ended-title">{endedCopy.title}</p>
-          <p className="im-lede im-chat-ended-lede">{endedCopy.body}</p>
+          <p className="im-chat-ended-lede">{endedCopy.body}</p>
           <button
             type="button"
-            className="im-btn im-btn-yes"
+            className="im-btn im-btn-yes im-btn-sm"
             onClick={() => onLeave({ alreadyEnded: true })}
           >
             Find someone new
@@ -278,17 +285,8 @@ function InstantMatchChatSurface({
         </div>
       )}
 
-      {showLeaveConfirm && (
-        <LeaveMatchModal
-          partnerName={partnerName}
-          busy={leaving}
-          onCancel={() => setShowLeaveConfirm(false)}
-          onConfirm={async () => {
-            const ok = await onLeave();
-            if (ok) setShowLeaveConfirm(false);
-          }}
-        />
-      )}
+     </div>
+
     </div>,
     document.body,
   );
@@ -305,20 +303,17 @@ function InstantMatchChatSurface({
 function describeEnding(chat, partnerName) {
   if (chat.endReason === 'expired') {
     return {
-      badge: 'Time up',
       title: 'Your Instant Match has ended',
       body: 'Your 24-hour chat window has expired.',
     };
   }
   if (chat.endReason === 'you_left') {
     return {
-      badge: 'Left',
       title: 'You left this match',
       body: 'This conversation is closed. Start a new search whenever you like.',
     };
   }
   return {
-    badge: 'Ended',
     title: `${partnerName} left the match`,
     body: 'Your Instant Match conversation has ended.',
   };

@@ -168,8 +168,8 @@
 /* Ended: still clearly "you had a match", but spent — muted rather than
    celebratory, so it does not read as a live chat waiting to be opened. */
 .im-fab-ended {
-  background: var(--im-paper-2, #e9e7e1);
-  color: #16130E;
+  background: var(--im-paper-deep);
+  color: var(--im-ink);
   box-shadow: var(--im-shadow-sm);
 }
 

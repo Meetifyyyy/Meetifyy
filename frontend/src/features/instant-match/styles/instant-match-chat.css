@@ -12,6 +12,13 @@
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* On a phone the window IS the root — it adds nothing and simply passes its
+   children through the flex column. The desktop rules above turn it into an
+   actual framed window. */
+.im-chat-window {
+  display: contents;
+}
+
 /* ── Header ──────────────────────────────────────────────────────────────── */
 
 .im-chat-head {
@@ -177,31 +184,51 @@
 
 .im-chat-foot { flex-shrink: 0; }
 
-.im-chat-leave {
-  display: block;
-  margin: 4px auto 8px;
-  opacity: 0.75;
-}
-.im-chat-leave:hover { opacity: 1; }
-
+/**
+ * The end-of-chat footer.
+ *
+ * Compact on purpose: it replaces the composer, so it should occupy about
+ * what the composer did. The first version stacked a sticker, a heading, a
+ * paragraph and a large button with generous padding and ate roughly a third
+ * of the viewport, pushing the conversation the user came back to read up out
+ * of sight.
+ *
+ * It also painted `--im-paper-2`, a token that does not exist. The fallback
+ * was a light app colour while the text kept inheriting `--im-ink` — cream in
+ * dark mode — so the "{name} left the match" line rendered near-white on
+ * near-white and was effectively invisible. Both colours are now explicit and
+ * come from the same theme pair.
+ */
 .im-chat-ended {
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 18px 20px calc(20px + env(safe-area-inset-bottom));
+  justify-content: center;
+  gap: 6px 12px;
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
   border-top: 2px solid var(--im-rule, rgba(0, 0, 0, 0.08));
-  background: var(--im-paper-2, var(--color-bg-subtle, #f7f7f5));
+  background: var(--im-paper-deep);
+  color: var(--im-ink);
   text-align: center;
 }
 
 .im-chat-ended-title {
   margin: 0;
   font-family: var(--im-display);
-  font-size: 1.05rem;
+  font-size: 0.98rem;
+  color: var(--im-ink);
 }
-.im-chat-ended-lede { margin: 0 0 4px; }
+
+/* The explanatory line is secondary; on a narrow screen it wraps to its own
+   row rather than squeezing the action. */
+.im-chat-ended-lede {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--im-ink-soft);
+}
+
+.im-chat-ended .im-btn { flex-shrink: 0; }
 
 /* ── Leave confirmation ──────────────────────────────────────────────────── */
 
@@ -247,9 +274,72 @@
 .im-btn-danger:hover { filter: brightness(0.96); }
 .im-btn-danger:disabled { opacity: 0.6; cursor: default; }
 
+/* ── Desktop: a window, not a takeover ───────────────────────────────────── */
+
+/**
+ * On a phone the chat owns the screen, which is right — there is nowhere else
+ * to be. On a desktop that reads as the app having navigated away, and it
+ * wastes an enormous amount of space on a 1440px display.
+ *
+ * Above 900px it becomes a centred window on a dimmed backdrop: the app stays
+ * visible behind it, so the chat is legibly a temporary thing you are looking
+ * at rather than a place you have gone. Sized in viewport units with a cap, so
+ * it always fits without the page scrolling.
+ */
 @media (min-width: 900px) {
-  .im-chat-head { padding: 14px 20px; }
+  .im-chat-root {
+    /* The dim layer fills the viewport; the window sits inside it. */
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(12, 10, 8, 0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    animation: im-chat-scrim-in 0.2s var(--im-ease-out) both;
+  }
+
+  .im-chat-window {
+    width: min(720px, 100%);
+    /* Never taller than the viewport minus the padding above — the window
+       must never be the reason the page scrolls. */
+    height: min(760px, calc(100vh - 48px));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--im-paper);
+    border: var(--im-border);
+    border-radius: var(--im-radius-lg);
+    box-shadow: var(--im-shadow-lg);
+    /* Rises and settles once. Transform and opacity only, so it composites on
+       the GPU and stays smooth on a cheap laptop. */
+    animation: im-chat-window-in 0.28s var(--im-ease-out) both;
+  }
+
+  .im-chat-head { padding: 14px 20px; border-radius: 0; }
   .im-chat-name { font-size: 1.15rem; }
+}
+
+@keyframes im-chat-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes im-chat-window-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Larger displays get a slightly roomier window, still capped. */
+@media (min-width: 1400px) {
+  .im-chat-window {
+    width: min(820px, 100%);
+    height: min(820px, calc(100vh - 64px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .im-chat-root,
+  .im-chat-window { animation: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
