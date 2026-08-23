@@ -256,13 +256,35 @@ export class DmService extends MessagingCoreService {
     return results.filter(Boolean);
   }
 
+  /**
+   * The existing DM between these two users, or null.
+   *
+   * "Existing" has to mean "one the caller can actually open". The caller's own
+   * participant row must still be live: `deletedAt` is set when they delete the
+   * conversation and `leftAt` when they leave it, and in both cases the
+   * Conversation row and both participant rows survive.
+   *
+   * Without that filter this returned the id of a conversation the caller had
+   * deleted. The client navigated there, the conversations list did not contain
+   * it and the history endpoint refused it, and the user got "This conversation
+   * doesn't exist or you no longer have access to it" from a Message button
+   * that should just have opened a fresh thread. It looked intermittent because
+   * it only happened with people whose DM had been deleted at some point.
+   *
+   * Returning null sends the caller down the draft path instead, which revives
+   * the conversation on the first message — and, because deletion also stamps
+   * `clearedAt`, revives it empty rather than restoring the old messages.
+   *
+   * The *target's* row is deliberately not filtered: whether they deleted their
+   * copy is their business and has no bearing on the caller opening theirs.
+   */
   async lookupExistingDM(currentUserId: string, targetUserId: string) {
     if (!targetUserId || targetUserId === currentUserId) return null;
     const existing = await this.prisma.conversation.findFirst({
       where: {
         type: 'DM',
         AND: [
-          { participants: { some: { userId: currentUserId } } },
+          { participants: { some: { userId: currentUserId, deletedAt: null, leftAt: null } } },
           { participants: { some: { userId: targetUserId } } }
         ]
       },

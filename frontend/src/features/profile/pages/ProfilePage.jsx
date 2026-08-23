@@ -293,41 +293,9 @@ export default function ProfilePage() {
 
   const posts = postsData?.posts || [];
 
-  const handleMessageClick = async () => {
-    if (isOwnProfile || !profileUser?.id) return;
-
-    // 1. Instant local cache lookup
-    const cachedConvs = queryClient.getQueryData(['conversations']);
-    if (Array.isArray(cachedConvs)) {
-      const existing = cachedConvs.find(c => {
-        if (c.type !== 'DM' && c.type !== 'dm') return false;
-        const targetId = c.targetUser?.id || c.otherUser?.id || c.userId;
-        if (targetId && String(targetId) === String(profileUser.id)) return true;
-        if (Array.isArray(c.participants) && c.participants.some(p => String(p.userId || p.id) === String(profileUser.id))) return true;
-        return false;
-      });
-
-      if (existing?.publicId || existing?.id) {
-        navigate(`/messages/${existing.publicId || existing.id}`, { state: { from: location.pathname } });
-        return;
-      }
-    }
-
-    // 2. Fast backend lookup for existing conversation
-    try {
-      const lookup = await dmApi.lookupDM(profileUser.id);
-      if (lookup?.id || lookup?.publicId) {
-        navigate(`/messages/${lookup.publicId || lookup.id}`, { state: { from: location.pathname } });
-        return;
-      }
-    } catch {
-      // ignore lookup error
-    }
-
-    // 3. Instant lazy draft navigation (0ms DB insertion)
-    navigate(`/messages/new?user=${profileUser.id}`, {
-      state: { from: location.pathname, targetUser: profileUser }
-    });
+  const handleMessageClick = () => {
+    if (isOwnProfile) return;
+    openDirectMessage(profileUser);
   };
 
   const handlePostClick = (post) => {

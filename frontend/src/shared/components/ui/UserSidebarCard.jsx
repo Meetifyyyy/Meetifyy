@@ -1,5 +1,4 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import { useProfile } from '@shared/hooks/useProfile';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -9,7 +8,8 @@ import Skeleton from '@shared/components/skeletons/Skeleton';
 import { getCollegeName } from '@shared/utils/user';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
-import { dmApi, messagesApi, getMediaUrl } from '@shared/api/apiClient';
+import { getMediaUrl } from '@shared/api/apiClient';
+import { useOpenDirectMessage } from '@shared/hooks/useOpenDirectMessage';
 import CoverImage from './CoverImage';
 import defaultCover from '@assets/images/default_cover.webp';
 import s from './UserSidebarCard.module.css';
@@ -121,8 +121,8 @@ export function UserSidebarCardSkeleton() {
 export default function UserSidebarCard({ username: propUsername, initialUser = null }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const queryClient = useQueryClient();
   const { currentUser } = useAuth();
+  const openDirectMessage = useOpenDirectMessage();
 
   const targetUsername = propUsername || initialUser?.username || '';
   const { profile, isLoading } = useProfile(targetUsername);
@@ -179,41 +179,9 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
     }
   };
 
-  const handleMessageClick = async () => {
-    if (isSelf || !effectiveUser?.id) return;
-
-    // 1. Instant local cache lookup
-    const cachedConvs = queryClient.getQueryData(['conversations']);
-    if (Array.isArray(cachedConvs)) {
-      const existing = cachedConvs.find(c => {
-        if (c.type !== 'DM' && c.type !== 'dm') return false;
-        const targetId = c.targetUser?.id || c.otherUser?.id || c.userId;
-        if (targetId && String(targetId) === String(effectiveUser.id)) return true;
-        if (Array.isArray(c.participants) && c.participants.some(p => String(p.userId || p.id) === String(effectiveUser.id))) return true;
-        return false;
-      });
-
-      if (existing?.publicId || existing?.id) {
-        navigate(`/messages/${existing.publicId || existing.id}`, { state: { from: location.pathname } });
-        return;
-      }
-    }
-
-    // 2. Fast backend lookup for existing conversation
-    try {
-      const lookup = await dmApi.lookupDM(effectiveUser.id);
-      if (lookup?.id || lookup?.publicId) {
-        navigate(`/messages/${lookup.publicId || lookup.id}`, { state: { from: location.pathname } });
-        return;
-      }
-    } catch {
-      // ignore lookup error
-    }
-
-    // 3. Instant lazy draft navigation (0ms DB insertion)
-    navigate(`/messages/new?user=${effectiveUser.id}`, {
-      state: { from: location.pathname, targetUser: effectiveUser }
-    });
+  const handleMessageClick = () => {
+    if (isSelf) return;
+    openDirectMessage(effectiveUser);
   };
 
   if (isLoading && !profile && !initialUser) {
