@@ -1,11 +1,20 @@
+import { useCallback } from 'react';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './ChatGalleryPage.module.css';
-import { sanitizeUrl } from '@shared/utils/urlSanitize';
-import { Image as ImageIcon, ArrowLeft, Play } from 'lucide-react';
+import { Image as ImageIcon, ArrowLeft } from 'lucide-react';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
+import MediaThumb from '@shared/components/media/MediaThumb';
 
 export default function ChatGalleryPage({ mediaList, onBack }) {
   const { openViewer } = useMediaViewer();
+
+  const openAt = useCallback((index) => {
+    const items = (mediaList || []).map((m) => ({
+      url: m.url,
+      type: m.type || (/\.(mp4|mov|mkv|webm)/i.test(m.url || '') ? 'video' : 'image'),
+    }));
+    openViewer(items, index);
+  }, [mediaList, openViewer]);
   return (
     <div className={sharedStyles.container}>
       <div className={sharedStyles.header}>
@@ -25,40 +34,15 @@ export default function ChatGalleryPage({ mediaList, onBack }) {
         {mediaList && mediaList.length > 0 ? (
           <div className={styles.galleryGrid}>
             {mediaList.map((item, idx) => (
-              <div 
-                key={idx} 
+              <MediaThumb
+                key={`${item.url}-${idx}`}
+                src={item.url}
+                poster={item.thumbnailUrl}
+                type={item.type}
+                alt=""
+                onClick={() => openAt(idx)}
                 className={styles.galleryGridItem}
-                onClick={() => {
-                  const formattedItems = mediaList.map(m => ({
-                    url: m.url,
-                    type: m.type || (/\.(mp4|mov|mkv)/i.test(m.url) ? 'video' : 'image')
-                  }));
-                  openViewer(formattedItems, idx);
-                }}
-                style={{ cursor: 'pointer' }}
-              >
-                {item.type === 'video' ? (
-                  <div className={sharedStyles.videoGridWrapper} style={{ position: 'relative', width: '100%', height: '100%' }}>
-                    <video src={item.url} className={styles.galleryGridMedia} style={{ objectFit: 'cover' }} />
-                    <div style={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      background: 'rgba(0,0,0,0.5)',
-                      borderRadius: '50%',
-                      padding: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <Play size={16} fill="white" color="white" />
-                    </div>
-                  </div>
-                ) : (
-                  <img src={item.url} alt="" className={styles.galleryGridMedia} />
-                )}
-              </div>
+              />
             ))}
           </div>
         ) : (

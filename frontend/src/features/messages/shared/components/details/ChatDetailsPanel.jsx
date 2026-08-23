@@ -14,6 +14,7 @@ import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { showToast } from '@shared/utils/toast';
 
 import ChatGalleryPage from './ChatGalleryPage';
+import MediaThumb from '@shared/components/media/MediaThumb';
 import GroupChangeOwnerPage from './GroupChangeOwnerPage';
 import GroupEditPage from './GroupEditPage';
 import GroupSettingsPage from './GroupSettingsPage';
@@ -27,6 +28,45 @@ import { commitDraftImage } from '@shared/utils/draftImageCache';
 import { sortGroupMembers } from '@shared/utils/memberSort';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { groupApi } from '@shared/api/apiClient';
+
+/**
+ * The horizontal gallery preview shown in chat details.
+ *
+ * Defined once. It was previously inlined twice — identically — in the DM and
+ * group branches of the panel, so the raw-URL bug below had to be fixed in two
+ * places and any future change would need remembering in both.
+ */
+function GalleryStrip({ mediaList, onOpen }) {
+  const hasMedia = Array.isArray(mediaList) && mediaList.length > 0;
+  return (
+    <div className={styles.galleryCard}>
+      <div className={styles.galleryHeader} onClick={onOpen}>
+        <span className={styles.galleryTitle}>Gallery</span>
+        <ChevronRight className={styles.galleryChevron} size={20} />
+      </div>
+      {hasMedia ? (
+        <div className={styles.galleryRow}>
+          {mediaList.map((item, idx) => (
+            <MediaThumb
+              key={`${item.url}-${idx}`}
+              src={item.url}
+              poster={item.thumbnailUrl}
+              type={item.type}
+              alt=""
+              onClick={onOpen}
+              className={styles.galleryThumbnail}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className={styles.noMediaContainer}>
+          <ImageIcon size={18} className={styles.noMediaIcon} />
+          <span>No media</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, onClearChat, onSearch, onLeaveActivity }) {
   const navigate = useNavigate();
@@ -162,6 +202,11 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       const rawMediaUrl = msg.mediaUrl || msg.payload?.mediaUrl || (msg.type === 'media' ? (msg.text || msg.payload?.text) : null) || '';
       const mediaUrl = typeof rawMediaUrl === 'string' ? rawMediaUrl : '';
       const mediaType = (msg.mediaType || msg.payload?.mediaType || msg.type || '').toLowerCase();
+      // Chat uploads store a separate thumbnail alongside the original. Carrying
+      // it here is what lets a video tile show a real frame instead of a black
+      // rectangle, and lets an image tile load the small file rather than the full one.
+      const rawThumb = msg.thumbnailUrl || msg.payload?.thumbnailUrl || '';
+      const thumbnailUrl = typeof rawThumb === 'string' ? rawThumb : '';
       const createdAt = msg.createdAt || msg.timestamp || new Date();
 
       // Skip voice notes & audio files completely
@@ -180,8 +225,8 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       if (mediaUrl && typeof mediaUrl === 'string') {
         const isVid = mediaType.includes('video') || /\.(mp4|mov|mkv)/i.test(mediaUrl) || mediaUrl.startsWith('data:video/');
         const isImg = mediaType.includes('image') || /\.(png|jpe?g|gif|webp|svg)/i.test(mediaUrl) || mediaUrl.startsWith('data:image/');
-        if (isVid) list.push({ type: 'video', url: mediaUrl, createdAt: new Date(createdAt).getTime() });
-        else if (isImg) list.push({ type: 'image', url: mediaUrl, createdAt: new Date(createdAt).getTime() });
+        if (isVid) list.push({ type: 'video', url: mediaUrl, thumbnailUrl, createdAt: new Date(createdAt).getTime() });
+        else if (isImg) list.push({ type: 'image', url: mediaUrl, thumbnailUrl, createdAt: new Date(createdAt).getTime() });
       }
 
       // Embedded links & data URLs in text
@@ -756,36 +801,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             )}
 
 
-            {/* Gallery Section */}
-            <div className={styles.galleryCard}>
-              <div className={styles.galleryHeader} onClick={() => setShowGalleryPage(true)}>
-                <span className={styles.galleryTitle}>Gallery</span>
-                <ChevronRight className={styles.galleryChevron} size={20} />
-              </div>
-              {mediaList && mediaList.length > 0 ? (
-                <div className={styles.galleryRow}>
-                  {mediaList.map((item, idx) => (
-                    <div key={idx} className={styles.galleryThumbnail} onClick={() => setShowGalleryPage(true)}>
-                      {item.type === 'video' ? (
-                        <div className={styles.videoGridWrapper} style={{ width: '100%', height: '100%' }}>
-                          <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          <div className={styles.playBadge}>
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                          </div>
-                        </div>
-                      ) : (
-                        <img src={item.url} alt="" className={styles.galleryThumbImg} />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className={styles.noMediaContainer}>
-                  <ImageIcon size={18} className={styles.noMediaIcon} />
-                  <span>No media</span>
-                </div>
-              )}
-            </div>
+            <GalleryStrip mediaList={mediaList} onOpen={() => setShowGalleryPage(true)} />
           </div>
         )}
 
@@ -799,36 +815,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
               </div>
             )}
 
-            {/* Gallery Section */}
-            <div className={styles.galleryCard}>
-              <div className={styles.galleryHeader} onClick={() => setShowGalleryPage(true)}>
-                <span className={styles.galleryTitle}>Gallery</span>
-                <ChevronRight className={styles.galleryChevron} size={20} />
-              </div>
-              {mediaList && mediaList.length > 0 ? (
-                <div className={styles.galleryRow}>
-                  {mediaList.map((item, idx) => (
-                    <div key={idx} className={styles.galleryThumbnail} onClick={() => setShowGalleryPage(true)}>
-                      {item.type === 'video' ? (
-                        <div className={styles.videoGridWrapper} style={{ width: '100%', height: '100%' }}>
-                          <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          <div className={styles.playBadge}>
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                          </div>
-                        </div>
-                      ) : (
-                        <img src={item.url} alt="" className={styles.galleryThumbImg} />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className={styles.noMediaContainer}>
-                  <ImageIcon size={18} className={styles.noMediaIcon} />
-                  <span>No media</span>
-                </div>
-              )}
-            </div>
+            <GalleryStrip mediaList={mediaList} onOpen={() => setShowGalleryPage(true)} />
 
             {isMember && (
               <button

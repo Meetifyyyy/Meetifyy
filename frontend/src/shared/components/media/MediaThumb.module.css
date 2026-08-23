@@ -1,0 +1,96 @@
+/*
+ * Only what every tile needs regardless of context. Sizing and corner radius
+ * are deliberately absent: consumers pass their own class (a fixed 84px strip
+ * item, a 1fr grid cell) and two competing rules at equal specificity would be
+ * settled by bundle order, which is not something to rely on.
+ */
+.tile {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-bg-soft, #f1f5f9);
+  flex-shrink: 0;
+}
+
+/* Applied only when the consumer supplied no class of its own. */
+.autoSize {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+}
+
+.rounded {
+  border-radius: var(--radius-md, 10px);
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.media[data-visible='true'] {
+  opacity: 1;
+}
+
+.skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-soft, #f1f5f9) 25%,
+    var(--color-bg-alt, #e2e8f0) 37%,
+    var(--color-bg-soft, #f1f5f9) 63%
+  );
+  background-size: 400% 100%;
+  animation: mediaThumbShimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes mediaThumbShimmer {
+  0%   { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* The designed "gone" state. Never the browser's broken-image glyph. */
+.unavailable {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-soft, #f1f5f9);
+  color: var(--color-text-light, #94a3b8);
+  border: 1px dashed var(--color-border, #e2e8f0);
+  border-radius: inherit;
+}
+
+.playBadge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+  .media { transition: none; }
+}

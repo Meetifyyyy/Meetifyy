@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
+import { getMediaUrl } from '@shared/api/apiClient';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
@@ -86,7 +87,7 @@ export function CommunityResult({ result, isSelected, onClick }) {
         style={item.color ? { background: item.color } : { background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }}
       >
         {isImageUrl(item.avatar) ? (
-           <img src={item.avatar} alt={item.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+           <img src={getMediaUrl(item.avatar)} alt={item.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
         ) : (
           <span style={{ fontWeight: 700, color: '#FFFFFF' }}>{item.avatar || item.name?.charAt(0).toUpperCase()}</span>
         )}
@@ -146,7 +147,7 @@ export function CollegeResult({ result, isSelected, onClick }) {
         style={item.color ? { background: item.color } : {}}
       >
         {isImageUrl(item.avatar) ? (
-           <img src={item.avatar} alt={item.name} className={`${styles.avatar} ${styles.collegeAvatar}`}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+           <img src={getMediaUrl(item.avatar)} alt={item.name} className={`${styles.avatar} ${styles.collegeAvatar}`}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
         ) : (
           <DefaultAvatar isGroup={true} />
         )}

@@ -23,7 +23,9 @@
   transition: filter 0.2s ease, opacity 0.2s ease;
 }
 
-.galleryGridItem:hover .galleryGridMedia {
+/* Targets the rendered element rather than a class name, so it keeps working
+   now that the tile is a shared component. */
+.galleryGridItem:hover img,
+.galleryGridItem:hover video {
   filter: brightness(0.75);
-  opacity: 0.85;
 }

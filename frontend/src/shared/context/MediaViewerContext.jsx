@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { getMediaUrl } from '@shared/api/apiClient';
 
 const MediaViewerContext = createContext(null);
 
@@ -25,9 +26,28 @@ export function MediaViewerProvider({ children }) {
 
   const savedScrollRef = useRef(0);
 
+  /**
+   * The viewer renders `item.url` straight into an <img>/<video>, and did no
+   * resolution of its own — so it worked only for callers that happened to pass
+   * an already-absolute URL. Callers handing it what the API stored (a relative
+   * `/api/media/<key>` path) opened a viewer that could not load anything.
+   *
+   * Resolving here fixes every caller at once, and is safe to apply blindly:
+   * `getMediaUrl` returns absolute http(s), data: and blob: URLs untouched, so
+   * a caller that already resolved is unaffected.
+   */
   const openViewer = useCallback((items, startIndex = 0, meta = null, originRect = null) => {
     savedScrollRef.current = window.scrollY;
-    setState({ open: true, items, index: startIndex, meta, originRect });
+    const resolved = (Array.isArray(items) ? items : []).map((item) => {
+      if (!item) return item;
+      if (typeof item === 'string') return { url: getMediaUrl(item), type: 'image' };
+      return {
+        ...item,
+        ...(item.url ? { url: getMediaUrl(item.url) } : {}),
+        ...(item.thumb ? { thumb: getMediaUrl(item.thumb) } : {}),
+      };
+    });
+    setState({ open: true, items: resolved, index: startIndex, meta, originRect });
   }, []);
 
   const closeViewer = useCallback(() => {
