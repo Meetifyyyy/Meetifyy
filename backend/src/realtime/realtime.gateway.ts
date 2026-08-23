@@ -333,10 +333,20 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
     const commId = payload.communityId || payload.data?.communityId;
     if (commId) {
-      this.server.to(`community_${commId}`).emit('community:memberCount', payload.data || payload);
-      this.server.to(`community_${commId}`).emit('community:updated', payload.data || payload);
+      // ONE event, to the room, on the generic bus.
+      //
+      // This used to fan a single membership change out four ways: two
+      // bespoke events plus `domainEvent` to the room, and then
+      // `server.emit` — a broadcast to every connected socket in the
+      // application. So one person joining any community woke every client
+      // everywhere, and clients inside the room ran three separate handlers
+      // for the same change. That fan-out is why a join made everyone's
+      // screen flicker rather than only the members who were looking at it.
+      //
+      // Room-scoped is the correct blast radius: a membership change is only
+      // visible on that community's surfaces. Anyone not in the room finds
+      // out the next time they open it.
       this.server.to(`community_${commId}`).emit('domainEvent', payload);
-      this.server.emit('community:updated', payload.data || payload);
     }
 
     if (Array.isArray(payload.targetUserIds) && payload.targetUserIds.length > 0) {

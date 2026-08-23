@@ -6,6 +6,12 @@ import { useConversations } from './useMessages';
 import { PROFILE_KEYS } from './useProfile';
 import { toggleRegistry } from '../utils/mutationRegistry';
 import { propagateUserMedia } from '../utils/propagateUserMedia';
+import {
+  applyMembershipEvent,
+  patchCommunityInLists,
+  patchCommunityDetail,
+  patchCommunityMemberRole,
+} from '@shared/utils/communityCache';
 
 import { flushPendingQueue } from '../../features/messages/shared/utils/offlineSync';
 import { updateMessageInCache } from '../../features/messages/shared/utils/cacheUtils';
@@ -194,21 +200,71 @@ export function useGlobalSocketSync() {
           break;
         }
 
-        case 'community.created':
-        case 'community.updated':
-        case 'community.deleted':
+        // ── Membership ─────────────────────────────────────────────────
+        // Patched in place, never refetched. A join or a leave moves a
+        // member count, one row of a member list, and — only for the person
+        // it happened to — their own join state. Nothing else about the
+        // community changes, and nothing about the feed or its posts changes
+        // at all.
+        //
+        // This previously invalidated five query keys AND set the community
+        // detail to null first. That null was the flicker: CommunityView
+        // derives `isLoading` from `!comm`, so wiping the cache replaced the
+        // whole page with a skeleton on every membership event.
         case 'community.memberJoined':
-        case 'community.memberLeft':
+        case 'community.memberLeft': {
+          const data = event.data || event;
+          applyMembershipEvent(queryClient, {
+            communityId: data.communityId,
+            userId: data.userId,
+            memberCount: data.memberCount,
+            joined: event.type === 'community.memberJoined',
+            currentUserId: currentUser?.id,
+          });
+          break;
+        }
+
+        // A role change moves one member's badge. It carries no count, so
+        // the detail is patched without touching anything else.
         case 'community.roleUpdated': {
-          const commId = event.data?.communityId || event.communityId;
+          const data = event.data || event;
+          patchCommunityMemberRole(
+            queryClient, data.communityId, data.memberId, data.newRole, currentUser?.id,
+          );
+          break;
+        }
+
+        // ── Structural ─────────────────────────────────────────────────
+        // A community appearing, disappearing, or being renamed genuinely
+        // does change the lists. Still no nulling, and still nothing that
+        // puts an open community page into a loading state.
+        case 'community.created':
+        case 'community.deleted': {
           queryClient.invalidateQueries({ queryKey: ['communities'] });
           queryClient.invalidateQueries({ queryKey: ['campus-communities'] });
-          queryClient.invalidateQueries({ queryKey: ['feed'] });
-          queryClient.invalidateQueries({ queryKey: ['posts'] });
-          if (commId) {
-            queryClient.setQueryData(['community', commId], null);
-            queryClient.invalidateQueries({ queryKey: ['community', commId] });
-            queryClient.invalidateQueries({ queryKey: ['community-posts', commId] });
+          break;
+        }
+
+        case 'community.updated': {
+          const commId = event.data?.communityId || event.communityId;
+          const fields = event.data?.community;
+          if (commId && fields) {
+            // The event carries the updated row, so the name/avatar/cover can
+            // be written straight in — no refetch, no loading state.
+            patchCommunityInLists(queryClient, commId, {
+              name: fields.name,
+              avatarKey: fields.avatarKey,
+              coverKey: fields.coverKey,
+              description: fields.description,
+            });
+            patchCommunityDetail(queryClient, commId, {
+              name: fields.name,
+              avatarKey: fields.avatarKey,
+              coverKey: fields.coverKey,
+              description: fields.description,
+            });
+          } else {
+            queryClient.invalidateQueries({ queryKey: ['communities'] });
           }
           break;
         }
@@ -548,14 +604,6 @@ export function useGlobalSocketSync() {
       }
     };
 
-    const handleCommunityCountEvent = (data) => {
-      const commId = data?.communityId;
-      queryClient.invalidateQueries({ queryKey: ['communities'] });
-      if (commId) {
-        queryClient.invalidateQueries({ queryKey: ['community', commId] });
-      }
-    };
-
     const handleDirectInvitationEvent = () => {
       queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
@@ -564,15 +612,11 @@ export function useGlobalSocketSync() {
     };
 
     socket.on('domainEvent', handleDomainEvent);
-    socket.on('community:memberCount', handleCommunityCountEvent);
-    socket.on('community:updated', handleCommunityCountEvent);
     socket.on('invitation:new', handleDirectInvitationEvent);
     socket.on('invitation:updated', handleDirectInvitationEvent);
 
     return () => {
       socket.off('domainEvent', handleDomainEvent);
-      socket.off('community:memberCount', handleCommunityCountEvent);
-      socket.off('community:updated', handleCommunityCountEvent);
       socket.off('invitation:new', handleDirectInvitationEvent);
       socket.off('invitation:updated', handleDirectInvitationEvent);
     };
