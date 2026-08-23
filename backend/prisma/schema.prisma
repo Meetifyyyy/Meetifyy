@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   // PERF: lets Prisma load nested relations with a LATERAL JOIN in a single
   // statement instead of issuing one query per relation. Without it a profile
   // feed page fanned out into 6 sequential round-trips (post, author, college,
@@ -260,7 +260,6 @@ model Post {
   // used by the feed, profile, and search queries, eliminating the in-memory id sort.
   @@index([deletedAt, createdAt(sort: Desc), id(sort: Desc)])
   @@index([communityId, deletedAt, createdAt(sort: Desc)])
-
 }
 
 model PostLike {
@@ -796,27 +795,45 @@ model MatchQueueEntry {
 }
 
 model MatchSession {
-  id             String      @id @default(uuid())
+  id             String                 @id @default(uuid())
   userAId        String
   userBId        String
   activity       String
-  status         MatchStatus @default(PENDING)
-  aAccepted      Boolean     @default(false)
-  bAccepted      Boolean     @default(false)
+  status         MatchStatus            @default(PENDING)
+  aAccepted      Boolean                @default(false)
+  bAccepted      Boolean                @default(false)
   conversationId String?
-  createdAt      DateTime    @default(now())
+  createdAt      DateTime               @default(now())
   expiresAt      DateTime
+  /// ─── Chat lifecycle ──────────────────────────────────────────────────
+  /// The server is the sole authority on whether messaging is still allowed.
+  /// A client's countdown is presentation only; every write re-checks these.
+  chatStatus     InstantMatchChatStatus @default(ACTIVE)
+  /// When the 24h conversation window closes. Stamped at accept time, so
+  /// expiry does not depend on anyone sending a message.
+  chatExpiresAt  DateTime?
+  /// Who walked away, and when. Null while the chat is live.
+  endedById      String?
+  endedAt        DateTime?
+  /// The shared interest the pair was matched on, kept on the session so the
+  /// chat header can explain itself without re-deriving it from the queue
+  /// snapshots (which are cleared once the match is made).
+  matchReason    String?
   /// Snapshot of each side's original queue request, so the server can
   /// re-queue the other user when a match is declined or times out without
   /// depending on that client still being connected to replay it.
   snapshotA      Json?
   snapshotB      Json?
-  userA          User        @relation("MatchUserA", fields: [userAId], references: [id])
-  userB          User        @relation("MatchUserB", fields: [userBId], references: [id])
+  userA          User                   @relation("MatchUserA", fields: [userAId], references: [id])
+  userB          User                   @relation("MatchUserB", fields: [userBId], references: [id])
 
   @@index([userAId])
   @@index([userBId])
   @@index([status, expiresAt])
+  /// Serves "does this user have a live instant-match chat?" — the question
+  /// asked on every Instant Match screen load and every message send.
+  @@index([chatStatus, chatExpiresAt])
+  @@index([conversationId])
 }
 
 model SuperAdmin {
@@ -1132,6 +1149,11 @@ enum NotificationType {
 enum ConversationType {
   DM
   GROUP
+  /// A temporary 24h Instant Match conversation. A distinct type rather than a
+  /// flag on DM so isolation is structural: every existing query that asks for
+  /// `type: 'DM'` excludes these automatically, and a future query that forgets
+  /// to filter cannot silently leak one into the Messages list.
+  INSTANT_MATCH
 }
 
 enum MessageType {
@@ -1253,6 +1275,19 @@ enum MatchStatus {
   PENDING
   ACCEPTED
   DECLINED
+  EXPIRED
+}
+
+/// Lifecycle of the *conversation* a match opened, tracked separately from
+/// MatchStatus — which describes the accept handshake and is finished by the
+/// time a chat exists. Keeping them apart means the 24h chat's states cannot
+/// disturb the matching state machine (or the re-match cooldown that reads it).
+enum InstantMatchChatStatus {
+  /// Inside the 24h window and both users are still in.
+  ACTIVE
+  /// One participant chose "Find someone new".
+  ENDED_BY_USER
+  /// The 24h window elapsed.
   EXPIRED
 }
 

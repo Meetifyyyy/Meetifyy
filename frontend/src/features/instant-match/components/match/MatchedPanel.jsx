@@ -4,6 +4,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import { getActivity, getActivityVerb } from '../../constants/matchConstants';
 import { Bolt, Starburst, Squiggle } from '../decor/Decor';
+import LeaveMatchModal from '../modals/LeaveMatchModal';
 
 /**
  * Shown when the user reopens Instant Match after a mutual accept.
@@ -14,12 +15,19 @@ import { Bolt, Starburst, Squiggle } from '../decor/Decor';
  * happened.
  */
 export default function MatchedPanel() {
-  const { recentMatch, openMatchChat, dismissRecentMatch } = useInstantMatch();
+  const {
+    recentMatch, openMatchChat, busy, chat, leaveMatch, leaving,
+  } = useInstantMatch();
+  const [confirmLeave, setConfirmLeave] = React.useState(false);
   const { currentUser } = useAuth();
 
   if (!recentMatch) return null;
 
-  const { candidate, activity, chatId } = recentMatch;
+  const { candidate, activity } = recentMatch;
+  // The dedicated chat's own state is the authority on whether there is
+  // anything to open — `recentMatch` describes the pairing, not the
+  // conversation's lifecycle.
+  const chatReady = chat ? chat.isActive : Boolean(recentMatch.chatId);
   const activityMeta = getActivity(activity);
 
   const you = {
@@ -63,24 +71,52 @@ export default function MatchedPanel() {
       </div>
 
       <div className="im-matched-actions">
-        {chatId ? (
-          <button type="button" className="im-btn im-btn-yes" onClick={openMatchChat}>
-            Open chat
-            <Bolt className="im-btn-bolt" />
-          </button>
-        ) : (
+        {/* Always offered. A missing `chatId` is usually a momentary gap —
+            the accept outran the conversation write, or this tab reconnected
+            mid-match — and the handler re-asks the server rather than doing
+            nothing, which is what made the button feel dead. It only reports
+            a closed chat once the server confirms there is none. */}
+        <button
+          type="button"
+          className="im-btn im-btn-yes"
+          onClick={openMatchChat}
+          disabled={busy}
+          aria-busy={busy || undefined}
+        >
+          {busy ? 'Opening…' : 'Open chat'}
+          {!busy && <Bolt className="im-btn-bolt" />}
+        </button>
+        {!chatReady && !busy && (
           <p className="im-matched-gone">
-            That chat has since closed — start a new search whenever you like.
+            {chat && !chat.isActive
+              ? 'This chat has ended — open it to see what happened.'
+              : 'Getting your chat ready — tap above if it does not open.'}
           </p>
         )}
+        {/* Never leaves on the first tap: this ends the chat for both people,
+            permanently. The confirmation names the other person and states
+            the consequence. */}
         <button
           type="button"
           className="im-btn im-btn-ghost im-btn-sm"
-          onClick={dismissRecentMatch}
+          onClick={() => setConfirmLeave(true)}
+          disabled={leaving}
         >
           Find someone new
         </button>
       </div>
+
+      {confirmLeave && (
+        <LeaveMatchModal
+          partnerName={them.name}
+          busy={leaving}
+          onCancel={() => setConfirmLeave(false)}
+          onConfirm={async () => {
+            const ok = await leaveMatch({ alreadyEnded: !chat?.isActive });
+            if (ok) setConfirmLeave(false);
+          }}
+        />
+      )}
     </div>
   );
 }

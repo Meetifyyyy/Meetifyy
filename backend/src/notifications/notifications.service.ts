@@ -146,7 +146,12 @@ export class NotificationsService implements OnModuleInit {
     } catch { /* non-fatal */ }
   }
 
-  async createNotification(dto: CreateNotificationDto) {
+  async createNotification(dto: CreateNotificationDto | null) {
+    // A factory may decline to build one at all — Instant Match messages do
+    // this, because their notification would deep-link into a section their
+    // conversation deliberately does not appear in.
+    if (!dto) return null;
+
     if ((dto.type as any) === 'MESSAGE') {
       return null; // Message updates are handled via real-time message:new flow, not notifications list
     }

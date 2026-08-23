@@ -9,6 +9,7 @@ import { InstantMatchProvider } from '@features/instant-match/context/InstantMat
 import InstantMatchFAB from '@features/instant-match/components/InstantMatchFAB';
 import InstantMatchSheet from '@features/instant-match/components/InstantMatchSheet';
 import MatchPopup from '@features/instant-match/components/match/MatchPopup';
+import InstantMatchChat from '@features/instant-match/components/chat/InstantMatchChat';
 
 export default function DashboardLayoutWrapper() {
   const matches = useMatches();
@@ -64,6 +65,11 @@ export default function DashboardLayoutWrapper() {
       <InstantMatchFAB />
       <InstantMatchSheet />
       <MatchPopup />
+      {/* The dedicated 24h conversation. Mounted at the shell so it can cover
+          the app from anywhere, and so it survives navigation underneath it —
+          it is not a route, because this chat has no place in the router's
+          messaging space. */}
+      <InstantMatchChat />
     </InstantMatchProvider>
   );
 }

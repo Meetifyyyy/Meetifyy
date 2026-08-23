@@ -10,13 +10,17 @@ import { PrismaFake } from './testing/prisma-fake';
  */
 describe('InstantMatchService', () => {
   let prisma: PrismaFake;
-  let messages: { createInstantMatchConversation: jest.Mock };
+  let messages: {
+    createInstantMatchConversation: jest.Mock;
+    registerInstantMatchGuard: jest.Mock;
+  };
   let emitter: {
     emitMatchFound: jest.Mock;
     emitMatchAccepted: jest.Mock;
     emitMatchDeclined: jest.Mock;
     emitSearchResumed: jest.Mock;
     emitQueueStats: jest.Mock;
+    emitInstantMatchChatEnded: jest.Mock;
   };
   let service: InstantMatchService;
 
@@ -45,7 +49,12 @@ describe('InstantMatchService', () => {
     messages = {
       createInstantMatchConversation: jest
         .fn()
-        .mockResolvedValue({ id: 'pub-conv-1', internalId: 'int-conv-1' }),
+        .mockResolvedValue({
+          id: 'pub-conv-1',
+          internalId: 'int-conv-1',
+          expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+        }),
+      registerInstantMatchGuard: jest.fn(),
     };
     emitter = {
       emitMatchFound: jest.fn(),
@@ -53,6 +62,7 @@ describe('InstantMatchService', () => {
       emitMatchDeclined: jest.fn(),
       emitSearchResumed: jest.fn(),
       emitQueueStats: jest.fn(),
+      emitInstantMatchChatEnded: jest.fn(),
     };
     setRealtimeGatewayRef(emitter);
     service = new InstantMatchService(prisma as any, messages as any);
@@ -89,16 +99,30 @@ describe('InstantMatchService', () => {
       await expect(service.joinQueue(joinDto('alice'))).resolves.toBeUndefined();
     });
 
-    it('pushes queue depth to everyone waiting in the bucket, not just the joiner', async () => {
+    it('pushes the new queue depth to every waiter, not just the joiner', async () => {
       await service.joinQueue(joinDto('alice', { activity: 'chat' }));
       emitter.emitQueueStats.mockClear();
       await service.joinQueue(joinDto('bob', { activity: 'chat', campus: 'campus-b' }));
 
-      // bob is in a different campus bucket, so alice must not be told anything
-      // changed — but bob himself sees his own bucket.
+      // The headline count is everyone searching, so a join anywhere changes
+      // the number on every searching screen — including alice's.
       const notified = emitter.emitQueueStats.mock.calls.map((c) => c[0]);
       expect(notified).toContain('bob');
-      expect(notified).not.toContain('alice');
+      expect(notified).toContain('alice');
+    });
+
+    it('tells each waiter how many share their own activity', async () => {
+      await service.joinQueue(joinDto('alice', { activity: 'chat' }));
+      await service.joinQueue(joinDto('carol', { activity: 'gaming', campus: 'campus-b' }));
+      emitter.emitQueueStats.mockClear();
+      await service.joinQueue(joinDto('bob', { activity: 'chat', campus: 'campus-b' }));
+
+      const byUser = new Map(
+        emitter.emitQueueStats.mock.calls.map((c) => [c[0], c[1]]),
+      );
+      // Three people searching in total; two of them for 'chat'.
+      expect(byUser.get('alice')).toMatchObject({ count: 3, sameActivity: 2 });
+      expect(byUser.get('carol')).toMatchObject({ count: 3, sameActivity: 1 });
     });
   });
 
@@ -129,11 +153,48 @@ describe('InstantMatchService', () => {
       expect(payload.timer).toBe(30);
     });
 
-    it('never matches across campuses, activities, or time preferences', async () => {
+    it('never matches across activities — the one hard requirement', async () => {
       await service.joinQueue(joinDto('alice'));
-      await service.joinQueue(joinDto('bob', { campus: 'campus-b' }));
       await service.joinQueue(joinDto('carol', { activity: 'gaming' }));
       expect(prisma.sessions).toHaveLength(0);
+    });
+
+    it('holds out for a compatible partner before settling for a distant one', async () => {
+      // Same activity, different campus: matchable, but not immediately —
+      // the opening threshold expects better than this.
+      await service.joinQueue(joinDto('alice'));
+      await service.joinQueue(joinDto('bob', { campus: 'campus-b' }));
+      expect(prisma.sessions).toHaveLength(0);
+    });
+
+    it('relaxes the non-critical parameters once someone has waited', async () => {
+      // The same cross-campus pair, five minutes into the wait. Campus,
+      // area, GPS and time preference are all preferences — none of them may
+      // leave a willing user searching indefinitely.
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      prisma.seedQueueEntry('bob', { campus: 'campus-b', joinedAt: fiveMinutesAgo });
+
+      await service.joinQueue(joinDto('alice'));
+
+      expect(prisma.sessions).toHaveLength(1);
+      expect(emitter.emitMatchFound).toHaveBeenCalledTimes(2);
+    });
+
+    it('matches across time preferences — "now" and "30min" are compatible', async () => {
+      await service.joinQueue(joinDto('alice', { timePreference: 'now' }));
+      await service.joinQueue(joinDto('bob', { timePreference: '30min' }));
+      expect(prisma.sessions).toHaveLength(1);
+    });
+
+    it('does not let a missing location block an otherwise strong match', async () => {
+      // Alice shared her area and GPS, Bob shared nothing. Withholding a
+      // location must not read as being far away.
+      await service.joinQueue(joinDto('alice', {
+        area: 'library',
+        gps: { latitude: 27.6, longitude: 77.6 },
+      }));
+      await service.joinQueue(joinDto('bob'));
+      expect(prisma.sessions).toHaveLength(1);
     });
 
     it('ignores an expired candidate rather than matching a ghost', async () => {
@@ -275,8 +336,26 @@ describe('InstantMatchService', () => {
       expect(messages.createInstantMatchConversation).toHaveBeenCalledTimes(1);
       expect(prisma.sessions[0].status).toBe('ACCEPTED');
       expect(emitter.emitMatchAccepted).toHaveBeenCalledTimes(2);
-      expect(emitter.emitMatchAccepted).toHaveBeenCalledWith('alice', { chatId: 'pub-conv-1' });
-      expect(emitter.emitMatchAccepted).toHaveBeenCalledWith('bob', { chatId: 'pub-conv-1' });
+      // Each side is told who they matched with and how to reach the chat,
+      // so "Open chat" works without having seen the match:found event.
+      expect(emitter.emitMatchAccepted).toHaveBeenCalledWith(
+        'alice',
+        expect.objectContaining({
+          matchId: 's3',
+          chatId: 'pub-conv-1',
+          internalId: 'int-conv-1',
+          candidate: expect.objectContaining({ id: 'bob' }),
+        }),
+      );
+      expect(emitter.emitMatchAccepted).toHaveBeenCalledWith(
+        'bob',
+        expect.objectContaining({
+          matchId: 's3',
+          chatId: 'pub-conv-1',
+          internalId: 'int-conv-1',
+          candidate: expect.objectContaining({ id: 'alice' }),
+        }),
+      );
     });
 
     it('stores the internal conversation id, not the routable public one', async () => {
@@ -452,29 +531,49 @@ describe('InstantMatchService', () => {
   // ── Stats ──────────────────────────────────────────────────────────────────
 
   describe('getQueueStats', () => {
-    it('counts only live entries in the same bucket', async () => {
+    it('counts everyone searching, not just the viewer\'s activity', async () => {
       prisma.seedQueueEntry('alice');
       prisma.seedQueueEntry('bob');
       prisma.seedQueueEntry('carol', { activity: 'gaming' });
-      const stats = await service.getQueueStats('campus-a', 'study', 'now');
-      expect(stats.count).toBe(2);
+      // Campus and time preference no longer partition the queue either.
+      prisma.seedQueueEntry('dave', { campus: 'campus-b', timePreference: 'today' });
+
+      const stats = await service.getQueueStats('study');
+      expect(stats.count).toBe(4);
+    });
+
+    it('reports how many of them share the viewer\'s activity', async () => {
+      prisma.seedQueueEntry('alice');
+      prisma.seedQueueEntry('bob');
+      prisma.seedQueueEntry('carol', { activity: 'gaming' });
+
+      expect((await service.getQueueStats('study')).sameActivity).toBe(2);
+      expect((await service.getQueueStats('gaming')).sameActivity).toBe(1);
+      expect((await service.getQueueStats('coffee')).sameActivity).toBe(0);
+    });
+
+    it('omits the activity breakdown when no activity is asked about', async () => {
+      prisma.seedQueueEntry('alice');
+      const stats = await service.getQueueStats();
+      expect(stats.count).toBe(1);
+      expect(stats.sameActivity).toBe(0);
     });
 
     it('excludes expired entries from the count', async () => {
       prisma.seedQueueEntry('alice');
       prisma.seedQueueEntry('bob', { expiresAt: new Date(Date.now() - 1) });
-      expect((await service.getQueueStats('campus-a', 'study', 'now')).count).toBe(1);
+      expect((await service.getQueueStats('study')).count).toBe(1);
     });
 
-    it('reports a sane wait for an empty bucket instead of NaN', async () => {
-      const stats = await service.getQueueStats('campus-a', 'study', 'now');
-      expect(stats).toEqual({ count: 0, avgWaitSecs: 60 });
+    it('reports a sane wait for an empty queue instead of NaN', async () => {
+      const stats = await service.getQueueStats('study');
+      expect(stats).toEqual({ count: 0, sameActivity: 0, avgWaitSecs: 60 });
     });
 
     it('derives the average wait from how long people have actually waited', async () => {
       prisma.seedQueueEntry('alice', { joinedAt: new Date(Date.now() - 200_000) });
       prisma.seedQueueEntry('bob', { joinedAt: new Date(Date.now() - 100_000) });
-      const stats = await service.getQueueStats('campus-a', 'study', 'now');
+      const stats = await service.getQueueStats('study');
       expect(stats.avgWaitSecs).toBeGreaterThanOrEqual(140);
       expect(stats.avgWaitSecs).toBeLessThanOrEqual(160);
     });

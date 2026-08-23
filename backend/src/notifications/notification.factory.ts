@@ -172,7 +172,22 @@ export class NotificationFactory {
     };
   }
 
-  createMessage(actor: any, conversation: any, targetUserId: string, messageText?: string): CreateNotificationDto {
+  /**
+   * A normal chat-message notification.
+   *
+   * Returns null for an Instant Match conversation. These notifications carry
+   * a conversationId that deep-links into Messages — a section the Instant
+   * Match chat deliberately does not appear in — so delivering one would
+   * either dead-end the user or drag a temporary match into the normal
+   * messaging surface. Instant Match owns its own notification story: the
+   * match itself is announced, and the chat's state is pushed over its own
+   * realtime events.
+   */
+  createMessage(actor: any, conversation: any, targetUserId: string, messageText?: string): CreateNotificationDto | null {
+    if (conversation?.type === 'INSTANT_MATCH' || conversation?.isInstantMatch) {
+      return null;
+    }
+
     const actorName = actor?.displayName || actor?.username || 'Someone';
     const actorUsername = actor?.username || '';
     const textSnippet = messageText ? messageText.substring(0, 80) : '';

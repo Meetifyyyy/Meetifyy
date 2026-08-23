@@ -1,4 +1,4 @@
-import { Module, OnModuleInit, Logger } from '@nestjs/common';
+import { Module, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { BullModule, InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { InstantMatchService } from './instant-match.service';
@@ -21,11 +21,15 @@ import { MessagesModule } from '../messages/messages.module';
   providers: [InstantMatchService, InstantMatchProcessor, InstantMatchRateLimiter],
   exports: [InstantMatchService, InstantMatchRateLimiter],
 })
-export class InstantMatchModule implements OnModuleInit {
+export class InstantMatchModule implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(InstantMatchModule.name);
+
+  /** In-process fallback sweep, armed only if BullMQ scheduling failed. */
+  private fallbackTimer: NodeJS.Timeout | null = null;
 
   constructor(
     @InjectQueue(INSTANT_MATCH_QUEUE) private readonly queue: Queue,
+    private readonly instantMatchService: InstantMatchService,
   ) {}
 
   async onModuleInit() {
@@ -44,10 +48,27 @@ export class InstantMatchModule implements OnModuleInit {
       );
       this.logger.log(`Instant Match expiry sweep scheduled every ${EXPIRY_SWEEP_MS}ms`);
     } catch (err) {
+      // Without a sweep, an unanswered match never expires: both users stay
+      // locked out of re-queueing and neither is put back in the queue. A
+      // single-process timer is a worse sweep than the queue (it can double
+      // up across replicas) but every transition it drives is claimed by a
+      // conditional update, so duplicates are dropped rather than
+      // double-notifying. Far better than no expiry at all.
       this.logger.error(
-        'Could not schedule the Instant Match expiry sweep — matches will only expire on response',
+        'Could not schedule the Instant Match expiry sweep on the queue — ' +
+        'falling back to an in-process timer',
         err as any,
       );
+      this.fallbackTimer = setInterval(() => {
+        void this.instantMatchService.expireStale().catch((sweepErr) => {
+          this.logger.error('Fallback expiry sweep failed', sweepErr);
+        });
+      }, EXPIRY_SWEEP_MS);
+      this.fallbackTimer.unref?.();
     }
+  }
+
+  onModuleDestroy() {
+    if (this.fallbackTimer) clearInterval(this.fallbackTimer);
   }
 }

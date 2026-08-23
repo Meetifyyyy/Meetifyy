@@ -36,6 +36,9 @@ function matchesCondition(value: any, condition: any): boolean {
       case 'lt':
         if (!(value < (operand as any))) return false;
         break;
+      case 'lte':
+        if (!(value <= (operand as any))) return false;
+        break;
       default:
         throw new Error(`prisma-fake: unsupported operator "${op}"`);
     }
@@ -209,6 +212,12 @@ export class PrismaFake {
           bAccepted: false,
           conversationId: null,
           createdAt: new Date(),
+          // Chat lifecycle defaults, mirroring the schema's own.
+          chatStatus: 'ACTIVE',
+          chatExpiresAt: null,
+          endedById: null,
+          endedAt: null,
+          matchReason: null,
           ...data,
         };
         self.sessions.push(row);
@@ -242,6 +251,18 @@ export class PrismaFake {
       async findFirst({ where, select }: any) {
         const row = self.conversations.find((c) => matchesWhere(c, where));
         return row ? project(row, select) : null;
+      },
+      // Ending a chat closes its conversation too, so the fake has to accept
+      // the write even though no assertion reads it back.
+      async updateMany({ where, data }: any) {
+        let count = 0;
+        for (const c of self.conversations) {
+          if (matchesWhere(c, where)) {
+            Object.assign(c, data);
+            count += 1;
+          }
+        }
+        return { count };
       },
     };
   }

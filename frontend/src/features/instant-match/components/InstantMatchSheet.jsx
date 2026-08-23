@@ -39,7 +39,11 @@ export default function InstantMatchSheet() {
   const searching = step === STEP_SEARCHING;
   // A fresh pairing outranks the form: reopening after a match should show
   // who you matched with, not step one again.
-  const showingMatched = Boolean(recentMatch) && status === 'idle' && !searching;
+  // `matched` is the state the user sits in for the life of the 24h chat;
+  // `idle` still qualifies because a reload restores the pairing before the
+  // status settles. Either way a live pairing outranks the form.
+  const showingMatched =
+    Boolean(recentMatch) && (status === 'matched' || status === 'idle') && !searching;
 
   useScrollLock(sheetOpen);
   useFocusTrap(sheetRef, sheetOpen, closeSheet);

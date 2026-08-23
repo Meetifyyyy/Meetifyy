@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  OnModuleInit,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -8,7 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MessagesService } from '../messages/messages.service';
-import { computeMatchScore } from './instant-match.scoring';
+import { computeCompatibility, relaxedThreshold } from './instant-match.scoring';
 import {
   JoinQueueDto,
   QueueSnapshot,
@@ -31,6 +32,10 @@ const REMATCH_COOLDOWN_MS = 30 * 60 * 1000;
  *  nothing left to link to. */
 const RECENT_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/** Upper bound on how many same-activity waiters one join attempt ranks.
+ *  Ordered oldest-first, so the people owed a match are always considered. */
+const CANDIDATE_SCAN_LIMIT = 200;
+
 export interface MatchCandidateDto {
   id: string;
   username: string;
@@ -49,6 +54,8 @@ export interface MatchFoundPayload {
   activity: string;
   area: string | null;
   timer: number;
+  /** 0–100 weighted compatibility, so the card can show *why* this pairing. */
+  compatibility?: number;
   /** Absolute deadline (ms epoch). The client counts down to this rather
    *  than to `timer` seconds from render, so a slow render, a backgrounded
    *  tab, or a late-arriving event cannot desync the ring from the server. */
@@ -56,7 +63,15 @@ export interface MatchFoundPayload {
 }
 
 export interface QueueStats {
+  /** Everyone searching Instant Match right now, across every activity,
+   *  campus and time window. This is the honest answer to "how busy is it?"
+   *  — the old per-bucket figure reported 0 while a dozen people were
+   *  searching one tile over. */
   count: number;
+  /** Of those, how many are looking for the same activity as this viewer —
+   *  the only people they can actually be paired with, since the activity is
+   *  the one hard requirement. */
+  sameActivity: number;
   avgWaitSecs: number;
 }
 
@@ -68,6 +83,9 @@ export interface RecentMatchPayload {
   candidate: MatchCandidateDto;
   activity: string;
   chatId: string | null;
+  /** When the 24h chat closes (ms epoch), so the client can retire the
+   *  Matched state on its own instead of pointing at a deleted chat. */
+  expiresAt: number | null;
   matchedAt: number;
 }
 
@@ -98,12 +116,64 @@ const USER_CARD_SELECT = {
   bio: true,
 } as const;
 
+/** Everything the client needs to open the new chat immediately — the public
+ *  id it routes on, the internal id it joins the socket room with, and the
+ *  deadline the chat header counts down to. */
+export interface MatchAcceptedPayload {
+  matchId: string;
+  chatId: string;
+  internalId: string;
+  expiresAt: number;
+  activity: string;
+  candidate: MatchCandidateDto;
+}
+
+/** The MatchSession row, once we know it carries a chat. */
+export type InstantMatchSession = {
+  id: string;
+  userAId: string;
+  userBId: string;
+  activity: string;
+  matchReason: string | null;
+  chatStatus: 'ACTIVE' | 'ENDED_BY_USER' | 'EXPIRED';
+  chatExpiresAt: Date | null;
+  endedById: string | null;
+  endedAt: Date | null;
+  createdAt: Date;
+  conversationId: string | null;
+};
+
+/** Why a chat is over, from the viewer's own point of view. */
+export type InstantMatchEndReason = 'you_left' | 'they_left' | 'expired';
+
+/**
+ * One viewer's view of an Instant Match chat. This is the only shape the
+ * client's state machine consumes, and it is always produced from the
+ * persisted row — realtime pushes it and resync pulls it, so a missed event
+ * and a reload converge on identical state.
+ */
+export interface InstantMatchChatState {
+  matchId: string;
+  otherUserId: string;
+  activity: string;
+  matchReason: string;
+  status: 'ACTIVE' | 'ENDED_BY_USER' | 'EXPIRED';
+  isActive: boolean;
+  endReason: InstantMatchEndReason | null;
+  endedById: string | null;
+  endedAt: number | null;
+  expiresAt: number | null;
+  createdAt: number;
+  conversationId: string | null;
+}
+
 export interface InstantMatchEmitter {
   emitMatchFound(userId: string, p: MatchFoundPayload): void;
-  emitMatchAccepted(userId: string, p: { chatId: string }): void;
+  emitMatchAccepted(userId: string, p: MatchAcceptedPayload): void;
   emitMatchDeclined(userId: string, p: { reason: string; requeued: boolean }): void;
   emitSearchResumed(userId: string): void;
   emitQueueStats(userId: string, stats: QueueStats): void;
+  emitInstantMatchChatEnded(userId: string, state: InstantMatchChatState): void;
 }
 
 // Injected by RealtimeGateway.afterInit() to avoid a circular module import.
@@ -114,13 +184,21 @@ export function setRealtimeGatewayRef(ref: InstantMatchEmitter | null) {
 }
 
 @Injectable()
-export class InstantMatchService {
+export class InstantMatchService implements OnModuleInit {
   private readonly logger = new Logger(InstantMatchService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly messagesService: MessagesService,
   ) {}
+
+  onModuleInit() {
+    // Close the loop the other way: MessagesService owns the single send path
+    // and needs to ask us whether an Instant Match chat still accepts writes.
+    // Registered rather than injected because the module dependency already
+    // runs InstantMatch -> Messages.
+    this.messagesService.registerInstantMatchGuard(this);
+  }
 
   // ─── Join queue ─────────────────────────────────────────────────────────────
 
@@ -134,6 +212,19 @@ export class InstantMatchService {
     const pending = await this.findPendingSessionFor(dto.userId);
     if (pending) {
       throw new BadRequestException('Respond to your current match first');
+    }
+
+    // One active Instant Match per user. Without this a user holding a live
+    // 24h chat could queue again and be paired a second time, leaving two
+    // conversations both claiming to be "your Instant Match" — and no way for
+    // the UI, which models exactly one, to represent the second. Leaving the
+    // current match is the deliberate way out, and it goes through the
+    // confirmation that says so.
+    const liveChat = await this.getActiveChatSession(dto.userId);
+    if (liveChat) {
+      throw new BadRequestException(
+        'You already have an Instant Match — leave it before finding someone new',
+      );
     }
 
     const expiresAt = new Date(Date.now() + QUEUE_TTL_MS);
@@ -159,7 +250,7 @@ export class InstantMatchService {
     );
 
     // Everyone waiting in this bucket now sees a different queue depth.
-    await this.broadcastQueueStats(dto.campus, dto.activity, dto.timePreference);
+    await this.broadcastQueueStats();
 
     // The user is queued at this point, so a failure to pair them *right now*
     // must not be reported as a failed join — that would tell them the search
@@ -181,7 +272,7 @@ export class InstantMatchService {
 
     await this.prisma.matchQueueEntry.deleteMany({ where: { userId } });
     this.logger.log(`queue:cancel user=${userId}`);
-    await this.broadcastQueueStats(entry.campus, entry.activity, entry.timePreference);
+    await this.broadcastQueueStats();
   }
 
   // ─── Matching ───────────────────────────────────────────────────────────────
@@ -200,15 +291,23 @@ export class InstantMatchService {
 
     const excludedIds = await this.getExcludedUserIds(userId);
 
+    // The activity is the only strict requirement. Campus, time preference,
+    // area and GPS used to be equality filters here, which is what made a
+    // sparse queue feel broken: a perfectly good partner who picked "30min"
+    // instead of "now" was not merely ranked lower, they were invisible.
+    // Those signals are now weighted by the scorer and traded away in order
+    // of importance as the wait grows.
     const candidates = await this.prisma.matchQueueEntry.findMany({
       where: {
-        campus: myEntry.campus,
         activity: myEntry.activity,
-        timePreference: myEntry.timePreference,
         userId: { not: userId, notIn: excludedIds.length ? excludedIds : undefined },
         expiresAt: { gt: new Date() },
       },
       include: { user: { select: USER_CARD_SELECT } },
+      // Bounded so one very popular activity cannot turn a join into an
+      // unbounded scan; the oldest waiters are the ones we owe a match to.
+      orderBy: { joinedAt: 'asc' },
+      take: CANDIDATE_SCAN_LIMIT,
     });
 
     if (candidates.length === 0) return;
@@ -219,35 +318,42 @@ export class InstantMatchService {
     });
     if (!me) return;
 
-    const myContext = {
-      area: myEntry.area,
-      optionalDetail: myEntry.optionalDetail,
-      latitude: myEntry.latitude,
-      longitude: myEntry.longitude,
-      interests: me.interests ?? [],
-    };
+    const history = await this.getPriorMatchCounts(
+      userId,
+      candidates.map((c) => c.userId),
+    );
 
+    const myContext = this.toScoringContext(myEntry, me);
+
+    const now = Date.now();
     const ranked = candidates
-      .map((candidate) => ({
-        candidate,
-        score: computeMatchScore(myContext, {
-          area: candidate.area,
-          optionalDetail: candidate.optionalDetail,
-          latitude: candidate.latitude,
-          longitude: candidate.longitude,
-          interests: candidate.user.interests ?? [],
-        }),
-      }))
-      // Ties break toward whoever has been waiting longest, so the queue
-      // stays fair instead of favouring whatever order Postgres returned.
+      .map((candidate) => {
+        const { score, breakdown } = computeCompatibility(
+          myContext,
+          this.toScoringContext(candidate, candidate.user, history.get(candidate.userId) ?? 0),
+        );
+        // Whoever has waited longer sets the bar: a five-minute waiter should
+        // not be held back by a partner who joined ten seconds ago.
+        const waitedMs = Math.max(
+          now - myEntry.joinedAt.getTime(),
+          now - candidate.joinedAt.getTime(),
+        );
+        return { candidate, score, breakdown, threshold: relaxedThreshold(waitedMs) };
+      })
+      .filter((r) => r.score >= r.threshold)
+      // Best compatibility first; ties break toward whoever has been waiting
+      // longest, so the queue stays fair instead of favouring whatever order
+      // Postgres returned.
       .sort((a, b) =>
         b.score - a.score ||
         a.candidate.joinedAt.getTime() - b.candidate.joinedAt.getTime(),
       );
 
+    if (ranked.length === 0) return;
+
     const timer = getAcceptTimerSecs(myEntry.activity, myEntry.timePreference);
 
-    for (const { candidate } of ranked) {
+    for (const { candidate, score, breakdown } of ranked) {
       const session = await this.claimPair(myEntry, candidate, timer);
       if (!session) continue; // lost the race for this candidate — try the next
 
@@ -261,6 +367,7 @@ export class InstantMatchService {
         area,
         timer,
         expiresAt: expiresAtMs,
+        compatibility: score,
       });
       realtimeGatewayRef?.emitMatchFound(candidate.userId, {
         matchId: session.id,
@@ -269,18 +376,79 @@ export class InstantMatchService {
         area,
         timer,
         expiresAt: expiresAtMs,
+        compatibility: score,
       });
 
-      this.logger.log(`match:created ${session.id} ${userId} <> ${candidate.userId}`);
+      this.logger.log(
+        `match:created ${session.id} ${userId} <> ${candidate.userId} ` +
+        `score=${score} ${JSON.stringify(breakdown)}`,
+      );
 
       // Both are out of the queue now — refresh the depth for everyone left.
-      await this.broadcastQueueStats(
-        myEntry.campus,
-        myEntry.activity,
-        myEntry.timePreference,
-      );
+      await this.broadcastQueueStats();
       return;
     }
+  }
+
+  /** Shapes a queue entry plus its owner's profile into scorer input. */
+  private toScoringContext(
+    entry: {
+      campus: string; activity: string; timePreference: string;
+      optionalDetail: string | null; area: string | null;
+      latitude: number | null; longitude: number | null; joinedAt: Date;
+    },
+    user: { interests: string[]; course: string | null; branch: string | null; currentYear: number | null },
+    priorConversations: number | null = null,
+  ) {
+    return {
+      campus: entry.campus,
+      activity: entry.activity,
+      timePreference: entry.timePreference,
+      area: entry.area,
+      optionalDetail: entry.optionalDetail,
+      latitude: entry.latitude,
+      longitude: entry.longitude,
+      interests: user.interests ?? [],
+      course: user.course,
+      branch: user.branch,
+      currentYear: user.currentYear,
+      joinedAt: entry.joinedAt.getTime(),
+      priorConversations,
+    };
+  }
+
+  /**
+   * How many times this user has previously matched with each candidate.
+   * One batched query rather than one per candidate — the scan limit above
+   * keeps the `in` list small.
+   */
+  private async getPriorMatchCounts(
+    userId: string,
+    candidateIds: string[],
+  ): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    if (candidateIds.length === 0) return counts;
+
+    try {
+      const sessions = await this.prisma.matchSession.findMany({
+        where: {
+          status: 'ACCEPTED',
+          OR: [
+            { userAId: userId, userBId: { in: candidateIds } },
+            { userBId: userId, userAId: { in: candidateIds } },
+          ],
+        },
+        select: { userAId: true, userBId: true },
+      });
+      for (const s of sessions) {
+        const other = s.userAId === userId ? s.userBId : s.userAId;
+        counts.set(other, (counts.get(other) ?? 0) + 1);
+      }
+    } catch (err) {
+      // History is a 6-point nudge — never let it block a match.
+      this.logger.warn(`Could not read match history for ${userId}`);
+    }
+    return counts;
   }
 
   /**
@@ -425,7 +593,7 @@ export class InstantMatchService {
     });
     if (claimed.count !== 1) return;
 
-    let conv: { id: string; internalId: string };
+    let conv: { id: string; internalId: string; expiresAt: number };
     try {
       conv = await this.messagesService.createInstantMatchConversation(
         session.userAId,
@@ -445,13 +613,48 @@ export class InstantMatchService {
 
     await this.prisma.matchSession.update({
       where: { id: session.id },
-      // Store the internal id: it is the stable foreign key, while the public
-      // id is what the client routes on.
-      data: { conversationId: conv.internalId },
+      data: {
+        // Store the internal id: it is the stable foreign key, while the
+        // public id is what the client routes on.
+        conversationId: conv.internalId,
+        // The chat's own lifecycle starts here, and the deadline is recorded
+        // on the session rather than inferred from the conversation — this is
+        // the row every send is authorized against.
+        chatStatus: 'ACTIVE',
+        chatExpiresAt: new Date(conv.expiresAt),
+        matchReason: session.activity,
+      },
     });
 
-    realtimeGatewayRef?.emitMatchAccepted(session.userAId, { chatId: conv.id });
-    realtimeGatewayRef?.emitMatchAccepted(session.userBId, { chatId: conv.id });
+    // Both users' cards are looked up so each side's `match:accepted` carries
+    // the person they matched with. The client renders the Matched state and
+    // the chat header from this alone, which is what lets "Open chat" work
+    // on a fresh device that has never seen the match:found event.
+    const [userA, userB] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: session.userAId }, select: USER_CARD_SELECT }),
+      this.prisma.user.findUnique({ where: { id: session.userBId }, select: USER_CARD_SELECT }),
+    ]);
+
+    const base = {
+      matchId: session.id,
+      chatId: conv.id,
+      internalId: conv.internalId,
+      expiresAt: conv.expiresAt,
+      activity: session.activity,
+    };
+
+    if (userB) {
+      realtimeGatewayRef?.emitMatchAccepted(session.userAId, {
+        ...base,
+        candidate: this.toCandidateDto(userB),
+      });
+    }
+    if (userA) {
+      realtimeGatewayRef?.emitMatchAccepted(session.userBId, {
+        ...base,
+        candidate: this.toCandidateDto(userA),
+      });
+    }
 
     this.logger.log(`match:accepted ${session.id} conversation=${conv.id}`);
   }
@@ -461,20 +664,12 @@ export class InstantMatchService {
   async expireStale(): Promise<void> {
     const now = new Date();
 
-    const staleEntries = await this.prisma.matchQueueEntry.findMany({
+    // The count is global now, so one broadcast covers every waiter — no
+    // need to enumerate which buckets the sweep happened to touch.
+    const removed = await this.prisma.matchQueueEntry.deleteMany({
       where: { expiresAt: { lt: now } },
-      select: { campus: true, activity: true, timePreference: true },
     });
-    if (staleEntries.length > 0) {
-      await this.prisma.matchQueueEntry.deleteMany({ where: { expiresAt: { lt: now } } });
-      const buckets = new Map<string, { campus: string; activity: string; timePreference: string }>();
-      for (const e of staleEntries) {
-        buckets.set(`${e.campus}|${e.activity}|${e.timePreference}`, e);
-      }
-      for (const b of buckets.values()) {
-        await this.broadcastQueueStats(b.campus, b.activity, b.timePreference);
-      }
-    }
+    if (removed.count > 0) await this.broadcastQueueStats();
 
     const expired = await this.prisma.matchSession.findMany({
       where: { status: 'PENDING', expiresAt: { lt: now } },
@@ -487,6 +682,14 @@ export class InstantMatchService {
     }
 
     if (handled > 0) this.logger.log(`match:expired ${handled} session(s)`);
+
+    // The 24h chat windows are swept on the same cadence, so an online user
+    // watching an open chat is told the moment it closes rather than
+    // discovering it on their next send. Users who are offline are reconciled
+    // lazily when they next read their state — correctness does not depend on
+    // this having run.
+    const chatsEnded = await this.expireStaleChats();
+    if (chatsEnded > 0) this.logger.log(`instant-match:chats-expired ${chatsEnded}`);
   }
 
   /**
@@ -552,11 +755,7 @@ export class InstantMatchService {
         update: { joinedAt: new Date(), ...shared },
       });
       realtimeGatewayRef?.emitSearchResumed(userId);
-      await this.broadcastQueueStats(
-        snapshot.campus,
-        snapshot.activity,
-        snapshot.timePreference,
-      );
+      await this.broadcastQueueStats();
       return true;
     } catch (err) {
       this.logger.error(`Failed to re-queue ${userId}`, err as any);
@@ -566,43 +765,70 @@ export class InstantMatchService {
 
   // ─── Stats ──────────────────────────────────────────────────────────────────
 
-  async getQueueStats(
-    campus: string,
-    activity: string,
-    timePreference: string,
-  ): Promise<QueueStats> {
+  /**
+   * A live snapshot of the whole Instant Match queue.
+   *
+   * Deliberately global rather than scoped to the viewer's bucket. Matching
+   * itself is no longer bucketed — campus, time and location are weighted
+   * preferences now — so a count filtered by all three described a queue that
+   * no longer exists, and read as "nobody is here" on a busy evening.
+   */
+  async getQueueStats(activity?: string | null): Promise<QueueStats> {
     const entries = await this.prisma.matchQueueEntry.findMany({
-      where: { campus, activity, timePreference, expiresAt: { gt: new Date() } },
-      select: { joinedAt: true },
+      where: { expiresAt: { gt: new Date() } },
+      select: { joinedAt: true, activity: true },
     });
 
-    if (entries.length === 0) return { count: 0, avgWaitSecs: 60 };
+    return this.summarise(entries, activity);
+  }
+
+  /** Shared by the single-reader and the broadcast path so both can never
+   *  disagree about what the same queue contains. */
+  private summarise(
+    entries: Array<{ joinedAt: Date; activity: string }>,
+    activity?: string | null,
+  ): QueueStats {
+    const sameActivity = activity
+      ? entries.filter((e) => e.activity === activity).length
+      : 0;
+
+    if (entries.length === 0) return { count: 0, sameActivity: 0, avgWaitSecs: 60 };
 
     const now = Date.now();
     const totalWait = entries.reduce((sum, e) => sum + (now - e.joinedAt.getTime()), 0);
     const avgWaitSecs = Math.max(30, Math.round(totalWait / entries.length / 1000));
 
-    return { count: entries.length, avgWaitSecs };
+    return { count: entries.length, sameActivity, avgWaitSecs };
   }
 
-  /** Pushes fresh stats to every user currently waiting in a bucket, so a
-   *  join, cancel, match, or expiry updates all of their screens at once. */
-  private async broadcastQueueStats(
-    campus: string,
-    activity: string,
-    timePreference: string,
-  ): Promise<void> {
+  /**
+   * Pushes fresh stats to everyone currently waiting, so a join, cancel,
+   * match or expiry updates every searching screen at once.
+   *
+   * The headline count is global, so any change moves the number for every
+   * waiter — not just for the bucket that changed. One read serves the whole
+   * broadcast; each user's `sameActivity` is computed from it in memory.
+   */
+  private async broadcastQueueStats(): Promise<void> {
     if (!realtimeGatewayRef) return;
     try {
-      const [stats, waiting] = await Promise.all([
-        this.getQueueStats(campus, activity, timePreference),
-        this.prisma.matchQueueEntry.findMany({
-          where: { campus, activity, timePreference, expiresAt: { gt: new Date() } },
-          select: { userId: true },
-        }),
-      ]);
-      for (const { userId } of waiting) {
-        realtimeGatewayRef.emitQueueStats(userId, stats);
+      const waiting = await this.prisma.matchQueueEntry.findMany({
+        where: { expiresAt: { gt: new Date() } },
+        select: { userId: true, joinedAt: true, activity: true },
+      });
+
+      // Per-activity totals once, rather than per recipient.
+      const byActivity = new Map<string, number>();
+      for (const e of waiting) {
+        byActivity.set(e.activity, (byActivity.get(e.activity) ?? 0) + 1);
+      }
+
+      const base = this.summarise(waiting);
+      for (const { userId, activity } of waiting) {
+        realtimeGatewayRef.emitQueueStats(userId, {
+          ...base,
+          sameActivity: byActivity.get(activity) ?? 0,
+        });
       }
     } catch (err) {
       // Stats are cosmetic — never let them break a join or a match.
@@ -649,7 +875,7 @@ export class InstantMatchService {
     }
 
     const stats = live
-      ? await this.getQueueStats(live.campus, live.activity, live.timePreference)
+      ? await this.getQueueStats(live.activity)
       : null;
 
     return {
@@ -698,15 +924,19 @@ export class InstantMatchService {
     // one. A missing or already-expired conversation yields a null chatId so
     // the UI can show the pairing without offering a dead link.
     let chatId: string | null = null;
+    let chatExpiresAt: number | null = null;
     if (session.conversationId) {
       const conv = await this.prisma.conversation.findFirst({
         where: {
           id: session.conversationId,
           OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
         },
-        select: { id: true, publicId: true },
+        select: { id: true, publicId: true, expiresAt: true },
       });
-      if (conv) chatId = conv.publicId || conv.id;
+      if (conv) {
+        chatId = conv.publicId || conv.id;
+        chatExpiresAt = conv.expiresAt?.getTime() ?? null;
+      }
     }
 
     return {
@@ -714,8 +944,271 @@ export class InstantMatchService {
       candidate: this.toCandidateDto(other),
       activity: session.activity,
       chatId,
+      expiresAt: chatExpiresAt,
       matchedAt: session.createdAt.getTime(),
     };
+  }
+
+  // ─── Instant Match chat session ─────────────────────────────────────────────
+  //
+  // Everything below is the authority for the dedicated 24h conversation:
+  // whether it exists, whether it is still live, and whether either user may
+  // still write to it. No client timer participates in any of these answers —
+  // a client's countdown is presentation only, and every write re-checks the
+  // row. That is what makes a stale tab, a suspended phone, or a hand-crafted
+  // socket frame unable to post into a chat that has ended.
+
+  /**
+   * The user's one live Instant Match chat, or null.
+   *
+   * Lazily reconciles expiry on read: a session whose window has passed is
+   * flipped to EXPIRED here rather than being reported as active until the
+   * sweep next runs. The sweep still exists — it is what notifies users who
+   * are online but not looking — but correctness never depends on it having
+   * run, which is what keeps an offline user from returning to a chat the
+   * clock says is dead and the database says is alive.
+   */
+  async getActiveChatSession(userId: string): Promise<InstantMatchSession | null> {
+    const session = await this.prisma.matchSession.findFirst({
+      where: {
+        status: 'ACCEPTED',
+        chatStatus: 'ACTIVE',
+        conversationId: { not: null },
+        OR: [{ userAId: userId }, { userBId: userId }],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!session) return null;
+
+    if (this.isPastWindow(session)) {
+      await this.expireChatSession(session.id);
+      return null;
+    }
+    return session as InstantMatchSession;
+  }
+
+  /**
+   * The state the Instant Match screen renders, whatever that state is.
+   *
+   * Returns the *most recent* session rather than only a live one, so a user
+   * coming back to a chat the other person left sees "they left" instead of a
+   * blank matching form — the difference between an explained ending and an
+   * apparent bug. Reconciles expiry the same way as above.
+   */
+  async getChatStateFor(userId: string): Promise<InstantMatchChatState | null> {
+    const session = await this.prisma.matchSession.findFirst({
+      where: {
+        status: 'ACCEPTED',
+        conversationId: { not: null },
+        // Anything older than the window is history, not state worth showing.
+        createdAt: { gte: new Date(Date.now() - RECENT_MATCH_WINDOW_MS) },
+        OR: [{ userAId: userId }, { userBId: userId }],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!session) return null;
+
+    let current = session;
+    if (current.chatStatus === 'ACTIVE' && this.isPastWindow(current)) {
+      await this.expireChatSession(current.id);
+      current = { ...current, chatStatus: 'EXPIRED' } as typeof current;
+    }
+
+    return this.toChatState(current as InstantMatchSession, userId);
+  }
+
+  /** True once the 24h window has closed. A session with no recorded window
+   *  (impossible for rows written after the migration) is treated as open,
+   *  so a data gap can never silently lock a live chat. */
+  private isPastWindow(session: { chatExpiresAt: Date | null }): boolean {
+    return Boolean(session.chatExpiresAt && session.chatExpiresAt.getTime() <= Date.now());
+  }
+
+  /**
+   * Ends a chat because one participant walked away.
+   *
+   * The conditional update is the whole concurrency story: `chatStatus:
+   * ACTIVE` in the WHERE means exactly one caller can perform the transition.
+   * Two users tapping "Find someone new" at the same instant therefore
+   * produce one ENDED_BY_USER row and one no-op, rather than two writes
+   * racing to record different leavers — and the loser is told the truth
+   * (already ended) instead of an error.
+   */
+  async leaveChatSession(
+    userId: string,
+    matchId?: string,
+  ): Promise<{ ended: boolean; session: InstantMatchChatState | null }> {
+    const session = matchId
+      ? await this.prisma.matchSession.findUnique({ where: { id: matchId } })
+      : await this.getActiveChatSession(userId);
+
+    if (!session) {
+      // Nothing live to leave. That is the ordinary outcome of a double tap,
+      // a second tab, or the other person having just left — so answer with
+      // whatever the state actually is rather than an empty result the caller
+      // cannot render. Without this the second tap of a double tap returned
+      // null and the UI had nothing to transition to.
+      return { ended: false, session: await this.getChatStateFor(userId) };
+    }
+
+    const isParticipant = session.userAId === userId || session.userBId === userId;
+    if (!isParticipant) {
+      // Knowing a match id must not let a third party end someone's chat.
+      throw new ForbiddenException('Not part of this match');
+    }
+
+    const claimed = await this.prisma.matchSession.updateMany({
+      where: { id: session.id, chatStatus: 'ACTIVE' },
+      data: {
+        chatStatus: 'ENDED_BY_USER',
+        endedById: userId,
+        endedAt: new Date(),
+      },
+    });
+
+    const fresh = await this.prisma.matchSession.findUnique({ where: { id: session.id } });
+    if (!fresh) return { ended: false, session: null };
+
+    if (claimed.count === 1) {
+      this.logger.log(`instant-match:chat-ended ${session.id} by=${userId}`);
+      // Close the conversation itself too, so any path that reads the
+      // conversation rather than the session also sees a dead chat.
+      await this.closeConversation(fresh.conversationId);
+      this.notifyChatEnded(fresh as InstantMatchSession);
+    }
+
+    return {
+      ended: claimed.count === 1,
+      session: this.toChatState(fresh as InstantMatchSession, userId),
+    };
+  }
+
+  /** Ends a chat because its 24h window closed. Same claim-once discipline as
+   *  leaving, so the sweep and a concurrent read cannot both notify. */
+  private async expireChatSession(sessionId: string): Promise<boolean> {
+    const claimed = await this.prisma.matchSession.updateMany({
+      where: { id: sessionId, chatStatus: 'ACTIVE' },
+      data: { chatStatus: 'EXPIRED', endedAt: new Date() },
+    });
+    if (claimed.count !== 1) return false;
+
+    const fresh = await this.prisma.matchSession.findUnique({ where: { id: sessionId } });
+    if (!fresh) return false;
+
+    this.logger.log(`instant-match:chat-expired ${sessionId}`);
+    await this.closeConversation(fresh.conversationId);
+    this.notifyChatEnded(fresh as InstantMatchSession);
+    return true;
+  }
+
+  private async closeConversation(conversationId: string | null): Promise<void> {
+    if (!conversationId) return;
+    try {
+      await this.prisma.conversation.updateMany({
+        where: { id: conversationId },
+        data: { status: 'ENDED' },
+      });
+    } catch (err) {
+      this.logger.warn(`Could not close conversation ${conversationId}`);
+    }
+  }
+
+  /** Tells both sides, each from their own point of view. Fire-and-forget:
+   *  the persisted row is the truth, and every screen reconciles against it,
+   *  so a dropped event costs a moment's staleness and nothing more. */
+  private notifyChatEnded(session: InstantMatchSession): void {
+    for (const uid of [session.userAId, session.userBId]) {
+      realtimeGatewayRef?.emitInstantMatchChatEnded(uid, this.toChatState(session, uid));
+    }
+  }
+
+  /**
+   * Projects a session into the shape a given viewer's UI needs.
+   *
+   * Per-viewer rather than a shared payload because "you left" and "they
+   * left" are different screens, and the difference must not be computed on
+   * the client from an id comparison it might get wrong.
+   */
+  private toChatState(session: InstantMatchSession, viewerId: string): InstantMatchChatState {
+    const otherUserId = session.userAId === viewerId ? session.userBId : session.userAId;
+    const endedByMe = Boolean(session.endedById && session.endedById === viewerId);
+
+    let reason: InstantMatchEndReason | null = null;
+    if (session.chatStatus === 'ENDED_BY_USER') reason = endedByMe ? 'you_left' : 'they_left';
+    else if (session.chatStatus === 'EXPIRED') reason = 'expired';
+
+    return {
+      matchId: session.id,
+      otherUserId,
+      activity: session.activity,
+      matchReason: session.matchReason ?? session.activity,
+      status: session.chatStatus,
+      isActive: session.chatStatus === 'ACTIVE' && !this.isPastWindow(session),
+      endReason: reason,
+      endedById: session.endedById ?? null,
+      endedAt: session.endedAt?.getTime() ?? null,
+      expiresAt: session.chatExpiresAt?.getTime() ?? null,
+      createdAt: session.createdAt.getTime(),
+      conversationId: session.conversationId,
+    };
+  }
+
+  /**
+   * Authorization for a single write into an Instant Match conversation.
+   *
+   * Called by MessagesService on the one send path every client shares, so
+   * there is no route — socket or HTTP, first tab or fifth — that reaches a
+   * message insert without passing through here.
+   */
+  async assertCanSendInChat(userId: string, conversationId: string): Promise<void> {
+    const session = await this.prisma.matchSession.findFirst({
+      where: { conversationId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // A conversation typed INSTANT_MATCH with no session behind it is
+    // corrupt state; refusing the write is the safe reading.
+    if (!session) throw new ForbiddenException('This Instant Match chat has ended');
+
+    if (session.userAId !== userId && session.userBId !== userId) {
+      throw new ForbiddenException('Not part of this match');
+    }
+
+    if (session.chatStatus === 'ENDED_BY_USER') {
+      throw new ForbiddenException(
+        session.endedById === userId
+          ? 'You left this match'
+          : 'The other student left this match',
+      );
+    }
+    if (session.chatStatus === 'EXPIRED') {
+      throw new ForbiddenException('This Instant Match has expired');
+    }
+
+    // The deadline is re-read from the row on every send, so a message that
+    // arrives one millisecond late is refused even if the sweep has not run
+    // and the sender's countdown still showed time on the clock.
+    if (this.isPastWindow(session)) {
+      await this.expireChatSession(session.id);
+      throw new ForbiddenException('This Instant Match has expired');
+    }
+  }
+
+  /** Expires every chat whose window has closed. Driven by the same sweep as
+   *  the accept-timer expiry, so online users are told promptly; offline ones
+   *  are reconciled by the lazy check on their next read. */
+  async expireStaleChats(): Promise<number> {
+    const due = await this.prisma.matchSession.findMany({
+      where: { chatStatus: 'ACTIVE', chatExpiresAt: { lte: new Date() } },
+      select: { id: true },
+      take: 200,
+    });
+
+    let handled = 0;
+    for (const { id } of due) {
+      if (await this.expireChatSession(id)) handled += 1;
+    }
+    return handled;
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────────────

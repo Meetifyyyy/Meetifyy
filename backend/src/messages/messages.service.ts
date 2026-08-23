@@ -14,8 +14,29 @@ import { resolvePresenceVisibilityForViewer } from '../users/privacy.helper';
 import { MentionsService } from '../mentions/mentions.service';
 import { buildReplyToSnapshot, REPLY_TO_SELECT } from './reply-preview.util';
 
+/** The one question MessagesService asks the Instant Match domain. Kept to a
+ *  single method so the coupling between the two stays visible and small. */
+export interface InstantMatchChatGuard {
+  assertCanSendInChat(userId: string, conversationId: string): Promise<void>;
+}
+
 @Injectable()
 export class MessagesService extends MessagingCoreService implements OnModuleInit, OnModuleDestroy {
+  /**
+   * Authorizes writes into an Instant Match chat.
+   *
+   * Late-bound rather than injected: InstantMatchModule already imports
+   * MessagesModule (it needs `createInstantMatchConversation`), so a
+   * constructor dependency the other way is a circular import. This mirrors
+   * the `setRealtimeGatewayRef` pattern the gateway uses for the same reason.
+   * InstantMatchService registers itself on init.
+   */
+  private instantMatchGuard: InstantMatchChatGuard | null = null;
+
+  registerInstantMatchGuard(guard: InstantMatchChatGuard | null) {
+    this.instantMatchGuard = guard;
+  }
+
   private instantMatchCleanupTimer?: NodeJS.Timeout;
   protected readonly logger = new Logger(MessagesService.name);
   private handleCache = new LruCache<string, string>(5000, 3600000);
@@ -66,9 +87,13 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
   async onModuleInit() {
     await this.cleanupExpiredInstantMatches();
+    // Every 5 minutes rather than 15: the sidebar shows a live countdown, so
+    // a chat that lingers for up to a quarter of an hour past "expired" reads
+    // as broken. Expiry is driven purely by `expiresAt`, which is stamped at
+    // creation — it does not depend on any message ever being sent.
     this.instantMatchCleanupTimer = setInterval(
       () => void this.cleanupExpiredInstantMatches(),
-      15 * 60 * 1000,
+      5 * 60 * 1000,
     );
     this.instantMatchCleanupTimer.unref?.();
   }
@@ -79,9 +104,26 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
   private async cleanupExpiredInstantMatches() {
     try {
-      await this.prisma.conversation.deleteMany({
+      // Collect the affected participants *before* the delete cascades their
+      // rows away — otherwise both users keep serving a cached conversation
+      // list containing a chat that no longer exists, and tapping it 404s.
+      const expiring = await this.prisma.conversation.findMany({
         where: { isInstantMatch: true, expiresAt: { lt: new Date() } },
+        select: { id: true, participants: { select: { userId: true } } },
       });
+      if (expiring.length === 0) return;
+
+      await this.prisma.conversation.deleteMany({
+        where: { id: { in: expiring.map((c) => c.id) } },
+      });
+
+      const affected = [
+        ...new Set(expiring.flatMap((c) => c.participants.map((p) => p.userId))),
+      ];
+      await this.invalidateUserConversationsCache(affected).catch(() => {});
+      this.logger.log(
+        `instant-match cleanup: removed ${expiring.length} expired chat(s)`,
+      );
     } catch (error) {
       this.logger.warn(`Expired instant-match cleanup failed: ${(error as Error).message}`);
     }
@@ -161,6 +203,8 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         id: true,
         publicId: true,
         name: true,
+        type: true,
+        isInstantMatch: true,
         participants: {
           where: { deletedAt: null, leftAt: null },
           select: { userId: true, isMuted: true }
@@ -170,6 +214,19 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
     if (!conv) {
       throw new ForbiddenException('Conversation not found');
+    }
+
+    // Instant Match chats are authorized against their match session, not
+    // just against participation: a chat can be over — someone left, or the
+    // 24h window closed — while both people are still participants. This is
+    // the single choke point every client shares, so no route reaches a
+    // message insert without it, and a stale tab is refused here rather than
+    // being trusted to have disabled its own input.
+    if (conv.type === 'INSTANT_MATCH' || conv.isInstantMatch) {
+      if (!this.instantMatchGuard) {
+        throw new ForbiddenException('This Instant Match chat is unavailable');
+      }
+      await this.instantMatchGuard.assertCanSendInChat(senderId, realConvId);
     }
 
     const senderParticipant = conv.participants.find(p => p.userId === senderId);
@@ -644,7 +701,14 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
     const [participants, excludedUserIds] = await Promise.all([
       this.prisma.conversationParticipant.findMany({
-        where: { userId, deletedAt: null },
+        where: {
+          userId,
+          deletedAt: null,
+          // Instant Match chats are a separate product surface reached only
+          // through Instant Match. They must never appear in Messages, carry
+          // a preview there, or contribute to its unread badge.
+          conversation: { type: { in: ['DM', 'GROUP'] } },
+        },
         orderBy: {
           conversation: { updatedAt: 'desc' }
         },
@@ -1229,7 +1293,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     userAId: string,
     userBId: string,
     activity: string,
-  ): Promise<{ id: string; internalId: string }> {
+  ): Promise<{ id: string; internalId: string; expiresAt: number }> {
     if (!userAId || !userBId || userAId === userBId) {
       throw new BadRequestException('Invalid instant match participants');
     }
@@ -1240,7 +1304,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     // pair a conversation that the expiry cleanup is about to delete.
     const existing = await this.prisma.conversation.findFirst({
       where: {
-        type: 'DM',
+        type: 'INSTANT_MATCH',
         isInstantMatch: true,
         expiresAt: { gt: new Date() },
         AND: [
@@ -1251,15 +1315,31 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     });
 
     if (existing) {
+      // No cache to invalidate: these conversations are not in any list.
       const pubId = (existing as any).publicId || existing.id;
-      return { id: pubId, internalId: existing.id };
+      return {
+        id: pubId,
+        internalId: existing.id,
+        expiresAt: (existing.expiresAt ?? expiresAt).getTime(),
+      };
     }
 
+    // No opening system message, and no denormalised lastMessage preview.
+    // Both existed so the chat would show up in the Messages list the moment
+    // the match was made; Instant Match conversations are no longer listed
+    // there at all, so nothing reads either one. The dedicated chat opens
+    // from the match session, not from a conversation list, and starts as a
+    // genuinely empty thread with its own header and starter prompts.
     const newPubId = generatePublicId();
     const conv = await this.prisma.conversation.create({
       data: {
         publicId: newPubId,
-        type: 'DM',
+        // Its own type, not a flagged DM. Every existing query that asks for
+        // `type: 'DM'` excludes Instant Match chats without having to know
+        // they exist.
+        type: 'INSTANT_MATCH',
+        // Kept in step with the type for the benefit of older rows and any
+        // read path still checking the flag.
         isInstantMatch: true,
         expiresAt,
         participants: {
@@ -1268,19 +1348,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       },
     });
 
-    const activityLabel = activity.charAt(0).toUpperCase() + activity.slice(1);
-    await this.prisma.message.create({
-      data: {
-        conversationId: conv.id,
-        senderId: userAId,
-        type: 'SYSTEM',
-        payload: {
-          text: `⚡ Instant Match — ${activityLabel}! You've been connected. Say hi!`,
-        },
-      },
-    });
-
-    return { id: newPubId, internalId: conv.id };
+    return { id: newPubId, internalId: conv.id, expiresAt: expiresAt.getTime() };
   }
 
   async getConversationParticipantIds(conversationId: string): Promise<string[]> {
