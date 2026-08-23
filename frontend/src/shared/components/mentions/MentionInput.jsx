@@ -88,6 +88,7 @@ export default function MentionInput({
   singleLine = false,
   onSubmit,
   onKeyDown,
+  onFocus,
   communityId = null,
   className = '',
   style = {},
@@ -483,6 +484,11 @@ export default function MentionInput({
         onInput={handleInput}
         onKeyDown={handleKeyDownInternal}
         onPaste={handlePaste}
+        // PostComposer has always passed an onFocus (to expand itself the moment
+        // the field is clicked) and this component never accepted it, so the
+        // prop went nowhere. It was masked because the first keystroke expands
+        // the composer too — the field just did not open until you typed.
+        onFocus={onFocus}
         onBlur={() => {
           // Delay closing so dropdown click can register
           setTimeout(() => setMentionActive(false), 200);
