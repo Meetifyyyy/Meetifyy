@@ -13,11 +13,8 @@ import { useCrewActivities } from '@shared/hooks/useCrew';
 import { useCommunities } from '@shared/hooks/useCommunities';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
-
-const isImageUrl = (str) => {
-  if (!str || typeof str !== 'string') return false;
-  return str.startsWith('/') || str.startsWith('http://') || str.startsWith('https://') || str.startsWith('data:');
-};
+import { resolveCommunityAvatar } from '@shared/utils/avatar';
+import { isCommunityMember, isCommunityOwner, communityMemberCount } from '@shared/utils/community';
 
 function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
   if (!act) return 'Starts soon';
@@ -102,15 +99,6 @@ function getStartsInLabel(act, index = 0, nowTime = Date.now()) {
  * When `embedded` is true the component renders its cards directly
  * (the parent <aside> in ProfilePage owns the container).
  */
-/**
- * Member count for a community payload. The list endpoint returns `memberCount`;
- * the optimistic join updater also maintains `membersCount`. Reading only
- * `members` (as this file used to) always yielded undefined.
- */
-function memberCountOf(c) {
-  return c?.memberCount ?? c?.membersCount ?? 0;
-}
-
 export default function ProfileRightSidebar({ embedded = false }) {
   const { currentUser } = useAuth();
   
@@ -200,13 +188,15 @@ export default function ProfileRightSidebar({ embedded = false }) {
     // The API field is `memberCount` (the backend even sorts by it); `members`
     // does not exist on this payload, so the old read was always undefined and
     // every card fell back to "0 members".
-    .sort((a, b) => memberCountOf(b) - memberCountOf(a))
+    .sort((a, b) => communityMemberCount(b) - communityMemberCount(a))
     .slice(0, 3);
 
-  const userCommunities = users?.[currentUser?.username]?.communities || currentUser?.communities || [];
-  const isCommunityJoined = (comm) => {
-    return !!comm.joined || userCommunities.includes(comm.name) || userCommunities.includes(comm.id);
-  };
+  // Membership comes from the payload's own `isJoined` / `userRole`, through the
+  // same helper every other community surface uses. This used to read
+  // `comm.joined` — a field the API has never returned — and fall back to
+  // `users[currentUser.username].communities`, but the users map is keyed by id,
+  // so that lookup was always undefined too. Between them the button read "Join"
+  // for every community, including ones the viewer owned.
 
   const cards = (
     <>
@@ -258,9 +248,14 @@ export default function ProfileRightSidebar({ embedded = false }) {
         <div className={s.panelCard}>
           <h3 className={s.panelTitle}>Discover Communities</h3>
           {popularCommunities.map(c => {
-            const rawJoined = isCommunityJoined(c);
+            const rawJoined = isCommunityMember(c, currentUser);
             const entityKey = `joinCommunity:${c.id}`;
             const isJoined = toggleRegistry.getLatestIntent(entityKey, rawJoined);
+            // The owner cannot leave — the server refuses it — so they get a
+            // static "Owner" chip rather than a button whose only outcome is a
+            // 403 and a toggle that snaps back.
+            const isOwner = isCommunityOwner(c, currentUser);
+            const avatarUrl = resolveCommunityAvatar(c);
             return (
               <div 
                 key={c.id} 
@@ -274,29 +269,39 @@ export default function ProfileRightSidebar({ embedded = false }) {
                     width: '38px',
                     height: '38px',
                     flexShrink: 0,
-                    ...(!isImageUrl(c.avatar) ? (c.color ? { background: c.color } : { background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }) : { background: 'var(--color-bg-white)' })
+                    ...(avatarUrl ? { background: 'var(--color-bg-white)' } : (c.color ? { background: c.color } : { background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }))
                   }}
                 >
-                  {isImageUrl(c.avatar)
-                    ? <img src={c.avatar} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-                    : <span style={{ color: '#FFF', fontWeight: 700, fontSize: '1.2rem' }}>{c.name.charAt(0).toUpperCase()}</span>
+                  {/* The image lives in `avatarKey` as a storage key, so it has
+                      to be resolved to an absolute media URL. Reading `c.avatar`
+                      raw found nothing for most communities, and for the rest
+                      produced a route-relative path that 404'd into the
+                      person-shaped default — which is what put a generic user
+                      icon on a community. */}
+                  {avatarUrl
+                    ? <img src={avatarUrl} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; }} />
+                    : <span style={{ color: '#FFF', fontWeight: 700, fontSize: '1.2rem' }}>{(c.name || '?').charAt(0).toUpperCase()}</span>
                   }
                 </div>
                 <div className={s.personInfo}>
                   <div className={s.personName}>{c.name}</div>
-                  <div className={s.personSub}>{memberCountOf(c)} members</div>
+                  <div className={s.personSub}>{communityMemberCount(c)} {communityMemberCount(c) === 1 ? 'member' : 'members'}</div>
                 </div>
-                <button
-                  className={`${s.joinBtn} ${isJoined ? s.joinedBtn : ''}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, rawJoined);
-                    toggleJoin({ communityId: c.id, isJoined: nextJoined, currentUser });
-                  }}
-                >
-                  {isJoined ? 'Joined' : 'Join'}
-                </button>
+                {isOwner ? (
+                  <span className={`${s.joinBtn} ${s.joinedBtn}`} aria-label="You own this community">Owner</span>
+                ) : (
+                  <button
+                    className={`${s.joinBtn} ${isJoined ? s.joinedBtn : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, rawJoined);
+                      toggleJoin({ communityId: c.id, isJoined: nextJoined, currentUser });
+                    }}
+                  >
+                    {isJoined ? 'Joined' : 'Join'}
+                  </button>
+                )}
               </div>
             );
           })}

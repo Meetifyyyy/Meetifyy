@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl, resolveCommunityAvatar } from '@shared/utils/avatar';
+import { isCommunityMember, isCommunityOwner } from '@shared/utils/community';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
@@ -250,14 +251,19 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
               )}
               <button
                 className={`${styles.heroJoinBtn}${joined ? ` ${styles.joined}` : ''}`}
-                onClick={onToggleJoin}
-                disabled={joining || comm.isEligibleToJoin === false || comm.hasPendingRequest}
+                onClick={isAdmin ? undefined : onToggleJoin}
+                aria-disabled={isAdmin || undefined}
+                disabled={joining || isAdmin || comm.isEligibleToJoin === false || comm.hasPendingRequest}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center', opacity: (comm.isEligibleToJoin === false || comm.hasPendingRequest) ? 0.8 : 1 }}
               >
                 {joining ? (
                   <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: joined ? 'currentColor' : 'white', borderTopColor: 'transparent' }} />
                 ) : null}
-                {joined ? (
+                {isAdmin ? (
+                  /* The owner cannot leave — ownership has to be transferred
+                     first, and the server refuses the request either way. */
+                  'Owner'
+                ) : joined ? (
                   <>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="20 6 9 17 4 12" />
@@ -492,14 +498,17 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
             )}
             <button
               className={`${styles.mobileJoinBtn}${joined ? ` ${styles.joined}` : ''}`}
-              onClick={onToggleJoin}
-              disabled={joining}
+              onClick={isAdmin ? undefined : onToggleJoin}
+              aria-disabled={isAdmin || undefined}
+              disabled={joining || isAdmin}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
             >
               {joining ? (
                 <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: joined ? 'currentColor' : 'white', borderTopColor: 'transparent' }} />
               ) : null}
-              {joined ? (
+              {isAdmin ? (
+                'Owner'
+              ) : joined ? (
                 <>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12" />
@@ -773,16 +782,7 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
     return users[currentUser.username]?.communities || currentUser.communities || [];
   }, [users, currentUser, comm]);
 
-  const rawJoined = useMemo(() => {
-    if (!comm) return false;
-    if (comm.ownerId && currentUser?.id && comm.ownerId === currentUser.id) return true;
-    if (comm.userRole === 'OWNER' || comm.userRole === 'MODERATOR' || comm.userRole === 'MEMBER') return true;
-    if (comm.isJoined !== undefined && comm.isJoined !== null) return Boolean(comm.isJoined);
-    if (Array.isArray(comm.members) && currentUser?.id) {
-      return comm.members.some(m => (m.userId || m.id || m.user?.id) === currentUser.id);
-    }
-    return userCommunities.includes(comm.name);
-  }, [comm, currentUser, userCommunities]);
+  const rawJoined = useMemo(() => isCommunityMember(comm, currentUser), [comm, currentUser]);
 
   const entityKey = `joinCommunity:${communityId}`;
   const joined = toggleRegistry.getLatestIntent(entityKey, rawJoined);
@@ -809,7 +809,7 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
     });
     return combined;
   }, [comm, fetchedPostsData, posts]);
-  const isOwner = comm ? (comm.ownerId === currentUser?.id || comm.userRole === 'OWNER' || (Array.isArray(comm.members) && comm.members.some(m => (m.userId === currentUser?.id || m.user?.id === currentUser?.id) && m.role === 'OWNER'))) : false;
+  const isOwner = isCommunityOwner(comm, currentUser);
   const isMod = comm ? (comm.userRole === 'MODERATOR' || (Array.isArray(comm.members) && comm.members.some(m => (m.userId === currentUser?.id || m.user?.id === currentUser?.id) && m.role === 'MODERATOR'))) : false;
   const isAdmin = isOwner;
 
@@ -962,7 +962,10 @@ function DeletedCommunityView({ onBack }) {
 
   const handleCreatePostClick = () => {
     if (!joined) {
-      toggleJoin({ communityId, isJoined: joined, currentUser });
+      // `isJoined` is the DESIRED next state. This passed `joined`, which is
+      // false in this branch — so the shortcut that is supposed to join the
+      // community was calling leave on it instead.
+      toggleJoin({ communityId, isJoined: true, currentUser });
     }
     setTimeout(() => {
       const inputEl = document.querySelector(`.${styles.composerWrap} div[contenteditable="true"]`) || 

@@ -2,6 +2,7 @@ import { useState, useEffect, memo } from 'react';
 import styles from './CommunityCard.module.css';
 import { useQueryClient } from '@tanstack/react-query';
 import { resolveCommunityAvatar } from '@shared/utils/avatar';
+import { isCommunityMember, isCommunityOwner } from '@shared/utils/community';
 import { useAuth } from '@shared/context/AuthContext';
 import { useJoinCommunity } from '../../hooks/useJoinCommunity';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
@@ -15,14 +16,9 @@ function CommunityCard({ comm, onClick }) {
   const queryClient = useQueryClient();
   const [imgError, setImgError] = useState(false);
   
-  // Real check: is currentUser in comm.members or owner?
-  const isJoined = (comm.ownerId && currentUser?.id && comm.ownerId === currentUser.id) ||
-    comm.userRole === 'OWNER' ||
-    comm.userRole === 'MODERATOR' ||
-    comm.userRole === 'MEMBER' ||
-    (comm.isJoined !== undefined ? Boolean(comm.isJoined) : (comm.isMember !== undefined ? Boolean(comm.isMember) : false)) ||
-    (comm.members?.some(m => (m.userId || m.id || m.user?.id) === currentUser?.id)) ||
-    currentUser?.communities?.includes(comm.name);
+  const isJoined = isCommunityMember(comm, currentUser);
+  // The server refuses to let an owner leave, so don't offer it.
+  const isOwner = isCommunityOwner(comm, currentUser);
   const entityKey = `joinCommunity:${comm.id}`;
   const displayJoined = toggleRegistry.getLatestIntent(entityKey, isJoined);
 
@@ -47,17 +43,21 @@ function CommunityCard({ comm, onClick }) {
             <span className={styles.cardLetter}>{initial}</span>
           )}
         </div>
-        <button
-          className={`${styles.joinBtn} ${displayJoined ? styles.joined : ''}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, isJoined);
-            toggleJoin({ communityId: comm.id, isJoined: nextJoined, currentUser });
-          }}
-          disabled={false} // allowed for rapid toggle
-        >
-          {displayJoined ? 'Joined' : 'Join'}
-        </button>
+        {isOwner ? (
+          <span className={`${styles.joinBtn} ${styles.joined}`} aria-label="You own this community">Owner</span>
+        ) : (
+          <button
+            className={`${styles.joinBtn} ${displayJoined ? styles.joined : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, isJoined);
+              toggleJoin({ communityId: comm.id, isJoined: nextJoined, currentUser });
+            }}
+            disabled={false} // allowed for rapid toggle
+          >
+            {displayJoined ? 'Joined' : 'Join'}
+          </button>
+        )}
       </div>
       <h3 className={styles.cardTitle}>{comm.name}</h3>
       <p className={styles.cardDesc}>

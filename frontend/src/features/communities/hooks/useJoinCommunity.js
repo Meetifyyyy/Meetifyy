@@ -1,7 +1,10 @@
 import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useToggleMutation } from '@shared/hooks/useToggleMutation';
 import { communitiesApi } from '@shared/api/apiClient';
 import { COMMUNITY_KEYS } from '@shared/hooks/useCommunities';
+import { isCommunityOwner } from '@shared/utils/community';
+import { showToast } from '@shared/utils/toast';
 
 export function useJoinCommunity() {
   const applyOptimistic = useCallback((queryClient, intent, variables) => {
@@ -50,13 +53,52 @@ export function useJoinCommunity() {
       : communitiesApi.leave(communityId, { signal });
   }, []);
 
-  const { mutate } = useToggleMutation({
+  const isOwner = useCallback((queryClient, variables) => {
+    const { communityId, currentUser } = variables;
+    if (!currentUser?.id) return false;
+    // The detail cache is the most reliable read; fall back to the list.
+    const detail = queryClient.getQueryData(COMMUNITY_KEYS.byId(communityId));
+    if (detail) return isCommunityOwner(detail, currentUser);
+    const lists = [
+      queryClient.getQueryData(COMMUNITY_KEYS.all),
+      queryClient.getQueryData(COMMUNITY_KEYS.campus),
+    ];
+    for (const list of lists) {
+      if (!Array.isArray(list)) continue;
+      const found = list.find((c) => c?.id === communityId);
+      if (found) return isCommunityOwner(found, currentUser);
+    }
+    return false;
+  }, []);
+
+  const { mutate: toggle } = useToggleMutation({
     entityKey: (vars) => `joinCommunity:${vars.communityId}`,
     applyOptimistic,
     applyRollback,
     callApi,
-    invalidateKeys: (vars) => [['communities'], ['campusCommunities'], ['community', vars.communityId], ['conversations']],
+    // `['communities']` covers the campus list too — its key is
+    // ['communities','campus']. The old list also named ['campusCommunities'],
+    // which no query has ever used.
+    invalidateKeys: (vars) => [['communities'], ['community', vars.communityId], ['conversations']],
   });
+
+  const queryClient = useQueryClient();
+
+  /**
+   * Leaving is refused for the owner before any request is made.
+   *
+   * Every surface should hide the control for them, but this is the one place
+   * all of them funnel through — and the server's rejection would otherwise
+   * arrive after the optimistic update had already removed them from the member
+   * list and decremented the count, producing a visible flip-back.
+   */
+  const mutate = useCallback((variables) => {
+    if (variables?.isJoined === false && isOwner(queryClient, variables)) {
+      showToast('Transfer ownership before leaving your own community', 'error');
+      return;
+    }
+    return toggle(variables);
+  }, [toggle, isOwner, queryClient]);
 
   return { mutate, isLoading: false };
 }
