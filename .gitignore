@@ -105,6 +105,12 @@ backend/prisma/*.db-journal
 # ------------------------------------------------------------------------------
 uploads/
 **/uploads/
+# ...but backend/src/uploads is the storage MODULE, not an upload directory.
+# The rule above silently swallowed every new file added there — its existing
+# files are only tracked because they predate the rule, and anything added
+# since had to be force-added or was quietly lost.
+!backend/src/uploads/
+!backend/src/uploads/**
 tmp/
 temp/
 scratch/

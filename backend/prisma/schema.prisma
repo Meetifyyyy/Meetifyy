@@ -115,7 +115,13 @@ model Media {
   duration            Int?
   visibility          String         @default("public")
   order               Int            @default(0)
-  ownerId             String
+  /// Nullable for platform-owned assets — the default avatars and covers
+  /// belong to no user. They cannot hang off a real account: the owner
+  /// relation cascades on delete, so one user closing their account would
+  /// take every default image with it. A null owner also makes the
+  /// ownership check that guards deletion refuse everyone, which is exactly
+  /// the desired behaviour for these.
+  ownerId             String?
   postId              String?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
@@ -126,7 +132,7 @@ model Media {
   avatarConversations Conversation[] @relation("ConversationAvatar")
   coverActivities     CrewActivity[] @relation("ActivityCover")
   campusEventPosters  CampusEvent[]  @relation("CampusEventPoster")
-  owner               User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner               User?          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   post                Post?          @relation(fields: [postId], references: [id], onDelete: Cascade)
   messageAttachments  Message[]      @relation("MessageAttachment")
   avatarUsers         User[]         @relation("UserAvatar")

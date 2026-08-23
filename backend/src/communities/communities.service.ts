@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { PresenceService } from '../presence/presence.service';
+import { DefaultAssetsService } from '../uploads/default-assets.service';
 import Redis from 'ioredis';
 
 @Injectable()
@@ -17,6 +18,7 @@ export class CommunitiesService implements OnModuleInit {
     private readonly domainEventService: DomainEventService,
     private readonly redisService: RedisService,
     private readonly presenceService: PresenceService,
+    private readonly defaultAssets: DefaultAssetsService,
   ) {
     this.redis = this.redisService.getClient();
   }
@@ -736,8 +738,17 @@ export class CommunitiesService implements OnModuleInit {
     const existing = await this.prisma.community.findUnique({ where: { slug } });
     const finalSlug = existing ? `${slug}-${Date.now()}` : slug;
 
-    const avatarVal = this.sanitizeMediaRef(data.avatarKey ?? data.avatar);
-    const coverVal = this.sanitizeMediaRef(data.coverKey ?? data.coverImage);
+    // Every new community starts with the platform defaults, stored on the
+    // row exactly like an upload would be. Not a render-time fallback: the
+    // record genuinely carries an image reference from the moment it exists,
+    // so the community looks finished everywhere immediately and the admin
+    // can replace it through the ordinary crop-and-upload flow.
+    const avatarVal =
+      this.sanitizeMediaRef(data.avatarKey ?? data.avatar) ??
+      this.defaultAssets.refFor('community-avatar');
+    const coverVal =
+      this.sanitizeMediaRef(data.coverKey ?? data.coverImage) ??
+      this.defaultAssets.refFor('community-cover');
     const descVal = data.description || data.desc;
 
     const createData: any = {

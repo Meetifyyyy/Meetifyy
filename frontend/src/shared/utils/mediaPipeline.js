@@ -387,10 +387,18 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
 // Folders whose images are rendered as small thumbnails in lists/grids/avatars.
 // For these we upload a derived `<key>_thumb.webp` variant the UI can request
 // instead of the full original (Avatar, feed MediaGrid, etc.).
-const DERIVED_THUMB_FOLDERS = ['avatars', 'groups', 'communities', 'posts', 'events'];
+// Folders whose uploads also get a `<key>_thumb.webp` variant the UI derives
+// at render time. Covers were missing from this list, so every profile and
+// community cover was served at full size wherever a small one would do.
+const DERIVED_THUMB_FOLDERS = [
+  'avatars', 'groups', 'communities', 'community-icons',
+  'profile-covers', 'community-covers',
+  'posts', 'events',
+];
 const thumbSizeForFolder = (folder) => {
-  if (folder === 'avatars' || folder === 'groups') return 160;
+  if (folder === 'avatars' || folder === 'groups' || folder === 'community-icons') return 160;
   if (folder === 'communities') return 256;
+  if (folder === 'profile-covers' || folder === 'community-covers') return 640;
   return 480; // posts
 };
 

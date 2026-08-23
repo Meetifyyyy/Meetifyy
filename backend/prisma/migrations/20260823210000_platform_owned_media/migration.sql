@@ -1,0 +1,11 @@
+-- Allow Media rows with no owner, for platform-owned assets.
+--
+-- The default avatars and covers are real uploaded images and need real Media
+-- rows, but they belong to no user. Attributing them to an account was not an
+-- option: Media.ownerId cascades on user delete, so that account closing
+-- would silently delete every default image the whole product points at.
+--
+-- Widening a NOT NULL column is safe for existing rows, which keep their
+-- owner. A null owner also makes StorageService.userOwnsMediaKey return false
+-- for everyone, so these assets cannot be deleted through the media API.
+ALTER TABLE "Media" ALTER COLUMN "ownerId" DROP NOT NULL;

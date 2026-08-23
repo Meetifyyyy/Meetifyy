@@ -135,7 +135,9 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
       }
     } catch (e) {
       console.error(e);
-      showToast('Upload failed', 'error');
+      // Report the real reason. The generic message here is the other half of
+      // why a rejected upload folder went unnoticed for so long.
+      showToast(e?.message || 'Upload failed', 'error');
     } finally {
       setIsUploading(false);
       setUploadingType(null);

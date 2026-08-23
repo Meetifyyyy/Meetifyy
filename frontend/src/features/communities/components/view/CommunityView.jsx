@@ -120,8 +120,15 @@ function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreateP
       });
       const fieldKey = cropType === 'avatar' ? 'avatarKey' : 'coverKey';
       await onUpdateCommunity(comm.id, { [fieldKey]: publicUrl });
-    } catch {
-      showToast('Upload failed', 'error');
+      // A fresh image at a new key: clear the error latch, or a previously
+      // failed cover would keep rendering the default over the new upload.
+      setCoverError(false);
+      showToast(cropType === 'avatar' ? 'Icon updated' : 'Cover updated', 'success');
+    } catch (err) {
+      // Surface what actually went wrong. The bare `catch {}` here reported
+      // every failure as "Upload failed", which is how a plain 400 from the
+      // upload endpoint stayed invisible for so long.
+      showToast(err?.message || 'Upload failed', 'error');
     } finally {
       setIsUploading(false);
       setCropType(null);

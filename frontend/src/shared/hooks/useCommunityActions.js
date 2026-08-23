@@ -69,9 +69,15 @@ export function useCommunityActions() {
   const updateCommunity = async (id, data) => {
     try {
       const updated = await communitiesApi.updateGroupInfo(id, data);
-      // Seed the cache immediately so the UI reflects the change before the re-fetch lands
+      // Seed the cache immediately so the UI reflects the change before the
+      // re-fetch lands — but MERGE it. The update endpoint returns the bare
+      // Community row, while this cache holds the enriched detail payload
+      // (members, isJoined, userRole, online). Replacing it wholesale made
+      // the Join button flip back and the member strip empty out for the
+      // second or two until the refetch returned.
       if (updated?.id) {
-        queryClient.setQueryData(['community', id], updated);
+        queryClient.setQueryData(['community', id], (prev) =>
+          (prev ? { ...prev, ...updated } : updated));
       }
       queryClient.invalidateQueries({ queryKey: ['communities'] });
       queryClient.invalidateQueries({ queryKey: ['community', id] });

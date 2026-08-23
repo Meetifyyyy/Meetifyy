@@ -299,7 +299,22 @@ export class StorageService {
     // 'activities' backs CrewActivity cover images. Folders are only key
     // prefixes within the single configured bucket, so adding one needs no
     // storage provisioning.
-    const allowedFolders = ['avatars', 'profile-covers', 'posts', 'communities', 'chat', 'groups', 'voice', 'temp', 'general', 'events', 'activities'];
+    //
+    // 'community-icons' and 'community-covers' are what the community editor
+    // has always sent. They were missing from this list, so every avatar or
+    // cover change on an existing community was rejected with a 400 before a
+    // byte was uploaded — the client reported it as a generic "Upload failed"
+    // and the real reason never surfaced. (Creating a community happened to
+    // work because that dialog posts to 'communities'.) They are kept as
+    // separate prefixes rather than folded into 'communities' so icons and
+    // covers stay distinguishable in storage, exactly as avatars and
+    // profile-covers already are for users.
+    const allowedFolders = [
+      'avatars', 'profile-covers',
+      'communities', 'community-icons', 'community-covers',
+      'posts', 'chat', 'groups', 'voice', 'temp', 'general', 'events', 'activities',
+      'defaults',
+    ];
     if (!allowedFolders.includes(folder)) {
       throw new BadRequestException(`Invalid upload folder. Allowed: ${allowedFolders.join(', ')}`);
     }

@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException, NotFoundException, ConflictException, BadRequestException, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { DefaultAssetsService } from '../uploads/default-assets.service';
 import { DomainValidatorService } from '../common/services/domain-validator.service';
 import { RedisService } from '../redis/redis.service';
 import { LruCache } from '../common/utils/lru-cache.util';
@@ -38,6 +39,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly supabaseService: SupabaseService,
     private readonly domainValidatorService: DomainValidatorService,
+    private readonly defaultAssets: DefaultAssetsService,
     @Optional() private readonly redisService?: RedisService,
   ) {}
 
@@ -402,7 +404,12 @@ export class AuthService {
           username: finalUsername,
           displayName,
           email: email,
-          avatar: sbUser.user_metadata?.avatar || null,
+          // Every new profile starts with the platform defaults, written onto
+          // the row like any uploaded image rather than substituted at render
+          // time. The profile cover is a deliberately different design from
+          // the community one, so the two surfaces never look alike.
+          avatar: sbUser.user_metadata?.avatar || this.defaultAssets.refFor('profile-avatar'),
+          cover: this.defaultAssets.refFor('profile-cover'),
           collegeId: collegeId,
           collegeEmail: email,
           birthday: userBirthday,
