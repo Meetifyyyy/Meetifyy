@@ -255,15 +255,21 @@ export function ThemeProvider({ children }) {
 
           activeAnimationRef.current = anim;
 
-          // Release the forwards-fill as soon as the reveal is done. The
-          // pseudo-element is torn down with the transition, so nothing is
-          // left to hold — and nothing lingers to contaminate the next one.
-          return anim.finished.then(() => {
-            if (activeAnimationRef.current === anim) {
-              try { anim.cancel(); } catch (_) { /* already gone */ }
-              activeAnimationRef.current = null;
-            }
-          });
+          /*
+           * The forwards-fill is deliberately NOT released here.
+           *
+           * Cancelling on `finished` reverts clip-path to its CSS value —
+           * `circle(0px)` — which blanks the new snapshot entirely for the
+           * frames between the animation ending and the browser tearing the
+           * pseudo-element down. The old snapshot shows through underneath,
+           * so the switch ended with a flash of the previous theme.
+           *
+           * The fill is released at the start of the *next* toggle instead,
+           * by which point this pseudo-element no longer exists. That still
+           * stops a stale animation contaminating the next reveal, which is
+           * what the cancellation was for, without the flash.
+           */
+          return anim.finished;
         })
         .catch(() => {
           // A skipped transition rejects `ready`; that is the normal path
