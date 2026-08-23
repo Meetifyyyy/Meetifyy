@@ -404,15 +404,80 @@ export class CommunitiesService implements OnModuleInit {
 
     const canViewPosts = isJoined || (!community.isPrivate && isEligibleToJoin);
 
+    const onlineCount = await this.countOnlineMembers(id, community.ownerId);
+
     return {
       ...community,
       isJoined,
+      online: onlineCount,
+      onlineCount,
       userRole,
       isEligibleToJoin,
       eligibilityMessage,
       canViewPosts,
       hasPendingRequest,
     };
+  }
+
+  /**
+   * How many of a community's members are online right now.
+   *
+   * Counted over *every* member, not over the 50 loaded for the member
+   * strip — that cap is why a large community could show "0 active now"
+   * while plenty of people were on. Deliberately computed outside the 60s
+   * community cache: a cached presence count is worse than none, because it
+   * keeps reporting people who left minutes ago.
+   *
+   * One indexed id-only read plus a single Redis MGET, so this stays cheap
+   * even on a community with thousands of members.
+   */
+  async countOnlineMembers(communityId: string, ownerId?: string | null): Promise<number> {
+    try {
+      const members = await this.prisma.communityMember.findMany({
+        where: { communityId },
+        select: { userId: true },
+      });
+
+      const ids = new Set(members.map((m) => m.userId));
+      // The owner is shown in the member strip whether or not they hold a
+      // CommunityMember row, so they must count the same way.
+      if (ownerId) ids.add(ownerId);
+      if (ids.size === 0) return 0;
+
+      const presence = await this.presenceService.getPresenceMany([...ids]);
+      let online = 0;
+      for (const p of presence.values()) {
+        if (p?.status === 'online') online += 1;
+      }
+      return online;
+    } catch (err) {
+      // A presence read must never take the community page down with it.
+      this.logger.warn(`Failed to count online members for ${communityId}`);
+      return 0;
+    }
+  }
+
+  /** Every community a user belongs to (or owns). Used to fan a presence
+   *  change out to exactly the rooms whose count just moved. */
+  async getCommunityIdsForUser(userId: string): Promise<string[]> {
+    try {
+      const [memberships, owned] = await Promise.all([
+        this.prisma.communityMember.findMany({
+          where: { userId },
+          select: { communityId: true },
+        }),
+        this.prisma.community.findMany({
+          where: { ownerId: userId, deletedAt: null },
+          select: { id: true },
+        }),
+      ]);
+      return [...new Set([
+        ...memberships.map((m) => m.communityId),
+        ...owned.map((c) => c.id),
+      ])];
+    } catch {
+      return [];
+    }
   }
 
   async joinCommunity(communityId: string, userId: string) {

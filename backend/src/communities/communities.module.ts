@@ -9,5 +9,8 @@ import { PresenceModule } from '../presence/presence.module';
   imports: [PrismaModule, SupabaseModule, PresenceModule],
   controllers: [CommunitiesController],
   providers: [CommunitiesService],
+  // RealtimeGateway needs the online-member count to push "active now"
+  // updates into community rooms.
+  exports: [CommunitiesService],
 })
 export class CommunitiesModule {}
