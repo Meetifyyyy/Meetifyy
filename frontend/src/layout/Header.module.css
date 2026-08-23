@@ -880,7 +880,13 @@
 @media (max-width: 768px) {
   .header {
     transition: transform 0.26s cubic-bezier(0.22, 0.9, 0.3, 1);
-    will-change: transform;
+    /* Deliberately NO `will-change: transform` here. It creates a containing
+       block for `position: fixed` descendants exactly as a real transform
+       does, which silently re-anchored the nav drawer to the 60px header box
+       instead of the viewport. The transform below has the same effect while
+       it is applied, which is why the drawer is portalled out of the header
+       rather than merely having the hint removed. A sticky bar sliding once
+       does not need the hint anyway. */
   }
 
   :global(html[data-chrome-hidden]) .header {

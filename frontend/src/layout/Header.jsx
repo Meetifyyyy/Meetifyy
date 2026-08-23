@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
@@ -87,6 +88,12 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   const navigate = useNavigate();
   const location = useLocation();
   const activeTab = location.pathname.startsWith('/messages') ? 'messages' : '';
+
+  // Navigating closes the drawer. It is portalled to <body> now, so it no
+  // longer vanishes along with the header on routes that hide the header —
+  // without this it could stay open over a page with no way to dismiss it.
+  // Declared after `location`: reading it above its own declaration throws.
+  useEffect(() => { setDrawerOpen(false); }, [location.pathname]);
   const isHomePage = location.pathname === '/home' || location.pathname === '/';
   const dropdownRef = useRef(null);
   const notifRef = useRef(null);
@@ -168,10 +175,19 @@ export default function Header({ variant = 'dashboard', wide = false }) {
         />
       </div>
 
-      {/* Side Drawer.
-          `data-scroll-lock-ignore` keeps useScrollLock from freezing the
-          drawer's own scroll along with the page behind it — the drawer is
-          not portalled, so it sits inside the subtree the lock walks. */}
+      {/* Side Drawer — portalled to <body>.
+          It must not live inside <header>: the header takes a transform
+          (and a will-change) on mobile to slide away on scroll, and either
+          one makes it the containing block for `position: fixed`
+          descendants. The drawer then resolved top/left/bottom against the
+          60px header box instead of the viewport, collapsing to that strip
+          — its background covered only the header row while its contents
+          spilled transparently over the feed.
+          `data-scroll-lock-ignore` is belt-and-braces: outside #root the
+          lock's walk cannot reach it anyway, but the marker keeps that true
+          if it is ever moved back. */}
+      {createPortal(
+        <>
       <div
         className={`${styles.mobileDrawer} ${drawerOpen ? styles.drawerOpen : ''}`}
         data-scroll-lock-ignore
@@ -301,6 +317,9 @@ export default function Header({ variant = 'dashboard', wide = false }) {
           onClick={() => setDrawerOpen(false)}
           aria-hidden="true"
         />
+      )}
+        </>,
+        document.body,
       )}
 
       {/* Center Search Bar */}

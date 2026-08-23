@@ -221,13 +221,12 @@ export function ThemeProvider({ children }) {
               clipPath: clipPathFrames,
             },
             {
-              // Shorter and decelerating rather than symmetric ease-in-out.
-              // The old curve started slow, which read as lag between the
-              // click and anything happening; this leaves immediately and
-              // settles at the edges, which is most of what makes the same
-              // circular reveal feel smooth. The shape of the reveal is
-              // unchanged — only its timing.
-              duration: 620,
+              // 800ms, decelerating rather than symmetric ease-in-out. The
+              // old curve started slow, which read as lag between the click
+              // and anything happening; this leaves immediately and settles
+              // at the edges. The shape and length of the reveal are as they
+              // were — only the distribution of time within it changed.
+              duration: 800,
               easing: 'cubic-bezier(0.22, 0.9, 0.3, 1)',
               fill: 'forwards',
               pseudoElement: '::view-transition-new(root)',
