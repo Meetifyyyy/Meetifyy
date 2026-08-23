@@ -29,6 +29,11 @@ export class DmService extends MessagingCoreService {
         deletedAt: null,
         conversation: { type: 'DM' }
       },
+      // Without an explicit order, `take`/`skip` paginate an unordered set:
+      // rows can repeat or vanish between pages, and a brand-new instant-match
+      // chat can land anywhere — including past the end of page one, which
+      // looks exactly like the chat not having been created.
+      orderBy: { conversation: { updatedAt: 'desc' } },
       take: limit,
       skip: offset,
       select: {
@@ -184,9 +189,14 @@ export class DmService extends MessagingCoreService {
       const lastMsgInfo = lastMsgMap.get(conv.id);
 
       // DM Visibility Lifecycle (PENDING vs ACTIVE):
-      // A conversation with 0 messages MUST NOT appear in the conversation list for ANY user
-      // until the first message is sent (unless it is an instant match).
-      if (!lastMsgInfo && !conv.isInstantMatch) {
+      // A conversation with 0 messages MUST NOT appear in the conversation list
+      // for ANY user until the first message is sent.
+      //
+      // The old `|| conv.isInstantMatch` exemption is gone: Instant Match
+      // chats now live on their own conversation type and are excluded by the
+      // `type: 'DM'` filter on the query above, so an exemption here could
+      // only ever re-admit one.
+      if (!lastMsgInfo) {
         return null;
       }
 

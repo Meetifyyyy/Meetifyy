@@ -86,17 +86,6 @@
   color: var(--color-text-light, #a1a1aa);
 }
 
-.instantMatchBadge {
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.1);
-  padding: 1px 5px;
-  border-radius: 6px;
-  margin-left: 4px;
-  vertical-align: middle;
-}
-
 .dmPreviewRow {
   display: flex;
   align-items: center;

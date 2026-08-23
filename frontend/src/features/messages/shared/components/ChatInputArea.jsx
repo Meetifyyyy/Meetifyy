@@ -125,12 +125,11 @@ export default function ChatInputArea({
   };
 
   const isClosed = conversation?.status === 'Closed';
-  const isExpiredInstantMatch = conversation?.isInstantMatch && conversation?.expiresAt && new Date(conversation.expiresAt).getTime() < Date.now();
   const isNotMember = (conversation?.type === 'GROUP' || conversation?.isGroup) && conversation?.isMember === false;
   // Also respect the parent-level disabled flag (e.g. blocked DM, ended activity)
   const isDisabledByParent = !!disabled;
 
-  if (isClosed || isExpiredInstantMatch || isNotMember || isDisabledByParent) {
+  if (isClosed || isNotMember || isDisabledByParent) {
     return (
       <div className={styles.msgChatInputWrap} style={{ justifyContent: 'center', padding: '1rem' }}>
         <div className={styles.msgBlockedNotice} style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
@@ -138,8 +137,6 @@ export default function ChatInputArea({
             ? disabledReason
             : isClosed
             ? 'This activity/conversation has ended.'
-            : isExpiredInstantMatch
-            ? 'This 24-hour instant match has expired.'
             : "You can't send messages because you're no longer in this group."}
         </div>
       </div>

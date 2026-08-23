@@ -1091,29 +1091,6 @@
   letter-spacing: 0.02em;
 }
 
-.beginningOfConversation {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 0.6rem 0 0.3rem;
-  flex-shrink: 0;
-}
-
-.beginningOfConversation span {
-  font-size: 0.73rem;
-  font-weight: 500;
-  color: var(--color-text-muted, #71717a);
-  background: var(--color-bg-subtle, #f4f4f5);
-  padding: 3px 12px;
-  border-radius: 20px;
-  letter-spacing: 0.02em;
-}
-
-[data-theme='dark'] .beginningOfConversation span {
-  background: rgba(255, 255, 255, 0.06);
-  color: #71717a;
-}
-
 .msgInitialLoadingCenter {
   display: flex;
   justify-content: center;

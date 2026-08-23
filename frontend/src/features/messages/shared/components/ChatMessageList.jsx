@@ -2,7 +2,6 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, mem
 import { ErrorState } from '@shared/components/ui/StateViews';
 import Avatar from '@shared/components/avatar/Avatar';
 import MessageBubble from './MessageBubble';
-import { timeAgo } from '@shared/utils/time';
 import { usePostLookup } from '@shared/hooks/usePostLookup';
 import styles from './ChatMessageList.module.css';
 import { getMsgTimestamp, compareMessages } from '../utils/cacheUtils';
@@ -574,34 +573,6 @@ export default function ChatMessageList({
         <div className={styles.topLoadingIndicator}>
           <div className={styles.topLoadingSpinner} />
           <span className={styles.topLoadingText}>Loading older messages…</span>
-        </div>
-      )}
-
-      {/* ── Beginning of conversation marker ── */}
-      {!hasMore && !isLoading && sortedMessages.length > 0 && (
-        <div className={styles.beginningOfConversation}>
-          <span>Beginning of conversation</span>
-        </div>
-      )}
-
-      {/* ── Instant-match banner (first item after beginning marker) ── */}
-      {conversation?.isInstantMatch && !isLoading && sortedMessages.length > 0 && (
-        <div className={styles.msgDateSeparator} style={{ margin: '0.5rem 0' }}>
-          <span className={styles.msgDateSeparatorLine} />
-          <span
-            className={styles.msgDateSeparatorText}
-            style={{
-              background: 'rgba(234, 179, 8, 0.12)',
-              color: '#eab308',
-              padding: '4px 14px',
-              borderRadius: '14px',
-              fontWeight: 600,
-              fontSize: '0.78rem',
-            }}
-          >
-            ⚡ Instant Match started {conversation.createdAt ? timeAgo(conversation.createdAt) : 'recently'}
-          </span>
-          <span className={styles.msgDateSeparatorLine} />
         </div>
       )}
 
