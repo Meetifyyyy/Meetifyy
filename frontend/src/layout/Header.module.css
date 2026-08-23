@@ -897,3 +897,51 @@
   .mobileDrawer { transition: none; }
   .drawerOverlay { animation: none; }
 }
+
+/* ── Theme toggle ─────────────────────────────────────────────────────────
+   The button's own response to being pressed. Separate from, and much
+   shorter than, the full-page circular reveal — the point is that the
+   control acknowledges the tap immediately, while the page catches up.
+   Nothing here touches the reveal itself. */
+
+.themeToggleIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Sun and moon rise from opposite sides, so the swap reads as one rotating
+     through to the other rather than a straight cross-fade. */
+  animation: themeIconSwap 0.42s cubic-bezier(0.22, 0.9, 0.3, 1) both;
+}
+
+@keyframes themeIconSwap {
+  from { transform: rotate(-120deg) scale(0.55); opacity: 0; }
+  60%  { opacity: 1; }
+  to   { transform: rotate(0deg) scale(1); opacity: 1; }
+}
+
+/* A quick inward press, then a settle. `:active` alone is not enough on
+   touch, where the state can be gone before a frame renders. */
+.drawerThemeToggleBtn {
+  /* Overrides the `transition: all 0.2s` above with something that will not
+     also animate colour changes mid-theme-switch, which double-animates
+     against the page reveal. */
+  transition: transform 0.18s cubic-bezier(0.22, 0.9, 0.3, 1),
+              border-color 0.2s ease,
+              background-color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.drawerThemeToggleBtn:active {
+  transform: scale(0.9);
+}
+
+.drawerThemeToggleBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .themeToggleIcon { animation: none; }
+  .drawerThemeToggleBtn { transition: none; }
+  .drawerThemeToggleBtn:active { transform: none; }
+}

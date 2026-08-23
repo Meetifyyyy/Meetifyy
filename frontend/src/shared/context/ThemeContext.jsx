@@ -111,7 +111,21 @@ export function ThemeProvider({ children }) {
     return 'light';
   });
 
-  const isTransitioningRef = useRef(false);
+  /**
+   * The live theme, for `toggleTheme` to read.
+   *
+   * Reading the `theme` state variable inside the handler reads whatever it
+   * was when that closure was created. Two clicks in quick succession both
+   * saw 'light' and both set 'dark', so the second toggle silently did
+   * nothing — the deeper half of "fast clicking does not work", underneath
+   * the in-flight guard that was dropping the click outright.
+   */
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
+
+  /** The transition currently playing, so a new click can cut it short
+   *  instead of being discarded. */
+  const activeTransitionRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -121,14 +135,29 @@ export function ThemeProvider({ children }) {
   }, [theme]);
 
   const toggleTheme = (options) => {
-    if (isTransitioningRef.current) {
-      return;
+    /*
+     * Rapid clicks are honoured rather than dropped.
+     *
+     * This used to return early for the full length of the animation, so
+     * anything faster than one click per 800ms was thrown away and the button
+     * felt dead. Now an in-flight transition is cut short — `skipTransition`
+     * settles it immediately, which is exactly what the API exists for — and
+     * the new one starts from the state the user just asked for. The reveal
+     * itself is unchanged; only its lifetime is interruptible.
+     */
+    if (activeTransitionRef.current) {
+      try {
+        activeTransitionRef.current.skipTransition?.();
+      } catch (_) { /* already finished */ }
+      activeTransitionRef.current = null;
     }
 
     try {
       localStorage.setItem('theme_preference_set', 'true');
     } catch (_) {}
-    const newTheme = theme === 'light' ? 'dark' : 'light';
+    // From the ref, never the closure — see themeRef.
+    const newTheme = themeRef.current === 'light' ? 'dark' : 'light';
+    themeRef.current = newTheme;
 
     // Measure live source element coordinates immediately at the moment of click
     const origin = getThemeOrigin(options);
@@ -166,7 +195,6 @@ export function ThemeProvider({ children }) {
     document.documentElement.style.setProperty('--vt-origin-y', transitionOrigin.y);
 
     document.documentElement.classList.add('theme-transitioning');
-    isTransitioningRef.current = true;
 
     try {
       const transition = document.startViewTransition(() => {
@@ -176,6 +204,8 @@ export function ThemeProvider({ children }) {
           setTheme(newTheme);
         });
       });
+
+      activeTransitionRef.current = transition;
 
       transition.ready
         .then(() => {
@@ -191,8 +221,14 @@ export function ThemeProvider({ children }) {
               clipPath: clipPathFrames,
             },
             {
-              duration: 800,
-              easing: 'cubic-bezier(0.42, 0, 0.58, 1)',
+              // Shorter and decelerating rather than symmetric ease-in-out.
+              // The old curve started slow, which read as lag between the
+              // click and anything happening; this leaves immediately and
+              // settles at the edges, which is most of what makes the same
+              // circular reveal feel smooth. The shape of the reveal is
+              // unchanged — only its timing.
+              duration: 620,
+              easing: 'cubic-bezier(0.22, 0.9, 0.3, 1)',
               fill: 'forwards',
               pseudoElement: '::view-transition-new(root)',
             }
@@ -207,17 +243,24 @@ export function ThemeProvider({ children }) {
       transition.finished
         .catch(() => {})
         .finally(() => {
+          // Only clear if this is still the current transition: a faster
+          // click has already replaced it, and its own cleanup owns the
+          // origin variables now.
+          if (activeTransitionRef.current !== transition) return;
+          activeTransitionRef.current = null;
           document.documentElement.classList.remove('theme-transitioning');
           document.documentElement.style.removeProperty('--vt-origin-x');
           document.documentElement.style.removeProperty('--vt-origin-y');
-          isTransitioningRef.current = false;
         });
     } catch (err) {
       console.error('startViewTransition error:', err);
+      activeTransitionRef.current = null;
       document.documentElement.classList.remove('theme-transitioning');
       document.documentElement.style.removeProperty('--vt-origin-x');
       document.documentElement.style.removeProperty('--vt-origin-y');
-      isTransitioningRef.current = false;
+      // The DOM update inside startViewTransition may not have run.
+      document.documentElement.setAttribute('data-theme', newTheme);
+      setTheme(newTheme);
     }
   };
 

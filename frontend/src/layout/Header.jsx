@@ -286,7 +286,12 @@ export default function Header({ variant = 'dashboard', wide = false }) {
             aria-label="Toggle theme"
             title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
           >
-            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+            {/* Keyed on the theme so the icon genuinely remounts and replays
+                its swap animation on every switch. A CSS transition alone
+                cannot animate one icon component being replaced by another. */}
+            <span key={theme} className={styles.themeToggleIcon}>
+              {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+            </span>
           </button>
         </div>
       </div>
@@ -384,7 +389,9 @@ export default function Header({ variant = 'dashboard', wide = false }) {
                   toggleTheme({ originElement: avatarRef.current });
                 }}
               >
-                {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+                <span key={theme} className={styles.themeToggleIcon}>
+                  {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+                </span>
                 <span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</span>
               </button>
 
