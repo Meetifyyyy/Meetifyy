@@ -199,6 +199,29 @@ export function ThemeProvider({ children }) {
       y: `${(origin.y / viewportHeight) * 100}%`,
     };
 
+    /*
+     * The radius that exactly covers the screen from this origin: the
+     * distance to whichever corner is farthest away.
+     *
+     * The reveal used to animate to a flat 200vmax, which on a phone is
+     * roughly twice the radius actually needed. Combined with a front-loaded
+     * easing curve, the circle reached the far corner about 13% of the way
+     * through the timeline — so the visible part of a 1200ms reveal lasted
+     * around 150ms and the remaining second was spent expanding invisibly
+     * past the edges. That is what read as the circle snapping to fill
+     * rather than expanding: the last stretch of screen was crossed in a
+     * handful of frames.
+     *
+     * Expressed in vmax rather than pixels for the same reason the origin is
+     * a percentage — see the note above about the snapshot's raster box —
+     * with a small margin so rounding cannot leave a sliver uncovered.
+     */
+    const farthestX = Math.max(origin.x, viewportWidth - origin.x);
+    const farthestY = Math.max(origin.y, viewportHeight - origin.y);
+    const neededRadiusPx = Math.hypot(farthestX, farthestY);
+    const vmaxPx = Math.max(viewportWidth, viewportHeight);
+    const revealRadius = `${((neededRadiusPx / vmaxPx) * 100 * 1.02).toFixed(2)}vmax`;
+
     const prefersReducedMotion =
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -232,9 +255,9 @@ export function ThemeProvider({ children }) {
         .then(() => {
           const clipPathFrames = [
             `circle(0px at ${transitionOrigin.x} ${transitionOrigin.y})`,
-            // Deliberately exceeds the farthest viewport corner without relying
-            // on the snapshot's pixel dimensions for radius calculation.
-            `circle(200vmax at ${transitionOrigin.x} ${transitionOrigin.y})`,
+            // Exactly reaches the farthest corner, so the whole duration is
+            // spent revealing screen rather than overshooting past it.
+            `circle(${revealRadius} at ${transitionOrigin.x} ${transitionOrigin.y})`,
           ];
 
           const anim = document.documentElement.animate(
@@ -242,12 +265,13 @@ export function ThemeProvider({ children }) {
               clipPath: clipPathFrames,
             },
             {
-              // Decelerating rather than symmetric ease-in-out: the old
-              // curve started slow, which read as lag between the click and
-              // anything happening. This leaves immediately and settles at
-              // the edges, which matters more the longer the reveal runs.
+              // A gentle standard curve. The previous one was steeply
+              // front-loaded, which compounded the overshoot above: most of
+              // the radius was covered in the first fraction of the timeline.
+              // With the radius now exactly fitted, an even curve is what
+              // keeps the edge moving at a readable speed throughout.
               duration: 1200,
-              easing: 'cubic-bezier(0.22, 0.9, 0.3, 1)',
+              easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
               fill: 'forwards',
               pseudoElement: '::view-transition-new(root)',
             }
