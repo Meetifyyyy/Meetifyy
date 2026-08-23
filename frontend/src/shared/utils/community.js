@@ -1,3 +1,5 @@
+import { getMediaUrl } from '@shared/api/apiClient';
+
 /**
  * Membership predicates for a community payload.
  *
@@ -57,4 +59,21 @@ export function communityMemberCount(community) {
     ?? (Array.isArray(community.members) ? community.members.length : 0);
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * Resolve a community's cover image to a loadable URL, or null.
+ *
+ * The same shape of bug as the avatar: the column is `coverKey`, several
+ * surfaces read `coverImage`, and the stored value is an object key that has to
+ * go through `getMediaUrl` before it can be an `<img src>`.
+ */
+export function resolveCommunityCover(community) {
+  const raw = community?.coverKey || community?.coverImage || community?.cover;
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length <= 2) return null;
+  // A CSS gradient is a valid cover in this app and is not an image URL.
+  if (trimmed.startsWith('linear-gradient') || trimmed.startsWith('radial-gradient') || trimmed.startsWith('conic-gradient')) return null;
+  return getMediaUrl(trimmed);
 }

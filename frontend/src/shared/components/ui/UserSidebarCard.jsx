@@ -46,20 +46,6 @@ function balanceTagsIntoTwoRows(tags) {
   return [row1, row2];
 }
 
-function getCoverStyle(cover, fallback) {
-  if (!cover || typeof cover !== 'string' || !cover.trim()) {
-    return { backgroundImage: `url("${fallback}")` };
-  }
-  const clean = cover.trim();
-  if (clean.startsWith('linear-gradient') || clean.startsWith('radial-gradient') || clean.startsWith('conic-gradient')) {
-    return { background: clean };
-  }
-  if (clean.startsWith('data:image/') || clean.startsWith('blob:')) {
-    return { backgroundImage: `url("${clean}")` };
-  }
-  const fullUrl = getMediaUrl(clean);
-  return { backgroundImage: `url("${encodeURI(fullUrl)}")` };
-}
 
 export function UserSidebarCardSkeleton() {
   return (

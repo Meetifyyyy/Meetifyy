@@ -1,6 +1,7 @@
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import styles from './InvitationItem.module.css';
+import { getMediaUrl } from '@shared/api/apiClient';
 
 export default function InvitationItem({
   inv,
@@ -23,7 +24,7 @@ export default function InvitationItem({
     >
       <div className={styles.avatar}>
         {isImageUrl(inv.hostAvatar) ? (
-          <img src={inv.hostAvatar} alt={inv.hostName || "Host"} className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+          <img src={getMediaUrl(inv.hostAvatar)} alt={inv.hostName || "Host"} className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
         ) : (
           <DefaultAvatar />
         )}

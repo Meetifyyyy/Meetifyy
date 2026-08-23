@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl, resolveCommunityAvatar } from '@shared/utils/avatar';
-import { isCommunityMember, isCommunityOwner } from '@shared/utils/community';
+import { isCommunityMember, isCommunityOwner, resolveCommunityCover } from '@shared/utils/community';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
@@ -124,7 +124,10 @@ function HeroSection({ comm, joined, joining, onToggleJoin, onCreatePost, userCo
     }
   };
 
-  const coverSrc = (!coverError && comm.coverImage) ? comm.coverImage : defaultCommunityCover;
+  // `coverKey` is the column; reading `coverImage` found nothing for most
+  // communities, and the raw value is a storage key rather than a URL.
+  const resolvedCover = resolveCommunityCover(comm);
+  const coverSrc = (!coverError && resolvedCover) ? resolvedCover : defaultCommunityCover;
 
   return (
     <div className={styles.heroSection}>

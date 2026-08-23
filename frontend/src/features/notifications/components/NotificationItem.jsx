@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import FollowButton from '@shared/components/ui/FollowButton';
 import Avatar from '@shared/components/avatar/Avatar';
 import styles from './NotificationItem.module.css';
+import { getMediaUrl } from '@shared/api/apiClient';
 
 export default function NotificationItem({
   notif,
@@ -23,7 +24,8 @@ export default function NotificationItem({
   // notification — the activity's own cover image.
   const activityName = notif.metadata?.activityName || null;
   const activityImage = notif.metadata?.activityImage || null;
-  const postMedia = notif.metadata?.postMedia || notif.metadata?.mediaUrl || notif.metadata?.postImage || notif.metadata?.thumbnailUrl || activityImage || null;
+  const rawPostMedia = notif.metadata?.postMedia || notif.metadata?.mediaUrl || notif.metadata?.postImage || notif.metadata?.thumbnailUrl || activityImage || null;
+  const postMedia = rawPostMedia ? getMediaUrl(rawPostMedia) : null;
 
   let displayText = notif.body || notif.text || '';
   if (isFollow) {

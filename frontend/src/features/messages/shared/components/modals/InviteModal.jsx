@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import { usersApi } from '@shared/api/apiClient';
+import { usersApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
@@ -201,7 +201,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
                 <div key={user.id} className={styles.listItem}>
                   <div className={styles.contactInfo}>
                     {isImageUrl(user.avatar) ? (
-                      <img src={user.avatar} alt={user.displayName || user.name} className={styles.avatar} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                      <img src={getMediaUrl(user.avatar)} alt={user.displayName || user.name} className={styles.avatar} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                     ) : (
                       <DefaultAvatar size={40} name={user.displayName || user.name} className={styles.avatar} />
                     )}

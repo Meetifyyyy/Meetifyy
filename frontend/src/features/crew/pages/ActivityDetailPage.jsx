@@ -29,6 +29,7 @@ const ActivityDiscussion = lazy(() =>
 );
 import ActivityDetailSkeleton from '../components/ActivityDetailSkeleton';
 import NotFoundState from '@shared/components/ui/NotFoundState';
+import { getMediaUrl } from '@shared/api/apiClient';
 
 /* ── Access denied ─────────────────────────────────────────────
  * The server decides access and answers 403 with a code; these are the
@@ -546,7 +547,7 @@ export default function ActivityDetailPage() {
   };
 
   const coverColor = activity?.coverColor || null;
-  const coverImgUrl = activity?.coverImage || getDefaultCover(title || cleanId);
+  const coverImgUrl = activity?.coverImage ? getMediaUrl(activity.coverImage) : getDefaultCover(title || cleanId);
 
   return (
     <div ref={containerRef} data-theme="dark" className={styles.root}>

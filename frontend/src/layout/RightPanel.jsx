@@ -10,7 +10,7 @@ import Avatar from '@shared/components/avatar/Avatar';
 import { canSeeOnlineStatus } from '@shared/utils/presence';
 import styles from './RightPanel.module.css';
 import { useQuery } from '@tanstack/react-query';
-import { usersApi, activitiesApi } from '@shared/api/apiClient';
+import { usersApi, activitiesApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCrewActivities } from '@shared/hooks/useCrew';
@@ -159,7 +159,7 @@ export function NotificationsActivity() {
                       />
                     </div>
                   ) : postMedia ? (
-                    <img src={postMedia} alt="" style={{ width: '34px', height: '34px', borderRadius: '6px', objectFit: 'cover' }} />
+                    <img src={getMediaUrl(postMedia)} alt="" style={{ width: '34px', height: '34px', borderRadius: '6px', objectFit: 'cover' }} />
                   ) : null}
                 </div>
               </div>

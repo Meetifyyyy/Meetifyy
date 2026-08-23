@@ -183,7 +183,7 @@ export function CrewResult({ result, isSelected, onClick }) {
     >
       <div className={styles.avatar} style={{ borderRadius: '12px', overflow: 'hidden' }}>
         {isImageUrl(eventImage) ? (
-          <img src={eventImage} alt={item.title} className={styles.avatar} style={{ borderRadius: 'inherit', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+          <img src={getMediaUrl(eventImage)} alt={item.title} className={styles.avatar} style={{ borderRadius: 'inherit', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
         ) : (
           <DefaultAvatar />
         )}

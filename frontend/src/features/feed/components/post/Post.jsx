@@ -20,6 +20,7 @@ import { useSavePost } from '../../hooks/useSavePost';
 import { useDeletePost } from '../../hooks/useDeletePost';
 import { useVotePoll } from '../../hooks/useVotePoll';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
+import { getMediaUrl } from '@shared/api/apiClient';
 
 function PollCard({ poll, postId }) {
   const { currentUser } = useAuth();
@@ -415,7 +416,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
                 onClick={(e) => e.stopPropagation()}
               >
                 {postData.linkPreview.image && (
-                  <img src={postData.linkPreview.image} alt="" loading="lazy" className={styles.linkPreviewImg} />
+                  <img src={getMediaUrl(postData.linkPreview.image)} alt="" loading="lazy" className={styles.linkPreviewImg} />
                 )}
                 <div className={styles.linkPreviewBody}>
                   {postData.linkPreview.site && (

@@ -511,7 +511,7 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                       <div style={{ width: '40px', height: '40px', borderRadius: '50%', overflow: 'hidden', background: 'var(--color-bg-alt)', flexShrink: 0 }}>
                         {req.user?.avatar ? (
-                          <img src={req.user.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <img src={getMediaUrl(req.user.avatar)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
                           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
                             {req.user?.displayName?.charAt(0) || 'U'}

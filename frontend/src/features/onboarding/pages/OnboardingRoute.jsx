@@ -9,6 +9,7 @@ import { communitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, ArrowLeft } from 'lucide-react';
+import { resolveCommunityAvatar } from '@shared/utils/avatar';
 
 
 // Draft persistence so a mid-onboarding reload doesn't wipe the user's picks.
@@ -346,7 +347,11 @@ export default function OnboardingRoute() {
             
             <div className={styles.communitiesList}>
               {suggestedCommunities.map(comm => {
-                const isImage = comm.avatar && (comm.avatar.startsWith('/') || comm.avatar.startsWith('http://') || comm.avatar.startsWith('https://') || comm.avatar.startsWith('data:'));
+                // Reads `avatarKey` and resolves it, like every other
+                // community surface. The local check only accepted values the
+                // API does not store.
+                const commAvatar = resolveCommunityAvatar(comm);
+                const isImage = Boolean(commAvatar);
                 return (
                   <div key={comm.id} className={styles.communityCard}>
                     <div className={styles.commInfo}>
@@ -358,9 +363,9 @@ export default function OnboardingRoute() {
                         }}
                       >
                         {isImage ? (
-                          <img src={comm.avatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                          <img src={commAvatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                         ) : (
-                          comm.avatar || comm.name.charAt(0).toUpperCase()
+                          comm.name.charAt(0).toUpperCase()
                         )}
                       </div>
                       <div className={styles.commText}>

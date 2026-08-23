@@ -14,7 +14,7 @@ import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCrewActivities } from '@shared/hooks/useCrew';
 import { useDebouncedState } from '@shared/hooks/useDebounce';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { searchApi } from '@shared/api/apiClient';
+import { searchApi, getMediaUrl } from '@shared/api/apiClient';
 import Post from '@features/feed/components/post/Post';
 import CrewCard from '@features/crew/components/cards/CrewCard';
 import styles from './SearchResultsRoute.module.css';
@@ -137,7 +137,7 @@ const CommunityRow = React.memo(function CommunityRow({ data, onOpen }) {
 const ActivityRow = React.memo(function ActivityRow({ data, storeActivity, usersById, onOpen }) {
   const activityData = storeActivity || data;
   const coverColor = activityData.coverColor || null;
-  const coverUrl = activityData.coverImage || getDefaultCover(activityData.title || activityData.id);
+  const coverUrl = (activityData.coverImage ? getMediaUrl(activityData.coverImage) : null) || getDefaultCover(activityData.title || activityData.id);
   const timeFormatted = formatDateTime(activityData);
 
   const seenIds = new Set();

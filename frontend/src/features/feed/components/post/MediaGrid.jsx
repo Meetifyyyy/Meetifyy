@@ -370,7 +370,8 @@ export function MediaGrid({ media, onMediaClick }) {
     if (item.isVideo) {
       const isLoaded = loadedStates[0];
       const isPlayingInline = Boolean(inlinePlaying[0]);
-      const posterUrl = item.raw?.poster || item.raw?.thumbnail || item.raw?.thumbnailUrl;
+      const rawPoster = item.raw?.poster || item.raw?.thumbnail || item.raw?.thumbnailUrl;
+      const posterUrl = rawPoster ? getMediaUrl(rawPoster) : null;
       const mediaSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
 
       if (isPlayingInline && mediaSrc) {

@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import Avatar from './avatar/Avatar';
 import InstantNotificationCard from './InstantNotificationCard';
 import { parseConversationRoute } from '../utils/conversationUrl';
-import { messagesApi } from '../api/apiClient';
+import { messagesApi, getMediaUrl } from '../api/apiClient';
 import { useGlobalSocketSync } from '../hooks/useGlobalSocketSync';
 import { appendMessageToCache, matchesConversationId, getConversationAliases, updateConversationPreview, applyGroupRoleChange } from '../../features/messages/shared/utils/cacheUtils';
 
@@ -201,7 +201,7 @@ export default function SocketManager() {
               actorName={actorName}
               bodyText={isGroupMessage ? (notification.metadata?.messageText || '') : bodyText}
               subText={isActivityJoin ? (notification.metadata?.activityName || null) : null}
-              thumbnail={isActivityJoin ? (notification.metadata?.activityImage || null) : null}
+              thumbnail={isActivityJoin && notification.metadata?.activityImage ? getMediaUrl(notification.metadata.activityImage) : null}
               time="just now"
               onClick={handleClick}
               onDismiss={() => toast.dismiss(t)}

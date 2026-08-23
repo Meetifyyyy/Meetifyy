@@ -10,6 +10,7 @@ import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './CrewCard.module.css';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import { getMediaUrl } from '@shared/api/apiClient';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 const DEFAULT_COVERS = [
@@ -196,7 +197,7 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
   // A solid-colour cover is an explicit choice, so it must win over the
   // deterministic default-image fallback.
   const coverColor = activity.coverColor || null;
-  const coverImgUrl = activity.coverImage || getDefaultCover(title || activity.id);
+  const coverImgUrl = activity.coverImage ? getMediaUrl(activity.coverImage) : getDefaultCover(title || activity.id);
 
   return (
     <div 

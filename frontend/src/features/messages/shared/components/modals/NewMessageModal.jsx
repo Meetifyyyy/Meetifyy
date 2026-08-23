@@ -4,6 +4,7 @@ import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import styles from './NewMessageModal.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { getMediaUrl } from '@shared/api/apiClient';
 
 export default function NewMessageModal({ onClose, onStartChat, onCreateGroup }) {
   const { currentUser } = useAuth();
@@ -168,7 +169,7 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
                       <div className={styles.userAvatar}>
                         {isImageUrl(user.avatar) ? (
                           <img
-                            src={user.avatar}
+                            src={getMediaUrl(user.avatar)}
                             alt={user.displayName || user.name || user.username}
                             className={styles.avatarImg}
                             onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} 
