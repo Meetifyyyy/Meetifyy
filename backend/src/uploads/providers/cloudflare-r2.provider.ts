@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -136,25 +136,49 @@ export class CloudflareR2Provider implements StorageProvider {
     }
   }
 
+  /**
+   * Store an object, or fail.
+   *
+   * This used to be unable to fail. It wrote the bytes to the container's local
+   * disk and then — whether R2 was unconfigured or the PutObject threw —
+   * returned a public URL as though the upload had succeeded. The caller
+   * (`StorageService.uploadFile`) took that as confirmation and wrote a Media
+   * row, so the database ended up referencing objects that only ever existed on
+   * one container's filesystem.
+   *
+   * On a platform with an ephemeral filesystem — Railway, where this runs —
+   * every deploy wipes that directory. The Media rows survive, the bytes do
+   * not, and every post referencing them serves 404s from then on, with no way
+   * to recover the image and nothing above warning level in the logs.
+   *
+   * Local disk is a development convenience for running without R2 credentials,
+   * not a fallback for a configured provider that is failing. When R2 is
+   * configured its result is the only thing that counts, and a failure
+   * propagates so the upload — and the post attached to it — fails loudly
+   * instead of quietly producing a permanently broken image.
+   */
   async upload(key: string, fileBuffer: Buffer, contentType: string): Promise<string> {
-    // Always save to local disk as fallback guarantee
-    this.saveToLocalDisk(key, fileBuffer);
+    if (!this.isConfigured || !this.s3) {
+      // No credentials: local-disk mode, for development only.
+      this.saveToLocalDisk(key, fileBuffer);
+      return this.getPublicUrl(key);
+    }
 
-    if (!this.isConfigured || !this.s3) return this.getPublicUrl(key);
     try {
       await this.s3.send(new PutObjectCommand({ Bucket: this.bucketName, Key: key, Body: fileBuffer, ContentType: contentType, CacheControl: 'public, max-age=31536000, immutable' }));
       return this.getPublicUrl(key);
-    } catch (e) {
-      this.logger.warn(`R2 upload failed for key ${key}, relying on local disk storage: ${e?.message || e}`);
-      return this.getPublicUrl(key);
+    } catch (e: any) {
+      this.logger.error(`R2 upload failed for key ${key} in bucket ${this.bucketName}: ${e?.message || e}`);
+      throw new ServiceUnavailableException('Upload failed, please try again');
     }
   }
 
   async exists(key: string): Promise<boolean> {
-    const localPath = this.getLocalFilePath(key);
-    if (fs.existsSync(localPath)) return true;
-
-    if (!this.isConfigured || !this.s3) return false;
+    // Local disk is consulted only in local-disk mode. Checking it first while
+    // R2 is configured let a leftover file from an earlier deploy mask an object
+    // that was never actually stored — the image looked fine on the container
+    // that had written it and 404'd on every other one.
+    if (!this.isConfigured || !this.s3) return fs.existsSync(this.getLocalFilePath(key));
     try {
       await this.s3.send(new HeadObjectCommand({ Bucket: this.bucketName, Key: key }));
       return true;

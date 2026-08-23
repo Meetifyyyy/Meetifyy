@@ -7,6 +7,7 @@ import { BlocksService } from '../users/blocks.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { MentionsService } from '../mentions/mentions.service';
+import { StorageService } from '../uploads/uploads.service';
 import { MentionDto } from '../common/dto/mention.dto';
 
 @Injectable()
@@ -21,6 +22,7 @@ export class PostsService {
     private readonly domainEventService: DomainEventService,
     private readonly redisService: RedisService,
     private readonly mentionsService: MentionsService,
+    private readonly storageService: StorageService,
   ) {}
 
   private formatPost(post: any, likedSet: Set<string>, bookmarkedSet: Set<string>, currentUserId?: string) {
@@ -110,6 +112,19 @@ export class PostsService {
       if (!media || media.ownerId !== authorId) {
         this.logger.warn(`createPost: media not found or not owned (author=${authorId}, key=${objectKey})`);
         throw new BadRequestException('Media not found or not owned');
+      }
+      // The Media row is written when the presigned URL is issued, i.e. BEFORE
+      // the browser has uploaded anything. A PUT that never completed — dropped
+      // connection, closed tab, a storage outage — therefore leaves a perfectly
+      // valid-looking row pointing at an object that does not exist, and
+      // attaching it produced a post whose image 404s forever with no clue why.
+      //
+      // One HeadObject at attach time turns that into a retryable error while
+      // the user still has the file selected.
+      const stored = await this.storageService.exists(objectKey);
+      if (!stored) {
+        this.logger.warn(`createPost: media row exists but object is missing from storage (key=${objectKey})`);
+        throw new BadRequestException('Image upload did not finish. Please re-select the image and try again.');
       }
       if (media.postId && media.postId !== '') {
         this.logger.warn(`createPost: media already attached to another post (key=${objectKey}, postId=${media.postId})`);
@@ -689,13 +704,18 @@ export class PostsService {
       },
     });
 
-    // Only decrement post comment counter when the comment isn't a structural placeholder
-    if (!hasActiveReplies) {
-      await this.prisma.post.update({
-        where: { id: comment.postId },
-        data: { commentCount: { decrement: 1 } },
-      }).catch(() => {}); // best-effort — don't fail the whole operation
-    }
+    // Always decrement. `addComment` increments unconditionally, so anything
+    // conditional here drifts: deleting a comment that had replies used to leave
+    // the count permanently one too high, while the client decremented anyway —
+    // so the number changed on screen and then jumped back on the next refetch.
+    //
+    // A comment that survives as a structural placeholder is still not a comment
+    // anyone wrote, and it is no longer rendered unless it is holding replies up,
+    // so counting it would be wrong on its own terms.
+    await this.prisma.post.update({
+      where: { id: comment.postId },
+      data: { commentCount: { decrement: 1 } },
+    }).catch(() => {}); // best-effort — don't fail the whole operation
 
     // Remove all likes on this comment
     await this.prisma.commentLike.deleteMany({ where: { commentId } }).catch(() => {});
@@ -799,6 +819,17 @@ export class PostsService {
     let parentComment: any = null;
     if (parentId) {
       parentComment = await this.prisma.comment.findUnique({ where: { id: parentId } });
+      // The parent was accepted on trust: an id for a comment on a *different*
+      // post was stored happily, producing a reply that belongs to a thread it
+      // can never be rendered in (the tree builder finds no parent and promotes
+      // it to a root on the wrong post). A deleted parent is refused too —
+      // replying under a tombstone resurrects it as a visible placeholder.
+      if (!parentComment || parentComment.postId !== postId) {
+        throw new NotFoundException('Comment not found');
+      }
+      if (parentComment.isDeleted) {
+        throw new BadRequestException('This comment has been deleted');
+      }
     }
 
     // Re-derive the true mention set from the actual comment text before persisting.
@@ -914,8 +945,32 @@ export class PostsService {
    * a structural placeholder (so the thread hierarchy is preserved without
    * leaking the original author/text), live comments get the viewer's like flag.
    */
+  /**
+   * Drops deleted comments that exist only as tombstones.
+   *
+   * A deleted comment is kept only when a live reply still hangs off it —
+   * without the placeholder the tree would lose its shape and orphan those
+   * replies. A deleted *leaf* serves no such purpose, and leaving it in meant a
+   * thread slowly filled with "[deleted]" rows that could never be cleared, and
+   * that `post.commentCount` did not count. Users saw "3 comments" above five
+   * rows.
+   *
+   * Pruning runs bottom-up and repeats to a fixed point, because removing a
+   * tombstone's last live descendant can turn its deleted parent into a leaf in
+   * turn.
+   */
+  private pruneEmptyTombstones(rawComments: any[]) {
+    let survivors = rawComments;
+    for (;;) {
+      const parentsWithChildren = new Set(survivors.map((c) => c.parentId).filter(Boolean));
+      const next = survivors.filter((c) => !c.isDeleted || parentsWithChildren.has(c.id));
+      if (next.length === survivors.length) return next;
+      survivors = next;
+    }
+  }
+
   private shapeComments(rawComments: any[], likedCommentIds: Set<string>) {
-    return rawComments.map((c) => {
+    return this.pruneEmptyTombstones(rawComments).map((c) => {
       if (c.isDeleted) {
         return {
           id: c.id,
