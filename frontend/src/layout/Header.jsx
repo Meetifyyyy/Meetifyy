@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useProfile } from '@shared/hooks/useProfile';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities, useCampusCommunities } from '@shared/hooks/useCommunities';
@@ -121,6 +122,40 @@ export default function Header({ variant = 'dashboard', wide = false }) {
 
   const username = currentUser?.username || '';
 
+  /*
+   * The drawer's follower/following counts.
+   *
+   * These came straight off `currentUser`, which is the sign-in snapshot and
+   * carries `followersList`/`followingList` arrays but no `stats` object and
+   * no numeric counts. So the Followers chain — `stats?.followers ??
+   * followers ?? 0` — had no path to a real value and rendered 0 for
+   * everyone, permanently. Following only appeared to work because it fell
+   * through to `followingList.length`.
+   *
+   * Both were also frozen at sign-in: following someone updates the
+   * ['profile', username] query (useFollowMutation, and the realtime
+   * follow/unfollow handler), never the auth object, so the drawer never
+   * moved until the next full sync.
+   *
+   * Reading the profile query is what the desktop sidebar card already does.
+   * It is the canonical store both of those writers target, so the counts
+   * now track follows immediately and survive a reload. The auth lists stay
+   * as a first-paint fallback for the moment before the query resolves.
+   */
+  const { profile: ownProfile } = useProfile(username);
+
+  const followersCount =
+    ownProfile?.stats?.followers
+    ?? ownProfile?.followersCount
+    ?? currentUser?.followersList?.length
+    ?? 0;
+
+  const followingCount =
+    ownProfile?.stats?.following
+    ?? ownProfile?.followingCount
+    ?? currentUser?.followingList?.length
+    ?? 0;
+
   const joinedCommunityObjects = useMemo(() => {
     const publicList = Array.isArray(allCommunitiesData) ? allCommunitiesData : Object.values(allCommunitiesData || communities || {});
     const campusList = Array.isArray(campusCommunities) ? campusCommunities : [];
@@ -227,11 +262,11 @@ export default function Header({ variant = 'dashboard', wide = false }) {
             
             <div className={styles.drawerProfileStats}>
               <div className={styles.statItem} onClick={(e) => { e.stopPropagation(); navigate(`/profile/${username}?tab=followers`, { state: { from: location.pathname } }); setDrawerOpen(false); }}>
-                <span className={styles.statNumber}>{currentUser?.stats?.followers ?? currentUser?.followers ?? 0}</span>
+                <span className={styles.statNumber}>{followersCount.toLocaleString()}</span>
                 <span className={styles.statLabel}>Followers</span>
               </div>
               <div className={styles.statItem} onClick={(e) => { e.stopPropagation(); navigate(`/profile/${username}?tab=following`, { state: { from: location.pathname } }); setDrawerOpen(false); }}>
-                <span className={styles.statNumber}>{currentUser?.stats?.following ?? currentUser?.followingList?.length ?? currentUser?.following ?? 0}</span>
+                <span className={styles.statNumber}>{followingCount.toLocaleString()}</span>
                 <span className={styles.statLabel}>Following</span>
               </div>
             </div>
