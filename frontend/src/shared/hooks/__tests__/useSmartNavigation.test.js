@@ -43,12 +43,21 @@ describe('useSmartNavigation & OverlayManager', () => {
 
 describe('OverlayManager history integrity', () => {
   let navigator;
+  let historyState;
 
   beforeEach(() => {
     overlayManager.stack = [];
     overlayManager.pendingSelfPops = 0;
-    navigator = vi.fn();
+    // React Router stamps `state` under `.usr` on the entry it pushes;
+    // OverlayManager reads it back to prove the top entry is its own. The mock
+    // has to do the same or nothing is ever poppable.
+    historyState = null;
+    navigator = vi.fn((to, opts) => {
+      if (typeof to === 'number') return;
+      historyState = { usr: opts?.state, key: 'k', idx: 0 };
+    });
     overlayManager.navigator = navigator;
+    overlayManager.readHistoryState = () => historyState;
   });
 
   it('pushes one history entry per overlay through the router, not raw pushState', () => {
@@ -142,12 +151,21 @@ describe('OverlayManager history integrity', () => {
 
 describe('OverlayManager multi-step flows', () => {
   let navigator;
+  let historyState;
 
   beforeEach(() => {
     overlayManager.stack = [];
     overlayManager.pendingSelfPops = 0;
-    navigator = vi.fn();
+    // React Router stamps `state` under `.usr` on the entry it pushes;
+    // OverlayManager reads it back to prove the top entry is its own. The mock
+    // has to do the same or nothing is ever poppable.
+    historyState = null;
+    navigator = vi.fn((to, opts) => {
+      if (typeof to === 'number') return;
+      historyState = { usr: opts?.state, key: 'k', idx: 0 };
+    });
     overlayManager.navigator = navigator;
+    overlayManager.readHistoryState = () => historyState;
   });
 
   it('keeps a stepping overlay registered and re-arms it for the next Back', () => {
@@ -206,12 +224,21 @@ describe('OverlayManager multi-step flows', () => {
 
 describe('OverlayManager history rebalance', () => {
   let navigator;
+  let historyState;
 
   beforeEach(() => {
     overlayManager.stack = [];
     overlayManager.pendingSelfPops = 0;
-    navigator = vi.fn();
+    // React Router stamps `state` under `.usr` on the entry it pushes;
+    // OverlayManager reads it back to prove the top entry is its own. The mock
+    // has to do the same or nothing is ever poppable.
+    historyState = null;
+    navigator = vi.fn((to, opts) => {
+      if (typeof to === 'number') return;
+      historyState = { usr: opts?.state, key: 'k', idx: 0 };
+    });
     overlayManager.navigator = navigator;
+    overlayManager.readHistoryState = () => historyState;
   });
 
   it('gives back the entry it pushed when nothing else has navigated', () => {
@@ -257,5 +284,67 @@ describe('OverlayManager history rebalance', () => {
       overlayManager.currentUrl = realUrl;
     }
     expect(overlayManager.hasOpenOverlays()).toBe(false);
+  });
+});
+
+describe('OverlayManager — only pops history it can prove is its own', () => {
+  let navigator;
+  let historyState;
+
+  beforeEach(() => {
+    overlayManager.stack = [];
+    overlayManager.pendingSelfPops = 0;
+    historyState = null;
+    navigator = vi.fn((to, opts) => {
+      if (typeof to === 'number') return;
+      historyState = { usr: opts?.state, key: 'k', idx: 0 };
+    });
+    overlayManager.navigator = navigator;
+    overlayManager.readHistoryState = () => historyState;
+  });
+
+  it('does not touch history when the top entry is not one of ours', () => {
+    // Cropping a community avatar or a profile picture: the cropper pushes,
+    // then unmounts mid-flow when the crop is accepted. If anything replaced
+    // the history state in between, a blind go(-1) walks the user off the page
+    // they were editing — which is exactly what was happening.
+    overlayManager.open('cropper', () => {});
+    navigator.mockClear();
+
+    historyState = { usr: undefined, key: 'someone-elses', idx: 5 };
+    overlayManager.close('cropper');
+
+    expect(navigator).not.toHaveBeenCalled();
+    expect(overlayManager.hasOpenOverlays()).toBe(false);
+  });
+
+  it('does not pop when no history state exists at all', () => {
+    overlayManager.open('cropper', () => {});
+    navigator.mockClear();
+
+    historyState = null;
+    overlayManager.close('cropper');
+    expect(navigator).not.toHaveBeenCalled();
+  });
+
+  it('still pops the entry when it IS provably on top', () => {
+    // The guard must not be so strict that it never gives entries back —
+    // otherwise every overlay leaves a dead Back press behind it.
+    overlayManager.open('cropper', () => {});
+    navigator.mockClear();
+
+    overlayManager.close('cropper');
+    expect(navigator).toHaveBeenCalledWith(-1);
+  });
+
+  it('gives back both entries when two overlays are torn down together', () => {
+    overlayManager.open('modal', () => {});
+    overlayManager.open('cropper', () => {});
+    navigator.mockClear();
+
+    // Closing the lower one takes the one above it with it; the browser is
+    // sitting on the top entry, which is among those being removed.
+    overlayManager.close('modal');
+    expect(navigator).toHaveBeenCalledWith(-2);
   });
 });

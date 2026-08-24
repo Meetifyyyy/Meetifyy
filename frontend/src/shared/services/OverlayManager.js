@@ -147,32 +147,58 @@ class OverlayManager {
   }
 
   /**
-   * Give back the history entries the removed overlays pushed.
+   * Which overlay, if any, pushed the history entry the browser is sitting on.
    *
-   * The `url` check is the important part. An entry's `url` is the address the
-   * overlay opened on, and its pushed entry carries that same address — so
-   * while the overlay is up, `currentUrl()` still matches. If it no longer
-   * matches, something has navigated since, our entry is not on top any more,
-   * and going back would undo *that* navigation rather than our push.
+   * `open()` stamps every entry it pushes with `state: { __overlayId }`, and
+   * React Router nests user state under `.usr`. Reading it back is the only
+   * way to *prove* the top of the history stack is ours rather than assume it.
+   */
+  /** Seam: the browser's current history state. Overridable in tests. */
+  readHistoryState() {
+    if (typeof window === 'undefined') return null;
+    return window.history.state;
+  }
+
+  currentHistoryOverlayId() {
+    const state = this.readHistoryState();
+    return state?.usr?.__overlayId ?? state?.__overlayId ?? null;
+  }
+
+  /**
+   * Give back the history entries the removed overlays pushed — but only when
+   * we can PROVE the browser is still sitting on one of them.
    *
-   * That is not hypothetical: a dropdown item that both closes the menu and
-   * opens a panel does the navigation in the event handler and the menu's
-   * teardown in the effect cleanup right after. Popping blindly there cancels
-   * the panel the user just asked for. Leaving the entry costs one extra Back
-   * press; cancelling their navigation costs them the action.
+   * This used to pop whenever the arithmetic said it should, and the
+   * arithmetic is only as good as its assumptions about mount order, batched
+   * unmounts and concurrent navigation. Every time one of those assumptions
+   * was wrong the user was thrown to a previous page — cropping a community
+   * avatar or a profile picture unmounted the cropper mid-flow and the stray
+   * `go(-1)` took the page with it.
+   *
+   * The stamped id turns an assumption into a check. If the entry on top is
+   * not one of the entries being removed, we leave history completely alone.
+   * The cost of not popping is one Back press that appears to do nothing,
+   * because the entry shares its URL with the page beneath it. The cost of
+   * popping wrongly is the user losing the page they were working on. Those
+   * are not close, so this errs hard in one direction.
    */
   rebalance(removed) {
     if (!this.navigator) return;
+
     const here = this.currentUrl();
-    const popCount = removed.filter(
+    const poppable = removed.filter(
       (e) => e.options?.pushHistoryState && e.url === here,
-    ).length;
-    if (popCount === 0) return;
+    );
+    if (poppable.length === 0) return;
+
+    // Consecutive pushes, removed together: the top entry must be one of them.
+    const topId = this.currentHistoryOverlayId();
+    if (!topId || !poppable.some((e) => e.id === topId)) return;
 
     // A single go(-n) fires exactly one popstate, however many entries it
-    // spans — so we expect one self-pop, not `popCount` of them.
+    // spans — so we expect one self-pop, not `poppable.length` of them.
     this.pendingSelfPops += 1;
-    this.navigator(-popCount);
+    this.navigator(-poppable.length);
   }
 
   /**
