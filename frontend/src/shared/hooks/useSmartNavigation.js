@@ -62,11 +62,6 @@ function persist() {
 }
 
 /**
- * Normalizes a location to the identity we compare entries by. Query strings
- * are deliberately excluded: `/crew?tab=saved` and `/crew?tab=hosting` are the
- * same page, and Back between them should still land on the previous *page*.
- */
-/**
  * True when `target` is a strict ancestor of `current` -- i.e. navigating to it
  * is a move *up* into a section we are already inside, not a new destination.
  * Matched on a `/` boundary so /messages never matches /messagesX.
@@ -76,8 +71,18 @@ export function isAncestorPath(target, current) {
   return current.startsWith(`${target}/`);
 }
 
+/**
+ * Normalizes a location to the identity we compare entries by.
+ *
+ * The query string counts. Sub-views that live in the URL (a followers list at
+ * `?tab=followers`, an open panel) push an entry whose pathname is identical to
+ * the profile behind it; ignoring `search` made those two entries look like
+ * duplicates, so Back skipped straight past the profile and closing the list
+ * closed the whole page. Incidental filters navigate with `replace` and never
+ * create an entry to step over, so nothing is lost by counting them here.
+ */
 export function getMeaningfulPath(pathname, search = '') {
-  return pathname;
+  return search ? `${pathname}${search.startsWith('?') ? search : `?${search}`}` : pathname;
 }
 
 /**

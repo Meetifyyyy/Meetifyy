@@ -11,7 +11,7 @@ import PageLayout from '@layout/PageLayout';
 import PageHeader from '@layout/PageHeader';
 import CrewCard from '../components/cards/CrewCard';
 import CrewCardSkeleton from '../components/cards/CrewCardSkeleton';
-import CreateActivityCard from '../components/cards/CreateActivityCard';
+import InstantMatchCard from '../components/cards/InstantMatchCard';
 import CrewRightPanel from '../components/layout/CrewRightPanel';
 import { mapActivity } from '@shared/utils/mapActivity';
 import { filterActivities } from '@features/crew/utils/crewUtils';
@@ -46,17 +46,6 @@ function SectionHeader({ title, onSeeAll, onBack }) {
           See All <ChevronRight size={15} />
         </button>
       )}
-    </div>
-  );
-}
-
-// Empty section state: a short line plus the same Create Activity card used
-// elsewhere, so an empty list is an invitation to create rather than a blank.
-function CreateActivityPrompt({ label, onCreateActivity }) {
-  return (
-    <div className={styles.sectionEmpty}>
-      {label && <p className={styles.sectionEmptyLabel}>{label}</p>}
-      <CreateActivityCard onCreateActivity={onCreateActivity} />
     </div>
   );
 }
@@ -353,6 +342,10 @@ export default function FindYourCrewPage() {
 
           <div className={styles.layout}>
             <div className={styles.content}>
+              {/* Always the first thing in the column, on every tab and while
+                  the list is still loading — the activity cards follow below. */}
+              <InstantMatchCard />
+
               {loading ? (
                 <div className={styles.list}>
                   <CrewCardSkeleton />
@@ -376,10 +369,7 @@ export default function FindYourCrewPage() {
                         {forYouActivities.length > 0 ? (
                           <div className={styles.list}>{renderCards(forYouActivities)}</div>
                         ) : (
-                          <CreateActivityPrompt
-                            label="Nothing to recommend just yet."
-                            onCreateActivity={() => navigate('/crew/create')}
-                          />
+                          <div className={styles.subEmpty}>Nothing to recommend just yet.</div>
                         )}
                         {forYouFeed.hasNextPage && <div ref={sentinelRef} style={{ height: '1px', width: '100%' }} />}
                       </>
@@ -413,8 +403,9 @@ export default function FindYourCrewPage() {
                         )}
                       </div>
                     ) : (
-                      <div className={styles.centerCreateCardWrapper}>
-                        <CreateActivityCard onCreateActivity={() => navigate('/crew/create')} />
+                      <div className={styles.emptyAll}>
+                        Nothing here yet. Start something above, or create an
+                        activity for later.
                       </div>
                     )
                   )}
@@ -427,7 +418,6 @@ export default function FindYourCrewPage() {
                       ) : (
                         <EmptyOrSearch
                           searching={searching}
-                          onCreateActivity={() => navigate('/crew/create')}
                         />
                       )}
                       {collegeFeed.hasNextPage && <div ref={sentinelRef} style={{ height: '1px', width: '100%' }} />}
@@ -442,7 +432,6 @@ export default function FindYourCrewPage() {
                       ) : (
                         <EmptyOrSearch
                           searching={searching}
-                          onCreateActivity={() => navigate('/crew/create')}
                         />
                       )}
                       {oneOnOneFeed.hasNextPage && <div ref={sentinelRef} style={{ height: '1px', width: '100%' }} />}
@@ -461,7 +450,6 @@ export default function FindYourCrewPage() {
                         <EmptyOrSearch
                           searching={searching}
                           label="Nothing saved yet — bookmark an activity to find it here."
-                          onCreateActivity={() => navigate('/crew/create')}
                         />
                       )}
                     </>
@@ -520,7 +508,6 @@ export default function FindYourCrewPage() {
 
             <div className={styles.sidebarWrapper}>
               <CrewRightPanel
-                showCreateCard={hasActivities}
                 onCreateActivity={() => navigate('/crew/create')}
                 onViewAll={() => {
                   setSelectedTab('My Activities');
@@ -536,8 +523,9 @@ export default function FindYourCrewPage() {
 }
 
 // Shared empty state for list tabs. A search that matches nothing is a dead end
-// and says so; a genuinely empty list offers the Create Activity card instead.
-function EmptyOrSearch({ searching, label, onCreateActivity }) {
+// and says so; a genuinely empty list just says so, because the Instant Match
+// strip at the top of the column is already offering the way out of it.
+function EmptyOrSearch({ searching, label }) {
   if (searching) {
     return (
       <div className={styles.empty}>
@@ -547,8 +535,9 @@ function EmptyOrSearch({ searching, label, onCreateActivity }) {
       </div>
     );
   }
-  if (onCreateActivity) {
-    return <CreateActivityPrompt label={label} onCreateActivity={onCreateActivity} />;
-  }
-  return <div className={styles.subEmpty}>{label}</div>;
+  return (
+    <div className={styles.subEmpty}>
+      {label || 'Nothing here yet.'}
+    </div>
+  );
 }

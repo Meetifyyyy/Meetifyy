@@ -27,6 +27,19 @@ export function useInstantMatchChatState({ enabled = true } = {}) {
   const requestSeq = useRef(0);
   const mounted = useRef(true);
 
+  // The matchId of an ended session the user has already been told about and
+  // dismissed. The server keeps answering with that row (correctly — it is the
+  // last thing that happened), so without this the "they left" panel came back
+  // every time the tab regained focus or the socket reconnected, and reopening
+  // Instant Match showed the ending again instead of a fresh search.
+  const dismissedMatchId = useRef(null);
+
+  /** Ended + already acknowledged = nothing to show. */
+  const isDismissed = useCallback(
+    (state) => Boolean(state && !state.isActive && state.matchId === dismissedMatchId.current),
+    [],
+  );
+
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
@@ -44,9 +57,13 @@ export function useInstantMatchChatState({ enabled = true } = {}) {
     if (!res.ok) return null;
 
     const next = res.data?.state ?? null;
+    if (isDismissed(next)) {
+      setChat(null);
+      return null;
+    }
     setChat(next);
     return next;
-  }, [enabled]);
+  }, [enabled, isDismissed]);
 
   useEffect(() => {
     if (!enabled) {
@@ -65,6 +82,7 @@ export function useInstantMatchChatState({ enabled = true } = {}) {
      */
     const offEnded = matchSocketClient.on('instant_match:chat_ended', (state) => {
       if (!state?.matchId) return;
+      if (isDismissed(state)) return;
       setChat((current) => {
         // An event for a match we have already moved on from is noise.
         if (current && current.matchId !== state.matchId) return current;
@@ -86,7 +104,7 @@ export function useInstantMatchChatState({ enabled = true } = {}) {
       offTransport();
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [enabled, refresh]);
+  }, [enabled, refresh, isDismissed]);
 
   /**
    * Leave the match. The server claims the transition, so calling this twice
@@ -95,13 +113,33 @@ export function useInstantMatchChatState({ enabled = true } = {}) {
   const leave = useCallback(async (matchId) => {
     const res = await matchSocketClient.leaveChat(matchId);
     if (!res.ok) return { ok: false, error: res.error };
+    // The ended row the server hands back is history for the person who just
+    // walked away, so it is acknowledged here rather than re-rendered at them.
+    if (res.data?.state && !res.data.state.isActive) {
+      dismissedMatchId.current = res.data.state.matchId;
+    }
     if (mounted.current && res.data?.state) setChat(res.data.state);
     return { ok: true, state: res.data?.state ?? null };
+  }, []);
+
+  /**
+   * Acknowledge an ended session: the user has read the ending and closed it.
+   * The row stays on the server; this only stops it being re-shown here, so the
+   * next visit to Instant Match starts at step one.
+   */
+  const dismissEnded = useCallback(() => {
+    setChat((current) => {
+      if (current && !current.isActive) {
+        dismissedMatchId.current = current.matchId;
+        return null;
+      }
+      return current;
+    });
   }, []);
 
   /** Called when the local countdown reaches zero. Asks rather than assumes —
    *  the deadline the client holds is a rendering hint, not a verdict. */
   const onCountdownElapsed = useCallback(() => { refresh(); }, [refresh]);
 
-  return { chat, loading, refresh, leave, onCountdownElapsed, setChat };
+  return { chat, loading, refresh, leave, onCountdownElapsed, setChat, dismissEnded };
 }

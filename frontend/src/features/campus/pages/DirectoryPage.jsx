@@ -18,7 +18,6 @@ import { useDebounce } from '@shared/hooks/useDebounce';
 
 const SearchableMajorSelect = ({ value, onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState("");
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -37,19 +36,14 @@ const SearchableMajorSelect = ({ value, onChange }) => {
     [courses],
   );
 
-  const filteredMajors = useMemo(() => {
-    const q = search.toLowerCase();
-    return courseOptions.filter(m => m.label.toLowerCase().includes(q));
-  }, [search, courseOptions]);
-
   const groupedMajors = useMemo(() => {
-    return filteredMajors.reduce((acc, course) => {
+    return courseOptions.reduce((acc, course) => {
       const firstLetter = course.label[0].toUpperCase();
       if (!acc[firstLetter]) acc[firstLetter] = [];
       acc[firstLetter].push(course);
       return acc;
     }, {});
-  }, [filteredMajors]);
+  }, [courseOptions]);
 
   const selectedLabel = value === 'All' ? 'Course' : courseOptions.find(m => m.value === value)?.label || 'Course';
 
@@ -68,20 +62,10 @@ const SearchableMajorSelect = ({ value, onChange }) => {
 
       {isOpen && (
         <div className={styles.customDropdownMenu}>
-          <div className={styles.customDropdownSearch}>
-            <Search size={14} color="var(--color-icon-base)" />
-            <input
-              type="text"
-              placeholder="Search course..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className={styles.customDropdownInput}
-            />
-          </div>
           <div className={styles.customDropdownList}>
             <div
               className={`${styles.customDropdownOption} ${value === 'All' ? styles.selected : ''}`}
-              onClick={() => { onChange('All'); setIsOpen(false); setSearch(""); }}
+              onClick={() => { onChange('All'); setIsOpen(false); }}
             >
               All Majors
             </div>
@@ -93,7 +77,7 @@ const SearchableMajorSelect = ({ value, onChange }) => {
                   <div
                     key={m.value}
                     className={`${styles.customDropdownOption} ${value === m.value ? styles.selected : ''}`}
-                    onClick={() => { onChange(m.value); setIsOpen(false); setSearch(""); }}
+                    onClick={() => { onChange(m.value); setIsOpen(false); }}
                   >
                     {m.label}
                   </div>
@@ -101,7 +85,7 @@ const SearchableMajorSelect = ({ value, onChange }) => {
               </div>
             ))}
 
-            {filteredMajors.length === 0 && (
+            {courseOptions.length === 0 && (
               <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
                 No courses found.
               </div>
@@ -174,7 +158,8 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
  * removed by the migration — so a card never renders an empty line.
  */
 function DirectorySubtitle({ user }) {
-  const summary = useAcademicSummary(user);
+  // Course + year only — the branch name is far too long for a directory card.
+  const summary = useAcademicSummary(user, { branch: false });
   return <>{summary || 'Campus Member'}</>;
 }
 

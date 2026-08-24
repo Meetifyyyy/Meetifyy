@@ -238,7 +238,9 @@ export default function ProfilePage() {
       }
     : profileUser;
 
-  const academicSummary = useAcademicSummary(effectiveUser);
+  // The tag sits in a row of one-word interest chips, so it carries the course
+  // name alone rather than the full course • branch • year line.
+  const academicSummary = useAcademicSummary(effectiveUser, { branch: false, year: false });
 
   // Show skeleton on first load OR while fetching incomplete/different user data
   const isDataIncomplete = profileUser && !profileUser.stats;
@@ -267,9 +269,9 @@ export default function ProfilePage() {
     userTags.push({ icon: '🎓', label: universityName });
   }
 
-  // "B.Tech • Computer Science & Engineering • 2nd Year". Null for accounts with
-  // no academic data yet (including legacy users cleared by the migration), in
-  // which case no tag is rendered at all.
+  // Just the course, e.g. "B.Tech". Null for accounts with no academic data yet
+  // (including legacy users cleared by the migration), in which case no tag is
+  // rendered at all.
   if (academicSummary) {
     userTags.push({ icon: '🎓', label: academicSummary });
   }

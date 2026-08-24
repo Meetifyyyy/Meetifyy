@@ -156,16 +156,20 @@ export function sanitizeAcademicSelection(courses, raw) {
  * "B.Tech • Computer Science & Engineering • 2nd Year".
  * Mirrors the server-side formatter so profiles read identically everywhere, and
  * degrades for legacy users whose academic fields were cleared by the migration.
+ * Surfaces with less room can drop parts: the directory shows course + year, and
+ * the profile's academic tag shows the course alone.
+ * @param {{ branch?: boolean, year?: boolean }} [parts] which segments to include
  * @returns {string|null}
  */
-export function formatAcademic(courses, course, branch, currentYear) {
+export function formatAcademic(courses, course, branch, currentYear, parts = {}) {
+  const { branch: withBranch = true, year: withYear = true } = parts;
   const c = findCourse(courses, course);
   if (!c) return null;
   const b = c.branches.find((x) => x.id === branch);
-  const parts = [c.name];
-  if (b && b.id !== 'general') parts.push(b.name);
-  if (Number.isInteger(currentYear) && currentYear > 0) parts.push(yearLabel(currentYear));
-  return parts.join(' • ');
+  const out = [c.name];
+  if (withBranch && b && b.id !== 'general') out.push(b.name);
+  if (withYear && Number.isInteger(currentYear) && currentYear > 0) out.push(yearLabel(currentYear));
+  return out.join(' • ');
 }
 
 /** Shared error copy — identical wording to the backend's ACADEMIC_ERRORS. */

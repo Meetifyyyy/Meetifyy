@@ -1021,18 +1021,10 @@ function DeletedCommunityView({ onBack }) {
       }
       return;
     }
+    // Joining is not a request to post: focusing the composer here yanked the
+    // page down and opened the keyboard on mobile. The composer is focused only
+    // when the user actually taps it (see handleCreatePostClick).
     toggleJoin({ communityId, isJoined: nextJoined, currentUser });
-    if (nextJoined) {
-      setTimeout(() => {
-        const inputEl = document.querySelector(`.${styles.composerWrap} div[contenteditable="true"]`) || 
-                        document.querySelector(`.${styles.composerWrap} textarea`) || 
-                        document.querySelector(`.${styles.composerWrap} input`);
-        if (inputEl) {
-          inputEl.focus();
-          inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }, 300);
-    }
   };
 
   const handleCreatePostClick = () => {

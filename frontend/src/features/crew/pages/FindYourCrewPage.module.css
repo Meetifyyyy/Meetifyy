@@ -215,13 +215,6 @@
   transform: translateY(0);
 }
 
-.centerCreateCardWrapper {
-  width: 100%;
-  max-width: 480px;
-  margin: 0rem auto;
-  display: flex;
-  justify-content: center;
-}
 
 .loadMoreBtn {
   margin: 1rem auto;
@@ -245,13 +238,13 @@
   border-color: var(--color-border-dark);
 }
 
+/* Below 1024px there is no room for a 380px rail beside the list, and letting
+   it wrap underneath turned the sidebar into a giant Create Activity card
+   dumped in the middle of the page. It is supplementary content, so it goes
+   away entirely — the header's + button still creates an activity. */
 @media (max-width: 1024px) {
-  .layout {
-    flex-direction: column;
-  }
-
   .sidebarWrapper {
-    width: 100%;
+    display: none;
   }
 }
 
@@ -266,10 +259,6 @@
 
   .list {
     gap: 0.75rem;
-  }
-
-  .sidebarWrapper {
-    display: none;
   }
 }
 
@@ -354,6 +343,16 @@
   margin-left: 0.25rem;
 }
 
+/* "All" with nothing in any section. The Instant Match strip sits above it, so
+   this only has to explain the blank, not offer a way out of it. */
+.emptyAll {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .subEmpty {
   padding: 1.25rem;
   background: var(--color-bg-secondary, rgba(0, 0, 0, 0.02));
@@ -367,27 +366,7 @@
  * An empty list is an invitation to create, not a blank slate: a short line of
  * context above the same Create Activity card used elsewhere on the page.
  * ─────────────────────────────────────────────────────────────────────────── */
-.sectionEmpty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.85rem;
-  width: 100%;
-}
-
-.sectionEmptyLabel {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: 0.88rem;
-  text-align: center;
-}
-
 /* The card keeps the same footprint it has as the page-level empty state. */
-.sectionEmpty > :not(.sectionEmptyLabel) {
-  width: 100%;
-  max-width: 480px;
-}
-
 /* Back affordance shown when a section is expanded in place ("See all"). */
 .sectionBackBtn {
   display: inline-flex;

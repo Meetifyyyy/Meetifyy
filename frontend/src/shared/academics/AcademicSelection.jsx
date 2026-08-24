@@ -129,7 +129,6 @@ export default function AcademicSelection({
           placeholder={loading ? 'Loading courses…' : 'Select Course'}
           options={courseOptions}
           disabled={isDisabled}
-          searchable
           aria-labelledby="academic-course-label"
         />
         <div className={c.slot}><Message text={errors.course} /></div>
@@ -144,7 +143,6 @@ export default function AcademicSelection({
           placeholder={course ? 'Select Branch' : 'Select a course first'}
           options={branchOptions}
           disabled={isDisabled || !course}
-          searchable
           aria-labelledby="academic-branch-label"
         />
         <div className={c.slot}><Message text={errors.branch} /></div>

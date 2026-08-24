@@ -50,8 +50,26 @@ export default function CampusPage() {
   const collegeCommunity = campusCommunities[userCollegeId];
   const collegeName = collegeCommunity?.name || authCollegeName;
 
+  // A fresh four faces on every visit rather than the same head of the list.
+  // The seed is fixed for the lifetime of the page, so a background refetch of
+  // campusUsers reshuffles nothing under the user's cursor.
+  const shuffleSeed = useRef(Math.floor(Math.random() * 2 ** 32));
+
   const suggestedUsers = useMemo(() => {
-    return (campusUsers || []).filter(u => u.id !== currentUser?.id).slice(0, 4);
+    const pool = (campusUsers || []).filter(u => u.id !== currentUser?.id);
+    // mulberry32 — a tiny deterministic PRNG so the order is stable per mount.
+    let seed = shuffleSeed.current;
+    const rand = () => {
+      seed = (seed + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, 4);
   }, [campusUsers, currentUser]);
 
   const handleCreateGroup = async (id) => {

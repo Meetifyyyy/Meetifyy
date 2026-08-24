@@ -91,7 +91,7 @@ export function InstantMatchProvider({ children }) {
   const [leaving, setLeaving] = useState(false);
   const {
     chat, refresh: refreshChat, leave: leaveChatSession, onCountdownElapsed,
-    setChat,
+    setChat, dismissEnded,
   } = useInstantMatchChatState({ enabled: Boolean(currentUser?.id) });
 
   const statusRef = useRef(status);
@@ -311,9 +311,20 @@ export function InstantMatchProvider({ children }) {
     if (statusRef.current === 'match_found') return;
     setSheetOpen(false);
     setError(null);
+    // Closing the sheet on the "they left" panel means the ending has been
+    // read. Acknowledge it so the next tap on the launcher opens step one
+    // instead of replaying the same notice.
+    if (chatRef.current && !chatRef.current.isActive) {
+      dismissEnded();
+      setRecentMatch(null);
+      setActiveMatch(null);
+      setStatus((prev) => (prev === 'searching' ? prev : 'idle'));
+      setFormData(initialFormData);
+      setStep(STEP_ACTIVITY);
+    }
     // Minimising while searching keeps the search alive — the connection is
     // held by the provider, not by the sheet.
-  }, []);
+  }, [dismissEnded]);
 
   const nextStep = useCallback(() => setStep((s) => Math.min(STEP_LOCATION, s + 1)), []);
   const prevStep = useCallback(() => setStep((s) => Math.max(STEP_ACTIVITY, s - 1)), []);
@@ -487,7 +498,11 @@ export function InstantMatchProvider({ children }) {
     }
   }, [refreshChat]);
 
-  const closeChatOverlay = useCallback(() => setChatOverlayOpen(false), []);
+  const closeChatOverlay = useCallback(() => {
+    setChatOverlayOpen(false);
+    // Same rule as the sheet: an ending the user has closed is done being shown.
+    if (chatRef.current && !chatRef.current.isActive) dismissEnded();
+  }, [dismissEnded]);
 
   /**
    * "Find someone new".

@@ -13,13 +13,21 @@ import { formatAcademic } from './academicCatalog';
  * accounts whose Major/Year-of-Pass was dropped by the migration. Callers should
  * treat null as "render nothing" rather than showing a placeholder.
  *
+ * Pass `parts` to drop segments on tighter surfaces, e.g. `{ branch: false }`
+ * for "B.Tech • 2nd Year" or `{ branch: false, year: false }` for "B.Tech".
+ *
  * @param {{ course?: string|null, branch?: string|null, currentYear?: number|null }|null|undefined} user
+ * @param {{ branch?: boolean, year?: boolean }} [parts]
  * @returns {string|null}
  */
-export function useAcademicSummary(user) {
+export function useAcademicSummary(user, parts = {}) {
   const { courses } = useAcademicCatalog();
+  const { branch: withBranch = true, year: withYear = true } = parts;
   return useMemo(
-    () => formatAcademic(courses, user?.course, user?.branch, user?.currentYear),
-    [courses, user?.course, user?.branch, user?.currentYear],
+    () => formatAcademic(courses, user?.course, user?.branch, user?.currentYear, {
+      branch: withBranch,
+      year: withYear,
+    }),
+    [courses, user?.course, user?.branch, user?.currentYear, withBranch, withYear],
   );
 }

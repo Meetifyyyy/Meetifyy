@@ -5,6 +5,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
 import { apiClient } from '@shared/api/apiClient';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
+import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { validateDOB } from '@shared/utils/dateValidation';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
 import AcademicSelection from '@shared/academics/AcademicSelection';
@@ -197,6 +198,7 @@ export default function SettingsRoute() {
   const navigate = useNavigate();
   const location = useLocation();
   const goBack = useSmartBack();
+  const { smartNavigate } = useSmartNavigation();
   const queryClient = useQueryClient();
   const isLargeScreen = useIsLargeScreen();
 
@@ -206,9 +208,12 @@ export default function SettingsRoute() {
   const activePanel = isKnownPanel ? canonicalPanel : null; // null = main list
 
   const openPanel = (next) => navigate(`/settings/${next}`);
-  // Returning to the list is a pop, not a new destination — otherwise Back from
-  // the list would walk right back into the panel the user just left.
-  const closePanel = () => goBack('/settings');
+  // Returning to the list is a move *up*, not a plain history pop: panels can be
+  // opened from inside one another (Privacy -> Blocked Contacts -> Privacy), so
+  // popping one entry would land on a sibling panel instead of the list.
+  // smartNavigate pops when the entry behind us really is the list, and replaces
+  // otherwise, so closing a panel always shows the list exactly once.
+  const closePanel = () => smartNavigate('/settings');
 
   // Account & Profile state
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
@@ -1051,7 +1056,7 @@ export default function SettingsRoute() {
         <button
           className={styles.backBtn}
           aria-label="Go back"
-          onClick={() => goBack(activePanel ? '/settings' : '/home')}
+          onClick={() => (activePanel ? closePanel() : goBack('/home'))}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

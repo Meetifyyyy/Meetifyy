@@ -11,7 +11,7 @@ import { mapActivity } from '@shared/utils/mapActivity';
 import CreateActivityCard from '../cards/CreateActivityCard';
 
 
-export default function CrewRightPanel({ onCreateActivity, onViewAll, showCreateCard = true }) {
+export default function CrewRightPanel({ onCreateActivity, onViewAll }) {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
 
@@ -64,10 +64,9 @@ export default function CrewRightPanel({ onCreateActivity, onViewAll, showCreate
 
   return (
     <aside className={styles.sidebar}>
-      {/* Create Activity Card */}
-      {showCreateCard && (
-        <CreateActivityCard onCreateActivity={onCreateActivity} />
-      )}
+      {/* Create Activity Card. This is its only home now — the sidebar is
+          hidden below 768px, where the header's + button carries the action. */}
+      <CreateActivityCard onCreateActivity={onCreateActivity} />
 
       {/* My Upcoming Activities Card */}
       <div className={styles.card}>
