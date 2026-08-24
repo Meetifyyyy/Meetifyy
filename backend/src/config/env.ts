@@ -226,6 +226,6 @@ export function assertEnvValid(): void {
   const detail = errors.map((message) => `  • ${message}`).join('\n');
   throw new Error(
     `\nEnvironment configuration is invalid for APP_ENV="${APP_ENV}".\n\n${detail}\n\n` +
-      `See .env.example and docs/environment-configuration.md for the full list of variables.\n`,
+      `See .env.example for the full list of variables.\n`,
   );
 }

@@ -7,7 +7,7 @@
  * IMPORTANT — these are BUILD-TIME values. Vite inlines `import.meta.env.*` into
  * the bundle when it is built, so a production bundle carries whatever variables
  * were present during the production build. Changing a variable afterwards has
- * no effect until the app is rebuilt. See docs/environment-configuration.md.
+ * no effect until the app is rebuilt.
  *
  * Only client-safe values may ever appear here: everything in this file ships to
  * the browser. Service-role keys, database URLs and API secrets belong to the
@@ -88,7 +88,7 @@ export function assertEnvValid() {
   const detail = problems.map((message) => `  • ${message}`).join('\n');
   throw new Error(
     `\nFrontend environment configuration is invalid (mode: ${raw.MODE}).\n\n${detail}\n\n` +
-      `See frontend/.env.example and docs/environment-configuration.md.\n`,
+      `See frontend/.env.example for the full list of variables.\n`,
   );
 }
 

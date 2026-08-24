@@ -86,7 +86,7 @@ if (problems.length > 0) {
   const detail = problems.map((message) => `  • ${message}`).join('\n');
   throw new Error(
     `\nAdmin frontend environment configuration is invalid (mode: ${MODE}).\n\n${detail}\n\n` +
-      `See admin-frontend/.env.example and docs/environment-configuration.md.\n`,
+      `See admin-frontend/.env.example for the full list of variables.\n`,
   );
 }
 
