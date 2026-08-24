@@ -203,11 +203,25 @@ function DateTimeModal({ formData, set, onClose }) {
     });
   };
 
+  // A day and a time can be chosen in either order, and neither implies the
+  // other. When only one half exists it is recorded on its own and nothing is
+  // derived from it — inventing the missing half is precisely the pre-filling
+  // this form is not supposed to do. The coupling below (end follows start,
+  // 5-minute minimum, 30-day cap) needs two real datetimes, so it only runs
+  // once the second half arrives.
   const pickDay = (day) => {
     if (isStart) {
+      if (!formData.startTimeHour) {
+        set({ startDateYear: viewYear, startDateMonth: viewMonth + 1, startDateDay: day });
+        return;
+      }
       const newStart = getParsedDate(viewYear, viewMonth + 1, day, formData.startTimeHour, formData.startTimeMinute, formData.startTimeAmPm);
       if (newStart) updateStartDate(newStart);
     } else {
+      if (!formData.endTimeHour) {
+        set({ endDateYear: viewYear, endDateMonth: viewMonth + 1, endDateDay: day });
+        return;
+      }
       const newEnd = getParsedDate(viewYear, viewMonth + 1, day, formData.endTimeHour, formData.endTimeMinute, formData.endTimeAmPm);
       if (newEnd) updateEndDate(newEnd);
     }
@@ -220,9 +234,17 @@ function DateTimeModal({ formData, set, onClose }) {
     const ampmStr = slot.h < 12 ? 'AM' : 'PM';
     
     if (isStart) {
+      if (!formData.startDateDay) {
+        set({ startTimeHour: hourStr, startTimeMinute: minuteStr, startTimeAmPm: ampmStr });
+        return;
+      }
       const newStart = getParsedDate(formData.startDateYear, formData.startDateMonth, formData.startDateDay, hourStr, minuteStr, ampmStr);
       if (newStart) updateStartDate(newStart);
     } else {
+      if (!formData.endDateDay) {
+        set({ endTimeHour: hourStr, endTimeMinute: minuteStr, endTimeAmPm: ampmStr });
+        return;
+      }
       const newEnd = getParsedDate(formData.endDateYear, formData.endDateMonth, formData.endDateDay, hourStr, minuteStr, ampmStr);
       if (newEnd) updateEndDate(newEnd);
     }
@@ -391,7 +413,11 @@ function CapacityModal({ value, onSave, onClose }) {
    Main Page
 ═══════════════════════════════ */
 const getParsedDate = (y, m, d, hStr, minStr, ampm) => {
-  if (!d) return null;
+  // Half a selection is not a datetime. Without the `hStr` guard a date picked
+  // before a time parsed to `new Date(y, m, d, NaN, NaN)` — an Invalid Date
+  // that is still truthy, so every caller's `if (parsed)` check waved it
+  // through and the whole form filled with NaN.
+  if (!d || !hStr) return null;
   let h = parseInt(hStr, 10);
   if (ampm === 'PM' && h !== 12) h += 12;
   if (ampm === 'AM' && h === 12) h = 0;
@@ -407,19 +433,26 @@ const formatToState = (d) => {
   };
 };
 
-const getInitialDates = () => {
-  const now = new Date();
-  const remainder = 5 - (now.getMinutes() % 5);
-  const start = new Date(now.getTime() + (remainder === 5 ? 0 : remainder) * 60000);
-  const end = new Date(start.getTime() + 60 * 60000); // +1 hour
-
-  const s = formatToState(start), e = formatToState(end);
-  return {
-    startDateYear: s.y, startDateMonth: s.m, startDateDay: s.d,
-    startTimeHour: s.h, startTimeMinute: s.min, startTimeAmPm: s.ap,
-    endDateYear: e.y, endDateMonth: e.m, endDateDay: e.d,
-    endTimeHour: e.h, endTimeMinute: e.min, endTimeAmPm: e.ap,
-  };
+/**
+ * The date and time a new activity opens with: nothing.
+ *
+ * This used to seed "now, rounded up to the next five minutes" as the start
+ * and an hour later as the end. It read as a helpful default and behaved as a
+ * trap — the form opened already showing a complete, publishable date and
+ * time that the user had never chosen, so the quickest path through the flow
+ * published an activity starting within the next five minutes. A date is a
+ * decision, and a decision nobody made must not be pre-made for them.
+ *
+ * Everything downstream already understood the empty state: `fmtDate` and
+ * `fmtTime` render "Select date"/"Select time", `canPublish` requires a
+ * resolved start AND end, and `publishBlockReason` says "Choose a date and
+ * time". Only the seeding was wrong.
+ */
+const EMPTY_DATE_TIME = {
+  startDateYear: null, startDateMonth: null, startDateDay: null,
+  startTimeHour: '', startTimeMinute: '', startTimeAmPm: '',
+  endDateYear: null, endDateMonth: null, endDateDay: null,
+  endTimeHour: '', endTimeMinute: '', endTimeAmPm: '',
 };
 
 const RANDOM_COVERS = [
@@ -816,7 +849,9 @@ export default function CreateActivityPage() {
   const [showReminder, setShowReminder] = useState(false);
   const [showCapacity, setShowCapacity] = useState(false);
   const [showWhoCanJoin, setShowWhoCanJoin] = useState(false);
-  const [hasInteractedWithDT, setHasInteractedWithDT] = useState(true);
+  // Starts false: with nothing pre-selected there is no value to show on the
+  // Date & Time button until the user has actually been into the picker.
+  const [hasInteractedWithDT, setHasInteractedWithDT] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [nowTs, setNowTs] = useState(() => Date.now());
   const [publishHint, setPublishHint] = useState('');
@@ -847,7 +882,7 @@ export default function CreateActivityPage() {
     coverColor: '',
     coverStatus: 'idle',
     coverIsDefaultAsset: !prefill.coverImage,
-    ...getInitialDates(),
+    ...EMPTY_DATE_TIME,
     location: '',
     slotsNeeded: 999,
     reminder: 'None',

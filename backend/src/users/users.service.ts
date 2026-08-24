@@ -1034,7 +1034,59 @@ export class UsersService {
     // immediately instead of lingering for the 60s conversation-cache TTL.
     await this.blocksService.invalidateBlockCache(blockerId, blockedId);
     await this.invalidateConversationListCache([blockerId, blockedId]);
+
+    // Both sides are told, live. A block closes the thread for writes in BOTH
+    // directions, and the person who was blocked is the one who most needs to
+    // know: without this event their composer stayed enabled and looked
+    // perfectly usable until they happened to reload, at which point a message
+    // they had already typed was refused. The server rejects the write either
+    // way — this is what stops them from getting that far.
+    //
+    // Directional flags are resolved per recipient rather than sent raw, so
+    // neither client has to work out which side of the block it is on, and the
+    // blocked user is never handed an `isBlockedByMe` they could render as an
+    // Unblock button for a block they did not place.
+    this.emitBlockState('user:blocked', blockerId, blockedId, true);
+
     return { success: true, blocked: true };
+  }
+
+  /**
+   * Push a block/unblock to both parties' open sessions.
+   *
+   * Fire-and-forget on purpose: a realtime delivery failure must never fail
+   * the block itself. The database row is the authority and every client
+   * re-reads it on the next conversation-list fetch, so a dropped event costs
+   * a stale composer until refresh — exactly the behaviour this event exists
+   * to improve, never worse than it.
+   */
+  private emitBlockState(
+    type: 'user:blocked' | 'user:unblocked',
+    blockerId: string,
+    blockedId: string,
+    blocked: boolean,
+  ) {
+    const push = (data: Record<string, unknown>, targets: string[]) => {
+      try {
+        // The emit is awaited by nobody and may be a synchronous mock, so the
+        // result is normalised before a rejection handler is attached.
+        Promise.resolve(this.domainEventService.emit(type, data, targets)).catch(() => {});
+      } catch {
+        // Realtime is best-effort here; the block itself has already committed.
+      }
+    };
+
+    // The blocker's own view: they placed it.
+    push(
+      { blocked, actorId: blockerId, targetUserId: blockedId, otherUserId: blockedId, isBlockedByMe: blocked, isBlockedByThem: false },
+      [blockerId],
+    );
+
+    // The blocked user's view: it was placed on them.
+    push(
+      { blocked, actorId: blockerId, targetUserId: blockerId, otherUserId: blockerId, isBlockedByMe: false, isBlockedByThem: blocked },
+      [blockedId],
+    );
   }
 
   /**
@@ -1085,6 +1137,12 @@ export class UsersService {
     // Invalidate cached block lists for both users
     await this.blocksService.invalidateBlockCache(blockerId, blockedId);
     await this.invalidateConversationListCache([blockerId, blockedId]);
+
+    // The reverse of the block event, so a composer that was disabled live
+    // re-enables live too. An unblock the other side only learns about on
+    // reload leaves them looking at a restriction that no longer exists.
+    this.emitBlockState('user:unblocked', blockerId, blockedId, false);
+
     return { success: true, blocked: false };
   }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useDismissibleMenu } from '../../../shared/hooks/useDismissibleMenu';
 import { ArrowLeft, MoreVertical, Search, BellOff, BellRing, LogOut, Info, Settings, Trash2, Pin } from 'lucide-react';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -18,7 +18,11 @@ export default function GroupChatHeader({
   isAdmin,
 }) {
   const { currentUser } = useAuth();
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  // Outside click, Escape and hardware Back all dismiss this menu — and
+  // Back dismisses only the menu, not the chat underneath it.
+  const {
+    open: showMoreMenu, setOpen: setShowMoreMenu, toggle: toggleMoreMenu, anchorRef: moreMenuRef,
+  } = useDismissibleMenu();
 
   if (!conversation) return null;
 
@@ -79,11 +83,11 @@ export default function GroupChatHeader({
       </div>
 
       <div className={styles.msgChatActions} onClick={(e) => e.stopPropagation()}>
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} ref={moreMenuRef}>
           <button 
             className={`${styles.msgChatActionBtn} ${showMoreMenu ? styles.msgChatActionBtnActive : ''}`} 
             title="More Options"
-            onClick={() => setShowMoreMenu(!showMoreMenu)}
+            onClick={toggleMoreMenu}
           >
             <MoreVertical size={18} />
           </button>

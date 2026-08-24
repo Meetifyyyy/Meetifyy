@@ -235,6 +235,9 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       await this.instantMatchGuard.assertCanSendInChat(senderId, realConvId);
     }
 
+    const convChatType: 'instant' | 'normal' =
+      (conv.type === 'INSTANT_MATCH' || conv.isInstantMatch) ? 'instant' : 'normal';
+
     const senderParticipant = conv.participants.find(p => p.userId === senderId);
     if (!senderParticipant) {
       throw new ForbiddenException('You are no longer a member of this conversation');
@@ -326,7 +329,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         }
       });
       if (existing) {
-        return this.formatMessageResponse(existing, realConvId, conversationId, senderId, clientMsgId, recipientIds, unmutedRecipientIds, conv.name || undefined);
+        return this.formatMessageResponse(existing, realConvId, conversationId, senderId, clientMsgId, recipientIds, unmutedRecipientIds, conv.name || undefined, convChatType);
       }
     }
 
@@ -420,7 +423,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       }).catch(err => this.logger.warn('Failed to process message mentions', err));
     }
 
-    return this.formatMessageResponse(message, realConvId, conversationId, senderId, clientMsgId, recipientIds, unmutedRecipientIds, conv.name || undefined);
+    return this.formatMessageResponse(message, realConvId, conversationId, senderId, clientMsgId, recipientIds, unmutedRecipientIds, conv.name || undefined, convChatType);
   }
 
   private async formatMessageResponse(
@@ -431,7 +434,13 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     clientMsgIdHint?: string,
     recipientIds: string[] = [],
     unmutedRecipientIds: string[] = [],
-    conversationName: string = ''
+    conversationName: string = '',
+    // Which surface this message belongs to. Every client routes notifications
+    // and in-app toasts on this field: an Instant Match message opens the
+    // Instant Match chat, a normal one deep-links into Messages. Without it a
+    // client can only guess from a conversation id, and an Instant Match chat
+    // has no row in the conversation list to guess from.
+    chatType: 'instant' | 'normal' = 'normal'
   ) {
     const msgPayload = (message.payload as any) || {};
     let replyToObj: any = null;
@@ -479,6 +488,8 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       recipientIds,
       unmutedRecipientIds,
       conversationName: conversationName || '',
+      chatType,
+      isInstantMatch: chatType === 'instant',
     };
 
     // H-3 fix: Pass the affected user IDs to trigger targeted O(1) invalidation

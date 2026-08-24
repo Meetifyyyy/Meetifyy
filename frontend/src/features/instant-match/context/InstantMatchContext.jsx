@@ -21,6 +21,15 @@ import {
  *  Application code should always go through `useInstantMatch`. */
 export const InstantMatchContext = createContext(null);
 
+/** See the listener in InstantMatchProvider. Dispatch it to open the chat. */
+export const INSTANT_MATCH_OPEN_CHAT_EVENT = 'instant-match:open-chat';
+
+/** Ask the Instant Match provider to open its chat overlay, from anywhere. */
+export function requestOpenInstantMatchChat() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(INSTANT_MATCH_OPEN_CHAT_EVENT));
+}
+
 /**
  * Client status. The server is authoritative for everything that outlives a
  * render — this only tracks what the user is currently looking at.
@@ -497,6 +506,27 @@ export function InstantMatchProvider({ children }) {
       setBusy(false);
     }
   }, [refreshChat]);
+
+  /**
+   * Open the Instant Match chat from outside the Instant Match tree.
+   *
+   * Notifications are the reason this exists. A tap on an Instant Match
+   * message notification has to land on this overlay, but the surfaces that
+   * handle notification taps — the global SocketManager, the notifications
+   * route — sit outside (or above) this provider and cannot call
+   * `openMatchChat` through the context. A window event is the seam: they
+   * announce the intent, and the one component that actually owns this state
+   * acts on it.
+   *
+   * Routing to `/messages/<id>` instead, which is what those surfaces used to
+   * do for every message notification alike, drops the user into the section
+   * an Instant Match conversation is deliberately absent from.
+   */
+  useEffect(() => {
+    const onOpenRequest = () => { openMatchChat(); };
+    window.addEventListener(INSTANT_MATCH_OPEN_CHAT_EVENT, onOpenRequest);
+    return () => window.removeEventListener(INSTANT_MATCH_OPEN_CHAT_EVENT, onOpenRequest);
+  }, [openMatchChat]);
 
   const closeChatOverlay = useCallback(() => {
     setChatOverlayOpen(false);

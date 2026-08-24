@@ -19,6 +19,8 @@ import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCrewActivities, useCrewActions } from '@shared/hooks/useCrew';
 
 import { NotifRowSkeleton } from '../components/skeletons/NotificationsSkeleton';
+import { requestOpenInstantMatchChat } from '@features/instant-match/context/InstantMatchContext';
+import { isInstantChatNotification } from '@shared/utils/instantChatRouting';
 
 export default function NotificationsRoute() {
   // ?tab=invitations survives a reload and gives Back a step inside the module
@@ -211,7 +213,15 @@ export default function NotificationsRoute() {
         break;
 
       case 'MESSAGE':
-        if (notif.entityId) {
+        // `chatType` decides the surface. An Instant Match message belongs to
+        // the Instant Match overlay, not to Messages — routing it by
+        // conversation id sent the user into a section that conversation is
+        // deliberately not listed in, and made the temporary match look like a
+        // normal thread. The overlay resolves the user's live session itself,
+        // which is why no id is needed (and why none is sent).
+        if (isInstantChatNotification(notif)) {
+          requestOpenInstantMatchChat();
+        } else if (notif.entityId) {
           navigate(`/messages/${notif.entityId}`, { state: { from: '/notifications' } });
         }
         break;

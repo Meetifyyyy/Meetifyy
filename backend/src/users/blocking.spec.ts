@@ -19,6 +19,7 @@ describe('UsersService — blocking', () => {
   let mockPrisma: any;
   let blocksMock: any;
   let blockRows: any[] = [];
+  let domainEvents: jest.Mock;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -34,6 +35,8 @@ describe('UsersService — blocking', () => {
       block: { deleteMany: jest.fn(), findMany: jest.fn() },
     };
 
+    domainEvents = jest.fn();
+
     blocksMock = blocksServiceMockProvider();
     // getBlockedContacts now reads through BlocksService, so the double serves
     // the rows the pagination/deleted-account assertions below rely on.
@@ -45,7 +48,7 @@ describe('UsersService — blocking', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: NotificationsService, useValue: { createNotification: jest.fn(), invalidatePrefsCache: jest.fn() } },
         { provide: NotificationFactory, useValue: {} },
-        { provide: DomainEventService, useValue: { emit: jest.fn() } },
+        { provide: DomainEventService, useValue: { emit: domainEvents } },
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
         blocksMock,
@@ -99,6 +102,55 @@ describe('UsersService — blocking', () => {
 
     it('refuses a self-block', async () => {
       await expect(service.blockUser('alice', 'alice')).rejects.toThrow();
+    });
+  });
+
+  describe('block realtime events', () => {
+    /** The events targeted at one user, as [type, data] pairs. */
+    const eventsFor = (userId: string) =>
+      domainEvents.mock.calls
+        .filter(([, , targets]) => Array.isArray(targets) && targets.includes(userId))
+        .map(([type, data]) => [type, data] as const);
+
+    it('tells the blocked user, live, that they can no longer send', async () => {
+      // Without this the block was invisible on their screen: the composer
+      // stayed enabled and the restriction only appeared after a refresh.
+      await service.blockUser('alice', 'bob');
+
+      const [[type, data]] = eventsFor('bob');
+      expect(type).toBe('user:blocked');
+      expect(data).toMatchObject({
+        blocked: true,
+        otherUserId: 'alice',
+        isBlockedByThem: true,
+        isBlockedByMe: false,
+      });
+    });
+
+    it('gives the blocker the other side of the same block', async () => {
+      // Directional flags are resolved per recipient. Handing the blocked user
+      // an `isBlockedByMe` would offer them an Unblock button for a block they
+      // never placed.
+      await service.blockUser('alice', 'bob');
+
+      const [[type, data]] = eventsFor('alice');
+      expect(type).toBe('user:blocked');
+      expect(data).toMatchObject({ blocked: true, otherUserId: 'bob', isBlockedByMe: true, isBlockedByThem: false });
+    });
+
+    it('reverses on unblock so the input re-enables without a reload', async () => {
+      await service.unblockUser('alice', 'bob');
+
+      const [[type, data]] = eventsFor('bob');
+      expect(type).toBe('user:unblocked');
+      expect(data).toMatchObject({ blocked: false, isBlockedByThem: false });
+    });
+
+    it('does not fail the block when realtime delivery throws', async () => {
+      // The row is already committed by this point. A dropped event costs a
+      // stale composer until refresh; it must never cost the block.
+      domainEvents.mockImplementation(() => { throw new Error('redis down'); });
+      await expect(service.blockUser('alice', 'bob')).resolves.toMatchObject({ blocked: true });
     });
   });
 

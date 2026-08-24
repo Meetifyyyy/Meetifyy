@@ -83,6 +83,10 @@ export class MessagesController {
           conversationId: message.conversationId,
           publicId: message.publicId,
           internalId: message.internalId,
+          // Lets clients skip a conversation that has no row in the Messages
+          // list at all, instead of reading its absence as a stale cache.
+          chatType: message.chatType || 'normal',
+          isInstantMatch: Boolean(message.isInstantMatch),
           lastMessage: {
             text: message.text || (message.mediaUrl ? (message.mediaType === 'image' ? 'Photo' : message.mediaType === 'video' ? 'Video' : 'Audio') : ''),
             createdAt: message.createdAt,
@@ -159,6 +163,8 @@ export class MessagesController {
       conversationId: message.conversationId,
       publicId: message.publicId,
       internalId: message.internalId,
+      chatType: message.chatType || 'normal',
+      isInstantMatch: Boolean(message.isInstantMatch),
       lastMessage: {
         text: message.text || (message.inviteData ? (message.inviteData.groupName ? `Group invite: ${message.inviteData.groupName}` : 'Group invite') : ''),
         createdAt: message.createdAt,
@@ -171,7 +177,16 @@ export class MessagesController {
         this.notificationsService.createNotification(
           this.notificationFactory.createMessage(
             { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
-            { id: conversationId, name: message.conversationName || message.senderName },
+            // The type has to travel with the conversation stub. Passing only
+            // { id, name } left the factory unable to tell an Instant Match
+            // chat from a DM, so every Instant Match message produced a
+            // notification that deep-linked into Messages.
+            {
+              id: conversationId,
+              name: message.conversationName || message.senderName,
+              type: message.isInstantMatch ? 'INSTANT_MATCH' : undefined,
+              isInstantMatch: Boolean(message.isInstantMatch),
+            },
             pId,
             message.text
           )

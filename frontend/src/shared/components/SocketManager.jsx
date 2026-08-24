@@ -10,6 +10,8 @@ import { parseConversationRoute } from '../utils/conversationUrl';
 import { messagesApi, getMediaUrl } from '../api/apiClient';
 import { useGlobalSocketSync } from '../hooks/useGlobalSocketSync';
 import { appendMessageToCache, matchesConversationId, getConversationAliases, updateConversationPreview, applyGroupRoleChange } from '../../features/messages/shared/utils/cacheUtils';
+import { isInstantChat, isInstantMatchChatOpen } from '../utils/instantChatRouting';
+import { requestOpenInstantMatchChat } from '../../features/instant-match/context/InstantMatchContext';
 
 export default function SocketManager() {
   const { session, isLoggedIn, currentUser } = useAuth();
@@ -524,6 +526,11 @@ export default function SocketManager() {
 
     const handleConversationUpdated = (payload) => {
       if (!payload) return;
+      // Same reasoning as in handleGlobalMessageNew: an Instant Match
+      // conversation is never in the Messages list, so a preview update for
+      // one has nothing to update and its `!exists` branch would invalidate
+      // the whole list on every message.
+      if (isInstantChat(payload)) return;
       const convId = payload.conversationId || payload.id || payload.publicId;
 
       if (convId) {
@@ -816,6 +823,45 @@ export default function SocketManager() {
       const convId = message.conversationId || message.publicId || message.internalId;
       if (!convId) return;
 
+      // Instant Match messages leave the normal-messaging machinery alone
+      // entirely, and this is the only place that decision can be made
+      // centrally.
+      //
+      // Everything below this point is about the Messages surface: the
+      // ['conversations'] cache that backs the conversation list, its unread
+      // badge, and a toast that deep-links into /messages/<id>. An Instant
+      // Match conversation has no row in that list by design (the server
+      // excludes it), which had two consequences. The `if (!found)` branch
+      // read the absence as a stale cache and fired an invalidate — so every
+      // Instant Match message triggered a full conversation-list refetch that
+      // could only ever return the same list without it. And the toast routed
+      // by conversation id into Messages, which is how tapping a notification
+      // for an Instant Match message landed the user in the wrong section on a
+      // thread that is not supposed to be reachable from there.
+      //
+      // The open Instant Match chat does not depend on any of this: it runs
+      // its own useChatManager, which appends to ['messages', <id>] from the
+      // same socket event.
+      if (isInstantChat(message)) {
+        if (!isSenderSelf && message.alert !== false && !isInstantMatchChatOpen()) {
+          toast.custom((t) => (
+            <InstantNotificationCard
+              avatar={message.senderAvatar || message.sender?.avatar || ''}
+              isGroup={false}
+              actorName={message.senderName || message.sender?.displayName || 'Your match'}
+              bodyText={message.text || 'New message'}
+              time="just now"
+              onClick={() => {
+                toast.dismiss(t);
+                requestOpenInstantMatchChat();
+              }}
+              onDismiss={() => toast.dismiss(t)}
+            />
+          ), { duration: 4000, position: 'top-center', dismissible: false });
+        }
+        return;
+      }
+
       const convs = queryClient.getQueryData(['conversations']) || [];
       const targetConv = convs.find(
         (c) =>
@@ -943,9 +989,61 @@ export default function SocketManager() {
       }
     };
 
+    /**
+     * A block landing on an open chat, live.
+     *
+     * The composer's disabled state is derived entirely from the conversation
+     * row in the ['conversations'] cache (`blocked` / `isBlockedByMe` /
+     * `isBlockedByThem` — see DMChatArea), so patching that row here is all it
+     * takes for the input to disable and the restriction notice to appear in
+     * the same frame the block is placed. Before this the server knew, the
+     * database knew, and the blocked user's screen did not: their composer
+     * stayed enabled, and they only discovered the block by typing a message
+     * and reloading.
+     *
+     * The server resolves the directional flags per recipient, so this handler
+     * never has to work out which side of the block it is on. `unblock` sends
+     * the same shape with `blocked: false`, which re-enables the input just as
+     * directly.
+     */
+    const handleBlockStateChange = (payload) => {
+      const otherUserId = payload?.otherUserId || payload?.targetUserId;
+      if (!otherUserId) return;
+      const blocked = Boolean(payload.blocked);
+
+      queryClient.setQueryData(['conversations'], (oldConvs) => {
+        if (!Array.isArray(oldConvs)) return oldConvs;
+        let modified = false;
+        const next = oldConvs.map((c) => {
+          const isGroupConv = c.isGroup || c.type === 'GROUP';
+          if (isGroupConv) return c;
+          const partnerId = c.targetUser?.id || c.otherUser?.id;
+          if (!partnerId || String(partnerId) !== String(otherUserId)) return c;
+          modified = true;
+          return {
+            ...c,
+            blocked,
+            isBlockedByMe: Boolean(payload.isBlockedByMe),
+            isBlockedByThem: Boolean(payload.isBlockedByThem),
+            // A block hides presence in both directions. Leaving a stale
+            // "Online" in the header of a chat you can no longer write to is
+            // both wrong and a small privacy leak.
+            ...(blocked && c.targetUser ? { targetUser: { ...c.targetUser, isOnline: false } } : {}),
+          };
+        });
+        return modified ? next : oldConvs;
+      });
+
+      // The list rows the cache patch above cannot reach (a conversation on a
+      // page this client has not loaded) come back correct on the next fetch.
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    };
+
     socket.on('notification:new', handleNewNotification);
     socket.on('notification:count', handleNotificationCount);
     socket.on('presence:update', handlePresenceUpdate);
+    socket.on('user:blocked', handleBlockStateChange);
+    socket.on('user:unblocked', handleBlockStateChange);
     socket.on('conversation:updated', handleConversationUpdated);
     socket.on('message:new', handleGlobalMessageNew);
     socket.on('message:updated', handleMessageUpdated);
@@ -957,6 +1055,8 @@ export default function SocketManager() {
       socket.off('notification:new', handleNewNotification);
       socket.off('notification:count', handleNotificationCount);
       socket.off('presence:update', handlePresenceUpdate);
+      socket.off('user:blocked', handleBlockStateChange);
+      socket.off('user:unblocked', handleBlockStateChange);
       socket.off('conversation:updated', handleConversationUpdated);
       socket.off('message:new', handleGlobalMessageNew);
       socket.off('message:updated', handleMessageUpdated);

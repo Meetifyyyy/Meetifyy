@@ -173,19 +173,49 @@ export class NotificationFactory {
   }
 
   /**
-   * A normal chat-message notification.
+   * A chat-message notification.
    *
-   * Returns null for an Instant Match conversation. These notifications carry
-   * a conversationId that deep-links into Messages — a section the Instant
-   * Match chat deliberately does not appear in — so delivering one would
-   * either dead-end the user or drag a temporary match into the normal
-   * messaging surface. Instant Match owns its own notification story: the
-   * match itself is announced, and the chat's state is pushed over its own
-   * realtime events.
+   * `metadata.chatType` is what tells the client which surface to open, and it
+   * is the only thing that does. An Instant Match message must open the
+   * Instant Match chat — the dedicated overlay the match lives on — while a
+   * normal message deep-links into Messages by conversationId. The two are
+   * different screens, so a notification that does not say which one it means
+   * can only guess, and the guess used to be Messages: a section the Instant
+   * Match chat deliberately does not appear in.
+   *
+   * An instant notification therefore carries NO conversationId. There is
+   * nothing for the client to route to by id — it asks Instant Match for the
+   * user's current session and opens that — and omitting it makes it
+   * impossible for a deep-link path to pick the id up by accident and drag a
+   * temporary match into the normal messaging surface.
    */
   createMessage(actor: any, conversation: any, targetUserId: string, messageText?: string): CreateNotificationDto | null {
-    if (conversation?.type === 'INSTANT_MATCH' || conversation?.isInstantMatch) {
-      return null;
+    const isInstant = conversation?.type === 'INSTANT_MATCH' || conversation?.isInstantMatch === true;
+
+    if (isInstant) {
+      const instantActor = actor?.displayName || actor?.username || 'Your match';
+      const instantSnippet = messageText ? messageText.substring(0, 80) : '';
+      return {
+        recipientId: targetUserId,
+        actorId: actor?.id,
+        type: NotificationType.MESSAGE,
+        entityType: NotificationEntityType.MESSAGE,
+        // The match session, never the conversation: this notification must
+        // not carry an id that /messages could route on.
+        entityId: conversation?.matchId || conversation?.id,
+        title: instantActor,
+        body: instantSnippet ? `${instantActor}: ${instantSnippet}` : `${instantActor} sent you a message.`,
+        metadata: {
+          version: 1,
+          chatType: 'instant',
+          isInstantMatch: true,
+          actorName: instantActor,
+          actorUsername: actor?.username || '',
+          actorAvatar: actor?.avatar || null,
+          messageText: instantSnippet,
+          isGroup: false,
+        },
+      };
     }
 
     const actorName = actor?.displayName || actor?.username || 'Someone';
@@ -211,6 +241,8 @@ export class NotificationFactory {
       body: bodyText,
       metadata: {
         version: 1,
+        chatType: 'normal',
+        isInstantMatch: false,
         actorName,
         actorUsername,
         actorAvatar: actor?.avatar || null,

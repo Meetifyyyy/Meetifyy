@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useDismissibleMenu } from '../../../shared/hooks/useDismissibleMenu';
 import { ArrowLeft, MoreVertical, Search, BellOff, BellRing, Trash2, ShieldOff, Info, Pin } from 'lucide-react';
 import Avatar from '@shared/components/avatar/Avatar';
 import { useCanSeeOthersPresence } from '@shared/hooks/usePresenceVisibility';
@@ -14,7 +14,11 @@ export default function DMChatHeader({
   onToggleSearch, 
   onOpenDetails,
 }) {
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  // Outside click, Escape and hardware Back all dismiss this menu — and
+  // Back dismisses only the menu, not the chat underneath it.
+  const {
+    open: showMoreMenu, setOpen: setShowMoreMenu, toggle: toggleMoreMenu, anchorRef: moreMenuRef,
+  } = useDismissibleMenu();
   const canSeePresence = useCanSeeOthersPresence();
 
   if (!conversation) return null;
@@ -61,11 +65,11 @@ export default function DMChatHeader({
       </div>
 
       <div className={styles.msgChatActions} onClick={(e) => e.stopPropagation()}>
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} ref={moreMenuRef}>
           <button 
             className={`${styles.msgChatActionBtn} ${showMoreMenu ? styles.msgChatActionBtnActive : ''}`} 
             title="More Options"
-            onClick={() => setShowMoreMenu(!showMoreMenu)}
+            onClick={toggleMoreMenu}
           >
             <MoreVertical size={18} />
           </button>

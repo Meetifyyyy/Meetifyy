@@ -861,6 +861,19 @@ export const messagesApi = {
     return apiClient.get(`/api/messages/${conversationId}${query ? `?${query}` : ''}`);
   },
   sendDirectMessage: (conversationId, payload) => apiClient.post(`/api/messages/${conversationId}/messages`, payload),
+  // `sendMessage` is the name every generic caller uses: useChatManager picks
+  // one of dmApi / groupApi / messagesApi by chat type and then calls
+  // `.sendMessage(...)` on whichever it got. Only this object was missing it,
+  // so that call resolved to `undefined` and threw.
+  //
+  // That path is the REST fallback — used when the socket is down, and after a
+  // 5s socket-ack timeout — so the failure was invisible for dm/group chats
+  // (they hit dmApi/groupApi, which have the method) and hit exactly one
+  // surface: the Instant Match chat, the only chat that runs on `messagesApi`.
+  // Every send there that fell back to REST threw, was swallowed by the
+  // `catch`, and left the message stuck as a failed optimistic bubble that
+  // never became a real message.
+  sendMessage: (conversationId, payload) => apiClient.post(`/api/messages/${conversationId}/messages`, payload),
   startConversation: (userIds, name) => apiClient.post('/api/messages', { userIds, name }),
   startInstantMatchChat: (targetUserId, activity) => apiClient.post('/api/messages/instant-match', { targetUserId, activity }),
   reactToMessage: (messageId, reaction) => apiClient.post(`/api/messages/${messageId}/react`, { reaction }),

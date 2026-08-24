@@ -48,24 +48,30 @@ describe('Instant Match isolation from normal Messages', () => {
     const factory = new NotificationFactory();
     const actor = { id: 'alice', displayName: 'Alice', avatar: null };
 
-    it('declines to build one for an Instant Match conversation', () => {
-      // Its deep link would point into Messages, where this conversation
-      // does not exist.
-      expect(
-        factory.createMessage(actor, { id: 'c1', type: 'INSTANT_MATCH' }, 'bob', 'hi'),
-      ).toBeNull();
+    it('marks one for an Instant Match conversation as instant, and gives it no conversationId', () => {
+      // The notification exists — the user is told about the message — but it
+      // must be routable ONLY to the Instant Match chat. A conversationId is
+      // what deep-links into Messages, where this conversation does not
+      // exist, so there deliberately isn't one to route on.
+      const dto = factory.createMessage(actor, { id: 'c1', type: 'INSTANT_MATCH' }, 'bob', 'hi');
+      expect(dto).not.toBeNull();
+      expect(dto?.metadata).toMatchObject({ chatType: 'instant', isInstantMatch: true });
+      expect(dto?.metadata).not.toHaveProperty('conversationId');
+      expect(dto?.metadata).not.toHaveProperty('publicId');
+      expect(dto?.metadata).not.toHaveProperty('internalId');
     });
 
-    it('also declines for a legacy row carrying only the old flag', () => {
-      expect(
-        factory.createMessage(actor, { id: 'c1', type: 'DM', isInstantMatch: true }, 'bob', 'hi'),
-      ).toBeNull();
+    it('does the same for a legacy row carrying only the old flag', () => {
+      const dto = factory.createMessage(actor, { id: 'c1', type: 'DM', isInstantMatch: true }, 'bob', 'hi');
+      expect(dto?.metadata).toMatchObject({ chatType: 'instant', isInstantMatch: true });
+      expect(dto?.metadata).not.toHaveProperty('conversationId');
     });
 
-    it('still builds one for a normal DM', () => {
+    it('still builds one for a normal DM, marked normal and routable by id', () => {
       const dto = factory.createMessage(actor, { id: 'c2', type: 'DM' }, 'bob', 'hi');
       expect(dto).not.toBeNull();
       expect(dto).toMatchObject({ recipientId: 'bob', type: 'MESSAGE' });
+      expect(dto?.metadata).toMatchObject({ chatType: 'normal', isInstantMatch: false, conversationId: 'c2' });
     });
 
     it('still builds one for a group', () => {
