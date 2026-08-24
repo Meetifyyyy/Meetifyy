@@ -1,11 +1,11 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { StorageProvider } from './storage-provider.interface';
+import { config } from '../../config';
 
 @Injectable()
 export class CloudflareR2Provider implements StorageProvider {
@@ -15,12 +15,10 @@ export class CloudflareR2Provider implements StorageProvider {
   private publicUrl: string;
   private readonly isConfigured: boolean;
 
-  constructor(private configService: ConfigService) {
-    const accountId = this.configService.get<string>('r2.accountId');
-    const accessKeyId = this.configService.get<string>('r2.accessKeyId');
-    const secretAccessKey = this.configService.get<string>('r2.secretAccessKey');
-    this.bucketName = this.configService.get<string>('r2.bucketName') || 'meetifyy-dev';
-    this.publicUrl = this.configService.get<string>('r2.publicUrl') || '';
+  constructor() {
+    const { accountId, accessKeyId, secretAccessKey, bucketName, region } = config.storage.r2;
+    this.bucketName = bucketName;
+    this.publicUrl = config.storage.publicUrl || config.storage.r2.publicUrl;
 
     this.isConfigured =
       !!(accountId && accessKeyId && secretAccessKey &&
@@ -28,7 +26,7 @@ export class CloudflareR2Provider implements StorageProvider {
 
     if (this.isConfigured) {
       this.s3 = new S3Client({
-        region: 'auto',
+        region,
         endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
         credentials: { accessKeyId: accessKeyId!, secretAccessKey: secretAccessKey! },
         // AWS SDK v3 (>= 3.729) can add default integrity checksums as SIGNED
@@ -39,6 +37,11 @@ export class CloudflareR2Provider implements StorageProvider {
         responseChecksumValidation: 'WHEN_REQUIRED',
       });
       this.logger.log('Cloudflare R2 configured');
+      if (!this.publicUrl) {
+        // Without a configured public host there is no correct URL to guess —
+        // media is served through the API's own /api/media route instead.
+        this.logger.warn('STORAGE_PUBLIC_URL / R2_PUBLIC_URL is not set; media will be served via /api/media');
+      }
     }
   }
 
@@ -85,13 +88,13 @@ export class CloudflareR2Provider implements StorageProvider {
     return { uploadUrl, publicUrl: filePublicUrl, key };
   }
 
-  async createSignedDownloadUrl(key: string, expiresIn = 3600): Promise<string> {
+  async createSignedDownloadUrl(key: string, expiresIn = config.storage.r2.signedUrlTtlSeconds): Promise<string> {
     if (!this.isConfigured || !this.s3) return `/mock-download/${key}`;
     const command = new GetObjectCommand({ Bucket: this.bucketName, Key: key });
     return getSignedUrl(this.s3, command, { expiresIn });
   }
 
-  async createSignedUrls(keys: string[], expiresIn = 3600): Promise<{ [key: string]: string }> {
+  async createSignedUrls(keys: string[], expiresIn = config.storage.r2.signedUrlTtlSeconds): Promise<{ [key: string]: string }> {
     const result: { [key: string]: string } = {};
     if (!keys || keys.length === 0) return result;
 
@@ -115,9 +118,9 @@ export class CloudflareR2Provider implements StorageProvider {
 
   getPublicUrl(key: string): string {
     if (!this.isConfigured) return `/mock-public/${key}`;
-    return this.publicUrl
-      ? `${this.publicUrl.replace(/\/$/, '')}/${key}`
-      : `https://${this.bucketName}.r2.dev/${key}`;
+    // The public host is a configuration value; when it is absent the key is
+    // returned as an API-relative media path rather than a guessed bucket host.
+    return this.publicUrl ? `${this.publicUrl}/${key}` : `/api/media/${key}`;
   }
 
   async delete(key: string): Promise<boolean> {

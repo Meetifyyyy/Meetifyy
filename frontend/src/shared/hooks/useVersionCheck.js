@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { config } from '@config';
 
 /**
  * Detects a newer deployment and reloads the app onto it.
@@ -107,7 +108,7 @@ function cleanReloadStamp() {
 
 export function useVersionCheck() {
   useEffect(() => {
-    if (import.meta.env.DEV) return undefined;
+    if (!config.features.enableVersionCheck) return undefined;
 
     cleanReloadStamp();
 

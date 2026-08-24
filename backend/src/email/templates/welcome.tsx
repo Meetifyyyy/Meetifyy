@@ -13,7 +13,7 @@ import {
   Text,
 } from '@react-email/components';
 
-import { SITE_CONFIG } from '../../common/config/site.config';
+import { SITE_CONFIG } from '../../config/site.config';
 import * as S from './_shared-styles';
 
 interface WelcomeEmailProps {

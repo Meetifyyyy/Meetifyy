@@ -24,6 +24,7 @@ import {
   ResetPasswordRequestDto,
   ResetPasswordDto,
 } from './dto/admin-auth.dto';
+import { config } from '../../config';
 const { authenticator } = require('otplib');
 const { UAParser } = require('ua-parser-js');
 
@@ -72,8 +73,8 @@ export class AdminAuthService implements OnModuleInit {
    */
   async seedDefaultSuperAdmin() {
     try {
-      const email = (this.configService.get<string>('SUPER_ADMIN_EMAIL') || '').toLowerCase().trim();
-      const pass = this.configService.get<string>('SUPER_ADMIN_PASSWORD') || '';
+      const email = config.auth.admin.superAdminEmail.toLowerCase().trim();
+      const pass = config.auth.admin.superAdminPassword;
 
       if (!email || !pass) {
         this.logger.warn(
@@ -112,7 +113,7 @@ export class AdminAuthService implements OnModuleInit {
   }
 
   private getAccessSecret(): string {
-    const secret = this.configService.get<string>('ADMIN_JWT_ACCESS_SECRET');
+    const secret = config.auth.admin.accessSecret;
     if (!secret) {
       throw new UnauthorizedException('ADMIN_JWT_ACCESS_SECRET is missing in server environment');
     }
@@ -120,7 +121,7 @@ export class AdminAuthService implements OnModuleInit {
   }
 
   private getRefreshSecret(): string {
-    const secret = this.configService.get<string>('ADMIN_JWT_REFRESH_SECRET');
+    const secret = config.auth.admin.refreshSecret;
     if (!secret) {
       throw new UnauthorizedException('ADMIN_JWT_REFRESH_SECRET is missing in server environment');
     }
@@ -128,7 +129,7 @@ export class AdminAuthService implements OnModuleInit {
   }
 
   private getPendingSecret(): string {
-    const secret = this.configService.get<string>('ADMIN_JWT_PENDING_SECRET');
+    const secret = config.auth.admin.pendingSecret;
     if (!secret) {
       throw new UnauthorizedException('ADMIN_JWT_PENDING_SECRET is missing in server environment');
     }

@@ -20,6 +20,7 @@ import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import styles from './SettingsRoute.module.css';
 import useDevToolsStore from '@shared/stores/devToolsStore';
 import BlockedContacts from '../panels/BlockedContacts';
+import { IS_DEV_BUILD, config } from '@config';
 
 // Large-device split layout only kicks in at this width — tablets and phones
 // keep the existing single-pane list/detail swap untouched.
@@ -646,9 +647,9 @@ export default function SettingsRoute() {
         </button>
       </div>
 
-      {/* Developer section — dev builds only. import.meta.env.DEV is statically
-          replaced at build time, so this whole block drops out in production. */}
-      {import.meta.env.DEV && (
+      {/* Developer section — dev builds only. `enableDevRoutes` folds to a
+          build-time constant, so this whole block drops out in production. */}
+      {IS_DEV_BUILD && (
         <>
           <div className={styles.sectionLabel}>Developer</div>
           <div className={styles.group}>
@@ -1180,15 +1181,17 @@ export default function SettingsRoute() {
               </div>
             ))}
 
-            <div className={styles.helpContactRow}>
-              <a
-                href="mailto:support@meetifyy.com?subject=Support%20Request"
-                className={styles.helpContactLink}
-              >
-                <Mail size={18} strokeWidth={2} />
-                Email support@meetifyy.com
-              </a>
-            </div>
+            {config.app.supportEmail && (
+              <div className={styles.helpContactRow}>
+                <a
+                  href={`mailto:${config.app.supportEmail}?subject=Support%20Request`}
+                  className={styles.helpContactLink}
+                >
+                  <Mail size={18} strokeWidth={2} />
+                  Email {config.app.supportEmail}
+                </a>
+              </div>
+            )}
           </div>
         </div>
       )}

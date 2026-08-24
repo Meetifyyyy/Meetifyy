@@ -8,6 +8,7 @@ import {
 import * as jwt from 'jsonwebtoken';
 import { createPublicKey, KeyObject } from 'crypto';
 import { SupabaseService } from '../../supabase/supabase.service';
+import { config } from '../../config';
 
 interface CachedTokenUser {
   userPayload: any;
@@ -63,13 +64,13 @@ export class JwtGuard implements CanActivate {
 
   /** The `iss` every Supabase token from THIS project carries. */
   private static expectedIssuer(): string | null {
-    const base = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+    const base = config.auth.supabase.url;
     if (!base || base.includes('placeholder')) return null;
     return `${base}/auth/v1`;
   }
 
   private static jwksUrl(): string | null {
-    const base = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+    const base = config.auth.supabase.url;
     if (!base || base.includes('placeholder')) return null;
     return `${base}/auth/v1/.well-known/jwks.json`;
   }
@@ -252,7 +253,7 @@ export class JwtGuard implements CanActivate {
     }
 
     // Fast path 2: legacy HS256 shared secret, if the project still issues HS256.
-    const secret = process.env.SUPABASE_JWT_SECRET;
+    const secret = config.auth.supabase.jwtSecret;
     if (secret && alg === 'HS256') {
       try {
         const payload: any = jwt.verify(token, secret, { algorithms: ['HS256'] });

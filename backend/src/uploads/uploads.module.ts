@@ -1,5 +1,4 @@
 import { Module, Global } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { UploadsController } from './uploads.controller';
 import { StorageService } from './uploads.service';
 import { DefaultAssetsService } from './default-assets.service';
@@ -12,11 +11,9 @@ import { PrismaModule } from '../prisma/prisma.module';
   controllers: [UploadsController],
   providers: [
     {
+      // The provider reads its own settings from the central config layer.
       provide: 'STORAGE_PROVIDER',
-      useFactory: (configService: ConfigService) => {
-        return new CloudflareR2Provider(configService);
-      },
-      inject: [ConfigService],
+      useClass: CloudflareR2Provider,
     },
     StorageService,
     DefaultAssetsService,

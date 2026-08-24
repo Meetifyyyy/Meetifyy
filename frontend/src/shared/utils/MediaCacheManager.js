@@ -1,4 +1,5 @@
 import { apiClient, getMediaUrl } from '../api/apiClient';
+import { config } from '@config';
 
 class MediaCacheManager {
   constructor() {
@@ -238,12 +239,11 @@ class MediaCacheManager {
           cleanKey = parts[1].split('?')[0].split('/').slice(1).join('/'); // remove bucket name
         }
       }
-      // Also check if it's an R2 public URL
-      if (cleanKey.includes('.r2.dev/')) {
-        const parts = cleanKey.split('.r2.dev/');
-        if (parts.length > 1) {
-          cleanKey = parts[1].split('?')[0];
-        }
+      // Also strip the configured public storage origin, so an absolute media
+      // URL and its bare key collapse to the same cache entry.
+      const storageOrigin = config.storage.publicUrl;
+      if (storageOrigin && cleanKey.startsWith(storageOrigin)) {
+        cleanKey = cleanKey.slice(storageOrigin.length).replace(/^\/+/, '').split('?')[0];
       }
       cleanKey = cleanKey.replace(/^\/+/, '');
 

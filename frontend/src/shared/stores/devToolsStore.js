@@ -1,11 +1,12 @@
 import { create } from 'zustand';
+import { IS_DEV_BUILD } from '@config';
 
 /**
  * devToolsStore — opt-in switches for development-only surfaces.
  *
  * These are persisted (unlike uiStore's transient state) so the choice survives
- * a reload, but they are only ever read behind `import.meta.env.DEV`, so none of
- * this reaches a production build.
+ * a reload, but they are only ever read behind `IS_DEV_BUILD`,
+ * so none of this reaches a production build.
  *
  * The Notification Lab used to mount its floating button unconditionally in dev.
  * It is fixed above everything at the bottom-right, so it sat on top of real
@@ -15,10 +16,10 @@ import { create } from 'zustand';
 const STORAGE_KEY = 'devTools.notificationLab';
 
 function readInitial() {
-  // Never read storage in a production build: the toggle UI and the lab mount are
-  // both behind import.meta.env.DEV, so the flag can only ever be false there.
-  // This keeps production from doing a pointless localStorage hit at boot.
-  if (!import.meta.env.DEV) return false;
+  // Never read storage in a production build: the toggle UI and the lab mount
+  // are both behind IS_DEV_BUILD, so the flag can only ever
+  // be false there. This keeps production from a pointless localStorage hit.
+  if (!IS_DEV_BUILD) return false;
   try {
     return localStorage.getItem(STORAGE_KEY) === 'true';
   } catch {

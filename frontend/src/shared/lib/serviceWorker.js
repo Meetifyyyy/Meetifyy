@@ -1,3 +1,4 @@
+import { config } from '@config';
 /**
  * Service Worker registration + lifecycle management.
  * Called once from main.jsx after React mounts.
@@ -6,8 +7,9 @@
 export async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
 
-  // In development, unregister any existing SW to prevent stale cache issues
-  if (import.meta.env.DEV) {
+  // Where the service worker is disabled (development by default), unregister
+  // any existing one so a stale cache cannot survive.
+  if (!config.features.enableServiceWorker) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
     return;

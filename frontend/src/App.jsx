@@ -1,4 +1,5 @@
 import { lazy, Suspense, useMemo, useEffect } from 'react';
+import { IS_DEV_BUILD } from '@config';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
 import { SmartBackTracker } from './shared/hooks/useSmartBack';
 import { useAuth } from './shared/context/AuthContext';
@@ -18,7 +19,7 @@ import useDevToolsStore from './shared/stores/devToolsStore';
 // Settings -> Developer.
 function NotificationLabMount() {
   const enabled = useDevToolsStore((s) => s.notificationLabEnabled);
-  if (!import.meta.env.DEV || !NotificationPlayground || !enabled) return null;
+  if (!IS_DEV_BUILD || !NotificationPlayground || !enabled) return null;
   return (
     <Suspense fallback={null}>
       <NotificationPlayground />
@@ -26,15 +27,15 @@ function NotificationLabMount() {
   );
 }
 
-const NotificationPlayground = import.meta.env.DEV
+const NotificationPlayground = IS_DEV_BUILD
   ? lazy(() => import('./local/NotificationPlayground').catch(() => ({ default: () => null })))
   : null;
 // DEV — logo animation experiment (remove before shipping)
-const LogoAnimationPage = import.meta.env.DEV
+const LogoAnimationPage = IS_DEV_BUILD
   ? lazy(() => import('./local/LogoAnimation').catch(() => ({ default: () => null })))
   : null;
 // DEV — Instant Match visual harness (every state, no backend needed)
-const InstantMatchPreview = import.meta.env.DEV
+const InstantMatchPreview = IS_DEV_BUILD
   ? lazy(() => import('./local/InstantMatchPreview').catch(() => ({ default: () => null })))
   : null;
 
@@ -339,20 +340,20 @@ export default function App() {
           path: '/dev/critical-error',
           element: <CriticalErrorScreen onRetry={() => window.location.reload()} />,
         },
-        ...(import.meta.env.DEV && NotificationPlayground ? [
+        ...(IS_DEV_BUILD && NotificationPlayground ? [
           {
             path: '/dev/notifications',
             element: <Suspense fallback={null}><NotificationPlayground /></Suspense>,
           }
         ] : []),
-        ...(import.meta.env.DEV && InstantMatchPreview ? [
+        ...(IS_DEV_BUILD && InstantMatchPreview ? [
           {
             path: '/dev/instant-match',
             element: <StaticRoute><Suspense fallback={null}><InstantMatchPreview /></Suspense></StaticRoute>,
           }
         ] : []),
         // DEV — logo animation experiment
-        ...(import.meta.env.DEV && LogoAnimationPage ? [
+        ...(IS_DEV_BUILD && LogoAnimationPage ? [
           {
             path: '/logo-animation',
             element: <StaticRoute><Suspense fallback={null}><LogoAnimationPage /></Suspense></StaticRoute>,

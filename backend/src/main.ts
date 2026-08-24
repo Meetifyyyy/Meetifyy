@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { config } from './config';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger as NestLogger } from '@nestjs/common';
 import helmet from 'helmet';
@@ -9,17 +10,17 @@ import { Logger } from 'nestjs-pino';
 import * as Sentry from '@sentry/nestjs';
 import { nodeProfilingIntegration } from '@sentry/profiling-node';
 
-const isProd = process.env.NODE_ENV === 'production';
-
 Sentry.init({
-  dsn: process.env.SENTRY_DSN || '',
+  dsn: config.app.observability.sentryDsn,
+  environment: config.env,
   integrations: [
     nodeProfilingIntegration(),
   ],
-  // Sample 10% of traces and 5% of profiles in production — 1.0 in production
-  // adds measurable per-request overhead and inflates Sentry costs dramatically.
-  tracesSampleRate: isProd ? 0.1 : 1.0,
-  profilesSampleRate: isProd ? 0.05 : 1.0,
+  // Sampling defaults to 10% of traces and 5% of profiles in production — 1.0
+  // there adds measurable per-request overhead and inflates Sentry costs
+  // dramatically. Both are tunable per environment.
+  tracesSampleRate: config.app.observability.sentryTracesSampleRate,
+  profilesSampleRate: config.app.observability.sentryProfilesSampleRate,
 });
 
 async function bootstrap() {
@@ -40,46 +41,33 @@ async function bootstrap() {
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
 
-  const defaultCorsOrigins = [
-    'https://meetify-web.vercel.app',
-    'https://dev.meetifyy.app',
-    'https://meetifyy.app',
-    'https://www.meetifyy.app',
-    // Localhost origins are only baked in outside production.
-    ...(isProd ? [] : [
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://localhost:5174',
-    ]),
-  ];
+  // Every allowed origin comes from configuration — FRONTEND_URL, ADMIN_URL and
+  // CORS_ORIGINS. Adding a preview domain is an environment change, never a
+  // code change.
+  const { origins: configuredCorsOrigins, originPatterns, allowLocalNetwork } = config.app.cors;
 
-  const envCorsOrigins = (process.env.CORS_ORIGINS || '')
-    .split(',')
-    .map((origin) => origin.trim().replace(/\/+$/, ''))
-    .filter(Boolean);
-
-  const configuredCorsOrigins = Array.from(new Set([...defaultCorsOrigins, ...envCorsOrigins]));
-
-  // Security Headers
-  // In development, CSP is disabled so LAN access from other devices on the same
-  // Wi-Fi works without needing to pre-list every possible local IP address.
-  // HSTS is also skipped in dev — it can permanently redirect HTTP→HTTPS on
-  // a browser session and break local http:// connections.
+  // Security headers. CSP and HSTS default to production-only: CSP off in dev so
+  // LAN access from other devices works without pre-listing every local IP, and
+  // HSTS off because it can pin a browser session to HTTPS and break local
+  // http:// connections. Both are overridable per environment.
+  // CSP sources are additive: 'self' plus whatever the environment declares.
+  // A new CDN or media host is a CSP_*_SRC change, not a deploy of new source.
+  const { security } = config.app;
   app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     crossOriginOpenerPolicy: { policy: 'unsafe-none' },
-    contentSecurityPolicy: isProd ? {
+    contentSecurityPolicy: security.cspEnabled ? {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", 'https://cdn.jsdelivr.net'],
-        workerSrc: ["'self'", 'blob:', 'https://cdn.jsdelivr.net'],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-        imgSrc: ["'self'", 'data:', 'blob:', 'https://images.unsplash.com', 'https://media.giphy.com', 'https://*.r2.dev'],
-        connectSrc: ["'self'", 'https://*.vercel.app', 'https://*.meetifyy.app', 'wss://*.railway.app', 'wss://*.meetifyy.app', ...configuredCorsOrigins],
+        scriptSrc: ["'self'", ...security.cspScriptSrc],
+        workerSrc: ["'self'", 'blob:', ...security.cspScriptSrc],
+        styleSrc: ["'self'", "'unsafe-inline'", ...security.cspStyleSrc],
+        fontSrc: ["'self'", ...security.cspFontSrc],
+        imgSrc: ["'self'", 'data:', 'blob:', ...security.cspImgSrc],
+        connectSrc: ["'self'", ...security.cspConnectSrc, ...configuredCorsOrigins],
       },
     } : false,
-    hsts: isProd ? {
+    hsts: security.hstsEnabled ? {
       maxAge: 31536000,
       includeSubDomains: true,
       preload: true,
@@ -92,29 +80,28 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean | string) => void) => {
       if (!origin) return callback(null, true);
-      // Localhost / LAN origins are only trusted outside production — a prod API
-      // must never treat a developer's local machine as a same-trust origin.
-      const isDevelopmentOrigin =
-        !isProd &&
+      // Localhost / LAN origins are trusted only where the environment says so.
+      // `allowLocalNetwork` is forced off in production, so a prod API can never
+      // treat a developer's machine as a same-trust origin.
+      const isLocalNetworkOrigin =
+        allowLocalNetwork &&
         /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|100\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/i.test(origin);
-      // Scope the Vercel wildcard to this project's deployments/previews
-      // (meetify*) rather than accepting ANY *.vercel.app site.
-      const isVercelOrigin = /^https:\/\/meetify[a-zA-Z0-9-]*\.vercel\.app$/i.test(origin);
-      const isMeetifyyOrigin = /^https:\/\/[a-zA-Z0-9-]+\.meetifyy\.app$/i.test(origin);
+
+      // Wildcard entries (from CORS_ORIGIN_PATTERNS or a starred CORS_ORIGINS
+      // entry) let a deployment allow its own preview domains without listing
+      // each one.
+      const matchesPattern = (allowed: string) => {
+        if (allowed === '*') return true;
+        if (!allowed.includes('*')) return false;
+        const regexPattern = '^' + allowed.replace(/\./g, '\\.').replace(/\*/g, '[^.]*') + '$';
+        return new RegExp(regexPattern, 'i').test(origin);
+      };
 
       const isAllowed =
         configuredCorsOrigins.includes(origin) ||
-        isDevelopmentOrigin ||
-        isVercelOrigin ||
-        isMeetifyyOrigin ||
-        configuredCorsOrigins.some((allowed) => {
-          if (allowed === '*') return true;
-          if (allowed.includes('*')) {
-            const regexPattern = '^' + allowed.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$';
-            return new RegExp(regexPattern, 'i').test(origin);
-          }
-          return false;
-        });
+        isLocalNetworkOrigin ||
+        originPatterns.some(matchesPattern) ||
+        configuredCorsOrigins.some(matchesPattern);
 
       if (isAllowed) {
         callback(null, origin);
@@ -139,31 +126,32 @@ async function bootstrap() {
   // Global Exception Filter
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  const port = process.env.PORT || 4000;
-  await app.listen(port, '0.0.0.0');
+  const { port, host } = config.app;
+  await app.listen(port, host);
 
   const server = app.getHttpServer();
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 66000;
 
   const logger = new NestLogger('Bootstrap');
-  const env = process.env.NODE_ENV === 'production' ? 'Production' : 'Development';
-  
+
   logger.log(`
 ===============================
- Meetifyy Backend
+ ${config.app.name} Backend
 ===============================
 
-Environment   ${env}
-Port          ${port}
-Version       0.9.0
+Environment   ${config.env}
+Host          ${host}:${port}
+Version       ${config.app.version}
+Frontend      ${config.app.frontendUrl}
+API base      ${config.app.apiBaseUrl || `(derived at request time)`}
 
 Database      [OK] PostgreSQL
-Redis         [OK] Connected
+Redis         [OK] ${config.redis.url ? 'Connected' : `${config.redis.host}:${config.redis.port}`}
 Socket.IO     [OK] Running
 BullMQ        [OK] Running
-Storage       [OK] Cloudflare R2
-Mail          [OK] Resend
+Storage       [OK] ${config.storage.provider}
+Mail          [OK] ${config.email.driver}
 Supabase      [OK] Connected
 
 Ready in ${process.uptime().toFixed(2)}s

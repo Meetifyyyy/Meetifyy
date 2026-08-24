@@ -20,45 +20,49 @@ import {
 } from './dto/admin-auth.dto';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import * as crypto from 'crypto';
+import { config } from '../../config';
 
 @Controller('admin/auth')
 export class AdminAuthController {
   constructor(private readonly authService: AdminAuthService) {}
 
+  /**
+   * Cookie domain / secure / sameSite all come from configuration, so the same
+   * code issues host-only insecure cookies in local development and
+   * domain-scoped Secure cookies in production, without a branch.
+   */
+  private get cookieBase() {
+    const { domain, secure, sameSite, path } = config.auth.cookie;
+    return { domain, secure, sameSite, path } as const;
+  }
+
   private setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
-    const isProd = process.env.NODE_ENV === 'production';
     const csrfToken = crypto.randomBytes(32).toString('hex');
+    const { accessMaxAgeMs, refreshMaxAgeMs } = config.auth.cookie;
 
     res.cookie('admin_access', accessToken, {
+      ...this.cookieBase,
       httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: 15 * 60 * 1000, // 15 mins
-      path: '/',
+      maxAge: accessMaxAgeMs,
     });
 
     res.cookie('admin_refresh', refreshToken, {
+      ...this.cookieBase,
       httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      path: '/',
+      maxAge: refreshMaxAgeMs,
     });
 
     res.cookie('admin_csrf', csrfToken, {
+      ...this.cookieBase,
       httpOnly: false, // exposed to frontend JS to attach as X-CSRF-Token header
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: 15 * 60 * 1000,
-      path: '/',
+      maxAge: accessMaxAgeMs,
     });
   }
 
   private clearAuthCookies(res: Response) {
-    const isProd = process.env.NODE_ENV === 'production';
-    res.clearCookie('admin_access', { path: '/', httpOnly: true, secure: isProd, sameSite: 'strict' });
-    res.clearCookie('admin_refresh', { path: '/', httpOnly: true, secure: isProd, sameSite: 'strict' });
-    res.clearCookie('admin_csrf', { path: '/', sameSite: 'strict' });
+    res.clearCookie('admin_access', { ...this.cookieBase, httpOnly: true });
+    res.clearCookie('admin_refresh', { ...this.cookieBase, httpOnly: true });
+    res.clearCookie('admin_csrf', { ...this.cookieBase });
   }
 
   @Post('login')

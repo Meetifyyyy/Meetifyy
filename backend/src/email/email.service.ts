@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { config } from '../config';
 
 @Injectable()
 export class EmailService {
@@ -61,7 +62,7 @@ export class EmailService {
       email,
       name,
       otp,
-      from: 'Meetifyy Security <noreply@meetifyy.app>',
+      from: config.email.securityFrom,
     });
   }
 }

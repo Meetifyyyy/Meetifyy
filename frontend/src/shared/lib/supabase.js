@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
+import { config } from '@config';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const { url: supabaseUrl, anonKey: supabaseAnonKey } = config.supabase;
 
-export const isSupabaseConfigured = supabaseUrl && !supabaseUrl.includes('placeholder') && supabaseUrl.trim().length > 0;
+export const isSupabaseConfigured = !!supabaseUrl && !supabaseUrl.includes('placeholder');
 
 // ─── Capture recovery context BEFORE createClient() clears the URL hash ──────
 //

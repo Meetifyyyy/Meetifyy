@@ -10,12 +10,14 @@ Meetifyy is a campus network platform designed for university students to connec
 meetifyy/
 ├── backend/                  # NestJS API Server & Service Engine
 │   ├── prisma/               # Database schema, migrations, & seed data
+│   ├── src/config/           # Central configuration layer (env loading + validation)
 │   ├── src/                  # Core API modules (auth, posts, messaging, presence, etc.)
 │   └── supabase-templates/   # Static Auth email templates
 │
 ├── frontend/                 # Main Student Web Application (React + Vite)
 │   ├── public/               # Static assets, fonts, icons, & offline files
 │   └── src/
+│       ├── config/           # Central configuration layer (public, build-time values)
 │       ├── features/         # Modular feature apps (feed, messaging, campus, crew, etc.)
 │       ├── layout/           # Shared page layouts, headers, & sidebars
 │       └── shared/           # Reusable UI components, hooks, & state stores
@@ -23,6 +25,32 @@ meetifyy/
 └── admin-frontend/           # Super Admin Portal (React + Vite + TypeScript)
     └── src/                  # Admin dashboard pages, audit tools, & moderation views
 ```
+
+---
+
+## ⚙️ Configuration & getting started
+
+Every environment-specific value — domains, database, email, storage, auth
+redirects, cookies, CORS — is supplied by environment variables and read through
+a central configuration layer. No source file needs editing to move between
+local, staging and production.
+
+```bash
+cp backend/.env.example        backend/.env.local
+cp frontend/.env.example       frontend/.env.local
+cp admin-frontend/.env.example admin-frontend/.env.local
+# fill in your development credentials, then:
+npm install
+npm run dev
+```
+
+The config layers live at `backend/src/config/`, `frontend/src/config/` and
+`admin-frontend/src/config/`. Application code imports `config` from there rather
+than reading `process.env` / `import.meta.env` directly.
+
+**Full reference: [docs/environment-configuration.md](docs/environment-configuration.md)** —
+environments, load order, build-time vs runtime, public vs private variables,
+startup validation, and the production deployment process.
 
 ---
 

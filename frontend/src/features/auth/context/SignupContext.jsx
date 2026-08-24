@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
+import { config } from '@config';
 
 // ─── DEV BYPASS ────────────────────────────────────────────────────────────────
 // Set to true to skip all signup validation and API calls (dev/design mode).
@@ -97,7 +98,7 @@ export const SignupProvider = ({ children }) => {
           parsed.course = '';
           parsed.branch = '';
           parsed.currentYear = null;
-          if (import.meta.env.DEV) {
+          if (config.features.enableDebugTools) {
             console.info('[signup] cleared legacy Major/Year-of-Pass draft state on restore');
           }
         }

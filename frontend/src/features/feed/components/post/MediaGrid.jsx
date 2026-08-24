@@ -191,9 +191,9 @@ function normalizeMedia(mediaInput) {
     //
     // `/api/media/...` used to be treated as "already usable" and handed
     // straight to `<img src>`. It is a *relative* path, so the browser resolved
-    // it against the page's own origin — dev.meetifyy.app, which is Vercel and
-    // has no such route — and every post image 404'd on first paint with
-    // `x-vercel-error: NOT_FOUND`. The API lives on a different host, and
+    // it against the page's own origin — the static frontend host, which has no
+    // such route — and every post image 404'd on first paint. The API generally
+    // lives on a different origin (see config.api.baseUrl), and
     // `getMediaUrl` is what knows that. Clicking the image still worked because
     // the viewer resolves its source properly, which is exactly the "broken in
     // the grid, fine in the viewer" split.

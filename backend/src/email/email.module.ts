@@ -5,7 +5,7 @@ import { EmailService } from './email.service';
 import { EmailProcessor } from './email.processor';
 import { DevEmailController } from './dev-email.controller';
 
-const isDev = process.env.NODE_ENV !== 'production';
+import { config } from '../config';
 
 @Module({
   imports: [
@@ -14,8 +14,9 @@ const isDev = process.env.NODE_ENV !== 'production';
       name: 'email',
     }),
   ],
-  // Dev controller only registers in non-production environments
-  controllers: isDev ? [DevEmailController] : [],
+  // The email preview controller is registered only where the environment
+  // enables development endpoints (never in production).
+  controllers: config.features.enableDevEndpoints ? [DevEmailController] : [],
   providers: [EmailService, EmailProcessor],
   exports: [EmailService],
 })

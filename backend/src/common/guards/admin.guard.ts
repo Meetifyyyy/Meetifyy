@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { config } from '../../config';
 
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -13,7 +14,7 @@ export class AdminGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
 
     // 1. Check API Key header for external Super Admin microservices/webapps
-    const superAdminApiKey = this.configService.get<string>('SUPER_ADMIN_API_KEY');
+    const superAdminApiKey = config.auth.admin.superAdminApiKey;
     const requestApiKey = request.headers['x-super-admin-api-key'] || request.headers['x-admin-secret'];
 
     if (superAdminApiKey && requestApiKey && requestApiKey === superAdminApiKey) {

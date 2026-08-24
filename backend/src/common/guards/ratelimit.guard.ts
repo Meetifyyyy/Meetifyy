@@ -2,6 +2,7 @@ import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } 
 import { RateLimiterRedis } from 'rate-limiter-flexible';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../../redis/redis.service';
+import { config } from '../../config';
 
 @Injectable()
 export class RateLimitGuard implements CanActivate {
@@ -11,10 +12,12 @@ export class RateLimitGuard implements CanActivate {
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
   ) {
-    const isProd = process.env.NODE_ENV === 'production';
+    // Enforced wherever the environment does not ask for relaxed limits —
+    // always on in production, opt-in elsewhere.
+    const enforce = !config.features.relaxedRateLimits;
     const redis = this.redisService.getClient();
 
-    if (isProd && redis) {
+    if (enforce && redis) {
       this.ratelimit = new RateLimiterRedis({
         storeClient: redis,
         points: 100, // 100 requests

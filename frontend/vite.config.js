@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
@@ -21,7 +21,14 @@ function versionBuildPlugin() {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Dev-server settings are environment values too, so a developer running the
+  // backend on a different port or host changes .env.local, not this file.
+  const env = loadEnv(mode, __dirname, '');
+  const devServerPort = Number.parseInt(env.VITE_DEV_SERVER_PORT || '3000', 10);
+  const devApiTarget = env.VITE_DEV_API_PROXY_TARGET || `http://127.0.0.1:${env.VITE_API_LOCAL_PORT || '4000'}`;
+
+  return {
   define: {
     __APP_BUILD_TIME__: BUILD_TIME
   },
@@ -117,6 +124,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // ── canonical new paths ──────────────────────────────────────
+      '@config':   path.resolve(__dirname, 'src/config'),
       '@stores':   path.resolve(__dirname, 'src/shared/stores'),
       '@shared':   path.resolve(__dirname, 'src/shared'),
       '@layout':   path.resolve(__dirname, 'src/layout'),
@@ -173,7 +181,7 @@ export default defineConfig({
   },
   clearScreen: false,
   server: {
-    port: 3000,
+    port: devServerPort,
     open: true,
     host: true,
     allowedHosts: true,
@@ -187,20 +195,21 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:4000',
+        target: devApiTarget,
         changeOrigin: true,
         secure: false,
       },
       '/health': {
-        target: 'http://127.0.0.1:4000',
+        target: devApiTarget,
         changeOrigin: true,
         secure: false,
       },
       '/socket.io': {
-        target: 'http://127.0.0.1:4000',
+        target: devApiTarget,
         changeOrigin: true,
         ws: true,
       },
     },
   },
+  };
 });

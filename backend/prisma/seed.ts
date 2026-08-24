@@ -1,5 +1,5 @@
-import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
+import { config } from '../src/config';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import {
@@ -20,7 +20,17 @@ import {
 } from '@prisma/client';
 
 async function main() {
-  console.log('Bootstrapping NestJS for seeding...');
+  // Seeding is destructive — it clears every table before inserting fixtures.
+  // It is refused against a production database unless the environment has
+  // explicitly opted in via ALLOW_DESTRUCTIVE_SEED=true.
+  if (!config.database.allowDestructiveSeed) {
+    throw new Error(
+      `Refusing to seed: APP_ENV="${config.env}" and ALLOW_DESTRUCTIVE_SEED is not enabled.\n` +
+        'Seeding deletes all existing rows. Set ALLOW_DESTRUCTIVE_SEED=true only if that is intended.',
+    );
+  }
+
+  console.log(`Bootstrapping NestJS for seeding (environment: ${config.env})...`);
   const app = await NestFactory.createApplicationContext(AppModule);
   const prisma = app.get(PrismaService);
 

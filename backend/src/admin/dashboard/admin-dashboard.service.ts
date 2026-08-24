@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { config } from '../../config';
 
 @Injectable()
 export class AdminDashboardService {
@@ -62,14 +63,14 @@ export class AdminDashboardService {
     }
 
     // 2. Redis / Memory Cache Check
-    const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.REDIS_URL;
+    const redisUrl = config.redis.url;
     if (redisUrl) {
       const rStart = Date.now();
       try {
         checks.redis = {
           status: 'UP',
           latencyMs: Date.now() - rStart,
-          detail: process.env.UPSTASH_REDIS_REST_URL ? 'Upstash Redis' : 'Redis Cache',
+          detail: 'Redis Cache',
         };
       } catch (err: any) {
         checks.redis = { status: 'DOWN', detail: 'Connection Failed' };
@@ -79,10 +80,14 @@ export class AdminDashboardService {
     }
 
     // 3. Dynamic Storage Provider Inspection
-    const storageProvider =
-      process.env.R2_ACCOUNT_ID ? 'Cloudflare R2' :
-      process.env.SUPABASE_URL ? 'Supabase Storage' :
-      process.env.AWS_S3_BUCKET ? 'AWS S3' : null;
+    // Reported from the configured provider rather than inferred from whichever
+    // credentials happen to be present.
+    const STORAGE_LABELS: Record<string, string> = {
+      r2: 'Cloudflare R2',
+      supabase: 'Supabase Storage',
+      local: 'Local Disk',
+    };
+    const storageProvider = STORAGE_LABELS[config.storage.provider] ?? null;
 
     checks.storage = {
       status: storageProvider ? 'UP' : 'DOWN',
@@ -91,9 +96,9 @@ export class AdminDashboardService {
 
     // 4. Dynamic Email Service Inspection
     const emailProvider =
-      process.env.RESEND_API_KEY ? 'Resend API' :
-      process.env.SMTP_HOST ? `SMTP (${process.env.SMTP_HOST})` :
-      process.env.SENDGRID_API_KEY ? 'SendGrid API' : null;
+      config.email.driver === 'resend'
+        ? 'Resend API'
+        : `SMTP (${config.email.smtp.host}:${config.email.smtp.port})`;
 
     checks.email = {
       status: emailProvider ? 'UP' : 'DOWN',
@@ -101,9 +106,10 @@ export class AdminDashboardService {
     };
 
     // 5. Monitoring / Sentry DSN Check
+    const sentryDsn = config.app.observability.sentryDsn;
     checks.sentry = {
-      status: process.env.SENTRY_DSN ? 'UP' : 'DOWN',
-      detail: process.env.SENTRY_DSN ? 'Sentry Node SDK' : 'Not configured',
+      status: sentryDsn ? 'UP' : 'DOWN',
+      detail: sentryDsn ? 'Sentry Node SDK' : 'Not configured',
     };
 
     return checks;

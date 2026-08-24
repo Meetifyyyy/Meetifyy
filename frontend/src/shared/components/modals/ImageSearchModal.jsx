@@ -8,6 +8,7 @@ import MediaCropper from '@shared/components/media/MediaCropper';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { showToast } from '@shared/utils/toast';
+import { config } from '@config';
 
 /**
  * `theme` re-applies a colour scope to the portalled content. Portalling to
@@ -47,7 +48,7 @@ export default function ImageSearchModal({ onClose, onSelect, theme }) {
       setIsLoading(true);
       if (activeTab === 'images') {
         // Fetch from Unsplash
-        const UNSPLASH_KEY = import.meta.env.VITE_UNSPLASH_KEY || '';
+        const UNSPLASH_KEY = config.integrations.unsplashKey;
         
         try {
           if (!query.trim()) {
@@ -95,7 +96,7 @@ export default function ImageSearchModal({ onClose, onSelect, theme }) {
         }
       } else {
         // Fetch from Giphy
-        const GIPHY_KEY = import.meta.env.VITE_GIPHY_KEY || '';
+        const GIPHY_KEY = config.integrations.giphyKey;
         
         try {
           if (!query.trim()) {

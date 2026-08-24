@@ -8,6 +8,7 @@
  * so every API call is a synchronous read — no async getSession() per request.
  */
 import { supabase } from '@shared/lib/supabase';
+import { config } from '@config';
 
 // ── Token cache ──────────────────────────────────────────────────────────────
 // Seeded on module load; refreshed instantly on every auth state change.
@@ -31,17 +32,17 @@ if (supabase) {
 }
 
 // ── API origin failover ──────────────────────────────────────────────────────
-// The app and the API are on different hostnames (Vercel and Railway). Campus
-// and other filtered networks routinely blocklist Railway's shared
-// `*.up.railway.app` wildcard without blocking the app's own domain, which
-// leaves the shell loading and every request failing at the TCP level.
+// The app and the API are typically served from different hostnames. Campus and
+// other filtered networks routinely blocklist a shared PaaS wildcard domain
+// without blocking the app's own domain, which leaves the shell loading and
+// every request failing at the TCP level.
 //
-// `/_api/*` is a Vercel rewrite that proxies to the same backend from the app's
-// own origin, so it is reachable wherever the app itself is. We do NOT route
+// The proxy prefix (a host rewrite that forwards to the same backend from the
+// app's own origin) is reachable wherever the app itself is. We do NOT route
 // through it by default — that would put all API traffic through the edge for
 // everyone. It is armed only after a real connection-level failure, and only
 // once the proxy has been confirmed to work, then remembered for the session.
-export const API_PROXY_PREFIX = '/_api';
+export const API_PROXY_PREFIX = config.api.proxyPrefix;
 const FAILOVER_FLAG = 'meetifyy_api_failover';
 
 let _useProxyOrigin = (() => {
@@ -63,8 +64,7 @@ function sameOriginProxyBase() {
  */
 function canFailOver() {
   if (typeof window === 'undefined' || !window.location) return false;
-  const host = window.location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1') return false;
+  if (isLocalHost(window.location.hostname)) return false;
   const direct = directBackendUrl();
   if (!direct) return false;
   try {
@@ -104,39 +104,49 @@ function activateFailover() {
   return _failoverProbe;
 }
 
+const isLocalHost = (host) => host === 'localhost' || host === '127.0.0.1';
+
+const isLocalNetworkHost = (host) =>
+  isLocalHost(host) ||
+  /^(192\.168\.|10\.|100\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|.+\.local$)/.test(host) ||
+  /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+
+/**
+ * The API origin, entirely from configuration.
+ *
+ * A page served from localhost, Tailscale (100.x.x.x) or a LAN IP talks to a
+ * backend on that same host — that is what makes testing from a phone on the
+ * same Wi-Fi work. The behaviour and the port are both configurable
+ * (VITE_API_PREFER_LOCAL, VITE_API_LOCAL_PORT); everywhere else the configured
+ * VITE_API_URL is used verbatim.
+ */
 const directBackendUrl = () => {
-  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-    const host = window.location.hostname;
-    const protocol = window.location.protocol;
-    const isLocalHost = host === 'localhost' || host === '127.0.0.1';
-    const isLocalIp = /^(192\.168\.|10\.|100\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|.+\.local$)/.test(host) || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+  const { baseUrl, localPort, preferLocalBackend } = config.api;
 
-    // In local development on localhost, Tailscale (100.x.x.x), or LAN IP, connect to local backend at port 4000
-    if (isLocalHost || isLocalIp) {
-      return `${protocol}//${host}:4000`;
+  if (preferLocalBackend && typeof window !== 'undefined' && window.location?.hostname) {
+    const { hostname, protocol } = window.location;
+    if (isLocalNetworkHost(hostname)) {
+      return `${protocol}//${hostname}:${localPort}`;
     }
   }
 
-  let rawEnv = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
-
-  if (rawEnv.includes('dev-api.meetifyy.app')) {
-    rawEnv = 'https://meetifyy-production.up.railway.app';
+  if (!baseUrl) {
+    // No API origin configured: same-origin (the dev server proxy, or a
+    // deployment that serves the API under its own domain).
+    return '';
   }
 
-  if (typeof window !== 'undefined' && window.location && window.location.protocol === 'https:') {
-    if (rawEnv.startsWith('http://') && !rawEnv.includes('localhost') && !rawEnv.includes('127.0.0.1')) {
-      return rawEnv.replace(/^http:\/\//i, 'https://');
-    }
+  // A secure page cannot call an insecure origin; upgrade rather than fail.
+  if (
+    typeof window !== 'undefined' &&
+    window.location?.protocol === 'https:' &&
+    baseUrl.startsWith('http://') &&
+    !isLocalHost(new URL(baseUrl).hostname)
+  ) {
+    return baseUrl.replace(/^http:\/\//i, 'https://');
   }
 
-  if (rawEnv) {
-    if (!rawEnv.startsWith('http://') && !rawEnv.startsWith('https://')) {
-      return `https://${rawEnv}`;
-    }
-    return rawEnv;
-  }
-
-  return 'http://127.0.0.1:4000';
+  return baseUrl;
 };
 
 export const getBackendUrl = () => (_useProxyOrigin ? sameOriginProxyBase() : directBackendUrl());
@@ -177,14 +187,16 @@ export const getMediaUrl = (pathOrUrl) => {
     finalUrl = normalizeDicebearUrl(finalUrl);
   }
 
-  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-    const host = window.location.hostname;
-    const isLocalHost = host === 'localhost' || host === '127.0.0.1';
-    if (!isLocalHost && !import.meta.env.VITE_API_URL) {
-      finalUrl = finalUrl.replace(/^http:\/\/(?:localhost|127\.0\.0\.1):4000/g, `${window.location.protocol}//${host}:4000`);
-    } else {
-      finalUrl = finalUrl.replace(/^http:\/\/(?:localhost|127\.0\.0\.1):4000/g, getBackendUrl());
-    }
+  // Stored media URLs may carry a localhost API origin from whichever machine
+  // wrote them. Rewrite that prefix to the API origin this client actually uses.
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const { hostname, protocol } = window.location;
+    const localOriginPattern = new RegExp(`^https?://(?:localhost|127\\.0\\.0\\.1):${config.api.localPort}`, 'i');
+    const replacement =
+      !isLocalHost(hostname) && !config.api.baseUrl
+        ? `${protocol}//${hostname}:${config.api.localPort}`
+        : getBackendUrl();
+    finalUrl = finalUrl.replace(localOriginPattern, replacement);
   }
 
   if (finalUrl.startsWith('http://') || finalUrl.startsWith('https://') || finalUrl.startsWith('data:') || finalUrl.startsWith('blob:')) {

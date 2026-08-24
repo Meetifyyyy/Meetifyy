@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { config } from '../config';
 
 @Injectable()
 export class SupabaseService implements OnModuleInit {
@@ -10,9 +11,9 @@ export class SupabaseService implements OnModuleInit {
   constructor(private configService: ConfigService) {}
 
   onModuleInit() {
-    const url = this.configService.get<string>('supabase.url');
-    const serviceRoleKey = this.configService.get<string>('supabase.serviceRoleKey');
-    const anonKey = this.configService.get<string>('supabase.anonKey');
+    const url = config.auth.supabase.url;
+    const serviceRoleKey = config.auth.supabase.serviceRoleKey;
+    const anonKey = config.auth.supabase.anonKey;
 
     if (!url || url.includes('placeholder')) {
       this.logger.warn('Supabase URL is placeholder. Using local fallback simulation.');

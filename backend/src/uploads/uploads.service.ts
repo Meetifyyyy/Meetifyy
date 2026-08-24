@@ -2,6 +2,7 @@ import { Injectable, Inject, Logger, BadRequestException } from '@nestjs/common'
 import type { StorageProvider } from './providers/storage-provider.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
+import { config } from '../config';
 
 @Injectable()
 export class StorageService {
@@ -14,10 +15,10 @@ export class StorageService {
     private prisma: PrismaService,
     private configService: ConfigService,
   ) {
-    this.providerName = this.configService.get<string>('app.storageProvider') || 'supabase';
+    this.providerName = config.storage.provider;
     this.bucketName = this.providerName === 'r2' 
-      ? (this.configService.get<string>('r2.bucketName') || 'meetifyy-dev')
-      : (this.configService.get<string>('supabase.bucketName') || 'meetifyy-dev');
+      ? config.storage.r2.bucketName
+      : config.auth.supabase.bucketName;
   }
 
   isSafeStorageKey(key: string): boolean {
@@ -169,7 +170,7 @@ export class StorageService {
   }
 
   private getSupabasePublicUrl(bucket: string, key: string): string {
-    const supabaseUrl = this.configService.get<string>('supabase.url');
+    const supabaseUrl = config.auth.supabase.url;
     if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
       return `/mock-public/${key}`;
     }

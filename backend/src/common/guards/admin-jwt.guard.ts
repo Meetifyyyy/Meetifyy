@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as jwt from 'jsonwebtoken';
+import { config } from '../../config';
 
 @Injectable()
 export class AdminJwtGuard implements CanActivate {
@@ -30,7 +31,7 @@ export class AdminJwtGuard implements CanActivate {
     }
 
     // 2. Verify JWT signature
-    const secret = this.configService.get<string>('ADMIN_JWT_ACCESS_SECRET');
+    const secret = config.auth.admin.accessSecret;
     if (!secret) {
       throw new UnauthorizedException('ADMIN_JWT_ACCESS_SECRET is missing in server environment');
     }

@@ -1,15 +1,45 @@
+import { config } from '../config';
+
+/**
+ * The API origin, entirely from configuration.
+ *
+ * A page served from a developer machine or a LAN device talks to the backend
+ * on that same host (so testing from another device on the same Wi-Fi works);
+ * everywhere else the configured VITE_API_URL is used verbatim.
+ */
 const getBackendUrl = (): string => {
-  const envUrl = import.meta.env.VITE_API_URL;
-  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-    return envUrl;
+  const { baseUrl, localPort, preferLocalBackend } = config.api;
+
+  if (preferLocalBackend && typeof window !== 'undefined' && window.location?.hostname) {
+    const { hostname, protocol } = window.location;
+    return `${protocol}//${hostname}:${localPort}`;
   }
-  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-    return `${window.location.protocol}//${window.location.hostname}:4000`;
-  }
-  return envUrl || 'http://localhost:4000';
+
+  // Empty base URL means same-origin, which is what a single-domain deployment
+  // (or the dev-server proxy) wants.
+  return baseUrl;
 };
 
 const BASE_URL = getBackendUrl();
+
+export { BASE_URL };
+
+/**
+ * Resolves a media reference into a URL this client can load.
+ *
+ * Handles the three shapes the API returns: an absolute URL, an API-relative
+ * path, and an absolute URL carrying whichever backend origin wrote it (which
+ * may not be the origin this client talks to).
+ */
+export function getMediaUrl(src?: string | null): string | null {
+  if (!src) return null;
+  const localOriginPattern = new RegExp(`^https?://(?:localhost|127\\.0\\.0\\.1):${config.api.localPort}`, 'i');
+  if (localOriginPattern.test(src)) {
+    return src.replace(localOriginPattern, BASE_URL);
+  }
+  if (src.startsWith('/')) return `${BASE_URL}${src}`;
+  return src;
+}
 
 /** Single-flight guard — concurrent 401 retries share one refresh attempt. */
 let refreshPromise: Promise<boolean> | null = null;

@@ -1,23 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '../api/apiClient';
+import { apiRequest, getMediaUrl } from '../api/apiClient';
 import { Search, X, Megaphone, Loader2, Check } from 'lucide-react';
 
 const RepAvatar: React.FC<{ user: any }> = ({ user }) => {
   const [imgError, setImgError] = useState(false);
 
-  const getAvatarUrl = (src?: string) => {
-    if (!src) return null;
-    if (src.startsWith('http://localhost:4000')) {
-      return src.replace('localhost', window.location.hostname);
-    }
-    if (src.startsWith('/')) {
-      return `${window.location.protocol}//${window.location.hostname}:4000${src}`;
-    }
-    return src;
-  };
-
-  const avatarUrl = getAvatarUrl(user.avatar);
+  const avatarUrl = getMediaUrl(user.avatar);
   const initial = (user.displayName || user.username || 'U').charAt(0).toUpperCase();
   const colors = ['#2563EB', '#7C3AED', '#10B981', '#F59E0B', '#EC4899'];
   const bgColor = colors[(initial.charCodeAt(0) || 0) % colors.length];

@@ -8,6 +8,7 @@ import App from './App.jsx';
 import { MediaViewerProvider } from './shared/context/MediaViewerContext';
 import { UsersMapProvider } from './shared/hooks/useUsersMap';
 import MediaViewer from './shared/components/MediaViewer/MediaViewer';
+import { config } from '@config';
 import './styles/variables.css';
 import './styles/global.css';
 
@@ -50,8 +51,8 @@ if (typeof window !== 'undefined') {
 
 // Service Worker registration
 if ('serviceWorker' in navigator) {
-  if (import.meta.env.DEV) {
-    // Unregister all SWs in development
+  if (!config.features.enableServiceWorker) {
+    // Unregister all SWs wherever the worker is disabled (development default)
     navigator.serviceWorker.getRegistrations().then((regs) => {
       for (const r of regs) r.unregister();
     });

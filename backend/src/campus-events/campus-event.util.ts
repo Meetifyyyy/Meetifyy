@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { config } from '../config';
 
 /**
  * Validates and normalizes an external registration URL.
@@ -32,7 +33,7 @@ export function sanitizeRegistrationUrl(raw?: string | null): string | null {
     throw new BadRequestException('Registration URL must use http or https.');
   }
 
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProd = config.isProduction;
   const host = parsed.hostname.toLowerCase();
   const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost');
 

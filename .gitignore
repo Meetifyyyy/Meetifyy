@@ -66,6 +66,9 @@ dist-ssr/
 !backend/.env.example
 !frontend/.env.example
 !admin-frontend/.env.example
+# Per-environment templates (placeholders only — never real values)
+!.env.*.example
+!*/.env.*.example
 
 # ------------------------------------------------------------------------------
 # 5. Local Development Runtime, Scripts & Playgrounds

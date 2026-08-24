@@ -1,6 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import { Resend } from 'resend';
 import * as nodemailer from 'nodemailer';
@@ -13,51 +12,33 @@ import { ResetPasswordEmail } from './templates/reset-password';
 import { VerificationOtpEmail } from './templates/verification-otp';
 import { PasswordChangedEmail } from './templates/password-changed';
 import { AdminOtpEmail } from './templates/admin-otp';
+import { config } from '../config';
 
 @Processor('email')
 export class EmailProcessor extends WorkerHost {
   private readonly logger = new Logger(EmailProcessor.name);
   private resend: Resend;
-  private mailpitTransporter: nodemailer.Transporter;
+  private smtpTransporter: nodemailer.Transporter;
   private driver: string;
-  private fromEmail: string;
+  private from: string;
 
-  constructor(private configService: ConfigService) {
+  constructor() {
     super();
-    this.driver = (
-      this.configService.get<string>('email.driver') ||
-      this.configService.get<string>('EMAIL_DRIVER') ||
-      'resend'
-    ).toLowerCase();
+    // Driver, credentials, sender and SMTP target are all environment values —
+    // the sending logic below is identical in every environment.
+    const { driver, smtp, resend, from } = config.email;
+    this.driver = driver;
+    this.resend = new Resend(resend.apiKey);
 
-    const apiKey =
-      this.configService.get<string>('resend.apiKey') ||
-      this.configService.get<string>('RESEND_API_KEY');
-    this.resend = new Resend(apiKey);
-
-    const smtpHost =
-      this.configService.get<string>('email.smtpHost') ||
-      this.configService.get<string>('SMTP_HOST') ||
-      '127.0.0.1';
-    const smtpPort =
-      this.configService.get<number>('email.smtpPort') ||
-      parseInt(this.configService.get<string>('SMTP_PORT') || '1025', 10);
-    const smtpUser =
-      this.configService.get<string>('email.smtpUser') ||
-      this.configService.get<string>('SMTP_USER');
-    const smtpPass =
-      this.configService.get<string>('email.smtpPass') ||
-      this.configService.get<string>('SMTP_PASS');
-
-    this.mailpitTransporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpPort === 465,
-      ...(smtpUser && smtpPass
+    this.smtpTransporter = nodemailer.createTransport({
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      ...(smtp.user && smtp.pass
         ? {
             auth: {
-              user: smtpUser,
-              pass: smtpPass,
+              user: smtp.user,
+              pass: smtp.pass,
             },
           }
         : {}),
@@ -66,13 +47,9 @@ export class EmailProcessor extends WorkerHost {
       },
     });
 
-    this.fromEmail =
-      this.configService.get<string>('email.fromEmail') ||
-      this.configService.get<string>('resend.fromEmail') ||
-      this.configService.get<string>('EMAIL_FROM') ||
-      'noreply@meetifyy.app';
+    this.from = from;
 
-    this.logger.log(`Email service initialized using driver: [${this.driver}] (SMTP target: ${smtpHost}:${smtpPort})`);
+    this.logger.log(`Email service initialized using driver: [${this.driver}] (SMTP target: ${smtp.host}:${smtp.port})`);
   }
 
   async process(job: Job<any, any, string>): Promise<any> {
@@ -140,14 +117,17 @@ export class EmailProcessor extends WorkerHost {
     }
 
     try {
-      const replyTo = this.configService.get<string>('EMAIL_REPLY_TO');
-      const rawFrom = job.data.from || this.fromEmail || 'noreply@meetifyy.app';
-      const from = rawFrom.includes('<') ? rawFrom : `Meetifyy <${rawFrom}>`;
+      const { replyTo, devRedirectTo, fromName } = config.email;
+      const rawFrom = job.data.from || this.from;
+      const from = rawFrom.includes('<') ? rawFrom : `${fromName} <${rawFrom}>`;
+      // Development safety valve: when DEV_EMAIL_REDIRECT is set, mail goes
+      // there instead of the real recipient. Always empty in production.
+      const to = devRedirectTo || job.data.email;
 
       if (this.driver === 'mailpit' || this.driver === 'smtp') {
-        const info = await this.mailpitTransporter.sendMail({
+        const info = await this.smtpTransporter.sendMail({
           from,
-          to: job.data.email,
+          to,
           subject,
           html,
           ...(replyTo ? { replyTo } : {}),
@@ -158,7 +138,7 @@ export class EmailProcessor extends WorkerHost {
 
       const { data, error } = await this.resend.emails.send({
         from,
-        to: job.data.email,
+        to,
         subject: subject,
         html: html,
         ...(replyTo ? { replyTo } : {}),

@@ -4,7 +4,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { RateLimitGuard } from './common/guards/ratelimit.guard';
 import { NoCacheInterceptor } from './common/interceptors/no-cache.interceptor';
-import { appConfig, supabaseConfig, redisConfig, r2Config, resendConfig, emailConfig } from './common/config/configuration';
+import { config, configNamespaces } from './config';
 import { SupabaseModule } from './supabase/supabase.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { LinkPreviewModule } from './link-preview/link-preview.module';
@@ -28,7 +28,6 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PresenceModule } from './presence/presence.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BullModule } from '@nestjs/bullmq';
-import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { EmailModule } from './email/email.module';
 import { InstantMatchModule } from './instant-match/instant-match.module';
@@ -45,7 +44,12 @@ import { AcademicsModule } from './academics/academics.module';
     DomainValidatorModule,
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, supabaseConfig, redisConfig, r2Config, resendConfig, emailConfig],
+      // The namespaces are views onto the central `config` object, which has
+      // already loaded and validated the environment by this point.
+      load: configNamespaces,
+      // dotenv loading is handled in src/config/env.ts so that configuration is
+      // available to module-level code, not only to injected ConfigService.
+      ignoreEnvFile: true,
     }),
     LoggerModule.forRoot({
       pinoHttp: {
@@ -76,7 +80,8 @@ import { AcademicsModule } from './academics/academics.module';
             };
           },
         },
-        transport: process.env.NODE_ENV !== 'production'
+        level: config.logging.level,
+        transport: config.logging.pretty
           ? {
               target: 'pino-pretty',
               options: {
@@ -112,9 +117,9 @@ import { AcademicsModule } from './academics/academics.module';
     EventEmitterModule.forRoot(),
     BullModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => {
+      useFactory: async () => {
         let connection: any = {};
-        const redisUrlString = configService.get<string>('REDIS_URL');
+        const redisUrlString = config.redis.url;
 
         if (redisUrlString) {
           const url = new URL(redisUrlString);
@@ -130,10 +135,10 @@ import { AcademicsModule } from './academics/academics.module';
           };
         } else {
           connection = {
-            host: configService.get<string>('REDIS_HOST') || 'localhost',
-            port: configService.get<number>('REDIS_PORT') || 6379,
-            password: configService.get<string>('REDIS_PASSWORD'),
-            tls: configService.get<string>('REDIS_TLS') === 'true' ? { rejectUnauthorized: false } : undefined,
+            host: config.redis.host,
+            port: config.redis.port,
+            password: config.redis.password,
+            tls: config.redis.tls ? { rejectUnauthorized: false } : undefined,
             maxRetriesPerRequest: null,
             enableReadyCheck: false,
             skipVersionCheck: true,
@@ -181,7 +186,6 @@ import { AcademicsModule } from './academics/academics.module';
           },
         };
       },
-      inject: [ConfigService],
     }),
     EmailModule,
     InstantMatchModule,

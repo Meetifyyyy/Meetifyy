@@ -1,6 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
 import { RateLimiterRedis } from 'rate-limiter-flexible';
 import { RedisService } from '../../redis/redis.service';
+import { config } from '../../config';
 
 /**
  * Stricter, dedicated rate limiter for sensitive unauthenticated auth endpoints
@@ -19,10 +20,12 @@ export class AuthRateLimitGuard implements CanActivate {
   private ratelimit: RateLimiterRedis | null = null;
 
   constructor(private readonly redisService: RedisService) {
-    const isProd = process.env.NODE_ENV === 'production';
+    // Enforced wherever the environment does not ask for relaxed limits —
+    // always on in production, opt-in elsewhere.
+    const enforce = !config.features.relaxedRateLimits;
     const redis = this.redisService.getClient();
 
-    if (isProd && redis) {
+    if (enforce && redis) {
       this.ratelimit = new RateLimiterRedis({
         storeClient: redis,
         points: 20, // 20 requests

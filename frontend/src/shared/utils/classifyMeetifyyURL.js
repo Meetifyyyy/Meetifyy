@@ -1,5 +1,8 @@
 /**
- * Classifies a URL as an internal Meetifyy route or an external link.
+ * Classifies a URL as an internal app route or an external link.
+ *
+ * Which hostnames count as "internal" is configuration (VITE_INTERNAL_DOMAINS
+ * plus the current origin), not a list baked into the source.
  *
  * Returns one of:
  *   { type: 'post',      id: '...' }
@@ -8,23 +11,21 @@
  *   { type: 'external',  url: '...' }
  *   { type: 'unknown',   url: '...' }   ← internal but unrecognized route
  */
+import { config } from '@config';
+
 export function classifyMeetifyyURL(url) {
   try {
     const parsed = new URL(url);
 
-    // Update these to match the actual deployed domains
-    const MEETIFYY_DOMAINS = [
-      'meetifyy.com',
-      'www.meetifyy.com',
-      'app.meetifyy.com',
-      'localhost',           // for local dev
-      '127.0.0.1'
-    ];
+    // The app's own origin always counts as internal; VITE_INTERNAL_DOMAINS
+    // covers its other domains (apex, www, app subdomain, preview hosts) so a
+    // new deployment domain never requires editing this file.
+    const internalDomains = config.app.internalDomains;
 
     const isIP = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(parsed.hostname);
     const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
 
-    const isInternal = isIP || parsed.hostname === currentHost || MEETIFYY_DOMAINS.some(
+    const isInternal = isIP || parsed.hostname === currentHost || internalDomains.some(
       domain => parsed.hostname === domain || parsed.hostname.endsWith(`.${domain}`)
     );
 

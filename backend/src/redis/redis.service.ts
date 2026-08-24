@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { config } from '../config';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
@@ -16,7 +17,7 @@ export class RedisService implements OnModuleDestroy {
   private readonly inProcessLocks = new Map<string, Promise<void>>();
 
   constructor(private readonly configService: ConfigService) {
-    const redisUrl = this.configService.get<string>('REDIS_URL');
+    const redisUrl = config.redis.url;
 
     if (redisUrl) {
       try {

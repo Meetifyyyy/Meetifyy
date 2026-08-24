@@ -7,18 +7,20 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { EmailService } from './email.service';
+import { config } from '../config';
 
 /**
  * Dev-only controller for triggering email templates via Mailpit.
- * NEVER active in production — guarded by NODE_ENV at the module level.
+ * NEVER active in production — gated by config.features.enableDevEndpoints,
+ * which is forced off there, both at module registration and per request.
  *
- * Usage (Mailpit must be running on localhost:1025):
- *   POST http://localhost:4000/dev/email/test/welcome
- *   POST http://localhost:4000/dev/email/test/verification-otp
- *   POST http://localhost:4000/dev/email/test/reset-password
- *   POST http://localhost:4000/dev/email/test/new-login
- *   POST http://localhost:4000/dev/email/test/password-changed
- *   POST http://localhost:4000/dev/email/test/admin-otp
+ * Usage (against the configured SMTP target, e.g. a local Mailpit):
+ *   POST <BACKEND_URL>/dev/email/test/welcome
+ *   POST <BACKEND_URL>/dev/email/test/verification-otp
+ *   POST <BACKEND_URL>/dev/email/test/reset-password
+ *   POST <BACKEND_URL>/dev/email/test/new-login
+ *   POST <BACKEND_URL>/dev/email/test/password-changed
+ *   POST <BACKEND_URL>/dev/email/test/admin-otp
  *
  * Body: { "email": "preview@mailpit.local", "name": "Alex" }
  */
@@ -27,7 +29,7 @@ export class DevEmailController {
   private readonly logger = new Logger(DevEmailController.name);
 
   constructor(private readonly emailService: EmailService) {
-    if (process.env.NODE_ENV === 'production') {
+    if (!config.features.enableDevEndpoints) {
       throw new Error('DevEmailController must never be loaded in production');
     }
   }
@@ -37,7 +39,7 @@ export class DevEmailController {
     @Param('template') template: string,
     @Body() body: Record<string, string>,
   ): Promise<{ ok: boolean; template: string; to: string }> {
-    if (process.env.NODE_ENV === 'production') {
+    if (!config.features.enableDevEndpoints) {
       throw new ForbiddenException('Dev email endpoint is disabled in production');
     }
 
@@ -59,7 +61,7 @@ export class DevEmailController {
         await this.emailService.sendResetPasswordEmail(
           email,
           name,
-          'https://dev.meetifyy.app/reset-password?token=dev-preview-token-abc123',
+          `${config.auth.redirects.resetPasswordUrl}?token=dev-preview-token-abc123`,
         );
         break;
 

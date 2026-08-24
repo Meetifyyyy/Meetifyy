@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/commo
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
+import { config } from '../config';
 
 /**
  * Connects through node-postgres rather than Prisma's own Rust connection layer.
@@ -21,7 +22,7 @@ import { Pool } from 'pg';
  * concurrency scale past a couple of hundred users.
  */
 const buildPool = () => {
-  const url = process.env.DATABASE_URL || '';
+  const url = config.database.url;
   // `max` is client-side; under transaction pooling these do NOT map 1:1 to
   // Postgres backends, so this can exceed what session mode allowed.
   const match = url.match(/[?&]connection_limit=(\d+)/);
@@ -57,7 +58,7 @@ export class PrismaService extends PrismaClient<
    * every query with `FATAL: (EMAXCONNSESSION) max clients reached`.)
    */
   private getPoolSize(): number {
-    const raw = process.env.DATABASE_URL || '';
+    const raw = config.database.url;
     const match = raw.match(/[?&]connection_limit=(\d+)/);
     const fromUrl = match ? parseInt(match[1], 10) : NaN;
     const fallback = require('os').cpus().length * 2 + 1;
@@ -118,13 +119,13 @@ export class PrismaService extends PrismaClient<
   }
 
   async onModuleInit() {
-    const isDev = process.env.NODE_ENV !== 'production';
+    const logQueries = config.logging.logQueries;
 
     // @ts-ignore
     this.$on('query', (e: any) => {
-      if (e.duration >= 500) {
+      if (e.duration >= config.database.slowQueryMs) {
         this.logger.warn(`Slow Query (${e.duration}ms) - ${e.query}`);
-      } else if (isDev) {
+      } else if (logQueries) {
         this.logger.debug(`Query (${e.duration}ms) - ${e.query}`);
       }
     });
