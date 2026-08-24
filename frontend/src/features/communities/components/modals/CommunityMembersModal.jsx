@@ -79,6 +79,10 @@ function MemberActionMenu({
     try {
       await usersApi.blockUser(member.id);
       showToast(`${member.name} blocked`, 'success');
+      // Drop them from the open list straight away. The backend now filters
+      // blocked members out of this list, so leaving the row on screen until
+      // the next refetch shows a member the server no longer returns.
+      if (onRemoved) onRemoved(member.id);
     } catch {
       showToast("Couldn't block user", 'error');
     }

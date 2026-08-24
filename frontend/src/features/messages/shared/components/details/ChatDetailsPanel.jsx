@@ -694,8 +694,11 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                     type="button"
                     className={`${styles.actionIconButton} ${conversation.isBlockedByMe ? styles.blockedBtn : ''}`}
                     onClick={() => {
-                      if (onBlockUser) {
-                        onBlockUser();
+                      // Must name the target and the current state: calling
+                      // this bare sent a request for user "undefined".
+                      const targetId = conversation.targetUser?.id || conversation.userId;
+                      if (onBlockUser && targetId) {
+                        onBlockUser(targetId, Boolean(conversation.isBlockedByMe));
                         onBack();
                       }
                     }}

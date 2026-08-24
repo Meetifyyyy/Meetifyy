@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { messagesApi, dmApi, groupApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
+import { showToast } from '../utils/toast';
 import { useConversations } from './useMessages';
 import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline';
 import { purgeConversationFromCaches } from '../../features/messages/shared/utils/cacheUtils';
@@ -215,28 +216,61 @@ export function useMessageActions() {
     }
   };
   const toggleBlockUser = async (targetUserId, currentlyBlocked) => {
-    queryClient.setQueryData(['conversations'], (old) => {
-      if (!Array.isArray(old)) return old;
-      return old.map(c => {
-        if (c.targetUser?.id === targetUserId || c.userId === targetUserId) {
-          return {
-            ...c,
-            blocked: !currentlyBlocked,
-            isBlockedByMe: !currentlyBlocked,
-            isBlockedByThem: false,
-          };
-        }
-        return c;
-      });
-    });
-
-    if (currentlyBlocked) {
-      await usersApi.unblockUser(targetUserId).catch(() => {});
-    } else {
-      await usersApi.blockUser(targetUserId).catch(() => {});
+    // Callers used to invoke this with no arguments at all, which sent
+    // POST /api/users/block/undefined. That request failed, the failure was
+    // swallowed below, and the optimistic write left the UI claiming a block
+    // that the server had never recorded — the user saw "Blocked" while
+    // messages kept arriving. Refuse to act on a target we cannot identify.
+    if (typeof targetUserId !== 'string' || !targetUserId) {
+      console.error('toggleBlockUser called without a target user id');
+      showToast("Couldn't update block status", 'error');
+      return;
     }
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    queryClient.invalidateQueries({ queryKey: ['users'] });
+
+    const wasBlocked = Boolean(currentlyBlocked);
+
+    const applyBlockState = (blockedByMe) => {
+      queryClient.setQueryData(['conversations'], (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map(c => {
+          if (c.targetUser?.id === targetUserId || c.userId === targetUserId) {
+            return {
+              ...c,
+              // `blocked` is the mutual answer: the thread is closed for writes
+              // if either side blocked. Preserve isBlockedByThem — whether they
+              // blocked me is independent of what I just did, and overwriting it
+              // with false re-opened an input that must stay closed.
+              blocked: blockedByMe || Boolean(c.isBlockedByThem),
+              isBlockedByMe: blockedByMe,
+            };
+          }
+          return c;
+        });
+      });
+    };
+
+    applyBlockState(!wasBlocked);
+
+    try {
+      if (wasBlocked) {
+        await usersApi.unblockUser(targetUserId);
+      } else {
+        await usersApi.blockUser(targetUserId);
+      }
+    } catch (err) {
+      // Put the UI back where the server actually is, and say so. Silently
+      // keeping the optimistic value is what made a failed block look like a
+      // successful one.
+      applyBlockState(wasBlocked);
+      showToast(
+        wasBlocked ? "Couldn't unblock this user" : "Couldn't block this user",
+        'error',
+      );
+      return;
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    }
   };
 
 

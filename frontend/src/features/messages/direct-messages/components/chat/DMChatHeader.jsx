@@ -112,7 +112,11 @@ export default function DMChatHeader({
               {onBlock && (
                 <button 
                   className={`${styles.msgDropdownItem} ${styles.msgDropdownItemDanger}`} 
-                  onClick={() => { onBlock(); setShowMoreMenu(false); }}
+                  onClick={() => {
+                    const targetId = conversation.targetUser?.id || conversation.userId;
+                    if (targetId) onBlock(targetId, blockedByMe);
+                    setShowMoreMenu(false);
+                  }}
                 >
                   <ShieldOff size={14} />
                   {blockedByMe ? 'Unblock Contact' : 'Block Contact'}

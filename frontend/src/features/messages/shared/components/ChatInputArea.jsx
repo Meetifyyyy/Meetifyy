@@ -202,7 +202,12 @@ export default function ChatInputArea({
               <button 
                 type="button" 
                 className={styles.unblockBannerBtn}
-                onClick={onBlockUser}
+                onClick={() => {
+                  // Was `onClick={onBlockUser}`, which handed the click Event
+                  // in as the target user id.
+                  const targetId = conversation.targetUser?.id || conversation.userId;
+                  if (onBlockUser && targetId) onBlockUser(targetId, true);
+                }}
               >
                 Unblock
               </button>
