@@ -3,6 +3,7 @@ import { CommunitiesService } from './communities.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateCommunityDto, UpdateCommunityDto, UpdateMemberRoleDto } from './dto/community.dto';
+import { moderatorPermissions } from './moderator-permissions';
 
 @Controller('api/communities')
 @UseGuards(JwtGuard)
@@ -38,6 +39,20 @@ export class CommunitiesController {
     const result = await this.communitiesService.getCampusCommunities(user?.id, limitNum, offsetNum, search);
     this.logger.debug(`GET /communities/campus [userId=${user?.id}] ${Math.round(performance.now() - t0)}ms`);
     return result;
+  }
+
+  /**
+   * The moderator permission set, for the promotion modals.
+   *
+   * Served from the same table the services enforce with, so the list an owner
+   * confirms against and the list a new moderator is shown are the list that
+   * is actually applied. Declared above the `:id` routes because it is a
+   * static path — Nest matches in declaration order, and `:id` would otherwise
+   * swallow it and try to parse "moderator-permissions" as a UUID.
+   */
+  @Get('moderator-permissions')
+  getModeratorPermissions() {
+    return { permissions: moderatorPermissions() };
   }
 
   @Get(':id')
@@ -93,6 +108,23 @@ export class CommunitiesController {
     @CurrentUser() user: any,
   ) {
     return this.communitiesService.updateCommunity(id, data, user.id);
+  }
+
+  /** The pending "you're now a moderator" notice for this viewer, or null. */
+  @Get(':id/moderator-notice')
+  async getModeratorNotice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: any,
+  ) {
+    return { notice: await this.communitiesService.getModeratorNotice(id, user.id) };
+  }
+
+  @Post(':id/moderator-notice/ack')
+  async acknowledgeModeratorNotice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.communitiesService.acknowledgeModeratorNotice(id, user.id);
   }
 
   @Patch(':id/members/:userId/role')

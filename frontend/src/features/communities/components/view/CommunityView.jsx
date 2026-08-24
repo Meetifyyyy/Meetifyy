@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { useAuth } from '@shared/context/AuthContext';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl, resolveCommunityAvatar } from '@shared/utils/avatar';
@@ -34,6 +34,7 @@ import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
  *  so the first paint is cheap and the observer has room to prefetch. */
 const POSTS_PAGE_SIZE = 15;
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import ModeratorWelcomeModal from '../moderation/ModeratorWelcomeModal';
 
 function getActivityPhrase(comm) {
   if (comm.trending) return 'Growing Fast';
@@ -697,6 +698,39 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
   const { addPost, updateCommunity } = useCommunityActions();
   const { currentUser } = useAuth();
   const { mutate: toggleJoin, isLoading: isJoining } = useJoinCommunity();
+  /**
+   * The one-time "you're now a moderator" notice.
+   *
+   * The server decides whether it is pending — it owns the promotion and
+   * acknowledgement timestamps — so this asks on open rather than tracking
+   * "seen" locally. Local state would show the modal again on another device
+   * and lose it entirely if this one's storage were cleared.
+   *
+   * `dismissed` is only to hide it for the rest of this view after
+   * acknowledging; the server's answer is what stops it coming back.
+   */
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
+  const { data: moderatorNotice } = useQuery({
+    queryKey: ['moderatorNotice', communityId],
+    queryFn: async () => (await communitiesApi.getModeratorNotice(communityId))?.notice ?? null,
+    enabled: Boolean(communityId && currentUser?.id),
+    staleTime: 0,
+  });
+
+  const acknowledgeModeratorNotice = useCallback(async () => {
+    // Hide first: this is an acknowledgement, not a request that can fail in a
+    // way the reader should have to care about.
+    setNoticeDismissed(true);
+    try {
+      await communitiesApi.acknowledgeModeratorNotice(communityId);
+    } catch {
+      // Unacknowledged on the server means they see it once more next visit —
+      // mildly annoying, and the right failure direction for a notice whose
+      // whole purpose is to be seen.
+    }
+    queryClient.setQueryData(['moderatorNotice', communityId], null);
+  }, [communityId, queryClient]);
+
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
@@ -1174,6 +1208,14 @@ function DeletedCommunityView({ onBack }) {
         onTitleClick={() => setShowMobileAbout(true)}
         onShare={() => setShowShareModal(true)}
       />
+
+      {moderatorNotice && !noticeDismissed && (
+        <ModeratorWelcomeModal
+          communityName={comm?.name}
+          permissions={moderatorNotice.permissions}
+          onAcknowledge={acknowledgeModeratorNotice}
+        />
+      )}
 
       {showAdminModal && (
         <CommunityAdminModal

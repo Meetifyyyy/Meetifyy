@@ -36,6 +36,9 @@ describe('CommunitiesService — member roles', () => {
       {} as any,
       { refFor: () => null } as any,
       { getExcludedUserIds: async () => [], isBlocked: async () => false, filterBlockedUsers: async (_u: any, ids: any) => ids, injectBlockFilter: async (_u: any, w: any) => w, invalidateBlockCache: async () => {} } as any,
+      // Promotion notifications are covered in communities.moderator-promotion.spec.ts.
+      { createNotification: async () => ({}) } as any,
+      { createModeratorPromotion: () => null } as any,
     );
   };
 
@@ -62,7 +65,10 @@ describe('CommunitiesService — member roles', () => {
     it('promotes a member to moderator', async () => {
       setup();
       await setRole('MODERATOR');
-      expect(updates[0].data).toEqual({ role: 'MODERATOR' });
+      // Promotion also stamps the moment, which is what makes the one-time
+      // welcome notice "once per promotion" rather than "once ever".
+      expect(updates[0].data).toMatchObject({ role: 'MODERATOR' });
+      expect(updates[0].data.moderatorPromotedAt).toBeInstanceOf(Date);
     });
 
     it('demotes a moderator back to member', async () => {

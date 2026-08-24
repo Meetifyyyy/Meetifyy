@@ -6,6 +6,9 @@ import { PresenceService } from '../presence/presence.service';
 import { BlocksService } from '../users/blocks.service';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
 import Redis from 'ioredis';
+import { roleCan, moderatorPermissions, type CommunityRoleName } from './moderator-permissions';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationFactory } from '../notifications/notification.factory';
 
 @Injectable()
 export class CommunitiesService implements OnModuleInit {
@@ -21,6 +24,8 @@ export class CommunitiesService implements OnModuleInit {
     private readonly presenceService: PresenceService,
     private readonly defaultAssets: DefaultAssetsService,
     private readonly blocksService: BlocksService,
+    private readonly notificationsService: NotificationsService,
+    private readonly notificationFactory: NotificationFactory,
   ) {
     this.redis = this.redisService.getClient();
   }
@@ -591,7 +596,8 @@ export class CommunitiesService implements OnModuleInit {
     });
 
     const isOwnerOrMod =
-      community?.ownerId === requestingUserId || member?.role === 'OWNER' || member?.role === 'MODERATOR';
+      community?.ownerId === requestingUserId ||
+      roleCan(member?.role as CommunityRoleName, 'REVIEW_JOIN_REQUESTS');
     if (!isOwnerOrMod) {
       throw new ForbiddenException('Only community owners or moderators can view join requests');
     }
@@ -622,7 +628,8 @@ export class CommunitiesService implements OnModuleInit {
     });
 
     const isOwnerOrMod =
-      community?.ownerId === requestingUserId || member?.role === 'OWNER' || member?.role === 'MODERATOR';
+      community?.ownerId === requestingUserId ||
+      roleCan(member?.role as CommunityRoleName, 'REVIEW_JOIN_REQUESTS');
     if (!isOwnerOrMod) {
       throw new ForbiddenException('Only community owners or moderators can manage join requests');
     }
@@ -670,7 +677,8 @@ export class CommunitiesService implements OnModuleInit {
     });
 
     const isOwnerOrMod =
-      community?.ownerId === requestingUserId || member?.role === 'OWNER' || member?.role === 'MODERATOR';
+      community?.ownerId === requestingUserId ||
+      roleCan(member?.role as CommunityRoleName, 'REVIEW_JOIN_REQUESTS');
     if (!isOwnerOrMod) {
       throw new ForbiddenException('Only community owners or moderators can manage join requests');
     }
@@ -903,6 +911,80 @@ export class CommunitiesService implements OnModuleInit {
     return updated;
   }
 
+  /**
+   * Tell a new moderator they have been promoted.
+   *
+   * Fire-and-forget: the role change has already committed, and a notification
+   * failure must not surface to the owner as a failed promotion they retry.
+   */
+  private notifyModeratorPromotion(communityId: string, memberId: string, actorId: string): void {
+    (async () => {
+      const [actor, community] = await Promise.all([
+        this.prisma.user.findUnique({
+          where: { id: actorId },
+          select: { id: true, username: true, displayName: true, avatar: true },
+        }),
+        this.prisma.community.findUnique({
+          where: { id: communityId },
+          select: { id: true, name: true, avatarKey: true },
+        }),
+      ]);
+
+      const dto = this.notificationFactory.createModeratorPromotion(actor, {
+        recipientId: memberId,
+        communityId,
+        communityName: community?.name ?? null,
+        communityAvatar: community?.avatarKey ?? null,
+      });
+      if (dto) await this.notificationsService.createNotification(dto);
+    })().catch((err) =>
+      this.logger.warn('Failed to send moderator promotion notification', err),
+    );
+  }
+
+  /**
+   * The pending welcome notice for this viewer, or null.
+   *
+   * Returned with the community so opening it costs no extra round trip — the
+   * modal has to appear on the next open, and a second request would let the
+   * page paint first and pop the modal in afterwards.
+   */
+  async getModeratorNotice(communityId: string, userId: string) {
+    if (!userId) return null;
+    const member = await this.prisma.communityMember.findUnique({
+      where: { userId_communityId: { userId, communityId } },
+      select: { role: true, moderatorPromotedAt: true, moderatorNoticeAckedAt: true },
+    });
+    if (!member || member.role !== 'MODERATOR' || !member.moderatorPromotedAt) return null;
+
+    const acked = member.moderatorNoticeAckedAt;
+    const pending = !acked || acked < member.moderatorPromotedAt;
+    if (!pending) return null;
+
+    return {
+      promotedAt: member.moderatorPromotedAt,
+      permissions: moderatorPermissions(),
+    };
+  }
+
+  /**
+   * Acknowledge the welcome notice. Idempotent — a double tap, or two tabs,
+   * simply stamps a later time on an already-acknowledged notice.
+   */
+  async acknowledgeModeratorNotice(communityId: string, userId: string) {
+    const member = await this.prisma.communityMember.findUnique({
+      where: { userId_communityId: { userId, communityId } },
+      select: { role: true },
+    });
+    if (!member) throw new NotFoundException('Member not found in community');
+
+    await this.prisma.communityMember.update({
+      where: { userId_communityId: { userId, communityId } },
+      data: { moderatorNoticeAckedAt: new Date() },
+    });
+    return { success: true };
+  }
+
   async updateMemberRole(communityId: string, memberId: string, newRole: 'MODERATOR' | 'MEMBER', requestingUserId: string) {
     // Re-checked here, not just in the DTO. This endpoint must never be able
     // to grant ownership: an OWNER row satisfies every owner check in this
@@ -936,13 +1018,31 @@ export class CommunitiesService implements OnModuleInit {
     });
     if (!targetMember) throw new NotFoundException('Member not found in community');
 
+    // A promotion is only a promotion if the role actually changes. Re-issuing
+    // MODERATOR on someone who already holds it must not re-arm the welcome
+    // modal or fire a second notification — an owner tapping twice, or a
+    // retried request, would otherwise pester them for nothing.
+    const isPromotion = newRole === 'MODERATOR' && targetMember.role !== 'MODERATOR';
+
     const updated = await this.prisma.communityMember.update({
       where: { userId_communityId: { userId: memberId, communityId } },
-      data: { role: newRole },
+      data: {
+        role: newRole,
+        // Stamped at the moment of promotion. The welcome modal is pending
+        // while this is newer than the acknowledgement, so a later demote +
+        // re-promote correctly shows it again.
+        ...(isPromotion ? { moderatorPromotedAt: new Date() } : {}),
+      },
     });
 
     this.domainEventService.emit('community.roleUpdated', { communityId, memberId, newRole });
     await this.invalidateCommunityCache(communityId);
+
+    // Told at the point of promotion, so it reaches them whether or not they
+    // reopen the community. The in-community modal is the richer version of
+    // the same news, not a replacement for it.
+    if (isPromotion) this.notifyModeratorPromotion(communityId, memberId, requestingUserId);
+
     return updated;
   }
 
@@ -960,7 +1060,10 @@ export class CommunitiesService implements OnModuleInit {
     const isOwner = community.ownerId === requestingUserId || requester?.role === 'OWNER';
     const isMod = requester?.role === 'MODERATOR';
 
-    if (!isOwner && !isMod) {
+    // Asked against the capability table rather than the role name, so the
+    // permission the owner was shown at promotion time is the permission
+    // enforced here. See moderator-permissions.ts.
+    if (!isOwner && !roleCan(requester?.role as CommunityRoleName, 'REMOVE_MEMBERS')) {
       throw new ForbiddenException('Only the owner or moderators can remove members');
     }
 

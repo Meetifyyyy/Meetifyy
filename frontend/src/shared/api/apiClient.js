@@ -659,6 +659,12 @@ export const communitiesApi = {
   // promote or demote a moderator anywhere in the UI.
   updateMemberRole: (id, memberId, role) =>
     apiClient.patch(`/api/communities/${id}/members/${memberId}/role`, { role }),
+  // The moderator permission set, served from the same table the backend
+  // enforces with — so the promotion modals show what is actually applied
+  // rather than a copy that quietly goes stale.
+  getModeratorPermissions: () => apiClient.get('/api/communities/moderator-permissions'),
+  getModeratorNotice: (id) => apiClient.get(`/api/communities/${id}/moderator-notice`),
+  acknowledgeModeratorNotice: (id) => apiClient.post(`/api/communities/${id}/moderator-notice/ack`),
   getPendingRequests: (id) => apiClient.get(`/api/communities/${id}/requests`),
   getJoinRequests: (id) => apiClient.get(`/api/communities/${id}/requests`),
   acceptJoinRequest: (id, requestId) => apiClient.post(`/api/communities/${id}/requests/${requestId}/accept`),

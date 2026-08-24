@@ -1,10 +1,12 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { roleCan } from '../communities/moderator-permissions';
 
 /** How the actor is entitled to delete. Drives the notification wording. */
 export type DeletionAuthority = 'author' | 'owner' | 'moderator';
 
-export type CommunityRoleName = 'OWNER' | 'MODERATOR' | 'MEMBER';
+export type { CommunityRoleName } from '../communities/moderator-permissions';
+type CommunityRoleName = 'OWNER' | 'MODERATOR' | 'MEMBER';
 
 export interface DeletionRequest {
   actorId: string;
@@ -87,7 +89,9 @@ export class ContentDeletionAuthorizer {
 
     const actorRole = await this.resolveRole(actorId, communityId, community.ownerId);
     if (actorRole === 'OWNER') return 'owner';
-    if (actorRole !== 'MODERATOR') return null;
+    // The capability table decides, not the role name — so what a new
+    // moderator is promised at promotion time is what they actually get.
+    if (!roleCan(actorRole, 'DELETE_MEMBER_CONTENT')) return null;
 
     const authorRole = await this.resolveRole(authorId, communityId, community.ownerId);
     return authorRole === 'MEMBER' ? 'moderator' : null;
@@ -166,7 +170,7 @@ export class ContentDeletionAuthorizer {
 
       const actorRole = roleIn(item.communityId);
       if (actorRole === 'OWNER') return true;
-      if (actorRole !== 'MODERATOR') return false;
+      if (!roleCan(actorRole, 'DELETE_MEMBER_CONTENT')) return false;
 
       // Missing row means MEMBER (left the community); the community owner is
       // never a MEMBER however the table reads.

@@ -14,6 +14,7 @@ import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { sortGroupMembers } from '@shared/utils/memberSort';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import PromoteModeratorModal from '../moderation/PromoteModeratorModal';
 
 
 /**
@@ -38,6 +39,9 @@ function MemberActionMenu({
   const [hasReported, setHasReported] = useState(false);
   const [coords, setCoords] = useState(null);
   const [roleBusy, setRoleBusy] = useState(false);
+  // Promotion is gated behind an explicit confirmation that spells out the
+  // powers being granted; nothing changes until it is confirmed.
+  const [confirmPromote, setConfirmPromote] = useState(false);
   const btnRef = useRef(null);
 
   const toggleOpen = (e) => {
@@ -100,9 +104,26 @@ function MemberActionMenu({
     }
   };
 
+  /**
+   * Promotion asks first; demotion does not.
+   *
+   * Granting moderator powers is the consequential direction — it hands
+   * someone authority over other members' content and membership, from a menu
+   * one item away from "Remove member". Taking it back is recoverable and
+   * needs no ceremony.
+   */
   const handleRoleToggle = async () => {
     if (roleBusy) return;
-    const nextRole = isTargetMod ? 'MEMBER' : 'MODERATOR';
+    if (!isTargetMod) {
+      setOpen(false);
+      setConfirmPromote(true);
+      return;
+    }
+    await applyRoleChange('MEMBER');
+  };
+
+  const applyRoleChange = async (nextRole) => {
+    if (roleBusy) return;
     setRoleBusy(true);
     try {
       // The cache patch lives in the caller so the member strip behind this
@@ -122,8 +143,23 @@ function MemberActionMenu({
     }
   };
 
+  const confirmPromotion = async () => {
+    await applyRoleChange('MODERATOR');
+    setConfirmPromote(false);
+  };
+
+  const promoteModal = confirmPromote ? (
+    <PromoteModeratorModal
+      memberName={member.name}
+      isBusy={roleBusy}
+      onConfirm={confirmPromotion}
+      onCancel={() => setConfirmPromote(false)}
+    />
+  ) : null;
+
   return (
     <div style={{ flexShrink: 0 }}>
+      {promoteModal}
       <button
         ref={btnRef}
         onClick={toggleOpen}

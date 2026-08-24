@@ -104,6 +104,51 @@ export class NotificationFactory {
     };
   }
 
+  /**
+   * "You are now a moderator of <community>."
+   *
+   * Sent at the moment of promotion so it lands whether or not the new
+   * moderator reopens the community — the in-community welcome modal is the
+   * richer version of this news, not a substitute for it.
+   *
+   * The permission list is deliberately NOT baked into the notification body.
+   * A notification is a durable row: a list copied into it at write time would
+   * still be claiming yesterday's permissions long after the set changed. The
+   * modal reads the live list instead, and this stays a pointer to it.
+   */
+  createModeratorPromotion(
+    actor: any,
+    opts: {
+      recipientId: string;
+      communityId: string;
+      communityName?: string | null;
+      communityAvatar?: string | null;
+    },
+  ): CreateNotificationDto | null {
+    if (!opts.recipientId || opts.recipientId === actor?.id) return null;
+
+    const communityName = opts.communityName || 'a community';
+    return {
+      recipientId: opts.recipientId,
+      actorId: actor?.id,
+      type: NotificationType.SYSTEM,
+      entityType: NotificationEntityType.COMMUNITY,
+      entityId: opts.communityId,
+      title: "You're now a moderator",
+      body: `You were made a moderator of ${communityName}.`,
+      metadata: {
+        version: 1,
+        kind: 'moderator_promotion',
+        communityId: opts.communityId,
+        communityName: opts.communityName || null,
+        communityAvatar: opts.communityAvatar || null,
+        actorName: actor?.displayName || actor?.username || 'The owner',
+        actorUsername: actor?.username || '',
+        actorAvatar: actor?.avatar || null,
+      },
+    };
+  }
+
   createCommentLike(actor: any, comment: any, commentAuthorId: string): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
     const actorUsername = actor?.username || '';

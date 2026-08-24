@@ -356,6 +356,18 @@ model CommunityMember {
   communityId String
   joinedAt    DateTime      @default(now())
   role        CommunityRole @default(MEMBER)
+  /// When this member was last promoted to moderator, and when they last
+  /// acknowledged the welcome modal explaining what that means.
+  ///
+  /// Two timestamps rather than a boolean flag, because the requirement is
+  /// "once per promotion", not "once ever": a member demoted and later
+  /// promoted again is being handed the role a second time and should be told
+  /// again. Comparing the two answers that — the notice is pending whenever
+  /// the acknowledgement is missing or older than the promotion that followed
+  /// it — while a single flag would need clearing on demote and would silently
+  /// stay set if that ever got missed.
+  moderatorPromotedAt    DateTime?
+  moderatorNoticeAckedAt DateTime?
   community   Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
