@@ -35,7 +35,15 @@ export default function BlockedContacts() {
 
   // Guards against a late response from an unmounted screen overwriting state.
   const isMounted = useRef(true);
-  useEffect(() => () => { isMounted.current = false; }, []);
+  useEffect(() => {
+    // Set on mount as well as cleared on unmount. Clearing only on cleanup
+    // breaks under StrictMode's double-invoke in development: the first
+    // simulated unmount latches this false, the real mount never restores it,
+    // and every state guard below silently drops its update — leaving the
+    // screen on "Loading..." forever even though the request had returned.
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
 
   const loadPage = useCallback(async (offset) => {
     const res = await apiClient.get(
