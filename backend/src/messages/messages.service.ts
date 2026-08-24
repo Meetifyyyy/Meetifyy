@@ -531,12 +531,11 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       deletedAt: null
     };
 
-    const [deletedForUser, blocksMade, currentParticipant, participants] = await Promise.all([
+    const [deletedForUser, currentParticipant, participants] = await Promise.all([
       currentUserId ? this.prisma.deletedMessage.findMany({
         where: { userId: currentUserId, message: { conversationId: realConvId } },
         select: { messageId: true }
       }) : Promise.resolve([]),
-      currentUserId ? this.blocksService.getBlockedByUserIds(currentUserId) : Promise.resolve([]),
       currentUserId ? this.prisma.conversationParticipant.findFirst({
         where: { conversationId: realConvId, userId: currentUserId, deletedAt: null },
         select: { userId: true, lastReadAt: true, clearedAt: true, leftAt: true }
@@ -565,11 +564,17 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       }
     }
 
-    if (blocksMade && blocksMade.length > 0) {
-      whereCondition.NOT = {
-        senderId: { in: blocksMade }
-      };
-    }
+    // Conversation history is deliberately NOT filtered by block.
+    //
+    // Blocking closes a thread for writes; it does not rewrite what was already
+    // said. Both sides keep the full history, read-only. Filtering the blocked
+    // party's messages out left the blocker looking at a one-sided transcript
+    // of their own replies, with the other half of the conversation silently
+    // missing — and in a group it tore holes in a shared thread for a block
+    // nobody else was party to.
+    //
+    // Read-only is enforced on the write path (sendMessage rejects both
+    // directions) and surfaced in the composer, not by hiding rows here.
 
     if (clearedAt) {
       whereCondition.createdAt = { ...(whereCondition.createdAt || {}), gt: clearedAt };
