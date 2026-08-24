@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
@@ -8,6 +8,7 @@ import { removeMessageFromCache, updateMessageInCache, updateConversationPreview
 import { messagesApi } from '@shared/api/apiClient';
 import { toast } from 'sonner';
 import { useUrlState } from '@shared/hooks/useUrlState';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 /**
  * Shared state + handlers for all ChatArea variants (DM, Group).
@@ -33,9 +34,50 @@ export function useChatAreaState(conversation) {
     push: true,
   });
   const showDetails = detailsView === 'details';
+
+  /**
+   * Opening the panel pushes; closing it POPS that push.
+   *
+   * Closing used to call `setDetailsView('')`, which — with `push: true` —
+   * pushed a *second* entry instead of undoing the first. History became
+   * [thread, thread?view=details, thread], so Back went from the closed panel
+   * straight back into the open one, and the next Back closed it again. The
+   * user was stuck toggling the details panel and could never reach the
+   * conversation list to pick a different chat, which on mobile (where the
+   * list is the only way to switch) meant being trapped in one conversation
+   * entirely.
+   *
+   * `navigate(-1)` removes the entry rather than burying it, so Back and the
+   * panel's own close button do exactly the same thing and the stack is left
+   * as it was before the panel opened.
+   */
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Did *this* session push the details entry? A panel reached by reload or a
+  // shared link has no entry of ours behind it, so popping would walk the user
+  // out of the app instead of closing a panel.
+  const pushedDetailsRef = useRef(false);
+
   const setShowDetails = useCallback(
-    (next) => setDetailsView(next ? 'details' : ''),
-    [setDetailsView]
+    (next) => {
+      if (next) {
+        pushedDetailsRef.current = true;
+        setDetailsView('details');
+        return;
+      }
+      if (pushedDetailsRef.current) {
+        pushedDetailsRef.current = false;
+        navigate(-1);
+        return;
+      }
+      // Deep-linked open: drop the param in place. A push here would leave a
+      // "closed" entry that Back immediately undoes — the same trap.
+      const params = new URLSearchParams(location.search);
+      params.delete('view');
+      const search = params.toString();
+      navigate({ pathname: location.pathname, search: search ? `?${search}` : '' }, { replace: true });
+    },
+    [setDetailsView, navigate, location.pathname, location.search]
   );
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -51,6 +93,9 @@ export function useChatAreaState(conversation) {
     setForwardingMsg(null);
     setShowSearch(false);
     setSearchQuery('');
+    // A different conversation is a different stack position; whatever entry
+    // the previous thread's panel pushed is no longer ours to pop.
+    pushedDetailsRef.current = false;
   }, [conversation?.id]);
 
   const handleCopyMessage = useCallback((msg) => {

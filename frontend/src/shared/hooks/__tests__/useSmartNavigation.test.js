@@ -203,3 +203,59 @@ describe('OverlayManager multi-step flows', () => {
     expect(overlayManager.hasOpenOverlays()).toBe(false);
   });
 });
+
+describe('OverlayManager history rebalance', () => {
+  let navigator;
+
+  beforeEach(() => {
+    overlayManager.stack = [];
+    overlayManager.pendingSelfPops = 0;
+    navigator = vi.fn();
+    overlayManager.navigator = navigator;
+  });
+
+  it('gives back the entry it pushed when nothing else has navigated', () => {
+    overlayManager.open('menu', () => {});
+    navigator.mockClear();
+
+    overlayManager.close('menu');
+    expect(navigator).toHaveBeenCalledWith(-1);
+  });
+
+  it('does NOT pop when a navigation has happened since the overlay opened', () => {
+    // A dropdown item that both closes the menu and opens a panel navigates in
+    // the event handler, then the menu tears down in the effect cleanup right
+    // after. Popping there cancels the panel the user just asked for — which
+    // is how "open chat details" became un-openable from the header menu.
+    overlayManager.open('menu', () => {});
+    navigator.mockClear();
+
+    const realUrl = overlayManager.currentUrl;
+    overlayManager.currentUrl = () => '/messages/abc?view=details';
+    try {
+      overlayManager.close('menu');
+      expect(navigator).not.toHaveBeenCalled();
+    } finally {
+      overlayManager.currentUrl = realUrl;
+    }
+
+    // The overlay is still properly deregistered either way — a stale entry in
+    // the stack would swallow every later Back press.
+    expect(overlayManager.hasOpenOverlays()).toBe(false);
+  });
+
+  it('unregisters on dispose without cancelling a navigation in flight', () => {
+    const dispose = overlayManager.open('sheet', () => {});
+    navigator.mockClear();
+
+    const realUrl = overlayManager.currentUrl;
+    overlayManager.currentUrl = () => '/somewhere/else';
+    try {
+      dispose();
+      expect(navigator).not.toHaveBeenCalled();
+    } finally {
+      overlayManager.currentUrl = realUrl;
+    }
+    expect(overlayManager.hasOpenOverlays()).toBe(false);
+  });
+});

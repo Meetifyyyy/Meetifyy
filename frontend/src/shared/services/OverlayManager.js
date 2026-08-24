@@ -143,14 +143,36 @@ class OverlayManager {
     removed.forEach((entry) => this.safeClose(entry));
 
     if (this.isHandlingPopstate) return;
+    this.rebalance(removed);
+  }
 
-    const popCount = removed.filter((e) => e.options?.pushHistoryState).length;
-    if (popCount > 0 && this.navigator) {
-      // A single go(-n) fires exactly one popstate, however many entries it
-      // spans — so we expect one self-pop, not `popCount` of them.
-      this.pendingSelfPops += 1;
-      this.navigator(-popCount);
-    }
+  /**
+   * Give back the history entries the removed overlays pushed.
+   *
+   * The `url` check is the important part. An entry's `url` is the address the
+   * overlay opened on, and its pushed entry carries that same address — so
+   * while the overlay is up, `currentUrl()` still matches. If it no longer
+   * matches, something has navigated since, our entry is not on top any more,
+   * and going back would undo *that* navigation rather than our push.
+   *
+   * That is not hypothetical: a dropdown item that both closes the menu and
+   * opens a panel does the navigation in the event handler and the menu's
+   * teardown in the effect cleanup right after. Popping blindly there cancels
+   * the panel the user just asked for. Leaving the entry costs one extra Back
+   * press; cancelling their navigation costs them the action.
+   */
+  rebalance(removed) {
+    if (!this.navigator) return;
+    const here = this.currentUrl();
+    const popCount = removed.filter(
+      (e) => e.options?.pushHistoryState && e.url === here,
+    ).length;
+    if (popCount === 0) return;
+
+    // A single go(-n) fires exactly one popstate, however many entries it
+    // spans — so we expect one self-pop, not `popCount` of them.
+    this.pendingSelfPops += 1;
+    this.navigator(-popCount);
   }
 
   /**
@@ -172,12 +194,7 @@ class OverlayManager {
     const removed = this.stack.splice(index, this.stack.length - index).reverse();
 
     if (this.isHandlingPopstate) return;
-
-    const popCount = removed.filter((e) => e.options?.pushHistoryState).length;
-    if (popCount > 0 && this.navigator) {
-      this.pendingSelfPops += 1;
-      this.navigator(-popCount);
-    }
+    this.rebalance(removed);
   }
 
   /** Remove an overlay from tracking without firing its onClose or touching history. */
