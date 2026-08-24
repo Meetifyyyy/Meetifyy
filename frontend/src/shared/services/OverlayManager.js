@@ -122,6 +122,24 @@ class OverlayManager {
     if (pushHistoryState) {
       // Same URL, new entry: the route is unchanged, only the overlay layer is.
       this.navigator(url, { state: { __overlayId: id }, preventScrollReset: true });
+
+      // Verify the entry actually landed, and record the truth on the entry.
+      //
+      // Everything downstream assumes an overlay that claims `pushHistoryState`
+      // has its own entry to give back and its own Back press to absorb. When
+      // the push silently does not happen, that assumption inverts the
+      // behaviour: the next Back pops whatever was underneath instead — the
+      // panel or page hosting the overlay — and handlePopstate then sees the
+      // URL has changed and tears every overlay down. One press closes the
+      // modal AND the page it was opened from, which is precisely the report
+      // dialog / chat details report.
+      //
+      // An entry that cannot be confirmed is marked non-backable, so it is
+      // dismissed by Escape and the backdrop like any other overlay but never
+      // claims a history entry it does not own.
+      if (this.currentHistoryOverlayId() !== id) {
+        entry.options.pushHistoryState = false;
+      }
     }
 
     // Unmount must not re-fire onClose — see dispose().

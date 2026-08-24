@@ -348,3 +348,42 @@ describe('OverlayManager — only pops history it can prove is its own', () => {
     expect(navigator).toHaveBeenCalledWith(-2);
   });
 });
+
+describe('OverlayManager — an unconfirmed push is not claimed', () => {
+  let navigator;
+  let historyState;
+
+  beforeEach(() => {
+    overlayManager.stack = [];
+    overlayManager.pendingSelfPops = 0;
+    historyState = null;
+    navigator = vi.fn();
+    overlayManager.navigator = navigator;
+    overlayManager.readHistoryState = () => historyState;
+  });
+
+  it('marks an entry non-backable when its push did not land', () => {
+    // If the push silently fails, every assumption downstream inverts: the
+    // next Back pops whatever was underneath — the panel hosting the overlay —
+    // and handlePopstate then tears everything down, so one press closes both
+    // the modal and the page it was opened from.
+    overlayManager.open('report', () => {}); // navigator mock never stamps state
+    expect(overlayManager.stack[0].options.pushHistoryState).toBe(false);
+  });
+
+  it('keeps the entry backable when the push is confirmed', () => {
+    navigator.mockImplementation((to, opts) => {
+      if (typeof to === 'number') return;
+      historyState = { usr: opts?.state };
+    });
+    overlayManager.open('report', () => {});
+    expect(overlayManager.stack[0].options.pushHistoryState).toBe(true);
+  });
+
+  it('never pops for an entry whose push was not confirmed', () => {
+    overlayManager.open('report', () => {});
+    navigator.mockClear();
+    overlayManager.close('report');
+    expect(navigator).not.toHaveBeenCalled();
+  });
+});
