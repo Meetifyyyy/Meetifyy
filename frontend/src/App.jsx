@@ -27,15 +27,24 @@ function NotificationLabMount() {
   );
 }
 
-const NotificationPlayground = IS_DEV_BUILD
+// These three previews live in src/local/, which is gitignored — they exist on a
+// developer's machine and never in a clean checkout.
+//
+// The gate MUST be the inline `import.meta.env.DEV`, not the IS_DEV_BUILD
+// re-export. Vite substitutes the inline form with the literal `false` in a
+// production build, so Rollup drops the whole branch and never tries to resolve
+// the module. Behind an imported binding it cannot prove the branch is dead
+// before resolution, so it attempts to resolve a path that is not in the repo
+// and the build fails — which is exactly what broke the Vercel deploy.
+const NotificationPlayground = import.meta.env.DEV
   ? lazy(() => import('./local/NotificationPlayground').catch(() => ({ default: () => null })))
   : null;
 // DEV — logo animation experiment (remove before shipping)
-const LogoAnimationPage = IS_DEV_BUILD
+const LogoAnimationPage = import.meta.env.DEV
   ? lazy(() => import('./local/LogoAnimation').catch(() => ({ default: () => null })))
   : null;
 // DEV — Instant Match visual harness (every state, no backend needed)
-const InstantMatchPreview = IS_DEV_BUILD
+const InstantMatchPreview = import.meta.env.DEV
   ? lazy(() => import('./local/InstantMatchPreview').catch(() => ({ default: () => null })))
   : null;
 
