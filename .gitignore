@@ -203,6 +203,8 @@ meetifyy-security-remediation-report.md
 docs/*
 !docs/network-reachability.md
 !docs/verification-checklist.md
+!docs/environment-configuration.md
+!docs/production-setup-checklist.md
 diff_*.txt
 all_files.txt
 git_files.txt

@@ -48,9 +48,14 @@ The config layers live at `backend/src/config/`, `frontend/src/config/` and
 `admin-frontend/src/config/`. Application code imports `config` from there rather
 than reading `process.env` / `import.meta.env` directly.
 
-**Full reference: [docs/environment-configuration.md](docs/environment-configuration.md)** —
-environments, load order, build-time vs runtime, public vs private variables,
-startup validation, and the production deployment process.
+Docs:
+
+- **[docs/environment-configuration.md](docs/environment-configuration.md)** —
+  environments, load order, build-time vs runtime, public vs private variables,
+  startup validation, and the production deployment process.
+- **[docs/production-setup-checklist.md](docs/production-setup-checklist.md)** —
+  what to watch out for when setting production up: the failures that are silent,
+  database and secret handling, cookie/CORS/CSP traps, and a verification pass.
 
 ---
 
