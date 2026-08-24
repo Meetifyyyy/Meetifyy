@@ -30,6 +30,7 @@ import { useCommunities } from '@shared/hooks/useCommunities';
 import { useDeleteComment } from '../../hooks/useDeleteComment';
 import { useLikeComment } from '../../hooks/useLikeComment';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
+import ConfirmModal from '@shared/components/modals/ConfirmModal';
 
 
 // ─── Shared tree context ─────────────────────────────────────────────────────
@@ -325,6 +326,19 @@ export default function CommentNode({
   const canDeleteComment =
     comment?.canDelete ?? Boolean(currentUser && comment.authorId === currentUser.id);
 
+  /**
+   * Removing someone else's comment confirms first; deleting your own does not.
+   *
+   * Deleting your own comment has always been immediate, and that stays — it is
+   * your content and the placeholder keeps the thread intact. Removing another
+   * member's is different in kind: it is irreversible for them, it notifies
+   * them, and the control sits in a small menu next to Report where a mis-tap
+   * is easy. Same reasoning as the post above.
+   */
+  const isModeratingOthersComment =
+    canDeleteComment && !(currentUser && comment.authorId === currentUser.id);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+
   const [isTextExpanded, setIsTextExpanded] = useState(false);
   const normalizedText = normalizeBodyText(comment.text);
   const textClip = truncateBodyText(normalizedText, COMMENT_LIMITS);
@@ -388,6 +402,15 @@ export default function CommentNode({
   const handleDelete = (e) => {
     e.stopPropagation();
     setShowMenu(false);
+    if (isDeleting) return;
+    if (isModeratingOthersComment) {
+      setConfirmRemove(true);
+      return;
+    }
+    runDelete();
+  };
+
+  const runDelete = () => {
     if (isDeleting) return;
     // `deleteCommentMutate` is fire-and-forget, so the previous try/finally set
     // the flag and cleared it in the same tick — the guard never actually held
@@ -673,7 +696,9 @@ export default function CommentNode({
                               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                             </svg>
                           )}
-                          {isDeleting ? 'Deleting…' : 'Delete'}
+                          {isDeleting
+                            ? (isModeratingOthersComment ? 'Removing…' : 'Deleting…')
+                            : (isModeratingOthersComment ? 'Remove' : 'Delete')}
                         </button>
                       )}
                     {(!currentUser || comment.authorId !== currentUser.id) && (
@@ -803,6 +828,17 @@ export default function CommentNode({
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        visible={confirmRemove}
+        title="Remove this comment?"
+        desc={`This removes ${author.displayName || author.username || 'this member'}'s comment. They'll be notified that a moderator removed it. Replies stay in the thread.`}
+        confirmText="Remove"
+        cancelText="Cancel"
+        isDestructive
+        onCancel={() => setConfirmRemove(false)}
+        onConfirm={() => { setConfirmRemove(false); runDelete(); }}
+      />
 
       <ReportModal
         isOpen={showReportModal}

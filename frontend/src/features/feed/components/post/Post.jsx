@@ -192,6 +192,18 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
    * refuse anyway.
    */
   const canDeletePost = postData?.canDelete ?? isOwnPost;
+
+  /**
+   * Removing someone else's post is a different act from deleting your own,
+   * and the UI should say so.
+   *
+   * Same control, same server rule — but "Delete Post / This post will be
+   * permanently removed" is written for an author tidying up after themselves.
+   * Shown to a moderator it hides the two things that actually matter: it is
+   * not their post, and the author will be told. A moderator should not learn
+   * that a notification went out by hearing about it from the author.
+   */
+  const isModeratingOthers = canDeletePost && !isOwnPost;
   const authorCollege = (author.collegeId && communitiesById) ? communitiesById[author.collegeId] : null;
   const authorCollegeName = getCollegeName(author, '') || authorCollege?.name || '';
 
@@ -326,7 +338,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
                     <polyline points="3 6 5 6 21 6" />
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                   </svg>
-                  Delete Post
+                  {isModeratingOthers ? 'Remove post' : 'Delete Post'}
                 </button>
               )}
               {!isOwnPost && (
@@ -489,8 +501,12 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
       {showDeleteConfirm && (
         <div onClick={(e) => e.stopPropagation()}>
           <ConfirmModal
-            title="Delete Post"
-            desc="This post will be permanently removed."
+            title={isModeratingOthers ? 'Remove this post?' : 'Delete Post'}
+            desc={
+              isModeratingOthers
+                ? `This removes ${author?.displayName || author?.username || 'this member'}'s post from the community. They'll be notified that a moderator removed it.`
+                : 'This post will be permanently removed.'
+            }
             visible={showDeleteConfirm}
             onCancel={() => setShowDeleteConfirm(false)}
             onConfirm={() => {
@@ -498,7 +514,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
               deletePost({ postId: id });
               if (isDetailed && onDeleted) onDeleted();
             }}
-            confirmText="Delete"
+            confirmText={isModeratingOthers ? 'Remove' : 'Delete'}
             cancelText="Cancel"
             isDestructive={true}
           />

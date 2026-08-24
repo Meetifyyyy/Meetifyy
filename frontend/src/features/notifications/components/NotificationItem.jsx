@@ -61,6 +61,23 @@ export default function NotificationItem({
     displayText = notif.title || '';
   }
 
+  /**
+   * Moderation notices are complete sentences, not "<name> <predicate>".
+   *
+   * Every other row here reads as an actor doing something — "Ana liked your
+   * post" — so the name is rendered separately and the body is the predicate.
+   * These two are the community acting, and their bodies are already whole
+   * sentences ("Your post in Chess Club was removed by a moderator"). Rendered
+   * the normal way they came out as "Mod Squad Your post in Chess Club was
+   * removed by a moderator" — a broken sentence that also names the individual
+   * moderator, which the wording deliberately avoids: a removal is the
+   * community's decision, not one person's, and naming them invites the author
+   * to take it up with them directly.
+   */
+  const systemKind = notif.metadata?.kind;
+  const isModerationNotice =
+    systemKind === 'content_removed' || systemKind === 'moderator_promotion';
+
   const isRead = notif.read === true || !!notif.readAt;
 
   let avatarSrc;
@@ -76,24 +93,36 @@ export default function NotificationItem({
       onClick={() => onClick(notif)}
     >
       <div className={styles.avatarWrapper}>
-        <Avatar src={avatarSrc} name={actorName} size="40px" />
+        {/* The community, not the moderator — same reason the body does not
+            name them. Falls back to the community's initial via Avatar. */}
+        <Avatar
+          src={isModerationNotice ? getMediaUrl(notif.metadata?.communityAvatar) || null : avatarSrc}
+          name={isModerationNotice ? (notif.metadata?.communityName || 'Community') : actorName}
+          size="40px"
+        />
       </div>
 
       <div className={styles.content}>
         <div className={styles.textRow}>
-          <span 
-            className={styles.actorName}
-            onClick={(e) => {
-              if (targetUsername) {
-                e.stopPropagation();
-                navigate(`/profile/${targetUsername}`, { state: { from: '/notifications' } });
-              }
-            }}
-            style={{ cursor: targetUsername ? 'pointer' : 'default' }}
-          >
-            {actorName}
-          </span>
-          <span className={styles.text}>{displayText}</span>
+          {isModerationNotice ? (
+            <span className={styles.text}>{displayText}</span>
+          ) : (
+            <>
+              <span
+                className={styles.actorName}
+                onClick={(e) => {
+                  if (targetUsername) {
+                    e.stopPropagation();
+                    navigate(`/profile/${targetUsername}`, { state: { from: '/notifications' } });
+                  }
+                }}
+                style={{ cursor: targetUsername ? 'pointer' : 'default' }}
+              >
+                {actorName}
+              </span>
+              <span className={styles.text}>{displayText}</span>
+            </>
+          )}
           <span className={styles.time}>• {timeStr}</span>
         </div>
         {isActivityJoin && activityName && (

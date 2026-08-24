@@ -171,6 +171,23 @@ export default function NotificationsRoute() {
     const postId = notif.metadata?.postId || (notif.entityType === 'POST' ? notif.entityId : null) || notif.postId;
     const commentId = notif.metadata?.commentId || (notif.entityType === 'COMMENT' ? notif.entityId : null) || notif.commentId;
 
+    // Moderation notices route by what still exists.
+    //
+    // A removal notice must NOT open the content it is about — that content is
+    // exactly what was just deleted, so the link lands on a not-found page and
+    // reads as a second failure on top of the bad news. The community is the
+    // thing that still exists and the place the decision came from.
+    const systemKind = notif.metadata?.kind;
+    if (systemKind === 'content_removed' || systemKind === 'moderator_promotion') {
+      const communityId = safeId(notif.metadata?.communityId);
+      if (communityId) {
+        navigate(`/communities/${communityId}`, { state: { from: '/notifications' } });
+      }
+      // A personal post removed by no community has nowhere useful to go, so
+      // the row stays put rather than bouncing the reader somewhere arbitrary.
+      return;
+    }
+
     switch (type) {
       case 'FOLLOW':
         if (actorUsername) {
