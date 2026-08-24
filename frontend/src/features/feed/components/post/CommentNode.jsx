@@ -18,7 +18,7 @@ import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { getCollegeName } from '@shared/utils/user';
-import Avatar from '@shared/components/avatar/Avatar';
+import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import RichText from '@shared/components/mentions/RichText';

@@ -5,6 +5,7 @@ import styles from './ChatInputAreaStyles.module.css';
 import { useVoiceRecorder } from '@features/messages/hooks/useVoiceRecorder';
 import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
 import { toast } from 'sonner';
+import { showToast } from '@shared/utils/toast';
 import ReplyPreviewContent from './ReplyPreviewContent';
 
 export default function ChatInputArea({

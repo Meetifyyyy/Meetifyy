@@ -7,6 +7,30 @@ import { useConversations } from '@shared/hooks/useMessages';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { getMediaUrl } from '@shared/api/apiClient';
 
+/**
+ * Coerce a poll option (or question) of unknown shape into display text.
+ *
+ * Hoisted to module scope because it was declared inside the
+ * `if (!pollData && post.pollOptions)` branch yet called again further down when
+ * building the share payload. A post that already carried `poll` data skipped
+ * the branch, so those later calls hit an undeclared name and threw.
+ */
+function getOptText(o) {
+  if (!o) return '';
+  if (typeof o === 'string') return o;
+  if (typeof o === 'number') return String(o);
+  if (typeof o === 'object') {
+    if (typeof o.text === 'string') return o.text;
+    if (typeof o.label === 'string') return o.label;
+    if (typeof o.title === 'string') return o.title;
+    if (typeof o.question === 'string') return o.question;
+    if (o.text && typeof o.text === 'object') return getOptText(o.text);
+    if (o.label && typeof o.label === 'object') return getOptText(o.label);
+    if (o.title && typeof o.title === 'object') return getOptText(o.title);
+  }
+  return '';
+}
+
 export default function SharePostModal({ isOpen, onClose, post, author }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
@@ -57,21 +81,6 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
       // Extract poll data reliably
       let pollData = post?.poll || null;
       if (!pollData && Array.isArray(post?.pollOptions) && post.pollOptions.length > 0) {
-        const getOptText = (o) => {
-          if (!o) return '';
-          if (typeof o === 'string') return o;
-          if (typeof o === 'number') return String(o);
-          if (typeof o === 'object') {
-            if (typeof o.text === 'string') return o.text;
-            if (typeof o.label === 'string') return o.label;
-            if (typeof o.title === 'string') return o.title;
-            if (typeof o.question === 'string') return o.question;
-            if (o.text && typeof o.text === 'object') return getOptText(o.text);
-            if (o.label && typeof o.label === 'object') return getOptText(o.label);
-            if (o.title && typeof o.title === 'object') return getOptText(o.title);
-          }
-          return '';
-        };
         const getOptVotes = (o) => {
           if (!o || typeof o !== 'object') return 0;
           const count = o.voteCount !== undefined ? o.voteCount : (o.votes !== undefined ? o.votes : (o._count?.votes || 0));

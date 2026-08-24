@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "pwa:assets": "node scripts/generate-pwa-assets.mjs"
+    "pwa:assets": "node scripts/generate-pwa-assets.mjs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
@@ -37,9 +39,16 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.39.5",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "globals": "^17.11.0",
     "rollup-plugin-visualizer": "^7.0.1",
     "sharp": "^0.35.3",
     "vite": "^6.0.0",
@@ -51,6 +60,15 @@
     "ejs": "^6.0.1",
     "fast-uri": "^3.1.5",
     "postcss": "^8.5.26",
-    "react-router": "7.18.2"
+    "react-router": "7.18.2",
+    "@eslint/config-array": {
+      "brace-expansion": "^1.1.12"
+    },
+    "@eslint/eslintrc": {
+      "brace-expansion": "^1.1.12"
+    },
+    "eslint": {
+      "brace-expansion": "^1.1.12"
+    }
   }
 }

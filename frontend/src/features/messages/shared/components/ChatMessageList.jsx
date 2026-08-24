@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo } from 'react';
 import { ErrorState } from '@shared/components/ui/StateViews';
 import Avatar from '@shared/components/avatar/Avatar';
+import { showToast } from '@shared/utils/toast';
 import MessageBubble from './MessageBubble';
 import { usePostLookup } from '@shared/hooks/usePostLookup';
 import styles from './ChatMessageList.module.css';

@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useProfile, PROFILE_KEYS } from '@shared/hooks/useProfile';
 
 import { showToast } from '@shared/utils/toast';
+import { useOpenDirectMessage } from '@shared/hooks/useOpenDirectMessage';
 import Post from '@features/feed/components/post/Post';
 import UserListModal from '@shared/components/modals/UserListModal';
 import { ErrorState } from '@shared/components/ui/StateViews';
@@ -71,6 +72,9 @@ export default function ProfilePage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const queryClient = useQueryClient();
+  // handleMessageClick called openDirectMessage without ever obtaining it, so
+  // the profile's Message button threw ReferenceError instead of opening a DM.
+  const openDirectMessage = useOpenDirectMessage();
   const { username: currentUserUsername, logout, currentUser: authUser, updateProfile } = useAuth();
   const targetUsername = profileUsername || currentUserUsername;
 

@@ -528,7 +528,7 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button
                         type="button"
-                        onClick={() => handleAcceptRequest(req.id)}
+                        onClick={() => handleApproveRequest(req.id)}
                         style={{ padding: '0.42rem 0.85rem', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
                       >
                         Accept
