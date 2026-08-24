@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BlocksService } from '../users/blocks.service';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DomainEventService } from '../events/domain-event.service';
@@ -51,6 +52,7 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
         { provide: DomainEventService, useValue: mockDomainEventService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: RedisService, useValue: mockRedisService },
+        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn().mockResolvedValue([]), isBlocked: jest.fn().mockResolvedValue(false), filterBlockedUsers: jest.fn(async (_u, ids) => ids), injectBlockFilter: jest.fn(async (_u, w) => w), invalidateBlockCache: jest.fn() } },
       ],
     }).compile();
 

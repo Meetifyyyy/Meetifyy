@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
+import { createBlocksServiceMock } from '../users/testing/blocks.service.mock';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
@@ -30,6 +31,8 @@ describe('Activity access enforcement (service level)', () => {
   let service: ActivitiesService;
   let discussion: ActivityDiscussionService;
   let prisma: any;
+  /** Users the viewer is blocked with, per test. */
+  let blockedIds: string[];
   let activityRow: any;
 
   const baseActivity = (visibility: string, invitations: any[] = [], members: any[] = []) => ({
@@ -98,6 +101,8 @@ describe('Activity access enforcement (service level)', () => {
       $queryRaw: jest.fn(async () => [{ inserted: true }]),
     };
 
+    blockedIds = [];
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ActivitiesService,
@@ -106,7 +111,24 @@ describe('Activity access enforcement (service level)', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: { createNotification: jest.fn(), cancelNotificationByCriteria: jest.fn() } },
         { provide: NotificationFactory, useValue: { createActivityJoin: jest.fn() } },
-        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn(async () => []) } },
+        {
+          provide: BlocksService,
+          useValue: {
+            ...createBlocksServiceMock(),
+            // Driven by the per-test `blockedIds` holder rather than fixed rows.
+            getExcludedUserIds: jest.fn(async () => blockedIds),
+            filterBlockedUsers: jest.fn(async (_u: string, ids: string[]) =>
+              ids.filter((id) => !blockedIds.includes(id)),
+            ),
+            injectBlockFilter: jest.fn(async (_u: string, where: any, field = 'id') => {
+              if (blockedIds.length === 0) return where;
+              const existing = where.AND;
+              const and = Array.isArray(existing) ? [...existing] : existing ? [existing] : [];
+              and.push({ [field]: { notIn: blockedIds } });
+              return { ...where, AND: and };
+            }),
+          },
+        },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
         { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn() } },
@@ -131,6 +153,49 @@ describe('Activity access enforcement (service level)', () => {
       expect(serialized).not.toContain('host-1');
     }
   };
+
+  describe('GET /api/activities/:id — blocked host', () => {
+    it('404s for a non-attendee who has blocked the host', async () => {
+      activityRow = baseActivity('PUBLIC');
+      blockedIds = ['host-1'];
+      await expect(service.getActivityById('act-1', 'user-other')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('still serves the essentials to an attendee who has blocked the host', async () => {
+      activityRow = baseActivity('PUBLIC');
+      blockedIds = ['host-1'];
+      prisma.crewActivityMember.findUnique = jest.fn(async () => ({ userId: 'user-other', status: 'MEMBER' }));
+
+      const res: any = await service.getActivityById('act-1', 'user-other');
+
+      // Blocking the host must not cost the attendee the event itself.
+      expect(res.id).toBe('act-1');
+      expect(res.title).toBe('Secret rooftop dinner');
+      expect(res.isJoined).toBe(true);
+    });
+
+    it('withholds the host identity from that attendee', async () => {
+      activityRow = baseActivity('PUBLIC');
+      blockedIds = ['host-1'];
+      prisma.crewActivityMember.findUnique = jest.fn(async () => ({ userId: 'user-other', status: 'MEMBER' }));
+
+      const res: any = await service.getActivityById('act-1', 'user-other');
+
+      expect(res.creator).toBeNull();
+      expect(res.creatorId).toBeNull();
+      expect(res.hostUnavailable).toBe(true);
+    });
+
+    it('leaves the host visible when there is no block', async () => {
+      activityRow = baseActivity('PUBLIC');
+      prisma.crewActivityMember.findUnique = jest.fn(async () => ({ userId: 'user-other', status: 'MEMBER' }));
+
+      const res: any = await service.getActivityById('act-1', 'user-other');
+
+      expect(res.creatorId).toBe('host-1');
+      expect(res.hostUnavailable).toBeUndefined();
+    });
+  });
 
   describe('GET /api/activities/:id', () => {
     it('returns an Anyone activity to a viewer from another college', async () => {

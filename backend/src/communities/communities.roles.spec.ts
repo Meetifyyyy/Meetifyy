@@ -35,6 +35,7 @@ describe('CommunitiesService — member roles', () => {
       { getClient: () => null } as any,
       {} as any,
       { refFor: () => null } as any,
+      { getExcludedUserIds: async () => [], isBlocked: async () => false, filterBlockedUsers: async (_u: any, ids: any) => ids, injectBlockFilter: async (_u: any, w: any) => w, invalidateBlockCache: async () => {} } as any,
     );
   };
 

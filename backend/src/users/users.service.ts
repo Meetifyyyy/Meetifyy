@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { DomainEventService } from '../events/domain-event.service';
@@ -286,7 +287,7 @@ export class UsersService {
     });
 
     if (!targetUser) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException('This profile isn\'t available.');
     }
 
     let isFollowing = false;
@@ -297,17 +298,10 @@ export class UsersService {
     // lookups, presence read and visibility check from ~3-4 sequential
     // backend↔DB round trips into a single round trip's worth of latency.
     const needsRelational = Boolean(currentUserId && currentUserId !== targetUser.id);
-    const [blockCount, followRecord, followedByRecord, presence, canSeeOnline] = await Promise.all([
+    const [isBlockedPair, followRecord, followedByRecord, presence, canSeeOnline] = await Promise.all([
       needsRelational
-        ? this.prisma.block.count({
-            where: {
-              OR: [
-                { blockerId: currentUserId!, blockedId: targetUser.id },
-                { blockerId: targetUser.id, blockedId: currentUserId! },
-              ],
-            },
-          })
-        : Promise.resolve(0),
+        ? this.blocksService.isBlocked(currentUserId!, targetUser.id)
+        : Promise.resolve(false),
       needsRelational
         ? this.prisma.follow.findUnique({
             where: { followerId_followingId: { followerId: currentUserId!, followingId: targetUser.id } },
@@ -328,8 +322,12 @@ export class UsersService {
       ),
     ]);
 
-    if (blockCount > 0) {
-      throw new NotFoundException('User not found');
+    if (isBlockedPair) {
+      // Deliberately the SAME message and status as the genuine
+      // profile-not-found above. If the two differed, comparing responses would
+      // let a user tell "this account blocked me" apart from "no such account"
+      // — which is exactly the disclosure the neutral 404 exists to prevent.
+      throw new NotFoundException('This profile isn\'t available.');
     }
     isFollowing = !!followRecord;
     isFollowedBy = !!followedByRecord;
@@ -562,6 +560,16 @@ export class UsersService {
     });
     if (!targetUser) throw new NotFoundException('User not found');
 
+    // Blocked users must not surface in a follower list. Excluded in SQL, before
+    // LIMIT/OFFSET, so pages stay full and the offset cursor does not skip —
+    // filtering the rows after the query would return short pages instead.
+    const excludedUserIds = currentUserId
+      ? await this.blocksService.getExcludedUserIds(currentUserId)
+      : [];
+    const followerBlockFilter = excludedUserIds.length > 0
+      ? Prisma.sql`AND f."followerId" NOT IN (${Prisma.join(excludedUserIds)})`
+      : Prisma.empty;
+
     const rows: any[] = await this.prisma.$queryRaw`
       SELECT 
         u."id",
@@ -579,6 +587,7 @@ export class UsersService {
       FROM "Follow" f
       JOIN "User" u ON f."followerId" = u."id"
       WHERE f."followingId" = ${targetUser.id}
+      ${followerBlockFilter}
       ORDER BY f."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
@@ -613,6 +622,14 @@ export class UsersService {
     });
     if (!targetUser) throw new NotFoundException('User not found');
 
+    // Same exclusion as getFollowers, applied to the followed side of the edge.
+    const excludedUserIds = currentUserId
+      ? await this.blocksService.getExcludedUserIds(currentUserId)
+      : [];
+    const followingBlockFilter = excludedUserIds.length > 0
+      ? Prisma.sql`AND f."followingId" NOT IN (${Prisma.join(excludedUserIds)})`
+      : Prisma.empty;
+
     const rows: any[] = await this.prisma.$queryRaw`
       SELECT 
         u."id",
@@ -630,6 +647,7 @@ export class UsersService {
       FROM "Follow" f
       JOIN "User" u ON f."followingId" = u."id"
       WHERE f."followerId" = ${targetUser.id}
+      ${followingBlockFilter}
       ORDER BY f."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
@@ -891,10 +909,52 @@ export class UsersService {
 
   async blockUser(blockerId: string, blockedId: string) {
     if (blockerId === blockedId) throw new BadRequestException('Cannot block yourself');
-    await this.prisma.block.upsert({
-      where: { blockerId_blockedId: { blockerId, blockedId } },
-      create: { blockerId, blockedId },
-      update: {},
+
+    // The block row and its immediate side effects go in one transaction: a
+    // block that lands without severing the follow edges would leave the pair
+    // following each other invisibly, and re-running the block later would not
+    // repair it (the upsert is a no-op the second time).
+    await this.prisma.$transaction(async (tx) => {
+      await tx.block.upsert({
+        where: { blockerId_blockedId: { blockerId, blockedId } },
+        create: { blockerId, blockedId },
+        update: {},
+      });
+
+      // Follow is severed in BOTH directions. Only A pressed the button, but
+      // the block is mutual, so leaving B->A intact would keep A's content
+      // reaching a follower who can no longer see them.
+      await tx.follow.deleteMany({
+        where: {
+          OR: [
+            { followerId: blockerId, followingId: blockedId },
+            { followerId: blockedId, followingId: blockerId },
+          ],
+        },
+      });
+
+      // Any live Instant Match between the two ends immediately. The pair is
+      // kept out of each other's future match pool by the block filter rather
+      // than by deleting their queue entries — both stay matchable with
+      // everyone else.
+      await tx.matchSession.updateMany({
+        where: {
+          OR: [
+            { userAId: blockerId, userBId: blockedId },
+            { userAId: blockedId, userBId: blockerId },
+          ],
+          // Only sessions still in play — a session already declined or
+          // expired keeps the outcome it actually had, so the re-match
+          // cooldown that reads MatchStatus is not rewritten by a later block.
+          NOT: { status: { in: ['DECLINED', 'EXPIRED'] } },
+        },
+        data: {
+          status: 'EXPIRED',
+          chatStatus: 'ENDED_BY_USER',
+          endedById: blockerId,
+          endedAt: new Date(),
+        },
+      });
     });
     // Invalidate cached block lists AND the conversation-list cache for both
     // users so the `blocked` flag / hidden presence reflect the change
@@ -904,10 +964,51 @@ export class UsersService {
     return { success: true, blocked: true };
   }
 
+  /**
+   * The authenticated user's own blocked list, for Settings -> Privacy ->
+   * Blocked Contacts.
+   *
+   * Only ever reads blocks *made by* this user (`blockerId`), never blocks
+   * received: the screen shows who you blocked, and a user must never be able
+   * to learn that they appear on someone else's list. The caller id always
+   * comes from the JWT, so there is no parameter that could address another
+   * user's list.
+   *
+   * Ordered newest-block-first and paginated, since a long-lived account can
+   * accumulate more entries than one screen should fetch.
+   */
+  async getBlockedContacts(blockerId: string, limit = 20, offset = 0) {
+    const take = Math.min(Math.max(limit, 1), 50);
+    const skip = Math.max(offset, 0);
+
+    // One extra row tells us whether another page exists without a COUNT.
+    const rows = await this.blocksService.listBlockedContacts(blockerId, take, skip);
+
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+
+    return {
+      contacts: page.map((row) => {
+        // A soft-deleted account keeps its Block row, so the entry stays
+        // listed (and stays unblockable) but is shown anonymously rather than
+        // leaking the name of an account that no longer exists.
+        const isDeleted = !row.blocked || row.blocked.deletedAt !== null;
+        return {
+          id: row.blockedId,
+          displayName: isDeleted ? 'Deleted Account' : row.blocked.displayName,
+          username: isDeleted ? null : row.blocked.username,
+          avatar: isDeleted ? null : row.blocked.avatar,
+          isDeleted,
+          blockedAt: row.createdAt,
+        };
+      }),
+      hasMore,
+      nextOffset: hasMore ? skip + take : null,
+    };
+  }
+
   async unblockUser(blockerId: string, blockedId: string) {
-    await this.prisma.block.deleteMany({
-      where: { blockerId, blockedId },
-    });
+    await this.blocksService.removeBlock(blockerId, blockedId);
     // Invalidate cached block lists for both users
     await this.blocksService.invalidateBlockCache(blockerId, blockedId);
     await this.invalidateConversationListCache([blockerId, blockedId]);
@@ -947,21 +1048,22 @@ export class UsersService {
       } catch {}
     }
 
-    const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
-    const excludeSet = new Set([...excludedUserIds, userId]);
-
-    const whereClause: any = {
-      id: { notIn: Array.from(excludeSet) },
-      accountStatus: 'ACTIVE',
-      ...(cleanQuery
-        ? {
-            OR: [
-              { displayName: { contains: cleanQuery, mode: 'insensitive' } },
-              { username: { contains: cleanQuery, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
-    };
+    const whereClause: any = await this.blocksService.injectBlockFilter(
+      userId,
+      {
+        id: { not: userId },
+        accountStatus: 'ACTIVE',
+        ...(cleanQuery
+          ? {
+              OR: [
+                { displayName: { contains: cleanQuery, mode: 'insensitive' } },
+                { username: { contains: cleanQuery, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
+      'id',
+    );
 
     const users = await this.prisma.user.findMany({
       where: whereClause,

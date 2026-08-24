@@ -659,10 +659,24 @@ model PostShare {
   @@index([userId, createdAt(sort: Desc)])
 }
 
+/// One row per block, keyed by the pair — so a duplicate block is impossible
+/// by construction and `blockerId` alone never identifies a row.
+///
+/// A `no_self_block` CHECK constraint (blockerId <> blockedId) is enforced in
+/// the database by migration 20260824000000_block_no_self_block. Prisma cannot
+/// express CHECK constraints in this file, so it is applied as raw SQL — do not
+/// assume the application-layer guard in UsersService.blockUser is the only one.
 model Block {
   blockerId String
   blockedId String
   createdAt DateTime @default(now())
+  /// onDelete: Cascade is safe here because accounts are SOFT-deleted: closing
+  /// an account stamps User.deletedAt and there is no `prisma.user.delete` call
+  /// anywhere in the codebase, so a block row is never destroyed out from under
+  /// the blocker. The Blocked Contacts list renders these as "Deleted Account"
+  /// off the `deletedAt` stamp (see UsersService.getBlockedContacts).
+  /// If hard deletion is ever introduced, this FK must change — cascading would
+  /// silently drop entries out of users' blocked lists.
   blocked   User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
   blocker   User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
 

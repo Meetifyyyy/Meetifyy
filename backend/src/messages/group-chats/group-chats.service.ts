@@ -1,6 +1,7 @@
 import { Injectable, ForbiddenException, NotFoundException, BadRequestException, Inject, forwardRef, Optional } from '@nestjs/common';
 import { MessagingCoreService } from '../core/messaging-core.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BlocksService } from '../../users/blocks.service';
 import { PresenceService } from '../../presence/presence.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { RedisService } from '../../redis/redis.service';
@@ -16,9 +17,12 @@ export class GroupChatsService extends MessagingCoreService {
     presenceService: PresenceService,
     domainEventService: DomainEventService,
     mentionsService: MentionsService,
+    // Required (and ahead of the optional param): block filtering of the
+    // notification fan-out runs through it on every group send.
+    blocksService: BlocksService,
     @Optional() private readonly redisService?: RedisService,
   ) {
-    super(prisma, presenceService, domainEventService, mentionsService);
+    super(prisma, presenceService, domainEventService, mentionsService, blocksService);
     this.redis = this.redisService?.getClient() ?? null;
   }
 
@@ -214,18 +218,10 @@ export class GroupChatsService extends MessagingCoreService {
     });
 
     const otherIds = participants.map(p => p.userId).filter(id => id !== senderId);
-    const blocks = await this.prisma.block.findMany({
-      where: {
-        OR: [
-          { blockerId: senderId, blockedId: { in: otherIds } },
-          { blockerId: { in: otherIds }, blockedId: senderId }
-        ]
-      },
-      select: { blockerId: true, blockedId: true }
-    });
-    const blockedUserSet = new Set(blocks.flatMap(b => [b.blockerId, b.blockedId]));
-
-    const unblockedIds = otherIds.filter(id => !blockedUserSet.has(id));
+    // Only the NOTIFICATION fan-out is trimmed here. Group messages themselves
+    // stay visible to everyone — hiding them would tear holes in a shared
+    // conversation for people who are not party to the block.
+    const unblockedIds = await this.blocksService.filterBlockedUsers(senderId, otherIds);
     const muteMap = new Map(participants.map(p => [p.userId, p.isMuted]));
     const unmutedIds = unblockedIds.filter(id => !muteMap.get(id));
 
@@ -459,16 +455,7 @@ export class GroupChatsService extends MessagingCoreService {
 
     // Block enforcement: don't let a member pull someone they've blocked (or who
     // blocked them) into a shared group.
-    const blocked = await this.prisma.block.findFirst({
-      where: {
-        OR: [
-          { blockerId: requesterId, blockedId: targetUserId },
-          { blockerId: targetUserId, blockedId: requesterId }
-        ]
-      },
-      select: { blockerId: true }
-    });
-    if (blocked) {
+    if (await this.blocksService.isBlocked(requesterId, targetUserId)) {
       throw new ForbiddenException('Cannot add a user you have blocked or who has blocked you');
     }
 

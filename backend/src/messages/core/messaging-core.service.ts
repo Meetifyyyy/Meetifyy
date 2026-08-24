@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { MentionSource, NotificationEntityType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BlocksService } from '../../users/blocks.service';
 import { PresenceService } from '../../presence/presence.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -28,6 +29,10 @@ export class MessagingCoreService {
     protected presenceService: PresenceService,
     protected domainEventService: DomainEventService,
     protected mentionsService: MentionsService,
+    // Required, not optional: every block rule this class enforces runs through
+    // it, so an unwired instance must fail at boot rather than quietly stop
+    // filtering.
+    protected blocksService: BlocksService,
   ) { }
 
   async getBatchUnblockedAndUnmutedParticipants(conversationId: string, senderId: string) {
@@ -42,18 +47,8 @@ export class MessagingCoreService {
       return { recipientIds: [], unmutedRecipientIds: [] };
     }
 
-    const blocks = await this.prisma.block.findMany({
-      where: {
-        OR: [
-          { blockerId: senderId, blockedId: { in: otherIds } },
-          { blockerId: { in: otherIds }, blockedId: senderId }
-        ]
-      },
-      select: { blockerId: true, blockedId: true }
-    });
-    const blockedUserSet = new Set(blocks.flatMap(b => [b.blockerId, b.blockedId]));
-
-    const unblockedIds = otherIds.filter(id => !blockedUserSet.has(id));
+    // Blocked pairs are dropped from the fan-out in both directions.
+    const unblockedIds = await this.blocksService.filterBlockedUsers(senderId, otherIds);
     const muteMap = new Map(participants.map(p => [p.userId, p.isMuted]));
     const unmutedIds = unblockedIds.filter(id => !muteMap.get(id));
 
@@ -176,20 +171,25 @@ export class MessagingCoreService {
     let unmutedRecipientIds: string[] = [];
 
     if (otherUserIds.length > 0) {
-      const blocks = await this.prisma.block.findMany({
-        where: {
-          OR: [
-            { blockerId: senderId, blockedId: { in: otherUserIds } },
-            { blockerId: { in: otherUserIds }, blockedId: senderId }
-          ]
-        },
-        select: { blockerId: true, blockedId: true }
-      });
+      const excluded = new Set(await this.blocksService.getExcludedUserIds(senderId));
+      const blockedByMe = new Set(await this.blocksService.getBlockedByUserIds(senderId));
+      const blockedUserSet = new Set(otherUserIds.filter(id => excluded.has(id)));
+      const isBlockedByMe = otherUserIds.some(id => blockedByMe.has(id));
+      const isBlockedByThem = otherUserIds.some(
+        id => blockedUserSet.has(id) && !blockedByMe.has(id),
+      );
 
-      const blockedUserSet = new Set(blocks.flatMap(b => [b.blockerId, b.blockedId]));
-      const isBlockedByMe = blocks.some(b => b.blockerId === senderId);
       if (isBlockedByMe) {
-        throw new ForbiddenException('Unblock this contact to send a message');
+        throw new ForbiddenException('You blocked this user. Unblock them to continue messaging.');
+      }
+
+      // See MessagesService.sendMessage: a 1:1 thread with a block in either
+      // direction is closed for writes rather than silently swallowing the
+      // message. Neutral wording, shared with restricted/limited accounts, so
+      // the 403 does not disclose a block.
+      const isOneToOne = otherUserIds.length === 1;
+      if (isBlockedByThem && isOneToOne) {
+        throw new ForbiddenException('You can no longer send messages to this user.');
       }
 
       recipientIds = otherUserIds.filter(id => !blockedUserSet.has(id));
@@ -366,10 +366,7 @@ export class MessagingCoreService {
       currentUserId ? this.prisma.conversationParticipant.findFirst({
         where: { userId: currentUserId, conversationId: realConvId }
       }) : Promise.resolve(null),
-      currentUserId ? this.prisma.block.findMany({
-        where: { blockerId: currentUserId },
-        select: { blockedId: true }
-      }) : Promise.resolve([]),
+      currentUserId ? this.blocksService.getBlockedByUserIds(currentUserId) : Promise.resolve([]),
       this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, deletedAt: null },
         select: { userId: true, lastReadAt: true, user: { select: { settings: { select: { readReceipts: true } } } } }
@@ -390,7 +387,7 @@ export class MessagingCoreService {
 
     if (blocksMade && blocksMade.length > 0) {
       whereCondition.NOT = {
-        senderId: { in: blocksMade.map(b => b.blockedId) }
+        senderId: { in: blocksMade }
       };
     }
 
@@ -986,13 +983,6 @@ export class MessagingCoreService {
     if (!user) return 'Someone';
     const rawName = user.username || user.displayName || 'Someone';
     return rawName.startsWith('@') ? rawName : `@${rawName}`;
-  }
-
-  async isUserBlockedBy(userId: string, targetUserId: string): Promise<boolean> {
-    const block = await this.prisma.block.findFirst({
-      where: { blockerId: targetUserId, blockedId: userId }
-    });
-    return !!block;
   }
 
   async isUserConversationMuted(conversationId: string, userId: string): Promise<boolean> {

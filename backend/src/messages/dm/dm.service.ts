@@ -1,6 +1,7 @@
 import { Injectable, ForbiddenException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { MessagingCoreService } from '../core/messaging-core.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BlocksService } from '../../users/blocks.service';
 import { PresenceService } from '../../presence/presence.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { generatePublicId } from '../../common/utils/public-id.util';
@@ -15,8 +16,9 @@ export class DmService extends MessagingCoreService {
     presenceService: PresenceService,
     domainEventService: DomainEventService,
     mentionsService: MentionsService,
+    blocksService: BlocksService,
   ) {
-    super(prisma, presenceService, domainEventService, mentionsService);
+    super(prisma, presenceService, domainEventService, mentionsService, blocksService);
   }
 
   async getUserDMConversations(userId: string, limit: number = 20, offset: number = 0) {
@@ -168,17 +170,13 @@ export class DmService extends MessagingCoreService {
       });
     }
 
-    const userBlocks = await this.prisma.block.findMany({
-      where: {
-        OR: [
-          { blockerId: userId },
-          { blockedId: userId },
-        ],
-      },
-      select: { blockerId: true, blockedId: true },
-    });
-    const blockedByMeSet = new Set(userBlocks.filter(b => b.blockerId === userId).map(b => b.blockedId));
-    const blockedByThemSet = new Set(userBlocks.filter(b => b.blockedId === userId).map(b => b.blockerId));
+    // Mutual set minus the ones this user placed leaves the ones placed on them.
+    const [mutualBlockIds, blockedByMeIds] = await Promise.all([
+      this.blocksService.getExcludedUserIds(userId),
+      this.blocksService.getBlockedByUserIds(userId),
+    ]);
+    const blockedByMeSet = new Set(blockedByMeIds);
+    const blockedByThemSet = new Set(mutualBlockIds.filter(id => !blockedByMeSet.has(id)));
 
     const results = await Promise.all(participants.map(async (p) => {
       const conv = p.conversation;
@@ -310,15 +308,7 @@ export class DmService extends MessagingCoreService {
       throw new ForbiddenException('Cannot start a DM with yourself');
     }
 
-    const isBlocked = await this.prisma.block.findFirst({
-      where: {
-        OR: [
-          { blockerId: currentUserId, blockedId: targetUserId },
-          { blockerId: targetUserId, blockedId: currentUserId }
-        ]
-      }
-    });
-    if (isBlocked) {
+    if (await this.blocksService.isBlocked(currentUserId, targetUserId)) {
       throw new ForbiddenException('Cannot start a conversation with a blocked user');
     }
 

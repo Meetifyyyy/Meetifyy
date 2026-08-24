@@ -31,6 +31,17 @@ interface CachedBlocks {
   expiresAt: number;
 }
 
+/**
+ * Directional cache: ids this user has blocked, WITHOUT the ids of users who
+ * blocked them. Kept separate from the mutual cache because almost every
+ * caller wants the mutual answer, and mixing the two behind one key is how
+ * "they blocked me" ends up mislabelled as "I blocked them".
+ */
+interface CachedOutgoingBlocks {
+  ids: string[];
+  expiresAt: number;
+}
+
 @Injectable()
 export class BlocksService implements OnModuleInit {
   private readonly redis: ReturnType<RedisService['getClient']>;
@@ -40,6 +51,9 @@ export class BlocksService implements OnModuleInit {
    * service shares one map (Nest can instantiate per-module providers).
    */
   private static readonly cache = new Map<string, CachedBlocks>();
+
+  /** @see CachedOutgoingBlocks */
+  private static readonly outgoingCache = new Map<string, CachedOutgoingBlocks>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -64,7 +78,10 @@ export class BlocksService implements OnModuleInit {
       if (channel !== BLOCK_INVALIDATE_CHANNEL) return;
       try {
         const userIds = JSON.parse(message) as string[];
-        for (const id of userIds) BlocksService.cache.delete(id);
+        for (const id of userIds) {
+          BlocksService.cache.delete(id);
+          BlocksService.outgoingCache.delete(id);
+        }
       } catch {
         // Malformed payload — ignore.
       }
@@ -72,8 +89,11 @@ export class BlocksService implements OnModuleInit {
   }
 
   /**
-   * Returns user IDs that should be excluded for the given user.
-   * Includes both directions: users this user blocked AND users who blocked them.
+   * Low-level primitive: user IDs that should be excluded for the given user,
+   * in both directions (users they blocked AND users who blocked them).
+   *
+   * Prefer `isBlocked` / `filterBlockedUsers` / `injectBlockFilter` — this stays
+   * public for the few callers that need the raw set to build a bespoke query.
    */
   async getExcludedUserIds(userId: string): Promise<string[]> {
     const now = Date.now();
@@ -107,6 +127,176 @@ export class BlocksService implements OnModuleInit {
     return result;
   }
 
+  /**
+   * True when a block exists between the two users in *either* direction.
+   *
+   * Block effect is mutual: only A initiates, but A and B become invisible to
+   * each other, so callers never need to care who pressed the button.
+   */
+  async isBlocked(userA: string, userB: string): Promise<boolean> {
+    if (userA === userB) return false;
+    const excluded = await this.getExcludedUserIds(userA);
+    return excluded.includes(userB);
+  }
+
+  /**
+   * IMPORTANT: any future community member search endpoint MUST call
+   * BlocksService.filterBlockedUsers(currentUserId, memberIds) before returning
+   * results. Do NOT implement block logic inline in the endpoint.
+   * See: audit finding 6.6.
+   *
+   * The same rule holds for any new endpoint that returns a list of users:
+   * participant lists, invite pickers, leaderboards, "who viewed this". The
+   * audit found two such lists (follower lists, activity attendees) shipped
+   * without filtering because the rule lived only in reviewers' heads.
+   *
+   * Drops every user the viewer is blocked with from `userIds`, preserving the
+   * caller's ordering. Use this for lists already in memory (participants,
+   * follower lists, mention candidates); for anything still expressible as a
+   * query, prefer `injectBlockFilter` so the exclusion happens in Postgres.
+   */
+  async filterBlockedUsers(currentUserId: string | null | undefined, userIds: string[]): Promise<string[]> {
+    if (!currentUserId || userIds.length === 0) return userIds;
+    const excluded = await this.getExcludedUserIds(currentUserId);
+    if (excluded.length === 0) return userIds;
+    const excludedSet = new Set(excluded);
+    return userIds.filter((id) => !excludedSet.has(id));
+  }
+
+  /**
+   * Adds block exclusion to a Prisma `where` clause, so filtering happens at the
+   * database level rather than after the rows are already in hand.
+   *
+   * `field` names the column holding the user id being filtered on — `authorId`
+   * for posts, `userId` for likes, `id` when querying User itself.
+   *
+   * The exclusion is appended to `AND` rather than assigned onto the field,
+   * because a caller may already constrain that same field (`authorId: { in }`
+   * on a following-feed, say). Assigning would silently drop their constraint;
+   * ANDing composes with it.
+   */
+  async injectBlockFilter<T extends Record<string, any>>(
+    currentUserId: string | null | undefined,
+    where: T,
+    field = 'id',
+  ): Promise<T & { AND?: any[] }> {
+    if (!currentUserId) return where;
+    const excluded = await this.getExcludedUserIds(currentUserId);
+    if (excluded.length === 0) return where;
+
+    const existingAnd = where.AND;
+    const and = Array.isArray(existingAnd) ? [...existingAnd] : existingAnd ? [existingAnd] : [];
+    and.push({ [field]: { notIn: excluded } });
+    return { ...where, AND: and };
+  }
+
+  /**
+   * Directional: the ids this user has blocked themselves.
+   *
+   * Distinct from `getExcludedUserIds`, which is mutual. Use this only where
+   * the DIRECTION genuinely matters — deciding whether to offer an "Unblock"
+   * affordance, or which of the two neutral messages a chat should show. For
+   * visibility filtering always use the mutual helpers: who pressed the button
+   * is irrelevant to who can see whom.
+   */
+  async getBlockedByUserIds(userId: string): Promise<string[]> {
+    const now = Date.now();
+    const cached = BlocksService.outgoingCache.get(userId);
+    if (cached && cached.expiresAt > now) return cached.ids;
+
+    const rows = await this.prisma.block.findMany({
+      where: { blockerId: userId },
+      select: { blockedId: true },
+    });
+    const ids = rows.map((r) => r.blockedId);
+
+    if (BlocksService.outgoingCache.size >= BLOCK_CACHE_MAX_ENTRIES) {
+      for (const [k, v] of BlocksService.outgoingCache) {
+        if (v.expiresAt <= now) BlocksService.outgoingCache.delete(k);
+      }
+      if (BlocksService.outgoingCache.size >= BLOCK_CACHE_MAX_ENTRIES) {
+        const oldest = BlocksService.outgoingCache.keys().next().value;
+        if (oldest) BlocksService.outgoingCache.delete(oldest);
+      }
+    }
+    BlocksService.outgoingCache.set(userId, { ids, expiresAt: now + BLOCK_CACHE_TTL_MS });
+    return ids;
+  }
+
+  /** Directional: did `blockerId` block `blockedId`? */
+  async hasBlocked(blockerId: string, blockedId: string): Promise<boolean> {
+    if (blockerId === blockedId) return false;
+    const ids = await this.getBlockedByUserIds(blockerId);
+    return ids.includes(blockedId);
+  }
+
+  /**
+   * Both directions for one pair, in one place, so callers stop hand-rolling it.
+   *
+   * `blockedByThem` is derived rather than queried: the pair is related if the
+   * mutual set contains them, and if this user is not the one who blocked, the
+   * other side must be.
+   */
+  async getBlockDirection(
+    userId: string,
+    otherUserId: string,
+  ): Promise<{ isBlocked: boolean; blockedByMe: boolean; blockedByThem: boolean }> {
+    if (!userId || !otherUserId || userId === otherUserId) {
+      return { isBlocked: false, blockedByMe: false, blockedByThem: false };
+    }
+    const [mutual, outgoing] = await Promise.all([
+      this.getExcludedUserIds(userId),
+      this.getBlockedByUserIds(userId),
+    ]);
+    const isBlocked = mutual.includes(otherUserId);
+    const blockedByMe = outgoing.includes(otherUserId);
+    return { isBlocked, blockedByMe, blockedByThem: isBlocked && !blockedByMe };
+  }
+
+  /**
+   * The rows behind Settings -> Privacy -> Blocked Contacts.
+   *
+   * Lives here rather than in UsersService so that BlocksService owns every
+   * read and write of the Block table — there is exactly one file to audit when
+   * asking "what can touch blocks?".
+   *
+   * Reads only blocks this user MADE (`blockerId`). Blocks received are never
+   * exposed: a user must not be able to learn that they appear on someone's
+   * list. Fetches one extra row to answer `hasMore` without a COUNT.
+   */
+  async listBlockedContacts(blockerId: string, take: number, skip: number) {
+    return this.prisma.block.findMany({
+      where: { blockerId },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: take + 1,
+      select: {
+        blockedId: true,
+        createdAt: true,
+        blocked: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            deletedAt: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Removes a block. Deliberately scoped to the pair AND the direction: a user
+   * can only lift a block they placed, never one placed on them.
+   *
+   * Cache invalidation is the caller's job (UsersService.unblockUser), since it
+   * also has other caches to clear in the same breath.
+   */
+  async removeBlock(blockerId: string, blockedId: string) {
+    return this.prisma.block.deleteMany({ where: { blockerId, blockedId } });
+  }
+
   private setCache(userId: string, ids: string[]) {
     if (BlocksService.cache.size >= BLOCK_CACHE_MAX_ENTRIES) {
       const now = Date.now();
@@ -132,6 +322,8 @@ export class BlocksService implements OnModuleInit {
   async invalidateBlockCache(userIdA: string, userIdB: string): Promise<void> {
     BlocksService.cache.delete(userIdA);
     BlocksService.cache.delete(userIdB);
+    BlocksService.outgoingCache.delete(userIdA);
+    BlocksService.outgoingCache.delete(userIdB);
 
     if (!this.redis) return;
     try {

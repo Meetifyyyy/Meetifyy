@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BlocksService } from '../users/blocks.service';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DomainEventService } from '../events/domain-event.service';
@@ -43,6 +44,7 @@ describe('NotificationsService — what reaches the notifications page', () => {
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: RedisService, useValue: { getClient: jest.fn().mockReturnValue(null) } },
+        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn().mockResolvedValue([]), isBlocked: jest.fn().mockResolvedValue(false), filterBlockedUsers: jest.fn(async (_u, ids) => ids), injectBlockFilter: jest.fn(async (_u, w) => w), invalidateBlockCache: jest.fn() } },
       ],
     }).compile();
     service = module.get(NotificationsService);

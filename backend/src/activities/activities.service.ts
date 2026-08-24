@@ -884,7 +884,14 @@ export class ActivitiesService implements OnModuleInit {
         : Promise.resolve(null),
     ]);
 
-    if (!activity || activity.deletedAt || (excludedUserIds.length > 0 && excludedUserIds.includes(activity.creatorId))) {
+    // Blocking the host must not make an event the viewer already joined
+    // unusable. An attendee keeps access to the essentials — when, where, what —
+    // and only the host's identity is withheld; a non-attendee still gets the
+    // neutral 404 that every other blocked surface returns.
+    const hostBlocked =
+      !!activity && excludedUserIds.length > 0 && excludedUserIds.includes(activity.creatorId);
+
+    if (!activity || activity.deletedAt || (hostBlocked && !myMembership)) {
       throw new NotFoundException('Activity not found');
     }
 
@@ -904,12 +911,38 @@ export class ActivitiesService implements OnModuleInit {
           _count: { members: (activity as any)._count?.members ?? 0 },
         })
       : { allowed: false, reason: 'Login required', code: 'AUTH_REQUIRED' as const };
+    // The embedded first page of attendees is filtered per-viewer, exactly like
+    // getAttendees. The host is exempt: they must see every participant even
+    // when two of their guests have blocked each other.
+    //
+    // memberCount below is intentionally left as the raw _count, so the total
+    // stays accurate even though this viewer sees fewer rows.
+    // Captured before filtering: "is there another page?" is a property of the
+    // underlying query, not of how many rows survive this viewer's block list.
+    const loadedMemberPageSize = (activity as any).members?.length ?? 0;
+
+    if (userId && activity.creatorId !== userId && (activity as any).members?.length) {
+      const visibleIds = new Set(
+        await this.blocksService.filterBlockedUsers(
+          userId,
+          (activity as any).members.map((m: any) => m.userId).filter(Boolean),
+        ),
+      );
+      (activity as any).members = (activity as any).members.filter((m: any) =>
+        visibleIds.has(m.userId),
+      );
+    }
+
     const { invitations, _count, ...activityFields } = activity as any;
     return {
       ...activityFields,
+      // Host identity is suppressed rather than the whole event: the profile
+      // stays unreachable (no name, no avatar, nothing to tap through to)
+      // while date, time, location and description survive.
+      ...(hostBlocked ? { creator: null, creatorId: null, hostUnavailable: true } : {}),
       // Authoritative attendee total — `members` is only the first page.
-      memberCount: _count?.members ?? activity.members.length,
-      hasMoreMembers: activity.members.length >= ActivitiesService.DETAIL_MEMBER_PAGE,
+      memberCount: _count?.members ?? loadedMemberPageSize,
+      hasMoreMembers: loadedMemberPageSize >= ActivitiesService.DETAIL_MEMBER_PAGE,
       isJoined: myMembership?.status === 'MEMBER',
       myStatus: myMembership?.status || null,
       isInvited: this.activityAuthorizationService.hasValidInvitation(user, activity as any),
@@ -975,8 +1008,20 @@ export class ActivitiesService implements OnModuleInit {
       }
     }
 
+    // Attendees the viewer is blocked with are excluded — but never for the
+    // host, who must keep a complete guest list to run the event. Filtering in
+    // the query (not after) keeps the keyset page size honest.
+    const isHost = activity.creatorId === userId;
+    const attendeeWhere = isHost
+      ? { activityId: cleanId, status: 'MEMBER' as const, ...cursorFilter }
+      : await this.blocksService.injectBlockFilter(
+          userId,
+          { activityId: cleanId, status: 'MEMBER' as const, ...cursorFilter },
+          'userId',
+        );
+
     const rows = await this.prisma.crewActivityMember.findMany({
-      where: { activityId: cleanId, status: 'MEMBER', ...cursorFilter },
+      where: attendeeWhere,
       orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }],
       take: take + 1,
       select: {

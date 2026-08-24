@@ -539,8 +539,9 @@ export class PostsService {
     });
     if (!targetAuthor) return { posts: [], nextCursor: undefined };
 
-    const excludedUserIds = userId ? await this.blocksService.getExcludedUserIds(userId) : [];
-    if (excludedUserIds.includes(targetAuthor.id)) return { posts: [], nextCursor: undefined };
+    if (userId && (await this.blocksService.isBlocked(userId, targetAuthor.id))) {
+      return { posts: [], nextCursor: undefined };
+    }
 
     // Compound keyset cursor "<iso>__<postId>" — the id tiebreaker keeps posts
     // with an identical createdAt from straddling a page boundary. Legacy
@@ -1080,8 +1081,13 @@ export class PostsService {
     // Roots are ordered oldest-first with an id tiebreaker so equal-createdAt
     // roots can't straddle a page boundary (forward keyset: strictly "after"
     // the cursor).
-    const roots = await this.prisma.comment.findMany({
-      where: {
+    // Comments by a blocked author are excluded for THIS viewer only — the rows
+    // stay in the table and other readers still see them normally. Filtering in
+    // the query rather than after the fact keeps the keyset page size honest:
+    // dropping rows post-hoc would return short pages and a cursor that skips.
+    const rootWhere = await this.blocksService.injectBlockFilter(
+      userId,
+      {
         postId,
         parentId: null,
         ...(cursorDate
@@ -1090,6 +1096,11 @@ export class PostsService {
             : { createdAt: { gt: cursorDate } }
           : {}),
       },
+      'authorId',
+    );
+
+    const roots = await this.prisma.comment.findMany({
+      where: rootWhere,
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       take: limit + 1,
       include: { author: { select: PostsService.COMMENT_AUTHOR_SELECT } },
@@ -1109,7 +1120,14 @@ export class PostsService {
     let depth = 0;
     while (frontier.length > 0 && depth < 40) {
       const children = await this.prisma.comment.findMany({
-        where: { parentId: { in: frontier } },
+        // Replies are filtered on the same basis. A reply whose parent was
+        // filtered out is unreachable anyway, since the parent never enters
+        // the frontier — so a blocked user's subtree disappears with them.
+        where: await this.blocksService.injectBlockFilter(
+          userId,
+          { parentId: { in: frontier } },
+          'authorId',
+        ),
         orderBy: { createdAt: 'asc' },
         include: { author: { select: PostsService.COMMENT_AUTHOR_SELECT } },
       });
@@ -1144,8 +1162,9 @@ export class PostsService {
       throw new NotFoundException('Post not found');
     }
     if (userId) {
-      const excluded = await this.blocksService.getExcludedUserIds(userId);
-      if (excluded.includes(post.authorId)) throw new NotFoundException('Post not found');
+      if (await this.blocksService.isBlocked(userId, post.authorId)) {
+        throw new NotFoundException('Post not found');
+      }
     }
 
     // Compound keyset cursor "<iso>__<commentId>" (legacy bare-date / bare-id
@@ -1288,7 +1307,10 @@ export class PostsService {
   }
 
   async getBookmarks(userId: string, limit = 10, cursor?: string) {
-    const excludedUserIds = userId ? await this.blocksService.getExcludedUserIds(userId) : [];
+    // A bookmark saved before a block stays in the table (historical data is
+    // never deleted on block) but must stop resolving for the viewer, so the
+    // exclusion is applied to the joined post rather than to the bookmark row.
+    const postFilter = await this.blocksService.injectBlockFilter(userId, { deletedAt: null }, 'authorId');
     // Compound keyset cursor "<iso>__<postId>" — postId is unique within a
     // user's bookmarks, so it's a stable tiebreaker for equal createdAt.
     let cursorDate: Date | undefined = undefined;
@@ -1312,7 +1334,7 @@ export class PostsService {
     const bookmarks = await this.prisma.postBookmark.findMany({
       where: {
         userId,
-        post: { deletedAt: null, authorId: { notIn: excludedUserIds } },
+        post: postFilter,
         ...(cursorDate
           ? cursorPostId
             ? { OR: [{ createdAt: { lt: cursorDate } }, { createdAt: cursorDate, postId: { lt: cursorPostId } }] }

@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { PresenceService } from '../presence/presence.service';
+import { BlocksService } from '../users/blocks.service';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
 import Redis from 'ioredis';
 
@@ -19,6 +20,7 @@ export class CommunitiesService implements OnModuleInit {
     private readonly redisService: RedisService,
     private readonly presenceService: PresenceService,
     private readonly defaultAssets: DefaultAssetsService,
+    private readonly blocksService: BlocksService,
   ) {
     this.redis = this.redisService.getClient();
   }
@@ -339,6 +341,24 @@ export class CommunitiesService implements OnModuleInit {
         role: 'OWNER' as any,
         user: community.owner,
       } as any);
+    }
+
+    // Hide blocked members from this viewer only. Membership itself is never
+    // touched by a block — both users stay in the community with full access —
+    // so this filters the loaded strip and nothing else. `_count.members` is
+    // left alone deliberately: the count must stay accurate ("2,341 members")
+    // even though some of them are not rendered for this viewer.
+    //
+    // Applied after the viewer-independent Redis cache is read, so one cached
+    // community body can still serve every viewer with a different block list.
+    if (userId && community.members?.length) {
+      const visibleIds = new Set(
+        await this.blocksService.filterBlockedUsers(
+          userId,
+          community.members.map((m: any) => m.userId).filter(Boolean),
+        ),
+      );
+      community.members = community.members.filter((m: any) => visibleIds.has(m.userId));
     }
 
     if (community.members) {

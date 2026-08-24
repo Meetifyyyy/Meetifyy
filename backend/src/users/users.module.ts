@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { UsersController } from './users.controller';
+import { BlockedContactsController, BlocksController } from './blocked-contacts.controller';
 import { UsersService } from './users.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -17,7 +18,7 @@ import { PresenceModule } from '../presence/presence.module';
     PresenceModule,
     BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE }),
   ],
-  controllers: [UsersController],
+  controllers: [UsersController, BlockedContactsController, BlocksController],
   providers: [UsersService, BlocksService],
   exports: [UsersService, BlocksService],
 })

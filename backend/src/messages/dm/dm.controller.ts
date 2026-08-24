@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, UseGuards, BadRequestException } from '@nestjs/common';
 import { DmService } from './dm.service';
+import { BlocksService } from '../../users/blocks.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
 import { DomainEventService } from '../../events/domain-event.service';
 import { NotificationsService } from '../../notifications/notifications.service';
@@ -13,6 +14,7 @@ export class DmController {
     private readonly domainEventService: DomainEventService,
     private readonly notificationsService: NotificationsService,
     private readonly notificationFactory: NotificationFactory,
+    private readonly blocksService: BlocksService,
   ) {}
 
   @Get()
@@ -209,11 +211,13 @@ export class DmController {
         const conv = await this.dmService.getConversationById(conversationId);
 
         const otherParticipantIds = participantIds.filter(pId => pId !== userId);
-        const unblockedParticipantIds = [];
-        for (const pId of otherParticipantIds) {
-          const hasBlockedSender = await this.dmService.isUserBlockedBy(userId, pId);
-          if (!hasBlockedSender) unblockedParticipantIds.push(pId);
-        }
+        // Was an N+1 of isUserBlockedBy (one query per participant) against a
+        // method that duplicated BlocksService. One cached call now answers for
+        // the whole list, in both directions.
+        const unblockedParticipantIds = await this.blocksService.filterBlockedUsers(
+          userId,
+          otherParticipantIds,
+        );
 
         this.domainEventService.emit('message:new', message, unblockedParticipantIds);
         this.domainEventService.emit('conversation:updated', {

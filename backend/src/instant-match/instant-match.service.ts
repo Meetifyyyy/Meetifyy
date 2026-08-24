@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { BlocksService } from '../users/blocks.service';
 import { MessagesService } from '../messages/messages.service';
 import { computeCompatibility, relaxedThreshold } from './instant-match.scoring';
 import {
@@ -190,6 +191,7 @@ export class InstantMatchService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly messagesService: MessagesService,
+    private readonly blocksService: BlocksService,
   ) {}
 
   onModuleInit() {
@@ -1231,11 +1233,11 @@ export class InstantMatchService implements OnModuleInit {
   private async getExcludedUserIds(userId: string): Promise<string[]> {
     const since = new Date(Date.now() - REMATCH_COOLDOWN_MS);
 
-    const [blocks, recent] = await Promise.all([
-      this.prisma.block.findMany({
-        where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
-        select: { blockerId: true, blockedId: true },
-      }),
+    const [blocked, recent] = await Promise.all([
+      // Blocks come from the shared BlocksService, not a local Block query, so
+      // there is exactly one place that decides who is blocked from whom (and
+      // this path gets its cache rather than a fresh query per match attempt).
+      this.blocksService.getExcludedUserIds(userId),
       this.prisma.matchSession.findMany({
         where: {
           status: { in: ['DECLINED', 'EXPIRED'] },
@@ -1246,10 +1248,7 @@ export class InstantMatchService implements OnModuleInit {
       }),
     ]);
 
-    const excluded = new Set<string>();
-    for (const b of blocks) {
-      excluded.add(b.blockerId === userId ? b.blockedId : b.blockerId);
-    }
+    const excluded = new Set<string>(blocked);
     for (const s of recent) {
       excluded.add(s.userAId === userId ? s.userBId : s.userAId);
     }

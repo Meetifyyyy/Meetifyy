@@ -6,6 +6,7 @@ import { CreateNotificationDto } from './notification.factory';
 import { NotificationType, Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
+import { BlocksService } from '../users/blocks.service';
 import Redis from 'ioredis';
 
 @Injectable()
@@ -19,6 +20,7 @@ export class NotificationsService implements OnModuleInit {
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly blocksService: BlocksService,
   ) {
     this.redis = this.redisService.getClient();
     if (this.redis) {
@@ -160,16 +162,17 @@ export class NotificationsService implements OnModuleInit {
       return null; // Don't notify self
     }
 
-    if (dto.actorId) {
-      const isBlocked = await this.prisma.block.findFirst({
-        where: {
-          OR: [
-            { blockerId: dto.recipientId, blockedId: dto.actorId },
-            { blockerId: dto.actorId, blockedId: dto.recipientId },
-          ],
-        },
-      });
-      if (isBlocked) return null;
+    // Personal notifications stop flowing in both directions once a block
+    // exists. SYSTEM notifications are deliberately exempt: "your post was
+    // removed by an admin" must still arrive even when the acting admin
+    // happens to be someone the recipient has blocked, and suppressing it
+    // would hide a moderation outcome the user needs to see.
+    //
+    // Routed through BlocksService rather than querying Block directly, so
+    // notification delivery uses the same block path (and cache) as every
+    // other surface.
+    if (dto.actorId && (dto.type as any) !== NotificationType.SYSTEM) {
+      if (await this.blocksService.isBlocked(dto.recipientId, dto.actorId)) return null;
     }
 
     // Fix BUG-29: Deduplicate system notifications (where actorId is null)

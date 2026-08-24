@@ -65,7 +65,7 @@ describe('InstantMatchService', () => {
       emitInstantMatchChatEnded: jest.fn(),
     };
     setRealtimeGatewayRef(emitter);
-    service = new InstantMatchService(prisma as any, messages as any);
+    service = new InstantMatchService(prisma as any, messages as any, blocksStubFor(prisma));
   });
 
   afterEach(() => setRealtimeGatewayRef(null));
@@ -699,3 +699,26 @@ describe('InstantMatchService', () => {
     expect(prisma.sessions).toHaveLength(1);
   });
 });
+
+/**
+ * Stands in for BlocksService, reading the fake Prisma's seeded block rows so
+ * the block-aware matching tests still exercise real exclusion behaviour after
+ * matching was consolidated onto the shared service.
+ */
+function blocksStubFor(prisma: any) {
+  const excluded = (userId: string): string[] =>
+    (prisma.blocks as any[])
+      .filter((b) => b.blockerId === userId || b.blockedId === userId)
+      .map((b) => (b.blockerId === userId ? b.blockedId : b.blockerId));
+
+  return {
+    getExcludedUserIds: async (userId: string) => excluded(userId),
+    isBlocked: async (a: string, b: string) => excluded(a).includes(b),
+    filterBlockedUsers: async (userId: string, ids: string[]) => {
+      const set = new Set(excluded(userId));
+      return ids.filter((id) => !set.has(id));
+    },
+    injectBlockFilter: async (_userId: string, where: any) => where,
+    invalidateBlockCache: async () => {},
+  } as any;
+}

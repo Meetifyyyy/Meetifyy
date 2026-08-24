@@ -7,6 +7,7 @@ import { RealtimeModule } from '../../realtime/realtime.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 import { MessagingCoreModule } from '../core/messaging-core.module';
 import { MentionsModule } from '../../mentions/mentions.module';
+import { BlocksService } from '../../users/blocks.service';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { MentionsModule } from '../../mentions/mentions.module';
     MentionsModule,
   ],
   controllers: [DmController],
-  providers: [DmService],
+  providers: [DmService, BlocksService],
   exports: [DmService],
 })
 export class DmModule {}

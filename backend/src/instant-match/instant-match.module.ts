@@ -11,14 +11,21 @@ import {
 import { EXPIRY_SWEEP_MS } from './instant-match.constants';
 import { PrismaModule } from '../prisma/prisma.module';
 import { MessagesModule } from '../messages/messages.module';
+import { RedisModule } from '../redis/redis.module';
+import { BlocksService } from '../users/blocks.service';
 
 @Module({
   imports: [
     PrismaModule,
     MessagesModule,
+    RedisModule,
     BullModule.registerQueue({ name: INSTANT_MATCH_QUEUE }),
   ],
-  providers: [InstantMatchService, InstantMatchProcessor, InstantMatchRateLimiter],
+  // BlocksService is provided here rather than by importing UsersModule (which
+  // would drag in notifications, presence and a queue registration this module
+  // has no use for). Its cache is deliberately static, so this copy shares one
+  // map — and one Redis invalidation channel — with every other copy.
+  providers: [InstantMatchService, InstantMatchProcessor, InstantMatchRateLimiter, BlocksService],
   exports: [InstantMatchService, InstantMatchRateLimiter],
 })
 export class InstantMatchModule implements OnModuleInit, OnModuleDestroy {

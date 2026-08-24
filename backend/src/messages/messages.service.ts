@@ -47,10 +47,16 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     protected readonly presenceService: PresenceService,
     protected readonly domainEventService: DomainEventService,
     mentionsService: MentionsService,
+    // NOT @Optional: this service enforces the block rules on every send and
+    // every conversation read. If it could go missing, block enforcement would
+    // silently disappear with it rather than failing loudly at boot. Declared
+    // without a modifier and handed to super(), so the single inherited
+    // `blocksService` is the one everything uses — no shadowing copy. Ordered
+    // before the optional param because a required parameter cannot follow one.
+    blocksService: BlocksService,
     @Optional() private readonly redisService?: RedisService,
-    @Optional() private readonly blocksService?: BlocksService,
   ) {
-    super(prisma, presenceService, domainEventService, mentionsService);
+    super(prisma, presenceService, domainEventService, mentionsService, blocksService);
     this.redis = this.redisService?.getClient() ?? null;
   }
 
@@ -245,31 +251,45 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       // block/unblock) tells us whether the sender has ANY block relationship
       // with a participant of this conversation. When there is no overlap, the
       // vast-majority case, we skip the Block table entirely.
-      const excluded = this.blocksService
-        ? new Set(await this.blocksService.getExcludedUserIds(senderId))
-        : null;
-      const hasOverlap = excluded ? otherUserIds.some(id => excluded.has(id)) : true;
+      const excluded = new Set(await this.blocksService.getExcludedUserIds(senderId));
+      const hasOverlap = otherUserIds.some(id => excluded.has(id));
 
-      if (excluded && !hasOverlap) {
+      if (!hasOverlap) {
+        // No block relationship with anyone in this conversation — the
+        // overwhelmingly common case, and it costs one cached lookup.
         recipientIds = otherUserIds;
       } else {
-        // Overlap (or no cache): hit Block for the directional detail so we can
-        // distinguish "I blocked them" (reject) from "they blocked me" (deliver
-        // to everyone else, silently drop for the blocker).
-        const blocks = await this.prisma.block.findMany({
-          where: {
-            OR: [
-              { blockerId: senderId, blockedId: { in: otherUserIds } },
-              { blockerId: { in: otherUserIds }, blockedId: senderId }
-            ]
-          },
-          select: { blockerId: true, blockedId: true }
-        });
-        const blockedUserSet = new Set(blocks.flatMap(b => [b.blockerId, b.blockedId]));
-        const isBlockedByMe = blocks.some(b => b.blockerId === senderId);
+        // Overlap: ask the service for the DIRECTION so we can tell "I blocked
+        // them" apart from "they blocked me" — the two produce different
+        // messages and, in a group, different fan-outs.
+        const blockedByMe = new Set(await this.blocksService.getBlockedByUserIds(senderId));
+        const blockedUserSet = new Set(otherUserIds.filter(id => excluded.has(id)));
+        const isBlockedByMe = otherUserIds.some(id => blockedByMe.has(id));
+        const isBlockedByThem = otherUserIds.some(
+          id => blockedUserSet.has(id) && !blockedByMe.has(id),
+        );
+
         if (isBlockedByMe) {
-          throw new ForbiddenException('Unblock this contact to send a message');
+          throw new ForbiddenException('You blocked this user. Unblock them to continue messaging.');
         }
+
+        // A 1:1 thread with a block in EITHER direction is closed for writes.
+        // Previously the blocked sender's message was written and then delivered
+        // to nobody — the client got a 200 and rendered a message that no one
+        // would ever receive. Rejecting is both honest to the sender and cheaper
+        // than storing undeliverable rows.
+        //
+        // The wording is deliberately the same neutral string used for
+        // restricted and limited accounts, so a 403 here does not disclose that
+        // a block specifically is what closed the thread.
+        const isOneToOne = otherUserIds.length === 1;
+        if (isBlockedByThem && isOneToOne) {
+          throw new ForbiddenException('You can no longer send messages to this user.');
+        }
+
+        // Group threads stay writable: the message is still legitimately
+        // delivered to every other participant, and only the blocked pair is
+        // dropped from the recipient fan-out.
         recipientIds = otherUserIds.filter(id => !blockedUserSet.has(id));
       }
 
@@ -516,10 +536,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         where: { userId: currentUserId, message: { conversationId: realConvId } },
         select: { messageId: true }
       }) : Promise.resolve([]),
-      currentUserId ? this.prisma.block.findMany({
-        where: { blockerId: currentUserId },
-        select: { blockedId: true }
-      }) : Promise.resolve([]),
+      currentUserId ? this.blocksService.getBlockedByUserIds(currentUserId) : Promise.resolve([]),
       currentUserId ? this.prisma.conversationParticipant.findFirst({
         where: { conversationId: realConvId, userId: currentUserId, deletedAt: null },
         select: { userId: true, lastReadAt: true, clearedAt: true, leftAt: true }
@@ -550,7 +567,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
     if (blocksMade && blocksMade.length > 0) {
       whereCondition.NOT = {
-        senderId: { in: blocksMade.map(b => b.blockedId) }
+        senderId: { in: blocksMade }
       };
     }
 
@@ -699,7 +716,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       } catch {}
     }
 
-    const [participants, excludedUserIds] = await Promise.all([
+    const [participants, excludedUserIds, blockedByMeIds] = await Promise.all([
       this.prisma.conversationParticipant.findMany({
         where: {
           userId,
@@ -756,9 +773,11 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
           }
         }
       }),
-      this.blocksService ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([])
+      this.blocksService.getExcludedUserIds(userId),
+      this.blocksService.getBlockedByUserIds(userId)
     ]);
     const blockedSet = new Set(excludedUserIds);
+    const blockedByMeSet = new Set(blockedByMeIds);
 
     const dmConvIds = (participants as any[]).filter((p: any) => p.conversation.type === 'DM').map((p: any) => p.conversation.id);
     const dmOtherParticipants = dmConvIds.length > 0 ? await this.prisma.conversationParticipant.findMany({
@@ -843,8 +862,17 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       let blockStatus = { isBlocked: false, isBlockedByMe: false, isBlockedByThem: false };
 
       if (otherUser) {
+        // Directional. `blockedSet` is the MUTUAL set, so using it for
+        // `isBlockedByMe` told the person who *was* blocked that they had
+        // blocked someone — offering them an Unblock button for a block they
+        // never made. Each side now gets its own accurate flag.
         const isBlocked = blockedSet.has(otherUser.id);
-        blockStatus = { isBlocked, isBlockedByMe: isBlocked, isBlockedByThem: false };
+        const blockedByMe = blockedByMeSet.has(otherUser.id);
+        blockStatus = {
+          isBlocked,
+          isBlockedByMe: blockedByMe,
+          isBlockedByThem: isBlocked && !blockedByMe,
+        };
         canSeeOnline = !isBlocked && !!userPresence?.isOnline && presenceVisibleSet.has(otherUser.id);
       }
 
@@ -889,9 +917,11 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         memberCount: isGroupConv ? (conv._count?.participants || (conv as any).memberCount || 0) : 0,
         pinned: p.isPinned || false,
         muted: p.isMuted || false,
-        blocked: blockStatus.isBlockedByMe,
+        // `blocked` drives the locked-input overlay, which both sides must get:
+        // neither party can send once a block exists in either direction.
+        blocked: blockStatus.isBlocked,
         isBlockedByMe: blockStatus.isBlockedByMe,
-        isBlockedByThem: false,
+        isBlockedByThem: blockStatus.isBlockedByThem,
         unreadCount,
         unread: unreadCount,
         lastMessage: resolvedLastMsg,
@@ -913,13 +943,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
     return result;
   }
 
-  async isUserBlockedBy(userId: string, targetUserId: string): Promise<boolean> {
-    const block = await this.prisma.block.findFirst({
-      where: { blockerId: targetUserId, blockedId: userId }
-    });
-    return !!block;
-  }
-
   async startConversation(userIds: string[], currentUserId: string, groupName?: string) {
     const filteredUserIds = (userIds || []).filter(id => id && id !== currentUserId);
 
@@ -927,15 +950,11 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       throw new ForbiddenException('Cannot start a conversation with yourself');
     }
 
-    const isBlocked = await this.prisma.block.findFirst({
-      where: {
-        OR: [
-          { blockerId: currentUserId, blockedId: { in: filteredUserIds } },
-          { blockerId: { in: filteredUserIds }, blockedId: currentUserId }
-        ]
-      }
-    });
-    if (isBlocked) {
+    // Any block in either direction with any invitee blocks the whole
+    // conversation. `filterBlockedUsers` drops the blocked ids, so a shorter
+    // result means at least one participant is unreachable.
+    const reachable = await this.blocksService.filterBlockedUsers(currentUserId, filteredUserIds);
+    if (reachable.length !== filteredUserIds.length) {
       throw new ForbiddenException('Cannot start a conversation with a blocked user');
     }
 
@@ -1163,16 +1182,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
 
     // Block enforcement: don't let a member pull someone they've blocked (or who
     // blocked them) into a shared group.
-    const blocked = await this.prisma.block.findFirst({
-      where: {
-        OR: [
-          { blockerId: requesterId, blockedId: targetUserId },
-          { blockerId: targetUserId, blockedId: requesterId }
-        ]
-      },
-      select: { blockerId: true }
-    });
-    if (blocked) {
+    if (await this.blocksService.isBlocked(requesterId, targetUserId)) {
       throw new ForbiddenException('Cannot add a user you have blocked or who has blocked you');
     }
 
