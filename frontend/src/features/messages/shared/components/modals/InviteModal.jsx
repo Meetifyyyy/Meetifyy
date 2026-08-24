@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import { usersApi, getMediaUrl } from '@shared/api/apiClient';
+import { usersApi, groupApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';

@@ -29,7 +29,7 @@ const ActivityDiscussion = lazy(() =>
 );
 import ActivityDetailSkeleton from '../components/ActivityDetailSkeleton';
 import NotFoundState from '@shared/components/ui/NotFoundState';
-import { getMediaUrl } from '@shared/api/apiClient';
+import { activitiesApi, getMediaUrl } from '@shared/api/apiClient';
 
 /* ── Access denied ─────────────────────────────────────────────
  * The server decides access and answers 403 with a code; these are the

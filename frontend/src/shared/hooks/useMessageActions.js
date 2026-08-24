@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { messagesApi, dmApi, groupApi } from '../api/apiClient';
+import { messagesApi, dmApi, groupApi, usersApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { showToast } from '../utils/toast';
 import { useConversations } from './useMessages';
