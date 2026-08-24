@@ -467,3 +467,31 @@ export function applyGroupRoleChange(queryClient, convId, targetUserId, newRole)
     };
   });
 }
+
+
+/**
+ * The conversation-list row preview.
+ *
+ * Three fields can carry it, and they are checked in order of how specific
+ * they are: a preview written directly onto the row (`lastMsg`), the flat
+ * server alias (`lastMessageText`), then the structured `lastMessage` object.
+ *
+ * Extracted so the fall-through is testable, because it is exactly what broke
+ * Clear Chat: blanking the two flat fields was not enough — the chain fell
+ * through to `lastMessage.text` and restored the message the user had just
+ * cleared. Anything clearing a preview must null `lastMessage` too, and this
+ * function is where that contract is asserted.
+ */
+export function derivePreviewText(c) {
+  if (!c) return '';
+  if (c.lastMsg) return c.lastMsg;
+  if (c.lastMessageText) return c.lastMessageText;
+  if (!c.lastMessage) return '';
+  if (c.lastMessage.text) return c.lastMessage.text;
+  if (c.lastMessage.mediaUrl) {
+    if (c.lastMessage.mediaType === 'image') return 'Photo';
+    if (c.lastMessage.mediaType === 'video') return 'Video';
+    return 'Audio';
+  }
+  return '';
+}

@@ -122,8 +122,8 @@ export default function DMList({
           position={{ x: contextMenu.x, y: contextMenu.y }}
           onClose={() => setContextMenu(null)}
           onMarkRead={() => onMarkRead?.(contextMenu.conv.id)}
-          onMute={() => onMute?.(contextMenu.conv.id, !contextMenu.conv.muted)}
-          onPin={() => onPin?.(contextMenu.conv.id, !contextMenu.conv.pinned)}
+          onMute={() => onMute?.(contextMenu.conv.id, Boolean(contextMenu.conv.muted ?? contextMenu.conv.isMuted))}
+          onPin={() => onPin?.(contextMenu.conv.id, Boolean(contextMenu.conv.pinned ?? contextMenu.conv.isPinned))}
           onDelete={() => onDelete?.(contextMenu.conv.id)}
         />
       )}

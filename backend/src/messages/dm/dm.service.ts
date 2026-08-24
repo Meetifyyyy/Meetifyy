@@ -35,12 +35,21 @@ export class DmService extends MessagingCoreService {
       // rows can repeat or vanish between pages, and a brand-new instant-match
       // chat can land anywhere — including past the end of page one, which
       // looks exactly like the chat not having been created.
-      orderBy: { conversation: { updatedAt: 'desc' } },
+      // Pinned rows first (most recently pinned at the top), then by recent
+      // activity. Ordering pinned-first in SQL rather than only in the client
+      // keeps `take`/`skip` pagination correct: a pin must not be able to
+      // strand a conversation on a later page than the one the list shows.
+      orderBy: [
+        { isPinned: 'desc' },
+        { pinnedAt: 'desc' },
+        { conversation: { updatedAt: 'desc' } },
+      ],
       take: limit,
       skip: offset,
       select: {
         isMuted: true,
         isPinned: true,
+        pinnedAt: true,
         clearedAt: true,
         lastReadAt: true,
         unreadCount: true,
@@ -198,6 +207,16 @@ export class DmService extends MessagingCoreService {
         return null;
       }
 
+      // The last message is read from the shared Message table, but Clear and
+      // Delete are per-user watermarks. Without this guard a user who cleared
+      // the chat still saw the other person's last message quoted in their
+      // list row — content they can no longer open anywhere. The row itself
+      // stays (that is what separates Clear from Delete); only the preview goes.
+      const cutoff = (p as any).clearedAt as Date | null;
+      const previewCleared = Boolean(
+        cutoff && lastMsgInfo?.createdAt && new Date(lastMsgInfo.createdAt) <= new Date(cutoff)
+      );
+
       const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
       const unreadCount = unreadMap.get(conv.id) || 0;
 
@@ -235,6 +254,7 @@ export class DmService extends MessagingCoreService {
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
         pinned: p.isPinned || false,
+        pinnedAt: p.pinnedAt || null,
         muted: p.isMuted || false,
         // `blocked` is the mutual answer: the thread is closed for writes if
         // EITHER side blocked. The two directional flags below tell the client
@@ -246,7 +266,7 @@ export class DmService extends MessagingCoreService {
         isBlockedByThem: blockStatus.isBlockedByThem,
         unreadCount,
         unread: unreadCount,
-        lastMessage: lastMsgInfo ? {
+        lastMessage: (lastMsgInfo && !previewCleared) ? {
           createdAt: lastMsgInfo.createdAt,
           senderId: lastMsgInfo.senderId,
           senderName: lastMsgInfo.senderName,

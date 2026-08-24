@@ -1183,7 +1183,24 @@
 .msgJumpHighlight {
   position: relative;
   animation: msgJumpPulse 1.8s ease-out;
-  border-radius: 14px;
+  border-radius: 16px;
+
+  /*
+   * Breathing room so the tint frames the message instead of hugging it. Every
+   * value is cancelled by an equal negative margin, because this class is added
+   * and removed while the thread is on screen — any net box change would jolt
+   * the scroll position at both ends of the 1.8s.
+   *
+   * `.msgBubbleContainer` sets `margin-bottom: 0.3rem`, so that value is
+   * carried through the calc rather than silently replaced. The 12px inline
+   * inset stays within `.msgChatBody`'s 1rem padding, so widening the band
+   * cannot introduce a horizontal scrollbar.
+   */
+  padding: 10px 12px;
+  margin-top: -10px;
+  margin-bottom: calc(0.3rem - 10px);
+  margin-left: -12px;
+  margin-right: -12px;
 }
 
 @keyframes msgJumpPulse {
@@ -1193,9 +1210,34 @@
   100% { background-color: rgba(99, 102, 241, 0.00); }
 }
 
+/*
+ * Dark mode needs its own tint, not the same one.
+ *
+ * Indigo-500 at 0.26 alpha reads clearly over a light thread, but composited
+ * over a near-black surface it resolves to something barely distinguishable
+ * from the background — the jump appeared to do nothing at all. A lighter
+ * indigo (400) at a higher alpha keeps the hue while actually separating from
+ * the surface.
+ */
+:global([data-theme="dark"]) .msgJumpHighlight {
+  animation-name: msgJumpPulseDark;
+}
+
+@keyframes msgJumpPulseDark {
+  0%   { background-color: rgba(129, 140, 248, 0.00); }
+  12%  { background-color: rgba(129, 140, 248, 0.42); }
+  60%  { background-color: rgba(129, 140, 248, 0.30); }
+  100% { background-color: rgba(129, 140, 248, 0.00); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .msgJumpHighlight {
     animation: none;
     background-color: rgba(99, 102, 241, 0.18);
+  }
+
+  :global([data-theme="dark"]) .msgJumpHighlight {
+    animation: none;
+    background-color: rgba(129, 140, 248, 0.30);
   }
 }

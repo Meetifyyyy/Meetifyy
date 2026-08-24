@@ -426,6 +426,7 @@ model ConversationParticipant {
   lastReadAt         DateTime?
   isMuted            Boolean          @default(false)
   isPinned           Boolean          @default(false)
+  pinnedAt           DateTime?
   groupUpdatesActive Boolean          @default(true)
   unreadCount        Int              @default(0)
   clearedAt          DateTime?
@@ -442,6 +443,8 @@ model ConversationParticipant {
   @@index([conversationId, deletedAt])
   @@index([conversationId, deletedAt, userId])
   @@index([conversationId, deletedAt, leftAt, userId])
+  // Chat-list ordering: pinned rows first, most recently pinned at the top.
+  @@index([userId, isPinned, pinnedAt(sort: Desc)])
 }
 
 model Message {

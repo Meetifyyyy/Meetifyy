@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
+import { httpLine, LOG_CAUSE } from '../logging/log-format';
 
 const SENSITIVE_FIELDS = new Set([
   'password', 'newpassword', 'confirmpassword', 'accesstoken', 'refreshtoken', 
@@ -28,9 +29,43 @@ function redact(obj: any): any {
   return copy;
 }
 
+
+/**
+ * Unwrap the thing that actually went wrong.
+ *
+ * A 500 reports `message` as the generic "Internal server error" the client is
+ * given, so the log line said nothing about the cause and you had to read the
+ * stack to find it. The real message goes on the line itself.
+ */
+function rootCause(exception: unknown): string {
+  if (exception instanceof Error && exception.message) {
+    // Prisma renders a multi-line message with the offending call and a code
+    // frame. The last non-empty line is the actual complaint
+    // ("The column `x` does not exist in the current database.").
+    const lines = exception.message.split('\n').map((l) => l.trim()).filter(Boolean);
+    return lines[lines.length - 1] || exception.message;
+  }
+  return String(exception);
+}
+
+/**
+ * Keep only this project's frames. A raw stack is ~15 lines of node_modules
+ * and node internals wrapped around the two or three frames that locate the
+ * bug; those are the ones worth printing.
+ */
+function appStack(exception: unknown, limit = 3): string {
+  if (!(exception instanceof Error) || !exception.stack) return '';
+  const frames = exception.stack
+    .split('\n')
+    .filter((l) => l.includes('/src/') && !l.includes('node_modules'))
+    .slice(0, limit)
+    .map((l) => l.trim().replace(/^at\s+/, '  at '));
+  return frames.join('\n');
+}
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger('HttpExceptionFilter');
+  private readonly logger = new Logger('HTTP');
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -47,23 +82,37 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? exception.getResponse()
         : 'Internal server error';
 
-    const reqId = (request as any).id ? `req=${(request as any).id} ` : '';
     let bodySnippet = '';
     if (request.body && Object.keys(request.body).length > 0) {
-      bodySnippet = ` - Body: ${JSON.stringify(redact(request.body))}`;
+      bodySnippet = `body=${JSON.stringify(redact(request.body))}`;
     }
 
-    const userId = (request as any).user?.id ? ` user=${(request as any).user.id}` : '';
-
-    // Log errors: 5xx as error with stack trace, 4xx as warning without stack trace
-    const logMsg = `[HTTP] ${request.method} ${request.url} ${status} ${reqId}${userId}${bodySnippet} - Error: ${
-      typeof message === 'object' ? JSON.stringify(redact(message)) : message
-    }`;
+    const cause = status >= 500
+      ? rootCause(exception)
+      : (typeof message === 'object' ? JSON.stringify(redact(message)) : String(message));
 
     if (status >= 500) {
-      this.logger.error(logMsg, exception instanceof Error ? exception.stack : '');
+      // 5xx is logged here because this is the only place with the stack.
+      // pino-http's own response line is demoted to debug so this is the sole
+      // entry, which is why the latency is absent — it is not known yet.
+      this.logger.error(
+        httpLine({
+          method: request.method,
+          url: request.url,
+          status,
+          userId: (request as any).user?.id,
+          reqId: (request as any).id,
+          extra: bodySnippet,
+          cause,
+        }),
+        appStack(exception),
+      );
     } else {
-      this.logger.warn(logMsg);
+      // 4xx does NOT log here. Doing so printed two lines for every rejected
+      // request — this one with the cause but no latency, and pino-http's with
+      // the latency but no cause. Handing the cause over lets pino-http emit a
+      // single complete line once the response is finished.
+      (request as any)[LOG_CAUSE] = cause;
     }
 
     // Format safe response structure.

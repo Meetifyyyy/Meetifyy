@@ -4,6 +4,7 @@ import {
   appendMessageToCache,
   purgeConversationFromCaches,
   applyGroupRoleChange,
+  derivePreviewText,
 } from '../cacheUtils';
 
 const msg = (id, text = 'hi') => ({ id, text, createdAt: new Date().toISOString() });
@@ -135,5 +136,55 @@ describe('applyGroupRoleChange', () => {
     applyGroupRoleChange(qc, 'g1', 'u2', 'OWNER');
     expect(qc.getQueryData(['groupDetails', 'g1']).ownerId).toBe('u2');
     expect(qc.getQueryData(['conversations'])[0].ownerId).toBe('u2');
+  });
+});
+
+/**
+ * The conversation-list row preview.
+ *
+ * Clear Chat broke on this: the optimistic patch blanked `lastMsg` and
+ * `lastMessageText` but left the structured `lastMessage` object alone, so the
+ * fall-through below reached it and put the just-cleared message back on the
+ * row. Anything that clears a preview has to null all three.
+ */
+describe('derivePreviewText', () => {
+  const cleared = {
+    lastMessage: null,
+    lastMsg: '',
+    lastMessageText: '',
+    lastMessageType: null,
+  };
+
+  it('is empty once a chat is cleared', () => {
+    expect(derivePreviewText(cleared)).toBe('');
+  });
+
+  it('does NOT fall through to lastMessage when the flat fields are blanked', () => {
+    // The exact shape the old optimistic patch produced.
+    const halfCleared = {
+      lastMsg: '',
+      lastMessageText: '',
+      lastMessage: { text: 'the message that was cleared' },
+    };
+    expect(derivePreviewText(halfCleared)).toBe('the message that was cleared');
+    // ...which is why the patch must null `lastMessage` as well:
+    expect(derivePreviewText({ ...halfCleared, lastMessage: null })).toBe('');
+  });
+
+  it('prefers the most specific source available', () => {
+    expect(derivePreviewText({ lastMsg: 'a', lastMessageText: 'b', lastMessage: { text: 'c' } })).toBe('a');
+    expect(derivePreviewText({ lastMessageText: 'b', lastMessage: { text: 'c' } })).toBe('b');
+    expect(derivePreviewText({ lastMessage: { text: 'c' } })).toBe('c');
+  });
+
+  it('names media when there is no text', () => {
+    expect(derivePreviewText({ lastMessage: { mediaUrl: 'x', mediaType: 'image' } })).toBe('Photo');
+    expect(derivePreviewText({ lastMessage: { mediaUrl: 'x', mediaType: 'video' } })).toBe('Video');
+    expect(derivePreviewText({ lastMessage: { mediaUrl: 'x', mediaType: 'audio' } })).toBe('Audio');
+  });
+
+  it('tolerates a missing conversation', () => {
+    expect(derivePreviewText(null)).toBe('');
+    expect(derivePreviewText({})).toBe('');
   });
 });

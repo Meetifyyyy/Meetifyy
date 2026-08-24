@@ -10,14 +10,22 @@ export default function DMChatHeader({
   onBlock, 
   onClearChat, 
   onTogglePin,
+  onToggleMute,
   onToggleSearch, 
   onOpenDetails,
 }) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [isMuted, setIsMuted] = useState(conversation?.muted || false);
   const canSeePresence = useCanSeeOthersPresence();
 
   if (!conversation) return null;
+
+  // Muted state comes from the shared conversation cache, never from local
+  // component state. The button used to flip a `useState` and nothing else:
+  // the label toggled, no request was ever sent, and the state was lost on
+  // remount — the chat was never actually muted. Reading the cache means this
+  // button, the sidebar context menu and the notification suppression all
+  // observe one value, and the optimistic write updates all three at once.
+  const isMuted = Boolean(conversation.muted ?? conversation.isMuted);
 
   const isOnline = canSeePresence && Boolean(
     conversation.targetUser ? conversation.targetUser.isOnline : (conversation.isOnline ?? conversation.online ?? false)
@@ -95,10 +103,10 @@ export default function DMChatHeader({
               )}
               <button 
                 className={styles.msgDropdownItem} 
-                onClick={() => { setIsMuted(!isMuted); setShowMoreMenu(false); }}
+                onClick={() => { onToggleMute?.(conversation.id, isMuted); setShowMoreMenu(false); }}
               >
                 {isMuted ? <BellRing size={14} /> : <BellOff size={14} />}
-                {isMuted ? 'Unmute Alerts' : 'Mute Alerts'}
+                {isMuted ? 'Unmute alerts' : 'Mute alerts'}
               </button>
               {onClearChat && (
                 <button 

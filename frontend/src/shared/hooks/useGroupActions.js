@@ -3,6 +3,7 @@ import { messagesApi, groupApi, communitiesApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { showToast } from '../utils/toast';
 import { applyGroupRoleChange } from '../../features/messages/shared/utils/cacheUtils';
+import { scheduleConversationWrite } from '../utils/conversationWriteQueue';
 
 /**
  * The group-chat / conversation admin actions `useData` used to define inline.
@@ -17,6 +18,15 @@ export function useGroupActions() {
   // here -- every reference below is to the ['conversations'] query key, not to
   // the array -- so this hook deliberately does not subscribe to either.
 
+  /**
+   * Pin/unpin a conversation for the current user.
+   *
+   * `pinnedAt` is written alongside the flag so the list can re-sort locally
+   * the moment the tap lands — pinned first, most recently pinned at the top —
+   * matching the order the server will return on the next fetch. Sorting on
+   * the flag alone left a freshly pinned chat wherever its last-activity time
+   * put it among the other pins, which reads as the pin not having applied.
+   */
   const togglePinConversation = async (convId, currentPinned) => {
     let isPinnedNow = currentPinned;
     if (typeof isPinnedNow !== 'boolean') {
@@ -26,19 +36,36 @@ export function useGroupActions() {
         if (found) isPinnedNow = !!(found.isPinned || found.pinned);
       }
     }
+    isPinnedNow = Boolean(isPinnedNow);
     const nextPinned = !isPinnedNow;
-    queryClient.setQueryData(['conversations'], (old) => {
-      if (!Array.isArray(old)) return old;
-      return old.map(c => (c.id === convId || c.publicId === convId) ? { ...c, isPinned: nextPinned, pinned: nextPinned } : c);
-    });
-    try {
-      await messagesApi.pinConversation(convId, nextPinned);
-    } catch (e) {
+    const previousPinnedAt = (() => {
+      const cached = queryClient.getQueryData(['conversations']);
+      const found = Array.isArray(cached) ? cached.find(c => c.id === convId || c.publicId === convId) : null;
+      return found?.pinnedAt ?? null;
+    })();
+
+    const writePinned = (pinned, pinnedAt) => {
       queryClient.setQueryData(['conversations'], (old) => {
         if (!Array.isArray(old)) return old;
-        return old.map(c => (c.id === convId || c.publicId === convId) ? { ...c, isPinned: isPinnedNow, pinned: isPinnedNow } : c);
+        return old.map(c => (c.id === convId || c.publicId === convId)
+          ? { ...c, isPinned: pinned, pinned, pinnedAt }
+          : c);
       });
-    }
+    };
+
+    writePinned(nextPinned, nextPinned ? new Date().toISOString() : null);
+
+    scheduleConversationWrite(`pin:${convId}`, async () => {
+      const latest = queryClient.getQueryData(['conversations']);
+      const row = Array.isArray(latest) ? latest.find(c => c.id === convId || c.publicId === convId) : null;
+      const desired = row ? Boolean(row.pinned ?? row.isPinned) : nextPinned;
+      try {
+        await messagesApi.pinConversation(convId, desired);
+      } catch (e) {
+        writePinned(isPinnedNow, previousPinnedAt);
+        showToast(desired ? "Couldn't pin chat" : "Couldn't unpin chat", 'error');
+      }
+    });
   };
 
   const updateGroupInfo = async (convId, name, avatarKey, description, rollbackAvatarKey = undefined) => {

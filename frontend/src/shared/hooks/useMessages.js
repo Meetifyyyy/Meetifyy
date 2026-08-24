@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { messagesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
+import { derivePreviewText } from '@features/messages/shared/utils/cacheUtils';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
 export const MESSAGE_KEYS = {
@@ -86,18 +87,7 @@ export function useConversations() {
         blocked: c.blocked || false,
         isBlockedByMe: c.isBlockedByMe || false,
         isBlockedByThem: c.isBlockedByThem || false,
-        lastMsg: (() => {
-          if (c.lastMsg) return c.lastMsg;
-          if (c.lastMessageText) return c.lastMessageText;
-          if (!c.lastMessage) return '';
-          if (c.lastMessage.text) return c.lastMessage.text;
-          if (c.lastMessage.mediaUrl) {
-            if (c.lastMessage.mediaType === 'image') return 'Photo';
-            if (c.lastMessage.mediaType === 'video') return 'Video';
-            return 'Audio';
-          }
-          return '';
-        })(),
+        lastMsg: derivePreviewText(c),
         lastSenderId: c.lastMessage?.senderId || null,
         timestamp: computedTimestamp,
         unread: c.unreadCount || c.unread || 0,

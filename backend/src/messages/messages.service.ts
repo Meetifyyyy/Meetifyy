@@ -731,14 +731,21 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
           // a preview there, or contribute to its unread badge.
           conversation: { type: { in: ['DM', 'GROUP'] } },
         },
-        orderBy: {
-          conversation: { updatedAt: 'desc' }
-        },
+        // Pinned rows first (most recently pinned at the top), then by recent
+        // activity. Ordering pinned-first in SQL rather than only in the client
+        // keeps `take`/`skip` pagination correct: a pin must not be able to
+        // strand a conversation on a later page than the one the list shows.
+        orderBy: [
+          { isPinned: 'desc' },
+          { pinnedAt: 'desc' },
+          { conversation: { updatedAt: 'desc' } },
+        ],
         skip: offset,
         take: limit,
         select: {
           isMuted: true,
           isPinned: true,
+          pinnedAt: true,
           clearedAt: true,
           lastReadAt: true,
           unreadCount: true,
@@ -884,7 +891,19 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       const pubId = (conv as any).publicId || conv.id;
       const unreadCount = p.unreadCount || 0;
 
-      const resolvedLastMsg = conv.lastMessageAt ? {
+      // The last-message preview lives on the Conversation row and is therefore
+      // shared by both participants — but Clear and Delete are per-user. Left
+      // unguarded, a user who cleared the chat still saw the other person's
+      // last message sitting in their list row, quoting content that no longer
+      // exists for them anywhere else. Hide any preview at or before this
+      // user's own cutoff; the next message they actually receive is after it
+      // and shows normally.
+      const cutoff = (p as any).clearedAt as Date | null;
+      const previewCleared = Boolean(
+        cutoff && conv.lastMessageAt && new Date(conv.lastMessageAt) <= new Date(cutoff)
+      );
+
+      const resolvedLastMsg = (conv.lastMessageAt && !previewCleared) ? {
         id: conv.lastMessageId || null,
         createdAt: conv.lastMessageAt,
         senderId: conv.lastMessageSenderId || '',
@@ -921,6 +940,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
         members: [],
         memberCount: isGroupConv ? (conv._count?.participants || (conv as any).memberCount || 0) : 0,
         pinned: p.isPinned || false,
+        pinnedAt: p.pinnedAt || null,
         muted: p.isMuted || false,
         // `blocked` drives the locked-input overlay, which both sides must get:
         // neither party can send once a block exists in either direction.
@@ -1029,33 +1049,6 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       select: { isMuted: true }
     });
     return participant?.isMuted || false;
-  }
-
-  async muteConversation(conversationId: string, userId: string, muted: boolean) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
-      data: { isMuted: muted }
-    });
-    return { success: true, muted };
-  }
-
-  async pinConversation(conversationId: string, userId: string, pinned: boolean) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
-      data: { isPinned: pinned }
-    });
-    return { success: true, pinned };
-  }
-
-  async clearChatForUser(conversationId: string, userId: string) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
-      data: { clearedAt: new Date() }
-    });
-    return { success: true };
   }
 
   async unsendMessage(messageId: string, userId: string) {

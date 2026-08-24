@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { config } from '../config';
+import { dbLine } from '../common/logging/log-format';
 
 /**
  * Connects through node-postgres rather than Prisma's own Rust connection layer.
@@ -38,12 +39,34 @@ const buildPool = () => {
   });
 };
 
+
+/**
+ * `SELECT 1` is the pool warm-up and the periodic liveness probe. It fires
+ * once per pooled connection, so a 15-connection pool printed fifteen
+ * identical lines every cycle and told you nothing.
+ */
+function isPoolPing(sql: string): boolean {
+  return /^\s*SELECT\s+1\s*$/i.test(sql || '');
+}
+
+/**
+ * Reduce a Prisma statement to `VERB Model` — enough to see what the request
+ * touched and in what order, without the generated SQL body.
+ */
+function summarizeQuery(sql: string): string {
+  const q = (sql || '').trim();
+  const verb = (q.split(/\s+/, 1)[0] || 'QUERY').toUpperCase();
+  const table =
+    q.match(/(?:FROM|INTO|UPDATE)\s+"?(?:public"?\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?/i)?.[1];
+  return table ? `${verb} ${table}` : verb;
+}
+
 @Injectable()
 export class PrismaService extends PrismaClient<
   { log: [{ emit: 'event', level: 'query' }, { emit: 'event', level: 'error' }, { emit: 'event', level: 'warn' }] },
   'query' | 'error' | 'warn'
 > implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger('DATABASE');
+  private readonly logger = new Logger('DB');
   private keepAliveTimer: NodeJS.Timeout | null = null;
   private readonly pool: Pool;
 
@@ -123,10 +146,16 @@ export class PrismaService extends PrismaClient<
 
     // @ts-ignore
     this.$on('query', (e: any) => {
+      // A full Prisma-generated SQL string is several hundred characters of
+      // JSONB_BUILD_OBJECT and LATERAL joins. Printing one per query buried
+      // every line that mattered — errors included — under a wall of SQL. The
+      // routine line is now a one-line summary; the full statement is still
+      // printed for slow queries, which is the case where you actually need to
+      // read it.
       if (e.duration >= config.database.slowQueryMs) {
-        this.logger.warn(`Slow Query (${e.duration}ms) - ${e.query}`);
-      } else if (logQueries) {
-        this.logger.debug(`Query (${e.duration}ms) - ${e.query}`);
+        this.logger.warn(dbLine(summarizeQuery(e.query), e.duration, `SLOW · ${e.query}`));
+      } else if (logQueries && !isPoolPing(e.query)) {
+        this.logger.debug(dbLine(summarizeQuery(e.query), e.duration));
       }
     });
 

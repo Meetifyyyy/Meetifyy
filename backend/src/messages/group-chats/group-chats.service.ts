@@ -59,14 +59,21 @@ export class GroupChatsService extends MessagingCoreService {
         deletedAt: null,
         conversation: { type: 'GROUP' }
       },
-      orderBy: {
-        conversation: { updatedAt: 'desc' }
-      },
+      // Pinned rows first (most recently pinned at the top), then by recent
+      // activity. Ordering pinned-first in SQL rather than only in the client
+      // keeps `take`/`skip` pagination correct: a pin must not be able to
+      // strand a conversation on a later page than the one the list shows.
+      orderBy: [
+        { isPinned: 'desc' },
+        { pinnedAt: 'desc' },
+        { conversation: { updatedAt: 'desc' } },
+      ],
       skip: offset,
       take: limit,
       select: {
         isMuted: true,
         isPinned: true,
+        pinnedAt: true,
         clearedAt: true,
         lastReadAt: true,
         unreadCount: true,
@@ -111,7 +118,19 @@ export class GroupChatsService extends MessagingCoreService {
       const groupAvatar = conv.avatarKey || null;
       const unreadCount = p.unreadCount || 0;
 
-      const resolvedLastMsg = conv.lastMessageAt ? {
+      // The last-message preview lives on the Conversation row and is therefore
+      // shared by both participants — but Clear and Delete are per-user. Left
+      // unguarded, a user who cleared the chat still saw the other person's
+      // last message sitting in their list row, quoting content that no longer
+      // exists for them anywhere else. Hide any preview at or before this
+      // user's own cutoff; the next message they actually receive is after it
+      // and shows normally.
+      const cutoff = (p as any).clearedAt as Date | null;
+      const previewCleared = Boolean(
+        cutoff && conv.lastMessageAt && new Date(conv.lastMessageAt) <= new Date(cutoff)
+      );
+
+      const resolvedLastMsg = (conv.lastMessageAt && !previewCleared) ? {
         id: conv.lastMessageId || null,
         createdAt: conv.lastMessageAt,
         senderId: conv.lastMessageSenderId || '',
@@ -147,6 +166,7 @@ export class GroupChatsService extends MessagingCoreService {
         members: [],
         memberCount: conv._count?.participants || 0,
         pinned: p.isPinned || false,
+        pinnedAt: p.pinnedAt || null,
         muted: p.isMuted || false,
         unreadCount,
         unread: unreadCount,

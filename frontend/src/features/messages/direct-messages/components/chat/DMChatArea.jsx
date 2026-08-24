@@ -8,6 +8,7 @@ export default function DMChatArea({
   onReactMessage,
   onClearChat,
   onTogglePin,
+  onToggleMute,
   onBlockUser,
   onBack,
   showChatOnMobile,
@@ -59,6 +60,7 @@ export default function DMChatArea({
           onBlock={onBlockUser}
           onClearChat={onClearChat}
           onTogglePin={onTogglePin}
+          onToggleMute={onToggleMute}
           onToggleSearch={() => state.setShowSearch(prev => !prev)}
           onOpenDetails={() => state.setShowDetails(true)}
         />

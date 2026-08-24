@@ -246,9 +246,19 @@ export default function MessagesLayout() {
         const term = searchVal.toLowerCase();
         return (c.name || '').toLowerCase().includes(term) || (c.lastMsg || c.lastMessageText || '').toLowerCase().includes(term);
       })
+      // Mirrors the server's ordering exactly (pinned first, then by pin time,
+      // then by recent activity) so the list can re-sort itself the instant a
+      // pin is tapped and land on the same order the next fetch returns —
+      // no refetch, and no visible reshuffle when one eventually happens.
       .sort((a, b) => {
-        if (a.pinned && !b.pinned) return -1;
-        if (!a.pinned && b.pinned) return 1;
+        const aPinned = Boolean(a.pinned ?? a.isPinned);
+        const bPinned = Boolean(b.pinned ?? b.isPinned);
+        if (aPinned !== bPinned) return aPinned ? -1 : 1;
+        if (aPinned && bPinned) {
+          const pinA = a.pinnedAt ? new Date(a.pinnedAt).getTime() : 0;
+          const pinB = b.pinnedAt ? new Date(b.pinnedAt).getTime() : 0;
+          if (pinA !== pinB) return pinB - pinA;
+        }
         const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
         const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
         return timeB - timeA;
@@ -408,6 +418,7 @@ export default function MessagesLayout() {
                 onEndGroup={endGroup}
                 onClearChat={clearChat}
                 onTogglePin={togglePinConversation}
+                onToggleMute={toggleMuteConversation}
                 onBack={handleBack}
                 showChatOnMobile={showChatOnMobile}
                 isLoading={isConversationsLoading || (isMessagesLoading && allMessages.length === 0)}
@@ -424,6 +435,7 @@ export default function MessagesLayout() {
               onReactMessage={reactToMessage}
               onClearChat={clearChat}
               onTogglePin={togglePinConversation}
+              onToggleMute={toggleMuteConversation}
               onBlockUser={toggleBlockUser}
               onBack={handleBack}
               showChatOnMobile={showChatOnMobile}

@@ -754,31 +754,79 @@ export class MessagingCoreService {
     return { success: true, count: forwarded.length, messages: forwarded };
   }
 
+  /**
+   * Cache-busting hook for the per-user conversation list.
+   *
+   * The four per-user conversation actions below (mute, pin, clear, delete)
+   * all change what `getUserConversations` should return, and that result is
+   * Redis-cached per user. Without this the optimistic UI update is correct
+   * for a moment and then snaps back the instant anything refetches the list
+   * and gets served the pre-action cache entry.
+   *
+   * Declared as a no-op here and overridden by the subclasses that own a Redis
+   * client (MessagesService, GroupChatsService); DmService has no list cache
+   * of its own and inherits the no-op.
+   */
+  async invalidateUserConversationsCache(_userIds?: string[]): Promise<void> {
+    /* no-op — see subclass overrides */
+  }
+
+  /**
+   * Per-user conversation-membership writes.
+   *
+   * All four actions below are deliberately `updateMany` rather than `update`:
+   * `updateMany` matches zero rows without throwing, which makes every one of
+   * them idempotent. A double-tap, an offline retry, or a request that races
+   * a "leave group" all resolve to the same end state instead of a P2025
+   * surfacing as a 500 to a user who already saw the UI change.
+   *
+   * Each is a single indexed write against one small membership row — no
+   * joins, no cascades, no aggregate recomputation — so the round trip stays
+   * short even before optimistic UI hides it.
+   */
   async muteConversation(conversationId: string, userId: string, muted: boolean) {
     const realConvId = await this.resolveConversationId(conversationId);
-    await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
+    await this.prisma.conversationParticipant.updateMany({
+      where: { userId, conversationId: realConvId },
       data: { isMuted: muted }
     });
+    this.invalidateUserConversationsCache([userId]).catch(() => {});
     return { success: true, muted };
   }
 
+  /**
+   * `pinnedAt` is stamped alongside `isPinned` so the list can order pinned
+   * chats by when they were pinned rather than by last activity — otherwise a
+   * newly pinned chat lands wherever its last message happens to put it, which
+   * reads as the pin not having worked. Unpinning clears it so a stale
+   * timestamp can never outlive the flag.
+   */
   async pinConversation(conversationId: string, userId: string, pinned: boolean) {
     const realConvId = await this.resolveConversationId(conversationId);
-    await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
-      data: { isPinned: pinned }
+    await this.prisma.conversationParticipant.updateMany({
+      where: { userId, conversationId: realConvId },
+      data: { isPinned: pinned, pinnedAt: pinned ? new Date() : null }
     });
+    this.invalidateUserConversationsCache([userId]).catch(() => {});
     return { success: true, pinned };
   }
 
+  /**
+   * Clear leaves the conversation in the list and only moves the per-user
+   * history watermark. Every read path that serves message content for a user
+   * — history, and the media gallery derived from it — filters on `clearedAt`,
+   * so the clear survives new messages arriving: they are after the watermark,
+   * the old ones stay behind it forever.
+   */
   async clearChatForUser(conversationId: string, userId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
-    await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
-      data: { clearedAt: new Date() }
+    const clearedAt = new Date();
+    await this.prisma.conversationParticipant.updateMany({
+      where: { userId, conversationId: realConvId },
+      data: { clearedAt }
     });
-    return { success: true };
+    this.invalidateUserConversationsCache([userId]).catch(() => {});
+    return { success: true, clearedAt };
   }
 
   /**
@@ -798,11 +846,12 @@ export class MessagingCoreService {
   async deleteConversationForUser(conversationId: string, userId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
     const now = new Date();
-    await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId, conversationId: realConvId } },
+    await this.prisma.conversationParticipant.updateMany({
+      where: { userId, conversationId: realConvId },
       data: { deletedAt: now, clearedAt: now }
     });
-    return { success: true };
+    this.invalidateUserConversationsCache([userId]).catch(() => {});
+    return { success: true, deletedAt: now, clearedAt: now };
   }
 
   // ─── Canonical group role/ownership operations ─────────────────────────────

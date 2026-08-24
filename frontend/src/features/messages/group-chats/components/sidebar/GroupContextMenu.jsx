@@ -4,6 +4,12 @@ import styles from './GroupContextMenu.module.css';
 export default function GroupContextMenu({ conv, position, onClose, onMarkRead, onMute, onPin, onLeave }) {
   if (!conv) return null;
 
+  // Read both spellings: the server returns `muted`/`pinned`, while some
+  // optimistic writes historically only set the `is*` form. Falling back
+  // keeps the label honest either way.
+  const isMuted = Boolean(conv.muted ?? conv.isMuted);
+  const isPinned = Boolean(conv.pinned ?? conv.isPinned);
+
   const handle = (fn) => (e) => {
     e.stopPropagation();
     fn?.();
@@ -22,11 +28,11 @@ export default function GroupContextMenu({ conv, position, onClose, onMarkRead, 
         )}
         <button className={styles.menuItem} onClick={handle(onPin)}>
           <Pin size={15} />
-          {conv.pinned ? 'Unpin' : 'Pin'}
+          {isPinned ? 'Unpin' : 'Pin'}
         </button>
         <button className={styles.menuItem} onClick={handle(onMute)}>
-          {conv.muted ? <BellRing size={15} /> : <BellOff size={15} />}
-          {conv.muted ? 'Unmute' : 'Mute'}
+          {isMuted ? <BellRing size={15} /> : <BellOff size={15} />}
+          {isMuted ? 'Unmute alerts' : 'Mute alerts'}
         </button>
         <div className={styles.divider} />
         <button className={`${styles.menuItem} ${styles.menuItemDanger}`} onClick={handle(onLeave)}>

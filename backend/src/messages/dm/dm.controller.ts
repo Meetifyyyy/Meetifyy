@@ -6,6 +6,7 @@ import { DomainEventService } from '../../events/domain-event.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { NotificationFactory } from '../../notifications/notification.factory';
 import { SendMessageDto } from '../core/dto/send-message.dto';
+import { emitMessageNew } from '../message-alert.util';
 
 @Controller('api/dm')
 export class DmController {
@@ -94,7 +95,11 @@ export class DmController {
     const previewText = message.text || (message.inviteData ? (message.inviteData.type === 'postShare' ? 'Shared a post' : (message.inviteData.groupName ? `Group invite: ${message.inviteData.groupName}` : 'Group invite')) : '');
 
     setImmediate(() => {
-      this.domainEventService.emit('message:new', message, unblockedParticipantIds).catch(() => {});
+      // Muted recipients still receive the message, flagged `alert: false`.
+      emitMessageNew(this.domainEventService, message, {
+        recipientIds: unblockedParticipantIds,
+        unmutedRecipientIds,
+      }).forEach((p) => p.catch(() => {}));
       this.domainEventService.emit('conversation:updated', {
         conversationId: message.conversationId,
         publicId: message.publicId,
@@ -105,7 +110,7 @@ export class DmController {
           senderId: userId
         }
       }, allParticipantIds).catch(() => {});
-      this.domainEventService.emit('message:new', message, [userId]).catch(() => {});
+      this.domainEventService.emit('message:new', { ...message, alert: false }, [userId]).catch(() => {});
 
       for (const pId of unmutedRecipientIds) {
         this.notificationsService.createNotification(

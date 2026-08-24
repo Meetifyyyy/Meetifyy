@@ -5,6 +5,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { SendMessageDto } from './core/dto/send-message.dto';
+import { emitMessageNew } from './message-alert.util';
 
 @Controller('api/messages')
 export class MessagesController {
@@ -73,8 +74,11 @@ export class MessagesController {
           this.messagesService.getConversationById(conversationId),
         ]);
 
-        // Emit to others
-        this.domainEventService.emit('message:new', message, unblockedParticipantIds);
+        // Emit to others; muted recipients get the message without the alert.
+        emitMessageNew(this.domainEventService, message, {
+          recipientIds: unblockedParticipantIds,
+          unmutedRecipientIds,
+        });
         this.domainEventService.emit('conversation:updated', {
           conversationId: message.conversationId,
           publicId: message.publicId,
@@ -98,8 +102,8 @@ export class MessagesController {
           ).catch(() => {});
         }
 
-        // Emit to sender
-        this.domainEventService.emit('message:new', message, [userId]);
+        // Emit to sender (multi-device sync, never alerted)
+        this.domainEventService.emit('message:new', { ...message, alert: false }, [userId]);
       }
     }
 
@@ -145,8 +149,12 @@ export class MessagesController {
 
     const allParticipantIds = Array.from(new Set([userId, ...unblockedParticipantIds]));
 
-    // Emit to others
-    this.domainEventService.emit('message:new', message, unblockedParticipantIds);
+    // Emit to others. Muted recipients still receive the message (mute is not
+    // a delivery filter) but receive it flagged `alert: false`.
+    emitMessageNew(this.domainEventService, message, {
+      recipientIds: unblockedParticipantIds,
+      unmutedRecipientIds,
+    });
     this.domainEventService.emit('conversation:updated', {
       conversationId: message.conversationId,
       publicId: message.publicId,

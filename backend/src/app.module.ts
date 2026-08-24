@@ -2,6 +2,14 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
+import {
+  httpLine,
+  fromRequest,
+  LOG_CAUSE,
+  prettyFormatters,
+  PRETTY_IGNORE,
+  PRETTY_MESSAGE_FORMAT,
+} from './common/logging/log-format';
 import { RateLimitGuard } from './common/guards/ratelimit.guard';
 import { NoCacheInterceptor } from './common/interceptors/no-cache.interceptor';
 import { config, configNamespaces } from './config';
@@ -58,36 +66,71 @@ import { AcademicsModule } from './academics/academics.module';
         },
         customSuccessMessage: (req, res, time) => {
           if (time > 1000) {
-            req.log.warn(`[WARN] Slow Request ${req.method} ${req.url} ${time}ms`);
+            req.log.warn(httpLine({
+              method: req.method, url: req.url, status: res.statusCode, ms: time,
+              userId: fromRequest(req, (r) => r?.user?.id), reqId: req.id as string, cause: 'slow request',
+            }));
           }
-          return `[HTTP] ${req.method} ${req.url} ${res.statusCode} ${time}ms req=${req.id}`;
+          return httpLine({
+            method: req.method,
+            url: req.url,
+            status: res.statusCode,
+            ms: time,
+            // The user was missing from the success line entirely, so a normal
+            // request could not be attributed to anyone without cross-checking
+            // the request id against some other line that happened to carry it.
+            userId: fromRequest(req, (r) => r?.user?.id),
+            reqId: req.id as string,
+            // HttpExceptionFilter stashes the reason a 4xx was refused here
+            // rather than logging its own line. Both used to print: one with
+            // the cause and no latency, one with the latency and no cause, for
+            // every single rejected request.
+            cause: fromRequest(req, (r) => r?.[LOG_CAUSE]),
+          });
         },
-        customErrorMessage: (req, res, err) => {
-          return `[HTTP] ${req.method} ${req.url} ${res.statusCode} req=${req.id} - ${err.message}`;
+        customErrorMessage: (req, res, err) => httpLine({
+          method: req.method, url: req.url, status: res.statusCode,
+          userId: fromRequest(req, (r) => r?.user?.id), reqId: req.id as string, cause: err.message,
+        }),
+        customLogLevel: (req, res, err) => {
+          // 5xx is owned by HttpExceptionFilter, which has the stack; this
+          // line would be its third copy, so it is kept at debug for when the
+          // extra timing detail is wanted. 4xx is owned here — the filter only
+          // contributes the cause, via LOG_CAUSE above.
+          if (res.statusCode >= 500 || err) return 'debug';
+          if (res.statusCode >= 400) return 'warn';
+          return 'info';
         },
         serializers: {
-          req: (req) => {
-            return {
-              id: req.id,
-              method: req.method,
-              url: req.url,
-              userId: req.raw?.user?.id,
-            };
-          },
-          res: (res) => {
-            return {
-              statusCode: res.statusCode,
-            };
-          },
+          // Never expand a stack here; the filter owns error reporting.
+          err: (err) => ({ type: err.type, message: err.message }),
+          req: (req) => ({
+            id: req.id,
+            method: req.method,
+            url: req.url,
+            userId: (req as any).raw?.user?.id,
+          }),
+          res: (res) => ({ statusCode: res.statusCode }),
         },
+        // Pretty output only: builds the aligned `time level [context]`
+        // prefix in the main thread, since pino-pretty cannot align it itself
+        // (see log-format.ts). Structured JSON logs are left untouched.
+        ...(config.logging.pretty ? { formatters: prettyFormatters } : {}),
         level: config.logging.level,
         transport: config.logging.pretty
           ? {
               target: 'pino-pretty',
               options: {
                 singleLine: true,
-                ignore: 'pid,hostname,req,res,responseTime',
-                messageFormat: '{msg}',
+                // `time`, `level` and `context` are rebuilt into the message
+                // by `prettyFormatters` so their widths are fixed; pino-pretty
+                // must not also print its own variable-width versions.
+                ignore: PRETTY_IGNORE,
+                // Must stay a plain string. pino-pretty runs in a worker
+                // thread, so anything in here is structured-cloned — a
+                // function threw DataCloneError and killed the boot.
+                messageFormat: PRETTY_MESSAGE_FORMAT,
+                colorize: false,
               },
             }
           : undefined,

@@ -564,12 +564,20 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       // controller path (MessagesController.sendMessage) exactly so realtime
       // and REST enforce blocks identically.
       const recipientIds: string[] = (message as any).recipientIds || [];
+      // Mute is enforced here, not left to the client. `sendMessage` already
+      // resolved every recipient's mute state in the same batched query it
+      // used for blocks, so stamping each copy with whether it may raise an
+      // alert costs nothing — and means a device with a cold or stale
+      // conversation cache still honours the mute. The message itself is
+      // delivered either way: mute silences the alert, not the sync.
+      const unmuted = new Set<string>((message as any).unmutedRecipientIds || []);
       for (const rId of recipientIds) {
         if (rId === senderId) continue;
-        this.server.to(rId).emit('message:new', payload);
+        this.server.to(rId).emit('message:new', { ...payload, alert: unmuted.has(rId) });
       }
-      // Multi-device sync: emit to sender's OTHER connected sockets/tabs
-      client.to(senderId).emit('message:new', payload);
+      // Multi-device sync: emit to sender's OTHER connected sockets/tabs.
+      // Never alerted — the sender already knows.
+      client.to(senderId).emit('message:new', { ...payload, alert: false });
 
       // Return server ACK directly to sending client callback
       return { status: 'ok', tempId: clientKey, clientId: clientKey, message: payload };

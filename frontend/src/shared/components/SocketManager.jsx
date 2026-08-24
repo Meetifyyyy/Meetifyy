@@ -902,7 +902,16 @@ export default function SocketManager() {
       // 3. If chat is NOT currently open, show instant screen toast notification.
       //    Never toast for own-sent messages (multi-device sync) — the sender already knows.
       if (!isViewingCurrentChat && !isSenderSelf) {
-        const isMuted = Boolean(targetConv?.muted || targetConv?.isMuted);
+        // The server stamps every `message:new` with whether this recipient may
+        // be alerted for it, having already resolved their mute state when it
+        // fanned the message out. Trust that when it is present: the local
+        // conversation cache is not authoritative here — a fresh tab or a cold
+        // load has no row for the chat yet and used to alert for chats the user
+        // had muted. The cache is only a fallback for older server builds that
+        // do not send the flag.
+        const isMuted = typeof message.alert === 'boolean'
+          ? !message.alert
+          : Boolean(targetConv?.muted || targetConv?.isMuted);
 
         if (!isMuted && window.location.pathname !== '/onboarding') {
           toast.custom((t) => {

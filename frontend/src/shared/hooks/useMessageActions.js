@@ -4,8 +4,9 @@ import { useAuth } from '../context/AuthContext';
 import { showToast } from '../utils/toast';
 import { useConversations } from './useMessages';
 import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline';
-import { purgeConversationFromCaches } from '../../features/messages/shared/utils/cacheUtils';
+import { purgeConversationFromCaches, matchesConversationId, getConversationAliases } from '../../features/messages/shared/utils/cacheUtils';
 import { idbDeleteConversationMessages } from '../../features/messages/shared/utils/idbMessages';
+import { scheduleConversationWrite } from '../utils/conversationWriteQueue';
 
 /**
  * The direct-message / conversation actions `useData` used to define inline.
@@ -179,40 +180,147 @@ export function useMessageActions() {
 
 
 
+  /**
+   * Mute/unmute a conversation for the current user.
+   *
+   * Two things this has to get right, both of which it used to get wrong:
+   *
+   * 1. It writes `muted` as well as `isMuted`. The server returns the flag as
+   *    `muted`, and every consumer — the context menus, the chat header, the
+   *    toast suppression in SocketManager — reads `muted` first. Patching only
+   *    `isMuted` left the label and the bell icon showing the old state until
+   *    the next full refetch, so the tap looked like it had done nothing.
+   * 2. It tolerates being called without `currentMuted`, resolving the current
+   *    value from the cache, so callers that only have a conversation id
+   *    cannot accidentally toggle to the state it is already in.
+   */
   const toggleMuteConversation = async (convId, currentMuted) => {
-    queryClient.setQueryData(['conversations'], (old) => {
-      if (!Array.isArray(old)) return old;
-      return old.map(c => c.id === convId || c.publicId === convId ? { ...c, isMuted: !currentMuted } : c);
-    });
-    try {
-      await messagesApi.muteConversation(convId, !currentMuted);
-    } catch (e) {
+    let isMutedNow = currentMuted;
+    if (typeof isMutedNow !== 'boolean') {
+      const cached = queryClient.getQueryData(['conversations']);
+      if (Array.isArray(cached)) {
+        const found = cached.find(c => matchesConversationId(c, convId));
+        if (found) isMutedNow = Boolean(found.muted ?? found.isMuted);
+      }
+    }
+    isMutedNow = Boolean(isMutedNow);
+    const nextMuted = !isMutedNow;
+
+    const writeMuted = (value) => {
       queryClient.setQueryData(['conversations'], (old) => {
         if (!Array.isArray(old)) return old;
-        return old.map(c => c.id === convId || c.publicId === convId ? { ...c, isMuted: currentMuted } : c);
+        return old.map(c => matchesConversationId(c, convId) ? { ...c, muted: value, isMuted: value } : c);
       });
-    }
+    };
+
+    writeMuted(nextMuted);
+
+    // Rapid taps: the UI follows every one of them (above), but only the
+    // settled state is sent. Without this a double-tap fires mute then unmute
+    // as two racing requests, and whichever lands second wins — which is not
+    // necessarily the one the user finished on.
+    scheduleConversationWrite(`mute:${convId}`, async () => {
+      const latest = queryClient.getQueryData(['conversations']);
+      const row = Array.isArray(latest) ? latest.find(c => matchesConversationId(c, convId)) : null;
+      const desired = row ? Boolean(row.muted ?? row.isMuted) : nextMuted;
+      try {
+        await messagesApi.muteConversation(convId, desired);
+      } catch (e) {
+        writeMuted(isMutedNow);
+        showToast(desired ? "Couldn't mute alerts" : "Couldn't unmute alerts", 'error');
+      }
+    });
   };
 
   const deleteConversation = async (convId) => {
     // One shared purge for every surface: the list row, every cached message
     // history under any of the conversation's id aliases, and the offline
     // mirror. Deletion is per-user — the other participant's copy is untouched.
+    //
+    // The row is snapshotted first so a failed request can put it back. Without
+    // that the optimistic removal was permanent-looking on failure until a
+    // refetch happened to run, and the invalidate alone could not restore a
+    // conversation the server still had while the list query was fresh.
+    const snapshot = (queryClient.getQueryData(['conversations']) || [])
+      .find(c => matchesConversationId(c, convId));
     const aliases = purgeConversationFromCaches(queryClient, convId, conversations);
     idbDeleteConversationMessages(aliases).catch(() => {});
     try {
       await messagesApi.deleteConversation(convId);
     } catch (e) {
+      if (snapshot) {
+        queryClient.setQueryData(['conversations'], (old) => {
+          const list = Array.isArray(old) ? old : [];
+          if (list.some(c => matchesConversationId(c, convId))) return list;
+          return [snapshot, ...list];
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      showToast("Couldn't delete chat", 'error');
     }
   };
 
+  /**
+   * Clear a chat for the current user only.
+   *
+   * The message list, the media gallery (derived from the same cached
+   * messages) and the offline mirror all have to go at once. Leaving IndexedDB
+   * populated was enough on its own to bring every "cleared" message back on
+   * the next cold load, because the local mirror is read before the network.
+   *
+   * The list row itself stays — that is the whole difference between Clear and
+   * Delete — but its preview is blanked so the row does not keep advertising a
+   * message the user can no longer open.
+   */
   const clearChat = async (convId) => {
-    queryClient.setQueryData(['messages', convId], () => ({ pages: [], pageParams: [] }));
+    const conv = (conversations || []).find(c => matchesConversationId(c, convId));
+    const aliases = new Set([String(convId), ...getConversationAliases(conv)]);
+
+    const previousMessages = new Map();
+    aliases.forEach((alias) => {
+      previousMessages.set(alias, queryClient.getQueryData(['messages', alias]));
+      queryClient.setQueryData(['messages', alias], { pages: [], pageParams: [] });
+    });
+    const previousRow = (queryClient.getQueryData(['conversations']) || [])
+      .find(c => matchesConversationId(c, convId));
+
+    // `lastMessage` must be nulled, not just the flat `lastMsg`/`lastMessageText`
+    // aliases. useMessages derives the row preview by falling through
+    // `lastMsg → lastMessageText → lastMessage.text`, so blanking only the
+    // first two let the chain fall through to the structured object and put
+    // the cleared message straight back on the row.
+    queryClient.setQueryData(['conversations'], (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(c => matchesConversationId(c, convId)
+        ? {
+            ...c,
+            lastMessage: null,
+            lastMsg: '',
+            lastMessageText: '',
+            lastMessageType: null,
+            lastSenderId: null,
+            unread: 0,
+            unreadCount: 0,
+          }
+        : c);
+    });
+
+    idbDeleteConversationMessages([...aliases]).catch(() => {});
+
     try {
       await messagesApi.clearChat(convId);
     } catch (e) {
-      console.error(e);
+      previousMessages.forEach((data, alias) => {
+        if (data) queryClient.setQueryData(['messages', alias], data);
+      });
+      if (previousRow) {
+        queryClient.setQueryData(['conversations'], (old) => {
+          if (!Array.isArray(old)) return old;
+          return old.map(c => matchesConversationId(c, convId) ? previousRow : c);
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ['messages', String(convId)] });
+      showToast("Couldn't clear chat", 'error');
     }
   };
   const toggleBlockUser = async (targetUserId, currentlyBlocked) => {
