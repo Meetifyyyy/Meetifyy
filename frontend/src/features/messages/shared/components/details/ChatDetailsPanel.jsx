@@ -26,7 +26,7 @@ import { toast } from 'sonner';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import { commitDraftImage } from '@shared/utils/draftImageCache';
 import { sortGroupMembers } from '@shared/utils/memberSort';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
 import { groupApi } from '@shared/api/apiClient';
 
 /**
@@ -168,9 +168,16 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   // the panel whenever the canonical ['messages', <pubId>] cache changes
   // (optimistic send, socket delivery, media URL swap), keeping it in sync.
   const messagesKey = conversation?.publicId || conversation?.id || conversation?.internalId || null;
+  //
+  // `skipToken` rather than a bare `enabled: false`: a query with no queryFn
+  // at all is a configuration error to TanStack, and it logged the
+  // "No queryFn was passed" warning on every single render of this panel —
+  // hundreds of lines of console noise that buried real errors. skipToken is
+  // the supported way to say "this observer never fetches", so the cache
+  // subscription works exactly as before, silently.
   const { data: liveHistory } = useQuery({
     queryKey: ['messages', messagesKey],
-    enabled: false, // subscribe to cache updates only; never refetch here
+    queryFn: skipToken, // subscribe to cache updates only; never refetch here
   });
 
   const galleryMessages = useMemo(() => {

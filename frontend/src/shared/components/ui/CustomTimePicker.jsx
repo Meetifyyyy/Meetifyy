@@ -6,6 +6,39 @@ import styles from './CustomTimePicker.module.css';
 const HOURS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 const MINUTES = ['00', '15', '30', '45'];
 
+export const EMPTY_TIME = { hour12: null, minute: null, ampm: null };
+
+/**
+ * Parse 'HH:MM' into the three columns, or nulls when there is no value.
+ *
+ * The empty case used to fall back to 10:00 AM, which the columns then
+ * rendered with `selectedItem` — so a picker the user had never touched
+ * opened with an hour, a minute and a meridiem all highlighted as if they had
+ * chosen them. The field itself was empty (`--:-- --`), so the picker was
+ * contradicting the input right next to it. Nulls match nothing, so nothing is
+ * highlighted until the user actually picks.
+ */
+export function parseTime(val) {
+  if (!val) return EMPTY_TIME;
+  const [hStr, mStr] = String(val).split(':');
+  let h = parseInt(hStr, 10);
+  const m = mStr || '00';
+  if (isNaN(h)) return EMPTY_TIME;
+
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) h = 12;
+  const hour12 = String(h).padStart(2, '0');
+
+  const minNum = parseInt(m, 10);
+  let minute = '00';
+  if (minNum >= 7 && minNum < 22) minute = '15';
+  else if (minNum >= 22 && minNum < 37) minute = '30';
+  else if (minNum >= 37 && minNum < 52) minute = '45';
+
+  return { hour12, minute, ampm };
+}
+
 /**
  * Custom TimePicker component styled cleanly for Meetifyy's theme.
  * Expects value in 'HH:MM' (24-hour) or converts to 12-hour format cleanly.
@@ -24,29 +57,27 @@ export default function CustomTimePicker({
   const hoursColRef = useRef(null);
   const minsColRef = useRef(null);
 
-  // Helper to parse 'HH:MM' to { hour12: '10', minute: '00', ampm: 'AM' }
-  const parseTime = (val) => {
-    if (!val) return { hour12: '10', minute: '00', ampm: 'AM' };
-    const [hStr, mStr] = val.split(':');
-    let h = parseInt(hStr, 10);
-    const m = mStr || '00';
-    if (isNaN(h)) return { hour12: '10', minute: '00', ampm: 'AM' };
+  const parsed = parseTime(value);
 
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12;
-    if (h === 0) h = 12;
-    const hour12 = String(h).padStart(2, '0');
+  /**
+   * Parts chosen in this session but not yet a complete time.
+   *
+   * A time needs an hour and a meridiem before it means anything, and the
+   * three columns are picked one at a time. Holding the partial choice here
+   * lets each column highlight what the user actually tapped while the form
+   * value stays empty — so validation still blocks submit, and the caller
+   * never receives a time assembled out of defaults nobody selected.
+   */
+  const [draft, setDraft] = useState(EMPTY_TIME);
 
-    const minNum = parseInt(m, 10);
-    let minute = '00';
-    if (minNum >= 7 && minNum < 22) minute = '15';
-    else if (minNum >= 22 && minNum < 37) minute = '30';
-    else if (minNum >= 37 && minNum < 52) minute = '45';
+  // An externally-set value (editing an existing event, a reset) is the truth;
+  // the draft follows it rather than lingering from a previous open.
+  useEffect(() => {
+    setDraft(parseTime(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
 
-    return { hour12, minute, ampm };
-  };
-
-  const formatted = parseTime(value);
+  const formatted = value ? parsed : draft;
 
   // Convert 12-hr to 24-hr string 'HH:MM'
   const to24HourStr = (h12, min, ampm) => {
@@ -125,12 +156,25 @@ export default function CustomTimePicker({
     };
   }, [isOpen]);
 
-  const handleSelect = (h12, min, ampm) => {
-    const time24 = to24HourStr(h12, min, ampm);
-    onChange?.(time24);
+  /**
+   * Record one column's choice, and emit only once the time is real.
+   *
+   * "Real" means the user has chosen an hour AND a meridiem — 7 without
+   * AM/PM is two different times. The minute defaults to :00 at that point,
+   * which is the one part with an unambiguous default and the value three of
+   * the four options round to anyway.
+   */
+  const handleSelect = (next) => {
+    const merged = { ...formatted, ...next };
+    setDraft(merged);
+
+    if (merged.hour12 && merged.ampm) {
+      onChange?.(to24HourStr(merged.hour12, merged.minute || '00', merged.ampm));
+    }
   };
 
   const handleClear = () => {
+    setDraft(EMPTY_TIME);
     onChange?.('');
     setIsOpen(false);
   };
@@ -166,7 +210,7 @@ export default function CustomTimePicker({
                     key={h}
                     type="button"
                     className={`${styles.colItem} ${formatted.hour12 === h ? styles.selectedItem : ''}`}
-                    onClick={() => handleSelect(h, formatted.minute, formatted.ampm)}
+                    onClick={() => handleSelect({ hour12: h })}
                   >
                     {h}
                   </button>
@@ -182,7 +226,7 @@ export default function CustomTimePicker({
                     key={m}
                     type="button"
                     className={`${styles.colItem} ${formatted.minute === m ? styles.selectedItem : ''}`}
-                    onClick={() => handleSelect(formatted.hour12, m, formatted.ampm)}
+                    onClick={() => handleSelect({ minute: m })}
                   >
                     {m}
                   </button>
@@ -196,7 +240,7 @@ export default function CustomTimePicker({
                     key={ap}
                     type="button"
                     className={`${styles.colItem} ${formatted.ampm === ap ? styles.selectedItem : ''}`}
-                    onClick={() => handleSelect(formatted.hour12, formatted.minute, ap)}
+                    onClick={() => handleSelect({ ampm: ap })}
                   >
                     {ap}
                   </button>

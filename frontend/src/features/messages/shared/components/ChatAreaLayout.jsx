@@ -70,10 +70,11 @@ export default function ChatAreaLayout({
   const { openViewer } = useMediaViewer();
   const { sendDirectMessage } = useMessageActions();
 
-  // Back closes the find-in-chat bar and the details panel before it leaves
-  // the conversation. Both sit *over* the thread, so dismissing one is what a
-  // Back press means while it is open — navigating away from the chat and
-  // taking the panel with it is a page the user did not ask to leave.
+  // Back closes whichever panel is over the thread before it leaves the
+  // conversation. Both the find-in-chat bar and the details panel sit *over*
+  // the chat, so dismissing one is what a Back press means while it is open —
+  // navigating away and taking the panel along is a page the user did not ask
+  // to leave.
   //
   // Identical cleanup to the X button (both call these), so Back and the
   // button are indistinguishable: the query is cleared either way rather than
@@ -85,8 +86,29 @@ export default function ChatAreaLayout({
 
   const closeDetails = useCallback(() => setShowDetails?.(false), [setShowDetails]);
 
-  useOverlayBack(Boolean(showSearch), closeSearch);
-  useOverlayBack(Boolean(showDetails), closeDetails);
+  /**
+   * ONE registration for both panels, not one each.
+   *
+   * They are mutually exclusive and they hand off directly: the details
+   * panel's Search button closes itself and opens the search bar in the same
+   * update. Registered separately, that handoff ran two history operations in
+   * one tick — the details overlay's effect cleanup popped its entry
+   * (`navigate(-1)`) while the search overlay's effect pushed a new one — and
+   * the pop landed on the just-pushed entry instead. The search bar opened and
+   * was immediately torn down again: the flicker.
+   *
+   * Keeping `isOpen` true across the swap means the effect never re-runs, so
+   * no history is touched at all when one panel replaces the other. The close
+   * handler reads whichever panel is currently up, and the single entry
+   * pushed when the first panel opened is the one Back pops.
+   */
+  const panelOpen = Boolean(showSearch || showDetails);
+  const closeOpenPanel = useCallback(() => {
+    if (showSearch) closeSearch();
+    else if (showDetails) closeDetails();
+  }, [showSearch, showDetails, closeSearch, closeDetails]);
+
+  useOverlayBack(panelOpen, closeOpenPanel);
 
   const messages = conversation?.messages || [];
 
