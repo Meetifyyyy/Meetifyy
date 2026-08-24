@@ -17,7 +17,8 @@ export default function UserListModal({ type, profileUsername, onClose }) {
   const { currentUser } = useAuth();
   const observerTargetRef = useRef(null);
 
-  useOverlayBack(true, onClose, { pushHistoryState: false });
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(true, onClose);
 
   useEffect(() => {
     const handleKeyDown = (e) => {

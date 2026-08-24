@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useId } from 'react';
+import React, { useRef, useEffect, useId, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useInstantMatch } from '../context/InstantMatchContext';
 import {
@@ -8,6 +8,7 @@ import {
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useAnimatedHeight } from '../hooks/useAnimatedHeight';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import ActivityStep from './steps/ActivityStep';
 import TimeStep from './steps/TimeStep';
 import DetailsStep from './steps/DetailsStep';
@@ -49,6 +50,40 @@ export default function InstantMatchSheet() {
 
   useScrollLock(sheetOpen);
   useFocusTrap(sheetRef, sheetOpen, closeSheet);
+
+  /**
+   * Back walks out of the form one step at a time, then closes the sheet.
+   *
+   * Returning true means "I stepped, I am still open", which keeps the sheet
+   * registered for the next Back press — so the flow unwinds the way the
+   * sheet's own Back button unwinds it, instead of discarding four answered
+   * questions on one press.
+   *
+   * There is nothing to step back through once the sheet is showing a result
+   * (searching, matched, ended): those panels replace the form rather than
+   * extending it, so Back closes.
+   *
+   * This also fixes the corrupted background. With no history entry pushed,
+   * Back used to change the route while `sheetOpen` — which lives in the
+   * provider at the layout level and therefore survives navigation — stayed
+   * true. The sheet rode along to the new page with `useScrollLock` still
+   * applied, leaving a page that could not be scrolled behind a sheet that no
+   * longer belonged there. Intercepting the press means the sheet closes
+   * properly and its scroll lock is released by its own cleanup.
+   */
+  const handleSheetBack = useCallback(() => {
+    if (!sheetOpen) return false;
+    const showingResult =
+      status === 'searching' || step === STEP_SEARCHING ||
+      Boolean(chat) || Boolean(recentMatch);
+    if (showingResult || step <= STEP_ACTIVITY) return false;
+
+    if (step === STEP_LOCATION && !ACTIVITY_DETAILS_CONFIG[formData.activity]) setStep(STEP_TIME);
+    else setStep(Math.max(STEP_ACTIVITY, step - 1));
+    return true;
+  }, [sheetOpen, status, step, chat, recentMatch, formData.activity, setStep]);
+
+  useOverlayBack(sheetOpen, closeSheet, { onBack: handleSheetBack });
 
   // The steps differ a lot in height; animate between them so the sheet
   // grows and shrinks instead of snapping.

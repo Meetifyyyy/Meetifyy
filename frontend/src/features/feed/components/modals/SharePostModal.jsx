@@ -6,6 +6,7 @@ import styles from '@features/crew/components/modals/ShareActivityModal.module.c
 import { useConversations } from '@shared/hooks/useMessages';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { getMediaUrl } from '@shared/api/apiClient';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 /**
  * Coerce a poll option (or question) of unknown shape into display text.
@@ -32,6 +33,9 @@ function getOptText(o) {
 }
 
 export default function SharePostModal({ isOpen, onClose, post, author }) {
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(Boolean(isOpen), onClose);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());

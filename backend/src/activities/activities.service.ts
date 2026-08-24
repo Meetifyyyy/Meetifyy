@@ -669,10 +669,24 @@ export class ActivitiesService implements OnModuleInit {
   ) {
     if (ids.length === 0) return [];
 
+    // The ranking these ids come from is cached, so it can predate a block.
+    // Re-reading the block set here — rather than trusting that the candidate
+    // pool was filtered when it was built — is what stops a "For You" page
+    // from serving an activity whose host has blocked this viewer since the
+    // ranking was computed. Every other hydration rule is already re-applied
+    // for exactly this reason; the block filter was the one that was not.
+    const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
+
     const rows = await this.prisma.crewActivity.findMany({
       where: {
         AND: [
-          { id: { in: ids }, deletedAt: null, status: 'OPEN', startDate: { gt: new Date() } },
+          {
+            id: { in: ids },
+            deletedAt: null,
+            status: 'OPEN',
+            startDate: { gt: new Date() },
+            ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
+          },
           this.activityAuthorizationService.discoveryWhere(viewer),
         ],
       },
@@ -1518,9 +1532,16 @@ export class ActivitiesService implements OnModuleInit {
    * members (it previously included PENDING and DECLINED rows in the avatars).
    */
   async getMyActivities(userId: string) {
+    // A host who blocks someone should not keep appearing in their list. The
+    // viewer's own activities are exempt by construction (you cannot block
+    // yourself), and an activity they merely joined drops out — the same
+    // outcome the detail route gives a non-attendee.
+    const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
+
     const activities = await this.prisma.crewActivity.findMany({
       where: {
         deletedAt: null,
+        ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
         OR: [
           { creatorId: userId },
           { members: { some: { userId, status: 'MEMBER' } } },
@@ -1544,7 +1565,13 @@ export class ActivitiesService implements OnModuleInit {
           }
         }
       },
-      orderBy: { createdAt: 'desc' }
+      // Ordered by when the activity HAPPENS, not when its row was written.
+      // `createdAt` put two activities drafted in the same sitting next to each
+      // other regardless of whether one was tomorrow and the other next month,
+      // which is what left the Past list in no discernible order. Most recent
+      // first is the right end for past events; the client still splits
+      // past/ongoing/upcoming and orders each bucket for its own direction.
+      orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }]
     });
 
     return activities.map(a => ({

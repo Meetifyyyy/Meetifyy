@@ -13,6 +13,7 @@ import { showToast } from '@shared/utils/toast';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { sortGroupMembers } from '@shared/utils/memberSort';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 
 /**
@@ -292,6 +293,9 @@ export default function CommunityMembersModal({
   const users = useUsersMap();
   const { currentUser } = useAuth();
   const [members, setMembers] = useState(initialMembers || []);
+
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(true, onClose);
 
   useEffect(() => {
     if (initialMembers) setMembers(initialMembers);

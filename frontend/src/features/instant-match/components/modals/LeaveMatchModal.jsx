@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import '../../styles/instant-match.css';
 import '../../styles/instant-match-chat.css';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 /**
  * Confirmation before walking away from a match.
@@ -14,6 +15,9 @@ import '../../styles/instant-match-chat.css';
  * about what they are about to lose.
  */
 export default function LeaveMatchModal({ partnerName, busy, onCancel, onConfirm }) {
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(true, onCancel);
+
   const ref = useRef(null);
   useFocusTrap(ref, true, busy ? undefined : onCancel);
 

@@ -2,11 +2,15 @@ import { useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import styles from './NewMessageModal.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { getMediaUrl } from '@shared/api/apiClient';
 
 export default function NewMessageModal({ onClose, onStartChat, onCreateGroup }) {
+  // Rendered only while open, so `true` is the open state.
+  useOverlayBack(true, onClose);
+
   const { currentUser } = useAuth();
   const users = useUsersMap();
   const [searchQuery, setSearchQuery] = useState('');

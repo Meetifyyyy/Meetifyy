@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useProfile } from '@shared/hooks/useProfile';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
@@ -72,12 +73,19 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const [isCommunitiesMenuOpen, setIsCommunitiesMenuOpen] = useState(false);
 
   // Freeze the page while the drawer is open. Without this, scrolling over
   // the drawer scrolled the feed behind it — and closing the drawer left the
   // user somewhere else entirely on the page they started from.
   useScrollLock(drawerOpen);
+
+  // Back closes the drawer instead of leaving the page it was opened over.
+  // The drawer is portalled to <body> and holds a scroll lock, so a Back press
+  // that changed the route used to strand a locked, half-open drawer on the
+  // next page — the same failure the Instant Match sheet had.
+  useOverlayBack(drawerOpen, closeDrawer);
 
   // Escape closes it, like every other overlay in the app.
   useEffect(() => {
@@ -236,7 +244,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
             className={styles.drawerWordmark} 
             onClick={() => { navigate('/home'); setDrawerOpen(false); }} 
           />
-          <button className={styles.closeDrawerBtn} onClick={() => setDrawerOpen(false)}>✕</button>
+          <button className={styles.closeDrawerBtn} onClick={closeDrawer}>✕</button>
         </div>
         
         <div className={styles.drawerContent}>

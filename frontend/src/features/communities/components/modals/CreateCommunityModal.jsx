@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { showToast } from '@shared/utils/toast';
@@ -73,10 +73,30 @@ const categories = [
 
 export default function CreateCommunityModal({ onClose, onCreated, isCampusCommunity = false }) {
   const { addCommunity } = useCommunityActions();
-  useOverlayBack(true, onClose);
 
   // Wizard Steps state
   const [step, setStep] = useState(1);
+
+  /**
+   * Back steps through the wizard, and only closes it from step one.
+   *
+   * Before this, Back left the Campus page entirely and dropped the user
+   * wherever they had been before it — the modal did close, but only as a side
+   * effect of the route changing underneath it, which is not what "close the
+   * modal" means. The cause was `useOverlayBack` defaulting to not pushing a
+   * history entry; with the entry pushed, the press is intercepted here and
+   * the route is never touched.
+   *
+   * Same transition as the modal's own Back button, so the two are
+   * interchangeable.
+   */
+  const handleWizardBack = useCallback(() => {
+    if (step <= 1) return false;
+    setStep((s) => s - 1);
+    return true;
+  }, [step]);
+
+  useOverlayBack(true, onClose, { onBack: handleWizardBack });
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [selectedCat, setSelectedCat] = useState(null);

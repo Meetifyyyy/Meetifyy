@@ -316,13 +316,43 @@
 
 /* ─── Children grid-collapse ────────────────────────────────────────────── */
 /* CSS Grid row-height trick: animates height without JS via grid-template-rows */
+/* The grid 1fr -> 0fr trick animates height without needing a measured pixel
+   value, so an arbitrarily deep subtree collapses smoothly. Opacity rides
+   along on a slightly shorter curve so the replies fade as they go rather
+   than being sheared off by the closing edge. */
 .repliesGrid {
   display: grid;
   grid-template-rows: 1fr;
-  transition: grid-template-rows 250ms ease-in-out;
+  opacity: 1;
+  /* `visibility` is deliberately in the transition list with a 0s duration so
+     expanding reveals the subtree immediately — otherwise it would inherit the
+     collapsed rule's 250ms delay and animate open from nothing. */
+  visibility: visible;
+  transition:
+    grid-template-rows 250ms ease-in-out,
+    opacity 200ms ease-in-out,
+    visibility 0s linear 0s;
 }
 
-.repliesGridCollapsed { grid-template-rows: 0fr; }
+/* A collapsed subtree must not stay keyboard-reachable at zero height, but
+   `visibility` cannot be tweened — applied plainly it snaps the replies away
+   on the first frame and the height/opacity animation plays over an already
+   empty box. Delaying it by the full duration lets the collapse finish
+   visibly, then takes the subtree out of the tab order. */
+.repliesGridCollapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 250ms ease-in-out,
+    opacity 200ms ease-in-out,
+    visibility 0s linear 250ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .repliesGrid,
+  .repliesGridCollapsed { transition: none; }
+}
 
 .repliesContainer {
   overflow: hidden;          /* required for grid collapse */

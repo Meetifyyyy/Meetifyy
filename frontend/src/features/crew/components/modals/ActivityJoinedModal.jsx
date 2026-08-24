@@ -1,8 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './ActivityJoinedModal.module.css';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 export default function ActivityJoinedModal({ activity, isOpen, onClose }) {
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(Boolean(isOpen), onClose);
+
   const overlayRef = useRef(null);
 
   useEffect(() => {

@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation, useParams, Navigate, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
 import { apiClient } from '@shared/api/apiClient';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { validateDOB } from '@shared/utils/dateValidation';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
@@ -280,6 +281,19 @@ export default function SettingsRoute() {
   // Help & Support drawer
   const [showHelpDrawer, setShowHelpDrawer] = useState(false);
   const [openFaq, setOpenFaq] = useState(null);
+
+  // The Help & Support drawer sits over the settings list, so Back closes the
+  // drawer rather than leaving Settings entirely. Collapsing the open FAQ on
+  // the way out matches the close button, so reopening always starts clean.
+  const closeHelpDrawer = useCallback(() => {
+    setShowHelpDrawer(false);
+    setOpenFaq(null);
+  }, []);
+  useOverlayBack(showHelpDrawer, closeHelpDrawer);
+
+  // Delete-account confirmation is a destructive dialog over the panel; Back
+  // must cancel it, never navigate past it.
+  useOverlayBack(showDeleteConfirm, () => setShowDeleteConfirm(false));
 
   useEffect(() => {
     let active = true;
@@ -1146,12 +1160,12 @@ export default function SettingsRoute() {
 
       {/* Help & Support Drawer */}
       {showHelpDrawer && (
-        <div className={styles.helpOverlay} onClick={() => setShowHelpDrawer(false)}>
+        <div className={styles.helpOverlay} onClick={closeHelpDrawer}>
           <div className={styles.helpCard} onClick={e => e.stopPropagation()}>
             <div className={styles.helpHeader}>
               <h2 className={styles.helpTitle}>Help &amp; Support</h2>
               <button
-                onClick={() => setShowHelpDrawer(false)}
+                onClick={closeHelpDrawer}
                 className={styles.helpCloseBtn}
                 aria-label="Close"
               >

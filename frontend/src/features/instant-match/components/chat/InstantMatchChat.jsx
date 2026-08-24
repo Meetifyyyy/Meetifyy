@@ -18,6 +18,7 @@ import {
 import { Bolt } from '../decor/Decor';
 import '../../styles/instant-match.css';
 import '../../styles/instant-match-chat.css';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 /**
  * The dedicated full-screen Instant Match conversation.
@@ -53,6 +54,12 @@ export default function InstantMatchChat() {
 
   const open = chatOverlayOpen && Boolean(chat);
   useScrollLock(open);
+  // Back leaves the Instant Match chat the same way its own back arrow and
+  // Escape do. It is a full-screen overlay mounted at the app shell rather
+  // than a route, so without this a Back press navigated the page hidden
+  // underneath it and left the chat (and its scroll lock) on top of a page
+  // the user never chose.
+  useOverlayBack(open, closeChatOverlay);
 
   if (!open) return null;
   return (

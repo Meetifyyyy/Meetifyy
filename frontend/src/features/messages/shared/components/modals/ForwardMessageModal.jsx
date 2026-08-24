@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import Avatar from '@shared/components/avatar/Avatar';
 import { Search, Check, X } from 'lucide-react';
 import styles from './ForwardMessageModal.module.css';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 export default function ForwardMessageModal({
   isOpen = true,
@@ -9,6 +10,9 @@ export default function ForwardMessageModal({
   conversations = [],
   onConfirmForward
 }) {
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(Boolean(isOpen), onClose);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);

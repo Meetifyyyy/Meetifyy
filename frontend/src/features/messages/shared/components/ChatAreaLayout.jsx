@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useCallback } from 'react';
 import { Search, X } from 'lucide-react';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
@@ -10,6 +10,7 @@ import MessageContextMenu from './MessageContextMenu';
 import ChatDetailsPanel from './details/ChatDetailsPanel';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import NotFoundState from '@shared/components/ui/NotFoundState';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import styles from './ChatAreaLayout.module.css';
 
 const ForwardMessageModal = lazy(() => import('./modals/ForwardMessageModal'));
@@ -69,6 +70,24 @@ export default function ChatAreaLayout({
   const { openViewer } = useMediaViewer();
   const { sendDirectMessage } = useMessageActions();
 
+  // Back closes the find-in-chat bar and the details panel before it leaves
+  // the conversation. Both sit *over* the thread, so dismissing one is what a
+  // Back press means while it is open — navigating away from the chat and
+  // taking the panel with it is a page the user did not ask to leave.
+  //
+  // Identical cleanup to the X button (both call these), so Back and the
+  // button are indistinguishable: the query is cleared either way rather than
+  // being left behind to re-highlight the thread on the next open.
+  const closeSearch = useCallback(() => {
+    setShowSearch?.(false);
+    setSearchQuery?.('');
+  }, [setShowSearch, setSearchQuery]);
+
+  const closeDetails = useCallback(() => setShowDetails?.(false), [setShowDetails]);
+
+  useOverlayBack(Boolean(showSearch), closeSearch);
+  useOverlayBack(Boolean(showDetails), closeDetails);
+
   const messages = conversation?.messages || [];
 
   // Resolve the first typing user's info for the avatar
@@ -107,8 +126,8 @@ export default function ChatAreaLayout({
           conversation={conversation}
           currentUser={currentUser}
           users={users}
-          onBack={() => setShowDetails(false)}
-          onClose={() => setShowDetails(false)}
+          onBack={closeDetails}
+          onClose={closeDetails}
           onSearch={() => {
             setShowDetails(false);
             setShowSearch(true);
@@ -124,42 +143,27 @@ export default function ChatAreaLayout({
       {header}
 
       {showSearch && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          padding: '8px 16px',
-          background: 'var(--color-bg-subtle, #18181b)',
-          borderBottom: '1px solid var(--color-border, #27272a)',
-          zIndex: 5,
-        }}>
-          <Search size={16} style={{ opacity: 0.6, flexShrink: 0 }} />
+        <div className={styles.searchBar}>
+          <Search size={16} className={styles.searchIcon} />
           <input
             type="text"
+            className={styles.searchInput}
             placeholder="Find in chat..."
             value={searchQuery || ''}
             onChange={(e) => setSearchQuery?.(e.target.value)}
-            style={{
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              color: 'var(--color-text-main, #ffffff)',
-              fontSize: '0.85rem'
-            }}
+            aria-label="Find in chat"
             autoFocus
           />
           {searchQuery && (
-            <button
-              onClick={() => setSearchQuery?.('')}
-              style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted, #94a3b8)', cursor: 'pointer', fontSize: '0.8rem', padding: '2px 6px' }}
-            >
+            <button type="button" className={styles.searchAction} onClick={() => setSearchQuery?.('')}>
               Clear
             </button>
           )}
           <button
-            onClick={() => { setShowSearch?.(false); setSearchQuery?.(''); }}
-            style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted, #94a3b8)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px' }}
+            type="button"
+            className={styles.searchAction}
+            onClick={closeSearch}
+            aria-label="Close search"
           >
             <X size={18} />
           </button>

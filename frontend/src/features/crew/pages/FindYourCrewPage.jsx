@@ -215,6 +215,25 @@ export default function FindYourCrewPage() {
       else upcoming.push(a);
     });
 
+    // Order each bucket by when the activity HAPPENS.
+    //
+    // These lists arrive in the order the server returned them, which is
+    // row-creation order — so an activity drafted last week for tomorrow sat
+    // above one drafted today for last night, and Past in particular read as
+    // unordered. Sorting here rather than relying on the fetch keeps the three
+    // buckets consistent even though they are assembled from several sources.
+    //
+    // Direction differs by bucket because "nearest to now" means opposite ends
+    // of the axis: upcoming counts forward from today, past counts backward.
+    const eventTime = (a) => {
+      const raw = a?.endDate || a?.startDate || a?.date || a?.createdAt;
+      const t = raw ? new Date(raw).getTime() : NaN;
+      return Number.isNaN(t) ? 0 : t;
+    };
+    past.sort((a, b) => eventTime(b) - eventTime(a));      // most recent first
+    ongoing.sort((a, b) => eventTime(a) - eventTime(b));   // ending soonest first
+    upcoming.sort((a, b) => eventTime(a) - eventTime(b));  // starting soonest first
+
     return { ongoingActivities: ongoing, upcomingActivities: upcoming, pastActivities: past };
   }, [selectedTab, allCombinedActivities, currentUser, debouncedSearchQuery]);
 

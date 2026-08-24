@@ -11,8 +11,12 @@ import { useConversations } from '@shared/hooks/useMessages';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { toast } from 'sonner';
 import { generateConversationUrl } from '@shared/utils/conversationUrl';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 export default function InviteModal({ isOpen, onClose, group }) {
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(Boolean(isOpen), onClose);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());

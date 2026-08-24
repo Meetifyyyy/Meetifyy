@@ -9,8 +9,12 @@ import MediaCropper from '@shared/components/media/MediaCropper';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import defaultCommunityCover from '@assets/images/default_community_cover.webp';
 import styles from './CommunityAdminModal.module.css';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 export default function CommunityAdminModal({ community, onClose, onDeleteCommunity }) {
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(true, onClose);
+
   const { updateCommunity, kickMember } = useCommunityActions();
   const [activeTab, setActiveTab] = useState('details');
   const avatarInputRef = useRef(null);

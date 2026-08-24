@@ -5,6 +5,7 @@ import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
 import styles from '@features/crew/components/modals/ShareActivityModal.module.css';
 import { useConversations } from '@shared/hooks/useMessages';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 /**
  * Member count for a community, whichever shape it arrived in: the list endpoint
@@ -19,6 +20,9 @@ function toMemberCount(community) {
 }
 
 export default function ShareCommunityModal({ isOpen, onClose, community }) {
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(Boolean(isOpen), onClose);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());

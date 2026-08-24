@@ -129,8 +129,32 @@
   justify-content: center;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
   flex-shrink: 0;
-  position: sticky;
-  top: calc(50vh - 180px);
+}
+
+/* Pin the poster while the details scroll past it — large screens only.
+ *
+ * It was already `position: sticky`, but with `top: calc(50vh - 180px)`, which
+ * pins it to the middle of the viewport rather than the top. On a typical
+ * laptop that is a ~270px offset for a ~370px-tall poster, so it sat low
+ * enough that on most events the details column ran out before the poster ever
+ * reached its stick point — it simply scrolled away with the page.
+ *
+ * `--sticky-top` is the small gap the scroll container's own top padding
+ * already establishes, so the poster lands where the text column starts
+ * instead of floating below it. Sticky is naturally bounded by
+ * `.detailLayout`, so it releases at the end of its container without any
+ * scroll listener.
+ *
+ * `align-items: flex-start` on `.detailLayout` is what makes this work: a
+ * flex item stretched to full height has no room to move within its
+ * container, and sticky on it does nothing at all.
+ */
+@media (min-width: 681px) {
+  .posterHero {
+    position: sticky;
+    top: 0.5rem;
+    align-self: flex-start;
+  }
 }
 
 .posterHero img {
@@ -170,6 +194,7 @@
     gap: 1.25rem;
   }
 
+  /* Mobile keeps the poster in the flow above the details, unchanged. */
   .posterHero {
     position: static;
     top: auto;

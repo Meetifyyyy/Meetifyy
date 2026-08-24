@@ -139,3 +139,67 @@ describe('OverlayManager history integrity', () => {
   });
 
 });
+
+describe('OverlayManager multi-step flows', () => {
+  let navigator;
+
+  beforeEach(() => {
+    overlayManager.stack = [];
+    overlayManager.pendingSelfPops = 0;
+    navigator = vi.fn();
+    overlayManager.navigator = navigator;
+  });
+
+  it('keeps a stepping overlay registered and re-arms it for the next Back', () => {
+    // A wizard reports "I stepped back, I am still open" by returning true.
+    // If the manager dropped it from the stack anyway, the SECOND Back press
+    // would find no overlay and navigate the page — losing the flow from
+    // step 2 instead of stepping to step 1.
+    let step = 3;
+    const handler = vi.fn(() => {
+      if (step <= 1) return false;
+      step -= 1;
+      return true;
+    });
+
+    overlayManager.open('wizard', handler);
+    navigator.mockClear();
+
+    overlayManager.handlePopstate();
+    expect(step).toBe(2);
+    expect(overlayManager.stack.length).toBe(1);
+    // Re-armed: a fresh entry was pushed for the next press.
+    expect(navigator).toHaveBeenCalledTimes(1);
+
+    overlayManager.handlePopstate();
+    expect(step).toBe(1);
+    expect(overlayManager.stack.length).toBe(1);
+
+    // Step one has nowhere to go, so this press closes for real.
+    overlayManager.handlePopstate();
+    expect(overlayManager.hasOpenOverlays()).toBe(false);
+  });
+
+  it('tells Back apart from a programmatic close', () => {
+    // The X button on a wizard means "close the whole thing". Stepping it
+    // back one page instead would make the close button refuse to close.
+    const handler = vi.fn(() => true);
+    overlayManager.open('wizard', handler);
+
+    overlayManager.handlePopstate();
+    expect(handler).toHaveBeenCalledWith(true);
+
+    handler.mockClear();
+    overlayManager.close('wizard');
+    expect(handler).toHaveBeenCalledWith(false);
+    expect(overlayManager.hasOpenOverlays()).toBe(false);
+  });
+
+  it('treats a throwing handler as closed rather than trapping every future Back', () => {
+    const handler = vi.fn(() => { throw new Error('boom'); });
+    overlayManager.open('broken', handler);
+
+    overlayManager.handlePopstate();
+    expect(overlayManager.hasOpenOverlays()).toBe(false);
+  });
+});

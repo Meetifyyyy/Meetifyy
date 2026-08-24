@@ -30,7 +30,8 @@ export default function ImageSearchModal({ onClose, onSelect, theme }) {
   const selectionTokenRef = useRef(0);
   const isCurrent = (token) => token === selectionTokenRef.current;
 
-  useOverlayBack(true, onClose, { pushHistoryState: false });
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(true, onClose);
   useScrollLock(true);
 
   useEffect(() => {

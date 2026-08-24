@@ -4,8 +4,12 @@ import { useQuery } from '@tanstack/react-query';
 import { messagesApi } from '@shared/api/apiClient';
 import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
 import styles from './ShareActivityModal.module.css';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 export default function ShareActivityModal({ isOpen, onClose, activity }) {
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(Boolean(isOpen), onClose);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());

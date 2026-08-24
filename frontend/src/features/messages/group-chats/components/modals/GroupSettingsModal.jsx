@@ -8,6 +8,7 @@ import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import { sortGroupMembers } from '@shared/utils/memberSort';
 import { showToast } from '@shared/utils/toast';
 import styles from './GroupSettingsModal.module.css';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 /**
  * The roster to show for a conversation.
@@ -28,6 +29,9 @@ export function pickGroupRoster(conversation) {
 }
 
 export default function GroupSettingsModal({ conversation, onClose, onLeaveGroup }) {
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(true, onClose);
+
   const { currentUser } = useAuth();
   const users = useUsersMap();
   const { updateGroupInfo, removeGroupMember } = useGroupActions();

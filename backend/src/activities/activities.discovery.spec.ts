@@ -15,6 +15,8 @@ import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
  * "All" payload behind it.
  */
 describe('Crew discovery', () => {
+  /** Users the viewer is blocked with, per test. */
+  let blockedIds: string[] = [];
   const GLA = 'college-gla';
   const ME = 'me';
   const day = 24 * 60 * 60 * 1000;
@@ -44,6 +46,7 @@ describe('Crew discovery', () => {
     pool = [];
     follows = [];
     friendMemberships = [];
+    blockedIds = [];
 
     prisma = {
       crewActivity: {
@@ -82,7 +85,7 @@ describe('Crew discovery', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: {} },
         { provide: NotificationFactory, useValue: {} },
-        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn(async () => []) } },
+        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn(async () => blockedIds) } },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
         { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn() } },
@@ -172,6 +175,20 @@ describe('Crew discovery', () => {
       expect(hydrationWhere).not.toContain('"PRIVATE"');
       expect(hydrationWhere).toContain('startDate');
       expect(hydrationWhere).toContain('"OPEN"');
+    });
+
+    it('re-applies the block filter when hydrating, not just when ranking', async () => {
+      // The ranking is cached, so its ids can predate a block. Every other
+      // rule is re-checked on hydration for exactly that reason; the block
+      // filter was not, which let a "For You" page keep serving an activity
+      // whose host had blocked this viewer since the ranking was built.
+      blockedIds = ['blocked-host'];
+      pool = [act('a')];
+      await service.getForYouFeed(ME, 20);
+
+      const hydrationWhere = JSON.stringify(prisma.crewActivity.findMany.mock.calls[1][0].where);
+      expect(hydrationWhere).toContain('blocked-host');
+      expect(hydrationWhere).toContain('notIn');
     });
 
     it('caps the candidate pool', async () => {

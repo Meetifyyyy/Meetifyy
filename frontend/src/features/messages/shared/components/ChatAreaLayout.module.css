@@ -189,3 +189,70 @@
   0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
   30%            { transform: translateY(-4px); opacity: 1; }
 }
+
+/* ── Find-in-chat search bar ────────────────────────────────────────────────
+ *
+ * Every colour here was previously an inline style whose fallback was a
+ * hardcoded dark value — and the background token it named,
+ * `--color-bg-subtle`, does not exist in either theme. So the bar always
+ * painted its `#18181b` fallback while the text used the real
+ * `--color-text-main`, which is near-black in light mode: near-black on
+ * near-black, i.e. an invisible search field for every light-mode user.
+ *
+ * These tokens are the ones the rest of the app uses and are defined for both
+ * themes, so the bar follows light/dark like everything around it. No
+ * fallbacks: a missing token should be a visible bug, not a silent commitment
+ * to one theme.
+ */
+.searchBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--color-bg-soft);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-main);
+  z-index: 5;
+}
+
+.searchIcon {
+  flex-shrink: 0;
+  color: var(--color-text-light);
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-text-main);
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+/* The placeholder was never styled at all, so it inherited the browser default
+   — grey enough to vanish against the dark bar, dark enough to read as real
+   input against the light one. */
+.searchInput::placeholder {
+  color: var(--color-text-light);
+  opacity: 1;
+}
+
+.searchAction {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 2px 6px;
+  font-family: inherit;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+}
+
+.searchAction:hover {
+  color: var(--color-text-main);
+  background: var(--color-border-light);
+}

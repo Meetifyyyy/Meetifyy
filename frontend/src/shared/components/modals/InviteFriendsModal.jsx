@@ -19,7 +19,8 @@ export default function InviteFriendsModal({
   const [selectedIds, setSelectedIds] = useState(initialSelectedIds);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useOverlayBack(true, onClose, { pushHistoryState: false });
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(true, onClose);
 
   useEffect(() => {
     const handleKeyDown = (e) => {

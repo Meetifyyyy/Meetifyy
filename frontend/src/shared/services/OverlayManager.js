@@ -68,19 +68,39 @@ class OverlayManager {
         dying.forEach((entry) => this.safeClose(entry));
       } else {
         this.stack.pop();
-        this.safeClose(top);
+
+        // A multi-step overlay can consume the Back instead of closing: its
+        // handler steps to the previous step and reports that it is still on
+        // screen. The entry then goes back on the stack and a fresh history
+        // entry is pushed, so the next Back is intercepted the same way and
+        // the user walks out of the flow one step at a time rather than
+        // losing the whole thing (or the page) on the first press.
+        const stillOpen = this.safeClose(top, true);
+        if (stillOpen) {
+          this.stack.push(top);
+          if (top.options?.pushHistoryState && this.navigator) {
+            this.navigator(top.url, { state: { __overlayId: top.id }, preventScrollReset: true });
+          }
+        }
       }
     } finally {
       this.isHandlingPopstate = false;
     }
   };
 
-  safeClose(entry) {
+  /**
+   * Run an entry's handler. Returns true when the handler reports the overlay
+   * is still open (a multi-step flow that stepped back rather than closing).
+   * A throwing handler is treated as closed — leaving a broken overlay
+   * registered would swallow every future Back press.
+   */
+  safeClose(entry, viaBack = false) {
     try {
-      if (typeof entry.onClose === 'function') entry.onClose();
+      if (typeof entry.onClose === 'function') return entry.onClose(viaBack) === true;
     } catch (e) {
       console.error('Error closing overlay:', e);
     }
+    return false;
   }
 
   /**

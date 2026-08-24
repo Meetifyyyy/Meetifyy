@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { REPORT_REASONS } from '@shared/api/reports/report-constants';
 import { useReportMutation } from '@shared/api/reports/useReportMutation';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import styles from './ReportModal.module.css';
 import { getMediaUrl } from '@shared/api/apiClient';
 
@@ -64,6 +65,9 @@ export default function ReportModal({
       description: '',
     },
   });
+
+  // Back dismisses the report, not the page it was opened from.
+  useOverlayBack(Boolean(isOpen), onClose);
 
   const selectedReason = watch('reason');
 

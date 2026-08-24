@@ -3,8 +3,12 @@ import { createPortal } from 'react-dom';
 import Cropper from 'react-easy-crop';
 import { getCroppedImg } from './cropImageUtils';
 import { X, Check, Loader2 } from 'lucide-react';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', onCropComplete, onCancel, onError }) {
+  // Back dismisses this dialog rather than navigating the page behind it.
+  useOverlayBack(true, onCancel);
+
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);

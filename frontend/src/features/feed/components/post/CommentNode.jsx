@@ -315,11 +315,27 @@ export default function CommentNode({
   const [hasReported, setHasReported] = useState(false);
 
   const hasChildren = comment.replies?.length > 0;
-  // Level 0 comments are expanded by default (unless explicitly closed)
-  // Sub-comments (level > 0) are collapsed by default (unless explicitly opened)
-  const isExpanded  = level === 0 
-    ? expandedMap[comment.id] !== false 
-    : expandedMap[comment.id] === true;
+
+  // Every node is expanded by default, at every depth. Nested replies used to
+  // require `expandedMap[id] === true` to show, so a thread opened with its
+  // sub-threads hidden behind a "View N replies" tap at every level — the
+  // deeper an exchange went, the more taps it took to read it, and a reply to
+  // a reply was invisible until someone thought to go looking.
+  //
+  // Collapsing is now a deliberate act, so only an explicit `false` hides
+  // anything.
+  const isExpanded = expandedMap[comment.id] !== false;
+
+  // Only a thread's root carries a collapse control. Collapsing the root
+  // collapses its whole subtree in one move (the replies grid contains every
+  // descendant), so per-node controls further down would offer the same
+  // outcome several times over and clutter every nested reply to do it.
+  const canCollapse = level === 0 && hasChildren;
+
+  const totalDescendants = (function countAll(node) {
+    if (!node.replies) return 0;
+    return node.replies.reduce((acc, reply) => acc + 1 + countAll(reply), 0);
+  })(comment);
 
   const author = comment.author || { displayName: 'Unknown', username: 'unknown', avatar: '?' };
   const authorCollege = (author.collegeId && communitiesById) ? communitiesById[author.collegeId] : null;
@@ -482,23 +498,19 @@ export default function CommentNode({
               <div className={styles.deletedLabel}>Deleted</div>
               <div className={styles.deletedSubtext}>This comment has been deleted.</div>
 
-              {!isExpanded && hasChildren && (() => {
-                const countAllReplies = (node) => {
-                  if (!node.replies) return 0;
-                  return node.replies.reduce((acc, reply) => acc + 1 + countAllReplies(reply), 0);
-                };
-                const totalReplies = countAllReplies(comment);
-                return (
-                  <button
-                    className={styles.viewRepliesBtn}
-                    data-no-collapse
-                    onClick={(e) => { e.stopPropagation(); toggleExpanded(comment.id, isExpanded); }}
-                    style={{ marginTop: '6px' }}
-                  >
-                    View {totalReplies} {totalReplies === 1 ? 'reply' : 'replies'}
-                  </button>
-                );
-              })()}
+              {canCollapse && (
+                <button
+                  className={styles.viewRepliesBtn}
+                  data-no-collapse
+                  aria-expanded={isExpanded}
+                  onClick={(e) => { e.stopPropagation(); toggleExpanded(comment.id, isExpanded); }}
+                  style={{ marginTop: '6px' }}
+                >
+                  {isExpanded
+                    ? 'Hide replies'
+                    : `Show ${totalDescendants} ${totalDescendants === 1 ? 'reply' : 'replies'}`}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -689,22 +701,18 @@ export default function CommentNode({
                 </button>
               </div>
 
-              {!isExpanded && hasChildren && (() => {
-                const countAllReplies = (node) => {
-                  if (!node.replies) return 0;
-                  return node.replies.reduce((acc, reply) => acc + 1 + countAllReplies(reply), 0);
-                };
-                const totalReplies = countAllReplies(comment);
-                return (
-                  <button
-                    className={styles.viewRepliesBtn}
-                    data-no-collapse
-                    onClick={(e) => { e.stopPropagation(); toggleExpanded(comment.id, isExpanded); }}
-                  >
-                    View {totalReplies} {totalReplies === 1 ? 'reply' : 'replies'}
-                  </button>
-                );
-              })()}
+              {canCollapse && (
+                <button
+                  className={styles.viewRepliesBtn}
+                  data-no-collapse
+                  aria-expanded={isExpanded}
+                  onClick={(e) => { e.stopPropagation(); toggleExpanded(comment.id, isExpanded); }}
+                >
+                  {isExpanded
+                    ? 'Hide replies'
+                    : `Show ${totalDescendants} ${totalDescendants === 1 ? 'reply' : 'replies'}`}
+                </button>
+              )}
 
               {isReplying && (
                 <div className={styles.inlineComposerContainer} data-no-collapse>
