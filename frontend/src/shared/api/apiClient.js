@@ -190,9 +190,18 @@ export const getMediaUrl = (pathOrUrl) => {
   if (finalUrl.startsWith('http://') || finalUrl.startsWith('https://') || finalUrl.startsWith('data:') || finalUrl.startsWith('blob:')) {
     return finalUrl;
   }
+  // Anything reaching here is treated as a media key and turned into
+  // /api/media/<key>. Guard against values that cannot be one: a stray initial
+  // or label produced requests like GET /api/media/H, which the backend
+  // answered with 400 on every render. A real key always carries a path
+  // separator or a file extension.
+  const candidate = finalUrl.replace(/^\/+/, '');
+  const looksLikeMediaKey = candidate.includes('/') || /\.[a-z0-9]{2,5}$/i.test(candidate);
+  if (!looksLikeMediaKey) return '';
+
   const cleanPath = finalUrl.startsWith('/api/media/')
     ? finalUrl
-    : `/api/media/${finalUrl.replace(/^\/+/, '')}`;
+    : `/api/media/${candidate}`;
   const backendUrl = getBackendUrl();
   return `${backendUrl.replace(/\/+$/, '')}${cleanPath}`;
 };

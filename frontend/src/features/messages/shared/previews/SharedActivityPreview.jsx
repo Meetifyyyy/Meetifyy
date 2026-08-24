@@ -4,6 +4,7 @@ import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './SharedActivityPreview.module.css';
 import { useCachedActivity } from '@shared/hooks/useCrew';
 import { getMediaUrl } from '@shared/api/apiClient';
+import { getDefaultActivityCover } from '@shared/utils/activityCover';
 
 export function SharedActivityPreview({ activity: passedActivity }) {
   const navigate = useNavigate();
@@ -27,8 +28,11 @@ export function SharedActivityPreview({ activity: passedActivity }) {
     }
   };
 
+  // getMediaUrl returns '' for anything that cannot be a media key, so the
+  // fallback also covers a malformed cover value, not just a missing one.
   const rawCover = activity.image || activity.coverImage;
-  const coverSrc = rawCover ? getMediaUrl(rawCover) : '/default_activity.webp';
+  const fallbackCover = getDefaultActivityCover(activity.id || activity.title || '');
+  const coverSrc = (rawCover && getMediaUrl(rawCover)) || fallbackCover;
 
   return (
     <div className={styles.activityShareCardNew} onClick={handleClick}>
@@ -38,7 +42,7 @@ export function SharedActivityPreview({ activity: passedActivity }) {
           loading="lazy" 
           className={styles.activityShareCover} 
           alt="Activity cover" 
-          onError={(e) => { e.target.onerror = null; e.target.src = '/default_activity.webp'; }}
+          onError={(e) => { e.target.onerror = null; e.target.src = fallbackCover; }}
         />
       </div>
       <div className={styles.activityShareContentNew}>

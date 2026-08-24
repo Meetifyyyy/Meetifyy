@@ -10,8 +10,20 @@ export class CreateActivityDto {
   @MaxLength(200)
   description?: string;
 
+  /**
+   * A stored cover: an absolute http(s) URL, or an app-relative path such as
+   * `/api/media/covers/<id>.webp`.
+   *
+   * `blob:` and `data:` are rejected. A blob URL is a pointer into one browser
+   * tab's memory — it dies with that tab and means nothing to anyone else — so
+   * persisting one leaves a cover that can never load for any viewer, forever.
+   * Two rows in production were saved that way before this validation existed.
+   */
   @IsString()
   @IsOptional()
+  @Matches(/^(https?:\/\/|\/)/, {
+    message: 'coverImage must be an http(s) URL or an app-relative path',
+  })
   coverImage?: string;
 
   /** Media row id produced by the media pipeline for an uploaded cover. */
