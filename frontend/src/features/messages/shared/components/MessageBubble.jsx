@@ -533,7 +533,10 @@ const MessageBubble = memo(function MessageBubble({
   conversations,
   requestToJoinGroup,
   onRetryUpload,
-  onCancelUpload
+  onCancelUpload,
+  // Find-in-chat term. ChatMessageList has always passed this down; the prop
+  // simply was never declared here, so the value arrived and was discarded.
+  searchQuery = '',
 }) {
   const navigate = useNavigate();
   const storeUsers = useUsersMap();
