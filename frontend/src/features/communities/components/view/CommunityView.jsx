@@ -690,6 +690,11 @@ function useSimulatedFetch(data, delay = 0, deps = []) {
 
 export default function CommunityView({ communityId, onBack, onPostClick }) {
   const queryClient = useQueryClient();
+  // Declared with the other top-level hooks so every effect below can use
+  // it. It used to sit two hundred lines down, which put it in the temporal
+  // dead zone for anything above — and a dependency array is evaluated during
+  // render, so referencing it earlier throws rather than merely being stale.
+  const { socket, isConnected } = useGlobalSocketStore();
   const navigate = useNavigate();
   // `posts` was always the literal [] the old hook returned, so it is inlined
   // here rather than sourced from a hook.
@@ -716,6 +721,39 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
     enabled: Boolean(communityId && currentUser?.id),
     staleTime: 0,
   });
+
+  /**
+   * Promoted while the community is already open.
+   *
+   * The notice query only runs on mount, so without this a member sitting on
+   * the community when the owner promotes them would see nothing until they
+   * navigated away and back — and they are the likeliest person to be looking
+   * at it, since the owner has probably just told them.
+   *
+   * Refetching rather than constructing the notice from the event keeps the
+   * server as the only thing that decides whether a notice is pending. The
+   * "once per promotion" rule lives in those two timestamps; a second copy of
+   * it here could show a modal the server considers acknowledged.
+   *
+   * `noticeDismissed` is reset because this is a NEW promotion — a member
+   * demoted and re-promoted in one sitting is being handed the role again, and
+   * a stale dismissal from the first time must not swallow the second notice.
+   */
+  useEffect(() => {
+    if (!socket || !communityId) return undefined;
+    const onPromoted = (payload) => {
+      if (payload?.communityId && payload.communityId !== communityId) return;
+      setNoticeDismissed(false);
+      queryClient.invalidateQueries({ queryKey: ['moderatorNotice', communityId] });
+      // Their role changed, so the moderator controls the page offers change
+      // with it — otherwise the modal lists powers the UI still hides.
+      queryClient.invalidateQueries({ queryKey: ['community', communityId] });
+      queryClient.invalidateQueries({ queryKey: ['communities'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    };
+    socket.on('community:moderator_promoted', onPromoted);
+    return () => socket.off('community:moderator_promoted', onPromoted);
+  }, [socket, communityId, queryClient]);
 
   const acknowledgeModeratorNotice = useCallback(async () => {
     // Hide first: this is an acknowledgement, not a request that can fail in a
@@ -769,7 +807,6 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
     };
   }, [showMobileAbout, isMobileAboutClosing]);
 
-  const { socket, isConnected } = useGlobalSocketStore();
 
   /**
    * Live "active now" count.

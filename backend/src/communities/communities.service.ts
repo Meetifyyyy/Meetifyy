@@ -1041,7 +1041,25 @@ export class CommunitiesService implements OnModuleInit {
     // Told at the point of promotion, so it reaches them whether or not they
     // reopen the community. The in-community modal is the richer version of
     // the same news, not a replacement for it.
-    if (isPromotion) this.notifyModeratorPromotion(communityId, memberId, requestingUserId);
+    if (isPromotion) {
+      this.notifyModeratorPromotion(communityId, memberId, requestingUserId);
+
+      // Pushed straight to the promoted member as well as written to their
+      // notifications. If they have the community open right now, waiting for
+      // them to close and reopen it before telling them they are a moderator
+      // is a strange way to hand someone a job — and they are the likeliest
+      // person to be looking at it, since the owner probably just told them.
+      //
+      // Targeted at them specifically rather than broadcast to the community
+      // room: the welcome modal is theirs alone, and the room carries every
+      // member. `community.roleUpdated` above still goes to the room for the
+      // member-list refresh everyone needs.
+      this.domainEventService.emit(
+        'community:moderator_promoted',
+        { communityId },
+        [memberId],
+      );
+    }
 
     return updated;
   }

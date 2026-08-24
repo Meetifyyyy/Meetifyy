@@ -106,6 +106,37 @@ describe('CommunitiesService — moderator promotion notice', () => {
       expect(created[0].metadata).toMatchObject({ kind: 'moderator_promotion', communityId: COMMUNITY });
     });
 
+    it('pushes a targeted realtime event so an open community reacts at once', async () => {
+      // Without this the promoted member sees nothing until they navigate away
+      // and back — and they are the likeliest person to be looking at the
+      // community, since the owner has probably just told them.
+      setup({ role: 'MEMBER', userId: MEMBER });
+      await service.updateMemberRole(COMMUNITY, MEMBER, 'MODERATOR', OWNER);
+
+      const emit = (service as any).domainEventService.emit;
+      const promoted = emit.mock.calls.find(
+        ([type]: any[]) => type === 'community:moderator_promoted',
+      );
+      expect(promoted).toBeDefined();
+      expect(promoted[1]).toEqual({ communityId: COMMUNITY });
+      // Targeted at the promoted member, not broadcast: the welcome modal is
+      // theirs alone. The room still gets community.roleUpdated for the
+      // member-list refresh everyone needs.
+      expect(promoted[2]).toEqual([MEMBER]);
+      expect(emit.mock.calls.some(([type]: any[]) => type === 'community.roleUpdated')).toBe(true);
+    });
+
+    it('pushes no promotion event on demotion or a no-op re-promotion', async () => {
+      setup({ role: 'MODERATOR', userId: MEMBER });
+      await service.updateMemberRole(COMMUNITY, MEMBER, 'MODERATOR', OWNER);
+      await service.updateMemberRole(COMMUNITY, MEMBER, 'MEMBER', OWNER);
+
+      const emit = (service as any).domainEventService.emit;
+      expect(
+        emit.mock.calls.filter(([type]: any[]) => type === 'community:moderator_promoted'),
+      ).toHaveLength(0);
+    });
+
     it('does not re-arm or re-notify someone who is already a moderator', async () => {
       // An owner tapping twice, or a retried request, must not pester them.
       setup({ role: 'MODERATOR', userId: MEMBER });
