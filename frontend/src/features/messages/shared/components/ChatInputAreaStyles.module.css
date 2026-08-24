@@ -131,7 +131,12 @@
   color: var(--color-primary);
 }
 
-@media (max-width: 768px) {
+/* Space-driven, so it follows the pane rather than the window — a composer
+   squeezed into a narrow thread pane needs the room just as much as one on a
+   phone. Navigation-driven rules (the back button) stay on viewport queries:
+   on desktop the conversation list is always beside the thread, so there is
+   nothing to go back to however narrow the pane gets. */
+@container chatpane (max-width: 768px) {
   .attachBtnHidden {
     max-width: 0 !important;
     width: 0 !important;
@@ -1225,7 +1230,7 @@
 
 
 
-@media (max-width: 768px) {
+@container chatpane (max-width: 768px) {
   .msgEmojiBtn {
     display: none;
   }

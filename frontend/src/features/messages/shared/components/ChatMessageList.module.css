@@ -53,13 +53,13 @@
   backface-visibility: hidden;
 }
 
-@media (min-width: 768px) {
+@container chatpane (min-width: 768px) {
   .msgBubbleWrapper {
     max-width: min(85%, 680px);
   }
 }
 
-@media (min-width: 1024px) {
+@container chatpane (min-width: 1024px) {
   .msgBubbleWrapper {
     max-width: min(80%, 680px);
   }
@@ -137,14 +137,28 @@
   box-shadow: none !important;
 }
 
+/*
+ * `break-word`, NOT `anywhere` — the difference is what collapsed the bubbles.
+ *
+ * `overflow-wrap: anywhere` (and the legacy `word-break: break-word`, which
+ * behaves the same way) permits a break between any two characters when the
+ * browser computes MIN-CONTENT width. `.msgBubble` is `width: fit-content`,
+ * which resolves toward min-content under pressure — so in a squeezed chat
+ * pane the bubble's minimum became one character wide and every message
+ * rendered as a vertical column of letters.
+ *
+ * `overflow-wrap: break-word` still breaks a long unbroken token (a URL, a
+ * pasted hash) at paint time so nothing overflows the bubble, but it does not
+ * contribute to intrinsic min-content. The bubble's floor is now the longest
+ * word in the message, which is the behaviour a chat bubble should have.
+ */
 .msgText {
   font-size: 0.88rem;
   font-weight: 400;
   line-height: 1.45;
   white-space: pre-wrap;
-  word-wrap: break-word;
-  word-break: break-word;
-  overflow-wrap: anywhere;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .msgTextTimeWrap {
@@ -193,7 +207,7 @@
 
 .msgMediaImgStandalone {
   display: block;
-  max-width: min(285px, 68vw);
+  max-width: min(285px, 68cqw);
   max-height: 285px;
   width: auto;
   height: auto;
@@ -404,8 +418,8 @@
 }
 
 .msgMediaWrapperInline {
-  width: min(65vw, 260px, calc(260px * var(--aspect, 1)));
-  max-width: min(65vw, 260px);
+  width: min(65cqw, 260px, calc(260px * var(--aspect, 1)));
+  max-width: min(65cqw, 260px);
   max-height: 260px;
   min-width: 130px;
   min-height: 130px;
@@ -413,42 +427,43 @@
 }
 
 .msgMediaWrapperStandalone {
-  width: min(65vw, 285px, calc(285px * var(--aspect, 1)));
-  max-width: min(65vw, 285px);
+  width: min(65cqw, 285px, calc(285px * var(--aspect, 1)));
+  max-width: min(65cqw, 285px);
   max-height: 285px;
   min-width: 130px;
   min-height: 130px;
   border-radius: 16px;
 }
 
-@media (max-width: 767px) {
+/* Narrow PANE, not narrow window — see .chatArea's container note. */
+@container chatpane (max-width: 767px) {
   .msgMediaWrapperInline {
-    width: min(65vw, 240px, calc(265px * var(--aspect, 1)));
-    max-width: min(65vw, 240px);
+    width: min(65cqw, 240px, calc(265px * var(--aspect, 1)));
+    max-width: min(65cqw, 240px);
     max-height: 265px;
     min-width: 120px;
     min-height: 120px;
   }
   .msgMediaWrapperStandalone {
-    width: min(65vw, 265px, calc(265px * var(--aspect, 1)));
-    max-width: min(65vw, 265px);
+    width: min(65cqw, 265px, calc(265px * var(--aspect, 1)));
+    max-width: min(65cqw, 265px);
     max-height: 265px;
     min-width: 120px;
     min-height: 120px;
   }
 }
 
-@media (max-width: 479px) {
+@container chatpane (max-width: 479px) {
   .msgMediaWrapperInline {
-    width: min(65vw, 210px, calc(240px * var(--aspect, 1)));
-    max-width: min(65vw, 210px);
+    width: min(65cqw, 210px, calc(240px * var(--aspect, 1)));
+    max-width: min(65cqw, 210px);
     max-height: 240px;
     min-width: 100px;
     min-height: 100px;
   }
   .msgMediaWrapperStandalone {
-    width: min(65vw, 230px, calc(240px * var(--aspect, 1)));
-    max-width: min(65vw, 230px);
+    width: min(65cqw, 230px, calc(240px * var(--aspect, 1)));
+    max-width: min(65cqw, 230px);
     max-height: 240px;
     min-width: 100px;
     min-height: 100px;
@@ -658,7 +673,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
-  word-break: break-word;
+  /* Same reasoning as .msgText — see the note there. The min-width above
+     already keeps this quote from collapsing, but it shares a fit-content
+     bubble, so it uses the same wrapping rule rather than a different one. */
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .msgBubbleMe .msgBubbleReplyRef {

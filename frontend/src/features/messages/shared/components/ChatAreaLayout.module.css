@@ -1,5 +1,22 @@
 /* Shared layout for all ChatArea variants (DM, Group, Activity) */
 
+/*
+ * The thread pane is a query container.
+ *
+ * Everything inside it — bubble widths, media sizing — used to size against
+ * the VIEWPORT (`65vw`, `68vw`, `@media (max-width: 767px)`). On a phone that
+ * is the same thing as the pane, so it looked right. On a desktop where the
+ * conversation list takes 350px and a docked devtools panel takes more, the
+ * pane can be a few hundred pixels wide while the viewport is still 1200+ —
+ * so the pane stayed in its "wide screen" styling and sized its contents
+ * against a width it did not have. Cramped, squeezed rendering was the result.
+ *
+ * Naming a container here lets the contents ask "how wide am *I*" instead of
+ * "how wide is the window". A narrow pane now renders the way it does on a
+ * small screen, and the conversation list beside it is unaffected — which is
+ * the behaviour we actually want, rather than forcing a minimum width on the
+ * pane and pushing the problem onto the list.
+ */
 .chatArea {
   display: none;
   flex-direction: column;
@@ -8,6 +25,8 @@
   min-width: 0;
   background: var(--color-bg-white, #ffffff);
   position: relative;
+  container-type: inline-size;
+  container-name: chatpane;
 }
 
 .chatAreaVisible {
