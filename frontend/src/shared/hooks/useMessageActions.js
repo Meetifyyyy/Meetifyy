@@ -262,10 +262,15 @@ export function useMessageActions() {
       // keeping the optimistic value is what made a failed block look like a
       // successful one.
       applyBlockState(wasBlocked);
+      // Surface what the server actually said. A bare "Couldn't block this
+      // user" hides the reason from the user AND from anyone debugging it —
+      // the API already returns a specific message, so pass it through.
+      const reason = err?.message && !/^API error \d+$/.test(err.message) ? err.message : null;
       showToast(
-        wasBlocked ? "Couldn't unblock this user" : "Couldn't block this user",
+        reason || (wasBlocked ? "Couldn't unblock this user" : "Couldn't block this user"),
         'error',
       );
+      console.error('block/unblock failed', { targetUserId, wasBlocked, status: err?.status, message: err?.message });
       return;
     } finally {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
