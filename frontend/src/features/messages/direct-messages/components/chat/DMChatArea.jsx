@@ -22,7 +22,10 @@ export default function DMChatArea({
 }) {
   const state = useChatAreaState(conversation);
 
-  const isBlocked = conversation?.isBlocked || conversation?.blocked;
+  // Mutual: the composer is disabled whichever side placed the block.
+  const isBlocked = Boolean(
+    conversation?.isBlockedByMe || conversation?.isBlockedByThem || conversation?.blocked,
+  );
 
   return (
     <ChatAreaLayout
@@ -42,7 +45,13 @@ export default function DMChatArea({
       emptyIcon="💬"
       emptyLabel="Select a conversation"
       inputDisabled={isBlocked}
-      inputDisabledReason={isBlocked ? 'You cannot message this contact' : null}
+      inputDisabledReason={
+        conversation?.isBlockedByMe
+          ? 'You blocked this user. Unblock them to continue messaging.'
+          : isBlocked
+            ? 'You can no longer send messages to this user.'
+            : null
+      }
       header={
         <DMChatHeader
           conversation={conversation}

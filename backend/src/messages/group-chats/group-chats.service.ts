@@ -456,7 +456,10 @@ export class GroupChatsService extends MessagingCoreService {
     // Block enforcement: don't let a member pull someone they've blocked (or who
     // blocked them) into a shared group.
     if (await this.blocksService.isBlocked(requesterId, targetUserId)) {
-      throw new ForbiddenException('Cannot add a user you have blocked or who has blocked you');
+      // Neutral by design. The earlier wording named the block relationship
+      // outright and so disclosed it to the caller. The reason is withheld
+      // here, exactly as it is on every other blocked surface.
+      throw new ForbiddenException('This user is not available to add to the group.');
     }
 
     await this.prisma.conversationParticipant.upsert({

@@ -692,19 +692,19 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                 <div className={styles.actionIconContainer}>
                   <button
                     type="button"
-                    className={`${styles.actionIconButton} ${conversation.blocked ? styles.blockedBtn : ''}`}
+                    className={`${styles.actionIconButton} ${conversation.isBlockedByMe ? styles.blockedBtn : ''}`}
                     onClick={() => {
                       if (onBlockUser) {
                         onBlockUser();
                         onBack();
                       }
                     }}
-                    title={conversation.blocked ? "Unblock Contact" : "Block Contact"}
+                    title={conversation.isBlockedByMe ? "Unblock Contact" : "Block Contact"}
                   >
                     <Ban size={24} />
                   </button>
-                  <span className={`${styles.actionIconLabel} ${conversation.blocked ? styles.blockedLabel : ''}`}>
-                    {conversation.blocked ? 'Unblock' : 'Block'}
+                  <span className={`${styles.actionIconLabel} ${conversation.isBlockedByMe ? styles.blockedLabel : ''}`}>
+                    {conversation.isBlockedByMe ? 'Unblock' : 'Block'}
                   </span>
                 </div>
               </div>

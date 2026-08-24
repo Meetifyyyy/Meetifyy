@@ -438,4 +438,47 @@ describe('Activity access enforcement (service level)', () => {
       expect(prisma.crewActivity.findMany).not.toHaveBeenCalled();
     });
   });
+
+  describe('GET /api/activities/:id/attendees — block filtering', () => {
+    const memberWhere = () =>
+      prisma.crewActivityMember.findMany.mock.calls[0]?.[0]?.where ?? {};
+
+    beforeEach(() => {
+      activityRow = baseActivity('PUBLIC');
+      prisma.crewActivityMember.findUnique = jest.fn(async () => ({
+        userId: 'user-other',
+        status: 'MEMBER',
+      }));
+      prisma.crewActivityMember.findMany = jest.fn(async () => []);
+    });
+
+    it('excludes blocked attendees in the query, not after the fact', async () => {
+      blockedIds = ['blocked-guest'];
+
+      await service.getAttendees('act-1', 'user-other');
+
+      // Filtering after the query would return short pages and a cursor that
+      // skips, so the exclusion has to be in the where clause.
+      expect(JSON.stringify(memberWhere())).toContain('blocked-guest');
+      expect(JSON.stringify(memberWhere())).toContain('notIn');
+    });
+
+    it('does not filter the list for the host', async () => {
+      blockedIds = ['blocked-guest'];
+
+      // host-1 is the creator of baseActivity: they must keep a complete guest
+      // list even when two of their guests have blocked each other.
+      await service.getAttendees('act-1', 'host-1');
+
+      expect(JSON.stringify(memberWhere())).not.toContain('notIn');
+    });
+
+    it('adds no exclusion when the viewer has blocked nobody', async () => {
+      blockedIds = [];
+
+      await service.getAttendees('act-1', 'user-other');
+
+      expect(JSON.stringify(memberWhere())).not.toContain('notIn');
+    });
+  });
 });

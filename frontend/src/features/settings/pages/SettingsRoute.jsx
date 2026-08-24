@@ -13,12 +13,13 @@ import { validateAcademicSelection } from '@shared/academics/academicCatalog';
 import {
   Pencil, Lock, Eye, EyeOff, AlertCircle, Trash2,
   User, GraduationCap, Shield, Bell, HelpCircle, LogOut,
-  ChevronRight, ChevronDown, Check, X, Mail,
+  ChevronRight, ChevronDown, Check, X, Mail, Ban,
 } from 'lucide-react';
 import CustomDatePicker from '@shared/components/ui/CustomDatePicker';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import styles from './SettingsRoute.module.css';
 import useDevToolsStore from '@shared/stores/devToolsStore';
+import BlockedContacts from '../panels/BlockedContacts';
 
 // Large-device split layout only kicks in at this width — tablets and phones
 // keep the existing single-pane list/detail swap untouched.
@@ -28,7 +29,7 @@ const LARGE_SCREEN_QUERY = '(min-width: 1024px)';
 // live in component state seeded from location.state, which meant it could not
 // be linked to, did not survive a reload, and gave mobile Back nothing to pop —
 // so Back from a sub-page left Settings altogether.
-const SETTINGS_PANELS = ['profile', 'academic', 'security', 'privacy', 'notifications', 'interests'];
+const SETTINGS_PANELS = ['profile', 'academic', 'security', 'privacy', 'notifications', 'interests', 'blocked-contacts'];
 
 // Old links and in-app callers that still say `account` mean the profile panel.
 const PANEL_ALIASES = { account: 'profile' };
@@ -517,6 +518,7 @@ export default function SettingsRoute() {
     privacy: 'Privacy Settings',
     notifications: 'Notifications',
     interests: 'Interests & Topics',
+    'blocked-contacts': 'Blocked Contacts',
   };
 
   // Each panel's markup is built once here and placed by the layout below —
@@ -934,9 +936,24 @@ export default function SettingsRoute() {
           </label>
         </div>
       </div>
+      <div className={styles.sectionLabel}>Blocked</div>
+      <div className={styles.group}>
+        <button className={styles.row} onClick={() => openPanel('blocked-contacts')}>
+          <span className={styles.rowIcon}>
+            <Ban size={20} strokeWidth={2} />
+          </span>
+          <span className={styles.rowLabel}>Blocked Contacts</span>
+          <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
+        </button>
+      </div>
+
       <button className={styles.saveBtn} onClick={handleSave}>Save Privacy Preferences</button>
     </div>
   );
+
+  // Self-contained: it owns its own fetching and needs nothing from the
+  // settings form state around it.
+  const blockedContactsPanel = <BlockedContacts />;
 
   const notificationsPanel = (
     <div className={`${styles.body} animate-in`}>
@@ -1064,6 +1081,7 @@ export default function SettingsRoute() {
             {activePanel === 'privacy' && privacyPanel}
             {activePanel === 'notifications' && notificationsPanel}
             {activePanel === 'interests' && interestsPanel}
+            {activePanel === 'blocked-contacts' && blockedContactsPanel}
             {!activePanel && <SettingsWelcomePanel />}
           </div>
         </div>
@@ -1076,6 +1094,7 @@ export default function SettingsRoute() {
           {activePanel === 'privacy' && privacyPanel}
           {activePanel === 'notifications' && notificationsPanel}
           {activePanel === 'interests' && interestsPanel}
+          {activePanel === 'blocked-contacts' && blockedContactsPanel}
         </>
       )}
 

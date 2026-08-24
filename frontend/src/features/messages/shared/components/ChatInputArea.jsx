@@ -190,10 +190,15 @@ export default function ChatInputArea({
           );
         }
 
-        if (conversation.isBlockedByMe || conversation.blocked) {
+        // The two block states are rendered separately and must stay that way.
+        //
+        // Only the person who placed the block is offered Unblock — showing that
+        // button to the other side would both mislead them (they have nothing to
+        // unblock) and disclose the block.
+        if (conversation.isBlockedByMe) {
           return (
             <div className={styles.msgBlockedInputOverlay}>
-              <span>This contact is blocked.</span>
+              <span>You blocked this user. Unblock them to continue messaging.</span>
               <button 
                 type="button" 
                 className={styles.unblockBannerBtn}
@@ -201,6 +206,18 @@ export default function ChatInputArea({
               >
                 Unblock
               </button>
+            </div>
+          );
+        }
+
+        // Shown to the blocked user, and to anyone whose thread is closed for a
+        // reason we do not name. Deliberately identical to the message used for
+        // restricted and limited accounts, so it reveals nothing about why —
+        // and carries no Unblock affordance.
+        if (conversation.isBlockedByThem || conversation.blocked) {
+          return (
+            <div className={styles.msgBlockedInputOverlay}>
+              <span>You can no longer send messages to this user.</span>
             </div>
           );
         }

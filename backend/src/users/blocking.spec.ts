@@ -154,4 +154,64 @@ describe('UsersService — blocking', () => {
       });
     });
   });
+
+  describe('follower and following lists', () => {
+    /**
+     * These lists are built with $queryRaw, so the only way to prove the
+     * exclusion reaches the database is to inspect the SQL fragment handed to
+     * Prisma. Asserting on the returned rows would prove nothing — the mock
+     * decides those.
+     */
+    const sqlFragments = () => {
+      const call = mockPrisma.$queryRaw.mock.calls[0];
+      if (!call) return '';
+      // Tagged template: (strings, ...values). Nested Prisma.sql fragments
+      // arrive as values carrying their own `strings`.
+      return call
+        .slice(1)
+        .map((v: any) => (v && Array.isArray(v.strings) ? v.strings.join(' ') : ''))
+        .join(' ');
+    };
+
+    beforeEach(() => {
+      mockPrisma.user = { findUnique: jest.fn(async () => ({ id: 'target' })) };
+      mockPrisma.$queryRaw = jest.fn(async () => []);
+    });
+
+    it('excludes blocked users from a follower list at the database level', async () => {
+      blocksMock.useValue.getExcludedUserIds = jest.fn(async () => ['bob']);
+
+      await service.getFollowers('someone', 'alice');
+
+      expect(sqlFragments()).toContain('NOT IN');
+      expect(sqlFragments()).toContain('followerId');
+    });
+
+    it('excludes blocked users from a following list at the database level', async () => {
+      blocksMock.useValue.getExcludedUserIds = jest.fn(async () => ['bob']);
+
+      await service.getFollowing('someone', 'alice');
+
+      expect(sqlFragments()).toContain('NOT IN');
+      expect(sqlFragments()).toContain('followingId');
+    });
+
+    it('emits no NOT IN clause when the viewer has blocked nobody', async () => {
+      blocksMock.useValue.getExcludedUserIds = jest.fn(async () => []);
+
+      await service.getFollowers('someone', 'alice');
+
+      // An empty list must not produce `NOT IN ()`, which is invalid SQL.
+      expect(sqlFragments()).not.toContain('NOT IN');
+    });
+
+    it('skips the block lookup entirely for an anonymous viewer', async () => {
+      blocksMock.useValue.getExcludedUserIds = jest.fn(async () => ['bob']);
+
+      await service.getFollowers('someone', undefined);
+
+      expect(blocksMock.useValue.getExcludedUserIds).not.toHaveBeenCalled();
+      expect(sqlFragments()).not.toContain('NOT IN');
+    });
+  });
 });

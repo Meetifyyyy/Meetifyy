@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { BlocksService } from './blocks.service';
 
 /**
@@ -11,9 +12,18 @@ describe('BlocksService', () => {
     const prisma = {
       block: {
         findMany: jest.fn(async ({ where }: any) => {
-          const userId = where.OR[0].blockerId;
-          return blocks.filter((b) => b.blockerId === userId || b.blockedId === userId);
+          // getBlockedByUserIds asks for one direction; the mutual read uses OR.
+          if (where.OR) {
+            const userId = where.OR[0].blockerId;
+            return blocks.filter((b) => b.blockerId === userId || b.blockedId === userId);
+          }
+          return blocks.filter((b) => b.blockerId === where.blockerId);
         }),
+        deleteMany: jest.fn(async ({ where }: any) => ({
+          count: blocks.filter(
+            (b) => b.blockerId === where.blockerId && b.blockedId === where.blockedId,
+          ).length,
+        })),
       },
     };
     return new BlocksService(prisma as any);
@@ -89,6 +99,59 @@ describe('BlocksService', () => {
       const service = makeService([{ blockerId: 'a10', blockedId: 'b10' }]);
       const input = { deletedAt: null };
       expect(await service.injectBlockFilter(undefined, input, 'authorId')).toEqual(input);
+    });
+  });
+
+  describe('directional helpers', () => {
+    it('hasBlocked is true only for the side that placed the block', async () => {
+      const service = makeService([{ blockerId: 'a20', blockedId: 'b20' }]);
+      expect(await service.hasBlocked('a20', 'b20')).toBe(true);
+      // b20 never blocked anyone — offering them an Unblock button would be
+      // both wrong and a disclosure.
+      expect(await service.hasBlocked('b20', 'a20')).toBe(false);
+    });
+
+    it('getBlockDirection separates blockedByMe from blockedByThem', async () => {
+      const service = makeService([{ blockerId: 'a21', blockedId: 'b21' }]);
+
+      expect(await service.getBlockDirection('a21', 'b21')).toEqual({
+        isBlocked: true,
+        blockedByMe: true,
+        blockedByThem: false,
+      });
+      expect(await service.getBlockDirection('b21', 'a21')).toEqual({
+        isBlocked: true,
+        blockedByMe: false,
+        blockedByThem: true,
+      });
+    });
+
+    it('reports no block in either direction for unrelated users', async () => {
+      const service = makeService([]);
+      expect(await service.getBlockDirection('a22', 'b22')).toEqual({
+        isBlocked: false,
+        blockedByMe: false,
+        blockedByThem: false,
+      });
+    });
+  });
+
+  describe('removeBlock', () => {
+    it('removes a block that exists', async () => {
+      const service = makeService([{ blockerId: 'a23', blockedId: 'b23' }]);
+      await expect(service.removeBlock('a23', 'b23')).resolves.toEqual({ count: 1 });
+    });
+
+    it('throws rather than reporting success for a block that was never made', async () => {
+      const service = makeService([]);
+      // deleteMany reports count 0 happily; returning success would make the
+      // endpoint an oracle for "did I block this person?".
+      await expect(service.removeBlock('a24', 'b24')).rejects.toThrow(NotFoundException);
+    });
+
+    it('will not let the blocked party lift a block placed on them', async () => {
+      const service = makeService([{ blockerId: 'a25', blockedId: 'b25' }]);
+      await expect(service.removeBlock('b25', 'a25')).rejects.toThrow(NotFoundException);
     });
   });
 });

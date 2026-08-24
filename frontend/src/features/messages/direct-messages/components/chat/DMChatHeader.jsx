@@ -22,7 +22,11 @@ export default function DMChatHeader({
   const isOnline = canSeePresence && Boolean(
     conversation.targetUser ? conversation.targetUser.isOnline : (conversation.isOnline ?? conversation.online ?? false)
   );
-  const isBlocked = conversation.isBlocked || conversation.blocked;
+  // `blocked` is mutual (the thread is closed either way). Only the person who
+  // placed the block may see the badge or the Unblock action — showing either
+  // to the other side would disclose the block and offer an action they cannot
+  // take.
+  const blockedByMe = Boolean(conversation.isBlockedByMe);
 
   const isGroupConv = conversation.type === 'GROUP' || conversation.isGroup;
   const avatarSrc = isGroupConv
@@ -40,7 +44,7 @@ export default function DMChatHeader({
         <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
           <div className={styles.msgChatName}>
             <span className={styles.msgChatNameText}>{conversation.name || 'Chat'}</span>
-            {isBlocked && <span className={styles.msgBlockedBadge}>Blocked</span>}
+            {blockedByMe && <span className={styles.msgBlockedBadge}>Blocked</span>}
           </div>
           {isOnline && (
             <div className={styles.msgChatStatus}>Online</div>
@@ -111,7 +115,7 @@ export default function DMChatHeader({
                   onClick={() => { onBlock(); setShowMoreMenu(false); }}
                 >
                   <ShieldOff size={14} />
-                  {isBlocked ? 'Unblock Contact' : 'Block Contact'}
+                  {blockedByMe ? 'Unblock Contact' : 'Block Contact'}
                 </button>
               )}
             </div>

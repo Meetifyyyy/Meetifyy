@@ -1,0 +1,262 @@
+/* Blocked Contacts — Settings > Privacy.
+   Uses the same tokens as SettingsRoute.module.css so the screen reads as part
+   of Settings rather than a bolted-on page. */
+
+.panel {
+  padding: 0.5rem 0 2rem;
+}
+
+.loading,
+.noMatches {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-family: var(--font-family-sans);
+  font-size: 0.9rem;
+}
+
+.error {
+  margin: 0 1rem 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  background: rgba(var(--color-danger-rgb), 0.1);
+  color: var(--color-danger);
+  font-size: 0.875rem;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+  padding: 3.5rem 1.5rem;
+  text-align: center;
+}
+
+.emptyIcon {
+  color: var(--color-text-light);
+}
+
+.emptyText {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-family-sans);
+  font-size: 0.95rem;
+}
+
+/* ── Search ──────────────────────────────────────────────────────────────── */
+
+.searchWrap {
+  position: relative;
+  margin: 0 1rem 0.75rem;
+}
+
+.searchIcon {
+  position: absolute;
+  top: 50%;
+  left: 0.75rem;
+  transform: translateY(-50%);
+  color: var(--color-text-light);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 0.6rem 0.75rem 0.6rem 2.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-soft);
+  color: var(--color-text-main);
+  font-family: var(--font-family-sans);
+  font-size: 0.9rem;
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* ── List ────────────────────────────────────────────────────────────────── */
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--color-border-light);
+
+  /* Exit transition for a confirmed unblock. Kept short: this is feedback that
+     the row is going, not an animation to admire. */
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.rowRemoving {
+  opacity: 0;
+  transform: translateX(-12px);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row {
+    transition: none;
+  }
+}
+
+.rowText {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.rowName {
+  color: var(--color-text-main);
+  font-family: var(--font-family-sans);
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowHandle {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowDate {
+  color: var(--color-text-light);
+  font-size: 0.78rem;
+}
+
+.unblockBtn {
+  flex-shrink: 0;
+  padding: 0.45rem 0.95rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-main);
+  font-family: var(--font-family-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.unblockBtn:hover:not(:disabled) {
+  background: var(--color-bg-alt);
+}
+
+.unblockBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.loadMoreBtn {
+  display: block;
+  margin: 1.25rem auto 0;
+  padding: 0.55rem 1.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-main);
+  font-family: var(--font-family-sans);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.loadMoreBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ── Confirmation dialog ─────────────────────────────────────────────────── */
+
+.dialogBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.dialog {
+  width: 100%;
+  max-width: 22rem;
+  padding: 1.4rem;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-white);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+}
+
+.dialogTitle {
+  margin: 0 0 0.55rem;
+  color: var(--color-text-main);
+  font-family: var(--font-family-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.dialogBody {
+  margin: 0 0 1.35rem;
+  color: var(--color-text-muted);
+  font-family: var(--font-family-sans);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.dialogCancel,
+.dialogConfirm {
+  padding: 0.5rem 1.1rem;
+  border-radius: var(--radius-full);
+  font-family: var(--font-family-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dialogCancel {
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-main);
+}
+
+.dialogConfirm {
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.dialogConfirm:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.dialogCancel:disabled,
+.dialogConfirm:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

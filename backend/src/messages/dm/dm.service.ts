@@ -209,7 +209,7 @@ export class DmService extends MessagingCoreService {
         const isBlockedByMe = blockedByMeSet.has(otherUser.id);
         const isBlockedByThem = blockedByThemSet.has(otherUser.id);
         blockStatus = {
-          isBlocked: isBlockedByMe,
+          isBlocked: isBlockedByMe || isBlockedByThem,
           isBlockedByMe,
           isBlockedByThem,
         };
@@ -236,9 +236,14 @@ export class DmService extends MessagingCoreService {
         updatedAt: conv.updatedAt,
         pinned: p.isPinned || false,
         muted: p.isMuted || false,
-        blocked: blockStatus.isBlockedByMe,
+        // `blocked` is the mutual answer: the thread is closed for writes if
+        // EITHER side blocked. The two directional flags below tell the client
+        // which of the two neutral messages to render — they must never be
+        // collapsed into one, and `isBlockedByThem` must never be hardcoded:
+        // doing so left the blocked user with a working-looking input.
+        blocked: blockStatus.isBlockedByMe || blockStatus.isBlockedByThem,
         isBlockedByMe: blockStatus.isBlockedByMe,
-        isBlockedByThem: false,
+        isBlockedByThem: blockStatus.isBlockedByThem,
         unreadCount,
         unread: unreadCount,
         lastMessage: lastMsgInfo ? {

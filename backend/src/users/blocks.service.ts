@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -294,7 +294,16 @@ export class BlocksService implements OnModuleInit {
    * also has other caches to clear in the same breath.
    */
   async removeBlock(blockerId: string, blockedId: string) {
-    return this.prisma.block.deleteMany({ where: { blockerId, blockedId } });
+    const { count } = await this.prisma.block.deleteMany({ where: { blockerId, blockedId } });
+
+    // deleteMany happily reports success for a pair that was never blocked,
+    // which let DELETE /api/blocks/:id return 200 for any id at all — an
+    // oracle for "did I block this person?" and a silent no-op for a client
+    // that got the id wrong. Absent block, absent row: 404.
+    if (count === 0) {
+      throw new NotFoundException('No block found for this user');
+    }
+    return { count };
   }
 
   private setCache(userId: string, ids: string[]) {
