@@ -9,6 +9,7 @@ import { RedisService } from '../redis/redis.service';
 import { MentionsService } from '../mentions/mentions.service';
 import { StorageService } from '../uploads/uploads.service';
 import { MentionDto } from '../common/dto/mention.dto';
+import { ContentDeletionAuthorizer } from './content-deletion.authorizer';
 
 @Injectable()
 export class PostsService {
@@ -23,6 +24,7 @@ export class PostsService {
     private readonly redisService: RedisService,
     private readonly mentionsService: MentionsService,
     private readonly storageService: StorageService,
+    private readonly contentDeletionAuthorizer: ContentDeletionAuthorizer,
   ) {}
 
   private formatPost(post: any, likedSet: Set<string>, bookmarkedSet: Set<string>, currentUserId?: string) {
@@ -212,7 +214,13 @@ export class PostsService {
   async deletePost(postId: string, userId: string) {
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
     if (!post) throw new NotFoundException('Post not found');
-    if (post.authorId !== userId) throw new ForbiddenException('Not your post');
+
+    // Server-side, on the one path every client shares. Hiding the delete
+    // button is a courtesy; this is the rule.
+    const authority = await this.contentDeletionAuthorizer.assertCanDelete(
+      { actorId: userId, authorId: post.authorId, communityId: post.communityId ?? null },
+      'post',
+    );
 
     await this.prisma.$transaction([
       this.prisma.post.update({ where: { id: postId }, data: { deletedAt: new Date() } }),
@@ -232,7 +240,69 @@ export class PostsService {
     // round-trip needed.
     this.domainEventService.emit('post.deleted', { postId, communityId: post.communityId || undefined }, [userId]);
 
+    // Removed by someone else: the author is told. Fired here, at the point of
+    // deletion, so no caller can skip it by using a different entry point.
+    if (authority !== 'author') {
+      this.notifyContentRemoved({
+        actorId: userId,
+        authorId: post.authorId,
+        authority,
+        contentType: 'post',
+        entityId: postId,
+        postId,
+        communityId: post.communityId ?? null,
+        preview: (post as any).text || '',
+      });
+    }
+
     return { success: true };
+  }
+
+  /**
+   * Tell an author their content was removed by a moderator or the owner.
+   *
+   * Fire-and-forget: the deletion has already committed, and a notification
+   * that fails to send must not turn a successful moderation action into an
+   * error the moderator sees as "it didn't work" and retries.
+   */
+  private notifyContentRemoved(opts: {
+    actorId: string;
+    authorId: string;
+    authority: 'owner' | 'moderator';
+    contentType: 'post' | 'comment';
+    entityId: string;
+    postId: string | null;
+    communityId: string | null;
+    preview: string;
+  }): void {
+    (async () => {
+      const [actor, community] = await Promise.all([
+        this.prisma.user.findUnique({
+          where: { id: opts.actorId },
+          select: { id: true, username: true, displayName: true, avatar: true },
+        }),
+        opts.communityId
+          ? this.prisma.community.findUnique({
+              where: { id: opts.communityId },
+              select: { name: true },
+            })
+          : Promise.resolve(null),
+      ]);
+
+      const dto = this.notificationFactory.createContentRemoved(actor, {
+        recipientId: opts.authorId,
+        contentType: opts.contentType,
+        removedBy: opts.authority,
+        entityId: opts.entityId,
+        postId: opts.postId,
+        communityId: opts.communityId,
+        communityName: community?.name ?? null,
+        contentPreview: opts.preview,
+      });
+      if (dto) await this.notificationsService.createNotification(dto);
+    })().catch((err) =>
+      this.logger.warn('Failed to send content-removed notification', err),
+    );
   }
 
   /**
@@ -640,6 +710,16 @@ export class PostsService {
 
     const formattedPosts = posts.map((post) => this.formatPost(post, likedSet, bookmarkedSet, userId));
 
+    // What this viewer may remove, answered by the same authorizer the delete
+    // endpoint enforces with. The client renders the control from this rather
+    // than re-deriving the rule — a second copy of an authorization rule, in
+    // the one place that cannot enforce it, is how the two drift apart.
+    const deletable = await this.contentDeletionAuthorizer.canDeleteEach(
+      userId,
+      formattedPosts.map((p: any) => ({ authorId: p.authorId, communityId: p.communityId ?? null })),
+    );
+    formattedPosts.forEach((p: any, i: number) => { p.canDelete = deletable[i]; });
+
     return {
       posts: formattedPosts,
       nextCursor,
@@ -750,12 +830,31 @@ export class PostsService {
   async deleteComment(commentId: string, userId: string) {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
-      include: { _count: { select: { replies: { where: { isDeleted: false } } } } },
+      include: {
+        _count: { select: { replies: { where: { isDeleted: false } } } },
+        // The comment's community is the community of the post it sits under —
+        // comments carry no communityId of their own, so moderation rights have
+        // to be resolved through the post.
+        post: { select: { communityId: true } },
+      },
     });
 
     if (!comment) throw new NotFoundException('Comment not found');
     if (comment.isDeleted) throw new NotFoundException('Comment already deleted');
-    if (comment.authorId !== userId) throw new ForbiddenException('Not your comment');
+
+    // Identical rule to posts, from the same authorizer — see its docblock.
+    const authority = await this.contentDeletionAuthorizer.assertCanDelete(
+      {
+        actorId: userId,
+        authorId: comment.authorId,
+        communityId: (comment as any).post?.communityId ?? null,
+      },
+      'comment',
+    );
+
+    // Captured before the update scrubs them.
+    const originalAuthorId = comment.authorId;
+    const originalText = comment.text || '';
 
     const hasActiveReplies = (comment as any)._count.replies > 0;
 
@@ -790,6 +889,19 @@ export class PostsService {
     await this.prisma.commentLike.deleteMany({ where: { commentId } }).catch(() => {});
 
     this.domainEventService.emit('comment.deleted', { commentId, postId: comment.postId, userId });
+
+    if (authority !== 'author') {
+      this.notifyContentRemoved({
+        actorId: userId,
+        authorId: originalAuthorId,
+        authority,
+        contentType: 'comment',
+        entityId: commentId,
+        postId: comment.postId,
+        communityId: (comment as any).post?.communityId ?? null,
+        preview: originalText,
+      });
+    }
 
     return { success: true, isDeleted: true, hasActiveReplies };
   }
@@ -1078,6 +1190,13 @@ export class PostsService {
    * caller is responsible for that.
    */
   private async fetchCommentPage(postId: string, userId: string, limit: number, cursorDate?: Date, cursorId?: string) {
+    // Comments inherit their moderation context from the post they sit under.
+    const parentPost = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: { communityId: true },
+    });
+    const postCommunityId = parentPost?.communityId ?? null;
+
     // Roots are ordered oldest-first with an id tiebreaker so equal-createdAt
     // roots can't straddle a page boundary (forward keyset: strictly "after"
     // the cursor).
@@ -1146,7 +1265,24 @@ export class PostsService {
       : [];
     const likedSet = new Set(commentLikes.map((l) => l.commentId));
 
-    return { comments: this.shapeComments(all, likedSet), nextCursor };
+    const shaped = this.shapeComments(all, likedSet);
+    const flat: any[] = [];
+    const walk = (nodes: any[]) => nodes.forEach((n) => { flat.push(n); if (n.replies?.length) walk(n.replies); });
+    walk(shaped);
+
+    const commentsDeletable = await this.contentDeletionAuthorizer.canDeleteEach(
+      userId,
+      // A comment has no community of its own — moderation rights come from
+      // the post it sits under.
+      flat.map((c: any) => ({ authorId: c.authorId, communityId: postCommunityId })),
+    );
+    flat.forEach((c: any, i: number) => {
+      // A scrubbed placeholder is already gone; offering to remove it again is
+      // meaningless and its authorId is no longer meaningful either.
+      c.canDelete = c.isDeleted ? false : commentsDeletable[i];
+    });
+
+    return { comments: shaped, nextCursor };
   }
 
   /**

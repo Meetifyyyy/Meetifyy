@@ -319,6 +319,12 @@ export default function CommentNode({
   // over-long body clipped behind a See more toggle. Separate from
   // `isExpanded`, which is about hiding the reply subtree — one is this
   // comment's own text, the other is its children.
+  // Same rule as posts, same source: the server's answer, from the authorizer
+  // the DELETE endpoint enforces with. Falls back to authorship on an older
+  // payload, which under-offers rather than showing a refused control.
+  const canDeleteComment =
+    comment?.canDelete ?? Boolean(currentUser && comment.authorId === currentUser.id);
+
   const [isTextExpanded, setIsTextExpanded] = useState(false);
   const normalizedText = normalizeBodyText(comment.text);
   const textClip = truncateBodyText(normalizedText, COMMENT_LIMITS);
@@ -649,7 +655,7 @@ export default function CommentNode({
                 </button>
                 {showMenu && (
                   <div className="dropdown open" style={{ right: 0, top: '100%', width: '120px' }}>
-              {currentUser && comment.authorId === currentUser.id && (
+              {canDeleteComment && (
                         <button
                           onClick={handleDelete}
                           disabled={isDeleting}

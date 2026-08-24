@@ -133,6 +133,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
   const [showMenu, setShowMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
@@ -174,6 +175,23 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
   const isSaved = toggleRegistry.getLatestIntent(`savePost:${id}`, rawIsSaved);
 
   const author = postData.author || { id: authorId, displayName: 'User', username: 'user', avatar: null };
+
+  const isOwnPost = Boolean(currentUser && authorId === currentUser.id);
+
+  /**
+   * Whether to offer removal — the server's answer, not our own.
+   *
+   * `canDelete` comes from the same authorizer the DELETE endpoint enforces
+   * with, so a community owner and a moderator see the control on content they
+   * are actually allowed to remove. Re-deriving the role rules here would put a
+   * second copy of an authorization rule in the one place that cannot enforce
+   * it, and the copies would drift.
+   *
+   * Falls back to authorship for a payload from an older server, which is the
+   * safe direction: it under-offers rather than showing a control the API would
+   * refuse anyway.
+   */
+  const canDeletePost = postData?.canDelete ?? isOwnPost;
   const authorCollege = (author.collegeId && communitiesById) ? communitiesById[author.collegeId] : null;
   const authorCollegeName = getCollegeName(author, '') || authorCollege?.name || '';
 
@@ -295,7 +313,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
           </button>
           {showMenu && (
             <div className="dropdown open" style={{ right: 0, top: '100%', width: '140px' }} onClick={(e) => e.stopPropagation()}>
-              {currentUser && authorId === currentUser.id && (
+              {canDeletePost && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -311,7 +329,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
                   Delete Post
                 </button>
               )}
-              {(!currentUser || authorId !== currentUser.id) && (
+              {!isOwnPost && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

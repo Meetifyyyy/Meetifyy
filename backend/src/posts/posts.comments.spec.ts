@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PostsService } from './posts.service';
+import { ContentDeletionAuthorizer } from './content-deletion.authorizer';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
@@ -44,6 +45,11 @@ describe('PostsService — comments', () => {
       providers: [
         PostsService,
         { provide: PrismaService, useValue: prisma },
+        // Deletion permissions have their own suite
+        // (posts.deletion-permissions.spec.ts). Here the author is always the
+        // one deleting, so the authorizer answers 'author' and these cases stay
+        // about what deletion does to the thread rather than who may do it.
+        { provide: ContentDeletionAuthorizer, useValue: { assertCanDelete: jest.fn(async () => 'author') } },
         { provide: NotificationsService, useValue: { createNotification: jest.fn(async () => ({})) } },
         { provide: NotificationFactory, useValue: { createComment: jest.fn(), createCommentReply: jest.fn() } },
         { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn(async () => []) } },

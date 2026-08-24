@@ -40,6 +40,70 @@ export class NotificationFactory {
     };
   }
 
+  /**
+   * "Your post/comment was removed by a moderator."
+   *
+   * Only ever built when someone OTHER than the author deleted the content —
+   * telling authors they deleted their own thing is noise, and the delete
+   * paths make that decision before calling here.
+   *
+   * The actor is named by role, not by name. A moderation action is the
+   * community acting, and putting a specific person on it invites the author
+   * to take it up with them directly. The metadata still carries the actor so
+   * the notification is attributable if it is ever disputed.
+   *
+   * `SYSTEM` rather than a new NotificationType: this is the app telling you
+   * something happened to your content, which is exactly what SYSTEM already
+   * means here, and it needs no enum migration to start working.
+   */
+  createContentRemoved(
+    actor: any,
+    opts: {
+      recipientId: string;
+      contentType: 'post' | 'comment';
+      removedBy: 'owner' | 'moderator';
+      entityId: string;
+      postId?: string | null;
+      communityId?: string | null;
+      communityName?: string | null;
+      contentPreview?: string | null;
+    },
+  ): CreateNotificationDto | null {
+    // No self-notifications, whatever the caller thinks it is doing.
+    if (!opts.recipientId || opts.recipientId === actor?.id) return null;
+
+    const roleLabel = opts.removedBy === 'owner' ? 'the community owner' : 'a moderator';
+    const noun = opts.contentType === 'post' ? 'post' : 'comment';
+    const where = opts.communityName ? ` in ${opts.communityName}` : '';
+
+    return {
+      recipientId: opts.recipientId,
+      actorId: actor?.id,
+      type: NotificationType.SYSTEM,
+      entityType:
+        opts.contentType === 'post'
+          ? NotificationEntityType.POST
+          : NotificationEntityType.COMMENT,
+      entityId: opts.entityId,
+      title: `Your ${noun} was removed`,
+      body: `Your ${noun}${where} was removed by ${roleLabel}.`,
+      metadata: {
+        version: 1,
+        kind: 'content_removed',
+        contentType: opts.contentType,
+        removedBy: opts.removedBy,
+        actorName: actor?.displayName || actor?.username || 'Moderator',
+        actorUsername: actor?.username || '',
+        actorAvatar: actor?.avatar || null,
+        postId: opts.postId || null,
+        commentId: opts.contentType === 'comment' ? opts.entityId : null,
+        communityId: opts.communityId || null,
+        communityName: opts.communityName || null,
+        contentPreview: opts.contentPreview ? String(opts.contentPreview).substring(0, 80) : '',
+      },
+    };
+  }
+
   createCommentLike(actor: any, comment: any, commentAuthorId: string): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
     const actorUsername = actor?.username || '';

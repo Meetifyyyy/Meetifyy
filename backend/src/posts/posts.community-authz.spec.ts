@@ -36,6 +36,8 @@ describe('PostsService — community post authorization', () => {
     };
     service = new PostsService(
       prisma, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
+      // Deletion authorizer — unused by the write-path guard under test.
+      {} as any,
     );
   };
 
