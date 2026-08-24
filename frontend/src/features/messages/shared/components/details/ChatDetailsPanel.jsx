@@ -276,7 +276,16 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       : null,
   );
 
-  if (!conversation) return null;
+  // `conversation` is required, and this component must not try to defend
+  // against its absence with an early return: five hooks are declared below
+  // this point, so returning here changed the hook count between renders — the
+  // exact thing that corrupts hook state.
+  //
+  // The guard that used to sit here was dead twice over. ChatAreaLayout already
+  // returns an empty state when there is no conversation before it ever renders
+  // this panel, and the useState calls near the top of this component read
+  // `conversation.name`, so a null value would have thrown long before reaching
+  // this line.
 
   // Determine chat type
   const isGroup = conversation.type === 'GROUP' || !!conversation.isGroup;

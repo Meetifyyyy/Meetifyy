@@ -50,8 +50,8 @@ export default function MessageContextMenu({
   const menuRef = useRef(null);
   const [coords, setCoords] = useState({ x: -9999, y: -9999, ready: false });
 
-  if (!msg || !position) return null;
-
+  // No early return above this point: useLayoutEffect below must run on every
+  // render, or React loses hook order the first time the menu closes.
   const isTemp = (m) => m && m.id && (String(m.id).startsWith('temp-') || String(m.id).startsWith('temp_'));
   const isUnavailableMedia = (m) => Boolean(m && (m.isMediaUnavailable || m.mediaError));
 
@@ -122,7 +122,7 @@ export default function MessageContextMenu({
     }
   ];
 
-  const rawVisible = actions.filter(a => a.visible(msg));
+  const rawVisible = msg ? actions.filter(a => a.visible(msg)) : [];
   const visibleActions = rawVisible.filter((item, idx) => {
     if (!item.isSeparator) return true;
     if (idx === 0 || idx === rawVisible.length - 1) return false;
@@ -140,7 +140,11 @@ export default function MessageContextMenu({
       ),
       ready: true,
     });
-  }, [position.x, position.y, visibleActions.length]);
+  }, [position?.x, position?.y, visibleActions.length]);
+
+  // Moved below the hook, which is the whole point: same rendered output,
+  // but the hook count no longer changes between renders.
+  if (!msg || !position) return null;
 
 
   return (

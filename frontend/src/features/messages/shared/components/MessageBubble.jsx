@@ -901,19 +901,6 @@ const MessageBubble = memo(function MessageBubble({
         </div>
       </div>
     );
-  } else if (profileData) {
-    // Shared Profile Card Message
-    innerContent = (
-      <div className={styles.msgImageCardContainer}>
-        <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
-          <SharedProfilePreview profile={profileData} />
-          <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
-        </div>
-        <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
-          {timeText}
-        </div>
-      </div>
-    );
   } else {
     // 5. Standard Text Bubble (or Image + Text Caption)
     innerContent = (
