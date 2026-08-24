@@ -136,12 +136,10 @@
 .coverSkeleton {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    90deg,
-    var(--color-border-light, #e2e8f0) 25%,
-    var(--color-bg-secondary, #f8fafc) 50%,
-    var(--color-border-light, #e2e8f0) 75%
-  );
+  background: linear-gradient(90deg,
+      var(--color-border-light, #e2e8f0) 25%,
+      var(--color-bg-secondary, #f8fafc) 50%,
+      var(--color-border-light, #e2e8f0) 75%);
   background-size: 200% 100%;
   animation: coverShimmer 1.5s infinite linear;
   z-index: 2;
@@ -151,12 +149,10 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    var(--color-border-light, #e2e8f0) 25%,
-    var(--color-bg-secondary, #f8fafc) 50%,
-    var(--color-border-light, #e2e8f0) 75%
-  );
+  background: linear-gradient(90deg,
+      var(--color-border-light, #e2e8f0) 25%,
+      var(--color-bg-secondary, #f8fafc) 50%,
+      var(--color-border-light, #e2e8f0) 75%);
   background-size: 200% 100%;
   animation: coverShimmer 1.5s infinite linear;
   z-index: 2;
@@ -166,6 +162,7 @@
   0% {
     background-position: 200% 0;
   }
+
   100% {
     background-position: -200% 0;
   }
@@ -412,7 +409,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .heroCreateBtn:hover {
-  transform: translateY(-2px);
+    transform: translateY(-2px);
   }
 }
 
@@ -485,7 +482,8 @@
   align-items: center;
 }
 
-.memberAvatar {  composes: ui-avatar from global;
+.memberAvatar {
+  composes: ui-avatar from global;
   width: 32px;
   height: 32px;
   font-family: var(--font-family-display);
@@ -496,8 +494,8 @@
   box-shadow: none;
 }
 
-.memberAvatar + .memberAvatar,
-.memberAvatar + .memberOverflow {
+.memberAvatar+.memberAvatar,
+.memberAvatar+.memberOverflow {
   margin-left: -8px;
 }
 
@@ -724,7 +722,7 @@
    COMPOSER
    ============================================================ */
 .composerWrap {
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
 }
 
 /* ============================================================
@@ -733,14 +731,14 @@
 .postsFeed {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.25rem;
   padding-bottom: 2rem;
 }
 
 .postWrapper {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+
   animation: none !important;
 }
 
@@ -896,7 +894,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .interestTag:hover {
-  transform: translateY(-1px);
+    transform: translateY(-1px);
   }
 }
 
@@ -958,7 +956,8 @@
   background: rgba(var(--color-primary-rgb), 0.15);
 }
 
-.contributorAvatar {  composes: ui-avatar from global;
+.contributorAvatar {
+  composes: ui-avatar from global;
   width: 30px;
   height: 30px;
   font-family: var(--font-family-display);
@@ -1067,7 +1066,8 @@
   background: rgba(24, 24, 27, 0.03);
 }
 
-.memberPreviewAvatar {  composes: ui-avatar from global;
+.memberPreviewAvatar {
+  composes: ui-avatar from global;
   width: 28px;
   height: 28px;
   font-family: var(--font-family-display);
@@ -1140,7 +1140,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .sidebarItem:hover {
-  transform: translateX(2px);
+    transform: translateX(2px);
   }
 }
 
@@ -1159,7 +1159,8 @@
   overflow: hidden;
 }
 
-.sidebarItemAvatarImg {  composes: ui-avatar-img from global;
+.sidebarItemAvatarImg {
+  composes: ui-avatar-img from global;
   border-radius: 10px;
 }
 
@@ -1291,7 +1292,7 @@
     border-width: 1px;
   }
 
-  .memberAvatar + .memberAvatar {
+  .memberAvatar+.memberAvatar {
     margin-left: -6px;
   }
 
@@ -1560,14 +1561,17 @@
   background: rgba(34, 197, 94, 0.12);
   color: #22c55e;
 }
+
 .guidelineBlue {
   background: rgba(59, 130, 246, 0.12);
   color: #3b82f6;
 }
+
 .guidelineOrange {
   background: rgba(249, 115, 22, 0.12);
   color: #f97316;
 }
+
 .guidelinePurple {
   background: rgba(168, 85, 247, 0.12);
   color: #a855f7;
@@ -1642,6 +1646,7 @@
     opacity: 0;
     transform: scale(0.96) translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -1732,17 +1737,18 @@
   box-shadow: var(--shadow-sm);
 }
 
-.switchToggle input:checked + .switchSlider {
+.switchToggle input:checked+.switchSlider {
   background-color: var(--color-primary);
 }
 
-.switchToggle input:checked + .switchSlider:before {
+.switchToggle input:checked+.switchSlider:before {
   transform: translateX(20px);
 }
 
 .mobileHeroCounts {
   display: none;
 }
+
 .mobileDesc {
   display: none;
 }
@@ -1759,12 +1765,15 @@
     z-index: 20;
     pointer-events: none;
   }
-  .mobileHeader > * {
+
+  .mobileHeader>* {
     pointer-events: auto;
   }
+
   .hiddenOnMobile {
     display: none !important;
   }
+
   .backBtn {
     width: 34px !important;
     height: 34px !important;
@@ -1774,9 +1783,11 @@
     background: rgba(0, 0, 0, 0.4);
     color: #FFFFFF !important;
   }
+
   .backBtn:hover {
     background: rgba(0, 0, 0, 0.55);
   }
+
   .heroSection {
     border-radius: 0;
     border: none !important;
@@ -1785,34 +1796,37 @@
     margin: 0;
     overflow: hidden;
   }
+
   .heroCover {
     border-radius: 0;
   }
+
   .editCoverBtn {
     display: none !important;
   }
+
   .heroContent {
     padding: 0;
   }
-  
+
   .desktopHeroLayout {
     display: none !important;
   }
-  
+
   .mobileHeroLayout {
     display: flex;
     flex-direction: column;
     padding: 0.5rem 12px 1.5rem 12px;
     gap: 0;
   }
-  
+
   .mobileHeroTopRow {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     margin-bottom: 0.5rem;
   }
-  
+
   .mobileAvatar {
     position: relative;
     width: 56px;
@@ -1826,11 +1840,11 @@
     flex-shrink: 0;
     border: 2px solid var(--color-bg-white);
   }
-  
+
   .mobileAvatar .heroLetter {
     font-size: 1.5rem !important;
   }
-  
+
   .mobileHeroMetaInfo {
     display: flex;
     flex-direction: column;
@@ -1838,7 +1852,7 @@
     flex: 1;
     min-width: 0;
   }
-  
+
   .mobileHeroTitleRow {
     display: flex;
     align-items: center;
@@ -1847,11 +1861,11 @@
     cursor: pointer;
     user-select: none;
   }
-  
+
   .mobileHeroTitleRow:active {
     opacity: 0.7;
   }
-  
+
   .mobileHeroTitle {
     font-family: var(--font-family-display);
     font-weight: 800;
@@ -1863,7 +1877,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  
+
   .mobileTitleArrow {
     color: var(--color-text-muted);
     display: flex;
@@ -1871,20 +1885,20 @@
     justify-content: center;
     flex-shrink: 0;
   }
-  
+
   .mobileHeroSubtext {
     font-family: var(--font-family-sans);
     font-size: 0.72rem;
     color: var(--color-text-muted);
   }
-  
+
   .mobileHeroDescWrapper {
     display: flex;
     align-items: flex-end;
     gap: 0.25rem;
     margin-bottom: 1rem;
   }
-  
+
   .mobileHeroDescLine {
     font-family: var(--font-family-sans);
     font-size: 0.8rem;
@@ -1897,13 +1911,13 @@
     overflow: hidden;
     flex: 1;
   }
-  
+
   .mobileHeroButtonsRow {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
-  
+
   .mobileNotificationBtn {
     display: flex;
     align-items: center;
@@ -1917,7 +1931,7 @@
     cursor: pointer;
     flex-shrink: 0;
   }
-  
+
   .mobileJoinBtn {
     flex: 1;
     padding: 0.55rem;
@@ -1933,16 +1947,18 @@
     justify-content: center;
     gap: 0.4rem;
   }
-  
+
   .mobileJoinBtn.joined {
     background: transparent;
     color: var(--color-text-main);
     border: 1.5px solid var(--color-border);
   }
+
   .main {
     grid-template-columns: 1fr;
     padding: 1rem 8px;
   }
+
   .rightColumn {
     display: none !important;
   }
@@ -1976,6 +1992,7 @@
     from {
       transform: translateY(100%);
     }
+
     to {
       transform: translateY(0);
     }
@@ -1985,6 +2002,7 @@
     from {
       transform: translateY(0);
     }
+
     to {
       transform: translateY(100%);
     }
@@ -2154,7 +2172,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .deletedPrimaryBtn:hover {
-  transform: translateY(-1px);
+    transform: translateY(-1px);
   }
 }
 
