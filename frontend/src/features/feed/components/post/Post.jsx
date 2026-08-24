@@ -6,6 +6,7 @@ import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar'
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { getCollegeName } from '@shared/utils/user';
 import RichText from '@shared/components/mentions/RichText';
+import { normalizeBodyText, truncateBodyText, clipMentions, POST_LIMITS } from '@shared/utils/bodyText';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities } from '@shared/hooks/useCommunities';
 import { timeAgo } from '@shared/utils/time';
@@ -124,13 +125,6 @@ function PollCard({ poll, postId }) {
   );
 }
 
-const normalizePostText = (str) => {
-  if (!str) return '';
-  return str
-    .trim()
-    .replace(/\r\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n');
-};
 
 function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityTag = false }) {
   const { currentUser } = useAuth();
@@ -339,35 +333,15 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
       </div>
 
       {text && (() => {
-        const normalizedText = normalizePostText(text);
-        const lines = normalizedText.split('\n');
-        const lineCount = lines.length;
-        const textLength = normalizedText.length;
-        
-        const exceedsCharLimit = textLength > 300;
-        const exceedsLineLimit = lineCount > 8;
-        const needsTruncation = (exceedsCharLimit || exceedsLineLimit) && !isDetailed;
+        const normalizedText = normalizeBodyText(text);
+        const clip = truncateBodyText(normalizedText, POST_LIMITS);
+        // The detail page is the place the whole post is meant to be read, so
+        // nothing is clipped there however long it runs.
+        const needsTruncation = clip.needsTruncation && !isDetailed;
+        const collapsed = needsTruncation && !isExpanded;
 
-        let displayedText = normalizedText;
-        if (needsTruncation && !isExpanded) {
-          let tempText = normalizedText;
-          if (exceedsCharLimit) {
-            tempText = normalizedText.slice(0, 300);
-          }
-          const tempLines = tempText.split('\n');
-          if (tempLines.length > 8) {
-            displayedText = tempLines.slice(0, 8).join('\n');
-          } else {
-            displayedText = tempText;
-          }
-          if (displayedText.length < normalizedText.length) {
-            displayedText = displayedText.trimEnd() + '...';
-          }
-        }
-
-        const displayedMentions = (needsTruncation && !isExpanded)
-          ? (mentions || []).filter(m => m.end <= (displayedText.endsWith('...') ? displayedText.length - 3 : displayedText.length))
-          : mentions;
+        const displayedText = collapsed ? clip.text : normalizedText;
+        const displayedMentions = collapsed ? clipMentions(mentions, displayedText) : mentions;
 
         return (
           <div className={`${styles.postBody} ${isDetailed ? styles.selectableText : ''}`}>
@@ -390,11 +364,11 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
       })()}
 
       {(() => {
-        const normalizedText = normalizePostText(text);
-        const lines = normalizedText.split('\n');
-        const lineCount = lines.length;
-        const textLength = normalizedText.length;
-        const needsTruncation = (textLength > 300 || lineCount > 8) && !isDetailed;
+        // Media stays hidden while the body is clipped, so a collapsed post is
+        // one compact block rather than three lines of text above a full-size
+        // image. Same rule as the text above it, from the same helper.
+        const needsTruncation =
+          truncateBodyText(normalizeBodyText(text), POST_LIMITS).needsTruncation && !isDetailed;
         const showMedia = !needsTruncation || isExpanded;
         return (
           <div className={`${styles.collapsibleMedia} ${showMedia ? styles.expanded : ''}`}>

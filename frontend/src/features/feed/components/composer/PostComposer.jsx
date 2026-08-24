@@ -10,6 +10,7 @@ import styles from './PostComposer.module.css';
 import { processAndUploadImage, processAndUploadVideo } from '@shared/utils/mediaPipeline';
 import { uploadsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
+import { normalizeBodyText } from '@shared/utils/bodyText';
 
 const overlayStyle = {
   position: 'absolute',
@@ -82,14 +83,6 @@ function PostComposer({ onSubmit }) {
     return () => document.removeEventListener('mousedown', handler);
   }, [showEmoji, hasContent]);
 
-  const normalizePostText = (str) => {
-    if (!str) return '';
-    return str
-      .trim()
-      .replace(/\r\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n');
-  };
-
   const handlePost = async (e) => {
     if (e) {
       e.preventDefault();
@@ -98,7 +91,7 @@ function PostComposer({ onSubmit }) {
     if (isPosting) return;
 
     const rawText = typeof value === 'string' ? value : (value?.text || '');
-    const text = normalizePostText(rawText);
+    const text = normalizeBodyText(rawText);
     const mentions = value?.mentions || [];
 
     if (showPoll) {

@@ -425,3 +425,26 @@
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
+/* ─── See more / See less ───────────────────────────────────────────────────
+ *
+ * Matches the post's .seeMoreBtn, scaled with the comment tree's own
+ * --font-scale so it stays proportionate as the thread density changes.
+ */
+.seeMoreBtn {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-family: var(--font-family-sans);
+  font-weight: 600;
+  font-size: calc(0.85rem * var(--font-scale, 1));
+  padding: 0.2rem 0;
+  cursor: pointer;
+  display: inline-block;
+  margin-top: 0.2rem;
+  transition: color var(--transition-normal);
+}
+
+.seeMoreBtn:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
+}

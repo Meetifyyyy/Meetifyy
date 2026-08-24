@@ -22,6 +22,7 @@ import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar'
 import MentionInput from '@shared/components/mentions/MentionInput';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import RichText from '@shared/components/mentions/RichText';
+import { normalizeBodyText, truncateBodyText, clipMentions, COMMENT_LIMITS } from '@shared/utils/bodyText';
 import { timeAgo } from '@shared/utils/time';
 import styles from './CommentNode.module.css';
 import { useAuth } from '@shared/context/AuthContext';
@@ -313,6 +314,19 @@ export default function CommentNode({
 
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
+
+  // Body text gets the same treatment as a post: whitespace tidied, an
+  // over-long body clipped behind a See more toggle. Separate from
+  // `isExpanded`, which is about hiding the reply subtree — one is this
+  // comment's own text, the other is its children.
+  const [isTextExpanded, setIsTextExpanded] = useState(false);
+  const normalizedText = normalizeBodyText(comment.text);
+  const textClip = truncateBodyText(normalizedText, COMMENT_LIMITS);
+  const isTextClipped = textClip.needsTruncation && !isTextExpanded;
+  const displayedText = isTextClipped ? textClip.text : normalizedText;
+  const displayedMentions = isTextClipped
+    ? clipMentions(comment.mentions, displayedText)
+    : comment.mentions;
 
   const hasChildren = comment.replies?.length > 0;
 
@@ -681,7 +695,24 @@ export default function CommentNode({
             {/* Body — always visible */}
             <div>
               <div className={styles.replyText}>
-                <RichText content={comment.text} mentions={comment.mentions} urlLimit={30} />
+                <RichText content={displayedText} mentions={displayedMentions} urlLimit={30} />
+                {textClip.needsTruncation && (
+                  <button
+                    type="button"
+                    className={styles.seeMoreBtn}
+                    data-no-collapse
+                    aria-expanded={isTextExpanded}
+                    onClick={(e) => {
+                      // The node itself collapses the thread on click, so this
+                      // must not bubble — expanding a comment's text should
+                      // never fold away its replies.
+                      e.stopPropagation();
+                      setIsTextExpanded((v) => !v);
+                    }}
+                  >
+                    {isTextExpanded ? 'See less' : 'See more'}
+                  </button>
+                )}
               </div>
               <div className={styles.replyActionsRow} data-no-collapse>
                 <button
