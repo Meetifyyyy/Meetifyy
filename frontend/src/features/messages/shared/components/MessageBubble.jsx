@@ -970,7 +970,7 @@ const MessageBubble = memo(function MessageBubble({
           )}
 
           <div className={styles.msgTextTimeWrap}>
-            {hasText && <RichText content={messageText} className={styles.msgText} />}
+            {hasText && <RichText content={messageText} className={styles.msgText} highlight={searchQuery} />}
             <div className={styles.msgTimeLabel}>{timeText}</div>
           </div>
         </div>

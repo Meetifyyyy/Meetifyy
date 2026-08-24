@@ -31,3 +31,14 @@
   text-decoration: none;
 }
 
+
+/* Find-in-chat hit. Painted rather than merely bolded so a match is findable
+   by eye while scanning, and given explicit colours because the browser
+   default <mark> is black-on-yellow — unreadable against a dark bubble. */
+.searchHit {
+  background: var(--color-warning-soft, rgba(250, 204, 21, 0.35));
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+  font-weight: 700;
+}

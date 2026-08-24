@@ -202,6 +202,12 @@ export default function ChatMessageList({
     if (!messages || messages.length === 0) return [];
 
     const isGroupUpdatesActive = conversation?.groupUpdatesActive !== false;
+    // Find-in-chat. `searchQuery` was threaded all the way down to
+    // MessageBubble — which never read it — so typing in the search bar did
+    // nothing at all: no filter, no highlight, no count. The thread is
+    // narrowed to matching messages here, and MessageBubble marks the hit
+    // inside each one.
+    const needle = (searchQuery || '').trim().toLowerCase();
 
     const seenMsgIds = new Map();
     let lastSystemText = null;
@@ -221,11 +227,18 @@ export default function ChatMessageList({
       const keyId = msg.id || msg.clientId || msg.tempId || `temp_idx_${idx}`;
       if (seenMsgIds.has(keyId)) return false;
       seenMsgIds.set(keyId, msg);
+
+      if (needle) {
+        // System notices are chat furniture, not things anyone searches for.
+        if (isSystem) return false;
+        const haystack = `${msg.text || msg.payload?.text || ''}`.toLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
       return true;
     });
 
     return [...filtered].sort(compareMessages);
-  }, [messages, conversation?.groupUpdatesActive]);
+  }, [messages, conversation?.groupUpdatesActive, searchQuery]);
 
   // ── Mark seen ────────────────────────────────────────────────────────────
 
@@ -646,7 +659,11 @@ export default function ChatMessageList({
 
       {/* ── Empty state ── */}
       {!isLoading && !error && renderItems.length === 0 && !isTyping && (
-        <div className={styles.msgEmptyState}>No messages in this chat.</div>
+        <div className={styles.msgEmptyState}>
+          {(searchQuery || '').trim()
+            ? `No messages match “${searchQuery.trim()}”.`
+            : 'No messages in this chat.'}
+        </div>
       )}
 
       {/* ── Full-screen spinner (initial load only) ── */}

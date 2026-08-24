@@ -6,7 +6,37 @@ import styles from './RichText.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 
 
-export default function RichText({ content = '', mentions = [], className = '', urlLimit = 50 }) {
+/**
+ * Wrap every case-insensitive occurrence of `term` in a <mark>.
+ *
+ * Applied only to leaf text nodes, so mentions and links keep their own
+ * rendering and their own click handlers — highlighting must never turn a
+ * working @mention or URL into inert marked-up text.
+ */
+export function markMatches(text, term, keyPrefix, markClass) {
+  if (!term || !text || typeof text !== 'string') return text;
+  const needle = term.toLowerCase();
+  const haystack = text.toLowerCase();
+  if (!haystack.includes(needle)) return text;
+
+  const out = [];
+  let cursor = 0;
+  let at = haystack.indexOf(needle);
+  while (at !== -1) {
+    if (at > cursor) out.push(text.slice(cursor, at));
+    out.push(
+      <mark key={`${keyPrefix}-hit-${at}`} className={markClass}>
+        {text.slice(at, at + term.length)}
+      </mark>
+    );
+    cursor = at + term.length;
+    at = haystack.indexOf(needle, cursor);
+  }
+  if (cursor < text.length) out.push(text.slice(cursor));
+  return out;
+}
+
+export default function RichText({ content = '', mentions = [], className = '', urlLimit = 50, highlight = '' }) {
   const navigate = useNavigate();
   // useUsersMap() always returns an object, so the `= {}` default is no longer needed.
   const users = useUsersMap();
@@ -33,7 +63,7 @@ export default function RichText({ content = '', mentions = [], className = '', 
     const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
     const parts = text.split(urlRegex);
     if (parts.length === 1) {
-      return text;
+      return markMatches(text, highlight, keyPrefix, styles.searchHit);
     }
     return parts.map((part, idx) => {
       if (urlRegex.test(part)) {
@@ -69,7 +99,7 @@ export default function RichText({ content = '', mentions = [], className = '', 
           </span>
         );
       }
-      return part;
+      return markMatches(part, highlight, `${keyPrefix}-${idx}`, styles.searchHit);
     });
   };
 

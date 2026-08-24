@@ -87,28 +87,21 @@ export default function ChatAreaLayout({
   const closeDetails = useCallback(() => setShowDetails?.(false), [setShowDetails]);
 
   /**
-   * ONE registration for both panels, not one each.
+   * ONLY the search bar registers here. The details panel must not.
    *
-   * They are mutually exclusive and they hand off directly: the details
-   * panel's Search button closes itself and opens the search bar in the same
-   * update. Registered separately, that handoff ran two history operations in
-   * one tick — the details overlay's effect cleanup popped its entry
-   * (`navigate(-1)`) while the search overlay's effect pushed a new one — and
-   * the pop landed on the just-pushed entry instead. The search bar opened and
-   * was immediately torn down again: the flicker.
+   * `showDetails` is URL state (`?view=details`, pushed — see
+   * useChatAreaState), so it already participates in real history and Back
+   * already closes it. Registering it with the OverlayManager as well made
+   * two mechanisms push for one panel, and the manager's `navigate(-1)` on
+   * teardown then rewound into an entry that still carried `?view=details`.
    *
-   * Keeping `isOpen` true across the swap means the effect never re-runs, so
-   * no history is touched at all when one panel replaces the other. The close
-   * handler reads whichever panel is currently up, and the single entry
-   * pushed when the first panel opened is the one Back pops.
+   * That is what reopened the details page when the user cancelled a search
+   * they had started from it: opening search pushes a no-`view` entry, and
+   * closing it popped one entry too many, straight back into details. Leaving
+   * details to its own URL-based back handling means the pop lands where the
+   * search bar was opened from and stops there.
    */
-  const panelOpen = Boolean(showSearch || showDetails);
-  const closeOpenPanel = useCallback(() => {
-    if (showSearch) closeSearch();
-    else if (showDetails) closeDetails();
-  }, [showSearch, showDetails, closeSearch, closeDetails]);
-
-  useOverlayBack(panelOpen, closeOpenPanel);
+  useOverlayBack(Boolean(showSearch), closeSearch);
 
   const messages = conversation?.messages || [];
 
