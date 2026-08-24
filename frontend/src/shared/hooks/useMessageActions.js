@@ -249,7 +249,14 @@ export function useMessageActions() {
       });
     };
 
-    applyBlockState(!wasBlocked);
+    // Optimism only ever moves toward MORE restriction. Blocking locks the
+    // composer immediately; unblocking waits for the server.
+    //
+    // Optimistically unlocking is what produced the reported flash: the other
+    // user may still be blocking you, so clearing the state locally showed a
+    // usable input for the length of one refetch before the server's answer put
+    // the lock straight back.
+    if (!wasBlocked) applyBlockState(true);
 
     try {
       if (wasBlocked) {
@@ -261,7 +268,7 @@ export function useMessageActions() {
       // Put the UI back where the server actually is, and say so. Silently
       // keeping the optimistic value is what made a failed block look like a
       // successful one.
-      applyBlockState(wasBlocked);
+      if (!wasBlocked) applyBlockState(false);
       // Surface what the server actually said. A bare "Couldn't block this
       // user" hides the reason from the user AND from anyone debugging it —
       // the API already returns a specific message, so pass it through.
@@ -275,6 +282,13 @@ export function useMessageActions() {
     } finally {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      // Blocking deletes both Follow rows in the same transaction, so any
+      // follower/following list on screen is stale the moment it returns.
+      // Keyed by username, so refetch every instance rather than guessing.
+      queryClient.invalidateQueries({ queryKey: ['followers'] });
+      queryClient.invalidateQueries({ queryKey: ['following'] });
+      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
     }
   };
 

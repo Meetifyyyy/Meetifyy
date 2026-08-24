@@ -30,8 +30,18 @@ export class UsersService {
     @InjectQueue(NOTIFICATIONS_QUEUE) private readonly notifQueue: Queue,
   ) {}
 
-  async getAllUsers(limit: number, offset: number) {
+  /**
+   * Directory-style listing of users.
+   *
+   * Took no viewer, so it neither excluded blocked users nor applied anyone's
+   * presence settings — it selected `settings` and then ignored them, returning
+   * `isOnline` for every row to every caller. Both sides of a block could watch
+   * each other's status here.
+   */
+  async getAllUsers(limit: number, offset: number, currentUserId?: string) {
+    const where = await this.blocksService.injectBlockFilter(currentUserId, {}, 'id');
     const users = await this.prisma.user.findMany({
+      where,
       take: limit,
       skip: offset,
       select: {
@@ -59,14 +69,30 @@ export class UsersService {
     const userIds = users.map(u => u.id);
     const presenceMap = await this.presenceService.getPresenceMany(userIds);
 
+    // Honour each target's own presence rules (and the block list) rather than
+    // reporting raw presence to whoever asked.
+    const visibleIds = currentUserId
+      ? await resolvePresenceVisibilityForViewer(
+          currentUserId,
+          users.map((u) => ({
+            userId: u.id,
+            rule: u.settings?.whoCanSeeOnline || 'everyone',
+            isEnabled: u.settings?.showOnlineStatus !== false,
+          })),
+          this.prisma,
+          this.blocksService,
+        )
+      : new Set<string>();
+
     return users.map(u => {
       const pres = presenceMap.get(u.id);
-      const isOnline = pres?.status === 'online';
+      const canSee = visibleIds.has(u.id);
+      const isOnline = canSee && pres?.status === 'online';
       return {
         ...u,
         isOnline,
         online: isOnline,
-        lastActive: pres?.lastSeen || null,
+        lastActive: canSee ? (pres?.lastSeen || null) : null,
       };
     });
   }
@@ -186,8 +212,12 @@ export class UsersService {
       ...(cursorWhere || {}),
     };
 
+    // Blocked users must not appear in the campus directory, in either
+    // direction. Applied to the query so the page size stays honest.
+    const directoryWhere = await this.blocksService.injectBlockFilter(userId, where, 'id');
+
     const rows = await this.prisma.user.findMany({
-      where,
+      where: directoryWhere,
       take: limit + 1, // fetch one extra to detect the next page
       select: {
         id: true,
@@ -212,16 +242,39 @@ export class UsersService {
     const nextCursor = hasMore && last ? `${new Date(last.createdAt).toISOString()}|${last.id}` : undefined;
 
     const presenceMap = await this.presenceService.getPresenceMany(pageRows.map(u => u.id));
+    // The directory selected each row's presence settings and then reported raw
+    // presence anyway. Resolve them properly, which also applies the block list.
+    const visibleIds = await resolvePresenceVisibilityForViewer(
+      userId,
+      pageRows.map((u) => ({
+        userId: u.id,
+        rule: u.settings?.whoCanSeeOnline || 'everyone',
+        isEnabled: u.settings?.showOnlineStatus !== false,
+      })),
+      this.prisma,
+      this.blocksService,
+    );
+
     const users = pageRows.map(({ createdAt, ...u }) => {
       const pres = presenceMap.get(u.id);
-      const isOnline = pres?.status === 'online';
-      return { ...u, isOnline, online: isOnline, lastActive: pres?.lastSeen || null };
+      const canSee = visibleIds.has(u.id);
+      const isOnline = canSee && pres?.status === 'online';
+      return { ...u, isOnline, online: isOnline, lastActive: canSee ? (pres?.lastSeen || null) : null };
     });
 
     return { users, nextCursor };
   }
 
-  async getUserById(id: string) {
+  /**
+   * Profile lookup by id.
+   *
+   * This route used to take no viewer at all, so it applied neither the block
+   * rules nor the target's own presence settings: a blocked user could read the
+   * full profile here, and `isOnline`/`lastActive` were returned to anybody who
+   * asked. It is the by-id twin of getProfileByUsername and must enforce the
+   * same rules.
+   */
+  async getUserById(id: string, currentUserId?: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
       select: {
@@ -236,16 +289,35 @@ export class UsersService {
         branch: true,
         currentYear: true,
         profileCompleted: true,
+        settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
       }
     });
-    if (!user) throw new NotFoundException('User not found');
-    const pres = await this.presenceService.getPresence(id);
-    const isOnline = pres?.status === 'online';
+    // Same body as the block case below, so the two are indistinguishable.
+    if (!user) throw new NotFoundException('This profile isn\'t available.');
+
+    if (currentUserId && currentUserId !== id && (await this.blocksService.isBlocked(currentUserId, id))) {
+      throw new NotFoundException('This profile isn\'t available.');
+    }
+
+    const canSeeOnline = currentUserId
+      ? await checkPresenceVisibility(
+          id,
+          currentUserId,
+          user.settings?.whoCanSeeOnline || 'everyone',
+          user.settings?.showOnlineStatus !== false,
+          this.prisma,
+          this.blocksService,
+        )
+      : false;
+
+    const pres = canSeeOnline ? await this.presenceService.getPresence(id) : null;
+    const isOnline = canSeeOnline && pres?.status === 'online';
+    const { settings: _settings, ...publicUser } = user as any;
     return {
-      ...user,
+      ...publicUser,
       isOnline,
       online: isOnline,
-      lastActive: pres?.lastSeen || null,
+      lastActive: canSeeOnline ? (pres?.lastSeen || null) : null,
     };
   }
 
@@ -319,6 +391,7 @@ export class UsersService {
         targetUser.settings?.whoCanSeeOnline || 'everyone',
         targetUser.settings?.showOnlineStatus !== false,
         this.prisma,
+        this.blocksService,
       ),
     ]);
 
@@ -1274,6 +1347,7 @@ export class UsersService {
         isEnabled: u.settings?.showOnlineStatus !== false,
       })),
       this.prisma,
+      this.blocksService,
     );
 
     const results: Array<{ id: string; username: string; displayName: string; avatar: string | null; isOnline: true }> = [];

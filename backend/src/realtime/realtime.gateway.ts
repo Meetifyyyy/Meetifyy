@@ -14,6 +14,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { SupabaseService } from '../supabase/supabase.service';
 import { MessagesService } from '../messages/messages.service';
 import { PresenceService } from '../presence/presence.service';
+import { BlocksService } from '../users/blocks.service';
 import {
   InstantMatchService,
   setRealtimeGatewayRef,
@@ -74,6 +75,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     private readonly redisService: RedisService,
     private readonly activityPolicy: ActivityAuthorizationService,
     private readonly communitiesService: CommunitiesService,
+    // Presence fan-out runs through this gateway, so it needs the block list to
+    // avoid pushing a status change across a block.
+    private readonly blocksService: BlocksService,
   ) {}
 
   afterInit() {
@@ -173,7 +177,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       const uniqueViewerIds = [...new Set(sharedConvs.map(p => p.userId).filter(id => id !== userId))];
 
       if (uniqueViewerIds.length > 0) {
-        const allowedViewerIds = await checkPresenceVisibilityBatch(userId, uniqueViewerIds, rule, isEnabled, this.prisma);
+        const allowedViewerIds = await checkPresenceVisibilityBatch(userId, uniqueViewerIds, rule, isEnabled, this.prisma, this.blocksService);
         if (allowedViewerIds.length > 0) {
           this.server.to(allowedViewerIds).emit('presence:update', presencePayload);
         }
@@ -520,7 +524,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       viewerId,
       targetUser.settings?.whoCanSeeOnline || 'everyone',
       targetUser.settings?.showOnlineStatus !== false,
-      this.prisma
+      this.prisma,
+      this.blocksService
     );
 
     return {
@@ -835,7 +840,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
           viewerId,
           targetUser.settings?.whoCanSeeOnline || 'everyone',
           targetUser.settings?.showOnlineStatus !== false,
-          this.prisma
+          this.prisma,
+          this.blocksService
         );
         return { uId, canSee };
       })

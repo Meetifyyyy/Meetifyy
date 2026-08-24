@@ -1,15 +1,32 @@
 import { PrismaService } from '../prisma/prisma.service';
+import { BlocksService } from './blocks.service';
+
+/**
+ * Presence is a two-way disclosure: "online now" tells the viewer something
+ * about the target, and read receipts/last-seen tell the target something back.
+ * A block has to sever it in BOTH directions, so every helper here takes
+ * BlocksService and drops blocked pairs before any privacy rule is considered.
+ *
+ * It is a required parameter rather than an optional one on purpose. These
+ * helpers are the only presence gate in the app; if a new call site could omit
+ * it, the omission would silently leak online status instead of failing to
+ * compile.
+ */
 
 export async function checkPresenceVisibility(
   targetUserId: string,
   viewerUserId: string,
   rule: 'everyone' | 'following' | 'mutual' | 'nobody' | string,
   isEnabled: boolean,
-  prisma: PrismaService
+  prisma: PrismaService,
+  blocksService: BlocksService
 ): Promise<boolean> {
   if (!isEnabled) return false;
   if (!targetUserId) return false;
   if (targetUserId === viewerUserId) return true;
+
+  // Checked before the privacy rule: a block overrides "everyone".
+  if (viewerUserId && (await blocksService.isBlocked(viewerUserId, targetUserId))) return false;
 
   // RULE: If viewer hides their own online status, they cannot see others'
   const viewerSettings = await prisma.userSettings.findUnique({
@@ -74,10 +91,18 @@ export async function checkPresenceVisibility(
 export async function resolvePresenceVisibilityForViewer(
   viewerUserId: string,
   targets: { userId: string; rule: string; isEnabled: boolean }[],
-  prisma: PrismaService
+  prisma: PrismaService,
+  blocksService: BlocksService
 ): Promise<Set<string>> {
   const visible = new Set<string>();
   if (!viewerUserId || targets.length === 0) return visible;
+
+  // Drop blocked pairs up front so no rule below can add them back.
+  const blockedIds = new Set(await blocksService.getExcludedUserIds(viewerUserId));
+  if (blockedIds.size > 0) {
+    targets = targets.filter((t) => !blockedIds.has(t.userId));
+    if (targets.length === 0) return visible;
+  }
 
   // Reciprocity: a viewer who hid their own online status sees nobody.
   const viewerSettings = await prisma.userSettings.findUnique({
@@ -134,9 +159,15 @@ export async function checkPresenceVisibilityBatch(
   viewerUserIds: string[],
   rule: 'everyone' | 'following' | 'mutual' | 'nobody' | string,
   isEnabled: boolean,
-  prisma: PrismaService
+  prisma: PrismaService,
+  blocksService: BlocksService
 ): Promise<string[]> {
   if (!isEnabled || !targetUserId || rule === 'nobody' || viewerUserIds.length === 0) return [];
+
+  // This drives the realtime fan-out, so filtering here is what stops a status
+  // change being pushed to someone on either side of a block.
+  viewerUserIds = await blocksService.filterBlockedUsers(targetUserId, viewerUserIds);
+  if (viewerUserIds.length === 0) return [];
 
   // Filter out viewers who have hidden their own online status
   const viewerSettings = await prisma.userSettings.findMany({

@@ -7,11 +7,12 @@ import { InstantMatchModule } from '../instant-match/instant-match.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ActivityAccessModule } from '../activities/activity-access.module';
 import { CommunitiesModule } from '../communities/communities.module';
+import { BlocksService } from '../users/blocks.service';
 
 @Global()
 @Module({
   imports: [SupabaseModule, MessagesModule, PresenceModule, InstantMatchModule, PrismaModule, ActivityAccessModule, CommunitiesModule],
-  providers: [RealtimeGateway],
+  providers: [RealtimeGateway, BlocksService],
   exports: [RealtimeGateway],
 })
 export class RealtimeModule {}

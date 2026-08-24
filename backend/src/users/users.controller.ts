@@ -16,10 +16,10 @@ export class UsersController {
   // ETag interceptor answers unchanged bodies with a 304, so this costs a
   // round-trip but not a payload. (Same reasoning as activities.controller.ts.)
   @CacheControl('private, no-cache')
-  async getAllUsers(@Query('limit') limit?: string, @Query('offset') offset?: string) {
+  async getAllUsers(@Req() req: any, @Query('limit') limit?: string, @Query('offset') offset?: string) {
     const limitNum = limit ? parseInt(limit, 10) : 20;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
-    return this.usersService.getAllUsers(limitNum, offsetNum);
+    return this.usersService.getAllUsers(limitNum, offsetNum, req.user?.id);
   }
 
   @Get('connections')
@@ -92,8 +92,8 @@ export class UsersController {
   @Get('id/:id')
   @UseGuards(JwtGuard)
   @CacheControl('private, no-cache')
-  async getUserById(@Param('id') id: string) {
-    return this.usersService.getUserById(id);
+  async getUserById(@Param('id') id: string, @Req() req: any) {
+    return this.usersService.getUserById(id, req.user?.id);
   }
 
   @Patch('me')

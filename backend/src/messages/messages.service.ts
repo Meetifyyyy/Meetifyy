@@ -853,7 +853,7 @@ export class MessagesService extends MessagingCoreService implements OnModuleIni
       });
     }
     const presenceVisibleSet = visTargets.length > 0
-      ? await resolvePresenceVisibilityForViewer(userId, visTargets, this.prisma)
+      ? await resolvePresenceVisibilityForViewer(userId, visTargets, this.prisma, this.blocksService)
       : new Set<string>();
 
     const result = await Promise.all((participants as any[]).map(async (p: any) => {

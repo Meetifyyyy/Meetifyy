@@ -160,7 +160,7 @@ export class DmService extends MessagingCoreService {
           isEnabled: u?.settings?.showOnlineStatus !== false,
         };
       });
-      const visibleSet = await resolvePresenceVisibilityForViewer(userId, visTargets, this.prisma);
+      const visibleSet = await resolvePresenceVisibilityForViewer(userId, visTargets, this.prisma, this.blocksService);
       userIdsToFetchPresence.forEach(uId => {
         const presence = batchPresence.get(uId);
         presenceMap.set(uId, {
