@@ -45,6 +45,33 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
   // by clientId without duplicating the message. Value shape:
   // { file, mediaType, targetConvId, localPreviewUrl, abortController, sendArgs }
   const pendingUploadsRef = useRef(new Map());
+
+  /**
+   * Drop a local preview blob, clearing every reference to it BEFORE revoking.
+   *
+   * Order matters. A blob: URL dies the moment it is revoked (and with the
+   * document that created it), but MessageBubble falls back to
+   * payload.localPreviewUrl when no server thumbnail is set — so any reference
+   * left in the query cache became a request for a dead blob, logged by the
+   * browser as "Not allowed to load local resource" on every re-render for the
+   * rest of the session.
+   *
+   * Declared as a hoisted function so the upload callbacks below can call it
+   * without taking it as a dependency.
+   */
+  function releaseLocalPreview(convId, clientId, url) {
+    if (!url) return;
+    try {
+      updateMessageInCache(queryClient, convId, clientId, (existing) => ({
+        payload: { ...(existing?.payload || {}), localPreviewUrl: null },
+      }));
+    } catch (_) { /* cache shape changed — revoke anyway */ }
+    // Deliberately no IndexedDB write here. sanitizeMessageForStorage already
+    // nulls any blob: localPreviewUrl on the way to disk, so IDB can never hold
+    // one — and idbPatchMessage shallow-merges, so patching `payload` would
+    // replace the whole object and drop mediaUrl, dimensions and duration with it.
+    try { URL.revokeObjectURL(url); } catch (_) { /* already revoked */ }
+  }
   const { conversations = [] } = useConversations();
   const { currentUser: dataUser } = useAuth();
   const currentUser = currentUserParam || dataUser;
@@ -494,12 +521,20 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         pendingUploadsRef.current.delete(clientId);
         // Revoke the local preview shortly after the server thumbnail has had time
         // to load — avoids both the memory leak and a mid-load flash.
-        if (localPreviewUrl) setTimeout(() => { try { URL.revokeObjectURL(localPreviewUrl); } catch (_) {} }, 5000);
+        //
+        // The clear MUST happen with the revoke, not only in the publicUrl branch
+        // above: an upload that resolves without a publicUrl skipped that branch
+        // while this timer still fired, leaving a revoked blob referenced in the
+        // cache. MessageBubble falls back to payload.localPreviewUrl, so every
+        // later re-render then requested a dead blob: URL.
+        if (localPreviewUrl) {
+          setTimeout(() => releaseLocalPreview(targetConvId, clientId, localPreviewUrl), 5000);
+        }
       } catch (err) {
         // A deliberate cancel removes the message; a real failure keeps it retryable.
         if (err?.name === 'AbortError') {
           pendingUploadsRef.current.delete(clientId);
-          if (localPreviewUrl) { try { URL.revokeObjectURL(localPreviewUrl); } catch (_) {} }
+          if (localPreviewUrl) releaseLocalPreview(targetConvId, clientId, localPreviewUrl);
           return;
         }
         updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed', uploadStatus: 'failed' });
@@ -628,7 +663,17 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       text: a.text || '',
       replyTo: a.replyTo,
       mentions: a.mentions || [],
-      mediaUrl: entry.localPreviewUrl || a.mediaUrl,
+      // A fresh preview per attempt: the previous one may already have been
+      // revoked, and re-sending a dead blob: URL is what put one in the cache.
+      mediaUrl: (() => {
+        try {
+          const fresh = URL.createObjectURL(entry.file);
+          entry.localPreviewUrl = fresh;
+          return fresh;
+        } catch (_) {
+          return a.mediaUrl;
+        }
+      })(),
       mediaType: entry.mediaType,
       inviteData: a.explicitInviteData,
       fileObj: entry.file,
@@ -643,8 +688,8 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     const entry = pendingUploadsRef.current.get(clientId);
     if (entry?.abortController) { try { entry.abortController.abort(); } catch (_) {} }
     pendingUploadsRef.current.delete(clientId);
-    if (entry?.localPreviewUrl) { try { URL.revokeObjectURL(entry.localPreviewUrl); } catch (_) {} }
-    // Remove the optimistic message from cache + IDB.
+    // Remove the row FIRST, then revoke. Revoking while the message was still in
+    // the cache left a window where a re-render could request the dead blob.
     queryClient.setQueryData(['messages', entry?.targetConvId || activeChatId], (old) => {
       if (!old?.pages) return old;
       return {
@@ -656,6 +701,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       };
     });
     idbDeleteMessage(clientId).catch(() => {});
+    if (entry?.localPreviewUrl) { try { URL.revokeObjectURL(entry.localPreviewUrl); } catch (_) {} }
   }, [queryClient, activeChatId]);
 
   const conversationsRef = useRef(conversations);
