@@ -1,0 +1,44 @@
+/* Cross-fading outline/solid nav icon.
+   Shared by the left Sidebar and the mobile BottomNav so both navigations use
+   one active-state language. */
+
+.navIcon {
+  /* Grid rather than absolute positioning on purpose: both layers occupy the
+     same cell, so the wrapper sizes itself to whatever the surrounding
+     stylesheet gives the <svg> (22px in the sidebar, 24/22px in the bottom
+     nav). Nothing here hard-codes a size, so existing layout is untouched. */
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.layer {
+  display: block;
+  grid-area: 1 / 1;
+  transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+/* The hidden layer stays mounted (that is what makes the swap animatable) but
+   must never intercept a tap meant for the visible one. */
+.hidden {
+  opacity: 0;
+  transform: scale(0.9);
+  pointer-events: none;
+}
+
+.shown {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layer {
+    transition: none;
+  }
+  .hidden,
+  .shown {
+    transform: none;
+  }
+}

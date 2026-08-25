@@ -101,6 +101,13 @@
   flex-shrink: 0;
 }
 
+/* The <NavIcon> stack that holds a link's outline and solid layers. It takes
+   its size from the rule above (both layers are 22px), so this only has to
+   stop it from being squeezed as a flex item. */
+.navIcon {
+  flex-shrink: 0;
+}
+
 .sidebarLink.active {
   color: var(--color-primary);
   background: transparent;

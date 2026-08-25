@@ -51,8 +51,12 @@
   flex-shrink: 0;
 }
 
+/* `.navIcon > svg` is the <NavIcon> stack (outline + solid layers). Kept as
+   child selectors so the Profile tab's <Avatar> — which renders its own nested
+   svg — is still not caught by these rules, exactly as before. */
 .bottomNavItem > svg,
-.iconWrapper > svg {
+.iconWrapper > svg,
+.navIcon > svg {
   width: 24px;
   height: 24px;
   flex-shrink: 0;
@@ -104,7 +108,8 @@
   }
   .iconWrapper,
   .bottomNavItem > svg,
-  .iconWrapper > svg {
+  .iconWrapper > svg,
+  .navIcon > svg {
     width: 22px;
     height: 22px;
   }

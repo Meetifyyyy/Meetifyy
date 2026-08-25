@@ -7,6 +7,7 @@ import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { isImageUrl } from '@shared/utils/avatar';
 import { getMediaUrl } from '@shared/api/apiClient';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
+import NavIcon from './NavIcon';
 import styles from './Sidebar.module.css';
 import {
   HomeIcon as HomeOutline,
@@ -28,31 +29,47 @@ import {
 } from '@heroicons/react/24/solid';
 import NotificationBell from '@features/notifications/components/NotificationBell';
 
-const CompassOutline = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+// Campus and Crew have no Heroicons counterpart, so their two variants are
+// drawn here -- the same two shapes the nav has always used, unchanged in
+// geometry. Only the paint differs between them, and each now spreads props so
+// <NavIcon> can hand it the layer class that cross-fades the pair.
+//
+// The "Solid" variants used to be `fill="none"` with a heavier stroke, which
+// made Campus and Crew the only tabs that thickened instead of filling while
+// every Heroicons tab switched to a genuinely solid glyph. They are filled with
+// currentColor now so all five tabs read the same way when active.
+
+const CompassOutline = (props) => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
     <circle cx="12" cy="12" r="10" />
     <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
   </svg>
 );
 
-const CompassSolid = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" />
-    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+// The needle is knocked out in the surface colour rather than left as a hole:
+// both navigations sit on --color-bg-white, and a knockout keeps the dial
+// readable at 22px where a stroked needle over a filled disc would smear.
+const CompassSolid = (props) => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <circle cx="12" cy="12" r="10" fill="currentColor" />
+    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="var(--color-bg-white)" stroke="var(--color-bg-white)" strokeWidth="1.5" />
   </svg>
 );
 
-const CampusOutline = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+const CampusOutline = (props) => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
     <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
     <path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5" />
   </svg>
 );
 
-const CampusSolid = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
-    <path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5" strokeWidth="2.5" />
+const CampusSolid = (props) => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    {/* Split so the tassel (M22 10v6) stays a stroked line -- filling it would
+        do nothing -- while the mortarboard closes into a solid diamond. */}
+    <path d="M22 10v6" />
+    <path d="M2 10l10-5 10 5-10 5z" fill="currentColor" />
+    <path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5" fill="currentColor" />
   </svg>
 );
 
@@ -142,11 +159,12 @@ export default function Sidebar({ onCommunityClick }) {
             onClick={(e) => { e.preventDefault(); navigate('/home'); }}
             onMouseEnter={() => import('@features/feed/pages/FeedRoute')}
           >
-            {location.pathname === '/home' ? (
-              <HomeSolid />
-            ) : (
-              <HomeOutline />
-            )}
+            <NavIcon
+              className={styles.navIcon}
+              active={location.pathname === '/home'}
+              outline={<HomeOutline />}
+              solid={<HomeSolid />}
+            />
             <span className={styles.linkText}>Home</span>
           </a>
           
@@ -163,11 +181,12 @@ export default function Sidebar({ onCommunityClick }) {
             }}
             onMouseEnter={() => import('@features/messages/pages/MessagesRoute')}
           >
-            {location.pathname.startsWith('/messages') ? (
-              <MessagesSolid />
-            ) : (
-              <MessagesOutline />
-            )}
+            <NavIcon
+              className={styles.navIcon}
+              active={location.pathname.startsWith('/messages')}
+              outline={<MessagesOutline />}
+              solid={<MessagesSolid />}
+            />
             <span className={styles.linkText}>Messages</span>
             {unreadMessagesCount > 0 && (
               <span className={styles.badge}>
@@ -182,11 +201,12 @@ export default function Sidebar({ onCommunityClick }) {
             onClick={(e) => { e.preventDefault(); navigate('/campus'); }}
             onMouseEnter={() => import('@features/campus/pages/CampusPage')}
           >
-            {location.pathname.startsWith('/campus') ? (
-              <CampusSolid />
-            ) : (
-              <CampusOutline />
-            )}
+            <NavIcon
+              className={styles.navIcon}
+              active={location.pathname.startsWith('/campus')}
+              outline={<CampusOutline />}
+              solid={<CampusSolid />}
+            />
             <span className={styles.linkText}>Campus</span>
           </a>
 
@@ -196,11 +216,12 @@ export default function Sidebar({ onCommunityClick }) {
             onClick={(e) => { e.preventDefault(); navigate('/crew'); }}
             onMouseEnter={() => import('@features/crew/pages/FindYourCrewPage')}
           >
-            {location.pathname.startsWith('/crew') ? (
-              <CompassSolid />
-            ) : (
-              <CompassOutline />
-            )}
+            <NavIcon
+              className={styles.navIcon}
+              active={location.pathname.startsWith('/crew')}
+              outline={<CompassOutline />}
+              solid={<CompassSolid />}
+            />
             <span className={styles.linkText}>Find your crew</span>
           </a>
 
@@ -209,11 +230,12 @@ export default function Sidebar({ onCommunityClick }) {
             className={`${styles.sidebarLink}${location.pathname.startsWith('/notifications') ? ` ${styles.active}` : ''}`}
             onClick={(e) => { e.preventDefault(); navigate('/notifications'); }}
           >
-            {location.pathname.startsWith('/notifications') ? (
-              <BellSolid />
-            ) : (
-              <BellOutline />
-            )}
+            <NavIcon
+              className={styles.navIcon}
+              active={location.pathname.startsWith('/notifications')}
+              outline={<BellOutline />}
+              solid={<BellSolid />}
+            />
             <span className={styles.linkText}>Notifications</span>
           </a>
           
@@ -223,11 +245,12 @@ export default function Sidebar({ onCommunityClick }) {
             onClick={(e) => { e.preventDefault(); navigate(`/profile/${username}`); }}
             onMouseEnter={() => import('@features/profile/pages/ProfilePage')}
           >
-            {location.pathname.startsWith('/profile') ? (
-              <ProfileSolid />
-            ) : (
-              <ProfileOutline />
-            )}
+            <NavIcon
+              className={styles.navIcon}
+              active={location.pathname.startsWith('/profile')}
+              outline={<ProfileOutline />}
+              solid={<ProfileSolid />}
+            />
             <span className={styles.linkText}>Profile</span>
           </a>
 
@@ -237,11 +260,12 @@ export default function Sidebar({ onCommunityClick }) {
             onClick={(e) => { e.preventDefault(); navigate('/settings'); }}
             onMouseEnter={() => import('@features/settings/pages/SettingsRoute')}
           >
-            {location.pathname.startsWith('/settings') ? (
-              <SettingsSolid />
-            ) : (
-              <SettingsOutline />
-            )}
+            <NavIcon
+              className={styles.navIcon}
+              active={location.pathname.startsWith('/settings')}
+              outline={<SettingsOutline />}
+              solid={<SettingsSolid />}
+            />
             <span className={styles.linkText}>Settings</span>
           </a>
         </nav>
