@@ -1,12 +1,9 @@
-import { Suspense, lazy, useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { groupApi } from '@shared/api/apiClient';
 import { useChatAreaState } from '@features/messages/shared/hooks/useChatAreaState';
 import ChatAreaLayout from '@features/messages/shared/components/ChatAreaLayout';
 import GroupChatHeader from './GroupChatHeader';
-
-const GroupSettingsModal = lazy(() => import('../modals/GroupSettingsModal'));
-
 
 export default function GroupChatArea({
   conversation,
@@ -47,6 +44,10 @@ export default function GroupChatArea({
       avatarKey: groupDetails.avatarKey || groupDetails.avatar || conversation?.avatarKey || conversation?.avatar,
       description: groupDetails.description ?? conversation?.description,
       ownerId: groupDetails.ownerId || conversation?.ownerId,
+      // The server's own word on this user's role, so the header can tell an
+      // OWNER (who may end the group) from an ADMIN (who may only leave it)
+      // without inferring it from id comparisons.
+      myRole: groupDetails.myRole ?? conversation?.myRole,
       admins: groupDetails.admins || conversation?.admins || [],
       members: groupDetails.members || conversation?.members || [],
       memberDetails: groupDetails.memberDetails || conversation?.memberDetails || [],
@@ -58,7 +59,6 @@ export default function GroupChatArea({
 
   const state = useChatAreaState(effectiveConv);
   const { currentUser } = state;
-  const [showSettings, setShowSettings] = useState(false);
 
   const isBanned = effectiveConv?.myMembershipStatus === 'BANNED';
   const isKicked = effectiveConv?.myMembershipStatus === 'KICKED' || effectiveConv?.isMember === false;
@@ -107,19 +107,8 @@ export default function GroupChatArea({
           onToggleMute={onToggleMute}
           onToggleSearch={() => state.setShowSearch(prev => !prev)}
           onOpenDetails={() => state.setShowDetails(true)}
-          onOpenSettings={() => setShowSettings(true)}
           isAdmin={isAdmin}
         />
-      }
-      extraModals={
-        showSettings && (
-          <Suspense fallback={null}>
-            <GroupSettingsModal
-              conversation={effectiveConv}
-              onClose={() => setShowSettings(false)}
-            />
-          </Suspense>
-        )
       }
     />
   );

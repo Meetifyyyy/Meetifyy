@@ -21,6 +21,12 @@ import { useCrewActivities, useCrewActions } from '@shared/hooks/useCrew';
 import { NotifRowSkeleton } from '../components/skeletons/NotificationsSkeleton';
 import { requestOpenInstantMatchChat } from '@features/instant-match/context/InstantMatchContext';
 import { isInstantChatNotification } from '@shared/utils/instantChatRouting';
+import {
+  INVITE_STATUS,
+  inviteFromNotification,
+  patchInviteNotification,
+  resolveInviteStatus,
+} from '../utils/inviteLifecycle';
 
 export default function NotificationsRoute() {
   // ?tab=invitations survives a reload and gives Back a step inside the module
@@ -40,6 +46,8 @@ export default function NotificationsRoute() {
     isFetchingNextPage,
     isLoading
   } = useNotifications();
+  // Separate server-filtered feed backing the Invitations tab.
+  const inviteFeed = useNotifications({ type: 'ACTIVITY_INVITE' });
   // getUserById was defined as exactly `users[id] || null` over this same map.
   const usersMap = useUsersMap();
   const getUserById = (id) => usersMap[id] || null;
@@ -80,44 +88,167 @@ export default function NotificationsRoute() {
 
 
   const queryClient = useQueryClient();
+  const loadedNotifications = notifications;
 
-  const { data: invitations = [] } = useQuery({
+  const { data: pendingInvitations = [] } = useQuery({
     queryKey: ['activity-pending-invitations'],
     queryFn: () => activitiesApi.getPendingInvitations(),
     staleTime: 10_000,
     enabled: !!currentUser?.id,
   });
 
-  // Both mutations drop the invitation from the pending list immediately rather
-  // than waiting on a refetch, so Accept/Decline feel instant. The snapshot is
-  // restored if the request fails, and the authoritative refetch still runs on
-  // settle.
-  const removeInvitationOptimistically = async (invitationId) => {
-    await queryClient.cancelQueries({ queryKey: ['activity-pending-invitations'] });
-    const previous = queryClient.getQueryData(['activity-pending-invitations']);
-    queryClient.setQueryData(['activity-pending-invitations'], (old) =>
-      Array.isArray(old) ? old.filter((i) => i.id !== invitationId) : old,
+  // The Invitations tab pages over ACTIVITY_INVITE notifications on the SERVER
+  // (`type=ACTIVITY_INVITE`), not over whatever invite rows happen to be inside
+  // the first pages of the main feed.
+  //
+  // The pending-invitations endpoint cannot back this tab: it is pending-only by
+  // definition, so an invite vanished from it the instant it was answered — the
+  // original bug. The notification row is the persisted record of the invite AND
+  // its outcome, so it is the only source that can show accepted / declined /
+  // cancelled / expired. Filtering server-side (rather than merging two lists on
+  // the client) means paging, refresh and every client agree, and the database
+  // stays the single source of truth.
+  //
+  // Pending invitations with no notification row at all — an invite whose
+  // notification the user deleted — are still merged in so nothing actionable
+  // is unreachable.
+  // Invites answered in this session: invitationId -> { status, activityId, row }.
+  // Cleared on failure; superseded by the server's own value once it lands.
+  const [settledInvites, setSettledInvites] = useState({});
+
+  const inviteNotifications = useMemo(
+    () => (inviteFeed.notifications || []).map(inviteFromNotification),
+    [inviteFeed.notifications],
+  );
+
+  const invitations = useMemo(() => {
+    const rows = [];
+    const seenActivities = new Set();
+
+    for (const inv of inviteNotifications) {
+      if (!inv.activityId || seenActivities.has(inv.activityId)) continue;
+      seenActivities.add(inv.activityId);
+      rows.push(inv);
+    }
+
+    for (const inv of pendingInvitations) {
+      if (seenActivities.has(inv.activityId)) continue;
+      seenActivities.add(inv.activityId);
+      rows.push(inv);
+    }
+
+    // Answers taken in THIS session are applied last and win.
+    //
+    // Neither source can be relied on to carry the answer back immediately: the
+    // pending endpoint drops the invite the moment it stops being pending, and
+    // the notification row is written asynchronously. Without this overlay the
+    // row either flipped back to Pending on the next refetch or disappeared
+    // outright — which is what made Accept/Decline look like it did nothing.
+    // The overlay only ever reflects an answer the server has confirmed (or is
+    // confirming), and it is dropped again if the request fails.
+    const withAnswers = rows.map(row => {
+      const settled =
+        settledInvites[row.id] ||
+        Object.values(settledInvites).find(s => s.activityId && s.activityId === row.activityId);
+      if (!settled) return row;
+      // The overlay fills a gap, it does not override the server: once the row
+      // carries a terminal status of its own (the answer came back, or the host
+      // cancelled in the meantime) that value wins.
+      if (resolveInviteStatus(row) !== INVITE_STATUS.PENDING) return row;
+      // Copied, never mutated — `row` may be an object owned by the query cache.
+      return { ...row, lifecycleStatus: settled.status };
+    });
+
+    const known = new Set(withAnswers.map(r => r.id));
+    for (const [invitationId, settled] of Object.entries(settledInvites)) {
+      // Both sources have already let go of it; keep the row itself so the
+      // outcome stays on screen rather than vanishing mid-interaction.
+      if (!known.has(invitationId) && settled.row) {
+        withAnswers.push({ ...settled.row, lifecycleStatus: settled.status });
+      }
+    }
+
+    return withAnswers.sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
     );
-    return { previous };
+  }, [inviteNotifications, pendingInvitations, settledInvites]);
+
+  // Answering an invite settles it in place: the row STAYS on screen and flips
+  // to Accepted / Declined on the click, matching what the server is about to
+  // persist on the same notification.
+  //
+  // The row is never removed from anything here. It is recorded in
+  // `settledInvites` (which the list memo applies over both sources) and
+  // patched into every notification cache entry, so the outcome shows whether
+  // the row came from the notification feed or from the pending endpoint.
+  const settleInvitationOptimistically = async (invitationId, nextStatus) => {
+    await queryClient.cancelQueries({ queryKey: ['activity-pending-invitations'] });
+    await queryClient.cancelQueries({ queryKey: ['notifications'] });
+
+    const previousPending = queryClient.getQueryData(['activity-pending-invitations']);
+    // Every ['notifications', ...] entry, not just the main feed — the
+    // Invitations tab has its own, and restoring only one would leave the two
+    // disagreeing after a failure.
+    const previousNotifications = queryClient.getQueriesData({ queryKey: ['notifications'] });
+
+    const row = invitations.find(i => i.id === invitationId) || null;
+    setSettledInvites(prev => ({
+      ...prev,
+      [invitationId]: { status: nextStatus, activityId: row?.activityId, row },
+    }));
+
+    patchInviteNotification(queryClient, {
+      invitationId,
+      activityId: row?.activityId,
+      status: nextStatus,
+    });
+
+    return { previousPending, previousNotifications, invitationId };
   };
 
   const restoreInvitations = (_err, _vars, ctx) => {
-    if (ctx?.previous !== undefined) {
-      queryClient.setQueryData(['activity-pending-invitations'], ctx.previous);
+    if (ctx?.previousPending !== undefined) {
+      queryClient.setQueryData(['activity-pending-invitations'], ctx.previousPending);
+    }
+    for (const [key, data] of ctx?.previousNotifications || []) {
+      queryClient.setQueryData(key, data);
+    }
+    // The answer did not stick, so the row goes back to offering the choice.
+    if (ctx?.invitationId) {
+      setSettledInvites(prev => {
+        const next = { ...prev };
+        delete next[ctx.invitationId];
+        return next;
+      });
     }
     showToast('Something went wrong. Please try again.', 'error');
   };
 
   const acceptMutation = useMutation({
     mutationFn: (invitationId) => activitiesApi.acceptInvitation(invitationId),
-    onMutate: removeInvitationOptimistically,
+    onMutate: (invitationId) => settleInvitationOptimistically(invitationId, INVITE_STATUS.ACCEPTED),
     onError: restoreInvitations,
-    onSuccess: (res) => {
+    // Accepting already performs the join server-side, so the user lands on the
+    // activity as a participant — there is no second "I'm in" step. The detail
+    // entry is refetched BEFORE navigating so the page cannot paint from a
+    // pre-join cached copy and offer to join an activity the user is already
+    // in. A failed acceptance never reaches here, so it never redirects.
+    onSuccess: async (res) => {
       queryClient.invalidateQueries({ queryKey: ['activities'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
-      if (res?.activityId) {
-        navigate(`/crew/${res.activityId}`, { state: { from: '/notifications' } });
-      }
+      const activityId = res?.activityId;
+      if (!activityId) return;
+
+      // Bounded: a slow or failing refetch must not strand the user on the
+      // notifications page — the detail page revalidates on mount anyway.
+      await queryClient
+        .fetchQuery({
+          queryKey: ['activity', activityId],
+          queryFn: () => activitiesApi.getById(activityId),
+        })
+        .catch(() => {});
+
+      navigate(`/crew/${activityId}`, { state: { from: '/notifications' } });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
@@ -126,7 +257,7 @@ export default function NotificationsRoute() {
 
   const declineMutation = useMutation({
     mutationFn: (invitationId) => activitiesApi.declineInvitation(invitationId),
-    onMutate: removeInvitationOptimistically,
+    onMutate: (invitationId) => settleInvitationOptimistically(invitationId, INVITE_STATUS.DECLINED),
     onError: restoreInvitations,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
@@ -166,7 +297,6 @@ export default function NotificationsRoute() {
   }, [activeTab, invitations]);
 
   const error = null;
-  const loadedNotifications = notifications;
   const retry = () => {};
 
   const SAFE_ID = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -324,7 +454,11 @@ export default function NotificationsRoute() {
     ].filter(g => g.items.length > 0);
   }, [loadedNotifications]);
 
-  const unreadInvCount = invitations.filter(i => !readInvitations.includes(i.id)).length;
+  // The tab badge counts only invites that still need an answer. A settled row
+  // is a record, and badging history would make the number never reach zero.
+  const unreadInvCount = invitations.filter(
+    i => resolveInviteStatus(i) === INVITE_STATUS.PENDING && !readInvitations.includes(i.id),
+  ).length;
 
   const headerTabs = useMemo(() => [
     { id: 'all', label: 'All Notifications' },
@@ -357,7 +491,7 @@ export default function NotificationsRoute() {
         </div>
 
         <div className={styles.list}>
-          {isLoading ? (
+          {(activeTab === 'invitations' ? inviteFeed.isLoading : isLoading) ? (
             <div className={styles.groupItems}>
               <NotifRowSkeleton />
               <NotifRowSkeleton />
@@ -374,6 +508,13 @@ export default function NotificationsRoute() {
               readInvitations={readInvitations}
               onAccept={(invId) => acceptMutation.mutate(invId)}
               onDecline={(invId) => declineMutation.mutate(invId)}
+              busyInvitationId={
+                acceptMutation.isPending
+                  ? acceptMutation.variables
+                  : declineMutation.isPending
+                    ? declineMutation.variables
+                    : null
+              }
               onNavigateHost={(hostId) => navigate(`/profile/${getUserById(hostId)?.username || hostId}`)}
               onViewActivity={handleInvClick}
               pageStyles={styles}
@@ -387,6 +528,28 @@ export default function NotificationsRoute() {
               pageStyles={styles}
               scrollRef={pageRef}
             />
+          )}
+          {activeTab === 'invitations' && inviteFeed.hasNextPage && (
+            <div style={{ padding: '0.5rem 0' }}>
+              <button
+                onClick={() => inviteFeed.fetchNextPage()}
+                disabled={inviteFeed.isFetchingNextPage}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  margin: '1rem 0',
+                  background: 'var(--color-bg-white)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  color: 'var(--color-text-main)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                }}
+              >
+                {inviteFeed.isFetchingNextPage ? 'Loading…' : 'Load More'}
+              </button>
+            </div>
           )}
           {activeTab !== 'invitations' && isFetchingNextPage && !isLoading && (
             <div className={styles.groupItems} style={{ marginTop: '0.75rem' }}>

@@ -109,7 +109,11 @@ describe('Activity access enforcement (service level)', () => {
         ActivityDiscussionService,
         ActivityAuthorizationService,
         { provide: PrismaService, useValue: prisma },
-        { provide: NotificationsService, useValue: { createNotification: jest.fn(), cancelNotificationByCriteria: jest.fn() } },
+        { provide: NotificationsService, useValue: {
+          createNotification: jest.fn(),
+          cancelNotificationByCriteria: jest.fn(),
+          updateNotificationLifecycleStatus: jest.fn().mockResolvedValue([]),
+        } },
         { provide: NotificationFactory, useValue: { createActivityJoin: jest.fn() } },
         {
           provide: BlocksService,
@@ -228,9 +232,20 @@ describe('Activity access enforcement (service level)', () => {
       await expectDenied(() => service.getActivityById('act-1', 'user-other'), 'COLLEGE_RESTRICTED');
     });
 
-    it('denies a Private activity to an uninvited same-college viewer', async () => {
+    it('404s a Private activity for an uninvited same-college viewer', async () => {
       activityRow = baseActivity('PRIVATE');
-      await expectDenied(() => service.getActivityById('act-1', 'user-same'), 'PRIVATE');
+      // Existence itself is restricted, so the denial is indistinguishable
+      // from a bad id — no code, no copy, no details.
+      await expect(service.getActivityById('act-1', 'user-same')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      try {
+        await service.getActivityById('act-1', 'user-same');
+      } catch (err: any) {
+        const serialized = JSON.stringify(err.getResponse());
+        expect(serialized).not.toContain('Secret rooftop dinner');
+        expect(serialized).not.toContain('PRIVATE');
+      }
     });
 
     it('gives the host full access to a Private activity', async () => {
@@ -254,9 +269,9 @@ describe('Activity access enforcement (service level)', () => {
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
 
-    it('rejects a direct API join on a Private activity', async () => {
+    it('rejects a direct API join on a Private activity without confirming it exists', async () => {
       activityRow = baseActivity('PRIVATE');
-      await expect(service.joinActivity('act-1', 'user-same')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.joinActivity('act-1', 'user-same')).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
 
@@ -272,7 +287,9 @@ describe('Activity access enforcement (service level)', () => {
       activityRow = baseActivity('PRIVATE', [
         { inviteeId: 'user-other', status: 'PENDING', revokedAt: null, expiresAt: new Date(Date.now() - 1000) },
       ]);
-      await expect(service.joinActivity('act-1', 'user-other')).rejects.toBeInstanceOf(ForbiddenException);
+      // An expired invitation leaves the caller in the same position as someone
+      // who was never invited, so they get the same 404.
+      await expect(service.joinActivity('act-1', 'user-other')).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('lets anyone join an Anyone activity, and is idempotent under repeats', async () => {
@@ -295,8 +312,18 @@ describe('Activity access enforcement (service level)', () => {
   });
 
   describe('activity discussion', () => {
-    it('refuses to read the discussion of a restricted activity', async () => {
+    it('refuses to read the discussion of a private activity', async () => {
       activityRow = baseActivity('PRIVATE');
+      prisma.crewActivity.findFirst.mockImplementation(async () => activityRow);
+      // Private denials are 404s everywhere the policy is applied, not just on
+      // the detail endpoint — the discussion must not disclose what the detail
+      // endpoint withholds.
+      await expect(discussion.getMessages('act-1', 'user-other')).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.activityDiscussionMessage.findMany).not.toHaveBeenCalled();
+    });
+
+    it('refuses to read the discussion of a college-restricted activity', async () => {
+      activityRow = baseActivity('COLLEGE_ONLY');
       prisma.crewActivity.findFirst.mockImplementation(async () => activityRow);
       await expect(discussion.getMessages('act-1', 'user-other')).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.activityDiscussionMessage.findMany).not.toHaveBeenCalled();

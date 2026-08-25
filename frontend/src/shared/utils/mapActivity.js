@@ -68,6 +68,10 @@ export function mapActivity(a) {
     pendingRequests,
     slotsFilled: count,
     slotsNeeded: a.slotsNeeded || a.maxMembers || 999,
+    // College label for the College / Campus surfaces. The server selects the
+    // college relation on every card, and `hostCollege` is the legacy free-text
+    // fallback for rows created before the relation existed.
+    collegeName: a.collegeName || a.college?.name || a.hostCollege || null,
     _membersData: membersData,
   };
 }

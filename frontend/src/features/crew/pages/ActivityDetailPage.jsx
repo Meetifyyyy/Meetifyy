@@ -18,6 +18,7 @@ import { Bookmark, UserPlus, CircleXIcon } from '@shared/components/icons';
 import { showToast } from '@shared/utils/toast';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import { useJoinActivity } from '../hooks/useJoinActivity';
+import { useActivityLifecycle } from '../hooks/useActivityLifecycle';
 import { useActivityById, useActivityAttendees } from '@shared/hooks/useCrew';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 // Deferred: the discussion pulls its own message page and joins a socket room.
@@ -426,6 +427,16 @@ export default function ActivityDetailPage() {
     return () => observer.disconnect();
   }, [discussionVisible, activity?.id]);
 
+  // Time-based lifecycle. `onBoundary` revalidates against the server at the
+  // crossing, because the stored status (ENDED, CANCELLED) is the server's to
+  // decide even though the *timing* is derived locally.
+  const lifecycle = useActivityLifecycle(activity, {
+    onBoundary: () => {
+      if (!cleanId) return;
+      queryClient.invalidateQueries({ queryKey: ['activity', cleanId] });
+    },
+  });
+
   const handleScroll = (e) => {
     const scrolled = e.target.scrollTop > 50;
     setShowHeaderTitle(prev => prev !== scrolled ? scrolled : prev);
@@ -488,39 +499,10 @@ export default function ActivityDetailPage() {
   const spotsLeft = slotsNeeded - slotsFilledAdjusted;
   const isFull = spotsLeft <= 0;
   const isHost = !!(currentUser?.id && (activity.hostId === currentUser.id || activity.creatorId === currentUser.id));
-  const isCancelled = activity.status === 'CANCELLED';
-  let hasEnded = activity.status === 'ENDED' || isCancelled;
-
-  let hasStarted = false;
-  const startRaw = activity.startDate || activity.date;
-  const endRaw = activity.endDate;
-
-  if (startRaw) {
-    const activityStart = new Date(startRaw);
-    if (!isNaN(activityStart.getTime())) {
-      hasStarted = new Date() >= activityStart;
-    }
-  }
-
-  if (endRaw) {
-    const activityEnd = new Date(endRaw);
-    if (!isNaN(activityEnd.getTime()) && new Date() >= activityEnd) {
-      hasEnded = true;
-    }
-  } else if (startRaw) {
-    const activityStart = new Date(startRaw);
-    if (!isNaN(activityStart.getTime())) {
-      let durationHours = 1;
-      if (activity.duration) {
-        const match = String(activity.duration).match(/(\d+)/);
-        if (match) durationHours = parseInt(match[1], 10);
-      }
-      const calculatedEnd = new Date(activityStart.getTime() + durationHours * 60 * 60 * 1000);
-      if (new Date() >= calculatedEnd) {
-        hasEnded = true;
-      }
-    }
-  }
+  // Start/end are derived by useActivityLifecycle (declared above the early
+  // returns, since hooks cannot live down here). It re-renders this page at the
+  // exact boundary, so an open page flips to "Already started!" on its own.
+  const { isCancelled, hasStarted, hasEnded } = lifecycle;
 
   const handleToggleJoin = () => {
     if (isHost) return;

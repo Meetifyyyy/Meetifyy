@@ -16,6 +16,10 @@ import CampusEventForm from '@features/campus-events/components/CampusEventForm'
 import eventStyles from '@features/campus-events/components/CampusEvents.module.css';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import { Plus, Users, CalendarPlus, ChevronRight } from '@shared/components/icons';
+import { useActivities } from '@shared/hooks/useCrew';
+import CrewCard from '@features/crew/components/cards/CrewCard';
+import CrewCardSkeleton from '@features/crew/components/cards/CrewCardSkeleton';
+import { mapActivity } from '@shared/utils/mapActivity';
 
 export default function CampusPage() {
   const navigate = useNavigate();
@@ -29,6 +33,17 @@ export default function CampusPage() {
   // Upcoming/Ongoing/Past breakdown lives on the dedicated /campus/events page.
   const upcoming = useCampusEvents('upcoming');
   const deleteEvent = useDeleteCampusEvent();
+
+  // College-scoped crew activities. The `campus` scope is resolved entirely by
+  // the server from the caller's own college — this page never filters by
+  // college itself, so there is nothing here for a client to bypass. Activities
+  // set to "Anyone" belong to the Crew All section and "Private" ones appear in
+  // no discovery surface at all, which is why neither reaches this list.
+  const campusActivities = useActivities('campus');
+  const campusActivityItems = useMemo(
+    () => (campusActivities.activities || []).map(mapActivity).filter(Boolean).slice(0, 4),
+    [campusActivities.activities],
+  );
 
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [eventFormState, setEventFormState] = useState(null); // null | { event? }
@@ -179,6 +194,44 @@ export default function CampusPage() {
             isFetchingNextPage={upcoming.isFetchingNextPage}
             fetchNextPage={upcoming.fetchNextPage}
           />
+        </section>
+
+        {/* Campus activities — the college-only crew activities of this campus. */}
+        <section className={styles.section}>
+          <div className={styles.sectionHeaderRow} style={{ justifyContent: 'space-between' }}>
+            <div className={styles.sectionHeaderRow}>
+              <span className={styles.sectionEmoji}>🎉</span>
+              <h2 className={styles.sectionTitleText}>campus activities</h2>
+            </div>
+            {campusActivityItems.length > 0 && (
+              <button
+                className={eventStyles.createBtn}
+                style={{ background: 'transparent', color: 'var(--color-primary, #8f0c13)', border: '1px solid var(--color-border, rgba(0,0,0,0.12))' }}
+                onClick={() => navigate('/crew?tab=college')}
+              >
+                See all <ChevronRight size={15} />
+              </button>
+            )}
+          </div>
+
+          {campusActivities.isLoading && campusActivityItems.length === 0 ? (
+            <>
+              <CrewCardSkeleton />
+              <CrewCardSkeleton />
+            </>
+          ) : campusActivityItems.length === 0 ? (
+            <p className={styles.emptyText} style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+              No college activities yet. Create one from Crew and set it to College.
+            </p>
+          ) : (
+            campusActivityItems.map(activity => (
+              <CrewCard
+                key={activity.id}
+                activity={activity}
+                onClick={(id) => navigate(`/crew/${id}`, { state: { from: '/campus' } })}
+              />
+            ))
+          )}
         </section>
 
         {/* Wrapper for Side by Side Sections on Desktop */}

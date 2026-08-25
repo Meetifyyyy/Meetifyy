@@ -21,9 +21,9 @@ export class ActivitiesController {
   ) {
     const rawLimit = parseInt(limit || '', 10);
     const parsedLimit = !isNaN(rawLimit) && rawLimit > 0 ? rawLimit : 20;
-    const allowedScopes = ['public', 'college', 'one_on_one', 'for_you'] as const;
+    const allowedScopes = ['public', 'college', 'campus', 'one_on_one', 'for_you'] as const;
     const parsedScope = (allowedScopes as readonly string[]).includes(scope || '')
-      ? (scope as 'public' | 'college' | 'one_on_one' | 'for_you')
+      ? (scope as 'public' | 'college' | 'campus' | 'one_on_one' | 'for_you')
       : 'public';
 
     // The personalized feed is ordered by relevance rather than recency, so it
@@ -159,7 +159,7 @@ export class ActivitiesController {
 
   @Post(':id/end')
   async endCrewActivity(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.activitiesService.cancelCrewActivity(id, user.id);
+    return this.activitiesService.endCrewActivity(id, user.id);
   }
 
   @Post(':id/invite')

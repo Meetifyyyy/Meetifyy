@@ -313,6 +313,19 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     // (joined `activity_<id>` via 'activity:join'), so attendee counts and
     // avatars update live instead of waiting for a refetch. Previously these
     // carried no targetUserIds and were dropped with a warning.
+    // Lifecycle changes for an activity reach everyone currently LOOKING at it.
+    // `activity_<id>` is an authorization-checked room (see
+    // checkActivityRoomAccess), so this is a safe fan-out, and it is what makes
+    // a detail page that is already open react to the activity starting,
+    // ending or being cancelled without the viewer refreshing.
+    if (payload.type === 'activity.updated' || payload.type === 'activity.started') {
+      const activityScopeId = payload.data?.activityId || payload.data?.id;
+      if (activityScopeId) {
+        this.server.to(`activity_${activityScopeId}`).emit('domainEvent', payload);
+        return;
+      }
+    }
+
     if (payload.type === 'activity.memberJoined' || payload.type === 'activity.memberLeft') {
       const activityScopeId = payload.data?.activityId || payload.activityId;
       if (activityScopeId) {

@@ -144,3 +144,47 @@
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
+/* Settled invites stay in the list as a record. They are visually quieter than
+   a pending one — the row is history, not a request for a decision — but the
+   outcome itself is colour-coded so accepted / declined / cancelled / ended are
+   distinguishable at a glance. */
+.settled .activityImg {
+  filter: saturate(0.75);
+}
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  padding: 0.2rem 0.65rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.statusAccepted {
+  color: var(--color-success, #15803d);
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.statusDeclined {
+  color: var(--color-danger, #ef4444);
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.32);
+}
+
+.statusCancelled {
+  color: var(--color-warning, #b45309);
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.statusExpired {
+  color: var(--color-text-muted);
+  background: rgba(0, 0, 0, 0.06);
+  border-color: var(--color-border);
+}

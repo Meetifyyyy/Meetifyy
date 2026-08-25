@@ -10,6 +10,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { ActivityAuthorizationService, UserAuthContext } from './activity-authorization.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { RedisService } from '../redis/redis.service';
+import { ActivityVisibility } from '@prisma/client';
 
 @Injectable()
 export class ActivitiesService implements OnModuleInit {
@@ -66,7 +67,111 @@ export class ActivitiesService implements OnModuleInit {
     // Run auto-expiration every 60 seconds
     setInterval(() => {
       this.autoExpireActivities().catch(() => {});
+      this.expireStartedInvitations().catch(() => {});
+      this.announceStartedActivities().catch(() => {});
     }, 60000);
+  }
+
+  /**
+   * Settles invitations that were never answered before the activity STARTED.
+   *
+   * An invitation is an offer to come along, so it stops being answerable the
+   * moment the thing begins — not when it finishes. `joinActivity` has always
+   * refused a started activity, which meant an unanswered invite sat in the
+   * Notifications page still offering Accept and Decline buttons that could
+   * only ever fail. Expiring at the start time is what makes the record match
+   * what the system will actually allow.
+   *
+   * Only PENDING rows are touched, so an accepted or declined invite keeps the
+   * answer its recipient gave.
+   */
+  async expireStartedInvitations() {
+    const now = new Date();
+    try {
+      const stale = await this.prisma.activityInvitation.findMany({
+        where: {
+          status: 'PENDING',
+          activity: {
+            deletedAt: null,
+            startDate: { lte: now },
+          },
+        },
+        select: { id: true, activityId: true, inviteeId: true },
+      });
+      if (stale.length === 0) return;
+
+      await this.prisma.activityInvitation.updateMany({
+        where: { id: { in: stale.map(i => i.id) } },
+        data: { status: 'EXPIRED' },
+      });
+
+      const byActivity = new Map<string, string[]>();
+      for (const inv of stale) {
+        const list = byActivity.get(inv.activityId) || [];
+        list.push(inv.inviteeId);
+        byActivity.set(inv.activityId, list);
+      }
+      for (const [activityId, inviteeIds] of byActivity) {
+        await this.settleInviteNotifications(activityId, 'EXPIRED', inviteeIds);
+        // Tells any open client to re-read; the notification row itself is
+        // pushed directly to the recipient by settleInviteNotifications.
+        await this.domainEventService.emit(
+          'invitation:updated',
+          { activityId, status: 'EXPIRED' },
+          inviteeIds,
+        );
+      }
+    } catch (err) {
+      this.logger.error('Failed to expire started invitations', err);
+    }
+  }
+
+  /** High-water mark for the start-time sweep; see announceStartedActivities. */
+  private lastStartSweepAt: Date | null = null;
+
+  /**
+   * Announces activities that have just crossed their start time to whoever is
+   * currently viewing them.
+   *
+   * "Started" is not a stored status — it is purely a function of `startDate`
+   * and the current time — so nothing in the ordinary write path fires at the
+   * moment it becomes true. Without this sweep the only client that learns of
+   * the transition is one that happens to refetch.
+   *
+   * This is a best-effort nudge, NOT the guarantee: an open detail page also
+   * runs its own timer to the authoritative start time, so the transition is
+   * correct even if this process is not running, the socket is down, or the
+   * sweep lands late. Deliberately room-scoped and detail-free.
+   */
+  async announceStartedActivities() {
+    const now = new Date();
+    const since = this.lastStartSweepAt;
+    this.lastStartSweepAt = now;
+    // First tick after boot has no window to compare against; skip rather than
+    // replaying every activity that ever started.
+    if (!since) return;
+
+    try {
+      const justStarted = await this.prisma.crewActivity.findMany({
+        where: {
+          status: 'OPEN',
+          deletedAt: null,
+          startDate: { gt: since, lte: now },
+        },
+        select: { id: true, startDate: true },
+      });
+
+      for (const act of justStarted) {
+        await this.domainEventService.emit('activity.started', {
+          activityId: act.id,
+          id: act.id,
+          startDate: act.startDate,
+          serverNow: now.toISOString(),
+        });
+      }
+    } catch (err) {
+      this.logger.error('Failed to announce started activities', err);
+    }
   }
 
   async autoExpireActivities() {
@@ -94,10 +199,29 @@ export class ActivitiesService implements OnModuleInit {
           data: { status: 'ENDED' }
         });
 
+        // Read the outstanding invitees first: after the updateMany below there
+        // is no longer any way to know whose invite went unanswered, and those
+        // are exactly the notifications that must be moved to EXPIRED rather
+        // than left showing live Accept/Decline buttons forever.
+        const pendingInvites = await this.prisma.activityInvitation.findMany({
+          where: { activityId: { in: expiredIds }, status: 'PENDING' },
+          select: { activityId: true, inviteeId: true },
+        });
+
         await this.prisma.activityInvitation.updateMany({
           where: { activityId: { in: expiredIds }, status: 'PENDING' },
           data: { status: 'EXPIRED' }
         });
+
+        const inviteesByActivity = new Map<string, string[]>();
+        for (const inv of pendingInvites) {
+          const list = inviteesByActivity.get(inv.activityId) || [];
+          list.push(inv.inviteeId);
+          inviteesByActivity.set(inv.activityId, list);
+        }
+        for (const [actId, inviteeIds] of inviteesByActivity) {
+          await this.settleInviteNotifications(actId, 'EXPIRED', inviteeIds);
+        }
 
         for (const actId of expiredIds) {
           this.domainEventService.emit('activity.updated', { id: actId, status: 'ENDED' });
@@ -177,9 +301,16 @@ export class ActivitiesService implements OnModuleInit {
   /**
    * Scoped feed. `scope` selects which slice of activities to return:
    *   - 'public'      → everything the viewer may discover (the "Recent" feed)
-   *   - 'college'     → discoverable activities hosted by the viewer's college,
-   *                     which includes PUBLIC ones from that college as well as
-   *                     COLLEGE_ONLY ones
+   *   - 'college'     → COLLEGE_ONLY activities belonging to the viewer's own
+   *                     college. Deliberately NOT "everything hosted by my
+   *                     college": a PUBLIC activity from the same college
+   *                     belongs to the All section, and mixing it in here made
+   *                     the College section misrepresent an activity's audience.
+   *                     PRIVATE never appears — the discovery policy excludes it
+   *                     structurally.
+   *   - 'campus'      → the same COLLEGE_ONLY slice, surfaced on the Campus
+   *                     page. It shares the college scope's rules exactly so the
+   *                     two surfaces can never disagree about who may see what.
    *   - 'one_on_one'  → discoverable activities with exactly 2 slots
    *
    * Every scope is intersected with the central discovery policy at the DATABASE
@@ -190,7 +321,7 @@ export class ActivitiesService implements OnModuleInit {
     userId?: string,
     limit = 20,
     cursor?: string,
-    scope: 'public' | 'college' | 'one_on_one' = 'public',
+    scope: 'public' | 'college' | 'campus' | 'one_on_one' = 'public',
   ) {
     const startTime = performance.now();
 
@@ -229,14 +360,15 @@ export class ActivitiesService implements OnModuleInit {
     // The college scope needs the caller's own college; a user with no college
     // has nothing to show there.
     const scopeCollegeId = viewer?.collegeId ?? null;
-    if (scope === 'college' && !scopeCollegeId) {
+    const isCollegeScope = scope === 'college' || scope === 'campus';
+    if (isCollegeScope && !scopeCollegeId) {
       return { activities: [], nextCursor: undefined };
     }
 
     // The audience tag pins every SHARED page to the college allowed to see it,
     // so a page built for one college can never be served to another.
     const audienceTag = `aud:${viewer?.collegeId || 'none'}`;
-    const scopeTag = scope === 'college' ? `college:${scopeCollegeId}` : scope;
+    const scopeTag = isCollegeScope ? `${scope}:${scopeCollegeId}` : scope;
 
     // A shared page is only sound for viewers with the same audience tag, no
     // blocks and no invitation-derived extra visibility.
@@ -270,7 +402,14 @@ export class ActivitiesService implements OnModuleInit {
         deletedAt: null,
         status: 'OPEN',
         startDate: { gt: now },
-        ...(scope === 'college' ? { collegeId: scopeCollegeId } : {}),
+        // College and Campus are the COLLEGE_ONLY surfaces. Pinning the
+        // visibility here (not just the college id) is what keeps "Anyone"
+        // activities out of the College section, and it is applied in the
+        // DATABASE query so the rule cannot be bypassed by a client that asks
+        // for the scope directly.
+        ...(isCollegeScope
+          ? { collegeId: scopeCollegeId, visibility: ActivityVisibility.COLLEGE_ONLY }
+          : {}),
         ...(scope === 'one_on_one' ? { maxMembers: 2 } : {}),
         ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
         ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
@@ -314,6 +453,9 @@ export class ActivitiesService implements OnModuleInit {
           updatedAt: true,
           hostCollege: true,
           collegeId: true,
+          // Same reason as CARD_SELECT: the College/Campus surfaces label each
+          // card with the college it belongs to.
+          college: { select: { id: true, name: true } },
           participationType: true,
           shareToCampus: true,
           visibility: true,
@@ -397,6 +539,9 @@ export class ActivitiesService implements OnModuleInit {
 
   /** Column set for feed/preview cards — mirrors getAllActivities' select. */
   private static readonly CARD_SELECT = {
+    // `college` is selected (not just collegeId) so a card can render the
+    // college tag the Campus page shows without a second lookup per row.
+    college: { select: { id: true, name: true } },
     id: true,
     creatorId: true,
     title: true,
@@ -788,7 +933,15 @@ export class ActivitiesService implements OnModuleInit {
       this.hydrateRankedActivities(rankedIds.slice(0, PREVIEW + 1), userId, viewer),
       collegeId
         ? this.prisma.crewActivity.findMany({
-            where: { AND: [{ ...baseFilter, collegeId }, policyWhere] },
+            // COLLEGE_ONLY only — same rule as the `college` feed scope behind
+            // this section's "See all", so the preview and the full list agree.
+            // A PUBLIC activity from the same college belongs to For You / All.
+            where: {
+              AND: [
+                { ...baseFilter, collegeId, visibility: ActivityVisibility.COLLEGE_ONLY },
+                policyWhere,
+              ],
+            },
             take: PREVIEW + 1,
             // Same ordering as the full list behind "See all", so the preview
             // reads as the top of that list rather than a different one.
@@ -950,6 +1103,10 @@ export class ActivitiesService implements OnModuleInit {
     const { invitations, _count, ...activityFields } = activity as any;
     return {
       ...activityFields,
+      // The server's clock, so a client can measure its own offset and time the
+      // "already started" transition against the authoritative start instant
+      // rather than against a device clock that may be minutes out.
+      serverNow: new Date().toISOString(),
       // Host identity is suppressed rather than the whole event: the profile
       // stays unreachable (no name, no avatar, nothing to tap through to)
       // while date, time, location and description survive.
@@ -1325,6 +1482,12 @@ export class ActivitiesService implements OnModuleInit {
       { ...activityRow, members: [] } as any,
     );
     if (!authDecision.allowed) {
+      // Same disclosure rule as assertCanView: a private activity a caller may
+      // not see must answer "not found" here too, or the join endpoint becomes
+      // an oracle for the existence of activities the detail endpoint hides.
+      if (authDecision.code === 'PRIVATE' || authDecision.code === 'NOT_FOUND') {
+        throw new NotFoundException('Activity not found');
+      }
       throw new ForbiddenException(authDecision.reason || 'You are not authorized to join this activity');
     }
 
@@ -1443,33 +1606,93 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   async cancelCrewActivity(activityId: string, currentUserId: string) {
+    return this.closeCrewActivity(activityId, currentUserId, 'CANCELLED');
+  }
+
+  async endCrewActivity(activityId: string, currentUserId: string) {
+    return this.closeCrewActivity(activityId, currentUserId, 'ENDED');
+  }
+
+  /**
+   * Closes an activity, either because the host cancelled it or because it is
+   * over. The two are NOT the same outcome for someone holding an unanswered
+   * invite — "the host called it off" and "it already happened" are different
+   * facts — so the terminal status is carried all the way through to the
+   * invitation row and to the invite notification the recipient still holds.
+   *
+   * Outstanding invites are settled here rather than silently dropped: the
+   * notification is re-stated in place (CANCELLED / EXPIRED), never deleted,
+   * and only for invitees who never answered — an accepted or declined invite
+   * keeps the record of what that person actually did.
+   */
+  private async closeCrewActivity(
+    activityId: string,
+    currentUserId: string,
+    terminalStatus: 'CANCELLED' | 'ENDED',
+  ) {
     const activity = await this.prisma.crewActivity.findUnique({
       where: { id: activityId, creatorId: currentUserId },
       select: { id: true }
     });
     if (!activity) throw new NotFoundException('Activity not found or you are not creator');
 
+    // Captured BEFORE the update — once the rows move off PENDING there is no
+    // way to tell who had an outstanding invite.
+    const pendingInvitees = await this.prisma.activityInvitation.findMany({
+      where: { activityId, status: 'PENDING' },
+      select: { inviteeId: true },
+    });
+
+    const invitationStatus = terminalStatus === 'CANCELLED' ? 'CANCELLED' : 'EXPIRED';
+
     await Promise.all([
       this.prisma.crewActivity.update({
         where: { id: activityId },
-        data: { status: 'CANCELLED' }
+        data: { status: terminalStatus }
       }),
       this.prisma.activityInvitation.updateMany({
         where: { activityId, status: 'PENDING' },
-        data: { status: 'EXPIRED' },
+        data: { status: invitationStatus },
       })
     ]);
 
+    await this.settleInviteNotifications(
+      activityId,
+      invitationStatus,
+      pendingInvitees.map(i => i.inviteeId),
+    );
+
     setImmediate(() => {
-      this.domainEventService.emit('activity.updated', { id: activityId, status: 'CANCELLED' });
+      this.domainEventService.emit('activity.updated', { id: activityId, status: terminalStatus });
       this.clearActivityFeedCaches();
     });
 
     return { success: true };
   }
 
-  async endCrewActivity(activityId: string, currentUserId: string) {
-    return this.cancelCrewActivity(activityId, currentUserId);
+  /**
+   * Re-states an invite notification in place. Never creates one and never
+   * removes one; `onlyIfStatusIn: ['PENDING']` is what stops a cancellation
+   * from rewriting the row of someone who had already accepted or declined.
+   *
+   * Every settle — the recipient's own answer as well as the activity reaching
+   * a terminal state — goes through here so all of them log a failure rather
+   * than swallowing it. A silently dropped update here is what leaves a row
+   * showing Accept/Decline for an invite that was already answered.
+   */
+  private async settleInviteNotifications(
+    activityId: string,
+    status: 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'EXPIRED',
+    recipientIds: string[],
+  ) {
+    if (recipientIds.length === 0) return;
+    await this.notificationsService.updateNotificationLifecycleStatus({
+      type: 'ACTIVITY_INVITE' as any,
+      entityId: activityId,
+      recipientIds,
+      status,
+      onlyIfStatusIn: ['PENDING'],
+    }).catch(err => this.logger.warn(`Failed to settle invite notifications for ${activityId}`, err));
   }
 
   async bookmarkActivity(activityId: string, userId: string) {
@@ -1724,6 +1947,14 @@ export class ActivitiesService implements OnModuleInit {
       throw new BadRequestException('Activity is not open for invitations');
     }
 
+    // A started activity is still OPEN until the expiry sweep closes it, but an
+    // invitation to it can no longer be accepted — joinActivity refuses a
+    // started activity. Sending one would put a notification in front of the
+    // invitee that is expired the moment it arrives.
+    if (activity.startDate && new Date(activity.startDate) <= new Date()) {
+      throw new BadRequestException('This activity has already started');
+    }
+
     const cleanInviteeIds = Array.from(new Set((inviteeIds || []).filter(id => id && id !== inviterId)));
     if (cleanInviteeIds.length === 0) {
       return { results: [] };
@@ -1758,6 +1989,20 @@ export class ActivitiesService implements OnModuleInit {
 
       const existingInv = invitationMap.get(inviteeId);
       if (existingInv) {
+        // Already said yes. Normally they are also in `existingMembers` and
+        // were caught above, but the invitation is the record of the answer and
+        // it must block a re-invite on its own — otherwise someone who accepted
+        // and later left could be sent a fresh invite, which would reset their
+        // answered notification back to Pending.
+        if (existingInv.status === 'ACCEPTED') {
+          results.push({
+            inviteeId,
+            status: 'ACCEPTED',
+            message: 'User has already accepted this invitation',
+          });
+          continue;
+        }
+
         if (existingInv.status === 'PENDING') {
           results.push({ inviteeId, status: 'PENDING', message: 'Invitation Pending' });
           continue;
@@ -1805,28 +2050,59 @@ export class ActivitiesService implements OnModuleInit {
         results.push({ inviteeId: inv.inviteeId, status: 'INVITED', invitationId: inv.id });
       }
 
+      const notificationPayload = {
+        activityId: activity.id,
+        inviterId,
+        invitations: createdInvitations.map(i => ({ inviteeId: i.inviteeId, invitationId: i.id })),
+        activityTitle: activity.title,
+        activityLocation: activity.location,
+        activityCoverImage: activity.coverImage,
+        activityCoverColor: activity.coverColor,
+        startDate: activity.startDate,
+        endDate: activity.endDate,
+        inviter: {
+          id: inviter?.id || inviterId,
+          name: inviter?.displayName || inviter?.username || 'Host',
+          username: inviter?.username || '',
+          avatar: inviter?.avatar,
+        },
+      };
+
+      // The invite NOTIFICATION is the durable record of the invite and of what
+      // the recipient eventually did with it. The queue is injected with
+      // @Optional(), so on any deployment without a worker this was silently
+      // never written: the invite existed only as an ActivityInvitation row,
+      // which is pending-only, and answering it therefore made the row vanish
+      // from the Notifications page instead of turning into "Accepted".
+      //
+      // The queue stays the preferred path (retries, off the request path); the
+      // inline call is the fallback when there is no queue or the enqueue
+      // fails. Both run the same method, and createNotification upserts, so a
+      // late-arriving job cannot produce a duplicate.
+      const dispatchInline = () =>
+        this.notificationsService
+          .createActivityInviteNotifications(notificationPayload)
+          .catch(err => this.logger.error('Failed to create invite notifications', err));
+
       if (this.notifQueue) {
-        setImmediate(() => {
-          this.notifQueue?.add('activity-invitations', {
-            activityId: activity.id,
-            inviterId,
-            invitations: createdInvitations.map(i => ({ inviteeId: i.inviteeId, invitationId: i.id })),
-            activityTitle: activity.title,
-            activityLocation: activity.location,
-            activityCoverImage: activity.coverImage,
-            activityCoverColor: activity.coverColor,
-            startDate: activity.startDate,
-            endDate: activity.endDate,
-            inviter: {
-              id: inviter?.id || inviterId,
-              name: inviter?.displayName || inviter?.username || 'Host',
-              username: inviter?.username || '',
-              avatar: inviter?.avatar,
-            },
-          }, { removeOnComplete: true, attempts: 3, backoff: { type: 'exponential', delay: 1000 } }).catch(err => {
+        // `await` inside try/catch rather than `.catch()` on the return value:
+        // a queue client can throw synchronously or hand back something that is
+        // not a promise, and this runs detached in a setImmediate where either
+        // would surface as an unhandled crash instead of a failed enqueue.
+        setImmediate(async () => {
+          try {
+            await this.notifQueue?.add('activity-invitations', notificationPayload, {
+              removeOnComplete: true,
+              attempts: 3,
+              backoff: { type: 'exponential', delay: 1000 },
+            });
+          } catch (err) {
             this.logger.warn('Failed to enqueue activity invitations job to BullMQ', err);
-          });
+            await dispatchInline();
+          }
         });
+      } else {
+        setImmediate(dispatchInline);
       }
     }
 
@@ -1842,6 +2118,11 @@ export class ActivitiesService implements OnModuleInit {
         status: 'PENDING',
         activity: {
           deletedAt: null,
+          // An invitation to something that has already begun is not
+          // answerable — the sweep will mark it EXPIRED, and until it does
+          // this filter keeps it out of the actionable list. Without it the
+          // list could offer an Accept that the join endpoint would refuse.
+          OR: [{ startDate: null }, { startDate: { gt: new Date() } }],
         },
       },
       include: {
@@ -1897,6 +2178,24 @@ export class ActivitiesService implements OnModuleInit {
     }));
   }
 
+  /**
+   * Accept an invitation: validate → JOIN → record the answer.
+   *
+   * The join happens BEFORE the invitation is marked ACCEPTED and before this
+   * method returns, so the caller can navigate straight to the activity and
+   * find themselves already a participant — there is no second "I'm in" step,
+   * and no window in which the invite reads as accepted while the membership
+   * row does not exist yet. If the join is refused (full, started, cancelled,
+   * visibility withdrawn) the invitation stays PENDING and the error surfaces,
+   * so a failed acceptance never redirects anywhere.
+   *
+   * IDEMPOTENT by design. A double-click, a retry after a dropped response, or
+   * two tabs racing all converge on the same single membership row: the
+   * membership write is an ON CONFLICT upsert inside joinActivity, and an
+   * already-ACCEPTED invitation is re-confirmed here rather than rejected.
+   * Only a genuinely unusable invitation (not yours, revoked, expired,
+   * declined, cancelled) is a 404.
+   */
   async acceptInvitation(invitationId: string, userId: string) {
     const invitation = await this.prisma.activityInvitation.findUnique({
       where: { id: invitationId },
@@ -1904,32 +2203,65 @@ export class ActivitiesService implements OnModuleInit {
     });
 
     // Bound to the AUTHENTICATED user — the invitation id alone grants nothing.
+    // `isValidInvitation` admits PENDING and ACCEPTED and rejects revoked or
+    // expired rows, which is exactly the set that may be (re-)accepted.
     if (
       !invitation ||
       invitation.inviteeId !== userId ||
-      invitation.status !== 'PENDING' ||
       !this.activityAuthorizationService.isValidInvitation(invitation, userId)
     ) {
       throw new NotFoundException('Invitation not found or no longer pending');
     }
 
+    // A retry of an invitation that was already accepted must not fail: if the
+    // membership exists the work is done, so report the same success the first
+    // call did and let the caller navigate.
+    if (invitation.status === 'ACCEPTED') {
+      const existingMember = await this.prisma.crewActivityMember.findUnique({
+        where: { userId_activityId: { userId, activityId: invitation.activityId } },
+        select: { status: true },
+      });
+      if (existingMember?.status === 'MEMBER') {
+        // Settle the notification here too. This path is taken by every retry
+        // and every double-click, so if the FIRST accept failed to advance the
+        // notification the row would otherwise be stuck offering Accept and
+        // Decline forever — no later attempt would ever reach the update below.
+        await this.settleInviteNotifications(invitation.activityId, 'ACCEPTED', [userId]);
+        return { success: true, activityId: invitation.activityId, alreadyJoined: true };
+      }
+      // ACCEPTED without a membership row means the previous attempt died
+      // between the two writes. Fall through and complete the join.
+    }
+
+    // Answerable only while the activity has not begun. joinActivity refuses a
+    // started activity anyway, but failing here first means the invite is also
+    // SETTLED as expired rather than left PENDING for a button that can never
+    // succeed.
+    await this.assertInvitationStillAnswerable(invitation, userId);
+
     // joinActivity re-runs the full policy independently; accepting an
-    // invitation is never a bypass of capacity/status/visibility rules.
+    // invitation is never a bypass of capacity/status/visibility rules. It is
+    // itself idempotent (ON CONFLICT upsert), so concurrent accepts cannot
+    // create duplicate participant rows.
     await this.joinActivity(invitation.activityId, userId);
 
-    await this.prisma.activityInvitation.update({
-      where: { id: invitationId },
+    // Conditional write: a cancellation or expiry that landed while the join
+    // was in flight has already moved this row off PENDING, and it must win —
+    // otherwise the invitation would read ACCEPTED for an activity that no
+    // longer exists to be accepted.
+    await this.prisma.activityInvitation.updateMany({
+      where: { id: invitationId, status: { in: ['PENDING', 'ACCEPTED'] } },
       data: {
         status: 'ACCEPTED',
-        respondedAt: new Date(),
+        respondedAt: invitation.respondedAt ?? new Date(),
       },
     });
 
-    await this.notificationsService.cancelNotificationByCriteria({
-      recipientId: userId,
-      entityId: invitation.activityId,
-      type: 'ACTIVITY_INVITE' as any,
-    }).catch(() => {});
+    // The invite notification is kept and re-stated, never removed — the
+    // recipient should still be able to see that they were invited and that
+    // they accepted. Only a PENDING row is advanced, so a duplicate accept
+    // cannot rewrite an already-settled record.
+    await this.settleInviteNotifications(invitation.activityId, 'ACCEPTED', [userId]);
 
     this.domainEventService.emit('invitation:updated', {
       invitationId,
@@ -1949,19 +2281,22 @@ export class ActivitiesService implements OnModuleInit {
       throw new NotFoundException('Invitation not found or no longer pending');
     }
 
-    await this.prisma.activityInvitation.update({
-      where: { id: invitationId },
+    await this.assertInvitationStillAnswerable(invitation, userId);
+
+    // Same conditional write as accept: only a still-PENDING invitation can be
+    // declined, so a concurrent cancellation is not overwritten.
+    const declined = await this.prisma.activityInvitation.updateMany({
+      where: { id: invitationId, status: 'PENDING' },
       data: {
         status: 'DECLINED',
         respondedAt: new Date(),
       },
     });
+    if (declined.count === 0) {
+      throw new NotFoundException('Invitation not found or no longer pending');
+    }
 
-    await this.notificationsService.cancelNotificationByCriteria({
-      recipientId: userId,
-      entityId: invitation.activityId,
-      type: 'ACTIVITY_INVITE' as any,
-    }).catch(() => {});
+    await this.settleInviteNotifications(invitation.activityId, 'DECLINED', [userId]);
 
     this.domainEventService.emit('invitation:updated', {
       invitationId,
@@ -1981,6 +2316,43 @@ export class ActivitiesService implements OnModuleInit {
    * Revoking does NOT remove an already-joined member — use the member flow for
    * that; it only withdraws the standing permission.
    */
+  /**
+   * Refuses an answer to an invitation whose activity has already started, and
+   * settles the record on the way out so the recipient's Notifications page
+   * stops offering a choice that no longer exists.
+   *
+   * Accept and decline share this because they must agree: a user must not be
+   * able to decline something they can no longer accept, or the two buttons
+   * would report different truths about the same invite.
+   */
+  private async assertInvitationStillAnswerable(
+    invitation: { id: string; activityId: string },
+    userId: string,
+  ) {
+    const activity = await this.prisma.crewActivity.findUnique({
+      where: { id: invitation.activityId },
+      select: { startDate: true, deletedAt: true },
+    });
+
+    if (!activity || activity.deletedAt) {
+      throw new NotFoundException('Activity not found');
+    }
+    if (!activity.startDate || new Date(activity.startDate) > new Date()) return;
+
+    await this.prisma.activityInvitation.updateMany({
+      where: { id: invitation.id, status: 'PENDING' },
+      data: { status: 'EXPIRED' },
+    });
+    await this.settleInviteNotifications(invitation.activityId, 'EXPIRED', [userId]);
+    await this.domainEventService.emit(
+      'invitation:updated',
+      { invitationId: invitation.id, activityId: invitation.activityId, status: 'EXPIRED' },
+      [userId],
+    );
+
+    throw new BadRequestException('This activity has already started');
+  }
+
   async revokeInvitation(activityId: string, hostId: string, inviteeId: string) {
     const activity = await this.prisma.crewActivity.findUnique({
       where: { id: activityId },
@@ -1997,6 +2369,7 @@ export class ActivitiesService implements OnModuleInit {
     });
 
     if (result.count > 0) {
+      await this.settleInviteNotifications(activityId, 'CANCELLED', [inviteeId]);
       await this.clearActivityFeedCaches();
         await this.domainEventService.emit('activity.visibilityChanged', {
         activityId,
@@ -2047,7 +2420,12 @@ export class ActivitiesService implements OnModuleInit {
         continue;
       }
 
-      if (inv.status === 'PENDING') {
+      if (inv.status === 'ACCEPTED') {
+        // They accepted; the invite picker must show them as already in rather
+        // than offering to invite them again. Reported as MEMBER because that
+        // is what accepting means, and the picker already renders that state.
+        statuses[inv.inviteeId] = { status: 'MEMBER' };
+      } else if (inv.status === 'PENDING') {
         statuses[inv.inviteeId] = { status: 'PENDING' };
       } else if (inv.status === 'DECLINED' && inv.respondedAt) {
         const timeSinceDecline = Date.now() - new Date(inv.respondedAt).getTime();

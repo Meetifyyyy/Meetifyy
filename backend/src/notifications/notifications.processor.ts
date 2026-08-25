@@ -85,70 +85,9 @@ export class NotificationsProcessor extends WorkerHost {
   }
 
   private async handleActivityInvitations(data: ActivityInvitationsJob) {
-    const { activityId, inviterId, invitations, activityTitle, activityLocation, activityCoverImage, activityCoverColor, startDate, endDate, inviter } = data;
-
-    for (const item of invitations) {
-      const { inviteeId, invitationId } = item;
-
-      const notif = await this.notificationsService.createNotification({
-        recipientId: inviteeId,
-        actorId: inviterId,
-        type: 'ACTIVITY_INVITE' as any,
-        entityType: 'ACTIVITY' as any,
-        entityId: activityId,
-        title: 'Activity Invitation',
-        body: `${inviter.name || 'Someone'} invited you to join ${activityTitle}`,
-        metadata: {
-          invitationId,
-          activityId,
-          title: activityTitle,
-          location: activityLocation,
-          startDate,
-          endDate,
-          coverImage: activityCoverImage,
-          // Solid-colour covers have no image; carry the colour so the
-          // notification renders the same cover the activity shows.
-          coverColor: activityCoverColor,
-          hostId: inviterId,
-          hostName: inviter.name,
-          hostAvatar: inviter.avatar,
-          hostUsername: inviter.username,
-        },
-        prePopulatedActor: {
-          id: inviterId,
-          username: inviter.username,
-          displayName: inviter.name,
-          avatar: inviter.avatar || null,
-        },
-      });
-
-      this.domainEventService.emit('invitation:new', {
-        id: invitationId,
-        activityId,
-        inviterId,
-        inviteeId,
-        status: 'PENDING',
-        activity: {
-          id: activityId,
-          title: activityTitle,
-          location: activityLocation,
-          startDate,
-          endDate,
-          coverImage: activityCoverImage,
-          coverColor: activityCoverColor,
-        },
-        inviter: {
-          id: inviter.id,
-          name: inviter.name,
-          username: inviter.username,
-          avatar: inviter.avatar,
-        },
-      }, [inviteeId]);
-
-      if (notif) {
-        this.domainEventService.emit('notification:new', notif, [inviteeId]);
-      }
-    }
+    // One implementation, shared with the inline fallback ActivitiesService
+    // uses when no queue worker is configured — see
+    // NotificationsService.createActivityInviteNotifications.
+    await this.notificationsService.createActivityInviteNotifications(data);
   }
 }
-

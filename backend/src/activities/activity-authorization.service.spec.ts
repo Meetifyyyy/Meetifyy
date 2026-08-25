@@ -283,14 +283,17 @@ describe('ActivityAuthorizationService', () => {
       }
     });
 
-    it('throws a detail-free 403 for a private activity', () => {
+    it('throws a bare 404 for a private activity, disclosing nothing', () => {
       try {
         policy.assertCanView(sameCollege, activity('PRIVATE'));
-        fail('expected a ForbiddenException');
+        fail('expected a NotFoundException');
       } catch (err: any) {
-        const body = err.getResponse();
-        expect(body.code).toBe('PRIVATE');
-        expect(body.message).toMatch(/private/i);
+        // 404, not 403: a "forbidden" would confirm to a stranger holding a
+        // copied link that the activity exists at all.
+        expect(err.getStatus()).toBe(404);
+        const serialized = JSON.stringify(err.getResponse());
+        expect(serialized).not.toContain('PRIVATE');
+        expect(serialized).not.toContain('act-1');
       }
     });
 

@@ -9,9 +9,10 @@ import { parseConversationRoute } from '../utils/conversationUrl';
 import { messagesApi, getMediaUrl } from '../api/apiClient';
 import { getDefaultActivityCover } from '../utils/activityCover';
 import { useGlobalSocketSync } from '../hooks/useGlobalSocketSync';
-import { appendMessageToCache, matchesConversationId, getConversationAliases, updateConversationPreview, applyGroupRoleChange } from '../../features/messages/shared/utils/cacheUtils';
+import { appendMessageToCache, matchesConversationId, getConversationAliases, updateConversationPreview, applyGroupRoleChange, isSystemMessage } from '../../features/messages/shared/utils/cacheUtils';
 import { isInstantChat, isInstantMatchChatOpen } from '../utils/instantChatRouting';
 import { requestOpenInstantMatchChat } from '../../features/instant-match/context/InstantMatchContext';
+import { patchInviteNotification } from '@features/notifications/utils/inviteLifecycle';
 
 export default function SocketManager() {
   const { session, isLoggedIn, currentUser } = useAuth();
@@ -86,6 +87,23 @@ export default function SocketManager() {
 
   useEffect(() => {
     if (!socket) return;
+
+    // A notification whose STATE changed — an activity invite that was
+    // accepted, declined, cancelled by the host, or overtaken by the activity
+    // ending. It is the same row, so it is patched in place rather than
+    // re-inserted: no toast, no unread bump, no duplicate. The invalidate that
+    // follows reconciles anything the local patch could not reach (a page this
+    // client has not loaded).
+    const handleNotificationUpdated = (notification) => {
+      if (!notification?.id) return;
+      patchInviteNotification(queryClient, {
+        notificationId: notification.id,
+        activityId: notification.metadata?.activityId || notification.entityId,
+        metadata: notification.metadata,
+      });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] });
+    };
 
     const handleNewNotification = (notification) => {
       if (notification.type?.toUpperCase() === 'MESSAGE') {
@@ -995,6 +1013,12 @@ export default function SocketManager() {
             const actorName = message.senderName || message.sender?.displayName || message.sender?.username || 'Someone';
             const actorAvatar = message.senderAvatar || message.sender?.avatar || '';
             const isGroupMessage = Boolean(message.isGroup || targetConv?.isGroup);
+            // A system message already names the person inside its own text
+            // ("@gyu changed group name to ..."), and it has no author in the
+            // sense a chat message does. Passing an actorName made the card
+            // prefix it with the sender, producing "Gyu: @gyu changed group
+            // name to ..." — the same person twice, one of them mid-sentence.
+            const isSystem = isSystemMessage(message);
             const groupName = targetConv?.name || 'Group';
             const groupAvatar = targetConv?.avatar || '';
             const textSnippet = message.text || (message.mediaType === 'image' ? 'Sent a photo' : message.mediaType === 'video' ? 'Sent a video' : message.mediaUrl ? 'Sent media' : 'New message');
@@ -1004,7 +1028,7 @@ export default function SocketManager() {
                 avatar={isGroupMessage ? (groupAvatar || actorAvatar) : actorAvatar}
                 isGroup={isGroupMessage}
                 groupName={groupName}
-                actorName={actorName}
+                actorName={isSystem ? null : actorName}
                 bodyText={textSnippet}
                 time="just now"
                 onClick={() => {
@@ -1071,6 +1095,7 @@ export default function SocketManager() {
     };
 
     socket.on('notification:new', handleNewNotification);
+    socket.on('notification:updated', handleNotificationUpdated);
     socket.on('notification:count', handleNotificationCount);
     socket.on('presence:update', handlePresenceUpdate);
     socket.on('user:blocked', handleBlockStateChange);
@@ -1084,6 +1109,7 @@ export default function SocketManager() {
 
     return () => {
       socket.off('notification:new', handleNewNotification);
+      socket.off('notification:updated', handleNotificationUpdated);
       socket.off('notification:count', handleNotificationCount);
       socket.off('presence:update', handlePresenceUpdate);
       socket.off('user:blocked', handleBlockStateChange);

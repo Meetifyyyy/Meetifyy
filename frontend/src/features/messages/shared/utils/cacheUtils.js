@@ -1,3 +1,20 @@
+/**
+ * A system message is the conversation narrating itself — "@gyu changed group
+ * name to X", someone joined, someone left. It has a sender on the wire (the
+ * user whose action produced it) but that sender is NOT its author, so nothing
+ * may attribute it to them the way it would a chat message.
+ *
+ * Kept here so the message bubble, the list preview and the instant toast all
+ * answer the question the same way; the three used to each decide for
+ * themselves, and the toast simply never asked.
+ */
+export function isSystemMessage(msg) {
+  if (!msg) return false;
+  const type = msg.type;
+  return type === 'SYSTEM' || type === 'system' || Boolean(msg.isSystem);
+}
+
+
 export function matchesConversationId(c, targetId) {
   if (!c || !targetId) return false;
   const targetStr = String(targetId).trim().toLowerCase();

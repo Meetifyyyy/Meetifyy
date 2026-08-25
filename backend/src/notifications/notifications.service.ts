@@ -376,16 +376,34 @@ export class NotificationsService implements OnModuleInit {
     }
   }
 
-  async getNotifications(userId: string, limit: number = 20, cursor?: string) {
+  /**
+   * The recipient's notification feed.
+   *
+   * `type` narrows it to a single kind. The Invitations tab uses it to page
+   * over ACTIVITY_INVITE rows directly: those rows are the persisted record of
+   * every invite and its outcome, so reading them here is what lets the tab
+   * show accepted / declined / cancelled / expired invites at all — the
+   * pending-invitations endpoint is pending-only by definition and can never
+   * return an answered one. The recipient scope is unchanged, so this narrows
+   * what a caller sees and can never widen it.
+   */
+  async getNotifications(
+    userId: string,
+    limit: number = 20,
+    cursor?: string,
+    type?: NotificationType,
+  ) {
     const take = limit + 1; // fetch 1 extra to check if there's a next page
-    
+
     const notifications = await this.prisma.notification.findMany({
       where: {
         recipientId: userId,
         deletedAt: null,
-        type: {
-          notIn: [NotificationType.MESSAGE]
-        }
+        // MESSAGE has its own unread surface and is never listed here, so an
+        // explicit `type` still cannot be used to pull one into this feed.
+        ...(type && type !== NotificationType.MESSAGE
+          ? { type }
+          : { type: { notIn: [NotificationType.MESSAGE] } }),
       },
       orderBy: { createdAt: 'desc' },
       take,
@@ -409,9 +427,108 @@ export class NotificationsService implements OnModuleInit {
     }
 
     return {
-      data: notifications,
+      data: await this.reconcileInviteNotifications(userId, notifications),
       nextCursor,
     };
+  }
+
+  /**
+   * Makes the invitation row — not the notification's metadata — the authority
+   * on what an invite notification says.
+   *
+   * `metadata.lifecycleStatus` is a denormalised copy, and any copy can drift:
+   * a write that failed and was swallowed, a notification created before the
+   * field existed, or an invitation settled by a path that never touched the
+   * notification. When it drifts the row goes on offering Accept and Decline
+   * for an invite that was already answered — which is exactly the bug this
+   * exists to stop, and it could not self-heal because every later accept
+   * short-circuits on "already a member".
+   *
+   * So the status is recomputed from `ActivityInvitation` (plus the activity's
+   * own lifecycle for the window before the expiry sweep runs) on every read,
+   * and a disagreement is written back so the stored copy converges instead of
+   * needing a repair migration.
+   */
+  private async reconcileInviteNotifications(userId: string, notifications: any[]) {
+    const invites = notifications.filter(
+      n => n.type === NotificationType.ACTIVITY_INVITE && (n.metadata as any)?.activityId,
+    );
+    if (invites.length === 0) return notifications;
+
+    const activityIds = [
+      ...new Set(invites.map(n => (n.metadata as any).activityId as string)),
+    ];
+
+    const invitations = await this.prisma.activityInvitation.findMany({
+      where: { inviteeId: userId, activityId: { in: activityIds } },
+      select: {
+        activityId: true,
+        status: true,
+        revokedAt: true,
+        activity: { select: { status: true, startDate: true, deletedAt: true } },
+      },
+    });
+    const byActivity = new Map(invitations.map(i => [i.activityId, i]));
+
+    const corrections: Array<{ id: string; metadata: any }> = [];
+
+    const reconciled = notifications.map(notif => {
+      if (notif.type !== NotificationType.ACTIVITY_INVITE) return notif;
+      const metadata = (notif.metadata as any) || {};
+      const invitation = byActivity.get(metadata.activityId);
+      // No invitation row to judge by (hard-deleted): leave the stored copy
+      // alone rather than guessing.
+      if (!invitation) return notif;
+
+      const authoritative = this.resolveInviteLifecycle(invitation);
+      if (authoritative === metadata.lifecycleStatus) return notif;
+
+      const nextMetadata = { ...metadata, lifecycleStatus: authoritative };
+      corrections.push({ id: notif.id, metadata: nextMetadata });
+      return { ...notif, metadata: nextMetadata };
+    });
+
+    // Write-back is best effort and off the response path: the caller already
+    // has the correct value, this only stops the same repair happening again.
+    if (corrections.length > 0) {
+      setImmediate(() => {
+        Promise.all(
+          corrections.map(c =>
+            this.prisma.notification.update({
+              where: { id: c.id },
+              data: { metadata: c.metadata },
+            }),
+          ),
+        ).catch(err => this.logger.warn(`Invite notification repair failed: ${err?.message}`));
+      });
+    }
+
+    return reconciled;
+  }
+
+  /** The invite's true state, from the invitation row and its activity. */
+  private resolveInviteLifecycle(invitation: {
+    status: string;
+    revokedAt?: Date | null;
+    activity?: { status: string; startDate: Date | null; deletedAt: Date | null } | null;
+  }): 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'EXPIRED' {
+    if (invitation.status === 'ACCEPTED') return 'ACCEPTED';
+    if (invitation.status === 'DECLINED') return 'DECLINED';
+    if (invitation.status === 'CANCELLED') return 'CANCELLED';
+    if (invitation.status === 'EXPIRED') return 'EXPIRED';
+
+    // Still PENDING on the row. The sweeps that settle these run on a timer, so
+    // the activity itself is consulted for the window before they land.
+    const activity = invitation.activity;
+    if (invitation.revokedAt) return 'CANCELLED';
+    if (!activity) return 'PENDING';
+    if (activity.deletedAt || activity.status === 'CANCELLED') return 'CANCELLED';
+    if (activity.status === 'ENDED') return 'EXPIRED';
+    // An invite stops being answerable when the activity STARTS.
+    if (activity.startDate && new Date(activity.startDate).getTime() <= Date.now()) {
+      return 'EXPIRED';
+    }
+    return 'PENDING';
   }
 
   async getUnreadCount(userId: string) {
@@ -544,5 +661,211 @@ export class NotificationsService implements OnModuleInit {
 
     this.logger.log(`Notification cancelled type=${type} recipient=${recipientId}`);
     return updated;
+  }
+
+  /**
+   * Creates the invite notifications for one `inviteFriends` call and announces
+   * them.
+   *
+   * This lives here, rather than inside the BullMQ processor, because the queue
+   * is OPTIONAL: `ActivitiesService` injects it with `@Optional()`, so on a
+   * deployment without a worker the job was never enqueued and the invite
+   * notification was never written at all. The invite then existed only as an
+   * ActivityInvitation row, which is pending-only — so the moment the user
+   * answered it, the record had nowhere to live and the row disappeared from
+   * the Notifications page. Sharing one implementation means the queued path
+   * and the inline fallback produce byte-identical rows.
+   *
+   * Idempotent by way of createNotification's upsert on
+   * (recipient, actor, entity, type): running both paths for the same invite
+   * updates the one row rather than creating a second.
+   */
+  async createActivityInviteNotifications(data: {
+    activityId: string;
+    inviterId: string;
+    invitations: Array<{ inviteeId: string; invitationId: string }>;
+    activityTitle: string;
+    activityLocation?: string | null;
+    activityCoverImage?: string | null;
+    activityCoverColor?: string | null;
+    startDate?: Date | string | null;
+    endDate?: Date | string | null;
+    inviter: { id: string; name: string; username: string; avatar?: string | null };
+  }) {
+    const {
+      activityId, inviterId, invitations, activityTitle, activityLocation,
+      activityCoverImage, activityCoverColor, startDate, endDate, inviter,
+    } = data;
+
+    for (const { inviteeId, invitationId } of invitations) {
+      const notif = await this.createNotification({
+        recipientId: inviteeId,
+        actorId: inviterId,
+        type: 'ACTIVITY_INVITE' as any,
+        entityType: 'ACTIVITY' as any,
+        entityId: activityId,
+        title: 'Activity Invitation',
+        body: `${inviter.name || 'Someone'} invited you to join ${activityTitle}`,
+        metadata: {
+          // The invite's own lifecycle, tracked on the notification so the row
+          // survives being answered instead of being deleted at that moment.
+          // The upsert in createNotification means a re-invite resets this to
+          // PENDING on the same row rather than stacking a second one.
+          lifecycleStatus: 'PENDING',
+          invitationId,
+          activityId,
+          title: activityTitle,
+          location: activityLocation,
+          startDate,
+          endDate,
+          coverImage: activityCoverImage,
+          // Solid-colour covers have no image; carry the colour so the
+          // notification renders the same cover the activity shows.
+          coverColor: activityCoverColor,
+          hostId: inviterId,
+          hostName: inviter.name,
+          hostAvatar: inviter.avatar,
+          hostUsername: inviter.username,
+        },
+        prePopulatedActor: {
+          id: inviterId,
+          username: inviter.username,
+          displayName: inviter.name,
+          avatar: inviter.avatar || null,
+        },
+      });
+
+      this.domainEventService.emit('invitation:new', {
+        id: invitationId,
+        activityId,
+        inviterId,
+        inviteeId,
+        status: 'PENDING',
+        activity: {
+          id: activityId,
+          title: activityTitle,
+          location: activityLocation,
+          startDate,
+          endDate,
+          coverImage: activityCoverImage,
+          coverColor: activityCoverColor,
+        },
+        inviter: {
+          id: inviter.id,
+          name: inviter.name,
+          username: inviter.username,
+          avatar: inviter.avatar,
+        },
+      }, [inviteeId]);
+
+      if (notif) {
+        this.domainEventService.emit('notification:new', notif, [inviteeId]);
+      }
+    }
+  }
+
+  /**
+   * Re-states an existing notification in place instead of removing it.
+   *
+   * An activity invite is a *record of what happened*, not a to-do item that
+   * evaporates once it is answered. Deleting it (which is what
+   * {@link cancelNotificationByCriteria} does) erased the only trace the
+   * recipient had that they were ever invited, and it did so at the exact
+   * moment the row became interesting — accepted, declined, cancelled by the
+   * host, or overtaken by the activity ending.
+   *
+   * This mutates the SAME row — no second notification is created for the
+   * same (recipient, activity) pair — merging `lifecycleStatus` into the
+   * existing metadata and pushing a `notification:updated` event so every
+   * connected client of that recipient re-renders without a manual refresh.
+   *
+   * `onlyIfStatusIn` is the guard that keeps a late lifecycle event from
+   * overwriting the recipient's own answer: an activity ending must not turn
+   * an ACCEPTED row back into EXPIRED.
+   */
+  async updateNotificationLifecycleStatus(params: {
+    type: NotificationType;
+    entityId: string;
+    status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'EXPIRED';
+    recipientIds?: string[];
+    body?: string;
+    onlyIfStatusIn?: Array<'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'EXPIRED'>;
+  }) {
+    const { type, entityId, status, recipientIds, body, onlyIfStatusIn } = params;
+
+    const existing = await this.prisma.notification.findMany({
+      where: {
+        type,
+        entityId,
+        deletedAt: null,
+        ...(recipientIds && recipientIds.length > 0
+          ? { recipientId: { in: recipientIds } }
+          : {}),
+      },
+      include: {
+        actor: {
+          select: { id: true, username: true, displayName: true, avatar: true },
+        },
+      },
+    });
+
+    const updatedRows: any[] = [];
+
+    for (const notif of existing) {
+      const metadata = (notif.metadata as any) || {};
+      const current = metadata.lifecycleStatus || 'PENDING';
+
+      if (current === status) continue;
+      if (onlyIfStatusIn && !onlyIfStatusIn.includes(current)) continue;
+
+      // Compare-and-swap on `updatedAt`.
+      //
+      // The guard above is a read; without this the window between reading and
+      // writing is a lost-update race. Two lifecycle events can genuinely land
+      // together — the invitee accepts at the same moment the host cancels —
+      // and a plain `update` would let whichever wrote last win regardless of
+      // what it had actually checked. Scoping the write to the exact row
+      // version we judged means the loser matches zero rows and simply stands
+      // down, leaving the winner's status intact.
+      const swap = await this.prisma.notification.updateMany({
+        where: { id: notif.id, updatedAt: notif.updatedAt, deletedAt: null },
+        data: {
+          metadata: {
+            ...metadata,
+            lifecycleStatus: status,
+            lifecycleUpdatedAt: new Date().toISOString(),
+          },
+          ...(body ? { body } : {}),
+          // Deliberately NOT touching readAt: a status change is a state
+          // correction on something the user already knows about, not a new
+          // thing demanding their attention. Re-flagging it unread would make
+          // the bell badge climb every time an activity they declined ended.
+        },
+      });
+
+      if (swap.count === 0) {
+        this.logger.log(
+          `Notification lifecycle CAS lost id=${notif.id} wanted=${status} from=${current}`,
+        );
+        continue;
+      }
+
+      // Re-read so the event carries exactly what is now persisted, rather than
+      // what this call assumed it would be.
+      const updated = await this.prisma.notification.findUnique({ where: { id: notif.id } });
+      if (!updated) continue;
+
+      const populated = { ...updated, actor: notif.actor };
+      updatedRows.push(populated);
+      this.domainEventService.emit('notification:updated', populated, [notif.recipientId]);
+    }
+
+    if (updatedRows.length > 0) {
+      this.logger.log(
+        `Notification lifecycle -> ${status} type=${type} entity=${entityId} count=${updatedRows.length}`,
+      );
+    }
+
+    return updatedRows;
   }
 }

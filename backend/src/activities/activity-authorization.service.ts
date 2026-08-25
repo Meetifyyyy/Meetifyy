@@ -176,19 +176,35 @@ export class ActivityAuthorizationService {
     };
   }
 
-  /** Throwing wrapper for controller/service call sites. */
+  /**
+   * Throwing wrapper for controller/service call sites.
+   *
+   * A PRIVATE activity answers 404, not 403. The distinction is deliberate:
+   * "forbidden" confirms that the id names a real activity, which is itself a
+   * disclosure for something whose whole point is that uninvited people cannot
+   * learn it exists. To a stranger holding a copied link, a private activity is
+   * indistinguishable from a typo. COLLEGE_ONLY keeps its 403 — its existence
+   * is already implied by the invite/share flows inside a college, and the
+   * explanatory copy ("ask the host for an invite") is what makes the denial
+   * actionable rather than a dead end.
+   *
+   * Either way the thrown body carries a code and generic copy only — never the
+   * title, description, location, host or attendees.
+   */
   assertCanView(user: UserAuthContext | null, activity: ActivityAuthTarget): void {
     const decision = this.canView(user, activity);
-    if (!decision.allowed) {
-      // The thrown body carries a code + generic copy only — never the title,
-      // description, location, host or attendees of the restricted activity.
-      throw new ForbiddenException({
-        statusCode: 403,
-        error: 'Forbidden',
-        code: decision.code,
-        message: decision.reason,
-      });
+    if (decision.allowed) return;
+
+    if (decision.code === 'PRIVATE') {
+      throw new NotFoundException('Activity not found');
     }
+
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: 'Forbidden',
+      code: decision.code,
+      message: decision.reason,
+    });
   }
 
   // ── 2. DISCOVER ────────────────────────────────────────────────────────────

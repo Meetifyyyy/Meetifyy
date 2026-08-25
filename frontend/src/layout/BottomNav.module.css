@@ -12,8 +12,19 @@
   z-index: 100;
   box-shadow: var(--shadow-sm);
   padding: 0 1rem env(safe-area-inset-bottom, 0px);
+  /* Stay put when the keyboard opens.
+     On Android the keyboard shrinks the LAYOUT viewport, so `bottom: 0` starts
+     meaning "the top of the keyboard" and this bar gets lifted up on top of it.
+     Translating down by exactly that shrink (--kb-layout-shift, published by
+     useKeyboardInset) puts it back on the physical bottom edge, where the
+     keyboard covers it — visible and unmoved, rather than hidden and popping
+     back. It is 0 on browsers that overlay the keyboard instead (iOS), where
+     `bottom: 0` is already the right place. */
+  transform: translateY(var(--kb-layout-shift, 0px));
 }
 
+/* Declared after .bottomNav so it wins on order at equal specificity: an open
+   chat hides the nav outright, and that must beat the keyboard translate. */
 .hiddenNav {
   transform: translateY(100%);
   opacity: 0;

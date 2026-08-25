@@ -749,14 +749,25 @@ nav a.active {
     padding-bottom: 0 !important;
     overflow: hidden !important;
     /* The global app Header is display:none on mobile for /messages (Header's
-       hideOnMobile), so the messages section spans from the viewport top. The
-       only bottom reservation is max(60px BottomNav, keyboard height): keyboard
-       closed → reserve the 60px nav row so the fixed BottomNav never overlaps
-       the chat input; keyboard open (--kb-inset > 60px, set by useKeyboardInset)
-       → reserve exactly the keyboard height so the input rises just above the
-       keyboard while the chat header stays pinned at the top. */
-    height: calc(100dvh - max(60px, var(--kb-inset, 0px))) !important;
-    max-height: calc(100dvh - max(60px, var(--kb-inset, 0px))) !important;
+       hideOnMobile), so the messages section spans from the viewport top, and
+       the only thing to reserve is the bottom edge. Whichever of these is
+       largest wins:
+
+         60px - kb-layout-shift  the visible part of the BottomNav row. Normally
+                                 the full 60px; on Android the keyboard shrinks
+                                 the layout viewport and the nav translates down
+                                 out of it by exactly that much, so its claim on
+                                 this box shrinks to nothing. Floored at 0 so it
+                                 can never subtract.
+         kb-inset                the keyboard, where it overlaps the layout
+                                 viewport instead of shrinking it (iOS).
+
+       Reserving the larger of the two is what keeps the nav's real position and
+       the space kept for it in agreement — reserve too little and the nav sits
+       over the content, too much and the leftover strip shows the canvas
+       through as a black band. */
+    height: calc(100dvh - max(0px, calc(60px - var(--kb-layout-shift, 0px)), var(--kb-inset, 0px))) !important;
+    max-height: calc(100dvh - max(0px, calc(60px - var(--kb-layout-shift, 0px)), var(--kb-inset, 0px))) !important;
   }
 
   .centre--messages.chat-is-open {
@@ -764,12 +775,16 @@ nav a.active {
     max-height: calc(100dvh - var(--kb-inset, 0px)) !important;
   }
 
-  /* Hide the BottomNav completely when the keyboard opens so it never gets pushed up. 
-     Using :has(:focus) ensures it hides instantly BEFORE the Android viewport resize fires, preventing flicker. */
-  html[data-keyboard-open] .app-bottom-nav,
-  body:has(input:focus, textarea:focus, [contenteditable="true"]:focus) .app-bottom-nav {
-    display: none !important;
-  }
+  /* The BottomNav is NOT hidden when the keyboard opens — it stays exactly
+     where it is and the keyboard simply covers it.
+     It used to be `display: none`, which solved the wrong problem: the nav was
+     never really "in the way", it was being *lifted* on Android, where the
+     keyboard shrinks the layout viewport and `bottom: 0` therefore means the
+     top of the keyboard. Translating it back down by that shrink
+     (--kb-layout-shift, see useKeyboardInset) keeps it anchored to the physical
+     bottom of the screen, behind the keyboard, without it disappearing and
+     reappearing. The translate lives in BottomNav.module.css so the nav's own
+     hidden state (open chat) can still override it. */
 
   /* Full-bleed "sheet" pages (post view, settings, search) draw their own opaque
      surface instead of sitting as cards on the body canvas. That surface only

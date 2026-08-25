@@ -46,7 +46,7 @@ export class ModerationService {
       }
 
       // 2. Validate target existence via Target Resolver
-      const targetExists = await this.targetResolver.exists(dto.targetType, dto.targetId);
+      const targetExists = await this.targetResolver.exists(dto.targetType, dto.targetId, reporterId);
       if (!targetExists) {
         Sentry.captureMessage(`Report submit failed: Target missing [${dto.targetType}:${dto.targetId}]`, 'warning');
         throw new NotFoundException(`The reported ${dto.targetType.toLowerCase()} could not be found.`);

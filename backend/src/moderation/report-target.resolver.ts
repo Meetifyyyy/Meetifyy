@@ -1,15 +1,30 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportTargetType } from '@prisma/client';
+import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 
 @Injectable()
 export class ReportTargetResolver {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activityPolicy: ActivityAuthorizationService,
+  ) {}
 
   /**
-   * Fast check if a report target exists in DB
+   * Fast check if a report target exists in DB.
+   *
+   * `reporterId` scopes the ACTIVITY check to what that user may actually see.
+   * Without it this method is an existence oracle: "report" answers 404 for an
+   * unknown id and 201 for a known one, so anyone could probe ids and learn
+   * whether a private activity exists — precisely what the visibility policy
+   * withholds everywhere else. Reporting something you cannot see is not a real
+   * use case, so the narrower check costs nothing.
    */
-  async exists(targetType: ReportTargetType, targetId: string): Promise<boolean> {
+  async exists(
+    targetType: ReportTargetType,
+    targetId: string,
+    reporterId?: string,
+  ): Promise<boolean> {
     switch (targetType) {
       case ReportTargetType.POST: {
         const post = await this.prisma.post.findUnique({ where: { id: targetId }, select: { id: true } });
@@ -24,7 +39,23 @@ export class ReportTargetResolver {
         return !!comm;
       }
       case ReportTargetType.ACTIVITY: {
-        const activity = await this.prisma.crewActivity.findUnique({ where: { id: targetId }, select: { id: true } });
+        const viewer = reporterId
+          ? await this.prisma.user.findUnique({
+              where: { id: reporterId },
+              select: { id: true, collegeId: true },
+            })
+          : null;
+        const activity = await this.prisma.crewActivity.findFirst({
+          where: {
+            AND: [
+              { id: targetId, deletedAt: null },
+              // Same policy the detail endpoint applies, so the two agree on
+              // what this user is allowed to know exists.
+              this.activityPolicy.accessWhere(viewer),
+            ],
+          },
+          select: { id: true },
+        });
         return !!activity;
       }
       case ReportTargetType.USER: {

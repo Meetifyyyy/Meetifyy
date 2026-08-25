@@ -2,6 +2,18 @@ import styles from './InvitationItem.module.css';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { DEFAULT_ACTIVITY_COVERS, getDefaultActivityCover } from '@shared/utils/activityCover';
+import {
+  INVITE_STATUS,
+  INVITE_STATUS_LABEL,
+  resolveInviteStatus,
+} from '../utils/inviteLifecycle';
+
+const STATUS_CLASS = {
+  [INVITE_STATUS.ACCEPTED]: 'statusAccepted',
+  [INVITE_STATUS.DECLINED]: 'statusDeclined',
+  [INVITE_STATUS.CANCELLED]: 'statusCancelled',
+  [INVITE_STATUS.EXPIRED]: 'statusExpired',
+};
 
 export default function InvitationItem({
   inv,
@@ -9,20 +21,22 @@ export default function InvitationItem({
   onNavigateHost,
   onAccept,
   onDecline,
-  onViewActivity
+  onViewActivity,
+  isBusy = false,
 }) {
-  const isExpired = 
-    inv.activityStatus === 'ENDED' || 
-    inv.activityStatus === 'COMPLETED' || 
-    inv.activityStatus === 'CANCELLED' || 
-    (inv.startDate && new Date(inv.startDate) < new Date());
+  // A settled invite keeps its row and shows the outcome; only a genuinely
+  // pending one still offers Accept / Decline.
+  const status = resolveInviteStatus(inv);
+  const isPending = status === INVITE_STATUS.PENDING;
 
   const rawCover = inv.coverImage || inv.image || inv.cover || null;
   const coverSrc = rawCover ? getMediaUrl(rawCover) : getDefaultActivityCover(inv.title || inv.id || '');
 
   return (
     <div 
-      className={`${styles.invitationItem} ${!isRead ? styles.unread : ''}`} 
+      className={`${styles.invitationItem} ${!isRead ? styles.unread : ''} ${!isPending ? styles.settled : ''}`}
+      data-invite-status={status}
+      
       onClick={() => onViewActivity(inv)}
     >
       {/* Activity cover + calendar badge (matching CrewCard style) */}
@@ -65,23 +79,37 @@ export default function InvitationItem({
         )}
 
         <div className={styles.invitationActions}>
-          {isExpired ? (
-            <span className={styles.expiredText}>Expired</span>
+          {!isPending ? (
+            <span
+              className={`${styles.statusPill} ${styles[STATUS_CLASS[status]] || ''}`}
+              data-status={status}
+            >
+              {INVITE_STATUS_LABEL[status]}
+            </span>
           ) : (
             <>
+              {/* Disabled in flight: the accept request joins the activity and
+                  then redirects, so a second click would fire a redundant
+                  request while the first is still completing. The backend is
+                  idempotent regardless — this is only to keep the UI honest. */}
               <button 
                 className={styles.acceptBtn}
+                disabled={isBusy}
+                aria-busy={isBusy}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (isBusy) return;
                   onAccept(inv.id, inv);
                 }}
               >
-                Accept
+                {isBusy ? 'Joining…' : 'Accept'}
               </button>
               <button 
                 className={styles.declineBtn}
+                disabled={isBusy}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (isBusy) return;
                   onDecline(inv.id, inv);
                 }}
               >

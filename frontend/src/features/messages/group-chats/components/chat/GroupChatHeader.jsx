@@ -1,5 +1,5 @@
 import { useDismissibleMenu } from '../../../shared/hooks/useDismissibleMenu';
-import { ArrowLeft, MoreVertical, Search, NotificationOff, NotificationOn, LogOut, Info, Settings, Trash2, Pin } from '@shared/components/icons';
+import { ArrowLeft, MoreVertical, Search, NotificationOff, NotificationOn, LogOut, Info, Trash2, Pin } from '@shared/components/icons';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
 import styles from '../../../shared/components/chat/ChatHeader.module.css';
@@ -14,7 +14,6 @@ export default function GroupChatHeader({
   onToggleMute,
   onToggleSearch, 
   onOpenDetails,
-  onOpenSettings,
   isAdmin,
 }) {
   const { currentUser } = useAuth();
@@ -34,8 +33,14 @@ export default function GroupChatHeader({
   // observe one value, and the optimistic write updates all three at once.
   const isMuted = Boolean(conversation.muted ?? conversation.isMuted);
 
+  // Ownership only — deliberately NOT `isAdmin`.
+  //
+  // The server lets only the OWNER end a group ("Only the owner can end the
+  // group"), so treating every admin as owner showed them End Group, which
+  // failed with a 403, and hid Leave Group behind the same branch — leaving a
+  // non-owner admin with no way out of the group at all.
   const isOwner = Boolean(
-    isAdmin ||
+    conversation?.myRole === 'OWNER' ||
     (currentUser?.id && (
       String(conversation?.ownerId) === String(currentUser.id) ||
       String(conversation?.hostId) === String(currentUser.id) ||
@@ -129,16 +134,6 @@ export default function GroupChatHeader({
                 >
                   <Pin size={14} />
                   {conversation.pinned || conversation.isPinned ? 'Unpin Group' : 'Pin Group'}
-                </button>
-              )}
-
-              {!isClosed && (conversation.isMember !== false) && isAdmin && onOpenSettings && (
-                <button 
-                  className={styles.msgDropdownItem} 
-                  onClick={() => { onOpenSettings(); setShowMoreMenu(false); }}
-                >
-                  <Settings size={14} />
-                  Group Settings
                 </button>
               )}
 

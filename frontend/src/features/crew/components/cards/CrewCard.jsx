@@ -244,6 +244,14 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
         <div className={styles.topRow}>
           <div className={styles.timeLabel}>
             {formatDateTime(activity)}
+            {/* College tag. Rendered only for college-scoped activities, which
+                is what the Campus and College surfaces show — an "Anyone"
+                activity has no single college it belongs to. */}
+            {activity.visibility === 'COLLEGE_ONLY' && activity.collegeName && (
+              <span className={styles.collegeTag} title={activity.collegeName}>
+                {activity.collegeName}
+              </span>
+            )}
           </div>
           <div className={styles.menuContainer} ref={menuRef}>
             <button className={styles.moreBtn} aria-label="More options" onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}>

@@ -3,13 +3,18 @@ import { notificationsApi } from '../api/apiClient';
 
 import { useAuth } from '../context/AuthContext';
 
-export function useNotifications() {
+export function useNotifications({ type } = {}) {
   const queryClient = useQueryClient();
   const { currentUser } = useAuth();
 
+  // A filtered feed is its own cache entry so the Invitations tab can page
+  // through invite history without disturbing (or being truncated by) the main
+  // list. Both are server-backed, so neither can drift from the database.
+  const queryKey = type ? ['notifications', { type }] : ['notifications'];
+
   const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey: ['notifications'],
-    queryFn: ({ pageParam = undefined }) => notificationsApi.getAll(15, pageParam),
+    queryKey,
+    queryFn: ({ pageParam = undefined }) => notificationsApi.getAll(15, pageParam, type),
     getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
     enabled: Boolean(currentUser?.id),
     staleTime: 1000 * 60, // 1 minute

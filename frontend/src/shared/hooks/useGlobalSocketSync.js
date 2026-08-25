@@ -495,6 +495,10 @@ export function useGlobalSocketSync() {
 
         case 'activity.created':
         case 'activity.deleted':
+        // A start-time crossing announced by the server sweep. The open detail
+        // page also has its own timer for this, so both paths converge on the
+        // same refetch; whichever arrives first wins and the second is a no-op.
+        case 'activity.started':
         case 'activity.updated': {
           // Structural changes: a new activity appeared or was cancelled/edited.
           const actId = event.data?.id || event.data?.activityId;

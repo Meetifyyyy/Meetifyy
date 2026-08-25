@@ -942,9 +942,12 @@ export const campusEventsApi = {
 };
 
 export const notificationsApi = {
-  getAll: (limit = 20, cursor) => {
+  getAll: (limit = 20, cursor, type) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (cursor) params.set('cursor', cursor);
+    // Narrows the feed to one kind server-side (the Invitations tab). The
+    // server allow-lists the value; anything else is ignored.
+    if (type) params.set('type', type);
     return apiClient.get(`/api/notifications?${params.toString()}`);
   },
   getUnreadCount: () => apiClient.get('/api/notifications/unread-count'),

@@ -64,7 +64,8 @@ export function useActivities(scope = 'public', { enabled = true } = {}) {
   const queryClient = useQueryClient();
   const { isLoggedIn } = useAuth();
 
-  // Each scope ('public' | 'for_you' | 'college' | 'one_on_one') gets its own
+  // Each scope ('public' | 'for_you' | 'college' | 'campus' | 'one_on_one')
+  // gets its own
   // cache entry so the All, College and 1-on-1 lists never clobber one another.
   // A section's preview and the full list behind its "See all" share a key, so
   // no duplicate fetching happens.

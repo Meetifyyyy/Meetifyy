@@ -9,6 +9,7 @@ import { isImageUrl } from '@shared/utils/avatar';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import RichText from '@shared/components/mentions/RichText';
 import { generateConversationUrl } from '@shared/utils/conversationUrl';
+import { isSystemMessage } from '../utils/cacheUtils';
 import { SharedPostPreview } from '../previews/SharedPostPreview';
 import { SharedProfilePreview } from '../previews/SharedProfilePreview';
 import { SharedCommunityPreview } from '../previews/SharedCommunityPreview';
@@ -675,7 +676,7 @@ const MessageBubble = memo(function MessageBubble({
     fireContextMenu(e, msg);
   };
 
-  if (msg.type === 'system' || msg.type === 'SYSTEM' || msg.isSystem) {
+  if (isSystemMessage(msg)) {
     const text = msg.text || msg.payload?.text || '';
     return (
       <div className={styles.systemMessageContainer}>
