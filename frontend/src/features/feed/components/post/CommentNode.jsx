@@ -295,6 +295,9 @@ export default function CommentNode({
   // Derived, not owned — see activeMenuId above.
   const menuRef = useRef(null);
   const portalMenuRef = useRef(null);
+  // Tracks which menuPos object the clamp effect below has already handled, so
+  // it corrects a position once per open and can never re-enter.
+  const clampedForRef = useRef(null);
   const [menuPos, setMenuPos] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting]     = useState(false);
@@ -373,19 +376,34 @@ export default function CommentNode({
    * assumption entirely — whatever the class, the padding or the longest label
    * turn out to be, it ends up inside the viewport.
    *
-   * Clamped, not re-anchored, so it stays visually attached to its button. The
-   * comparison guard is what stops this from looping: the clamped values are
-   * already clamped, so the second pass changes nothing.
+   * Clamped, not re-anchored, so it stays visually attached to its button.
+   *
+   * Measured with offsetWidth/offsetHeight, NOT getBoundingClientRect: the
+   * shared `.dropdown` class opens with a 0.2s `transform: scale()` transition,
+   * and the client rect reports the *transformed* box, so it reported a
+   * different size on every frame of that animation. Each pass then produced a
+   * different clamp, re-rendered, re-measured a still-animating menu and looped
+   * synchronously until React threw "Maximum update depth exceeded" (#185).
+   * The offset box is the untransformed layout size, so it is stable and the
+   * comparison guard below genuinely terminates after one correction.
+   *
+   * `clampedForRef` additionally makes this run at most once per open, so no
+   * later re-render can restart the cycle.
    */
   useLayoutEffect(() => {
-    if (!showMenu || !menuPos || !portalMenuRef.current) return;
+    if (!showMenu) { clampedForRef.current = null; return; }
+    if (!menuPos || !portalMenuRef.current) return;
+    if (clampedForRef.current === menuPos) return;
+    clampedForRef.current = menuPos;
     const GAP = 8;
-    const r = portalMenuRef.current.getBoundingClientRect();
+    const el = portalMenuRef.current;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
     const vw = window.visualViewport?.width || window.innerWidth;
     const vh = window.visualViewport?.height || window.innerHeight;
 
-    const left = Math.min(Math.max(GAP, menuPos.left), Math.max(GAP, vw - r.width - GAP));
-    const top = Math.min(Math.max(GAP, menuPos.top), Math.max(GAP, vh - r.height - GAP));
+    const left = Math.min(Math.max(GAP, menuPos.left), Math.max(GAP, vw - w - GAP));
+    const top = Math.min(Math.max(GAP, menuPos.top), Math.max(GAP, vh - h - GAP));
     if (left !== menuPos.left || top !== menuPos.top) setMenuPos({ top, left });
   }, [showMenu, menuPos]);
 
@@ -796,9 +814,16 @@ export default function CommentNode({
                       position: 'fixed',
                       top: menuPos.top,
                       left: menuPos.left,
-                      // Width comes from the shared .dropdown class; the layout
-                      // effect measures whatever that turns out to be.
-                      maxWidth: 'calc(100vw - 16px)',
+                      // `.dropdown` is written for an absolutely-positioned menu
+                      // anchored to its button and carries `right: 0`. Left as-is,
+                      // a fixed element with BOTH `left` (below) and `right` set
+                      // and `width: auto` stretches to span the whole gap between
+                      // them -- which is why this menu rendered as a full-width
+                      // bar instead of hugging its one "Report" item. Clearing
+                      // `right` and sizing to `max-content` makes it shrink-wrap.
+                      right: 'auto',
+                      width: 'max-content',
+                      maxWidth: 'min(260px, calc(100vw - 16px))',
                       // Above the comment tree and the post card, but below the
                       // app's real modals so a confirm dialog still covers it.
                       zIndex: 4000,
