@@ -1,7 +1,7 @@
-import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import styles from './InvitationItem.module.css';
+import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import { getMediaUrl } from '@shared/api/apiClient';
+import { DEFAULT_ACTIVITY_COVERS, getDefaultActivityCover } from '@shared/utils/activityCover';
 
 export default function InvitationItem({
   inv,
@@ -17,18 +17,31 @@ export default function InvitationItem({
     inv.activityStatus === 'CANCELLED' || 
     (inv.startDate && new Date(inv.startDate) < new Date());
 
+  const rawCover = inv.coverImage || inv.image || inv.cover || null;
+  const coverSrc = rawCover ? getMediaUrl(rawCover) : getDefaultActivityCover(inv.title || inv.id || '');
+
   return (
     <div 
       className={`${styles.invitationItem} ${!isRead ? styles.unread : ''}`} 
       onClick={() => onViewActivity(inv)}
     >
-      <div className={styles.avatar}>
-        {isImageUrl(inv.hostAvatar) ? (
-          <img src={getMediaUrl(inv.hostAvatar)} alt={inv.hostName || "Host"} className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-        ) : (
-          <DefaultAvatar />
-        )}
+      {/* Activity cover + calendar badge (matching CrewCard style) */}
+      <div className={styles.activityThumb}>
+        <img
+          src={coverSrc}
+          alt={inv.title || 'Activity'}
+          className={styles.activityImg}
+          onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_ACTIVITY_COVERS[0]; }}
+        />
+        <div className={styles.calendarBadge}>
+          <CalendarIcon
+            date={inv.startDate}
+            size="badge"
+            style={{ border: '2.5px solid var(--color-bg-white, #ffffff)', boxShadow: 'none' }}
+          />
+        </div>
       </div>
+
       <div className={styles.content}>
         <div>
           <span 
@@ -45,12 +58,9 @@ export default function InvitationItem({
           <span className={styles.actionText}>invited you to <strong>{inv.title}</strong></span>
         </div>
 
-        {(inv.startDate || inv.location) && (
-          <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', display: 'flex', gap: '0.75rem', marginTop: '0.15rem' }}>
-            {inv.startDate && (
-              <span>{new Date(inv.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
-            )}
-            {inv.location && <span>• {inv.location}</span>}
+        {inv.startDate && (
+          <div style={{ fontSize: '0.77rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>
+            {new Date(inv.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
           </div>
         )}
 

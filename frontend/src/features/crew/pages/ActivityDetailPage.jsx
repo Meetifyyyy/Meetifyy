@@ -11,11 +11,11 @@ import { getRelativeDateLabel } from '@shared/utils/time';
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import ShareActivityModal from '../components/modals/ShareActivityModal';
-import ActivityJoinedModal from '../components/modals/ActivityJoinedModal';
 import InviteFriendsModal from '@shared/components/modals/InviteFriendsModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ActivityDetailPage.module.css';
-import { Bookmark, UserPlus } from '@shared/components/icons';
+import { Bookmark, UserPlus, CircleXIcon } from '@shared/components/icons';
+import { showToast } from '@shared/utils/toast';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import { useJoinActivity } from '../hooks/useJoinActivity';
 import { useActivityById, useActivityAttendees } from '@shared/hooks/useCrew';
@@ -546,6 +546,18 @@ export default function ActivityDetailPage() {
     toggleSaveActivity(activity.id);
   };
 
+  const handleSendInvites = async (userIds) => {
+    try {
+      await activitiesApi.inviteFriends(activity.id, userIds);
+      queryClient.invalidateQueries({ queryKey: ['activity-invitation-statuses', activity.id] });
+      showToast('Invitations sent successfully!', 'success');
+    } catch (err) {
+      console.error('Failed to invite friends', err);
+      showToast(err?.response?.data?.message || err?.message || 'Failed to send invitations', 'error');
+      throw err;
+    }
+  };
+
   const coverColor = activity?.coverColor || null;
   const coverImgUrl = activity?.coverImage ? getMediaUrl(activity.coverImage) : getDefaultCover(title || cleanId);
 
@@ -594,21 +606,18 @@ export default function ActivityDetailPage() {
                 <button
                   className={styles.actionBtn}
                   onClick={() => setShowInviteModal(true)}
+                  aria-label="Invite Friends"
                   title="Invite Friends"
-                  style={{ color: '#818cf8', background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.3)' }}
                 >
-                  <UserPlus size={17} />
+                  <UserPlus size={18} strokeWidth={2} />
                 </button>
                 <button
                   className={styles.actionBtn}
                   onClick={handleEndActivity}
+                  aria-label="Cancel Activity"
                   title="Cancel Activity"
-                  style={{ color: '#f87171', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)' }}
                 >
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                  </svg>
+                  <CircleXIcon size={18} strokeWidth={2} />
                 </button>
               </>
             )}
@@ -645,31 +654,7 @@ export default function ActivityDetailPage() {
 
               {renderDesktopAttendees && (
               <div className={`${styles.attendeesSection} ${styles.desktopOnlyAttendees}`}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                  <h3 className={styles.attendeesTitle} style={{ margin: 0 }}>Attendees ({activity.slotsFilled || activity.participants?.length || 0})</h3>
-                  {isHost && !hasStarted && !isCancelled && !hasEnded && (
-                    <button
-                      type="button"
-                      onClick={() => setShowInviteModal(true)}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.4rem',
-                        padding: '0.4rem 0.85rem',
-                        borderRadius: '20px',
-                        background: 'rgba(99, 102, 241, 0.15)',
-                        border: '1px solid rgba(99, 102, 241, 0.35)',
-                        color: '#818cf8',
-                        fontWeight: 600,
-                        fontSize: '0.8rem',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <UserPlus size={14} />
-                      Invite Friends
-                    </button>
-                  )}
-                </div>
+                <h3 className={styles.attendeesTitle}>Attendees ({activity.slotsFilled || activity.participants?.length || 0})</h3>
 
                 <div className={styles.attendeesList}>
                   {/* _membersData is always ordered: host first, then other members.
@@ -772,31 +757,7 @@ export default function ActivityDetailPage() {
               {/* Mobile Attendees Section */}
               {renderMobileAttendees && (
               <div className={`${styles.attendeesSection} ${styles.mobileOnlyAttendees}`}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                  <h3 className={styles.attendeesTitle} style={{ margin: 0 }}>Attendees ({activity.slotsFilled || activity.participants?.length || 0})</h3>
-                  {isHost && !hasStarted && !isCancelled && !hasEnded && (
-                    <button
-                      type="button"
-                      onClick={() => setShowInviteModal(true)}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.4rem',
-                        padding: '0.4rem 0.85rem',
-                        borderRadius: '20px',
-                        background: 'rgba(99, 102, 241, 0.15)',
-                        border: '1px solid rgba(99, 102, 241, 0.35)',
-                        color: '#818cf8',
-                        fontWeight: 600,
-                        fontSize: '0.8rem',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <UserPlus size={14} />
-                      Invite Friends
-                    </button>
-                  )}
-                </div>
+                <h3 className={styles.attendeesTitle}>Attendees ({activity.slotsFilled || activity.participants?.length || 0})</h3>
 
                 <div className={styles.attendeesList}>
                   {attendeeList.map((pUser, idx) => {
@@ -867,29 +828,21 @@ export default function ActivityDetailPage() {
                 Already started!
               </button>
             ) : isHost ? (
-              <div style={{ display: 'flex', gap: '0.75rem', flex: 1, minWidth: 0 }}>
-                <button className={`${styles.joinBtn} ${styles.joinedBtn}`} disabled style={{ flex: 1, cursor: 'default', padding: '0.8rem 1rem', minWidth: 0 }}>
-                  Hosted by you
-                </button>
-                {!hasStarted && (
-                  <button
-                    type="button"
-                    className={styles.joinBtn}
-                    onClick={() => setShowInviteModal(true)}
-                    style={{
-                      flex: 1,
-                      background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                      color: '#fff',
-                      border: 'none',
-                      padding: '0.8rem 1rem',
-                      minWidth: 0
-                    }}
-                  >
-                    <UserPlus size={16} style={{ marginRight: '0.4rem', flexShrink: 0 }} />
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Invite Friends</span>
-                  </button>
-                )}
-              </div>
+              <button
+                type="button"
+                className={styles.joinBtn}
+                onClick={() => setShowInviteModal(true)}
+                style={{
+                  background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  flexDirection: 'row',
+                  gap: '0.5rem',
+                }}
+              >
+                <UserPlus size={18} />
+                <span>Invite Friends</span>
+              </button>
             ) : isJoined ? (
               <button 
                 type="button"
@@ -936,6 +889,13 @@ export default function ActivityDetailPage() {
 
         {/* Modals */}
         <ShareActivityModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} activity={activity} />
+        {showInviteModal && (
+          <InviteFriendsModal
+            activityId={activity.id}
+            onSendInvites={handleSendInvites}
+            onClose={() => setShowInviteModal(false)}
+          />
+        )}
         <ConfirmModal 
           title="Cancel Activity" 
           desc="This will cancel the activity and notify all participants." 

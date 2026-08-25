@@ -154,6 +154,17 @@ export default function NotificationsRoute() {
     navigate(`/crew/${actId}`, { state: { activity: inv, from: '/notifications' } });
   };
 
+  // Auto-mark all invitations as read the moment the user opens the tab
+  useEffect(() => {
+    if (activeTab !== 'invitations' || invitations.length === 0) return;
+    const unread = invitations.filter(i => !readInvitations.includes(i.id));
+    if (unread.length === 0) return;
+    const updated = [...new Set([...readInvitations, ...unread.map(i => i.id)])];
+    setReadInvitations(updated);
+    localStorage.setItem('read_invitations', JSON.stringify(updated));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, invitations]);
+
   const error = null;
   const loadedNotifications = notifications;
   const retry = () => {};
@@ -313,6 +324,8 @@ export default function NotificationsRoute() {
     ].filter(g => g.items.length > 0);
   }, [loadedNotifications]);
 
+  const unreadInvCount = invitations.filter(i => !readInvitations.includes(i.id)).length;
+
   const headerTabs = useMemo(() => [
     { id: 'all', label: 'All Notifications' },
     { 
@@ -320,15 +333,15 @@ export default function NotificationsRoute() {
       label: (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
           Invitations
-          {invitations.length > 0 && (
+          {unreadInvCount > 0 && (
             <span className={styles.tabBadge}>
-              {invitations.length}
+              {unreadInvCount}
             </span>
           )}
         </span>
       )
     }
-  ], [invitations.length]);
+  ], [unreadInvCount]);
 
   return (
     <main className="centre centre-wide animate-in">

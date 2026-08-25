@@ -77,7 +77,7 @@ import {
   UndoIcon,
   UnfoldMoreIcon,
   Upload03Icon,
-  UserAdd01Icon,
+  UserAdd02Icon,
   UserBlock01Icon,
   UserCheck01Icon,
   UserGroupIcon,
@@ -204,7 +204,7 @@ const GLYPHS = {
   User: UserIcon,
   Users: UserGroupIcon,
   UserCheck: UserCheck01Icon,
-  UserPlus: UserAdd01Icon,
+  UserPlus: UserAdd02Icon,
   UserX: UserRemove01Icon,
   Ban: UserBlock01Icon,
   Flag: Flag02Icon,
@@ -263,6 +263,9 @@ export const ArrowRight = /*#__PURE__*/ icon(GLYPHS.ArrowRight, 'ArrowRight');
 export const ChevronsUpDown = /*#__PURE__*/ icon(GLYPHS.ChevronsUpDown, 'ChevronsUpDown');
 export const X = /*#__PURE__*/ icon(GLYPHS.X, 'X');
 export const XCircle = /*#__PURE__*/ icon(GLYPHS.XCircle, 'XCircle');
+export const CircleX = XCircle;
+export const CircleXIcon = XCircle;
+export const CancelCircle = XCircle;
 export const Check = /*#__PURE__*/ icon(GLYPHS.Check, 'Check');
 export const CheckCheck = /*#__PURE__*/ icon(GLYPHS.CheckCheck, 'CheckCheck');
 export const CheckCircle2 = /*#__PURE__*/ icon(GLYPHS.CheckCircle2, 'CheckCircle2');
@@ -305,6 +308,7 @@ export const User = /*#__PURE__*/ icon(GLYPHS.User, 'User');
 export const Users = /*#__PURE__*/ icon(GLYPHS.Users, 'Users');
 export const UserCheck = /*#__PURE__*/ icon(GLYPHS.UserCheck, 'UserCheck');
 export const UserPlus = /*#__PURE__*/ icon(GLYPHS.UserPlus, 'UserPlus');
+export const UserAdd = UserPlus;
 export const UserX = /*#__PURE__*/ icon(GLYPHS.UserX, 'UserX');
 export const Ban = /*#__PURE__*/ icon(GLYPHS.Ban, 'Ban');
 export const Flag = /*#__PURE__*/ icon(GLYPHS.Flag, 'Flag');

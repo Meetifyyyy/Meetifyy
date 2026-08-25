@@ -1,23 +1,32 @@
 .overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  inset: 0;
   height: 100dvh;
-  z-index: 1000000;
+  z-index: 10000000;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  padding: 1rem;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  padding: 1.5rem;
   animation: fadeIn 0.2s ease-out;
+  box-sizing: border-box;
 }
 
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+.notch {
+  display: none;
+  width: 36px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 2px;
+  margin: 10px auto 0;
+  flex-shrink: 0;
 }
 
 .modal {
@@ -33,6 +42,7 @@
   color: #fff;
   overflow: hidden;
   animation: scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
 }
 
 @keyframes scaleUp {
@@ -132,6 +142,12 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.body::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/WebKit */
 }
 
 .userRow {
@@ -287,4 +303,36 @@
   text-align: center;
   color: rgba(255, 255, 255, 0.5);
   font-size: 0.9rem;
+}
+
+/* ── Mobile: bottom sheet ─────────────────────────────────── */
+@media (max-width: 640px) {
+  .overlay {
+    /* align to bottom, no side padding */
+    align-items: flex-end;
+    justify-content: stretch;
+    padding: 0;
+  }
+
+  .modal {
+    /* fill full width, slide up from bottom */
+    max-width: 100%;
+    max-height: 90dvh;
+    border-radius: 24px 24px 0 0;
+    border-bottom: none;
+    animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+    /* Keep overflow hidden so rounded corners clip content */
+    overflow: hidden;
+  }
+
+  .notch {
+    display: block;
+    /* Notch sits inside the header area, rounds look fine */
+    margin-bottom: -6px;
+  }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
 }

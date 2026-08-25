@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { usersApi, activitiesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
@@ -76,7 +77,7 @@ export default function InviteFriendsModal({
     }
   };
 
-  return (
+  const content = (
     <div
       className={styles.overlay}
       onClick={(e) => {
@@ -84,6 +85,7 @@ export default function InviteFriendsModal({
       }}
     >
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.notch} />
         <div className={styles.header}>
           <div className={styles.titleGroup}>
             <h3 className={styles.title}>Invite Friends</h3>
@@ -191,4 +193,6 @@ export default function InviteFriendsModal({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
 }

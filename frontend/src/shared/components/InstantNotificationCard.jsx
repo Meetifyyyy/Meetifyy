@@ -1,18 +1,23 @@
-import React, { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import Avatar from './avatar/Avatar';
+import CalendarIcon from './ui/CalendarIcon';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { DEFAULT_ACTIVITY_COVERS, getDefaultActivityCover } from '../utils/activityCover';
 
 export default function InstantNotificationCard({
   avatar,
   name,
   isGroup = false,
+  isActivity = false,
   groupName,
   actorName,
   bodyText,
   subText,
   thumbnail,
   time = 'just now',
+  joinerAvatar,
+  activityDate,
   onClick,
   onDismiss,
 }) {
@@ -95,13 +100,42 @@ export default function InstantNotificationCard({
         overflow: 'hidden',
       }}
     >
-      <div style={{ flexShrink: 0 }}>
-        <Avatar
-          src={displayAvatar}
-          name={displayName}
-          size="40px"
-          isGroup={isGroup}
-        />
+      <div style={{ flexShrink: 0, position: 'relative', width: '48px', height: '48px' }}>
+        {isActivity ? (
+          <>
+            {/* Activity cover image */}
+            <img
+              src={displayAvatar || getDefaultActivityCover(displayName)}
+              alt=""
+              onError={(e) => {
+                e.target.onerror = null;
+                e.target.src = DEFAULT_ACTIVITY_COVERS[0];
+              }}
+              style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '12px',
+                objectFit: 'cover',
+                display: 'block',
+              }}
+            />
+            {/* Calendar badge at bottom-right */}
+            <div style={{ position: 'absolute', bottom: '-6px', right: '-8px', zIndex: 2 }}>
+              <CalendarIcon
+                date={activityDate}
+                size="badge"
+                style={{ border: '2.5px solid var(--color-bg-white, #ffffff)', boxShadow: 'none' }}
+              />
+            </div>
+          </>
+        ) : (
+          <Avatar
+            src={displayAvatar}
+            name={displayName}
+            size="40px"
+            isGroup={isGroup}
+          />
+        )}
       </div>
 
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>

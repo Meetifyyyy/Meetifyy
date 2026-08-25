@@ -23,6 +23,24 @@ export function NotificationsActivity() {
   const { notifications, isLoading } = useNotifications();
   const users = useUsersMap();
   const navigate = useNavigate();
+  const { DEFAULT_ACTIVITY_COVERS, getDefaultActivityCover } = React.useMemo(() => {
+    // Inline the same deterministic cover logic used across the app
+    const covers = [
+      'https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=800&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?q=80&w=800&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?q=80&w=800&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1528605248644-14dd04022da1?q=80&w=800&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1551818255-e6e10975bc17?q=80&w=800&auto=format&fit=crop',
+    ];
+    const fn = (idOrTitle = '') => {
+      let hash = 0;
+      const str = String(idOrTitle || '');
+      for (let i = 0; i < str.length; i++) { hash = (hash << 5) - hash + str.charCodeAt(i); hash |= 0; }
+      return covers[Math.abs(hash) % covers.length];
+    };
+    return { DEFAULT_ACTIVITY_COVERS: covers, getDefaultActivityCover: fn };
+  }, []);
 
   const displayNotifs = notifications.slice(0, 4);
 
@@ -64,10 +82,23 @@ export function NotificationsActivity() {
 
             const notifType = (n.type || '').toLowerCase();
             const isFollow = notifType === 'follow';
-            const postMedia = n.metadata?.postMedia || n.metadata?.mediaUrl || n.metadata?.postImage || n.metadata?.thumbnailUrl || null;
+            // Strictly "someone joined your activity" — exclude invites
+            const isActivityJoin = notifType === 'join_request' || notifType === 'activity_join';
+            // "Someone invited you to join an activity"
+            const isActivityInvite = notifType === 'activity_invite';
+            const postMedia = (!isActivityJoin && !isActivityInvite) ? (n.metadata?.postMedia || n.metadata?.mediaUrl || n.metadata?.postImage || n.metadata?.thumbnailUrl || null) : null;
+
+            const activityName = n.metadata?.activityName || n.metadata?.activityTitle || n.title || 'Activity';
+            const activityImage = n.metadata?.activityImage;
+            const activityCoverSrc = activityImage ? getMediaUrl(activityImage) : getDefaultActivityCover(activityName || n.entityId || '');
+            const activityDate = n.metadata?.activityDate || n.metadata?.startDate || null;
 
             let bodyText = n.body || n.text || '';
-            if (isFollow) {
+            if (isActivityJoin) {
+              bodyText = 'joined the activity.';
+            } else if (isActivityInvite) {
+              bodyText = 'invited you to join.';
+            } else if (isFollow) {
               bodyText = 'started following you.';
             } else if (notifType === 'like') {
               bodyText = 'liked your post.';
@@ -85,8 +116,6 @@ export function NotificationsActivity() {
               bodyText = 'mentioned you.';
             } else if (notifType === 'message') {
               bodyText = 'sent you a message.';
-            } else if (notifType === 'join_request') {
-              bodyText = 'requested to join your activity.';
             } else if (bodyText.startsWith(actorName)) {
               bodyText = bodyText.substring(actorName.length).trim();
             }
@@ -108,6 +137,10 @@ export function NotificationsActivity() {
               .replace(' day', 'd');
 
             const handleItemClick = () => {
+              if (isActivityJoin || isActivityInvite) {
+                const activityId = n.entityId || n.metadata?.activityId;
+                if (activityId) { navigate(`/crew/${activityId}`, { state: { from: location.pathname } }); return; }
+              }
               const postId = n.metadata?.postId || (n.entityType === 'POST' ? n.entityId : null);
               if (isFollow && targetUsername) {
                 navigate(`/profile/${targetUsername}`, { state: { from: location.pathname } });
@@ -127,26 +160,61 @@ export function NotificationsActivity() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.65rem',
-                  padding: '0.5rem 0.25rem',
+                  padding: (isActivityJoin || isActivityInvite) ? '0.6rem 0.25rem' : '0.5rem 0.25rem',
                   borderRadius: '10px',
                   cursor: 'pointer',
-                  borderBottom: 'none'
+                  borderBottom: 'none',
+                  overflow: 'visible',
                 }}
               >
-                <Avatar 
-                  src={actorAvatar} 
-                  name={actorName} 
-                  size="38px" 
-                />
-                
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.82rem', lineHeight: 1.35, color: 'var(--color-text-muted)' }}>
-                    <strong style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>
-                      {actorName}
-                    </strong>{' '}
-                    <span>{bodyText}</span>{' '}
-                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-light)', whiteSpace: 'nowrap' }}>• {timeStr}</span>
+                {/* Left slot */}
+                {(isActivityJoin || isActivityInvite) ? (
+                  <div style={{ position: 'relative', width: '42px', height: '42px', flexShrink: 0 }}>
+                    <img
+                      src={activityCoverSrc}
+                      alt=""
+                      style={{ width: '42px', height: '42px', borderRadius: '10px', objectFit: 'cover', display: 'block' }}
+                      onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_ACTIVITY_COVERS[0]; }}
+                    />
+                    {/* Calendar badge — bottom-right, matching CrewCard */}
+                    <div style={{ position: 'absolute', bottom: '-7px', right: '-9px', zIndex: 2 }}>
+                      <CalendarIcon
+                        date={activityDate}
+                        size="badge"
+                        style={{ border: '2.5px solid var(--color-bg-white, #ffffff)', boxShadow: 'none' }}
+                      />
+                    </div>
                   </div>
+                ) : (
+                  <Avatar 
+                    src={actorAvatar} 
+                    name={actorName} 
+                    size="38px" 
+                  />
+                )}
+                
+                {/* Text */}
+                <div style={{ flex: 1, minWidth: 0, paddingLeft: (isActivityJoin || isActivityInvite) ? '6px' : 0 }}>
+                  {(isActivityJoin || isActivityInvite) ? (
+                    <>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {activityName}
+                        <span style={{ fontSize: '0.72rem', color: 'var(--color-text-light)', fontWeight: 400, marginLeft: '4px' }}>• {timeStr}</span>
+                      </div>
+                      <div style={{ fontSize: '0.79rem', color: 'var(--color-text-muted)', marginTop: '1px' }}>
+                        <strong style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{actorName}</strong>
+                        {' '}{isActivityInvite ? 'invited you to join.' : 'joined the activity.'}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: '0.82rem', lineHeight: 1.35, color: 'var(--color-text-muted)' }}>
+                      <strong style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>
+                        {actorName}
+                      </strong>{' '}
+                      <span>{bodyText}</span>{' '}
+                      <span style={{ fontSize: '0.75rem', color: 'var(--color-text-light)', whiteSpace: 'nowrap' }}>• {timeStr}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ flexShrink: 0, marginLeft: '0.35rem', display: 'flex', alignItems: 'center' }}>

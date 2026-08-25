@@ -4,10 +4,10 @@ import { useGlobalSocketStore } from '../stores/useGlobalSocketStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
-import Avatar from './avatar/Avatar';
 import InstantNotificationCard from './InstantNotificationCard';
 import { parseConversationRoute } from '../utils/conversationUrl';
 import { messagesApi, getMediaUrl } from '../api/apiClient';
+import { getDefaultActivityCover } from '../utils/activityCover';
 import { useGlobalSocketSync } from '../hooks/useGlobalSocketSync';
 import { appendMessageToCache, matchesConversationId, getConversationAliases, updateConversationPreview, applyGroupRoleChange } from '../../features/messages/shared/utils/cacheUtils';
 import { isInstantChat, isInstantMatchChatOpen } from '../utils/instantChatRouting';
@@ -91,6 +91,16 @@ export default function SocketManager() {
       if (notification.type?.toUpperCase() === 'MESSAGE') {
         return; // Handled via global message:new event
       }
+
+      // Suppress toasts the current user fired themselves (e.g. they invited
+      // someone — the backend echoes ACTIVITY_INVITE back to the actor too).
+      const actorId = notification.actor?.id || notification.actorId || notification.metadata?.actorId;
+      if (actorId && currentUser?.id && String(actorId) === String(currentUser.id)) {
+        // Still invalidate queries so counts/lists stay fresh, but no toast.
+        queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        return;
+      }
+
       // Invalidate queries so useNotifications hook fetches the latest
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
 
@@ -125,10 +135,14 @@ export default function SocketManager() {
         toast.custom((t) => {
           const isGroupMessage = Boolean(notification.metadata?.isGroup || notification.metadata?.conversationType === 'GROUP');
           const notifTypeRaw = (notification.type || '').toLowerCase();
+          // Strictly only "someone joined your activity" — exclude invites
           const isActivityJoin = notifTypeRaw === 'join_request' || notifTypeRaw === 'activity_join';
-          // Activity joins name the joiner by username, matching how the host knows them.
-          const actorName = isActivityJoin
-            ? (notification.actor?.username || notification.metadata?.actorUsername || 'Someone')
+          // "Someone invited you to join an activity"
+          const isActivityInvite = notifTypeRaw === 'activity_invite';
+
+          const actorUsername = notification.actor?.username || notification.metadata?.actorUsername || notification.metadata?.actorName || '';
+          const actorName = (isActivityJoin || isActivityInvite)
+            ? (actorUsername || notification.actor?.displayName || notification.metadata?.actorDisplayName || 'Someone')
             : (notification.actor?.displayName || notification.actor?.username || notification.metadata?.actorDisplayName || notification.metadata?.actorName || notification.metadata?.actorUsername || 'Someone');
           const actorAvatar = notification.actor?.avatar || notification.metadata?.actorAvatar || '';
           const groupName = notification.metadata?.conversationName || notification.title || 'Group';
@@ -137,7 +151,11 @@ export default function SocketManager() {
           const notifType = (notification.type || '').toLowerCase();
 
           let bodyText = notification.body || notification.title || '';
-          if (notifType === 'follow') {
+          if (isActivityJoin) {
+            bodyText = `${actorName} joined the activity.`;
+          } else if (isActivityInvite) {
+            bodyText = `${actorName} invited you to join.`;
+          } else if (notifType === 'follow') {
             bodyText = 'started following you.';
           } else if (notifType === 'like') {
             bodyText = 'liked your post.';
@@ -164,9 +182,6 @@ export default function SocketManager() {
             } else {
               bodyText = textSnippet;
             }
-          } else if (notifType === 'join_request' || notifType === 'activity_join') {
-            // Joining is direct — there is no approval step to report.
-            bodyText = 'joined your activity.';
           } else if (bodyText.startsWith(actorName)) {
             bodyText = bodyText.substring(actorName.length).trim();
           }
@@ -174,6 +189,14 @@ export default function SocketManager() {
           if (!bodyText) {
             bodyText = notification.title || 'sent a notification.';
           }
+
+          const activityName = notification.metadata?.activityName || notification.metadata?.activityTitle
+            // Only fall back to notification.title when it's not a generic backend label
+            || (notification.title && !['activity invitation', 'activity invite'].includes((notification.title || '').toLowerCase()) ? notification.title : null)
+            || 'Activity';
+          const rawActivityImage = notification.metadata?.activityImage;
+          const activityImage = rawActivityImage ? getMediaUrl(rawActivityImage) : getDefaultActivityCover(activityName || notification.entityId || '');
+          const activityDate = notification.metadata?.activityDate || notification.metadata?.startDate || null;
 
           const handleClick = () => {
             toast.dismiss(t);
@@ -185,7 +208,7 @@ export default function SocketManager() {
                 return;
               }
             }
-            if (isActivityJoin) {
+            if (isActivityJoin || isActivityInvite) {
               const activityId = notification.entityId || notification.metadata?.activityId;
               if (activityId) {
                 navigate(`/crew/${activityId}`, { state: { from: window.location.pathname } });
@@ -195,15 +218,23 @@ export default function SocketManager() {
             navigate('/notifications');
           };
 
+          // Both joins and invites show the activity cover + calendar badge
+          const showActivityThumb = isActivityJoin || isActivityInvite;
+          const displayAvatar = showActivityThumb ? activityImage : (isGroupMessage ? groupAvatar : actorAvatar);
+          // Use activity name as the card title for both join and invite
+          const displayTitle = showActivityThumb ? activityName : actorName;
+
           return (
             <InstantNotificationCard
-              avatar={isGroupMessage ? groupAvatar : actorAvatar}
+              avatar={showActivityThumb ? activityImage : displayAvatar}
               isGroup={isGroupMessage}
+              isActivity={showActivityThumb}
               groupName={groupName}
-              actorName={actorName}
+              actorName={displayTitle}
               bodyText={isGroupMessage ? (notification.metadata?.messageText || '') : bodyText}
-              subText={isActivityJoin ? (notification.metadata?.activityName || null) : null}
-              thumbnail={isActivityJoin && notification.metadata?.activityImage ? getMediaUrl(notification.metadata.activityImage) : null}
+              subText={null}
+              thumbnail={null}
+              activityDate={showActivityThumb ? activityDate : undefined}
               time="just now"
               onClick={handleClick}
               onDismiss={() => toast.dismiss(t)}
