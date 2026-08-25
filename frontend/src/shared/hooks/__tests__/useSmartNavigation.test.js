@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { overlayManager } from '../../services/OverlayManager';
-import { getMeaningfulPath, isAncestorPath } from '../useSmartNavigation';
+import { getMeaningfulPath, isAncestorPath, resolveTargetKey } from '../useSmartNavigation';
 
 describe('useSmartNavigation & OverlayManager', () => {
   beforeEach(() => {
@@ -8,9 +8,35 @@ describe('useSmartNavigation & OverlayManager', () => {
   });
 
   it('normalizes meaningful paths cleanly', () => {
+    // The query string is part of the identity: a sub-view that lives in the
+    // URL (`?tab=Saved`, an open panel) is a different page from the one
+    // behind it, and folding the two together made Back skip the parent.
     expect(getMeaningfulPath('/home')).toBe('/home');
-    expect(getMeaningfulPath('/crew', '?tab=Saved')).toBe('/crew');
-    expect(getMeaningfulPath('/search', '?q=test')).toBe('/search');
+    expect(getMeaningfulPath('/crew', '?tab=Saved')).toBe('/crew?tab=Saved');
+    expect(getMeaningfulPath('/search', '?q=test')).toBe('/search?q=test');
+    expect(getMeaningfulPath('/search', 'q=test')).toBe('/search?q=test');
+  });
+
+  describe('resolveTargetKey (what a navigate(to) would land on)', () => {
+    const here = { pathname: '/messages/abc', search: '?view=details' };
+
+    it('reads a string target, hash excluded', () => {
+      expect(resolveTargetKey('/home', here)).toBe('/home');
+      expect(resolveTargetKey('/crew?tab=Saved#top', here)).toBe('/crew?tab=Saved');
+    });
+
+    it('reads an object target, falling back to the current pathname', () => {
+      expect(resolveTargetKey({ pathname: '/crew', search: '?tab=Saved' }, here)).toBe('/crew?tab=Saved');
+      expect(resolveTargetKey({ search: '' }, here)).toBe('/messages/abc');
+    });
+
+    it('gives up rather than guess on targets it cannot resolve', () => {
+      // A delta or a relative path resolves against router internals we do not
+      // have here; guessing would collapse onto the wrong entry.
+      expect(resolveTargetKey(-1, here)).toBe(null);
+      expect(resolveTargetKey('../sibling', here)).toBe(null);
+      expect(resolveTargetKey(undefined, here)).toBe(null);
+    });
   });
 
   it('registers and dismisses open overlays in LIFO order', () => {

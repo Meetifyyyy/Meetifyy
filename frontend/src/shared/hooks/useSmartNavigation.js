@@ -1,61 +1,93 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation, useNavigationType } from 'react-router-dom';
 import { overlayManager } from '@shared/services/OverlayManager';
+import { createBrowserHistoryMirror, isUsableIdx } from '@shared/lib/navigation/browserHistoryMirror';
 
 /**
  * Back-navigation core.
  *
- * The browser's own history is the single source of truth. React Router stamps
- * every entry it creates with a monotonic `history.state.idx`; this module only
- * keeps a *label cache* (idx -> path) so `goBack` can tell whether the entry
- * behind us is a different page or a duplicate of the current one. The cache is
- * never consulted to decide *whether* we can go back — that comes from `idx`
- * alone — so a stale or missing cache degrades to correct-but-dumber behaviour
- * instead of the desynced stack the previous implementation could produce.
+ * The browser's own history is still the stack the user actually walks — but
+ * what goes *onto* it is now decided by a collapsing history stack
+ * (`@shared/lib/navigation/collapsingHistoryStack`) rather than by whoever
+ * called navigate. The rule it enforces:
+ *
+ *   - re-entering the page you are already on pushes nothing;
+ *   - re-entering a page already in the stack steps BACK onto it and discards
+ *     the detour above it;
+ *   - only a genuinely new destination pushes.
+ *
+ * Which is the fix for the bug this module used to have. Every navigation was
+ * a push, so toggling between two tabs a hundred times built a hundred-deep
+ * stack and escaping it took a hundred Back presses. Now the stack can never
+ * hold two entries for the same page, so leaving a stretch of switching costs
+ * one press per DISTINCT page touched, however many times the user switched.
+ *
+ * `SmartBackTracker` reconciles on arrival rather than only at the call site,
+ * so a navigation made with a raw `useNavigate` or a `<Link>` is collapsed
+ * too: a push that lands on a page already in the stack is walked straight
+ * back onto the existing entry. Collapsing is a property of the app, not a
+ * feature you get for calling the right helper.
+ *
+ * Because collapses and Back are both performed as real history steps, the
+ * browser Back button, the Android hardware/gesture back, the iOS swipe and
+ * `goBack()` are the same operation on the same stack — there is no second,
+ * simulated stack that can drift out of step with the first.
  */
 
-const SESSION_KEY = 'smartHistoryEntries_v3';
-const ORIGIN_KEY = 'smartHistoryOrigin_v3';
+const SESSION_KEY = 'smartHistoryStack_v4';
 
-const _state = {
-  // Sparse array of path strings, indexed by history.state.idx.
-  entries: [],
-  // The idx this SPA session started at. Anything at or below it belongs to
-  // whatever the user was doing before the app loaded (another site, a fresh
-  // tab), so Back from there must leave the app rather than be simulated.
-  originIdx: null,
-};
+/**
+ * Where Back goes when nothing of ours is left behind it (requirement: this is
+ * never undefined). On the web, "exit the app" is not ours to perform — the
+ * browser owns the entries before the session started — so an exhausted stack
+ * lands on the default route instead, and only a further Back, which belongs
+ * to the browser, leaves the site. Callers can name a different route per call
+ * site via `goBack(fallbackPath)`.
+ */
+const DEFAULT_ROUTE = '/home';
+
+/**
+ * Stretch goal, off by default: treat an uninterrupted stretch of toggling
+ * between already-seen pages as one logical step, so a single Back leaves the
+ * whole stretch. The shipped guarantee is the weaker, more predictable one —
+ * one press per distinct page — because with this on, Home → A → B → A → B
+ * puts a single Back at Home rather than at A, which surprises anyone who
+ * expects Back to undo the last move. Flip it here to opt the whole app in;
+ * the behaviour is covered by tests either way.
+ */
+const COLLAPSE_TOGGLE_SESSIONS = false;
+
+const mirror = createBrowserHistoryMirror({
+  defaultRoute: DEFAULT_ROUTE,
+  collapseToggleSessions: COLLAPSE_TOGGLE_SESSIONS,
+});
 
 function currentIdx() {
-  const idx = window.history.state?.idx;
-  // `typeof NaN === 'number'`, and a negative or fractional idx is equally
-  // unusable: both reach `_state.entries.length = idx` below, which throws
-  // RangeError: Invalid array length and takes out the root error boundary.
-  // Only a real, non-negative array index counts as usable here.
-  return Number.isSafeInteger(idx) && idx >= 0 ? idx : null;
+  const idx = typeof window !== 'undefined' ? window.history.state?.idx : null;
+  return isUsableIdx(idx) ? idx : null;
+}
+
+/**
+ * Is the entry we are sitting on one an overlay pushed for Back to eat?
+ * Those share their URL with the page beneath them and exist only to be
+ * popped, so they must never enter the page stack.
+ */
+function currentEntryIsOverlay() {
+  if (typeof window === 'undefined') return false;
+  const state = window.history.state;
+  return (state?.usr?.__overlayId ?? state?.__overlayId ?? null) !== null;
 }
 
 try {
-  const storedEntries = sessionStorage.getItem(SESSION_KEY);
-  if (storedEntries) {
-    const parsed = JSON.parse(storedEntries);
-    if (Array.isArray(parsed)) _state.entries = parsed;
-  }
-  const storedOrigin = sessionStorage.getItem(ORIGIN_KEY);
-  if (storedOrigin !== null) {
-    const parsed = Number(storedOrigin);
-    if (Number.isFinite(parsed)) _state.originIdx = parsed;
-  }
+  const stored = sessionStorage.getItem(SESSION_KEY);
+  if (stored) mirror.hydrate(JSON.parse(stored));
 } catch (e) {
   /* sessionStorage unavailable (private mode / disabled) — run cacheless */
 }
 
 function persist() {
   try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(_state.entries));
-    if (_state.originIdx !== null) {
-      sessionStorage.setItem(ORIGIN_KEY, String(_state.originIdx));
-    }
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(mirror.snapshot()));
   } catch (e) {
     /* ignore */
   }
@@ -86,87 +118,81 @@ export function getMeaningfulPath(pathname, search = '') {
 }
 
 /**
+ * The identity a `navigate(to)` argument would land on, or null when it cannot
+ * be resolved statically (a relative path, a delta). Callers fall back to a
+ * plain navigate in that case rather than guessing.
+ */
+export function resolveTargetKey(to, location) {
+  if (typeof to === 'number') return null;
+  if (typeof to === 'string') {
+    const withoutHash = to.split('#')[0];
+    if (!withoutHash.startsWith('/')) return null;
+    const [pathname, search = ''] = withoutHash.split('?');
+    return getMeaningfulPath(pathname, search ? `?${search}` : '');
+  }
+  if (to && typeof to === 'object') {
+    const pathname = to.pathname ?? location?.pathname;
+    if (!pathname) return null;
+    return getMeaningfulPath(pathname, to.search ?? '');
+  }
+  return null;
+}
+
+/**
  * SmartBackTracker — mount once at the router root.
  *
- * Records the path at each history index. Because entries are keyed by the
- * router's own idx rather than pushed/popped in parallel, PUSH/POP/REPLACE all
- * self-correct: a POP simply reads the idx it landed on, and a forward
- * navigation after a POP truncates the entries the browser itself discarded.
+ * Feeds every location change to the mirror and performs whatever step it asks
+ * for. `location.key` is in the dependency list on purpose: a push to the URL
+ * we are already on changes nothing else about the location, and without it
+ * that push — the purest form of the duplicate this module exists to prevent —
+ * would slip past unnoticed.
  */
 export function SmartBackTracker() {
   const location = useLocation();
   const navType = useNavigationType();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const path = getMeaningfulPath(location.pathname, location.search);
-    const idx = currentIdx();
-
-    if (idx === null) {
-      // No router-managed history state (very old browsers, or an entry pushed
-      // outside the router). Nothing reliable to key on; leave the cache alone.
-      return;
-    }
-
-    if (_state.originIdx === null) {
-      _state.originIdx = idx;
-    } else if (idx < _state.originIdx) {
-      // The user went back past where this session started (possible when the
-      // tab was restored). Re-anchor so we never simulate Back into entries we
-      // know nothing about.
-      _state.originIdx = idx;
-    }
-
-    if (navType === 'PUSH') {
-      // A push invalidates every forward entry the browser just discarded.
-      _state.entries.length = idx;
-    }
-    _state.entries[idx] = path;
+    const step = mirror.sync({
+      idx: currentIdx(),
+      key: getMeaningfulPath(location.pathname, location.search),
+      navType,
+      isOverlay: currentEntryIsOverlay(),
+    });
 
     persist();
-  }, [location.pathname, location.search, navType]);
+
+    // A collapse: the browser pushed an entry the stack refused. Stepping back
+    // onto the entry that already exists targets the same URL, so nothing
+    // visibly re-renders — the user simply ends up on the entry they walked,
+    // scroll position and all, instead of a duplicate stacked on top of it.
+    if (step?.go) navigate(step.go);
+  }, [location.pathname, location.search, location.key, navType, navigate]);
 
   return null;
 }
 
 /**
- * True when there is at least one in-app history entry behind the current one.
- * Used to decide between a real `navigate(-1)` and a synthetic "up" navigation.
+ * True when there is at least one in-app page behind the current one.
+ * Used to decide between a real history step and a synthetic "up" navigation.
  */
 export function canGoBackInApp() {
-  const idx = currentIdx();
-  if (idx === null) return false;
-  const origin = _state.originIdx ?? 0;
-  return idx > origin;
+  return mirror.canGoBack(currentIdx());
 }
 
-/**
- * Number of history steps back to the nearest entry whose path differs from the
- * current one, or null when there is no such entry within this app session.
- * Guards against the duplicate entries that repeated same-path pushes can leave
- * behind, so one Back press never appears to do nothing.
- */
-function stepsToPreviousDistinctEntry(currentPath) {
-  const idx = currentIdx();
-  if (idx === null) return null;
-  const origin = _state.originIdx ?? 0;
-
-  let target = idx - 1;
-  while (target >= origin && _state.entries[target] === currentPath) {
-    target -= 1;
-  }
-  if (target < origin) return null;
-  // An unknown (never-cached) entry is still a real entry — stepping to it is
-  // correct; we just can't say what it was.
-  return idx - target;
+/** Test/debug seam: the page stack as the app currently sees it. */
+export function debugHistoryStack() {
+  return mirror.stack.keys();
 }
 
 /**
  * Centralized navigation hook.
  *
  *  - `goBack(fallbackPath, options)` — dismisses an open overlay, otherwise
- *    pops the real history stack, otherwise navigates up to `fallbackPath`.
- *  - `smartNavigate(to, options)` — `navigate` that replaces instead of pushing
- *    when the target is the page we are already on.
+ *    steps back to the previous *distinct* page, otherwise navigates to
+ *    `fallbackPath`.
+ *  - `smartNavigate(to, options)` — `navigate` that collapses instead of
+ *    pushing when the target is a page already in the stack.
  */
 export function useSmartNavigation() {
   const navigate = useNavigate();
@@ -174,7 +200,7 @@ export function useSmartNavigation() {
   const isNavigating = useRef(false);
 
   const goBack = useCallback(
-    (fallbackPath = '/home', options = { replace: true }) => {
+    (fallbackPath = DEFAULT_ROUTE, options = { replace: true }) => {
       // 1. An open overlay owns Back before the route does.
       if (overlayManager.hasOpenOverlays()) {
         overlayManager.closeTop();
@@ -189,62 +215,67 @@ export function useSmartNavigation() {
       }, 350);
 
       // 3. Real history first. This is what makes Back behave identically
-      //    whether it comes from the browser chrome, the hardware key, or an
-      //    in-app back button: all three pop the same stack.
-      if (canGoBackInApp()) {
-        const steps = stepsToPreviousDistinctEntry(
-          getMeaningfulPath(location.pathname, location.search)
-        );
-        if (steps) {
-          navigate(-steps);
-          return;
-        }
+      //    whether it comes from the browser chrome, the hardware key, the iOS
+      //    swipe or an in-app back button: all of them move the same stack.
+      //    The mirror is not mutated here — the resulting POP comes back
+      //    through SmartBackTracker, which is the only place the stack is
+      //    allowed to shrink, so the two can never disagree.
+      const plan = mirror.planBack({ idx: currentIdx(), fallbackRoute: fallbackPath });
+      if (plan.go) {
+        navigate(plan.go);
+        return;
       }
 
-      // 4. No in-app history behind us — this is a deep link, a new tab, or a
-      //    reload at the session's first entry. Navigate *up* to the parent
-      //    instead, replacing so we don't grow a stack the user never walked.
-      if (location.pathname === fallbackPath) return;
-      navigate(fallbackPath, { replace: true, ...options });
+      // 4. Nothing of ours behind us — a deep link, a new tab, or a reload at
+      //    the session's first entry. Go to the fallback instead, replacing so
+      //    we don't grow a stack the user never walked. Already there? Stay
+      //    put: the next Back is the browser's, and leaves the app.
+      const route = plan.route || fallbackPath;
+      if (location.pathname === route) return;
+      navigate(route, { replace: true, ...options });
     },
-    [navigate, location.pathname, location.search]
+    [navigate, location.pathname]
   );
 
   const smartNavigate = useCallback(
     (to, options = {}) => {
+      const currentKey = getMeaningfulPath(location.pathname, location.search);
+      const targetKey = resolveTargetKey(to, location);
       const target = typeof to === 'string' ? to : to?.pathname || '';
       const targetPath = target.split('?')[0].split('#')[0];
 
-      // Re-navigating to the page we're already on should never grow history.
-      const isSamePage = targetPath === location.pathname;
+      if (targetKey && !options.replace) {
+        // Re-navigating to the page we're already on must never grow history.
+        // Replacing rather than returning early keeps any `state` the caller
+        // passed, while still leaving the stack exactly as deep as it was.
+        if (targetKey === currentKey) {
+          navigate(to, { ...options, replace: true });
+          return;
+        }
 
-      // Neither should navigating *up* to a section we are already inside.
-      // Tapping "Messages" while a chat is open is a return to the tab root, not
-      // a new destination: pushing there left the chat stranded one entry behind
-      // the list, so a later Back re-opened the chat the user had just closed
-      // (and the same held for /campus/... -> /campus, /crew/:id -> /crew).
-      // Replacing discards the child entry instead, so Back from a tab root
-      // leaves the section, which is what the stack should look like.
-      const isAncestorOfCurrent = isAncestorPath(targetPath, location.pathname);
-
-      const shouldReplace = options.replace || isSamePage || isAncestorOfCurrent;
-
-      // Going up when the entry directly behind us is already that section root:
-      // step back onto it instead of replacing. Replacing would leave two
-      // consecutive identical entries, so the next Back would land on the list
-      // again and look like it did nothing. Popping reuses the entry the user
-      // actually walked, so Back from the list leaves the section in one press.
-      if (isAncestorOfCurrent && !options.replace) {
-        const idx = currentIdx();
-        if (idx !== null && idx - 1 >= (_state.originIdx ?? 0) && _state.entries[idx - 1] === targetPath) {
-          navigate(-1);
+        // Already somewhere in the stack: step back onto that entry and drop
+        // the detour above it. This is the whole fix — it is why toggling
+        // between two tabs stays two entries deep instead of two hundred, and
+        // why the entry the user returns to keeps its scroll position.
+        const collapse = mirror.planCollapse({ idx: currentIdx(), key: targetKey });
+        if (collapse?.go) {
+          navigate(collapse.go);
           return;
         }
       }
 
+      // Same page (ignoring the query) or a move *up* into a section we are
+      // already inside — tapping "Messages" while a chat is open is a return
+      // to the tab root, not a new destination. Neither should push: replacing
+      // discards the child entry instead, so Back from a tab root leaves the
+      // section rather than re-opening the chat the user just closed.
+      const isSamePage = targetPath === location.pathname;
+      const isAncestorOfCurrent = isAncestorPath(targetPath, location.pathname);
+      const shouldReplace = options.replace || isSamePage || isAncestorOfCurrent;
+
       navigate(to, { ...options, replace: shouldReplace });
     },
-    [navigate, location.pathname]
+    [navigate, location]
   );
 
   return {

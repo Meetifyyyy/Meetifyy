@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 import { INTERESTS_BY_CATEGORY } from '../constants/interestsData';
 import styles from './OnboardingRoute.module.css';
@@ -100,20 +101,20 @@ export default function OnboardingRoute() {
   // which are invalid states now that the account exists). But make back feel
   // sensible rather than frozen: if they're on Step 2, browser-back returns them
   // to Step 1 instead of doing nothing.
-  useEffect(() => {
-    window.history.pushState(null, '', window.location.href);
-
-    const handlePopState = () => {
+  //
+  // This is the app's standard multi-step-Back contract rather than a private
+  // popstate listener: returning true means "I stepped back and I am still
+  // here", so the manager re-arms the entry and the next press is caught the
+  // same way. The listener it replaces pushed its entry with a raw
+  // `history.pushState`, which wipes the router's `idx` stamp — every history
+  // distance measured afterwards (a collapse, a multi-step Back) was measured
+  // against an index that had silently reset to zero.
+  useOverlayBack(true, () => {}, {
+    onBack: () => {
       setStep((prev) => (prev > 1 ? prev - 1 : prev));
-      // Re-arm the trap so a subsequent back press is caught again.
-      window.history.pushState(null, '', window.location.href);
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-    };
-  }, []);
+      return true; // never let Back leave onboarding
+    },
+  });
 
   if (!currentUser) {
     return <Navigate to="/login" replace />;
