@@ -10,7 +10,7 @@
  * - All other data flow, props, and state management unchanged
  */
 
-import { useState, useCallback, useEffect, useMemo, useRef, useContext, createContext } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useContext, createContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { showToast } from '@shared/utils/toast';
@@ -31,6 +31,7 @@ import { useDeleteComment } from '../../hooks/useDeleteComment';
 import { useLikeComment } from '../../hooks/useLikeComment';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
+import { createPortal } from 'react-dom';
 
 
 // ─── Shared tree context ─────────────────────────────────────────────────────
@@ -40,6 +41,8 @@ const TreeDensityContext = createContext({
   toggleExpanded: () => {},
   expand: () => {},
   activeReplyId: null,
+  activeMenuId: null,
+  setActiveMenuId: () => {},
   setActiveReplyId: () => {},
 });
 
@@ -74,6 +77,12 @@ export function CommentTreeRoot({ postId, comments, onReplySubmit }) {
    * button, and no indication which one a keystroke was going to.
    */
   const [activeReplyId, setActiveReplyId] = useState(null);
+  // At most one ⋮ menu open across the whole tree, for the same reason there is
+  // at most one reply box: the menus are per-node local state, so opening one
+  // never closed another and two (or ten) could sit open at once — see the
+  // screenshot that prompted this. Owning it here makes "another one opened"
+  // and "this one closed" the same event.
+  const [activeMenuId, setActiveMenuId] = useState(null);
 
   useEffect(() => {
     if (window.location.hash.startsWith('#comment-')) {
@@ -113,8 +122,8 @@ export function CommentTreeRoot({ postId, comments, onReplySubmit }) {
   const tier = totalVisible <= 5 ? 'small' : totalVisible <= 15 ? 'medium' : 'large';
 
   const treeContext = useMemo(
-    () => ({ tier, expandedMap, toggleExpanded, expand, activeReplyId, setActiveReplyId }),
-    [tier, expandedMap, toggleExpanded, expand, activeReplyId],
+    () => ({ tier, expandedMap, toggleExpanded, expand, activeReplyId, setActiveReplyId, activeMenuId, setActiveMenuId }),
+    [tier, expandedMap, toggleExpanded, expand, activeReplyId, activeMenuId],
   );
 
   return (
@@ -283,7 +292,10 @@ export default function CommentNode({
   isLastSibling = false,
 }) {
   const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
-  const [showMenu, setShowMenu]         = useState(false);
+  // Derived, not owned — see activeMenuId above.
+  const menuRef = useRef(null);
+  const portalMenuRef = useRef(null);
+  const [menuPos, setMenuPos] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting]     = useState(false);
 
@@ -300,7 +312,104 @@ export default function CommentNode({
   const { communitiesById } = useCommunities();
   const { mutate: deleteCommentMutate } = useDeleteComment();
   const { mutate: toggleLike, isLoading: isLiking } = useLikeComment();
-  const { tier, expandedMap, toggleExpanded, expand, activeReplyId, setActiveReplyId } = useContext(TreeDensityContext);
+  const { tier, expandedMap, toggleExpanded, expand, activeReplyId, setActiveReplyId, activeMenuId, setActiveMenuId } = useContext(TreeDensityContext);
+
+  const showMenu = activeMenuId === comment.id;
+  const setShowMenu = useCallback(
+    (next) => setActiveMenuId(next ? comment.id : null),
+    [setActiveMenuId, comment.id],
+  );
+
+  /**
+   * The menu is portalled to <body> and positioned in viewport coordinates.
+   *
+   * It used to be absolutely positioned inside the row, which put it inside
+   * `.treeRoot` — and that has `overflow-x: auto; overflow-y: hidden` to stop
+   * deep threads widening the page. An absolutely positioned child cannot
+   * escape a scroll container, so the menu was clipped at the tree's edge and
+   * its lower items became unreachable. Flipping it upwards does not help:
+   * the clip is the ancestor, not the viewport.
+   *
+   * So it leaves the tree entirely. Position is measured from the button at
+   * open time, flipped above when there is no room below, and clamped to the
+   * viewport so it can never render off-screen in either direction.
+   */
+  const openMenu = useCallback(() => {
+    if (showMenu) { setShowMenu(false); return; }
+
+    // First-paint estimate only — the real size is measured and corrected in
+    // the layout effect below. `.dropdown` carries `min-width: 160px`, so an
+    // assumed 120 positioned the menu as if it were narrower than it renders
+    // and pushed it off the right edge on a phone.
+    const MENU_W = 160;
+    const MENU_H = 120;
+    const GAP = 8;
+    const rect = menuRef.current?.getBoundingClientRect();
+    if (rect) {
+      const vh = window.visualViewport?.height || window.innerHeight;
+      const vw = window.visualViewport?.width || window.innerWidth;
+      const spaceBelow = vh - rect.bottom;
+      // Flip only when below is genuinely too tight AND above has more room,
+      // so a menu near the top of a short viewport does not flip into the
+      // header instead.
+      const flip = spaceBelow < MENU_H + GAP && rect.top > spaceBelow;
+
+      const top = flip ? Math.max(GAP, rect.top - MENU_H - GAP) : rect.bottom + GAP;
+      // Right-aligned to the button, then clamped so a deeply indented comment
+      // (whose button sits far right) cannot push it past either edge.
+      const left = Math.min(Math.max(GAP, rect.right - MENU_W), vw - MENU_W - GAP);
+      setMenuPos({ top, left });
+    }
+    setShowMenu(true);
+  }, [showMenu, setShowMenu]);
+
+  /**
+   * Correct the position against the menu's REAL size, once it exists.
+   *
+   * Positioning from an assumed width is guesswork, and it was wrong: the
+   * shared `.dropdown` class sets `min-width: 160px`, which beat the inline
+   * width, so the menu rendered wider than it was placed for and hung off the
+   * right edge of a phone screen. Measuring the mounted element removes the
+   * assumption entirely — whatever the class, the padding or the longest label
+   * turn out to be, it ends up inside the viewport.
+   *
+   * Clamped, not re-anchored, so it stays visually attached to its button. The
+   * comparison guard is what stops this from looping: the clamped values are
+   * already clamped, so the second pass changes nothing.
+   */
+  useLayoutEffect(() => {
+    if (!showMenu || !menuPos || !portalMenuRef.current) return;
+    const GAP = 8;
+    const r = portalMenuRef.current.getBoundingClientRect();
+    const vw = window.visualViewport?.width || window.innerWidth;
+    const vh = window.visualViewport?.height || window.innerHeight;
+
+    const left = Math.min(Math.max(GAP, menuPos.left), Math.max(GAP, vw - r.width - GAP));
+    const top = Math.min(Math.max(GAP, menuPos.top), Math.max(GAP, vh - r.height - GAP));
+    if (left !== menuPos.left || top !== menuPos.top) setMenuPos({ top, left });
+  }, [showMenu, menuPos]);
+
+  // Dismiss on anything that would leave it stranded: a click elsewhere, or
+  // any scroll/resize, since the position was measured once and does not track.
+  useEffect(() => {
+    if (!showMenu) return undefined;
+    const close = (e) => {
+      if (e && menuRef.current?.contains(e.target)) return;
+      if (e && portalMenuRef.current?.contains(e.target)) return;
+      setShowMenu(false);
+    };
+    const closeNow = () => setShowMenu(false);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('touchstart', close, { passive: true });
+    window.addEventListener('scroll', closeNow, true);
+    window.addEventListener('resize', closeNow);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('touchstart', close);
+      window.removeEventListener('scroll', closeNow, true);
+      window.removeEventListener('resize', closeNow);
+    };
+  }, [showMenu, setShowMenu]);
 
   // At most one reply box is open across the whole tree, so this is derived
   // rather than owned. Opening another node's box closes this one by definition.
@@ -330,10 +439,11 @@ export default function CommentNode({
    * Removing someone else's comment confirms first; deleting your own does not.
    *
    * Deleting your own comment has always been immediate, and that stays — it is
-   * your content and the placeholder keeps the thread intact. Removing another
+   * your content and the placeholder keeps the thread intact. Deleting another
    * member's is different in kind: it is irreversible for them, it notifies
    * them, and the control sits in a small menu next to Report where a mis-tap
-   * is easy. Same reasoning as the post above.
+   * is easy. The label is "Delete" in both cases; only the confirmation
+   * differs.
    */
   const isModeratingOthersComment =
     canDeleteComment && !(currentUser && comment.authorId === currentUser.id);
@@ -666,18 +776,34 @@ export default function CommentNode({
               </div>
 
               {/* Kebab menu */}
-              <div className={styles.menuWrapper} data-no-collapse>
+              <div className={styles.menuWrapper} data-no-collapse ref={menuRef}>
                 <button
-                  onClick={(e) => { e.stopPropagation(); setShowMenu(s => !s); }}
+                  onClick={(e) => { e.stopPropagation(); openMenu(); }}
                   className={styles.menuBtn}
+                  aria-expanded={showMenu}
                   aria-label="More options"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /><circle cx="5" cy="12" r="1.5" />
                   </svg>
                 </button>
-                {showMenu && (
-                  <div className="dropdown open" style={{ right: 0, top: '100%', width: '120px' }}>
+                {showMenu && menuPos && createPortal(
+                  <div
+                    ref={portalMenuRef}
+                    className="dropdown open"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: 'fixed',
+                      top: menuPos.top,
+                      left: menuPos.left,
+                      // Width comes from the shared .dropdown class; the layout
+                      // effect measures whatever that turns out to be.
+                      maxWidth: 'calc(100vw - 16px)',
+                      // Above the comment tree and the post card, but below the
+                      // app's real modals so a confirm dialog still covers it.
+                      zIndex: 4000,
+                    }}
+                  >
               {canDeleteComment && (
                         <button
                           onClick={handleDelete}
@@ -696,9 +822,7 @@ export default function CommentNode({
                               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                             </svg>
                           )}
-                          {isDeleting
-                            ? (isModeratingOthersComment ? 'Removing…' : 'Deleting…')
-                            : (isModeratingOthersComment ? 'Remove' : 'Delete')}
+                          {isDeleting ? 'Deleting…' : 'Delete'}
                         </button>
                       )}
                     {(!currentUser || comment.authorId !== currentUser.id) && (
@@ -718,7 +842,8 @@ export default function CommentNode({
                         {hasReported ? 'Already Reported' : 'Report'}
                       </button>
                     )}
-                  </div>
+                  </div>,
+                  document.body,
                 )}
               </div>
             </div>
@@ -831,9 +956,9 @@ export default function CommentNode({
 
       <ConfirmModal
         visible={confirmRemove}
-        title="Remove this comment?"
-        desc={`This removes ${author.displayName || author.username || 'this member'}'s comment. They'll be notified that a moderator removed it. Replies stay in the thread.`}
-        confirmText="Remove"
+        title="Delete this comment?"
+        desc={`This deletes ${author.displayName || author.username || 'this member'}'s comment. They'll be notified that a moderator deleted it. Replies stay in the thread.`}
+        confirmText="Delete"
         cancelText="Cancel"
         isDestructive
         onCancel={() => setConfirmRemove(false)}

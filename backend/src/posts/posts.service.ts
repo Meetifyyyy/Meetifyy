@@ -27,6 +27,33 @@ export class PostsService {
     private readonly contentDeletionAuthorizer: ContentDeletionAuthorizer,
   ) {}
 
+  /**
+   * Stamp `canDelete` on posts on their way to a client.
+   *
+   * Every path that returns posts must call this. `getFeed` alone had it, and
+   * getFeed has an early-return branch for its raw-SQL query that skipped it —
+   * so the flag was missing from the community feed, the post detail page,
+   * profile posts and bookmarks, and owners and moderators saw no delete
+   * control anywhere except one code path. The client falls back to
+   * authorship when the field is absent, which fails closed and made the
+   * omission silent rather than loud.
+   *
+   * Answered by the same authorizer the DELETE endpoint enforces with, so
+   * what the UI offers and what the API allows cannot disagree.
+   */
+  private async attachCanDelete<T extends { authorId?: string; communityId?: string | null }>(
+    posts: T[],
+    userId?: string,
+  ): Promise<T[]> {
+    if (!posts.length) return posts;
+    const flags = await this.contentDeletionAuthorizer.canDeleteEach(
+      userId,
+      posts.map((p) => ({ authorId: (p as any).authorId, communityId: (p as any).communityId ?? null })),
+    );
+    posts.forEach((p: any, i) => { p.canDelete = flags[i]; });
+    return posts;
+  }
+
   private formatPost(post: any, likedSet: Set<string>, bookmarkedSet: Set<string>, currentUserId?: string) {
     const isLiked = likedSet.has(post.id);
     const isBookmarked = bookmarkedSet.has(post.id);
@@ -596,6 +623,8 @@ export class PostsService {
       };
     });
 
+    await this.attachCanDelete(formattedPosts as any[], userId);
+
     return {
       posts: formattedPosts,
       nextCursor,
@@ -710,15 +739,7 @@ export class PostsService {
 
     const formattedPosts = posts.map((post) => this.formatPost(post, likedSet, bookmarkedSet, userId));
 
-    // What this viewer may remove, answered by the same authorizer the delete
-    // endpoint enforces with. The client renders the control from this rather
-    // than re-deriving the rule — a second copy of an authorization rule, in
-    // the one place that cannot enforce it, is how the two drift apart.
-    const deletable = await this.contentDeletionAuthorizer.canDeleteEach(
-      userId,
-      formattedPosts.map((p: any) => ({ authorId: p.authorId, communityId: p.communityId ?? null })),
-    );
-    formattedPosts.forEach((p: any, i: number) => { p.canDelete = deletable[i]; });
+    await this.attachCanDelete(formattedPosts as any[], userId);
 
     return {
       posts: formattedPosts,
@@ -1396,8 +1417,13 @@ export class PostsService {
       };
     }
 
+    const [canDeleteThis] = await this.contentDeletionAuthorizer.canDeleteEach(userId, [
+      { authorId: (post as any).authorId, communityId: (post as any).communityId ?? null },
+    ]);
+
     return {
       ...post,
+      canDelete: canDeleteThis,
       media: formattedMedia,
       pollOptions,
       poll,
@@ -1516,6 +1542,7 @@ export class PostsService {
       return this.formatPost(b.post, likedSet, bookmarkedSet, userId);
     }).filter(Boolean);
 
+    await this.attachCanDelete(formattedPosts as any[], userId);
     return { posts: formattedPosts, nextCursor };
   }
 

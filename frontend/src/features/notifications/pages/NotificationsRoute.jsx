@@ -394,7 +394,7 @@ export default function NotificationsRoute() {
                     background: 'var(--color-bg-white)',
                     border: '1px solid var(--color-border)',
                     borderRadius: '8px',
-                    color: 'var(--color-text)',
+                    color: 'var(--color-text-main)',
                     fontWeight: 600,
                     cursor: 'pointer',
                     textAlign: 'center',

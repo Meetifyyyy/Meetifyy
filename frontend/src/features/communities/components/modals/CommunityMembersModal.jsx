@@ -208,7 +208,7 @@ function MemberActionMenu({
                 border: 'none',
                 cursor: roleBusy ? 'default' : 'pointer',
                 fontSize: '0.85rem',
-                color: 'var(--color-text)',
+                color: 'var(--color-text-main)',
                 fontWeight: 500,
                 display: 'flex',
                 alignItems: 'center',
@@ -219,8 +219,8 @@ function MemberActionMenu({
               }}
             >
               {isTargetMod
-                ? <ShieldMinus size={16} color="var(--color-text-secondary)" />
-                : <ShieldPlus size={16} color="var(--color-text-secondary)" />}
+                ? <ShieldMinus size={16} color="var(--color-text-muted)" />
+                : <ShieldPlus size={16} color="var(--color-text-muted)" />}
               <span>
                 {roleBusy
                   ? 'Saving…'
