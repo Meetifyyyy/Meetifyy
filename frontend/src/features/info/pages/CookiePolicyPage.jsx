@@ -1,6 +1,6 @@
 import StaticDocLayout from './StaticDocLayout';
 import styles from './StaticDocLayout.module.css';
-import { Mail } from 'lucide-react';
+import { Mail } from '@shared/components/icons';
 
 export default function CookiePolicyPage() {
   return (

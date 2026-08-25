@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Cropper from 'react-easy-crop';
 import { getCroppedImg } from './cropImageUtils';
-import { X, Check, Loader2 } from 'lucide-react';
+import { X, Check, Loader2 } from '@shared/components/icons';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', onCropComplete, onCancel, onError }) {

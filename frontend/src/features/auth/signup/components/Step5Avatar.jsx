@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Upload, Loader2 } from 'lucide-react';
+import { ArrowRight, Upload, Loader2 } from '@shared/components/icons';
 import { useSignup } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';

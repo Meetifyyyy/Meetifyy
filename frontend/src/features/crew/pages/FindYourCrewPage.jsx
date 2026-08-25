@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from '@shared/components/icons';
 import { useAuth } from '@shared/context/AuthContext';
 import { useActivities, useCrewDiscover, useSavedActivitiesQuery, useMyActivitiesQuery } from '@shared/hooks/useCrew';
 import { useDebounce } from '@shared/hooks/useDebounce';

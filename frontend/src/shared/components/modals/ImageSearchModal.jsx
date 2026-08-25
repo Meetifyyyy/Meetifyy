@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './ImageSearchModal.module.css';
-import { X, Search, Upload, Loader2 } from 'lucide-react';
+import { X, Search, Upload, Loader2 } from '@shared/components/icons';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import { compressAndCacheDraftImage } from '@shared/utils/draftImageCache';
 import MediaCropper from '@shared/components/media/MediaCropper';

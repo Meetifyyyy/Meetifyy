@@ -16,7 +16,7 @@ import {
   Pencil, Lock, Eye, EyeOff, AlertCircle, Trash2,
   User, GraduationCap, Shield, Bell, HelpCircle, LogOut,
   ChevronRight, ChevronDown, Check, X, Mail, Ban,
-} from 'lucide-react';
+} from '@shared/components/icons';
 import CustomDatePicker from '@shared/components/ui/CustomDatePicker';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import styles from './SettingsRoute.module.css';

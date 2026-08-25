@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { ArrowRight, AlertCircle } from 'lucide-react';
+import { ArrowRight, AlertCircle } from '@shared/components/icons';
 import {
   AuthShell,
   AuthHeading,

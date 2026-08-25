@@ -1,4 +1,4 @@
-import { Search, ArrowLeft } from 'lucide-react';
+import { Search, ArrowLeft } from '@shared/components/icons';
 import PageLayout from '@layout/PageLayout';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import styles from '@features/search/pages/SearchResultsRoute.module.css';

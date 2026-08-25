@@ -122,20 +122,19 @@
   justify-content: center;
   color: white;
   flex-shrink: 0;
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .createCardBtn:hover .createCardBtnIcon {
-    transform: rotate(90deg);
-  }
 }
 
 .btnAsterisk {
   font-size: 1.5rem;
   font-weight: 800;
   line-height: 1;
-  margin-top: 6px;
+  /* Inter draws '*' high in its em box: with the flex centring above, the
+     glyph's ink sits 4px (0.167em at this size) above the circle's centre. The
+     old `margin-top: 6px` nudged it back down, but margin is part of the flex
+     item's box, so centring absorbed half of it and left the asterisk about a
+     pixel high. A transform is not laid out, so the correction is exact, and
+     in em it survives a change of font-size. */
+  transform: translateY(0.167em);
 }
 
 .createCardBtnText {
@@ -176,14 +175,9 @@
 
 @media (max-width: 768px) {
   .createCardBtn,
-  .createCardBtnIcon,
   .createCardBtnText,
   .createCardBtnArrow {
     transition: none !important;
-  }
-
-  .createCardBtn:hover .createCardBtnIcon {
-    transform: none !important;
   }
 
   .createCardBtn:hover .createCardBtnText {

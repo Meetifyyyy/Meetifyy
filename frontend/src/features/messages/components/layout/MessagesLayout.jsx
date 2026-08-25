@@ -10,7 +10,7 @@ import { matchesConversationId } from '../../shared/utils/cacheUtils';
 import { generateConversationUrl, correctConversationUrl, parseConversationRoute } from '@shared/utils/conversationUrl';
 import { showToast } from '@shared/utils/toast';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { MessageSquarePlus, Search } from 'lucide-react';
+import { MessageSquarePlus, Search } from '@shared/components/icons';
 
 import DMItem from '../../direct-messages/components/sidebar/DMItem';
 import GroupItem from '../../group-chats/components/sidebar/GroupItem';

@@ -1,6 +1,6 @@
 import Avatar from '@shared/components/avatar/Avatar';
 import { timeAgo } from '@shared/utils/time';
-import { Pin, VolumeX } from 'lucide-react';
+import { Pin, NotificationOff } from '@shared/components/icons';
 import { useAuth } from '@shared/context/AuthContext';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import styles from '../../../shared/components/sidebar/ConversationList.module.css';
@@ -114,7 +114,7 @@ export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu 
           {conv.timestamp ? timeAgo(conv.timestamp) : conv.time}
         </span>
         <div className={styles.convIndicators}>
-          {conv.muted && <VolumeX size={12} className={styles.mutedIcon} />}
+          {conv.muted && <NotificationOff size={12} className={styles.mutedIcon} />}
           {conv.pinned && <Pin size={12} className={styles.pinnedIcon} />}
           {isUnread && <span className={styles.convBadge}>{conv.unread > 99 ? '99+' : conv.unread}</span>}
         </div>

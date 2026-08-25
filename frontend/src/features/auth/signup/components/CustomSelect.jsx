@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown } from '@shared/components/icons';
 import styles from '../SignupFlow.module.css';
 
 // Damerau-Levenshtein distance to calculate spelling edit distance (tolerates insertions, deletions, substitutions, transpositions)

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { AlertCircle, ArrowRight } from 'lucide-react';
+import { AlertCircle, ArrowRight } from '@shared/components/icons';
 import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
 import CustomSelect from './CustomSelect';

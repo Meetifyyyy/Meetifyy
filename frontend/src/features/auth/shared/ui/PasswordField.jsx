@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from '@shared/components/icons';
 import AuthField from './AuthField';
 import s from './authKit.module.css';
 

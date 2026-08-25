@@ -22,6 +22,7 @@ import { useDeletePost } from '../../hooks/useDeletePost';
 import { useVotePoll } from '../../hooks/useVotePoll';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { getMediaUrl } from '@shared/api/apiClient';
+import { Bookmark } from '@shared/components/icons';
 
 function PollCard({ poll, postId }) {
   const { currentUser } = useAuth();
@@ -483,9 +484,18 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
           const nextSaved = toggleRegistry.getNextToggleIntent(entityKey, isSaved);
           toggleSave({ postId: id, isSaved: nextSaved, postData }); 
         }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill={isSaved ? 'var(--color-primary)' : 'none'} stroke={isSaved ? 'var(--color-primary)' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-          </svg>
+          {/* strokeWidth 2 rather than the Hugeicons default 1.5: the like,
+              comment and share glyphs beside it in this row are hand-drawn at 2,
+              and a lighter bookmark among them reads as a rendering bug.
+              The saved state recolours through `color` because the glyph's path
+              carries its own stroke="currentColor", which an svg-level stroke
+              cannot override. */}
+          <Bookmark
+            size={18}
+            strokeWidth={2}
+            color={isSaved ? 'var(--color-primary)' : undefined}
+            fill={isSaved ? 'var(--color-primary)' : 'none'}
+          />
           <span className={styles.shareText} style={{ fontSize: '0.85rem', fontWeight: 600 }}>{isSaved ? 'Saved' : 'Save'}</span>
         </button>
       </div>

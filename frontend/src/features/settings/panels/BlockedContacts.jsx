@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ShieldOff, Search } from 'lucide-react';
+import { ShieldOff, Search } from '@shared/components/icons';
 import { apiClient } from '@shared/api/apiClient';
 import BlockedContactRow from './BlockedContactRow';
 import UnblockConfirmDialog from './UnblockConfirmDialog';

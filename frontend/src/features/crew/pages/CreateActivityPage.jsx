@@ -11,11 +11,23 @@ import { commitDraftImage, removeDraftImage } from '@shared/utils/draftImageCach
 
 import { getRelativeDateLabel } from '@shared/utils/time';
 import {
-  ArrowLeft, Send, ImageIcon,
-  MapPin, Users, Pencil, Bell, CalendarClock,
-  ChevronLeft, ChevronRight, ChevronDown, X, Search, GraduationCap,
-  BellOff, ChevronsUpDown, Eye, Link, Check, Loader2
-} from 'lucide-react';
+  Send,
+  MapPin,
+  Users,
+  Pencil,
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Search,
+  NotificationOff,
+  NotificationOn,
+  ChevronsUpDown,
+  Eye,
+  Link,
+  Check,
+  Loader2,
+} from '@shared/components/icons';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { activitiesApi, usersApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
@@ -1476,9 +1488,9 @@ export default function CreateActivityPage() {
               >
                 <div className={styles.rowLeft}>
                   {formData.reminder === 'None' ? (
-                    <BellOff size={16} className={styles.rowIcon} />
+                    <NotificationOff size={16} className={styles.rowIcon} />
                   ) : (
-                    <Bell size={16} className={styles.rowIcon} />
+                    <NotificationOn size={16} className={styles.rowIcon} />
                   )}
                   <span className={styles.rowTitle}>Reminder</span>
                 </div>

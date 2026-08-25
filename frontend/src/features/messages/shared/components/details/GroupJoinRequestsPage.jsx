@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import Avatar from '@shared/components/avatar/Avatar';
-import { Check, X, UserCheck, ArrowLeft } from 'lucide-react';
+import { Check, X, UserCheck, ArrowLeft } from '@shared/components/icons';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './GroupJoinRequestsPage.module.css';
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Mail, Check, AlertCircle } from 'lucide-react';
+import { Mail, Check, AlertCircle } from '@shared/components/icons';
 import { useSignup, DEV_BYPASS_SIGNUP } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';

@@ -3,6 +3,8 @@ import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
 import NavIcon from './NavIcon';
+import { CampusOutline, CampusSolid } from './CampusIcon';
+import { CrewOutline, CrewSolid } from './CrewIcon';
 import styles from './BottomNav.module.css';
 import {
   HomeIcon as HomeOutline,
@@ -14,50 +16,6 @@ import {
   ChatBubbleOvalLeftEllipsisIcon as MessagesSolid,
   UserIcon as ProfileSolid,
 } from '@heroicons/react/24/solid';
-
-// Campus and Crew have no Heroicons counterpart, so their two variants are
-// drawn here -- the same two shapes the nav has always used, unchanged in
-// geometry. Only the paint differs between them, and each now spreads props so
-// <NavIcon> can hand it the layer class that cross-fades the pair.
-//
-// The "Solid" variants used to be `fill="none"` with a heavier stroke, which
-// made Campus and Crew the only tabs that thickened instead of filling while
-// every Heroicons tab switched to a genuinely solid glyph. They are filled with
-// currentColor now so all five tabs read the same way when active.
-
-const CompassOutline = (props) => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    <circle cx="12" cy="12" r="10" />
-    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
-  </svg>
-);
-
-// The needle is knocked out in the surface colour rather than left as a hole:
-// both navigations sit on --color-bg-white, and a knockout keeps the dial
-// readable at 22px where a stroked needle over a filled disc would smear.
-const CompassSolid = (props) => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    <circle cx="12" cy="12" r="10" fill="currentColor" />
-    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="var(--color-bg-white)" stroke="var(--color-bg-white)" strokeWidth="1.5" />
-  </svg>
-);
-
-const CampusOutline = (props) => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
-    <path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5" />
-  </svg>
-);
-
-const CampusSolid = (props) => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    {/* Split so the tassel (M22 10v6) stays a stroked line -- filling it would
-        do nothing -- while the mortarboard closes into a solid diamond. */}
-    <path d="M22 10v6" />
-    <path d="M2 10l10-5 10 5-10 5z" fill="currentColor" />
-    <path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5" fill="currentColor" />
-  </svg>
-);
 
 import { useUnreadCounts } from '@features/messages/hooks/useUnreadCounts';
 
@@ -154,8 +112,8 @@ export default function BottomNav({ hidden }) {
           <NavIcon
             className={styles.navIcon}
             active={isCrewActive}
-            outline={<CompassOutline />}
-            solid={<CompassSolid />}
+            outline={<CrewOutline />}
+            solid={<CrewSolid />}
           />
         </div>
         <span>Crew</span>

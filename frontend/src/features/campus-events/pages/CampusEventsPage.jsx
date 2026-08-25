@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, CalendarPlus } from 'lucide-react';
+import { ArrowLeft, CalendarPlus } from '@shared/components/icons';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';

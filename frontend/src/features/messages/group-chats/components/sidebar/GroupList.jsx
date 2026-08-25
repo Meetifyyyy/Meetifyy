@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { MessageSquarePlus, Search } from 'lucide-react';
+import { MessageSquarePlus, Search } from '@shared/components/icons';
 import GroupItem from './GroupItem';
 import GroupContextMenu from './GroupContextMenu';
 import NewMessageModal from '../../../shared/components/modals/NewMessageModal';

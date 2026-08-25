@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback } from 'react';
-import { Search, X } from 'lucide-react';
+import { Search, X } from '@shared/components/icons';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { showToast } from '@shared/utils/toast';

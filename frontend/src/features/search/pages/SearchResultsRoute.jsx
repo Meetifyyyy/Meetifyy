@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useUrlState } from '@shared/hooks/useUrlState';
-import { Search, Clock, X, RefreshCw, AlertCircle, Calendar, ArrowLeft, Loader2, Sparkles, Users, Compass, Globe2, FileText } from 'lucide-react';
+import { Search, Clock, X, RefreshCw, AlertCircle, Calendar, ArrowLeft, Loader2, Users, Activity, Globe2, FileText } from '@shared/components/icons';
 import { useGlobalSearch } from '@features/search/hooks/useGlobalSearch';
 import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
@@ -22,7 +22,7 @@ import styles from './SearchResultsRoute.module.css';
 const QUICK_CHIPS = [
   { id: 'all', label: 'All', Icon: null },
   { id: 'people', label: 'People', Icon: Users },
-  { id: 'activities', label: 'Activities', Icon: Compass },
+  { id: 'activities', label: 'Activities', Icon: Activity },
   { id: 'communities', label: 'Communities', Icon: Globe2 },
   { id: 'posts', label: 'Posts', Icon: FileText },
 ];

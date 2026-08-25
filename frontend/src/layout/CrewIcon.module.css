@@ -1,0 +1,18 @@
+/* Hugeicons draws this glyph as two paths: the body, then the two eyes as
+   round-capped zero-length strokes sitting on top of it.
+
+   Filling the svg to build the active state paints BOTH paths in currentColor,
+   so the eyes disappear into the solid body and the tab loses its face. Knock
+   them back out in the colour of the surface the navigations sit on -- the same
+   trick the Campus glyph uses for its mortarboard. */
+.solid > path:nth-child(2) {
+  stroke: var(--color-bg-white);
+}
+
+/* The eyes are drawn as zero-length round-capped strokes, so stroke-width IS
+   their diameter -- 1.5 by default, which reads as a pinprick at 22px. Nudged
+   up a little, in both states, so the face does not change size when the tab
+   becomes active. */
+.crew > path:nth-child(2) {
+  stroke-width: 2;
+}

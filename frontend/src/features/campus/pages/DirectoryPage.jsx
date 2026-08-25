@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, Plus } from 'lucide-react';
+import { ArrowLeft, Search } from '@shared/components/icons';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 

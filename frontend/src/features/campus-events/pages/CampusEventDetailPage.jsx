@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, CalendarX } from 'lucide-react';
+import { ExternalLink } from '@shared/components/icons';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { useCampusEvent } from '@shared/hooks/useCampusEvents';

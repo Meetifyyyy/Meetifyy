@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Image as ImageIcon, Video, Mic, FileText, Link2, User, Users,
   FileImage, Calendar, Ban, AlertCircle, MessageSquare, Sticker,
-} from 'lucide-react';
+} from '@shared/components/icons';
 import { getMediaUrl } from '@shared/api/apiClient';
 import Avatar from '@shared/components/avatar/Avatar';
 import { useUsersMap } from '@shared/hooks/useUsersMap';

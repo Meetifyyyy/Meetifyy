@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X } from 'lucide-react';
+import { Menu, X } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import { useAuth } from '@shared/context/AuthContext';
 import styles from './LandingNavbar.module.css';

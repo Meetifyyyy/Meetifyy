@@ -7,7 +7,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities, useCampusCommunities } from '@shared/hooks/useCommunities';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
-import { Sun, Moon } from 'lucide-react';
+import { Bookmark, Moon, Sun } from '@shared/components/icons';
 
 import useUIStore from '@stores/uiStore';
 import { showToast } from '@shared/utils/toast';
@@ -428,9 +428,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
               <button 
                 onClick={() => { navigate('/saved'); setDropdownOpen(false); }}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-                </svg>
+                <Bookmark size={18} strokeWidth={2} />
                 Saved
               </button>
 

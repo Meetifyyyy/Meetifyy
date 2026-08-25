@@ -64,6 +64,7 @@ INTERESTS_BY_CATEGORY.forEach(category => {
 
 
 import CoverImage from '@shared/components/ui/CoverImage';
+import { Bookmark } from '@shared/components/icons';
 
 
 export default function ProfilePage() {
@@ -347,7 +348,7 @@ export default function ProfilePage() {
                       Share Profile
                     </button>
                     <button className={s.dropdownItem} onClick={() => { setMenuOpen(false); navigate('/saved'); }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                      <Bookmark size={16} strokeWidth={2} />
                       Saved
                     </button>
                     <button

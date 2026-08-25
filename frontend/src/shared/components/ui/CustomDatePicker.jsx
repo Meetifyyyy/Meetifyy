@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight } from '@shared/components/icons';
 import styles from './CustomDatePicker.module.css';
 
 const MONTH_NAMES = [

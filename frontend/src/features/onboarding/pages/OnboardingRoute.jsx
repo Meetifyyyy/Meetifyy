@@ -8,7 +8,7 @@ import { useCommunities } from '@shared/hooks/useCommunities';
 import { communitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, ArrowLeft } from 'lucide-react';
+import { Check, ArrowLeft } from '@shared/components/icons';
 import { resolveCommunityAvatar } from '@shared/utils/avatar';
 
 

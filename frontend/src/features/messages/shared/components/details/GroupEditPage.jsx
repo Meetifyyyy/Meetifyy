@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from '@shared/components/icons';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './GroupEditPage.module.css';
 import Avatar from '@shared/components/avatar/Avatar';

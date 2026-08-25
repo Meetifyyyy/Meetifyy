@@ -1,5 +1,5 @@
 import { useRef, useLayoutEffect, useState } from 'react';
-import { Reply, Copy, Forward, Trash2, Undo2 } from 'lucide-react';
+import { Reply, Copy, Forward, Trash2, Undo2 } from '@shared/components/icons';
 import styles from './MessageContextMenu.module.css';
 
 export const MENU_GAP = 12;

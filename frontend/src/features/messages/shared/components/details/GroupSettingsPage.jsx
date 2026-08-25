@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from '@shared/components/icons';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './GroupSettingsPage.module.css';
 

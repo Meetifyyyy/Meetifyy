@@ -114,7 +114,7 @@ export default defineConfig(({ mode }) => {
           'vendor-react': ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query', '@tanstack/react-virtual'],
           'vendor-framer': ['framer-motion'],
           'vendor-emoji': ['emoji-mart', '@emoji-mart/data', '@emoji-mart/react'],
-          'vendor-icons': ['lucide-react', '@heroicons/react'],
+          'vendor-icons': ['@hugeicons/react', '@hugeicons/core-free-icons', '@heroicons/react'],
           'vendor-zustand': ['zustand', 'immer']
         }
       }
@@ -172,7 +172,8 @@ export default defineConfig(({ mode }) => {
       'react-router-dom',
       '@tanstack/react-query',
       'framer-motion',
-      'lucide-react',
+      '@hugeicons/react',
+      '@hugeicons/core-free-icons',
       'zustand',
       'immer',
       'socket.io-client',

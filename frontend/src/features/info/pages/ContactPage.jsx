@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import StaticDocLayout from './StaticDocLayout';
 import styles from './StaticDocLayout.module.css';
-import { Mail, Send, CheckCircle2 } from 'lucide-react';
+import { Mail, Send, CheckCircle2 } from '@shared/components/icons';
 
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);

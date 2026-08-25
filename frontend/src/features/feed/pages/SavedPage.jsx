@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { Bookmark, List, Grid, Calendar, FileText } from 'lucide-react';
+import { Bookmark, List, Grid, Calendar, FileText } from '@shared/components/icons';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { postsApi, activitiesApi } from '@shared/api/apiClient';
 import Post from '../components/post/Post';

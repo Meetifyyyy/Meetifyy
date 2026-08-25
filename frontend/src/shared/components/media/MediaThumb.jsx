@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ImageOff, Play } from 'lucide-react';
+import { ImageOff, Play } from '@shared/components/icons';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import styles from './MediaThumb.module.css';

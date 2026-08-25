@@ -11,6 +11,7 @@ import styles from './CrewCard.module.css';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { getMediaUrl } from '@shared/api/apiClient';
+import { Bookmark } from '@shared/components/icons';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 const DEFAULT_COVERS = [
@@ -320,9 +321,7 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
           
           <div className={styles.actionsGroup}>
             <button className={`${styles.saveBtn} ${isSaved ? styles.saved : ''}`} aria-label={isSaved ? "Unsave" : "Save"} onClick={handleSave}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill={isSaved ? "currentColor" : "none"} stroke={isSaved ? "none" : "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
-              </svg>
+              <Bookmark size={18} strokeWidth={2} fill={isSaved ? 'currentColor' : 'none'} />
             </button>
           </div>
         </div>

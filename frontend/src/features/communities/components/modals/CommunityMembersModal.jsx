@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { UserX, Ban, Flag, ShieldPlus, ShieldMinus } from 'lucide-react';
+import { UserX, Ban, Flag, ShieldPlus, ShieldMinus } from '@shared/components/icons';
 import { isImageUrl } from "@shared/utils/avatar";
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';

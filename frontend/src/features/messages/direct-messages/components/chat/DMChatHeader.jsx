@@ -1,5 +1,5 @@
 import { useDismissibleMenu } from '../../../shared/hooks/useDismissibleMenu';
-import { ArrowLeft, MoreVertical, Search, BellOff, BellRing, Trash2, ShieldOff, Info, Pin } from 'lucide-react';
+import { ArrowLeft, MoreVertical, Search, NotificationOff, NotificationOn, Trash2, ShieldOff, Info, Pin } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
 import { useCanSeeOthersPresence } from '@shared/hooks/usePresenceVisibility';
 import styles from '../../../shared/components/chat/ChatHeader.module.css';
@@ -109,7 +109,7 @@ export default function DMChatHeader({
                 className={styles.msgDropdownItem} 
                 onClick={() => { onToggleMute?.(conversation.id, isMuted); setShowMoreMenu(false); }}
               >
-                {isMuted ? <BellRing size={14} /> : <BellOff size={14} />}
+                {isMuted ? <NotificationOn size={14} /> : <NotificationOff size={14} />}
                 {isMuted ? 'Unmute alerts' : 'Mute alerts'}
               </button>
               {onClearChat && (

@@ -1,5 +1,5 @@
 import { useRef, useLayoutEffect, useState } from 'react';
-import { Pin, BellOff, BellRing, Trash2, CheckCheck } from 'lucide-react';
+import { Pin, NotificationOff, NotificationOn, Trash2, CheckCheck } from '@shared/components/icons';
 import { computeMenuPosition } from '@features/messages/shared/components/MessageContextMenu';
 import styles from './DMContextMenu.module.css';
 
@@ -64,7 +64,7 @@ export default function DMContextMenu({ conv, position, onClose, onMarkRead, onM
           {isPinned ? 'Unpin' : 'Pin'}
         </button>
         <button className={styles.menuItem} onClick={handle(onMute)}>
-          {isMuted ? <BellRing size={15} /> : <BellOff size={15} />}
+          {isMuted ? <NotificationOn size={15} /> : <NotificationOff size={15} />}
           {isMuted ? 'Unmute alerts' : 'Mute alerts'}
         </button>
         <div className={styles.divider} />

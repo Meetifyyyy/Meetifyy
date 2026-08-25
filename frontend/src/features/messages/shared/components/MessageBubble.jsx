@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { Reply, MoreVertical, Image as ImageIcon, CalendarDays, AlertCircle, Play } from 'lucide-react';
+import { Reply, MoreVertical, Image as ImageIcon, AlertCircle, Play } from '@shared/components/icons';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import Avatar from '@shared/components/avatar/Avatar';
 import { isImageUrl } from '@shared/utils/avatar';

@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './ChatGalleryPage.module.css';
-import { Image as ImageIcon, ArrowLeft } from 'lucide-react';
+import { Image as ImageIcon, ArrowLeft } from '@shared/components/icons';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import MediaThumb from '@shared/components/media/MediaThumb';
 

@@ -6,7 +6,7 @@ import s from './authKit.module.css';
  * Used for the "check your email" / "link expired" / "password updated"
  * style states across the forgot/reset password flows.
  *
- * @param {React.ComponentType} [icon]  lucide icon component (omit for the loading tone, which shows a spinner instead)
+ * @param {React.ComponentType} [icon]  icon component from @shared/components/icons (omit for the loading tone, which shows a spinner instead)
  * @param {'success'|'error'|'loading'} [tone]
  */
 export default function AuthStatus({ icon: Icon, tone = 'success', title, description, children }) {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Avatar from '@shared/components/avatar/Avatar';
 import PostPreviewSkeleton from '@shared/components/skeletons/PostPreviewSkeleton';
-import { Image as ImageIcon, BarChart2, FileX } from 'lucide-react';
+import { BarChart2, FileX } from '@shared/components/icons';
 import styles from './SharedPostPreview.module.css';
 import { usePostLookup } from '@shared/hooks/usePostLookup';
 import { useUsersMap } from '@shared/hooks/useUsersMap';

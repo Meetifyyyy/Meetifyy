@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, memo } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, X, Send, ChevronUp } from 'lucide-react';
+import { MessageCircle, X, Send, ChevronUp } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { useAuth } from '@shared/context/AuthContext';

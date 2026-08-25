@@ -1,5 +1,5 @@
 import React, { forwardRef } from 'react';
-import { AlertCircle, Check, X, Loader2, WifiOff } from 'lucide-react';
+import { AlertCircle, Check, X, Loader2, WifiOff } from '@shared/components/icons';
 import s from './authKit.module.css';
 
 /**

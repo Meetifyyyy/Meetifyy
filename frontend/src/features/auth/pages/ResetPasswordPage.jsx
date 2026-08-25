@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@shared/context/AuthContext';
 import Toast from '@shared/components/ui/Toast';
-import { CheckCircle2, XCircle } from 'lucide-react';
+import { CheckCircle2, XCircle } from '@shared/components/icons';
 import { getBackendUrl } from '@shared/api/apiClient';
 import {
   AuthShell,

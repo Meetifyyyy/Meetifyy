@@ -1,5 +1,5 @@
 import { useDismissibleMenu } from '../../../shared/hooks/useDismissibleMenu';
-import { ArrowLeft, MoreVertical, Search, BellOff, BellRing, LogOut, Info, Settings, Trash2, Pin } from 'lucide-react';
+import { ArrowLeft, MoreVertical, Search, NotificationOff, NotificationOn, LogOut, Info, Settings, Trash2, Pin } from '@shared/components/icons';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
 import styles from '../../../shared/components/chat/ChatHeader.module.css';
@@ -118,7 +118,7 @@ export default function GroupChatHeader({
                 className={styles.msgDropdownItem} 
                 onClick={() => { onToggleMute?.(conversation.id, isMuted); setShowMoreMenu(false); }}
               >
-                {isMuted ? <BellRing size={14} /> : <BellOff size={14} />}
+                {isMuted ? <NotificationOn size={14} /> : <NotificationOff size={14} />}
                 {isMuted ? 'Unmute alerts' : 'Mute alerts'}
               </button>
 

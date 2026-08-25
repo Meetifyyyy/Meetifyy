@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from '@shared/components/icons';
 import s from './authKit.module.css';
 
 /** A standalone back arrow for single-step screens (forgot/reset password) that don't need the full StepProgress rail. */

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from '@shared/components/icons';
 import { getMediaUrl, deriveThumbnailKey } from '@shared/api/apiClient';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import styles from './CampusEvents.module.css';

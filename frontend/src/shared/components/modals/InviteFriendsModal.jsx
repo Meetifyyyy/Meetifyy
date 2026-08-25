@@ -5,7 +5,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import ShareModalAvatar from '../avatar/ShareModalAvatar';
 import styles from './InviteFriendsModal.module.css';
-import { Search, X, Check, UserCheck, Clock, AlertCircle } from 'lucide-react';
+import { Search, X, Check } from '@shared/components/icons';
 
 export default function InviteFriendsModal({
   activityId,

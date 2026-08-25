@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, ImagePlus, CalendarRange } from 'lucide-react';
+import { X, ImagePlus, CalendarRange } from '@shared/components/icons';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import { showToast } from '@shared/utils/toast';

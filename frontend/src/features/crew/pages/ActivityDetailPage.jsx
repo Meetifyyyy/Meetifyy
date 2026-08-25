@@ -15,7 +15,7 @@ import ActivityJoinedModal from '../components/modals/ActivityJoinedModal';
 import InviteFriendsModal from '@shared/components/modals/InviteFriendsModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ActivityDetailPage.module.css';
-import { UserPlus, MessageCircle } from 'lucide-react';
+import { Bookmark, UserPlus } from '@shared/components/icons';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import { useJoinActivity } from '../hooks/useJoinActivity';
 import { useActivityById, useActivityAttendees } from '@shared/hooks/useCrew';
@@ -587,9 +587,7 @@ export default function ActivityDetailPage() {
               </svg>
             </button>
             <button className={`${styles.actionBtn} ${isSaved ? styles.saved : ''}`} aria-label={isSaved ? "Unsave" : "Save"} onClick={handleSave}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
-              </svg>
+              <Bookmark size={18} strokeWidth={2} fill={isSaved ? 'currentColor' : 'none'} />
             </button>
             {isHost && !hasStarted && !isCancelled && !hasEnded && (
               <>

@@ -8,7 +8,7 @@ import { showToast } from '@shared/utils/toast';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './CampusCommunitiesPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
-import { Plus, Search, ArrowLeft } from 'lucide-react';
+import { Plus, Search, ArrowLeft } from '@shared/components/icons';
 import CreateCommunityModal from '@features/communities/components/modals/CreateCommunityModal';
 import CommunityCard from '@features/communities/components/card/CommunityCard';
 import CommunityGrid from '@features/communities/components/card/CommunityGrid';

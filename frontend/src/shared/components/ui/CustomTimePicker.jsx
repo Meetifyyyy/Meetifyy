@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Clock } from 'lucide-react';
+import { Clock } from '@shared/components/icons';
 import styles from './CustomTimePicker.module.css';
 
 const HOURS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];

@@ -35,6 +35,7 @@ import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
 const POSTS_PAGE_SIZE = 15;
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import ModeratorWelcomeModal from '../moderation/ModeratorWelcomeModal';
+import { NotificationOff, NotificationOn } from '@shared/components/icons';
 
 function getActivityPhrase(comm) {
   if (comm.trending) return 'Growing Fast';
@@ -250,17 +251,9 @@ function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreateP
                   title={isMuted ? "Unmute community" : "Mute community"}
                 >
                   {isMuted ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M10.268 21a2 2 0 0 0 3.464 0" />
-                      <path d="M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742" />
-                      <path d="m2 2 20 20" />
-                      <path d="M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05" />
-                    </svg>
+                    <NotificationOff size={18} strokeWidth={2} />
                   ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M18 8A6 6 0 0 0 6 8v7a2 2 0 0 0-2 2v0a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v0a2 2 0 0 0-2-2z" />
-                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                    </svg>
+                    <NotificationOn size={18} strokeWidth={2} />
                   )}
                 </button>
               )}
@@ -497,17 +490,9 @@ function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreateP
                 onClick={onMuteClick}
               >
                 {isMuted ? (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M10.268 21a2 2 0 0 0 3.464 0" />
-                    <path d="M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742" />
-                    <path d="m2 2 20 20" />
-                    <path d="M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05" />
-                  </svg>
+                  <NotificationOff size={18} strokeWidth={2} />
                 ) : (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M18 8A6 6 0 0 0 6 8v7a2 2 0 0 0-2 2v0a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v0a2 2 0 0 0-2-2z" />
-                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                  </svg>
+                  <NotificationOn size={18} strokeWidth={2} />
                 )}
               </button>
             )}

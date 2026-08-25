@@ -1,5 +1,5 @@
 import styles from './ChatDetailsPanel.module.css';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 

@@ -15,7 +15,7 @@ import CampusEventSection from '@features/campus-events/components/CampusEventSe
 import CampusEventForm from '@features/campus-events/components/CampusEventForm';
 import eventStyles from '@features/campus-events/components/CampusEvents.module.css';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
-import { Plus, Users, CalendarPlus, Megaphone, ChevronRight } from 'lucide-react';
+import { Plus, Users, CalendarPlus, ChevronRight } from '@shared/components/icons';
 
 export default function CampusPage() {
   const navigate = useNavigate();

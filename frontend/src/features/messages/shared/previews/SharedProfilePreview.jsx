@@ -4,7 +4,7 @@ import { isImageUrl } from '@shared/utils/avatar';
 import { getMediaUrl } from '@shared/api/apiClient';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import ProfilePreviewSkeleton from '@shared/components/skeletons/ProfilePreviewSkeleton';
-import { UserX } from 'lucide-react';
+import { UserX } from '@shared/components/icons';
 import styles from './SharedProfilePreview.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import Avatar from '@shared/components/avatar/Avatar';
-import { Search, Check, X } from 'lucide-react';
+import { Search, Check, X } from '@shared/components/icons';
 import styles from './ForwardMessageModal.module.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 

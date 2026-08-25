@@ -18,6 +18,19 @@
   color: var(--color-primary);
 }
 
+.iconContainer svg {
+  /* The bells used to carry width/height="24" on the element itself; Heroicons
+     do not, so the size lives here now. The 27px override below still applies.
+
+     Do NOT give <NavIcon>'s own .navIcon class a `display` here. It sets
+     `inline-grid` so its outline and solid layers share one grid cell; any
+     other display lays the two layers out side by side instead, doubling the
+     width and shifting the visible bell left or right as the active state
+     flips. */
+  width: 24px;
+  height: 24px;
+}
+
 .iconContainer {
   position: relative;
   display: flex;

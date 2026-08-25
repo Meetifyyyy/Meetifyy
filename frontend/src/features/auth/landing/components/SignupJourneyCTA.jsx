@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, ArrowRight, School, Compass, X, Check, Loader2 } from 'lucide-react';
+import { Sparkles, ArrowRight, School, Compass, X, Check, Loader2 } from '@shared/components/icons';
 import styles from './SignupJourneyCTA.module.css';
 
 const titleVariants = {

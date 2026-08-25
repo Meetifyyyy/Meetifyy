@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { supabase } from '@shared/context/AuthContext';
 import Toast from '@shared/components/ui/Toast';
-import { MailCheck, ArrowRight } from 'lucide-react';
+import { MailCheck, ArrowRight } from '@shared/components/icons';
 import {
   AuthShell,
   AuthHeading,

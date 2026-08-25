@@ -8,7 +8,7 @@ import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ChatDetailsPanel.module.css';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
 import sidebarStyles from '../sidebar/ConversationList.module.css';
-import { Pin, Trash2, LogOut, ChevronRight, User, Search, Ban, UserPlus, UserCheck, Check, X, Image as ImageIcon, CalendarDays, Calendar, CalendarX, ArrowLeft, MoreVertical } from 'lucide-react';
+import { Pin, Trash2, ChevronRight, User, Search, Ban, UserPlus, UserCheck, Image as ImageIcon, ArrowLeft, MoreVertical } from '@shared/components/icons';
 import InviteModal from '../modals/InviteModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { showToast } from '@shared/utils/toast';

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ImageOff } from 'lucide-react';
+import { ImageOff } from '@shared/components/icons';
 import { mediaCache } from '../../utils/MediaCacheManager';
 
 export default function OptimizedImage({ 

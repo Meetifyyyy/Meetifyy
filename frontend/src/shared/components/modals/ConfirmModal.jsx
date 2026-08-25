@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Info } from 'lucide-react';
+import { AlertTriangle, Info } from '@shared/components/icons';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import styles from './ConfirmModal.module.css';
 
