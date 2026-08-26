@@ -2,7 +2,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 9px 14px 11px 14px;
   border-radius: 16px;
   width: 275px;
   min-width: 275px;
@@ -14,6 +14,7 @@
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
+  position: relative;
 }
 
 [data-theme="dark"] .voicePlayerContainer {
@@ -76,8 +77,7 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
-/* Centre column: waveform stacked over the time read-out. Its height is pinned
-   to the play button's 36px so the bubble's overall size is unchanged. */
+/* Centre column: waveform vertically centered with the play button */
 .voiceCenter {
   position: relative;
   flex: 1;
@@ -88,12 +88,14 @@
 }
 
 .waveformContainer {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
   height: 22px;
   cursor: pointer;
   outline: none;
   touch-action: none;
+  position: relative;
 }
 
 .waveformContainer:focus-visible {
@@ -101,91 +103,96 @@
   box-shadow: 0 0 0 2px var(--color-primary, #6366f1);
 }
 
-/* Straight progress track. Two stacked lines plus a handle — nothing animated
-   per frame except the fill's width and the handle's left offset. */
+/* Waveform Track with dual-layer background / foreground bars */
 .waveTrack {
   position: relative;
+  width: 100%;
+  height: 22px;
+  display: flex;
+  align-items: center;
+}
+
+.waveBarsBackground,
+.waveBarsForeground {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 2px;
 }
 
-.waveLine,
-.waveFill {
-  position: absolute;
-  left: 0;
-  height: 3px;
-  border-radius: 2px;
-}
-
-.waveLine {
-  width: 100%;
-}
-
-.waveFill {
-  width: 0;
-}
-
-.waveHandle {
-  position: absolute;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  /* Centred on the playhead without shifting the track's own layout. */
-  transform: translateX(-50%);
+.waveBarsForeground {
+  clip-path: inset(0 100% 0 0);
   pointer-events: none;
+  will-change: clip-path;
 }
 
-/* Received message colours */
-.voicePlayerThem .waveLine {
-  background: rgba(0, 0, 0, 0.16);
+.waveBar {
+  flex: 1;
+  min-width: 2px;
+  max-width: 3.5px;
+  border-radius: 9999px;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-[data-theme="dark"] .voicePlayerThem .waveLine {
-  background: rgba(255, 255, 255, 0.22);
+.waveformContainer:hover .waveBar {
+  opacity: 0.95;
 }
 
-.voicePlayerThem .waveFill,
-.voicePlayerThem .waveHandle {
+/* Received message colors */
+.voicePlayerThem .waveBarsBackground .waveBar {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .voicePlayerThem .waveBarsBackground .waveBar {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.voicePlayerThem .waveBarsForeground .waveBar {
   background: var(--color-primary, #6366f1);
 }
 
-/* Sent message colours */
-.voicePlayerMe .waveLine {
+/* Sent message colors */
+.voicePlayerMe .waveBarsBackground .waveBar {
   background: rgba(255, 255, 255, 0.38);
 }
 
-.voicePlayerMe .waveFill,
-.voicePlayerMe .waveHandle {
+.voicePlayerMe .waveBarsForeground .waveBar {
   background: #ffffff;
 }
 
-/* Taken out of flow deliberately. In the column layout it shared the 36px with
-   the track and pushed the line above the bubble's true centre; absolute
-   positioning lets the line sit dead centre with the time hanging below it. */
+/* Time metadata row: moved further down below the centered waveform */
 .voiceMeta {
   position: absolute;
   left: 0;
-  bottom: 0;
+  bottom: -7px;
   display: flex;
   align-items: center;
   line-height: 1;
   pointer-events: none;
+  padding-left: 1px;
 }
 
 .voiceTimeText {
-  font-size: 9.5px;
+  font-size: 8.5px;
   font-weight: 600;
   color: var(--color-text-muted, #71717a);
-  letter-spacing: 0.01em;
+  letter-spacing: 0.03em;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   white-space: nowrap;
 }
 
+[data-theme="dark"] .voicePlayerThem .voiceTimeText {
+  color: #a1a1aa;
+}
+
 .voicePlayerMe .voiceTimeText {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .voiceSpeedBtn {
@@ -239,3 +246,4 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+

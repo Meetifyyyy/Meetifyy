@@ -19,6 +19,7 @@ export const siteConfigValues = {
   frontendUrl,
 
   /** Logos fall back to assets served by the frontend itself when unset. */
+  wordmarkUrl: assets.wordmarkUrl || `${frontendUrl}/wordmark.png`,
   logoUrl: assets.logoUrl || `${frontendUrl}/meetifyy_wordmark.png`,
   logoIconUrl: assets.logoIconUrl || `${frontendUrl}/logo.png`,
   logoWhiteUrl: assets.logoWhiteUrl || `${frontendUrl}/meetifyy_wordmark_white.png`,
@@ -33,6 +34,7 @@ export const siteConfigValues = {
   privacyUrl: `${frontendUrl}${str('PRIVACY_PATH', { default: '/privacy-policy' })}`,
   termsUrl: `${frontendUrl}${str('TERMS_PATH', { default: '/terms-and-conditions' })}`,
   supportEmail: str('SUPPORT_EMAIL', { default: '' }),
+  supportUrl: url('SUPPORT_URL', { default: '' }),
 
   instagramUrl: url('INSTAGRAM_URL'),
   twitterUrl: url('TWITTER_URL'),

@@ -1,15 +1,55 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { getMediaUrl } from '@shared/api/apiClient';
 import styles from './VoiceMessagePlayer.module.css';
 
 // Global cache for audio durations so we never recalculate or lose durations on re-renders
 const durationCache = new Map();
 
+// Global cache for waveform bars
+const waveformCache = new Map();
+
 // Global tracker for currently playing audio to prevent multiple voice notes playing at once
 let activeAudioInstance = null;
 
-// Progress is expressed as a percentage of the track's own width, so the line
-// needs no fixed geometry and scales with whatever space the layout gives it.
+// Total bars in the waveform
+const NUM_BARS = 32;
+
+// Deterministically generate dynamic natural waveform bars from an audio source
+const getWaveformBars = (seedStr) => {
+  if (!seedStr) {
+    return [32, 48, 64, 82, 55, 72, 95, 68, 42, 58, 76, 92, 64, 88, 100, 72, 54, 68, 84, 48, 62, 92, 78, 58, 72, 88, 62, 44, 52, 38, 28, 22];
+  }
+  if (waveformCache.has(seedStr)) {
+    return waveformCache.get(seedStr);
+  }
+
+  let hash = 0;
+  for (let i = 0; i < seedStr.length; i++) {
+    hash = ((hash << 5) - hash + seedStr.charCodeAt(i)) | 0;
+  }
+  const seed = Math.abs(hash);
+
+  const bars = [];
+  for (let i = 0; i < NUM_BARS; i++) {
+    const norm = i / (NUM_BARS - 1);
+    const envelope = Math.sin(norm * Math.PI) * 0.45 + 0.55;
+
+    const wave1 = Math.sin((i + 1) * 0.58 + (seed % 97) * 0.11);
+    const wave2 = Math.cos((i + 1) * 0.92 + (seed % 67) * 0.14);
+    const wave3 = Math.sin((i + 1) * 1.55 + (seed % 43) * 0.07);
+
+    const raw = Math.abs(0.5 * wave1 + 0.35 * wave2 + 0.15 * wave3);
+    const modulated = raw * envelope;
+    
+    // Scale between 22% and 100%
+    const heightPercent = Math.round(22 + 78 * Math.max(0, Math.min(1, modulated)));
+    bars.push(heightPercent);
+  }
+
+  waveformCache.set(seedStr, bars);
+  return bars;
+};
+
 const formatTime = (secs) => {
   if (!secs || isNaN(secs) || !isFinite(secs) || secs < 0) return '0:00';
   const m = Math.floor(secs / 60);
@@ -27,16 +67,11 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
   const waveformRef = useRef(null);
   const isDraggingRef = useRef(false);
 
-  // Progress is painted through these refs, never through React state. The
-  // playhead moves 60 times a second; re-rendering the whole bubble that often
-  // is what made the time label and speed pill shimmer.
+  // Foreground bars layer ref: progress is painted through clipPath, never through 60fps React state
   const fillRef = useRef(null);
-  const handleRef = useRef(null);
   const currentTimeRef = useRef(0);
 
   const [isPlaying, setIsPlaying] = useState(false);
-  // Whole seconds only — the label can't change more often than that, so this
-  // re-renders at most once per second instead of once per frame.
   const [displaySec, setDisplaySec] = useState(0);
   const [duration, setDuration] = useState(() => {
     if (initialDuration && isFinite(initialDuration) && initialDuration > 0) {
@@ -49,19 +84,80 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
   });
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isInvalidBlob, setIsInvalidBlob] = useState(false);
+  const [waveformBars, setWaveformBars] = useState(() => getWaveformBars(rawSrc || ''));
 
   const isValidSource = Boolean(audioSrc && !isInvalidBlob);
 
-  // Keep the duration ref-readable inside the animation loop without making it
-  // a dependency of every callback.
   const durationRef = useRef(duration);
   durationRef.current = duration;
 
-  /** Writes the playhead straight to the DOM. No React involved. */
+  // Asynchronously extract real audio waveform peaks if available, else keep deterministic pattern
+  useEffect(() => {
+    setWaveformBars(getWaveformBars(rawSrc || ''));
+    if (!audioSrc) return;
+
+    const cacheKey = `real_${audioSrc}`;
+    if (waveformCache.has(cacheKey)) {
+      setWaveformBars(waveformCache.get(cacheKey));
+      return;
+    }
+
+    let isMounted = true;
+    const extractRealPeaks = async () => {
+      try {
+        const response = await fetch(audioSrc);
+        if (!response.ok) return;
+        const arrayBuffer = await response.arrayBuffer();
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const audioCtx = new AudioCtx();
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        const rawData = audioBuffer.getChannelData(0);
+        const blockSize = Math.floor(rawData.length / NUM_BARS);
+        if (blockSize <= 0) {
+          audioCtx.close();
+          return;
+        }
+
+        const realBars = [];
+        let maxVal = 0;
+        for (let i = 0; i < NUM_BARS; i++) {
+          const start = i * blockSize;
+          let sum = 0;
+          for (let j = 0; j < blockSize; j++) {
+            sum += Math.abs(rawData[start + j] || 0);
+          }
+          const avg = sum / blockSize;
+          realBars.push(avg);
+          if (avg > maxVal) maxVal = avg;
+        }
+
+        if (maxVal > 0 && isMounted) {
+          const normalized = realBars.map((val) => {
+            const ratio = val / maxVal;
+            return Math.round(22 + 78 * Math.pow(ratio, 0.65));
+          });
+          waveformCache.set(cacheKey, normalized);
+          setWaveformBars(normalized);
+        }
+        audioCtx.close();
+      } catch (_) {
+        // Fallback is already active with getWaveformBars
+      }
+    };
+
+    extractRealPeaks();
+    return () => {
+      isMounted = false;
+    };
+  }, [audioSrc, rawSrc]);
+
+  /** Writes the playhead straight to the DOM via clip-path. No React re-renders involved. */
   const paintProgress = useCallback((ratio) => {
-    const pct = `${Math.max(0, Math.min(1, ratio || 0)) * 100}%`;
-    if (fillRef.current) fillRef.current.style.width = pct;
-    if (handleRef.current) handleRef.current.style.left = pct;
+    const pct = Math.max(0, Math.min(100, (ratio || 0) * 100));
+    if (fillRef.current) {
+      fillRef.current.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+    }
   }, []);
 
   const syncTime = useCallback((time) => {
@@ -93,7 +189,6 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
       setDuration(d);
       if (audioSrc) durationCache.set(audioSrc, d);
     } else if (d === Infinity) {
-      // Workaround for WebM without duration header in Chrome
       const onTimeUpdateForDuration = () => {
         audio.removeEventListener('timeupdate', onTimeUpdateForDuration);
         const realDuration = audio.duration;
@@ -137,11 +232,10 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
     };
   }, [isPlaying, audioSrc, syncTime]);
 
-  // Repaint when the duration lands after the fact (metadata arrives late), so
-  // an already-seeked playhead sits at the right spot.
+  // Repaint when duration or bars change
   useEffect(() => {
     paintProgress(duration > 0 ? currentTimeRef.current / duration : 0);
-  }, [duration, paintProgress]);
+  }, [duration, waveformBars, paintProgress]);
 
   // Clean up audio on unmount
   useEffect(() => {
@@ -244,10 +338,10 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
       togglePlay();
     } else if (e.key === 'ArrowRight') {
       e.preventDefault();
-      seekToRatio(((currentTimeRef.current + 2) / (durationRef.current || 1)));
+      seekToRatio((currentTimeRef.current + 2) / (durationRef.current || 1));
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      seekToRatio(((currentTimeRef.current - 2) / (durationRef.current || 1)));
+      seekToRatio((currentTimeRef.current - 2) / (durationRef.current || 1));
     }
   };
 
@@ -262,9 +356,8 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
     }
   };
 
-  // Idle shows the full length; once playing or scrubbed it shows the position
-  // against that length, so the label never loses the total.
   const hasProgress = isPlaying || displaySec > 0;
+
   return (
     <div className={`${styles.voicePlayerContainer} ${isFromMe ? styles.voicePlayerMe : styles.voicePlayerThem}`}>
       {isValidSource && (
@@ -306,7 +399,7 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
         )}
       </button>
 
-      {/* Centre: line waveform above the time read-out */}
+      {/* Centre: dynamic waveform bars with time read-out cleanly below */}
       <div className={styles.voiceCenter}>
         <div
           ref={waveformRef}
@@ -325,11 +418,31 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
           tabIndex="0"
         >
           <div className={styles.waveTrack} aria-hidden="true">
-            <div className={styles.waveLine} />
-            {/* Only these two inline styles change as playback advances — one
-                write each per frame, no React reconciliation. */}
-            <div ref={fillRef} className={styles.waveFill} style={{ width: '0%' }} />
-            <div ref={handleRef} className={styles.waveHandle} style={{ left: '0%' }} />
+            {/* Inactive background bars */}
+            <div className={styles.waveBarsBackground}>
+              {waveformBars.map((height, idx) => (
+                <span
+                  key={idx}
+                  className={styles.waveBar}
+                  style={{ height: `${height}%` }}
+                />
+              ))}
+            </div>
+
+            {/* Active foreground bars - smoothly clipped by playback progress */}
+            <div
+              ref={fillRef}
+              className={styles.waveBarsForeground}
+              style={{ clipPath: 'inset(0 100% 0 0)' }}
+            >
+              {waveformBars.map((height, idx) => (
+                <span
+                  key={idx}
+                  className={styles.waveBar}
+                  style={{ height: `${height}%` }}
+                />
+              ))}
+            </div>
           </div>
         </div>
 
@@ -340,8 +453,7 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
         </div>
       </div>
 
-      {/* Right: speed. Always mounted at a fixed width, so switching between
-          play and pause can never reflow the waveform beside it. */}
+      {/* Right: speed */}
       <button
         type="button"
         className={styles.voiceSpeedBtn}

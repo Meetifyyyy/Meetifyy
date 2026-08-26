@@ -28,6 +28,7 @@ export const storageConfigValues = {
 
   /** Branding assets referenced from emails and other server-rendered surfaces. */
   assets: {
+    wordmarkUrl: url('WORDMARK_URL'),
     logoUrl: url('LOGO_URL'),
     logoIconUrl: url('LOGO_ICON_URL'),
     logoWhiteUrl: url('LOGO_WHITE_URL'),
