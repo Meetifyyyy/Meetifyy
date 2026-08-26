@@ -218,3 +218,86 @@ test_svc.ts
 
 # Mailpit binary (dev-only, not committed)
 local/bin/mailpit
+
+# ------------------------------------------------------------------------------
+# 13. Generated Build Metadata
+# ------------------------------------------------------------------------------
+# `versionBuildPlugin` in frontend/vite.config.js rewrites version.json on every
+# `buildStart`, so it changes on each build and conflicts on every merge while
+# carrying no information a build cannot regenerate. It is currently TRACKED —
+# this rule only stops it coming back after `git rm --cached`.
+frontend/public/version.json
+**/public/version.json
+
+# vite-plugin-pwa's development output. Named dev-dist, so the dist/ rules above
+# do not cover it.
+dev-dist/
+**/dev-dist/
+
+# ------------------------------------------------------------------------------
+# 14. Keys, Certificates & Service Credentials
+# ------------------------------------------------------------------------------
+# Section 4 keeps .env files out; these are the credential formats that arrive as
+# their own files instead — a downloaded service account, a local TLS cert, an
+# Android signing keystore. None belong in a repo, and a leak here is worse than
+# a leak of source.
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.pfx
+*.p12
+*.jks
+*.keystore
+secrets/
+**/secrets/
+*service-account*.json
+gha-creds-*.json
+
+# ------------------------------------------------------------------------------
+# 15. Additional Editor, AI Assistant & Tooling Metadata
+# ------------------------------------------------------------------------------
+# Section 11 covers the editors this project has met so far; these are the rest,
+# listed so a teammate on a different setup cannot commit their local config.
+.history/
+.cursor/
+.cursorrules
+.windsurf/
+.windsurfrules
+.zed/
+.fleet/
+.continue/
+.aider*
+.sourcegraph/
+*.code-workspace
+
+# ------------------------------------------------------------------------------
+# 16. Process, Cache & Packaging Leftovers
+# ------------------------------------------------------------------------------
+*.pid
+*.pid.lock
+*.seed
+.vitest/
+**/.vitest/
+.jest-cache/
+**/.jest-cache/
+.pnpm-store/
+.yarn/cache/
+.yarn/install-state.gz
+*.tgz
+*.tar.gz
+*.zip
+*.7z
+*.rar
+
+# Throwaway scripts written beside the code they probe. `**/*.tmp` above catches
+# the .tmp suffix; this catches the .tmp- prefix convention, which is what a
+# one-off db check or migration probe tends to be called.
+.tmp-*
+**/.tmp-*
+
+# Extra OS leftovers not covered in section 10.
+.AppleDouble
+.LSOverride
+Thumbs.db:encryptable
