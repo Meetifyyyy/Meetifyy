@@ -1,0 +1,148 @@
+/* Invite-link landing screen. Occupies the chat pane, so it has to fill the
+   same box the chat area would — full height on desktop, full viewport column
+   on mobile where the pane is the whole screen. */
+.panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.65rem;
+  width: 100%;
+  max-width: 360px;
+  padding: 2rem 1.5rem;
+  border-radius: 20px;
+  background: var(--color-bg-card, #ffffff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  box-sizing: border-box;
+}
+
+.title {
+  margin: 0.35rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--color-text-main, #18181b);
+  /* Group names are user-supplied and can be a single long token. */
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text-muted, #71717a);
+}
+
+.description {
+  margin: 0.25rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--color-text-main, #18181b);
+  overflow-wrap: anywhere;
+}
+
+.subtitle {
+  margin: 0.35rem 0 0.25rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--color-text-muted, #71717a);
+}
+
+.primaryBtn {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%);
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  opacity: 0.94;
+}
+
+.primaryBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.secondaryBtn {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-text-muted, #71717a);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.secondaryBtn:hover {
+  color: var(--color-text-main, #18181b);
+}
+
+/* ── Loading placeholders ─────────────────────────────────────────────────── */
+
+.skeletonAvatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+}
+
+.skeletonLine {
+  width: 60%;
+  height: 18px;
+  border-radius: 6px;
+}
+
+.skeletonLineShort {
+  width: 40%;
+  height: 14px;
+  border-radius: 6px;
+}
+
+.shimmer {
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.06));
+  animation: invitePulse 1.4s ease-in-out infinite;
+}
+
+@keyframes invitePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .panel {
+    padding: 1rem;
+    align-items: flex-start;
+    padding-top: 3rem;
+  }
+
+  .card {
+    border: none;
+    background: transparent;
+    padding: 1.5rem 1rem;
+  }
+}

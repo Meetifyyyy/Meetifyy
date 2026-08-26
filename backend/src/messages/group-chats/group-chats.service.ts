@@ -751,47 +751,4 @@ export class GroupChatsService extends MessagingCoreService {
     return { success: true };
   }
 
-  async requestGroupJoin(conversationId: string, userId: string) {
-    const realConvId = await this.resolveConversationId(conversationId);
-    const conversation: any = await this.prisma.conversation.findUnique({
-      where: { id: realConvId },
-      include: {
-        participants: { where: { userId, leftAt: null, deletedAt: null } as any }
-      }
-    });
-
-    if (!conversation) throw new NotFoundException('Group not found');
-    if (conversation.participants.length > 0) return { status: 'JOINED' };
-
-    const convStatus = String(conversation.status || '').toUpperCase();
-    if (convStatus === 'CLOSED' || convStatus === 'ENDED') {
-      throw new BadRequestException('This group is closed and no longer accepts new members');
-    }
-
-    const whoCanJoin = conversation.whoCanJoin || 'ANYONE';
-    if (whoCanJoin === 'ANYONE') {
-      await this.prisma.conversationParticipant.upsert({
-        where: { userId_conversationId: { userId, conversationId: realConvId } },
-        create: { userId, conversationId: realConvId, role: 'MEMBER' },
-        update: {
-          leftAt: null,
-          deletedAt: null,
-          joinedAt: new Date(),
-          role: 'MEMBER'
-        } as any
-      });
-      return { status: 'JOINED' };
-    }
-
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 48);
-
-    await this.prisma.conversationJoinRequest.upsert({
-      where: { conversationId_userId: { conversationId: realConvId, userId } },
-      create: { conversationId: realConvId, userId, status: 'PENDING', expiresAt },
-      update: { status: 'PENDING', expiresAt }
-    });
-
-    return { status: 'PENDING' };
-  }
 }

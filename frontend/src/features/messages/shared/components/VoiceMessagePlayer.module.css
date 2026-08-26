@@ -1,7 +1,7 @@
 .voicePlayerContainer {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 10px 14px;
   border-radius: 16px;
   width: 275px;
@@ -76,68 +76,106 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
-.waveformContainer {
+/* Centre column: waveform stacked over the time read-out. Its height is pinned
+   to the play button's 36px so the bubble's overall size is unchanged. */
+.voiceCenter {
+  position: relative;
   flex: 1;
+  min-width: 0;
+  height: 36px;
   display: flex;
   align-items: center;
-  height: 28px;
-  min-width: 0;
+}
+
+.waveformContainer {
+  display: block;
+  width: 100%;
+  height: 22px;
   cursor: pointer;
   outline: none;
-  padding: 0 1px;
   touch-action: none;
 }
 
-.waveformBars {
+.waveformContainer:focus-visible {
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px var(--color-primary, #6366f1);
+}
+
+/* Straight progress track. Two stacked lines plus a handle — nothing animated
+   per frame except the fill's width and the handle's left offset. */
+.waveTrack {
+  position: relative;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
-  gap: 2.5px;
-  height: 24px;
+}
+
+.waveLine,
+.waveFill {
+  position: absolute;
+  left: 0;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.waveLine {
   width: 100%;
 }
 
-.waveformBar {
-  flex: 1;
-  min-width: 2px;
-  max-width: 4px;
-  border-radius: 3px;
-  transition: background-color 0.1s ease, opacity 0.1s ease;
+.waveFill {
+  width: 0;
 }
 
-/* Received Message Waveform Colors */
-.voicePlayerThem .waveformBarActive {
+.waveHandle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  /* Centred on the playhead without shifting the track's own layout. */
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* Received message colours */
+.voicePlayerThem .waveLine {
+  background: rgba(0, 0, 0, 0.16);
+}
+
+[data-theme="dark"] .voicePlayerThem .waveLine {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.voicePlayerThem .waveFill,
+.voicePlayerThem .waveHandle {
   background: var(--color-primary, #6366f1);
 }
 
-.voicePlayerThem .waveformBarInactive {
-  background: rgba(0, 0, 0, 0.18);
-}
-
-[data-theme="dark"] .voicePlayerThem .waveformBarInactive {
-  background: rgba(255, 255, 255, 0.24);
-}
-
-/* Sent Message Waveform Colors */
-.voicePlayerMe .waveformBarActive {
-  background: #ffffff;
-}
-
-.voicePlayerMe .waveformBarInactive {
+/* Sent message colours */
+.voicePlayerMe .waveLine {
   background: rgba(255, 255, 255, 0.38);
 }
 
-.voiceRightSlot {
+.voicePlayerMe .waveFill,
+.voicePlayerMe .waveHandle {
+  background: #ffffff;
+}
+
+/* Taken out of flow deliberately. In the column layout it shared the 36px with
+   the track and pushed the line above the bubble's true centre; absolute
+   positioning lets the line sit dead centre with the time hanging below it. */
+.voiceMeta {
+  position: absolute;
+  left: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  width: 38px;
-  min-width: 38px;
-  max-width: 38px;
-  flex-shrink: 0;
+  line-height: 1;
+  pointer-events: none;
 }
 
 .voiceTimeText {
-  font-size: 13px;
+  font-size: 9.5px;
   font-weight: 600;
   color: var(--color-text-muted, #71717a);
   letter-spacing: 0.01em;
@@ -155,17 +193,17 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  width: 38px;
-  min-width: 38px;
-  max-width: 38px;
-  height: 26px;
+  width: 34px;
+  min-width: 34px;
+  max-width: 34px;
+  height: 22px;
   padding: 0;
   box-sizing: border-box;
   border-radius: 8px;
   border: none;
   background: rgba(0, 0, 0, 0.08);
   color: var(--color-text-main, #334155);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
@@ -195,4 +233,9 @@
 
 .voicePlayerMe .voiceSpeedBtn:hover {
   background: rgba(255, 255, 255, 0.35);
+}
+
+.voiceSpeedBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }

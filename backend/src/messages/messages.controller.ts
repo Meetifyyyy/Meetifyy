@@ -544,8 +544,8 @@ export class MessagesController {
   @UseGuards(JwtGuard)
   async joinGroup(@Req() req: any, @Param('id') conversationId: string) {
     const userId = req.user?.id;
-    const result = await this.messagesService.requestGroupJoin(conversationId, userId);
-    if (result.status === 'JOINED') {
+    const result = await this.messagesService.joinGroupByInvite(conversationId, userId);
+    if (result.status === 'JOINED' && !result.alreadyMember) {
       const userHandle = await this.messagesService.getUserHandle(userId);
       await this.broadcastSystemMessage(conversationId, userId, `${userHandle} joined the group`);
     }
@@ -555,7 +555,13 @@ export class MessagesController {
   @Post(':id/request')
   @UseGuards(JwtGuard)
   async requestJoinGroup(@Req() req: any, @Param('id') conversationId: string) {
-    const userId = req.user?.id;
-    return this.messagesService.requestGroupJoin(conversationId, userId);
+    // Identical semantics to :id/join — the invite card has always posted here.
+    return this.joinGroup(req, conversationId);
+  }
+
+  @Get(':id/invite')
+  @UseGuards(JwtGuard)
+  async getInvitePreview(@Req() req: any, @Param('id') conversationId: string) {
+    return this.messagesService.getGroupInvitePreview(conversationId, req.user?.id);
   }
 }

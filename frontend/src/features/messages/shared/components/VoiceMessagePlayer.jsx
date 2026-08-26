@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { getMediaUrl } from '@shared/api/apiClient';
 import styles from './VoiceMessagePlayer.module.css';
 
@@ -8,25 +8,8 @@ const durationCache = new Map();
 // Global tracker for currently playing audio to prevent multiple voice notes playing at once
 let activeAudioInstance = null;
 
-// Total bars in the waveform
-const NUM_BARS = 30;
-
-// Deterministically generate dynamic natural waveform bars from an audio source
-const getWaveformBars = (seedStr) => {
-  const bars = [];
-  let seed = 0;
-  for (let i = 0; i < (seedStr || '').length; i++) {
-    seed = (seed * 31 + seedStr.charCodeAt(i)) & 0xffffffff;
-  }
-  for (let i = 0; i < NUM_BARS; i++) {
-    const pseudo = Math.abs(Math.sin((i + 1) * 0.48 + (seed % 100) * 0.12));
-    const pseudo2 = Math.abs(Math.cos((i + 1) * 0.85 + (seed % 50) * 0.08));
-    const height = Math.round(28 + 72 * (0.65 * pseudo + 0.35 * pseudo2));
-    bars.push(Math.max(24, Math.min(100, height)));
-  }
-  return bars;
-};
-
+// Progress is expressed as a percentage of the track's own width, so the line
+// needs no fixed geometry and scales with whatever space the layout gives it.
 const formatTime = (secs) => {
   if (!secs || isNaN(secs) || !isFinite(secs) || secs < 0) return '0:00';
   const m = Math.floor(secs / 60);
@@ -44,8 +27,17 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
   const waveformRef = useRef(null);
   const isDraggingRef = useRef(false);
 
+  // Progress is painted through these refs, never through React state. The
+  // playhead moves 60 times a second; re-rendering the whole bubble that often
+  // is what made the time label and speed pill shimmer.
+  const fillRef = useRef(null);
+  const handleRef = useRef(null);
+  const currentTimeRef = useRef(0);
+
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
+  // Whole seconds only — the label can't change more often than that, so this
+  // re-renders at most once per second instead of once per frame.
+  const [displaySec, setDisplaySec] = useState(0);
   const [duration, setDuration] = useState(() => {
     if (initialDuration && isFinite(initialDuration) && initialDuration > 0) {
       return Number(initialDuration);
@@ -58,7 +50,27 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isInvalidBlob, setIsInvalidBlob] = useState(false);
 
-  const bars = useMemo(() => getWaveformBars(rawSrc || ''), [rawSrc]);
+  const isValidSource = Boolean(audioSrc && !isInvalidBlob);
+
+  // Keep the duration ref-readable inside the animation loop without making it
+  // a dependency of every callback.
+  const durationRef = useRef(duration);
+  durationRef.current = duration;
+
+  /** Writes the playhead straight to the DOM. No React involved. */
+  const paintProgress = useCallback((ratio) => {
+    const pct = `${Math.max(0, Math.min(1, ratio || 0)) * 100}%`;
+    if (fillRef.current) fillRef.current.style.width = pct;
+    if (handleRef.current) handleRef.current.style.left = pct;
+  }, []);
+
+  const syncTime = useCallback((time) => {
+    currentTimeRef.current = time;
+    const d = durationRef.current;
+    paintProgress(d > 0 ? time / d : 0);
+    const whole = Math.floor(time);
+    setDisplaySec((prev) => (prev === whole ? prev : whole));
+  }, [paintProgress]);
 
   // Sync initial duration if provided or cached
   useEffect(() => {
@@ -100,10 +112,11 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
   useEffect(() => {
     const updateProgress = () => {
       if (audioRef.current && isPlaying && !isDraggingRef.current) {
-        setCurrentTime(audioRef.current.currentTime);
-        if (audioRef.current.duration && isFinite(audioRef.current.duration) && audioRef.current.duration !== duration) {
-          setDuration(audioRef.current.duration);
-          if (audioSrc) durationCache.set(audioSrc, audioRef.current.duration);
+        syncTime(audioRef.current.currentTime);
+        const d = audioRef.current.duration;
+        if (d && isFinite(d) && d !== durationRef.current) {
+          setDuration(d);
+          if (audioSrc) durationCache.set(audioSrc, d);
         }
         animationRef.current = requestAnimationFrame(updateProgress);
       }
@@ -122,7 +135,13 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
         animationRef.current = null;
       }
     };
-  }, [isPlaying, duration, audioSrc]);
+  }, [isPlaying, audioSrc, syncTime]);
+
+  // Repaint when the duration lands after the fact (metadata arrives late), so
+  // an already-seeked playhead sits at the right spot.
+  useEffect(() => {
+    paintProgress(duration > 0 ? currentTimeRef.current / duration : 0);
+  }, [duration, paintProgress]);
 
   // Clean up audio on unmount
   useEffect(() => {
@@ -162,27 +181,27 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
 
   const handleTimeUpdate = () => {
     if (audioRef.current && !isPlaying && !isDraggingRef.current) {
-      setCurrentTime(audioRef.current.currentTime);
+      syncTime(audioRef.current.currentTime);
     }
   };
 
   const handleEnded = () => {
     setIsPlaying(false);
-    setCurrentTime(0);
     if (audioRef.current) {
       audioRef.current.currentTime = 0;
     }
+    syncTime(0);
   };
 
   // Interactive seeking calculation
   const seekToRatio = (ratio) => {
     const targetRatio = Math.max(0, Math.min(1, ratio));
-    const targetTime = targetRatio * (duration || 0);
+    const targetTime = targetRatio * (durationRef.current || 0);
     if (isFinite(targetTime)) {
-      setCurrentTime(targetTime);
       if (audioRef.current) {
         audioRef.current.currentTime = targetTime;
       }
+      syncTime(targetTime);
     }
   };
 
@@ -191,8 +210,7 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
     const rect = waveformRef.current.getBoundingClientRect();
     if (rect.width <= 0) return;
     const clickX = e.clientX - rect.left;
-    const ratio = clickX / rect.width;
-    seekToRatio(ratio);
+    seekToRatio(clickX / rect.width);
   };
 
   const handlePointerDown = (e) => {
@@ -226,14 +244,10 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
       togglePlay();
     } else if (e.key === 'ArrowRight') {
       e.preventDefault();
-      const nextTime = Math.min(duration || 0, currentTime + 2);
-      if (audioRef.current) audioRef.current.currentTime = nextTime;
-      setCurrentTime(nextTime);
+      seekToRatio(((currentTimeRef.current + 2) / (durationRef.current || 1)));
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      const prevTime = Math.max(0, currentTime - 2);
-      if (audioRef.current) audioRef.current.currentTime = prevTime;
-      setCurrentTime(prevTime);
+      seekToRatio(((currentTimeRef.current - 2) / (durationRef.current || 1)));
     }
   };
 
@@ -248,13 +262,9 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
     }
   };
 
-  const isValidSource = Boolean(audioSrc && !isInvalidBlob);
-  const progressRatio = duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
-  const activeBarCount = Math.round(progressRatio * NUM_BARS);
-
-  // Time label: full duration when idle, progress when seeked but paused
-  const idleDisplayTime = currentTime > 0 ? formatTime(currentTime) : formatTime(duration);
-
+  // Idle shows the full length; once playing or scrubbed it shows the position
+  // against that length, so the label never loses the total.
+  const hasProgress = isPlaying || displaySec > 0;
   return (
     <div className={`${styles.voicePlayerContainer} ${isFromMe ? styles.voicePlayerMe : styles.voicePlayerThem}`}>
       {isValidSource && (
@@ -275,7 +285,7 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
         />
       )}
 
-      {/* 1. Left: Play/Pause Button (vertically centered) */}
+      {/* Left: play / pause */}
       <button
         type="button"
         className={styles.voicePlayBtn}
@@ -296,54 +306,52 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
         )}
       </button>
 
-      {/* 2. Center: Waveform (vertically centered) */}
-      <div
-        ref={waveformRef}
-        className={styles.waveformContainer}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        onKeyDown={handleKeyDown}
-        role="slider"
-        aria-label="Audio playback scrubber"
-        aria-valuenow={currentTime}
-        aria-valuemin="0"
-        aria-valuemax={duration || 0}
-        tabIndex="0"
-      >
-        <div className={styles.waveformBars}>
-          {bars.map((height, idx) => {
-            const isActive = idx < activeBarCount;
-            return (
-              <div
-                key={idx}
-                className={`${styles.waveformBar} ${isActive ? styles.waveformBarActive : styles.waveformBarInactive}`}
-                style={{ height: `${height}%` }}
-              />
-            );
-          })}
+      {/* Centre: line waveform above the time read-out */}
+      <div className={styles.voiceCenter}>
+        <div
+          ref={waveformRef}
+          className={styles.waveformContainer}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onKeyDown={handleKeyDown}
+          role="slider"
+          aria-label="Audio playback scrubber"
+          aria-valuenow={displaySec}
+          aria-valuemin="0"
+          aria-valuetext={`${formatTime(displaySec)} of ${formatTime(duration)}`}
+          aria-valuemax={Math.floor(duration || 0)}
+          tabIndex="0"
+        >
+          <div className={styles.waveTrack} aria-hidden="true">
+            <div className={styles.waveLine} />
+            {/* Only these two inline styles change as playback advances — one
+                write each per frame, no React reconciliation. */}
+            <div ref={fillRef} className={styles.waveFill} style={{ width: '0%' }} />
+            <div ref={handleRef} className={styles.waveHandle} style={{ left: '0%' }} />
+          </div>
+        </div>
+
+        <div className={styles.voiceMeta}>
+          <span className={styles.voiceTimeText}>
+            {hasProgress ? `${formatTime(displaySec)} / ${formatTime(duration)}` : formatTime(duration)}
+          </span>
         </div>
       </div>
 
-      {/* 3. Right: Timing when not playing OR Fixed-Width Playback Speed button while playing */}
-      <div className={styles.voiceRightSlot}>
-        {isPlaying ? (
-          <button
-            type="button"
-            className={styles.voiceSpeedBtn}
-            onClick={toggleSpeed}
-            title="Playback speed"
-            aria-label={`Playback speed ${playbackSpeed}x`}
-          >
-            {playbackSpeed}x
-          </button>
-        ) : (
-          <span className={styles.voiceTimeText}>
-            {idleDisplayTime}
-          </span>
-        )}
-      </div>
+      {/* Right: speed. Always mounted at a fixed width, so switching between
+          play and pause can never reflow the waveform beside it. */}
+      <button
+        type="button"
+        className={styles.voiceSpeedBtn}
+        onClick={toggleSpeed}
+        disabled={!isValidSource}
+        title="Playback speed"
+        aria-label={`Playback speed ${playbackSpeed}x`}
+      >
+        {playbackSpeed}×
+      </button>
     </div>
   );
 }

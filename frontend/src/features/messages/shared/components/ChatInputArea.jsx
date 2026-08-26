@@ -7,6 +7,7 @@ import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipe
 import { toast } from 'sonner';
 import { showToast } from '@shared/utils/toast';
 import ReplyPreviewContent from './ReplyPreviewContent';
+import LiveWaveform from './LiveWaveform';
 
 export default function ChatInputArea({
   conversation,
@@ -53,7 +54,16 @@ export default function ChatInputArea({
 
   const hasText = !!(typeof inputValue === 'string' ? inputValue : (inputValue?.text || '')).trim();
 
-  const { isRecording, recordingTime, startRecording, deleteRecording, sendRecording, formatDuration } = useVoiceRecorder({
+  const {
+    isRecording,
+    isUploading: isUploadingVoice,
+    recordingTime,
+    startRecording,
+    deleteRecording,
+    sendRecording,
+    formatDuration,
+    levelsRef: voiceLevelsRef,
+  } = useVoiceRecorder({
     onSend: (audioUrl, mediaType, duration) => sendMessageFn && sendMessageFn(conversation.id, '', replyingTo, [], audioUrl, 'audio', null, null, { duration }),
     showToast: (msg) => toast.error(msg),
   });
@@ -228,19 +238,26 @@ export default function ChatInputArea({
           );
         }
 
-        if (isRecording) {
+        if (isRecording || isUploadingVoice) {
           return (
             <div className={styles.msgRecordingContainer}>
               <div className={styles.msgRecordingLeft}>
                 <span className={styles.msgRecordingDot} />
-                <span className={styles.msgRecordingTime}>{formatDuration(recordingTime)}</span>
+                <span className={styles.msgRecordingTime}>
+                  {isUploadingVoice ? 'Sending…' : formatDuration(recordingTime)}
+                </span>
               </div>
+              <LiveWaveform
+                levelsRef={voiceLevelsRef}
+                active={isRecording}
+                className={styles.msgRecordingWaveform}
+              />
               <div className={styles.msgRecordingActions}>
                 <button 
                   type="button" 
                   className={styles.msgRecordingDeleteBtn} 
                   onClick={deleteRecording}
-                  title="Delete Recording"
+                  title={isUploadingVoice ? 'Cancel' : 'Delete Recording'}
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
@@ -250,6 +267,7 @@ export default function ChatInputArea({
                   type="button" 
                   className={styles.msgRecordingSendBtn} 
                   onClick={sendRecording}
+                  disabled={isUploadingVoice}
                   title="Send Voice Message"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

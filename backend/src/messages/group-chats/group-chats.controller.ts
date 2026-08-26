@@ -473,17 +473,45 @@ export class GroupChatsController {
     return result;
   }
 
+  // Readable by any authenticated user, member or not — an invite link is a
+  // dead end otherwise, since /details and the history endpoint both require
+  // membership. Returns only what the invite itself already discloses.
+  @Get(':id/invite')
+  @UseGuards(JwtGuard)
+  async getInvitePreview(@Req() req: any, @Param('id') conversationId: string) {
+    return this.groupChatsService.getGroupInvitePreview(conversationId, req.user?.id);
+  }
+
   @Post(':id/join')
   @UseGuards(JwtGuard)
   async joinGroup(@Req() req: any, @Param('id') conversationId: string) {
     const userId = req.user?.id;
-    const result = await this.groupChatsService.requestGroupJoin(conversationId, userId);
+    const result = await this.groupChatsService.joinGroupByInvite(conversationId, userId);
     this.groupChatsService.invalidateGroupDetailsCache(conversationId).catch(() => {});
-    if (result.status === 'JOINED') {
+
+    // Only a membership that did NOT already exist announces itself. Without
+    // this guard a re-tapped invite posts "x joined the group" over and over.
+    if (result.status === 'JOINED' && !result.alreadyMember) {
       const userHandle = await this.groupChatsService.getUserHandle(userId);
       await this.broadcastSystemMessage(conversationId, userId, `${userHandle} joined the group`);
+      try {
+        const participantIds = await this.groupChatsService.getConversationParticipantIds(conversationId);
+        // The joiner needs conversation:updated to pull the group into their
+        // own chat list; existing members need member_added to refresh rosters.
+        this.domainEventService.emit('group:member_added', { conversationId: result.conversationId, userId }, participantIds);
+        this.domainEventService.emit('conversation:updated', { conversationId: result.conversationId }, participantIds);
+      } catch {
+        // Real-time fan-out is best-effort; the join itself already committed.
+      }
     }
     return result;
+  }
+
+  // Same handler as /join. Kept because the invite card has always posted here.
+  @Post(':id/request')
+  @UseGuards(JwtGuard)
+  async requestJoin(@Req() req: any, @Param('id') conversationId: string) {
+    return this.joinGroup(req, conversationId);
   }
 
   @Delete('msg/:messageId/for-me')

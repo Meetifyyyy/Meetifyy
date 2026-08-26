@@ -21,6 +21,7 @@ import GroupChatArea from '../../group-chats/components/chat/GroupChatArea';
 import DMContextMenu from '../../direct-messages/components/sidebar/DMContextMenu';
 import GroupContextMenu from '../../group-chats/components/sidebar/GroupContextMenu';
 
+import GroupInvitePanel from '../../shared/components/GroupInvitePanel';
 import NewMessageModal from '../../shared/components/modals/NewMessageModal';
 import ConversationSkeleton from '../../shared/components/skeletons/ConversationSkeleton';
 
@@ -406,6 +407,22 @@ export default function MessagesLayout() {
           };
 
           const activeKey = activeChatId || activeConv?.id || 'chat';
+
+          // The id in the URL is real but this user cannot open it. That is
+          // exactly what an invite link looks like before it is accepted, so
+          // offer the invite instead of a dead "Chat not found". The panel
+          // falls back to the not-found state itself when the id turns out not
+          // to be a joinable group.
+          if (isChatInvalid) {
+            return (
+              <GroupInvitePanel
+                key={`invite-${activeKey}`}
+                groupId={activeChatId}
+                showChatOnMobile={showChatOnMobile}
+                onBack={handleBack}
+              />
+            );
+          }
 
           if (type === 'group') {
             return (

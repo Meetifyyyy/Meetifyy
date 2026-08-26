@@ -1144,6 +1144,20 @@
   font-size: 0.95rem;
   font-weight: 500;
   color: var(--color-text-main);
+  /* Fixed-advance digits and a reserved box. With proportional digits the label
+     changed width as the seconds ticked, which nudged the flex row and made the
+     waveform beside it jitter once a second. */
+  font-variant-numeric: tabular-nums;
+  min-width: 3.25rem;
+  white-space: nowrap;
+}
+
+.msgRecordingWaveform {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
+  margin: 0 0.85rem;
+  display: block;
 }
 
 .msgRecordingActions {
@@ -1168,6 +1182,11 @@
 .msgRecordingDeleteBtn:hover {
   background: rgba(239, 68, 68, 0.1);
   color: #ef4444;
+}
+
+.msgRecordingSendBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .msgRecordingSendBtn {

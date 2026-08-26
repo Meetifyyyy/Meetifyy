@@ -825,6 +825,17 @@
   margin: 0;
 }
 
+.groupInviteNote {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--color-text-muted, #71717a);
+}
+
+.groupInviteCardMe .groupInviteNote {
+  color: rgba(255, 255, 255, 0.85);
+}
+
 .groupInviteActions {
   display: flex;
   width: 100%;

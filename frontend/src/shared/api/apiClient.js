@@ -839,6 +839,8 @@ export const groupApi = {
   acceptJoinRequest: (conversationId, targetUserId) => apiClient.post(`/api/group-chats/${conversationId}/requests/${targetUserId}/accept`),
   declineJoinRequest: (conversationId, targetUserId) => apiClient.post(`/api/group-chats/${conversationId}/requests/${targetUserId}/decline`),
   joinGroup: (conversationId) => apiClient.post(`/api/group-chats/${conversationId}/join`),
+  // Readable by non-members — this is what an invite link resolves against.
+  getInvitePreview: (conversationId) => apiClient.get(`/api/group-chats/${conversationId}/invite`),
   unsendMessage: (messageId) => apiClient.delete(`/api/group-chats/msg/${messageId}`),
   deleteMessageForMe: (messageId) => apiClient.delete(`/api/group-chats/msg/${messageId}/for-me`),
   forwardMessage: (messageId, targetConversationIds) => apiClient.post(`/api/group-chats/msg/${messageId}/forward`, { targetConversationIds }),
