@@ -302,3 +302,70 @@ gha-creds-*.json
 .AppleDouble
 .LSOverride
 Thumbs.db:encryptable
+
+# ------------------------------------------------------------------------------
+# 17. Python, Scratch Scripts & Temporary Files
+# ------------------------------------------------------------------------------
+*.py
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+ENV/
+env/
+
+# Scratch & temporary workspace directories
+scratch/
+**/scratch/
+temp/
+**/temp/
+tmp/
+**/tmp/
+brain/
+**/.system_generated/
+
+# Scratch script patterns
+scratch_*
+scratch.*
+*.scratch.*
+*.scratch
+temp_*
+tmp_*
+test_*.py
+scratch_*.py
+test_script*
+
+# Scratch & temporary Markdown notes (preserves tracked durable documentation)
+scratch*.md
+**/scratch*.md
+temp*.md
+**/temp*.md
+tmp*.md
+**/tmp*.md
+AUDIT*.md
+audit_*.md
+NOTES*.md
+notes.md
+*notes*.md
+TODO*.md
+todo*.md
+walkthrough*.md
+implementation_plan*.md
+task*.md
+plan*.md
+scratch_*.md
+test_*.md
+
+# Database dumps & backup files
+*.dump
+*.sql.bak
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.db

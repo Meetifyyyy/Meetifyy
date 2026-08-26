@@ -7,7 +7,8 @@ set -euo pipefail
 
 SUBSCRIPTION_ID="4f4979b4-2a88-469a-9347-e53f4ae83005"
 TENANT_ID="7339fc19-f2ee-4b86-adc9-ecd6d13b1a4d"
-LOCATION="centralindia"
+# Using uaenorth (allowed by your subscription policy, ~25-30ms from India, full student capacity)
+APP_LOCATION="uaenorth"
 RESOURCE_GROUP="meetifyy-dev-rg"
 ACR_NAME="meetifyycr"
 LOGS_WORKSPACE="meetifyy-dev-logs"
@@ -17,27 +18,28 @@ APP_NAME="meetifyy-api-dev"
 echo "==> 1. Setting Azure Subscription..."
 az account set --subscription "$SUBSCRIPTION_ID"
 
-echo "==> 2. Registering Azure Providers (if not registered)..."
-az provider register --namespace Microsoft.App --wait
-az provider register --namespace Microsoft.OperationalInsights --wait
-az provider register --namespace Microsoft.ContainerRegistry --wait
+echo "==> 2. Verifying Resource Group ($RESOURCE_GROUP)..."
+if ! az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1; then
+  az group create --name "$RESOURCE_GROUP" --location "$APP_LOCATION"
+fi
 
-echo "==> 3. Creating DEV Resource Group ($RESOURCE_GROUP)..."
-az group create --name "$RESOURCE_GROUP" --location "$LOCATION"
+echo "==> 3. Creating/Checking Container Registry ($ACR_NAME)..."
+if ! az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+  az acr create \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$ACR_NAME" \
+    --sku Basic \
+    --admin-enabled true \
+    --location "$APP_LOCATION" || true
+fi
 
-echo "==> 4. Creating Container Registry ($ACR_NAME)..."
-az acr create \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "$ACR_NAME" \
-  --sku Basic \
-  --admin-enabled true \
-  --location "$LOCATION" || true
-
-echo "==> 5. Creating Log Analytics Workspace ($LOGS_WORKSPACE)..."
-az monitor log-analytics workspace create \
-  --resource-group "$RESOURCE_GROUP" \
-  --workspace-name "$LOGS_WORKSPACE" \
-  --location "$LOCATION"
+echo "==> 4. Creating Log Analytics Workspace ($LOGS_WORKSPACE in $APP_LOCATION)..."
+if ! az monitor log-analytics workspace show --resource-group "$RESOURCE_GROUP" --workspace-name "$LOGS_WORKSPACE" >/dev/null 2>&1; then
+  az monitor log-analytics workspace create \
+    --resource-group "$RESOURCE_GROUP" \
+    --workspace-name "$LOGS_WORKSPACE" \
+    --location "$APP_LOCATION"
+fi
 
 WORKSPACE_ID=$(az monitor log-analytics workspace show \
   --resource-group "$RESOURCE_GROUP" \
@@ -49,13 +51,15 @@ WORKSPACE_KEY=$(az monitor log-analytics workspace get-shared-keys \
   --workspace-name "$LOGS_WORKSPACE" \
   --query primarySharedKey --output tsv)
 
-echo "==> 6. Creating Container Apps Environment ($ENV_NAME)..."
-az containerapp env create \
-  --name "$ENV_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --location "$LOCATION" \
-  --logs-workspace-id "$WORKSPACE_ID" \
-  --logs-workspace-key "$WORKSPACE_KEY"
+echo "==> 5. Creating Container Apps Environment ($ENV_NAME in $APP_LOCATION)..."
+if ! az containerapp env show --name "$ENV_NAME" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+  az containerapp env create \
+    --name "$ENV_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --location "$APP_LOCATION" \
+    --logs-workspace-id "$WORKSPACE_ID" \
+    --logs-workspace-key "$WORKSPACE_KEY"
+fi
 
 # Load local backend .env values
 ENV_FILE="backend/.env"
@@ -85,7 +89,7 @@ R2_BUCKET_NAME=$(get_env R2_BUCKET_NAME)
 R2_PUBLIC_URL=$(get_env R2_PUBLIC_URL)
 SENTRY_DSN=$(get_env SENTRY_DSN)
 
-echo "==> 7. Creating Initial DEV Container App ($APP_NAME)..."
+echo "==> 6. Creating Initial DEV Container App ($APP_NAME)..."
 az containerapp create \
   --name "$APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
@@ -133,7 +137,7 @@ az containerapp create \
     "r2-secret-access-key=${R2_SECRET_ACCESS_KEY}" \
     "sentry-dsn=${SENTRY_DSN}"
 
-echo "==> 8. Wiring secret references to container environment variables..."
+echo "==> 7. Wiring secret references to container environment variables..."
 az containerapp update \
   --name "$APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
@@ -152,7 +156,7 @@ az containerapp update \
     "R2_SECRET_ACCESS_KEY=secretref:r2-secret-access-key" \
     "SENTRY_DSN=secretref:sentry-dsn"
 
-echo "==> 9. Creating GitHub Actions Service Principal & OIDC..."
+echo "==> 8. Creating GitHub Actions Service Principal & OIDC..."
 SP_JSON=$(az ad sp create-for-rbac \
   --name "meetifyy-github-actions-dev" \
   --role Contributor \
@@ -161,7 +165,7 @@ SP_JSON=$(az ad sp create-for-rbac \
 
 CLIENT_ID=$(echo "$SP_JSON" | grep -o '"appId": "[^"]*' | cut -d'"' -f4)
 
-echo "==> 10. Configuring Federated Credential for GitHub Actions (development branch)..."
+echo "==> 9. Configuring Federated Credential for GitHub Actions (development branch)..."
 az ad app federated-credential create \
   --id "$CLIENT_ID" \
   --parameters "{
