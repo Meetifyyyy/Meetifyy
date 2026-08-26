@@ -1,196 +1,149 @@
 .voicePlayerContainer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px 14px 14px;
-  border-radius: 26px;
+  padding: 10px 14px;
+  border-radius: 16px;
   width: 275px;
   min-width: 275px;
   max-width: 275px;
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  background: #e8e8ee;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  box-shadow: none;
   box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 
 [data-theme="dark"] .voicePlayerContainer {
-  background: #202020;
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  background: #33343a;
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: none;
 }
 
 .voicePlayerMe {
-  background: var(--color-primary) !important;
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
   border-color: transparent !important;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28) !important;
+  color: white !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .voicePlayerMe {
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
+  border-color: transparent !important;
+  color: white !important;
+  box-shadow: none !important;
 }
 
 .voicePlayBtn {
   width: 36px;
   height: 36px;
+  min-width: 36px;
+  min-height: 36px;
   border-radius: 50%;
   border: none;
-  background: var(--color-primary);
+  background: var(--color-primary, #6366f1);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: opacity 0.15s ease, background 0.15s ease;
+  transition: transform 0.12s ease, opacity 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  outline: none;
+}
+
+.voicePlayBtn:hover {
+  opacity: 0.94;
+  transform: scale(1.04);
+}
+
+.voicePlayBtn:active {
+  transform: scale(0.96);
+}
+
+.voicePlayBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .voicePlayerMe .voicePlayBtn {
   background: white;
-  color: var(--color-primary);
+  color: var(--color-primary, #6366f1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
-.voicePlayBtn:hover {
-  opacity: 0.92;
-}
-
-.voicePlayerCenter {
+.waveformContainer {
   flex: 1;
   display: flex;
   align-items: center;
-  position: relative;
   height: 28px;
   min-width: 0;
-}
-
-.voiceScrubber {
-  width: 100%;
-  height: 4px;
-  margin: 0;
-  -webkit-appearance: none;
-  appearance: none;
-  background: linear-gradient(
-    to right,
-    var(--color-primary) 0%,
-    var(--color-primary) var(--progress, 0%),
-    rgba(128, 128, 128, 0.35) var(--progress, 0%),
-    rgba(128, 128, 128, 0.35) 100%
-  );
-  border-radius: 4px;
+  cursor: pointer;
   outline: none;
-  cursor: pointer;
+  padding: 0 1px;
+  touch-action: none;
 }
 
-.voicePlayerMe .voiceScrubber {
-  background: linear-gradient(
-    to right,
-    white 0%,
-    white var(--progress, 0%),
-    rgba(255, 255, 255, 0.35) var(--progress, 0%),
-    rgba(255, 255, 255, 0.35) 100%
-  );
+.waveformBars {
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+  height: 24px;
+  width: 100%;
 }
 
-.voiceScrubber::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  cursor: pointer;
-  transition: transform 0.1s ease;
+.waveformBar {
+  flex: 1;
+  min-width: 2px;
+  max-width: 4px;
+  border-radius: 3px;
+  transition: background-color 0.1s ease, opacity 0.1s ease;
 }
 
-.voicePlayerMe .voiceScrubber::-webkit-slider-thumb {
-  background: white;
+/* Received Message Waveform Colors */
+.voicePlayerThem .waveformBarActive {
+  background: var(--color-primary, #6366f1);
 }
 
-.voiceTimeText {
-  position: absolute;
-  bottom: -12px;
-  left: 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: #64748B;
+.voicePlayerThem .waveformBarInactive {
+  background: rgba(0, 0, 0, 0.18);
 }
 
-.voicePlayerMe .voiceTimeText {
-  color: rgba(255, 255, 255, 0.9);
+[data-theme="dark"] .voicePlayerThem .waveformBarInactive {
+  background: rgba(255, 255, 255, 0.24);
 }
 
-.voiceSpeedBtn {
-  padding: 2px 7px;
-  border-radius: 10px;
-  border: none;
-  background: rgba(0, 0, 0, 0.05);
-  color: #475569;
-  font-size: 10px;
-  font-weight: 600;
-  cursor: pointer;
-  flex-shrink: 0;
-  transform: none !important;
-  transition: opacity 0.15s ease;
+/* Sent Message Waveform Colors */
+.voicePlayerMe .waveformBarActive {
+  background: #ffffff;
 }
 
-.voiceSpeedBtn:hover {
-  opacity: 0.85;
+.voicePlayerMe .waveformBarInactive {
+  background: rgba(255, 255, 255, 0.38);
 }
 
-@media (hover: hover) and (pointer: fine) {
-
-  .voiceSpeedBtn:hover {
-  transform: none !important;
-  }
-}
-
-.voicePlayerMe .voiceSpeedBtn {
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  color: white;
-}
-
-.voiceFooter {
+.voiceRightSlot {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
-  margin-top: 2px;
-  font-size: 0.68rem;
-}
-
-.voicePlayerMe .voiceFooter {
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.voicePlayerThem .voiceFooter {
-  color: var(--text-secondary, #94a3b8);
-}
-
-.voiceFooterTime {
-  font-size: 0.68rem;
-}
-
-.voiceFooterIcon {
-  display: inline-flex;
-  align-items: center;
-}
-
-.voicePlayerMe .voiceScrubber::-webkit-slider-thumb {
-  background: white;
-}
-
-@media (hover: hover) and (pointer: fine) {
-
-  .voiceScrubber::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-  }
+  width: 38px;
+  min-width: 38px;
+  max-width: 38px;
+  flex-shrink: 0;
 }
 
 .voiceTimeText {
-  position: absolute;
-  bottom: -6px;
-  left: 2px;
-  font-size: 0.68rem;
-  color: var(--color-text-muted);
+  font-size: 13px;
   font-weight: 600;
+  color: var(--color-text-muted, #71717a);
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .voicePlayerMe .voiceTimeText {
@@ -198,39 +151,48 @@
 }
 
 .voiceSpeedBtn {
-  width: 44px;
-  min-width: 44px;
-  max-width: 44px;
-  height: 28px;
-  padding: 0;
-  border-radius: 14px;
-  border: 1px solid rgba(128, 128, 128, 0.25);
-  background: rgba(128, 128, 128, 0.18);
-  color: var(--color-text-main);
-  font-size: 0.75rem;
-  font-weight: 700;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  text-align: center;
+  width: 38px;
+  min-width: 38px;
+  max-width: 38px;
+  height: 26px;
+  padding: 0;
+  box-sizing: border-box;
+  border-radius: 8px;
+  border: none;
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--color-text-main, #334155);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.15s ease;
-  text-align: center;
+  transition: background-color 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
+  user-select: none;
+  outline: none;
+}
+
+[data-theme="dark"] .voiceSpeedBtn {
+  background: rgba(255, 255, 255, 0.14);
+  color: #f1f5f9;
+}
+
+.voiceSpeedBtn:hover {
+  opacity: 0.88;
+}
+
+.voiceSpeedBtn:active {
+  transform: scale(0.94);
 }
 
 .voicePlayerMe .voiceSpeedBtn {
   background: rgba(255, 255, 255, 0.25);
-  border-color: rgba(255, 255, 255, 0.35);
-  color: white;
+  color: #ffffff;
 }
 
-.voiceSpeedBtn:hover {
-  background: rgba(128, 128, 128, 0.35);
-}
-
-@media (hover: hover) and (pointer: fine) {
-
-  .voiceSpeedBtn:hover {
-  transform: scale(1.05);
-  }
+.voicePlayerMe .voiceSpeedBtn:hover {
+  background: rgba(255, 255, 255, 0.35);
 }

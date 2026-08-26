@@ -415,6 +415,8 @@
   vertical-align: middle;
   overflow: hidden;
   aspect-ratio: var(--aspect, 1);
+  box-sizing: border-box;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
 }
 
 .msgMediaWrapperInline {
@@ -433,6 +435,10 @@
   min-width: 130px;
   min-height: 130px;
   border-radius: 16px;
+}
+
+.msgBubbleMe .msgMediaWrapper {
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 /* Narrow PANE, not narrow window — see .chatArea's container note. */
@@ -474,6 +480,11 @@
 [data-theme='dark'] .msgMediaWrapperStandalone,
 [data-theme='dark'] .msgMediaWrapperInline {
   background-color: transparent;
+  border-color: var(--color-border, rgba(255, 255, 255, 0.12));
+}
+
+[data-theme='dark'] .msgBubbleMe .msgMediaWrapper {
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .msgMediaSkeleton {
@@ -705,23 +716,63 @@
   flex-direction: column;
   gap: 12px;
   padding: 14px 16px;
-  background: var(--color-bg-card, #ffffff);
-  border: 1px solid var(--color-border, #e4e4e7);
+  background: #e8e8ee;
+  border: 1px solid rgba(0, 0, 0, 0.07);
   border-radius: 18px;
   min-width: 260px;
   max-width: 320px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  transition: box-shadow 0.2s ease;
+  box-shadow: none;
+  transition: opacity 0.15s ease;
+  box-sizing: border-box;
 }
 
 [data-theme='dark'] .groupInviteCard {
-  background: var(--color-bg-card, #18181b);
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  background: #33343a;
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: none;
+}
+
+.groupInviteCardThem {
+  background: #e8e8ee;
+  border-color: rgba(0, 0, 0, 0.07);
+}
+
+[data-theme='dark'] .groupInviteCardThem {
+  background: #33343a;
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.groupInviteCardMe {
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
+  border-color: transparent !important;
+  color: white !important;
+  box-shadow: none !important;
+}
+
+[data-theme='dark'] .groupInviteCardMe {
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
+  border-color: transparent !important;
+  color: white !important;
+  box-shadow: none !important;
+}
+
+.groupInviteCardMe .groupInviteInfo h4 {
+  color: #ffffff;
+}
+
+.groupInviteCardMe .groupInviteInfo p {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.groupInviteCardMe .groupInviteBtn {
+  background: white;
+  color: var(--color-primary, #6366f1);
+  box-shadow: none;
 }
 
 .groupInviteCard:hover {
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  opacity: 0.94;
+  box-shadow: none;
 }
 
 .groupInviteHeader {

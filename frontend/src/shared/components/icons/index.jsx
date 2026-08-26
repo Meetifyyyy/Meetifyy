@@ -117,8 +117,8 @@ import {
  * set looks like what it is; call sites that pass an explicit `strokeWidth`
  * still win, exactly as before.
  */
-const icon = (glyph, name) => {
-  const Icon = forwardRef((props, ref) => <HugeiconsIcon ref={ref} icon={glyph} {...props} />);
+const icon = (glyph, name, defaultProps = {}) => {
+  const Icon = forwardRef((props, ref) => <HugeiconsIcon ref={ref} icon={glyph} {...defaultProps} {...props} />);
   Icon.displayName = name;
   return Icon;
 };
@@ -256,10 +256,10 @@ const GLYPHS = {
 
 export const ChevronDown = /*#__PURE__*/ icon(GLYPHS.ChevronDown, 'ChevronDown');
 export const ChevronUp = /*#__PURE__*/ icon(GLYPHS.ChevronUp, 'ChevronUp');
-export const ChevronLeft = /*#__PURE__*/ icon(GLYPHS.ChevronLeft, 'ChevronLeft');
-export const ChevronRight = /*#__PURE__*/ icon(GLYPHS.ChevronRight, 'ChevronRight');
-export const ArrowLeft = /*#__PURE__*/ icon(GLYPHS.ArrowLeft, 'ArrowLeft');
-export const ArrowRight = /*#__PURE__*/ icon(GLYPHS.ArrowRight, 'ArrowRight');
+export const ChevronLeft = /*#__PURE__*/ icon(GLYPHS.ChevronLeft, 'ChevronLeft', { strokeWidth: 2.25 });
+export const ChevronRight = /*#__PURE__*/ icon(GLYPHS.ChevronRight, 'ChevronRight', { strokeWidth: 2.25 });
+export const ArrowLeft = /*#__PURE__*/ icon(GLYPHS.ArrowLeft, 'ArrowLeft', { strokeWidth: 2.25 });
+export const ArrowRight = /*#__PURE__*/ icon(GLYPHS.ArrowRight, 'ArrowRight', { strokeWidth: 2.25 });
 export const ChevronsUpDown = /*#__PURE__*/ icon(GLYPHS.ChevronsUpDown, 'ChevronsUpDown');
 export const X = /*#__PURE__*/ icon(GLYPHS.X, 'X');
 export const XCircle = /*#__PURE__*/ icon(GLYPHS.XCircle, 'XCircle');

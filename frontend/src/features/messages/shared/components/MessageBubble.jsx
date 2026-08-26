@@ -357,7 +357,7 @@ function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = n
   );
 }
 
-function GroupInviteCard({ msg, currentUser, conversations, navigate, requestToJoinGroup }) {
+function GroupInviteCard({ msg, currentUser, conversations, navigate, requestToJoinGroup, isMe }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { mutate: toggleJoin } = useJoinCommunity();
 
@@ -431,12 +431,14 @@ function GroupInviteCard({ msg, currentUser, conversations, navigate, requestToJ
       }
     } catch {
       toast.error('Request failed');
+      navigate(`/messages/${targetConv?.id || targetGroupId}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const groupAvatarSrc = targetConv?.avatarKey || targetConv?.avatar || targetConv?.icon || targetConv?.coverImage || targetConv?.avatarUrl || msg.inviteData?.groupAvatar || msg.inviteData?.avatar || null;
+  const groupAvatar = targetConv?.avatarKey || msg.inviteData?.groupAvatar;
+  const groupAvatarSrc = groupAvatar ? getMediaUrl(groupAvatar) : null;
   const groupName = targetConv?.name || msg.inviteData?.groupName || 'Group';
 
   const getButtonText = () => {
@@ -447,7 +449,7 @@ function GroupInviteCard({ msg, currentUser, conversations, navigate, requestToJ
   };
 
   return (
-    <div className={styles.groupInviteCard}>
+    <div className={`${styles.groupInviteCard} ${isMe ? styles.groupInviteCardMe : styles.groupInviteCardThem}`}>
       <div className={styles.groupInviteHeader}>
         <Avatar src={groupAvatarSrc} name={groupName} size="48px" isGroup={true} />
         <div className={styles.groupInviteInfo}>
@@ -767,7 +769,7 @@ const MessageBubble = memo(function MessageBubble({
     innerContent = (
       <div className={styles.msgImageCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
-          <SharedProfilePreview profile={prof} />
+          <SharedProfilePreview profile={prof} isMe={isMe} />
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
         </div>
         <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
@@ -786,6 +788,7 @@ const MessageBubble = memo(function MessageBubble({
             conversations={conversations}
             navigate={navigate}
             requestToJoinGroup={requestToJoinGroup}
+            isMe={isMe}
           />
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
         </div>
@@ -800,7 +803,7 @@ const MessageBubble = memo(function MessageBubble({
     innerContent = (
       <div className={styles.msgImageCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
-          <SharedActivityPreview activity={act} />
+          <SharedActivityPreview activity={act} isMe={isMe} />
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
         </div>
         <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
@@ -813,7 +816,7 @@ const MessageBubble = memo(function MessageBubble({
     innerContent = (
       <div className={styles.msgAudioCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
-          <VoiceMessagePlayer src={mediaUrl} audioUrl={mediaUrl} fromMe={isMe} isMe={isMe} />
+          <VoiceMessagePlayer src={mediaUrl} audioUrl={mediaUrl} duration={mediaDuration} fromMe={isMe} isMe={isMe} />
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
         </div>
         <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
@@ -884,7 +887,7 @@ const MessageBubble = memo(function MessageBubble({
     innerContent = (
       <div className={styles.msgImageCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
-          <SharedCommunityPreview community={communityData} />
+          <SharedCommunityPreview community={communityData} isMe={isMe} />
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
         </div>
         <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>
@@ -897,7 +900,7 @@ const MessageBubble = memo(function MessageBubble({
     innerContent = (
       <div className={styles.msgImageCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
-          <SharedPostPreview post={postData} />
+          <SharedPostPreview post={postData} isMe={isMe} />
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
         </div>
         <div className={`${styles.msgImageFooter} ${isMe ? styles.msgImageFooterMe : styles.msgImageFooterThem}`}>

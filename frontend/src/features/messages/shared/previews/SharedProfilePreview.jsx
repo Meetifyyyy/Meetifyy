@@ -11,6 +11,7 @@ import { useUsersMap } from '@shared/hooks/useUsersMap';
 export function SharedProfilePreview({
   profile,
   isLoading = false,
+  isMe = false,
 }) {
   const navigate = useNavigate();
   const users = useUsersMap();
@@ -47,7 +48,7 @@ export function SharedProfilePreview({
 
   return (
     <div 
-      className={styles.container} 
+      className={`${styles.container} ${isMe ? styles.containerMe : styles.containerThem}`} 
       onClick={handleCardClick}
       role="article" 
       aria-label={`Shared profile of ${displayName}`}

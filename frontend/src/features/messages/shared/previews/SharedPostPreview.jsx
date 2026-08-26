@@ -8,7 +8,7 @@ import { usePostLookup } from '@shared/hooks/usePostLookup';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { getMediaUrl } from '@shared/api/apiClient';
 
-export function SharedPostPreview({ post, isLoading = false }) {
+export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
   const navigate = useNavigate();
   const getPostById = usePostLookup();
   // getUserById was defined as exactly `users[id] || null` over this same map.
@@ -147,7 +147,7 @@ export function SharedPostPreview({ post, isLoading = false }) {
 
   return (
     <div 
-      className={styles.container} 
+      className={`${styles.container} ${isMe ? styles.containerMe : styles.containerThem}`} 
       onClick={handleCardClick}
       role="article"
       aria-label={`Post by ${authorName}`}

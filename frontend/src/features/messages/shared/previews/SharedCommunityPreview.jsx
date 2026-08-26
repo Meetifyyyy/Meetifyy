@@ -26,7 +26,7 @@ function resolveMemberCount(community) {
   return 0;
 }
 
-export function SharedCommunityPreview({ community }) {
+export function SharedCommunityPreview({ community, isMe = false }) {
   const navigate = useNavigate();
 
   if (!community) return null;
@@ -44,7 +44,7 @@ export function SharedCommunityPreview({ community }) {
   const avatarSrc = rawAvatar ? getMediaUrl(rawAvatar) : '';
 
   return (
-    <div className={styles.card} onClick={handleClick}>
+    <div className={`${styles.card} ${isMe ? styles.cardMe : styles.cardThem}`} onClick={handleClick}>
       <div className={styles.avatarWrapper}>
         {isImageUrl(avatarSrc) ? (
           <img

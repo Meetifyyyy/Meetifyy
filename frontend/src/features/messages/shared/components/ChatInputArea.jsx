@@ -54,7 +54,7 @@ export default function ChatInputArea({
   const hasText = !!(typeof inputValue === 'string' ? inputValue : (inputValue?.text || '')).trim();
 
   const { isRecording, recordingTime, startRecording, deleteRecording, sendRecording, formatDuration } = useVoiceRecorder({
-    onSend: (audioUrl) => sendMessageFn && sendMessageFn(conversation.id, '', replyingTo, [], audioUrl, 'audio'),
+    onSend: (audioUrl, mediaType, duration) => sendMessageFn && sendMessageFn(conversation.id, '', replyingTo, [], audioUrl, 'audio', null, null, { duration }),
     showToast: (msg) => toast.error(msg),
   });
 

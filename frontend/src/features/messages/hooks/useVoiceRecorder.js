@@ -66,6 +66,8 @@ export function useVoiceRecorder({ onSend, showToast }) {
   const sendRecording = () => {
     if (!mediaRecorderRef.current) return;
 
+    const finalDuration = recordingTime;
+
     mediaRecorderRef.current.onstop = async () => {
       try {
         const mimeType = audioChunksRef.current[0]?.type || 'audio/webm';
@@ -78,12 +80,12 @@ export function useVoiceRecorder({ onSend, showToast }) {
         const publicUrl = uploadRes.publicUrl || uploadRes.url;
 
         if (publicUrl) {
-          onSend(publicUrl, 'audio');
+          onSend(publicUrl, 'audio', finalDuration);
         } else {
           // Fallback to data URL
           const reader = new FileReader();
           reader.onloadend = () => {
-            if (reader.result) onSend(reader.result, 'audio');
+            if (reader.result) onSend(reader.result, 'audio', finalDuration);
           };
           reader.readAsDataURL(audioBlob);
         }
@@ -95,7 +97,7 @@ export function useVoiceRecorder({ onSend, showToast }) {
           const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
           const reader = new FileReader();
           reader.onloadend = () => {
-            if (reader.result) onSend(reader.result, 'audio');
+            if (reader.result) onSend(reader.result, 'audio', finalDuration);
           };
           reader.readAsDataURL(audioBlob);
         }

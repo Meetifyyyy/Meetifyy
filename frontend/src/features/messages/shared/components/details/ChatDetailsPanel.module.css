@@ -23,7 +23,7 @@
 .backBtn {
   background: none;
   border: none;
-  color: var(--color-text-muted);
+  color: var(--color-text-main);
   cursor: pointer;
   padding: 0;
   width: 36px;

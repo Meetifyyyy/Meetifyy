@@ -181,7 +181,7 @@
 .msgBackBtn {
   background: none;
   border: none;
-  color: var(--color-icon-base);
+  color: var(--color-text-main);
   cursor: pointer;
   padding: 0;
   width: 36px;

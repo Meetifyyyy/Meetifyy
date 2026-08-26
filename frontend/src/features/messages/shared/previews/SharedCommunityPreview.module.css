@@ -3,21 +3,60 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.65rem 0.85rem;
-  background: var(--color-bg-white, #ffffff);
-  border: 1px solid var(--color-border, #e4e4e7);
+  background: #e8e8ee;
+  border: 1px solid rgba(0, 0, 0, 0.07);
   border-radius: 12px;
   cursor: pointer;
   color: var(--color-text-main, #18181b);
-  transition: background 0.15s ease, border-color 0.15s ease;
+  box-shadow: none;
+  box-sizing: border-box;
+  transition: opacity 0.15s ease;
   user-select: none;
   min-width: 180px;
   max-width: 280px;
   margin-top: 4px;
 }
 
+[data-theme='dark'] .card {
+  background: #33343a;
+  border-color: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+}
+
+.cardThem {
+  background: #e8e8ee;
+  border-color: rgba(0, 0, 0, 0.07);
+}
+
+[data-theme='dark'] .cardThem {
+  background: #33343a;
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.cardMe {
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
+  border-color: transparent !important;
+  color: white !important;
+  box-shadow: none !important;
+}
+
+[data-theme='dark'] .cardMe {
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
+  border-color: transparent !important;
+  color: white !important;
+  box-shadow: none !important;
+}
+
 .card:hover {
-  background: var(--color-bg-soft, #f4f4f5);
-  border-color: var(--color-border-hover, #d4d4d8);
+  opacity: 0.92;
+}
+
+.cardMe .name {
+  color: #ffffff;
+}
+
+.cardMe .membersCount {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .avatarWrapper {

@@ -2,32 +2,61 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #e8e8ee;
+  border: 1px solid rgba(0, 0, 0, 0.07);
   border-radius: 14px;
   padding: 14px 16px;
   cursor: pointer;
   width: 100%;
   min-width: 280px;
   max-width: 100%;
-  color: inherit;
+  color: var(--color-text-main, #18181b);
   box-sizing: border-box;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  box-shadow: none;
+  transition: opacity 0.15s ease;
 }
 
-:global([data-theme='light']) .container {
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.15);
+[data-theme='dark'] .container {
+  background: #33343a;
+  border-color: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+}
+
+.containerThem {
+  background: #e8e8ee;
+  border-color: rgba(0, 0, 0, 0.07);
+}
+
+[data-theme='dark'] .containerThem {
+  background: #33343a;
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.containerMe {
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
+  border-color: transparent !important;
+  color: white !important;
+  box-shadow: none !important;
+}
+
+[data-theme='dark'] .containerMe {
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
+  border-color: transparent !important;
+  color: white !important;
+  box-shadow: none !important;
 }
 
 .container:hover {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.32);
+  opacity: 0.92;
 }
 
-:global([data-theme='light']) .container:hover {
-  background: rgba(0, 0, 0, 0.07);
-  border-color: rgba(0, 0, 0, 0.28);
+.containerMe .authorName {
+  color: #ffffff;
+}
+
+.containerMe .authorUsername,
+.containerMe .timestampText {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .authorRow {

@@ -220,9 +220,11 @@ export default function CampusPage() {
               <CrewCardSkeleton />
             </>
           ) : campusActivityItems.length === 0 ? (
-            <p className={styles.emptyText} style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-              No college activities yet. Create one from Crew and set it to College.
-            </p>
+            <div className={eventStyles.emptyState}>
+              <p className={eventStyles.emptyText}>
+                No college activities yet. Create one from Crew and set it to College.
+              </p>
+            </div>
           ) : (
             campusActivityItems.map(activity => (
               <CrewCard

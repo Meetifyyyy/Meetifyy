@@ -1,5 +1,5 @@
 .activityShareCardNew {
-  background: var(--color-bg-white, #ffffff);
+  background: #e8e8ee;
   border-radius: 20px;
   width: 270px;
   min-width: 270px;
@@ -11,16 +11,56 @@
   margin-top: 6px;
   cursor: pointer;
   color: var(--color-text-main, #18181b);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
-  border: 1px solid var(--color-border-light, #e4e4e7);
+  box-shadow: none;
+  border: 1px solid rgba(0, 0, 0, 0.07);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: box-shadow 0.2s ease;
+  transition: opacity 0.15s ease;
+}
+
+[data-theme='dark'] .activityShareCardNew {
+  background: #33343a;
+  border-color: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+}
+
+.activityShareCardThem {
+  background: #e8e8ee;
+  border-color: rgba(0, 0, 0, 0.07);
+}
+
+[data-theme='dark'] .activityShareCardThem {
+  background: #33343a;
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.activityShareCardMe {
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
+  border-color: transparent !important;
+  color: white !important;
+  box-shadow: none !important;
+}
+
+[data-theme='dark'] .activityShareCardMe {
+  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
+  border-color: transparent !important;
+  color: white !important;
+  box-shadow: none !important;
 }
 
 .activityShareCardNew:hover {
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  opacity: 0.94;
+  box-shadow: none;
+}
+
+.activityShareCardMe .activityShareTitleNew {
+  color: #ffffff;
+}
+
+.activityShareCardMe .activityShareMetaRowNew,
+.activityShareCardMe .activityShareLocationNew {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .activityShareCoverWrapper {
@@ -91,9 +131,22 @@
 }
 
 .activityShareLocationNew {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.74rem;
   color: var(--color-text-muted, #71717a);
   margin-top: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.locIcon {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.locText {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
