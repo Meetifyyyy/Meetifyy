@@ -168,7 +168,20 @@ SP_JSON=$(az ad sp create-for-rbac \
 
 PROD_CLIENT_ID=$(echo "$SP_JSON" | grep -o '"appId": "[^"]*' | cut -d'"' -f4)
 
-echo "==> 8. Configuring Federated Credential for GitHub Actions (main branch)..."
+# See the note in setup-azure-dev.sh: deploy-prod.yml declares
+# `environment: production`, so GitHub presents `environment:production`
+# rather than `ref:refs/heads/main`. Both subjects are registered.
+echo "==> 8. Configuring Federated Credentials for GitHub Actions (environment + branch)..."
+az ad app federated-credential create \
+  --id "$PROD_CLIENT_ID" \
+  --parameters "{
+    \"name\": \"meetifyy-prod-environment\",
+    \"issuer\": \"https://token.actions.githubusercontent.com\",
+    \"subject\": \"repo:Meetifyyyy/Meetifyy:environment:production\",
+    \"audiences\": [\"api://AzureADTokenExchange\"]
+  }" || true
+
+# Kept so the workflow still authenticates if `environment:` is ever dropped.
 az ad app federated-credential create \
   --id "$PROD_CLIENT_ID" \
   --parameters "{

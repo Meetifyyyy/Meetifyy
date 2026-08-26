@@ -165,7 +165,23 @@ SP_JSON=$(az ad sp create-for-rbac \
 
 CLIENT_ID=$(echo "$SP_JSON" | grep -o '"appId": "[^"]*' | cut -d'"' -f4)
 
-echo "==> 9. Configuring Federated Credential for GitHub Actions (development branch)..."
+# Two credentials, because the subject GitHub presents depends on how the job
+# is written. A job declaring `environment: development` — which deploy-dev.yml
+# does, so the development environment's secrets are in scope — presents
+# `environment:development`, NOT `ref:refs/heads/development`. Registering only
+# the branch subject is what caused every deploy to fail AADSTS700213 with
+# "No matching federated identity record found".
+echo "==> 9. Configuring Federated Credentials for GitHub Actions (environment + branch)..."
+az ad app federated-credential create \
+  --id "$CLIENT_ID" \
+  --parameters "{
+    \"name\": \"meetifyy-dev-environment\",
+    \"issuer\": \"https://token.actions.githubusercontent.com\",
+    \"subject\": \"repo:Meetifyyyy/Meetifyy:environment:development\",
+    \"audiences\": [\"api://AzureADTokenExchange\"]
+  }" || true
+
+# Kept so the workflow still authenticates if `environment:` is ever dropped.
 az ad app federated-credential create \
   --id "$CLIENT_ID" \
   --parameters "{
