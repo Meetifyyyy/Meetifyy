@@ -1,4 +1,4 @@
-import { IS_PRODUCTION, email, int, invariant, oneOf, str } from './env';
+import { IS_PRODUCTION, IS_STAGING, email, int, invariant, oneOf, str } from './env';
 import { appConfigValues } from './app.config';
 
 /**
@@ -10,17 +10,19 @@ import { appConfigValues } from './app.config';
  * values.
  */
 
+const isDeployed = IS_PRODUCTION || IS_STAGING;
+
 const driver = oneOf('EMAIL_DRIVER', ['mailpit', 'smtp', 'resend'] as const, {
-  default: IS_PRODUCTION ? 'resend' : 'mailpit',
+  default: isDeployed ? 'resend' : 'mailpit',
 });
 
 const fromEmail = email('EMAIL_FROM', { requiredIn: ['staging', 'production'] }) || str('RESEND_FROM_EMAIL');
 const fromName = str('EMAIL_FROM_NAME', { default: appConfigValues.name });
 const smtpPort = int('SMTP_PORT', { default: '1025', min: 1, max: 65535 });
 
-// A production deploy still pointed at Mailpit would queue mail into a local
+// A deployed environment still pointed at Mailpit would queue mail into a local
 // SMTP port that does not exist there and drop every message silently.
-invariant(!IS_PRODUCTION || driver !== 'mailpit', 'Invalid EMAIL_DRIVER: "mailpit" cannot be used in production');
+invariant(!isDeployed || driver !== 'mailpit', 'Invalid EMAIL_DRIVER: "mailpit" cannot be used in staging or production');
 invariant(
   driver !== 'resend' || !!str('RESEND_API_KEY'),
   'Missing required environment variable: RESEND_API_KEY (required when EMAIL_DRIVER=resend)',
