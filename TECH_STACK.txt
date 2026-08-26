@@ -1,0 +1,111 @@
+===============================================================================
+MEETIFYY — TECH STACK & TEAM OWNERSHIP
+Last updated: 2026-08-27
+===============================================================================
+
+-------------------------------------------------------------------------------
+1. TECH STACK (SHORT)
+-------------------------------------------------------------------------------
+
+FRONTEND (frontend/)
+  React 18 + Vite 6 (JavaScript, not TS)
+  Routing ......... React Router 7
+  State ........... Zustand + Immer, TanStack Query (server state)
+  Forms ........... React Hook Form + Zod
+  UI .............. Plain CSS (144 files, no Tailwind), Framer Motion
+  Icons ........... HugeIcons, Heroicons
+  Realtime ........ socket.io-client
+  Extras .......... emoji-mart, Fuse.js (search), react-easy-crop,
+                    browser-image-compression, Sonner (toasts)
+  PWA ............. vite-plugin-pwa (injectManifest, custom sw.js)
+  Tests ........... Vitest
+
+ADMIN PANEL (admin-frontend/)
+  React 19 + Vite + TypeScript
+  TanStack Query + TanStack Table, Recharts, Lucide, Framer Motion
+  Lint: oxlint
+
+BACKEND (backend/)
+  NestJS 11 on Node 22 (TypeScript)
+  API ............. Express platform, class-validator / class-transformer
+  ORM ............. Prisma 6 + @prisma/adapter-pg (node-postgres driver)
+  Realtime ........ socket.io (@nestjs/websockets)
+  Queues .......... BullMQ + Redis
+  Auth ............ Supabase Auth, JWT, bcryptjs, otplib (2FA)
+  Email ........... Resend + React Email, Nodemailer (Mailpit in dev)
+  Storage ......... Cloudflare R2 via AWS S3 SDK (presigned URLs)
+  Security ........ Helmet, rate-limiter-flexible, sanitize-html
+  Logging ......... Pino (nestjs-pino), Sentry (errors + profiling)
+  Tests ........... Jest (39 suites / 542 tests)
+
+DATA
+  PostgreSQL on Supabase (transaction pooler, port 6543)
+  Prisma migrations; DIRECT_URL used for migrations only
+  Redis — queues, cache, presence
+
+INFRASTRUCTURE
+  Backend ......... Docker -> Azure Container Registry -> Azure Container Apps
+                    (region: uaenorth; internal Redis container)
+  Frontend/Admin .. Vercel
+  DNS/CDN ......... Cloudflare
+  CI/CD ........... GitHub Actions (ci.yml, deploy-dev.yml, deploy-prod.yml)
+                    OIDC federated auth to Azure (no stored passwords)
+
+ENVIRONMENTS
+  dev.meetifyy.app ....... frontend (Vercel)
+  dev-api.meetifyy.app ... backend  (Azure Container Apps)
+  production ............. not provisioned yet
+
+-------------------------------------------------------------------------------
+2. TEAM OWNERSHIP
+-------------------------------------------------------------------------------
+
+  Frontend ................ Shravya
+  Backend ................. Somya
+  Security ................ Yash
+  Database ................ Sarthak
+
+  All remaining areas ..... Sarthak
+
+-------------------------------------------------------------------------------
+3. OWNERSHIP BY AREA (FULL)
+-------------------------------------------------------------------------------
+
+AREA                          OWNER
+----                          -----
+Frontend (web app UI)         Shravya
+Backend (API / services)      Somya
+Security                      Yash
+Database                      Sarthak
+DevOps / Infrastructure       Sarthak
+CI/CD & Deployments           Sarthak
+Cloud (Azure)                 Sarthak
+DNS / Cloudflare              Sarthak
+Admin Panel                   Sarthak
+Realtime (sockets/presence)   Sarthak
+Queues & Jobs (BullMQ)        Sarthak
+Email & Notifications         Sarthak
+Media / File Storage (R2)     Sarthak
+Search                        Sarthak
+Monitoring & Logging          Sarthak
+QA / Testing                  Sarthak
+Documentation                 Sarthak
+Mobile / PWA                  Sarthak
+Design / UX                   Sarthak
+Product                       Sarthak
+
+-------------------------------------------------------------------------------
+4. APP MODULES (for reference)
+-------------------------------------------------------------------------------
+
+Backend modules:
+  academics, activities, admin, auth, campus-events, communities, email,
+  events, health, instant-match, link-preview, mentions, messages,
+  moderation, monitoring, notifications, posts, presence, realtime, redis,
+  search, supabase, support, uploads, users
+
+Frontend features:
+  auth, campus, campus-events, communities, crew, feed, info, instant-match,
+  messages, notifications, onboarding, profile, search, settings
+
+===============================================================================
