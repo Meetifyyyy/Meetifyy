@@ -25,11 +25,47 @@ export type AppEnvironment = 'development' | 'test' | 'staging' | 'production';
 
 const KNOWN_ENVIRONMENTS: AppEnvironment[] = ['development', 'test', 'staging', 'production'];
 
+const ENV_ROOT = path.resolve(__dirname, '..', '..');
+
+/**
+ * Reads a dotenv file without applying it to `process.env`.
+ *
+ * Used only to discover APP_ENV before the real load runs. Which files that
+ * load reads depends on APP_ENV, so APP_ENV itself has to be settled first.
+ */
+function peekDotenv(file: string): Record<string, string> {
+  const full = path.join(ENV_ROOT, file);
+  if (!fs.existsSync(full)) return {};
+  try {
+    return dotenv.parse(fs.readFileSync(full));
+  } catch {
+    return {};
+  }
+}
+
 function resolveAppEnv(): AppEnvironment {
   // APP_ENV exists so a staging deployment can run with NODE_ENV=production
   // (which the toolchain needs for optimised builds) while still selecting
   // staging configuration. It falls back to NODE_ENV everywhere else.
-  const raw = (process.env.APP_ENV || process.env.NODE_ENV || 'development').trim().toLowerCase();
+  //
+  // The environment-agnostic dotenv files are consulted too, so that APP_ENV
+  // can be declared in a file rather than only in the real process
+  // environment. It previously could not: APP_ENV was resolved before any
+  // file was loaded, so `APP_ENV=production` in a .env was read too late and
+  // silently ignored, leaving the process in development.
+  //
+  // Only `.env` and `.env.local` are consulted here. `.env.<APP_ENV>` cannot
+  // be: naming it requires the answer this function is computing.
+  const fromFiles = { ...peekDotenv('.env'), ...peekDotenv('.env.local') };
+  const raw = (
+    process.env.APP_ENV ||
+    process.env.NODE_ENV ||
+    fromFiles.APP_ENV ||
+    fromFiles.NODE_ENV ||
+    'development'
+  )
+    .trim()
+    .toLowerCase();
   return (KNOWN_ENVIRONMENTS as string[]).includes(raw) ? (raw as AppEnvironment) : 'development';
 }
 
@@ -43,7 +79,6 @@ function loadDotenvFiles(): void {
   // In a deployed environment the platform injects real environment variables;
   // dotenv files are a local-development convenience. Loading them is still
   // harmless there because `override` is never set.
-  const root = path.resolve(__dirname, '..', '..');
   const candidates = [
     `.env.${APP_ENV}.local`,
     '.env.local',
@@ -52,7 +87,7 @@ function loadDotenvFiles(): void {
   ];
 
   for (const file of candidates) {
-    const full = path.join(root, file);
+    const full = path.join(ENV_ROOT, file);
     if (fs.existsSync(full)) {
       dotenv.config({ path: full, override: false, quiet: true });
     }
