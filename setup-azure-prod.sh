@@ -72,6 +72,23 @@ if ! az containerapp env show --name "$ENV_NAME" --resource-group "$RESOURCE_GRO
     --logs-workspace-key "$WORKSPACE_KEY"
 fi
 
+if [ -z "${REDIS_URL:-}" ]; then
+  echo "==> 4b. Provisioning Dedicated Production Redis Container (meetifyy-redis-prod)..."
+  az containerapp create \
+    --name meetifyy-redis-prod \
+    --resource-group "$RESOURCE_GROUP" \
+    --environment "$ENV_NAME" \
+    --image redis:7-alpine \
+    --target-port 6379 \
+    --ingress internal \
+    --transport tcp \
+    --min-replicas 1 \
+    --max-replicas 1 \
+    --cpu 0.25 \
+    --memory 0.5Gi 2>/dev/null || true
+  REDIS_URL="redis://meetifyy-redis-prod:6379"
+fi
+
 echo "==> 5. Creating Production Container App ($APP_NAME)..."
 az containerapp create \
   --name "$APP_NAME" \
