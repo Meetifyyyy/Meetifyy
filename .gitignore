@@ -203,6 +203,7 @@ meetifyy-security-remediation-report.md
 docs/*
 !docs/network-reachability.md
 !docs/verification-checklist.md
+!docs/production-azure-setup-guide.md
 diff_*.txt
 all_files.txt
 git_files.txt
