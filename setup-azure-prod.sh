@@ -5,7 +5,7 @@ set -euo pipefail
 # Meetifyy — Automated Azure PROD Provisioning Script
 # ─────────────────────────────────────────────────────────────────────────────
 
-LOCATION="centralindia"
+LOCATION="uaenorth"
 RESOURCE_GROUP="meetifyy-prod-rg"
 ACR_NAME="meetifyycr"
 LOGS_WORKSPACE="meetifyy-prod-logs"
@@ -40,13 +40,17 @@ echo "==> 1. Setting Azure Subscription..."
 az account set --subscription "$SUBSCRIPTION_ID"
 
 echo "==> 2. Creating PROD Resource Group ($RESOURCE_GROUP)..."
-az group create --name "$RESOURCE_GROUP" --location "$LOCATION"
+if ! az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1; then
+  az group create --name "$RESOURCE_GROUP" --location "$LOCATION"
+fi
 
-echo "==> 3. Creating Log Analytics Workspace ($LOGS_WORKSPACE)..."
-az monitor log-analytics workspace create \
-  --resource-group "$RESOURCE_GROUP" \
-  --workspace-name "$LOGS_WORKSPACE" \
-  --location "$LOCATION"
+echo "==> 3. Creating Log Analytics Workspace ($LOGS_WORKSPACE in $LOCATION)..."
+if ! az monitor log-analytics workspace show --resource-group "$RESOURCE_GROUP" --workspace-name "$LOGS_WORKSPACE" >/dev/null 2>&1; then
+  az monitor log-analytics workspace create \
+    --resource-group "$RESOURCE_GROUP" \
+    --workspace-name "$LOGS_WORKSPACE" \
+    --location "$LOCATION"
+fi
 
 WORKSPACE_ID=$(az monitor log-analytics workspace show \
   --resource-group "$RESOURCE_GROUP" \
@@ -58,13 +62,15 @@ WORKSPACE_KEY=$(az monitor log-analytics workspace get-shared-keys \
   --workspace-name "$LOGS_WORKSPACE" \
   --query primarySharedKey --output tsv)
 
-echo "==> 4. Creating Container Apps Environment ($ENV_NAME)..."
-az containerapp env create \
-  --name "$ENV_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --location "$LOCATION" \
-  --logs-workspace-id "$WORKSPACE_ID" \
-  --logs-workspace-key "$WORKSPACE_KEY"
+echo "==> 4. Creating Container Apps Environment ($ENV_NAME in $LOCATION)..."
+if ! az containerapp env show --name "$ENV_NAME" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+  az containerapp env create \
+    --name "$ENV_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --location "$LOCATION" \
+    --logs-workspace-id "$WORKSPACE_ID" \
+    --logs-workspace-key "$WORKSPACE_KEY"
+fi
 
 echo "==> 5. Creating Production Container App ($APP_NAME)..."
 az containerapp create \

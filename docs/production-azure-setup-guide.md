@@ -79,13 +79,13 @@ az login
 az account set --subscription "<PROD_SUBSCRIPTION_ID>"
 
 # Create production resource group
-az group create --name meetifyy-prod-rg --location centralindia
+az group create --name meetifyy-prod-rg --location uaenorth
 
 # Create production Log Analytics workspace
 az monitor log-analytics workspace create \
   --resource-group meetifyy-prod-rg \
   --workspace-name meetifyy-prod-logs \
-  --location centralindia
+  --location uaenorth
 
 WORKSPACE_ID=$(az monitor log-analytics workspace show \
   --resource-group meetifyy-prod-rg \
@@ -101,7 +101,7 @@ WORKSPACE_KEY=$(az monitor log-analytics workspace get-shared-keys \
 az containerapp env create \
   --name meetifyy-prod-env \
   --resource-group meetifyy-prod-rg \
-  --location centralindia \
+  --location uaenorth \
   --logs-workspace-id "$WORKSPACE_ID" \
   --logs-workspace-key "$WORKSPACE_KEY"
 ```
