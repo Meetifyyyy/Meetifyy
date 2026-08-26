@@ -161,16 +161,16 @@ jobs:
               "DATABASE_URL=secretref:database-url" \
               "DIRECT_URL=secretref:direct-url" \
             --secrets \
-              "database-url=$(az containerapp secret show \
+              "database-url=$(az containerapp secret list \
                   --name "${CONTAINERAPP}" \
                   --resource-group "${RESOURCE_GROUP}" \
-                  --secret-name database-url \
-                  --query 'value' --output tsv)" \
-              "direct-url=$(az containerapp secret show \
+                  --show-values \
+                  --query "[?name=='database-url'].value" --output tsv)" \
+              "direct-url=$(az containerapp secret list \
                   --name "${CONTAINERAPP}" \
                   --resource-group "${RESOURCE_GROUP}" \
-                  --secret-name direct-url \
-                  --query 'value' --output tsv)"
+                  --show-values \
+                  --query "[?name=='direct-url'].value" --output tsv)"
 
           az containerapp job start \
             --name "${JOB_NAME}" \
