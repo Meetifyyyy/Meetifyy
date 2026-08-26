@@ -10,14 +10,14 @@
 # Checks performed:
 #   1. Install dependencies
 #   2. Generate Prisma client (validates schema.prisma syntax)
-#   3. Validate committed migrations are consistent with schema.prisma
+#   3. Validate schema.prisma (prisma validate)
 #   4. TypeScript typecheck (tsc --noEmit via tsconfig.build.json)
-#   5. ESLint
+#   5. ESLint            — non-blocking (pre-existing type-safety backlog)
 #   6. Production build (nest build)
 #   7. Unit tests (jest)
 #
-# No live database is needed for any of these — Prisma schema validation and
-# migration consistency checks run offline against the committed files only.
+# No live database is needed for any of these — schema validation runs offline
+# against the committed files only, using the placeholder URLs set below.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: CI
@@ -44,6 +44,14 @@ jobs:
   validate:
     name: Lint · Typecheck · Build · Test
     runs-on: ubuntu-latest
+
+    # Placeholder connection strings. No step here talks to a real database,
+    # but the Prisma CLI resolves `env()` in the datasource block before it
+    # does anything at all — including `validate` — and hard-fails with P1012
+    # if the vars are unset. Declared at job level so every step inherits them.
+    env:
+      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
+      DIRECT_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
 
     defaults:
       run:
@@ -80,8 +88,11 @@ jobs:
         run: npx tsc --project tsconfig.build.json --noEmit
 
       # ── 7. ESLint ──────────────────────────────────────────────────────────
+      # Non-blocking: formatting and parse errors are clean, but ~4.6k
+      # pre-existing `no-unsafe-*` findings remain. Flip to blocking once
+      # that backlog is worked down.
       - name: ESLint
-        run: npm run lint || true
+        run: npm run lint
         continue-on-error: true
 
       # ── 8. Build ───────────────────────────────────────────────────────────
@@ -89,18 +100,18 @@ jobs:
       # dist output matches the latest generated client.
       - name: Production build
         run: npm run build
-        env:
-          DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
-          DIRECT_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
 
       # ── 9. Unit tests ──────────────────────────────────────────────────────
+      # Placeholders only — the suite is fully mocked and opens no network
+      # connections. They exist because `src/config` validates the whole env
+      # at import time, so a missing var throws before any test body runs.
       - name: Unit tests
-        run: npm test -- --passWithNoTests || true
-        continue-on-error: true
+        run: npm test -- --passWithNoTests
         env:
-          DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
-          DIRECT_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
           APP_ENV: test
           NODE_ENV: test
           FRONTEND_URL: "http://localhost:3000"
           REDIS_URL: ""
+          SUPABASE_URL: "https://ci-placeholder.supabase.co"
+          SUPABASE_ANON_KEY: "ci_placeholder_anon_key"
+          SUPPORT_IP_HASH_SALT: "ci_placeholder_salt"

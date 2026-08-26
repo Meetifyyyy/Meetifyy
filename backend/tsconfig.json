@@ -12,7 +12,6 @@
     "sourceMap": true,
     "outDir": "./dist",
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
-    "rootDir": "src",
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
@@ -23,6 +22,9 @@
     "noFallthroughCasesInSwitch": true,
     "jsx": "react"
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "**/*.mock.ts", "src/**/testing/**/*", "render-templates.ts", "prisma", "scripts"]
+  // Widest view of the codebase — used by the IDE and by ESLint's project
+  // service, which can only type-check a file that some tsconfig includes.
+  // Build-only exclusions live in tsconfig.build.json.
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["node_modules", "dist"]
 }
