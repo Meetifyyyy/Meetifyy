@@ -652,14 +652,30 @@ In the Cloudflare dashboard for `meetifyy.app`:
 
 | Type | Name | Content | Proxy |
 |------|------|---------|-------|
-| CNAME | `api` | `meetifyy-api.livelybeach-abc123.centralindia.azurecontainerapps.io` | **Proxied** (orange ☁) |
+| CNAME | `api` | `meetifyy-api.livelybeach-abc123.centralindia.azurecontainerapps.io` | **DNS only** (grey ☁) at first — see below |
 
-Replace the `Content` value with your actual Container App FQDN.
+Replace the `Content` value with your actual Container App FQDN. It must be a
+**CNAME to the Azure FQDN**. An `A` record holding a Cloudflare IP produces
+Cloudflare **Error 1000 — "DNS points to prohibited IP"**, which is what the
+`dev-api` record was doing while DEV was down.
 
 > [!IMPORTANT]
-> Enable Cloudflare proxy (orange cloud) for the `api` record. This hides the
-> Azure IP, provides DDoS protection, and ensures the domain works from
-> college networks that block Azure IP ranges.
+> **Order matters.** Add the record as **DNS only (grey cloud)** first, and
+> leave it there until Azure has issued and bound the managed certificate.
+> The binding is `SniEnabled`, and Cloudflare's proxy terminates TLS itself,
+> so validation cannot complete while the record is proxied.
+>
+> 1. Add the CNAME, **DNS only**.
+> 2. Bind the custom domain in Azure and wait for the managed certificate.
+> 3. Confirm `curl https://api.meetifyy.app/health` returns 200.
+> 4. *Then* switch to **Proxied (orange cloud)** if you want it, and set
+>    SSL/TLS mode to **Full (strict)** so Cloudflare speaks HTTPS to Azure.
+>
+> Proxying is worth enabling once it works: it hides the Azure IP, adds DDoS
+> protection, and helps on college networks that block Azure IP ranges — see
+> [docs/network-reachability.md](docs/network-reachability.md). Just do not
+> turn it on before step 3, or you cannot tell a certificate problem from a
+> proxy problem.
 
 ### HTTPS
 
@@ -754,7 +770,21 @@ az ad sp create-for-rbac \
 
 # 2. Note the appId (clientId) and tenant
 
-# 3. Add federated credential for the main branch
+# 3. Add federated credentials.
+#    The deploy workflows declare `environment:`, which makes GitHub mint the
+#    OIDC token with subject `environment:<name>` rather than
+#    `ref:refs/heads/<branch>`. Register the environment form or every deploy
+#    fails at "Azure login" with AADSTS700213. Both are registered so the
+#    workflow still authenticates if `environment:` is ever dropped.
+az ad app federated-credential create \
+  --id YOUR_APP_ID \
+  --parameters '{
+    "name": "meetifyy-prod-environment",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:YOUR_GITHUB_ORG/meetifyy:environment:production",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
 az ad app federated-credential create \
   --id YOUR_APP_ID \
   --parameters '{
@@ -1036,9 +1066,17 @@ az containerapp update \
 - Verify `ACR_LOGIN_SERVER` is exactly `meetifyycr.azurecr.io`
 - Verify the service principal has `AcrPush` role on the registry
 
-**OIDC authentication failure**:
-- Verify the federated credential `subject` matches the branch name exactly
+**OIDC authentication failure** (`AADSTS700213: No matching federated identity
+record found for presented assertion subject ...`):
+- Read the subject quoted in the error and register **that exact string**.
+- A job with `environment: <name>` presents
+  `repo:OWNER/REPO:environment:<name>` — *not* the branch subject. Matching
+  the branch name is not sufficient and is the usual cause of this error.
+- List what is actually registered:
+  `az ad app federated-credential list --id <APP_ID> --query "[].{name:name,subject:subject}" -o table`
 - Check `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+- The failure happens *before* the build, so the Container App keeps serving
+  its previous image — on a new setup, the placeholder hello-world one.
 
 **Migration job fails**:
 - The workflow creates a one-shot Container App Job to run migrations
@@ -1723,7 +1761,19 @@ az ad sp create-for-rbac \
 
 # Note the appId → AZURE_CLIENT_ID_DEV
 
-# DEV federated credential (development branch only)
+# DEV federated credentials.
+# The `environment:` subject is the one deploy-dev.yml actually presents;
+# the branch subject is kept only as a fallback. Registering just the branch
+# form is what caused five consecutive DEV deploy failures.
+az ad app federated-credential create \
+  --id YOUR_DEV_APP_ID \
+  --parameters '{
+    "name": "meetifyy-dev-environment",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:YOUR_ORG/meetifyy:environment:development",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
 az ad app federated-credential create \
   --id YOUR_DEV_APP_ID \
   --parameters '{
@@ -1743,7 +1793,16 @@ az ad sp create-for-rbac \
 
 # Note the appId → AZURE_CLIENT_ID_PROD
 
-# PROD federated credential (main branch only)
+# PROD federated credentials (environment subject first — see the DEV note)
+az ad app federated-credential create \
+  --id YOUR_PROD_APP_ID \
+  --parameters '{
+    "name": "meetifyy-prod-environment",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:YOUR_ORG/meetifyy:environment:production",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
 az ad app federated-credential create \
   --id YOUR_PROD_APP_ID \
   --parameters '{

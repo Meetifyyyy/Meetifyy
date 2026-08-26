@@ -194,7 +194,28 @@ SP_JSON=$(az ad sp create-for-rbac \
 
 PROD_CLIENT_ID=$(echo "$SP_JSON" | grep -o '"appId": "[^"]*' | cut -d'"' -f4)
 
-# Create federated credential bound exclusively to the 'main' branch
+# TWO credentials, and the first one is the one that actually matters.
+#
+# deploy-prod.yml declares `environment: production` (so the production
+# environment's secrets are in scope). A job with an `environment:` makes
+# GitHub mint its OIDC token with subject `environment:production` — NOT
+# `ref:refs/heads/main`. Register only the branch form and every deploy
+# dies at "Azure login" with AADSTS700213 before it builds anything.
+#
+# This exact mistake took DEV down: five consecutive failed deploys, and
+# the Container App sat on the placeholder hello-world image the whole
+# time. See "GitHub OIDC subject" in production-setup-checklist.md.
+az ad app federated-credential create \
+  --id "$PROD_CLIENT_ID" \
+  --parameters "{
+    \"name\": \"meetifyy-prod-environment\",
+    \"issuer\": \"https://token.actions.githubusercontent.com\",
+    \"subject\": \"repo:Meetifyyyy/Meetifyy:environment:production\",
+    \"audiences\": [\"api://AzureADTokenExchange\"]
+  }"
+
+# Branch form. Only used if `environment:` is ever removed from the
+# workflow — harmless to keep, and cheap insurance.
 az ad app federated-credential create \
   --id "$PROD_CLIENT_ID" \
   --parameters "{
@@ -203,6 +224,11 @@ az ad app federated-credential create \
     \"subject\": \"repo:Meetifyyyy/Meetifyy:ref:refs/heads/main\",
     \"audiences\": [\"api://AzureADTokenExchange\"]
   }"
+
+# Verify both landed before moving on — this is far cheaper than
+# discovering the gap during your first production deploy:
+az ad app federated-credential list --id "$PROD_CLIENT_ID" \
+  --query "[].{name:name,subject:subject}" -o table
 
 # Grant push rights to ACR
 ACR_ID=$(az acr show --name meetifyycr --resource-group meetifyy-dev-rg --query id --output tsv)
@@ -231,13 +257,45 @@ az role assignment create --assignee "$PROD_CLIENT_ID" --role AcrPush --scope "$
 
 ## 6. Cloudflare DNS & Custom Domain
 
-1. In Azure Portal, copy the FQDN of `meetifyy-api` (e.g. `meetifyy-api.xyz.centralindia.azurecontainerapps.io`).
-2. Go to **Cloudflare** → `meetifyy.app` → **DNS Records** → **Add Record**:
-   * **Type**: `CNAME`
+Do these in order. Turning the proxy on too early is indistinguishable from a
+broken certificate, and it is how `dev-api` ended up serving Cloudflare
+**Error 1000 — "DNS points to prohibited IP"**.
+
+1. Copy the FQDN of `meetifyy-api`:
+
+   ```bash
+   az containerapp show -n meetifyy-api -g meetifyy-prod-rg \
+     --query 'properties.configuration.ingress.fqdn' -o tsv
+   ```
+
+2. **Cloudflare** → `meetifyy.app` → **DNS Records** → **Add Record**:
+   * **Type**: `CNAME`  ← never an `A` record; an A record pointing at a
+     Cloudflare IP is exactly what triggers Error 1000
    * **Name**: `api`
-   * **Target**: `meetifyy-api.xyz.centralindia.azurecontainerapps.io`
-   * **Proxy Status**: **Proxied (Orange Cloud ☁️)**
-3. In Azure Portal under `meetifyy-api` → **Custom domains**, bind `api.meetifyy.app` with managed certificate.
+   * **Target**: the FQDN from step 1
+   * **Proxy Status**: **DNS only (grey cloud)** — for now
+
+3. Azure Portal → `meetifyy-api` → **Custom domains** → bind `api.meetifyy.app`
+   with a managed certificate. The binding is `SniEnabled`; Cloudflare's proxy
+   terminates TLS itself, so this cannot validate while the record is proxied.
+
+4. Verify before touching the proxy — hit the Azure FQDN first, which proves
+   the container serves independently of Cloudflare, then the custom domain:
+
+   ```bash
+   curl -sS -o /dev/null -w 'http=%{http_code}\n' --max-time 30 https://<AZURE_FQDN>/health
+   curl -sS -o /dev/null -w 'http=%{http_code}\n' --max-time 30 https://api.meetifyy.app/health
+   ```
+
+   Both must return `200`. If the first fails, the problem is the container or
+   ingress `targetPort`, not DNS.
+
+5. *Optionally* switch the record to **Proxied (orange cloud)** and set
+   **SSL/TLS → Full (strict)**. Worth doing — it hides the Azure IP and helps
+   on college networks that block Azure ranges
+   ([network-reachability.md](network-reachability.md)) — but only after
+   step 4 passes. Re-run step 4 afterwards to confirm the proxy did not
+   break anything.
 
 ---
 
