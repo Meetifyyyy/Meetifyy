@@ -81,5 +81,6 @@ ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 
 # Production start: runs the compiled NestJS application.
 # Prisma migrations are NOT run here — they run as a GitHub Actions step
-# before the new image is deployed, matching the Railway pre-deploy pattern.
+# before the new image is deployed.
+# Generated Prisma client in node_modules/@prisma/client is copied to prod.
 CMD ["node", "dist/main"]

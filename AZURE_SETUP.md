@@ -539,8 +539,7 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 ## 10. Supabase
 
 The existing Supabase PostgreSQL database connects from Azure Container Apps
-exactly as it did from Railway — via connection strings in `DATABASE_URL` and
-`DIRECT_URL`.
+via connection strings in `DATABASE_URL` and `DIRECT_URL`.
 
 ### Connection strings from Supabase dashboard
 
@@ -585,11 +584,10 @@ The backend reads these variables:
 - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
 - `R2_BUCKET_NAME`, `R2_PUBLIC_URL`
 
-These are the same values that worked on Railway. Set them as Container App
-secrets and reference them as `secretref:r2-access-key-id` etc.
+Set them as Container App secrets and reference them as `secretref:r2-access-key-id` etc.
 
 > [!NOTE]
-> Unlike Railway, Azure Container Apps does NOT have an ephemeral local
+> Azure Container Apps does NOT have an ephemeral local
 > filesystem that is wiped on deploy. However, local disk storage is still
 > not used in production — all uploads go directly to R2.
 

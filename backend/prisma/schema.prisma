@@ -1104,8 +1104,8 @@ model HelpArticle {
 ///
 /// Deliberately narrow: a normalized route, an outcome and a duration. No
 /// headers, no bodies, no query strings - see monitoring/utils/redactor.ts for
-/// what is refused and why. Railway already owns infrastructure logs; these
-/// tables own the per-endpoint picture Railway cannot see.
+/// what is refused and why. Azure Container Apps owns infrastructure logs; these
+/// tables own the per-endpoint picture Container Apps logs cannot see.
 model RequestLog {
   id           String   @id @default(uuid())
   /// Correlates a request with its error row and with the pino access log.

@@ -22,8 +22,7 @@ jest.config*
 # ── Source maps (can be generated from dist if needed) ───────────────────────
 **/*.js.map
 
-# ── Railway / Nixpacks / legacy deployment configs (not needed in image) ──────
-railway.json
+# ── Legacy deployment configs (not needed in image) ───────────────────────────
 nixpacks.toml
 Procfile
 
