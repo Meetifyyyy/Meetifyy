@@ -1,5 +1,5 @@
 ===============================================================================
-MEETIFYY — TECH STACK & TEAM OWNERSHIP
+MEETIFYY — TECH STACK & WHO HANDLES WHAT
 Last updated: 2026-08-27
 ===============================================================================
 
@@ -57,26 +57,30 @@ ENVIRONMENTS
   production ............. not provisioned yet
 
 -------------------------------------------------------------------------------
-2. TEAM OWNERSHIP
+2. TEAM — WHO HANDLES WHAT
 -------------------------------------------------------------------------------
 
-  Frontend ................ Shravya
-  Backend ................. Somya
-  Security ................ Yash
+  Frontend ................ Shravya, Sarthak
+  Backend ................. Somya, Sarthak
+  Security ................ Yash, Sarthak
   Database ................ Sarthak
+  Design / UX ............. Shravya, Sarthak
+  QA / Testing ............ Shravya, Somya, Yash, Sarthak
 
   All remaining areas ..... Sarthak
 
 -------------------------------------------------------------------------------
-3. OWNERSHIP BY AREA (FULL)
+3. AREA RESPONSIBILITIES (FULL)
 -------------------------------------------------------------------------------
 
-AREA                          OWNER
-----                          -----
-Frontend (web app UI)         Shravya
-Backend (API / services)      Somya
-Security                      Yash
+AREA                          HANDLED BY
+----                          ----------
+Frontend (web app UI)         Shravya, Sarthak
+Backend (API / services)      Somya, Sarthak
+Security                      Yash, Sarthak
 Database                      Sarthak
+Design / UX                   Shravya, Sarthak
+QA / Testing                  Shravya, Somya, Yash, Sarthak
 DevOps / Infrastructure       Sarthak
 CI/CD & Deployments           Sarthak
 Cloud (Azure)                 Sarthak
@@ -88,10 +92,8 @@ Email & Notifications         Sarthak
 Media / File Storage (R2)     Sarthak
 Search                        Sarthak
 Monitoring & Logging          Sarthak
-QA / Testing                  Sarthak
 Documentation                 Sarthak
 Mobile / PWA                  Sarthak
-Design / UX                   Sarthak
 Product                       Sarthak
 
 -------------------------------------------------------------------------------
