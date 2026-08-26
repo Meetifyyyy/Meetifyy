@@ -56,6 +56,7 @@ export default function HelpSupportPage() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [presetCategory, setPresetCategory] = useState(null);
+  const [openArticleId, setOpenArticleId] = useState(null);
 
   const formSectionRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -253,7 +254,12 @@ export default function HelpSupportPage() {
 
       {isSearchActive && search.state === 'done' && search.results.length > 0 && (
         <section className={styles.section} aria-label="Search results">
-          <FaqAccordion articles={search.results} headingLevel="h2" />
+          <FaqAccordion
+            articles={search.results}
+            headingLevel="h2"
+            openArticleId={openArticleId}
+            onToggleArticle={setOpenArticleId}
+          />
         </section>
       )}
 
@@ -329,11 +335,12 @@ export default function HelpSupportPage() {
                 key={article.id}
                 type="button"
                 className={styles.quickLink}
-                onClick={() =>
+                onClick={() => {
+                  setOpenArticleId(article.id);
                   document
                     .getElementById(`help-category-${article.categorySlug}`)
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                }
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
               >
                 <span>{article.question}</span>
                 <ArrowRight size={13} aria-hidden="true" className={styles.quickLinkIcon} />
@@ -399,7 +406,12 @@ export default function HelpSupportPage() {
               </h2>
               {category.description && <p className={styles.sectionIntro}>{category.description}</p>}
             </div>
-            <FaqAccordion articles={category.articles} headingLevel="h3" />
+            <FaqAccordion
+              articles={category.articles}
+              headingLevel="h3"
+              openArticleId={openArticleId}
+              onToggleArticle={setOpenArticleId}
+            />
           </section>
         ))}
 

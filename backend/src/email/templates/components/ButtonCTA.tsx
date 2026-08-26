@@ -8,23 +8,31 @@ interface ButtonCTAProps {
 
 export const ButtonCTA: React.FC<ButtonCTAProps> = ({ href, children }) => {
   return (
-    <Button href={href} style={button}>
-      {children}
-    </Button>
+    <div style={buttonContainer}>
+      <Button href={href} style={button}>
+        {children}
+      </Button>
+    </div>
   );
 };
 
+const buttonContainer = {
+  textAlign: 'center' as const,
+  margin: '28px 0',
+};
+
 const button = {
-  backgroundColor: '#2563EB', // Blue
-  borderRadius: '8px',
-  color: '#fff',
-  fontSize: '16px',
-  fontWeight: 'bold',
+  backgroundColor: '#2563eb',
+  borderRadius: '10px',
+  color: '#ffffff',
+  fontSize: '15px',
+  fontWeight: '600',
   textDecoration: 'none',
   textAlign: 'center' as const,
-  display: 'block',
+  display: 'inline-block',
   width: '100%',
-  padding: '14px 7px',
-  marginTop: '20px',
-  marginBottom: '20px',
+  maxWidth: '320px',
+  padding: '14px 28px',
+  boxSizing: 'border-box' as const,
+  boxShadow: '0 4px 14px rgba(37, 99, 235, 0.28)',
 };

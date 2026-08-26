@@ -19,7 +19,7 @@ import { siteConfigValues } from './site.config';
  * transactional mail uses. Falls back to the published SUPPORT_EMAIL. When
  * neither is set the header is simply omitted.
  */
-const replyTo = email('SUPPORT_REPLY_TO', { default: siteConfigValues.supportEmail });
+const replyTo = email('SUPPORT_REPLY_TO');
 
 export const supportConfigValues = {
   replyTo: replyTo || undefined,

@@ -107,7 +107,8 @@ export class AdminAuthService implements OnModuleInit {
         },
       });
       this.logger.log(`Super Admin account synced: ${email}`);
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.message?.includes('Cannot use a pool after calling end')) return;
       this.logger.error('Failed to seed Super Admin', err);
     }
   }

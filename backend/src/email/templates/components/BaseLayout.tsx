@@ -28,7 +28,7 @@ export const BaseLayout: React.FC<BaseLayoutProps> = ({ previewText, children })
           <Section style={header}>
             <Img
               src={SITE_CONFIG.wordmarkUrl}
-              width="150"
+              width="140"
               alt="Meetifyy"
               style={logo}
             />
@@ -42,13 +42,14 @@ export const BaseLayout: React.FC<BaseLayoutProps> = ({ previewText, children })
           
           <Section style={footer}>
             <Text style={footerText}>
-              <Link href={SITE_CONFIG.instagramUrl} style={socialLink}>Instagram</Link> •{' '}
-              <Link href={SITE_CONFIG.twitterUrl} style={socialLink}>Twitter</Link> •{' '}
+              <Link href={SITE_CONFIG.instagramUrl} style={socialLink}>Instagram</Link>
+              <span style={footerSeparator}>•</span>
               <Link href={SITE_CONFIG.linkedinUrl} style={socialLink}>LinkedIn</Link>
             </Text>
             <Text style={footerText}>
               &copy; {new Date().getFullYear()} {SITE_CONFIG.appName}. All rights reserved.<br />
-              <Link href={SITE_CONFIG.privacyUrl} style={footerLink}>Privacy Policy</Link> •{' '}
+              <Link href={SITE_CONFIG.privacyUrl} style={footerLink}>Privacy Policy</Link>
+              <span style={footerSeparator}>•</span>
               <Link href={SITE_CONFIG.termsUrl} style={footerLink}>Terms of Service</Link>
             </Text>
           </Section>
@@ -58,24 +59,25 @@ export const BaseLayout: React.FC<BaseLayoutProps> = ({ previewText, children })
   );
 };
 
-// Styles
 const main = {
-  backgroundColor: '#f6f9fc',
+  backgroundColor: '#f8fafc',
   fontFamily:
-    '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Ubuntu,sans-serif',
+    '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif',
+  padding: '36px 0',
 };
 
 const container = {
   backgroundColor: '#ffffff',
-  margin: '40px auto',
-  padding: '40px 20px',
-  borderRadius: '8px',
-  maxWidth: '600px',
-  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+  margin: '0 auto',
+  padding: '40px 32px',
+  borderRadius: '16px',
+  maxWidth: '580px',
+  border: '1px solid #e2e8f0',
+  boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.05)',
 };
 
 const header = {
-  padding: '0 0 30px',
+  padding: '0 0 32px',
   textAlign: 'center' as const,
 };
 
@@ -89,8 +91,8 @@ const contentWrapper = {
 };
 
 const divider = {
-  borderColor: '#e6ebf1',
-  margin: '30px 0',
+  borderColor: '#f1f5f9',
+  margin: '32px 0 24px',
 };
 
 const footer = {
@@ -98,19 +100,24 @@ const footer = {
 };
 
 const footerText = {
-  color: '#8898aa',
+  color: '#94a3b8',
   fontSize: '12px',
-  lineHeight: '16px',
-  margin: '10px 0',
+  lineHeight: '18px',
+  margin: '8px 0',
 };
 
 const footerLink = {
-  color: '#8898aa',
+  color: '#94a3b8',
   textDecoration: 'underline',
 };
 
 const socialLink = {
-  color: '#8898aa',
+  color: '#64748b',
   textDecoration: 'none',
   fontWeight: '500',
+};
+
+const footerSeparator = {
+  color: '#cbd5e1',
+  margin: '0 8px',
 };

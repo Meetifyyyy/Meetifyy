@@ -5,13 +5,10 @@ import { createElement } from 'react';
 import { PrismaService } from '../prisma/prisma.service';
 import { config } from '../config';
 import { htmlToPlainText } from '../common/utils/sanitize-html.util';
-import {
-  SUPPORT_CATEGORY_LABELS,
-  SUPPORT_STATUS_LABELS,
-  SUPPORT_STATUS_USER_MESSAGE,
-} from '../support/support.constants';
+import { SUPPORT_CATEGORY_LABELS } from '../support/support.constants';
 import { SupportRequestReceivedEmail } from './templates/support-request-received';
 import { SupportReplyEmail } from './templates/support-reply';
+import { SupportAttachmentItem } from './templates/components/SupportDetails';
 
 /** Job names handled by this builder. Kept here so the processor imports one thing. */
 export const SUPPORT_EMAIL_JOBS = {
@@ -40,13 +37,12 @@ export interface BuiltEmail {
 }
 
 /**
- * Assembles the three support emails from the database.
+ * Assembles support emails from the database.
  *
  * Queue jobs carry only a row id. Loading the content here rather than in the
  * enqueuing service means the message body - which includes the user's own
  * words and, for replies, an admin's - never sits in Redis, and a job that is
- * retried an hour later renders the ticket's *current* status rather than a
- * snapshot taken when it was queued.
+ * retried renders the ticket's current status rather than a stale snapshot.
  */
 @Injectable()
 export class SupportEmailBuilder {
@@ -72,30 +68,27 @@ export class SupportEmailBuilder {
       return null;
     }
 
+    const mediaBaseUrl = config.app.apiBaseUrl || config.app.backendUrl || config.app.frontendUrl;
+    const attachments = resolveAttachmentItems(ticket.attachments, mediaBaseUrl);
+
     const element = createElement(SupportRequestReceivedEmail, {
       name: ticket.name,
       email: ticket.email,
       ticketNumber: ticket.ticketNumber,
-      categoryLabel: SUPPORT_CATEGORY_LABELS[ticket.category],
+      categoryLabel: SUPPORT_CATEGORY_LABELS[ticket.category] || 'Support Request',
       subject: ticket.subject,
       description: ticket.description,
-      submittedAt: formatTimestamp(ticket.createdAt),
-      statusLabel: SUPPORT_STATUS_LABELS[ticket.status],
-      attachmentNames: attachmentNames(ticket.attachments),
-      deviceSummary: describeDevice(ticket.browserInfo),
-      pageContext: ticket.pageContext,
+      attachments,
       helpCentreUrl: config.support.helpCentreUrl,
     });
 
     return {
       to: ticket.email,
-      // The ticket number goes in the subject so the user's own mail client
-      // threads follow-ups together, and so an inbound reply can be matched
-      // back to the ticket from the subject alone.
-      subject: `[${ticket.ticketNumber}] We've received your support request`,
+      // Subject clearly identifies the support request ID and Meetifyy branding
+      subject: `Support request received: #${ticket.ticketNumber} | Meetifyy`,
       html: await render(element),
       text: await render(element, { plainText: true }),
-      replyTo: config.support.replyTo,
+      replyTo: undefined,
       deliveryTarget: { model: 'supportTicket', id: ticket.id },
       logContext: { ticketNumber: ticket.ticketNumber, kind: 'confirmation' },
     };
@@ -112,10 +105,7 @@ export class SupportEmailBuilder {
       return null;
     }
 
-    // Belt and braces. The admin service already refuses to enqueue a mail for
-    // an internal note; this is the second, independent check, because the
-    // consequence of getting it wrong is sending a user the team's private
-    // notes about them.
+    // Belt and braces check: internal notes must never be emailed to a user.
     if (message.isInternal) {
       this.logger.error(
         `support_email.internal_note_blocked ${JSON.stringify({ messageId, ticketNumber: message.ticket.ticketNumber })}`,
@@ -125,65 +115,38 @@ export class SupportEmailBuilder {
 
     const { ticket } = message;
     const element = createElement(SupportReplyEmail, {
-      name: ticket.name,
       ticketNumber: ticket.ticketNumber,
-      subject: ticket.subject,
       replyHtml: message.body,
-      statusLabel: SUPPORT_STATUS_LABELS[ticket.status],
-      statusMessage: SUPPORT_STATUS_USER_MESSAGE[ticket.status],
-      repliedAt: formatTimestamp(message.createdAt),
       helpCentreUrl: config.support.helpCentreUrl,
     });
 
     return {
       to: ticket.email,
-      // `Re:` plus the same bracketed reference the confirmation used, so this
-      // lands in the thread the user already has.
-      subject: `Re: [${ticket.ticketNumber}] ${ticket.subject}`,
+      // Standardized subject format: Update on your support request #{Support ID} | Meetifyy
+      subject: `Update on your support request #${ticket.ticketNumber} | Meetifyy`,
       html: await render(element),
       text: await render(element, { plainText: true }),
-      replyTo: config.support.replyTo,
+      replyTo: undefined,
       deliveryTarget: { model: 'supportMessage', id: message.id },
       logContext: { ticketNumber: ticket.ticketNumber, kind: 'admin-reply', messageId: message.id },
     };
   }
 }
 
-/** `25 August 2026 at 14:32 UTC` - unambiguous in every locale that reads it. */
-function formatTimestamp(date: Date): string {
-  return `${new Intl.DateTimeFormat('en-GB', {
-    dateStyle: 'long',
-    timeStyle: 'short',
-    timeZone: 'UTC',
-  }).format(date)} UTC`;
-}
-
-function countAttachments(attachments: unknown): number {
-  return Array.isArray(attachments) ? attachments.length : 0;
-}
-
-/**
- * Filenames of the stored attachments, for display.
- *
- * Only the names travel into the email - the files themselves are never
- * attached, so a support confirmation can never be used to bounce a payload
- * back out to an address the sender chose.
- */
-function attachmentNames(attachments: unknown): string[] {
+/** Resolves structured attachment metadata into clean names and accessible media links. */
+function resolveAttachmentItems(attachments: unknown, baseUrl: string): SupportAttachmentItem[] {
   if (!Array.isArray(attachments)) return [];
-  return attachments
-    .map((file) => (file && typeof file === 'object' ? (file as Record<string, unknown>).filename : null))
-    .filter((name): name is string => typeof name === 'string' && name.length > 0);
-}
-
-/** "Chrome · Linux · desktop", falling back to the raw user agent. */
-function describeDevice(browserInfo: unknown): string | null {
-  const info = (browserInfo ?? {}) as Record<string, unknown>;
-  const parts = [info.browser, info.os, info.deviceType].filter(
-    (part): part is string => typeof part === 'string' && part.length > 0,
-  );
-  if (parts.length) return parts.join(' · ');
-  return typeof info.userAgent === 'string' ? info.userAgent : null;
+  const items: SupportAttachmentItem[] = [];
+  for (const file of attachments) {
+    if (!file || typeof file !== 'object') continue;
+    const f = file as Record<string, unknown>;
+    const filename = typeof f.filename === 'string' && f.filename.length > 0 ? f.filename : 'attachment';
+    const key = typeof f.key === 'string' ? f.key : typeof f.storageKey === 'string' ? f.storageKey : undefined;
+    const url = key ? `${baseUrl}/api/media/${key}` : undefined;
+    const size = typeof f.size === 'number' ? f.size : typeof f.fileSize === 'number' ? f.fileSize : undefined;
+    items.push({ filename, url, size });
+  }
+  return items;
 }
 
 /** Exported for the reply preview in the Admin Dashboard. */

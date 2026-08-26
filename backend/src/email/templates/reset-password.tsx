@@ -20,7 +20,7 @@ export const ResetPasswordEmail = ({
 
       <Text style={text}>Hi {name},</Text>
       <Text style={text}>
-        We received a request to reset the password for your Meetifyy account. Click the button below to set a new password.
+        We received a request to reset the password for your Meetifyy account. Click the button below to choose a new password:
       </Text>
 
       <ButtonCTA href={resetLink}>
@@ -28,7 +28,7 @@ export const ResetPasswordEmail = ({
       </ButtonCTA>
 
       <Text style={text}>
-        If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
+        This password reset link is valid for 10 minutes. If you did not request a password reset, you can safely ignore this email. Your password will remain secure and unchanged.
       </Text>
 
       <Text style={text}>
@@ -40,17 +40,17 @@ export const ResetPasswordEmail = ({
 };
 
 const heading = {
-  fontSize: '24px',
+  fontSize: '22px',
   fontWeight: 'bold',
-  color: '#050F24',
+  color: '#0f172a',
   marginBottom: '20px',
   textAlign: 'center' as const,
 };
 
 const text = {
-  fontSize: '16px',
+  fontSize: '15px',
   lineHeight: '24px',
-  color: '#050F24',
+  color: '#334155',
   marginBottom: '16px',
 };
 

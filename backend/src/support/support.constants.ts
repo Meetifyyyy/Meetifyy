@@ -68,9 +68,9 @@ export const SUPPORT_PRIORITY_LABELS: Record<SupportPriority, string> = {
 export const SUPPORT_STATUS_USER_MESSAGE: Record<SupportStatus, string> = {
   OPEN: 'Your request is in our queue and a member of the team will pick it up shortly.',
   IN_PROGRESS: 'We are actively working on your request.',
-  WAITING_FOR_USER: 'We need a little more information from you - please reply to this email so we can continue.',
-  RESOLVED: 'We consider this request resolved. If anything is still not right, reply to this email and we will reopen it.',
-  CLOSED: 'This request is now closed. If you need anything else, reply to this email or open a new request.',
+  WAITING_FOR_USER: 'We need a little more information from you to proceed with your request.',
+  RESOLVED: 'We consider this request resolved.',
+  CLOSED: 'This request is now closed.',
 };
 
 /**

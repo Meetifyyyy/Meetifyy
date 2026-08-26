@@ -14,11 +14,11 @@
 /* ── Section rhythm ──────────────────────────────────────────────────────── */
 
 .section {
-  margin-top: 3rem;
+  margin-top: 1rem;
 }
 
 .sectionHead {
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.75rem;
 }
 
 .sectionTitle {
@@ -31,9 +31,9 @@
 }
 
 .sectionIntro {
-  margin: 0.4rem 0 0;
+  margin: 0.3rem 0 0;
   font-size: 0.9rem;
-  line-height: 1.6;
+  line-height: 1.55;
   color: #57534e;
   max-width: 42rem;
 }
@@ -41,7 +41,7 @@
 /* ── Search ──────────────────────────────────────────────────────────────── */
 
 .searchSection {
-  margin-top: 1.75rem;
+  margin-top: 0;
   /* Held narrower than the page so the field reads as a considered control
      rather than a full-bleed banner. */
   max-width: 34rem;
@@ -113,11 +113,14 @@
 }
 
 .searchStatus {
-  margin: 0.6rem 0 0;
+  margin: 0.35rem 0 0;
   font-size: 0.825rem;
   color: #78716c;
-  /* Reserved so results appearing does not shift the section below. */
-  min-height: 1.2rem;
+}
+
+.searchStatus:empty {
+  display: none;
+  margin: 0;
 }
 
 /* ── Quick links ─────────────────────────────────────────────────────────── */
@@ -231,11 +234,12 @@
   border: 1px solid #e7e5e4;
   border-radius: 12px;
   overflow: hidden;
-  transition: border-color 0.16s ease;
+  transition: border-color 0.24s ease, box-shadow 0.24s ease;
 }
 
 .faqItemOpen {
   border-color: #d6d3d1;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
 }
 
 .faqTrigger {
@@ -259,7 +263,7 @@
 .faqChevron {
   flex-shrink: 0;
   color: #a8a29e;
-  transition: transform 0.24s ease, color 0.16s ease;
+  transition: transform 0.28s cubic-bezier(0.04, 0.62, 0.23, 0.98), color 0.16s ease;
 }
 
 .faqTrigger:hover .faqChevron {
@@ -948,7 +952,7 @@
   }
 
   .section {
-    margin-top: 2.25rem;
+    margin-top: 0.75rem;
   }
 }
 

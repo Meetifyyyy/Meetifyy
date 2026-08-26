@@ -83,7 +83,8 @@ export class DefaultAssetsService implements OnModuleInit {
       await this.ensureUploaded();
       await this.backfillExisting();
       await this.repointOutdatedDefaults();
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.message?.includes('Cannot use a pool after calling end')) return;
       this.logger.error(`Could not publish default assets: ${(err as Error)?.message}`);
     }
   }

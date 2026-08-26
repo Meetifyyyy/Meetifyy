@@ -68,6 +68,7 @@ export class PrismaService extends PrismaClient<
 > implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('DB');
   private keepAliveTimer: NodeJS.Timeout | null = null;
+  private isDestroyed = false;
   private readonly pool: Pool;
 
   /**
@@ -105,16 +106,25 @@ export class PrismaService extends PrismaClient<
     // blip) is emitted on the Pool, not on a query. Without a listener Node
     // treats it as an unhandled 'error' event and terminates the process.
     this.pool.on('error', (err) => {
+      if (this.isDestroyed || err.message?.includes('Cannot use a pool after calling end')) {
+        return;
+      }
       this.logger.warn(`Postgres pool error (recovered): ${err.message}`);
     });
 
     // Handle transient database connection drops with automatic retry
     this.$use(async (params, next) => {
+      if (this.isDestroyed) {
+        return;
+      }
       let retries = 2;
       while (retries >= 0) {
         try {
           return await next(params);
         } catch (error: any) {
+          if (this.isDestroyed || (error?.message && error.message.includes('Cannot use a pool after calling end on the pool'))) {
+            return;
+          }
           const isConnError =
             error?.code === 'P1001' ||
             error?.code === 'P1002' ||
@@ -183,7 +193,13 @@ export class PrismaService extends PrismaClient<
     this.$on('error', (e: any) => {
       // Ignore noisy raw logs for P1001 transient connection drops,
       // as our $use middleware already handles them gracefully with retries.
-      if (e.message && (e.message.includes('P1001') || e.message.includes("Can't reach database server"))) {
+      if (
+        this.isDestroyed ||
+        (e.message &&
+          (e.message.includes('P1001') ||
+            e.message.includes("Can't reach database server") ||
+            e.message.includes('Cannot use a pool after calling end on the pool')))
+      ) {
         return;
       }
       this.logger.error(e.message || e);
@@ -191,6 +207,7 @@ export class PrismaService extends PrismaClient<
 
     // @ts-ignore
     this.$on('warn', (e: any) => {
+      if (this.isDestroyed) return;
       this.logger.warn(e.message || e);
     });
 
@@ -218,6 +235,7 @@ export class PrismaService extends PrismaClient<
       // serial ping only keeps one connection hot and lets the rest go cold,
       // reintroducing the very handshake cost the warmup just paid.
       this.keepAliveTimer = setInterval(async () => {
+        if (this.isDestroyed) return;
         try {
           await Promise.all(
             Array.from({ length: poolSize }, () =>
@@ -227,19 +245,26 @@ export class PrismaService extends PrismaClient<
         } catch {}
       }, 25000);
     } catch (error) {
-      this.logger.error('Could not connect to database on startup.');
-      this.logger.debug(error);
+      if (!this.isDestroyed) {
+        this.logger.error('Could not connect to database on startup.');
+        this.logger.debug(error);
+      }
     }
   }
 
   async onModuleDestroy() {
+    this.isDestroyed = true;
     if (this.keepAliveTimer) {
       clearInterval(this.keepAliveTimer);
       this.keepAliveTimer = null;
     }
-    await this.$disconnect();
-    // The adapter owns this pool, so Prisma's disconnect does not close it —
-    // leaving it open holds sockets to the pooler after shutdown.
-    await this.pool.end().catch(() => {});
+    try {
+      await this.$disconnect().catch(() => {});
+    } catch {}
+    try {
+      // The adapter owns this pool, so Prisma's disconnect does not close it —
+      // leaving it open holds sockets to the pooler after shutdown.
+      await this.pool.end().catch(() => {});
+    } catch {}
   }
 }

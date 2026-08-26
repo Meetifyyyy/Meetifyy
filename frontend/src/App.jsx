@@ -345,6 +345,14 @@ export default function App() {
           element: <StaticRoute>{withBoundary(<HelpSupportPage />, null)}</StaticRoute>,
         },
         {
+          path: '/support',
+          element: <Navigate to="/help-and-support" replace />,
+        },
+        {
+          path: '/help',
+          element: <Navigate to="/help-and-support" replace />,
+        },
+        {
           // The old contact page was a frontend-only form that recorded nothing
           // and mailed nobody; Help & Support replaces it end to end. Kept as a
           // redirect rather than removed, because /contact is already linked

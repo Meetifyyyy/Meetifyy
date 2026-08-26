@@ -211,7 +211,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
         break;
 
       case 'send-verification-otp':
-        subject = 'Your Meetifyy Verification Code';
+        subject = 'Verify your college email';
         html = await render(createElement(VerificationOtpEmail, {
           name: job.data.name,
           otp: job.data.otp
@@ -250,8 +250,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
     // there instead of the real recipient. Always empty in a deployed
     // environment, so production and staging always reach the real address.
     const to = devRedirectTo || intendedTo;
-    // Support mail points its Reply-To at the support inbox so "just reply to
-    // this email" is literally true; everything else keeps the global value.
+    // Support mail leaves reply-to unconfigured or uses explicit override if configured.
     const effectiveReplyTo = replyToOverride ?? replyTo;
 
     // Never widened to include `html`, `otp`, `resetLink` or any other body

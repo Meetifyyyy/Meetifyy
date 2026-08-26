@@ -30,14 +30,14 @@ export default function LandingFooter() {
             <div className={styles.socialSection}>
               <span className={styles.sectionLabel}>Social</span>
               <div className={styles.socialIcons} aria-label="Social media links">
-                {/* X / Twitter */}
-                <a href="#" className={styles.socialIcon} aria-label="Twitter">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                  </svg>
-                </a>
                 {/* Instagram */}
-                <a href="#" className={styles.socialIcon} aria-label="Instagram">
+                <a
+                  href="https://www.instagram.com/meetifyy.in?igsi=YzVoZ3drN29id2tn"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.socialIcon}
+                  aria-label="Instagram"
+                >
                   <svg
                     width="18"
                     height="18"
@@ -54,7 +54,13 @@ export default function LandingFooter() {
                   </svg>
                 </a>
                 {/* LinkedIn */}
-                <a href="#" className={styles.socialIcon} aria-label="LinkedIn">
+                <a
+                  href="https://www.linkedin.com/company/meetifyy/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.socialIcon}
+                  aria-label="LinkedIn"
+                >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z" />
                     <circle cx="4" cy="4" r="2" />

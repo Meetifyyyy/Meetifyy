@@ -48,7 +48,8 @@ export class CommunitiesService implements OnModuleInit {
       }
       this.logger.log(`Repaired owner roles for ${communities.length} communities.`);
       await this.invalidateCommunityCache();
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.message?.includes('Cannot use a pool after calling end')) return;
       this.logger.error('Failed to auto-repair community owner roles', e);
     }
   }

@@ -33,12 +33,14 @@ export const siteConfigValues = {
   verifyEmailUrl: authConfigValues.redirects.verifyEmailUrl,
   privacyUrl: `${frontendUrl}${str('PRIVACY_PATH', { default: '/privacy-policy' })}`,
   termsUrl: `${frontendUrl}${str('TERMS_PATH', { default: '/terms-and-conditions' })}`,
-  supportEmail: str('SUPPORT_EMAIL', { default: '' }),
-  supportUrl: url('SUPPORT_URL', { default: '' }),
+  supportUrl: url('SUPPORT_URL', { default: `${frontendUrl}/help-and-support` }),
 
-  instagramUrl: url('INSTAGRAM_URL'),
-  twitterUrl: url('TWITTER_URL'),
-  linkedinUrl: url('LINKEDIN_URL'),
+  instagramUrl: url('INSTAGRAM_URL', {
+    default: 'https://www.instagram.com/meetifyy.in?igsi=YzVoZ3drN29id2tn',
+  }),
+  linkedinUrl: url('LINKEDIN_URL', {
+    default: 'https://www.linkedin.com/company/meetifyy/',
+  }),
 
   passwordResetExpiryMinutes: int('PASSWORD_RESET_EXPIRY_MINUTES', { default: '10', min: 1 }),
   otpExpiryMinutes: int('OTP_EXPIRY_MINUTES', { default: '10', min: 1 }),

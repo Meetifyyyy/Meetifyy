@@ -16,7 +16,8 @@ const driver = oneOf('EMAIL_DRIVER', ['mailpit', 'smtp', 'resend'] as const, {
   default: isDeployed ? 'resend' : 'mailpit',
 });
 
-const fromEmail = email('EMAIL_FROM', { requiredIn: ['staging', 'production'] }) || str('RESEND_FROM_EMAIL');
+const fromEmail =
+  email('EMAIL_FROM', { requiredIn: ['staging', 'production'] }) || str('RESEND_FROM_EMAIL') || 'noreply@meetifyy.app';
 const fromName = str('EMAIL_FROM_NAME', { default: appConfigValues.name });
 const smtpPort = int('SMTP_PORT', { default: '1025', min: 1, max: 65535 });
 
