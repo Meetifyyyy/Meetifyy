@@ -74,9 +74,6 @@ export const NewLoginEmail = ({
         if you need help.
       </Text>
 
-      <ButtonCTA href={SITE_CONFIG.resetPasswordUrl}>
-        Reset Password
-      </ButtonCTA>
 
       <Text style={text}>
         If this was you, no further action is required.
