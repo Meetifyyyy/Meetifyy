@@ -5,8 +5,10 @@ import {
   Body,
   Logger,
   ForbiddenException,
+  UseGuards,
 } from '@nestjs/common';
 import { EmailService } from './email.service';
+import { DevEndpointGuard } from '../common/guards/dev-endpoint.guard';
 import { config } from '../config';
 
 /**
@@ -25,6 +27,7 @@ import { config } from '../config';
  * Body: { "email": "preview@mailpit.local", "name": "Alex" }
  */
 @Controller('dev/email/test')
+@UseGuards(DevEndpointGuard)
 export class DevEmailController {
   private readonly logger = new Logger(DevEmailController.name);
 

@@ -28,6 +28,20 @@ invariant(
   'Missing required environment variable: RESEND_API_KEY (required when EMAIL_DRIVER=resend)',
 );
 
+/** The bare `user@host` part of the From header, with any `Name <...>` wrapper stripped. */
+const senderAddress = fromEmail.includes('<')
+  ? fromEmail.slice(fromEmail.indexOf('<') + 1, fromEmail.indexOf('>')).trim()
+  : fromEmail.trim();
+
+// Resend can only send from a domain verified on the account. Without an
+// address there is nothing to verify and every send would 403. In staging and
+// production EMAIL_FROM is already required above, so this only covers the
+// case of a developer opting into the resend driver locally.
+invariant(
+  driver !== 'resend' || isDeployed || senderAddress.includes('@'),
+  'Missing required environment variable: EMAIL_FROM (required when EMAIL_DRIVER=resend)',
+);
+
 export const emailConfigValues = {
   driver,
 
@@ -42,9 +56,13 @@ export const emailConfigValues = {
 
   /**
    * Development-only safety valve: when set, every outgoing message is
-   * redirected here instead of the real recipient. Ignored in production.
+   * redirected here instead of the real recipient.
+   *
+   * Ignored in every deployed environment. It used to be disabled only under
+   * IS_PRODUCTION, which left staging able to silently swallow every real
+   * recipient into one developer inbox.
    */
-  devRedirectTo: IS_PRODUCTION ? '' : str('DEV_EMAIL_REDIRECT'),
+  devRedirectTo: isDeployed ? '' : str('DEV_EMAIL_REDIRECT'),
 
   smtp: {
     host: str('SMTP_HOST', { default: '127.0.0.1' }),
@@ -56,6 +74,12 @@ export const emailConfigValues = {
 
   resend: {
     apiKey: str('RESEND_API_KEY'),
+    /**
+     * Domain of the From address. Resend rejects (403) any send whose From
+     * domain is not verified on the account, so this is checked once at boot
+     * rather than discovered one bounced job at a time.
+     */
+    fromDomain: senderAddress.includes('@') ? senderAddress.split('@')[1].toLowerCase() : '',
   },
 };
 

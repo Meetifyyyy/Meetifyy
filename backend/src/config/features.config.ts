@@ -1,4 +1,4 @@
-import { IS_DEVELOPMENT, IS_PRODUCTION, bool, oneOf } from './env';
+import { IS_DEVELOPMENT, IS_PRODUCTION, bool, oneOf, str } from './env';
 
 /**
  * Environment-dependent behaviour, gathered in one place.
@@ -10,6 +10,11 @@ import { IS_DEVELOPMENT, IS_PRODUCTION, bool, oneOf } from './env';
 export const featuresConfigValues = {
   /** `/dev/email/*` preview endpoints. Never available in production. */
   enableDevEndpoints: IS_PRODUCTION ? false : bool('FEATURE_DEV_ENDPOINTS', { default: 'true' }),
+  /**
+   * Shared secret for dev-only routes. When empty they are reachable from
+   * loopback only, which is the normal local-development case.
+   */
+  devEndpointToken: str('DEV_ENDPOINT_TOKEN'),
   /** Verbose in-app debugging surfaces. */
   enableDebugTools: IS_PRODUCTION ? false : bool('FEATURE_DEBUG_TOOLS', { default: String(IS_DEVELOPMENT) }),
   /** Unreleased functionality that can be enabled per environment. */

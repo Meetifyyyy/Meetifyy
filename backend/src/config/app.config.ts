@@ -11,7 +11,13 @@ const adminUrl = url('ADMIN_URL');
 
 // The API base is derived from BACKEND_URL unless explicitly overridden — one
 // fewer value to keep in step across environments.
-const apiBaseUrl = url('API_BASE_URL') || (backendUrl ? `${backendUrl}/api` : '');
+//
+// No `/api` suffix is appended: main.ts never calls setGlobalPrefix, so the
+// routes are served at the root (`/health`, not `/api/health`). The suffix
+// produced a base URL that 404s for every path, which the startup banner then
+// printed as the API address. Deployments that really do sit behind an `/api`
+// path can still say so with API_BASE_URL.
+const apiBaseUrl = url('API_BASE_URL') || backendUrl;
 
 // CORS_ORIGINS is the authoritative allow-list. Nothing is baked into the code:
 // a new preview domain is a variable change, not a deploy of new source.

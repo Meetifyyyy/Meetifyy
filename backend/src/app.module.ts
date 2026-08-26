@@ -193,6 +193,9 @@ import { AcademicsModule } from './academics/academics.module';
 
         return {
           connection,
+          // Namespaces every queue by environment. Without it, a local worker
+          // pointed at the deployed Redis silently steals production jobs.
+          prefix: config.redis.queuePrefix,
           createClient: (type: 'client' | 'subscriber' | 'bclient', opts?: any) => {
             const clientOpts = {
               ...connection,
