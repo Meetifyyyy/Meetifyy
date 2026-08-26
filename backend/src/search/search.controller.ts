@@ -1,4 +1,13 @@
-import { Controller, Get, Query, UseGuards, Req, Post, Body, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  UseGuards,
+  Req,
+  Post,
+  Body,
+  Delete,
+} from '@nestjs/common';
 import { SearchService } from './search.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 
@@ -17,14 +26,17 @@ export class SearchController {
   ) {
     const currentUserId = req.user?.id;
     const limitNum = limit ? parseInt(limit, 10) : 15;
-    return this.searchService.globalSearch(query, currentUserId, limitNum, type, cursor);
+    return this.searchService.globalSearch(
+      query,
+      currentUserId,
+      limitNum,
+      type,
+      cursor,
+    );
   }
 
   @Get('suggestions')
-  async getSuggestions(
-    @Req() req: any,
-    @Query('q') query: string,
-  ) {
+  async getSuggestions(@Req() req: any, @Query('q') query: string) {
     const currentUserId = req.user?.id;
     return this.searchService.getSuggestions(query, currentUserId);
   }

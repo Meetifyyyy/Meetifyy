@@ -22,9 +22,21 @@ import { SupportService } from './support.service';
  * what makes it reviewable at a glance that nothing here can read a ticket.
  */
 @Module({
-  imports: [PrismaModule, EmailModule, RedisModule, UploadsModule, SupabaseModule],
+  imports: [
+    PrismaModule,
+    EmailModule,
+    RedisModule,
+    UploadsModule,
+    SupabaseModule,
+  ],
   controllers: [SupportController],
-  providers: [SupportService, HelpService, SupportRateLimitGuard, JwtGuard, OptionalJwtGuard],
+  providers: [
+    SupportService,
+    HelpService,
+    SupportRateLimitGuard,
+    JwtGuard,
+    OptionalJwtGuard,
+  ],
   exports: [SupportService, HelpService],
 })
 export class SupportModule {}

@@ -7,7 +7,11 @@ import { int, oneOf, str, url } from './env';
  * values — a development bucket and a production bucket differ only here.
  */
 
-const provider = oneOf('STORAGE_PROVIDER', ['r2', 'supabase', 'local'] as const, { default: 'r2' });
+const provider = oneOf(
+  'STORAGE_PROVIDER',
+  ['r2', 'supabase', 'local'] as const,
+  { default: 'r2' },
+);
 
 export const storageConfigValues = {
   provider,
@@ -23,7 +27,11 @@ export const storageConfigValues = {
     publicUrl: url('R2_PUBLIC_URL'),
     region: str('STORAGE_REGION', { default: 'auto' }),
     /** Presigned URL lifetime in seconds. */
-    signedUrlTtlSeconds: int('STORAGE_SIGNED_URL_TTL', { default: '3600', min: 60, max: 604800 }),
+    signedUrlTtlSeconds: int('STORAGE_SIGNED_URL_TTL', {
+      default: '3600',
+      min: 60,
+      max: 604800,
+    }),
   },
 
   /** Branding assets referenced from emails and other server-rendered surfaces. */

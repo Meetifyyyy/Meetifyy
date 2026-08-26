@@ -46,10 +46,16 @@ describe('Activity feed scopes', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: {} },
         { provide: NotificationFactory, useValue: {} },
-        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn(async () => []) } },
+        {
+          provide: BlocksService,
+          useValue: { getExcludedUserIds: jest.fn(async () => []) },
+        },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
-        { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn() } },
+        {
+          provide: getQueueToken(NOTIFICATIONS_QUEUE),
+          useValue: { add: jest.fn() },
+        },
       ],
     }).compile();
 

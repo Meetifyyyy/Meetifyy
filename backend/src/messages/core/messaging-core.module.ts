@@ -7,8 +7,13 @@ import { MentionsModule } from '../../mentions/mentions.module';
 import { BlocksService } from '../../users/blocks.service';
 
 @Module({
-  imports: [PrismaModule, PresenceModule, forwardRef(() => RealtimeModule), MentionsModule],
+  imports: [
+    PrismaModule,
+    PresenceModule,
+    forwardRef(() => RealtimeModule),
+    MentionsModule,
+  ],
   providers: [MessagingCoreService, BlocksService],
-  exports: [MessagingCoreService]
+  exports: [MessagingCoreService],
 })
 export class MessagingCoreModule {}

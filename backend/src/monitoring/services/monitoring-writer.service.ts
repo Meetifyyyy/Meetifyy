@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -72,7 +77,12 @@ export class MonitoringWriterService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Buffered row counts, surfaced on the admin dashboard's system panel. */
-  getBufferDepth(): { requests: number; errors: number; metrics: number; dropped: number } {
+  getBufferDepth(): {
+    requests: number;
+    errors: number;
+    metrics: number;
+    dropped: number;
+  } {
     return {
       requests: this.requestBuffer.length,
       errors: this.errorBuffer.length,
@@ -92,7 +102,10 @@ export class MonitoringWriterService implements OnModuleInit, OnModuleDestroy {
       this.droppedSinceLastReport += overflow;
     }
 
-    const total = this.requestBuffer.length + this.errorBuffer.length + this.metricBuffer.length;
+    const total =
+      this.requestBuffer.length +
+      this.errorBuffer.length +
+      this.metricBuffer.length;
     if (total >= config.monitoring.flushBatchSize) void this.flush();
   }
 
@@ -105,7 +118,12 @@ export class MonitoringWriterService implements OnModuleInit, OnModuleDestroy {
    */
   private async flush(): Promise<void> {
     if (this.flushing) return;
-    if (!this.requestBuffer.length && !this.errorBuffer.length && !this.metricBuffer.length) return;
+    if (
+      !this.requestBuffer.length &&
+      !this.errorBuffer.length &&
+      !this.metricBuffer.length
+    )
+      return;
 
     this.flushing = true;
 
@@ -118,11 +136,22 @@ export class MonitoringWriterService implements OnModuleInit, OnModuleDestroy {
     try {
       await Promise.all([
         requests.length
-          ? this.prisma.requestLog.createMany({ data: requests, skipDuplicates: true })
+          ? this.prisma.requestLog.createMany({
+              data: requests,
+              skipDuplicates: true,
+            })
           : Promise.resolve(),
-        errors.length ? this.prisma.errorLog.createMany({ data: errors, skipDuplicates: true }) : Promise.resolve(),
+        errors.length
+          ? this.prisma.errorLog.createMany({
+              data: errors,
+              skipDuplicates: true,
+            })
+          : Promise.resolve(),
         metrics.length
-          ? this.prisma.systemMetric.createMany({ data: metrics, skipDuplicates: true })
+          ? this.prisma.systemMetric.createMany({
+              data: metrics,
+              skipDuplicates: true,
+            })
           : Promise.resolve(),
       ]);
 

@@ -31,12 +31,23 @@ describe('Content deletion permissions', () => {
    * answers meaningful — with separate fixtures the equivalence test would
    * only prove the two mocks agreed.
    */
-  const setup = (roles: Record<string, 'OWNER' | 'MODERATOR' | 'MEMBER'>, commOver: any = {}) => {
-    const comm = { id: COMMUNITY, ownerId: OWNER, deletedAt: null, name: 'Chess Club', ...commOver };
+  const setup = (
+    roles: Record<string, 'OWNER' | 'MODERATOR' | 'MEMBER'>,
+    commOver: any = {},
+  ) => {
+    const comm = {
+      id: COMMUNITY,
+      ownerId: OWNER,
+      deletedAt: null,
+      name: 'Chess Club',
+      ...commOver,
+    };
     prisma = {
       community: {
         findUnique: jest.fn(async () => comm),
-        findMany: jest.fn(async () => (comm.deletedAt ? [] : [{ id: comm.id, ownerId: comm.ownerId }])),
+        findMany: jest.fn(async () =>
+          comm.deletedAt ? [] : [{ id: comm.id, ownerId: comm.ownerId }],
+        ),
       },
       communityMember: {
         findUnique: jest.fn(async ({ where }: any) => {
@@ -44,20 +55,35 @@ describe('Content deletion permissions', () => {
           return role ? { role } : null;
         }),
         findMany: jest.fn(async ({ where }: any) => {
-          const wanted: string[] = where.userId?.in ?? (where.userId ? [where.userId] : Object.keys(roles));
+          const wanted: string[] =
+            where.userId?.in ??
+            (where.userId ? [where.userId] : Object.keys(roles));
           return wanted
             .filter((uid) => roles[uid])
-            .map((uid) => ({ communityId: COMMUNITY, userId: uid, role: roles[uid] }));
+            .map((uid) => ({
+              communityId: COMMUNITY,
+              userId: uid,
+              role: roles[uid],
+            }));
         }),
       },
     };
     authorizer = new ContentDeletionAuthorizer(prisma);
   };
 
-  const may = (actorId: string, authorId: string, communityId: string | null = COMMUNITY) =>
-    authorizer.resolveAuthority({ actorId, authorId, communityId });
+  const may = (
+    actorId: string,
+    authorId: string,
+    communityId: string | null = COMMUNITY,
+  ) => authorizer.resolveAuthority({ actorId, authorId, communityId });
 
-  const ROLES = { [OWNER]: 'OWNER', mod: 'MODERATOR', mod2: 'MODERATOR', member: 'MEMBER', member2: 'MEMBER' } as const;
+  const ROLES = {
+    [OWNER]: 'OWNER',
+    mod: 'MODERATOR',
+    mod2: 'MODERATOR',
+    member: 'MEMBER',
+    member2: 'MEMBER',
+  } as const;
 
   describe('the owner', () => {
     beforeEach(() => setup({ ...ROLES }));
@@ -203,7 +229,12 @@ describe('Content deletion permissions', () => {
     });
 
     it('answers false for everything when there is no viewer', async () => {
-      expect(await authorizer.canDeleteEach(undefined, items)).toEqual([false, false, false, false]);
+      expect(await authorizer.canDeleteEach(undefined, items)).toEqual([
+        false,
+        false,
+        false,
+        false,
+      ]);
     });
 
     it('needs no queries at all for personal posts', async () => {
@@ -216,7 +247,9 @@ describe('Content deletion permissions', () => {
     });
 
     it('does not look up author roles when the viewer moderates nothing', async () => {
-      prisma.community.findMany = jest.fn(async () => [{ id: COMMUNITY, ownerId: OWNER }]);
+      prisma.community.findMany = jest.fn(async () => [
+        { id: COMMUNITY, ownerId: OWNER },
+      ]);
       prisma.communityMember.findMany = jest.fn(async () => []);
       await authorizer.canDeleteEach('member', items);
       // One call: the viewer's own memberships. No author-role lookup, because
@@ -225,11 +258,17 @@ describe('Content deletion permissions', () => {
     });
 
     it('protects an owner who has no membership row', async () => {
-      prisma.community.findMany = jest.fn(async () => [{ id: COMMUNITY, ownerId: OWNER }]);
+      prisma.community.findMany = jest.fn(async () => [
+        { id: COMMUNITY, ownerId: OWNER },
+      ]);
       prisma.communityMember.findMany = jest.fn(async ({ where }: any) =>
-        where.userId === 'mod' ? [{ communityId: COMMUNITY, role: 'MODERATOR' }] : [],
+        where.userId === 'mod'
+          ? [{ communityId: COMMUNITY, role: 'MODERATOR' }]
+          : [],
       );
-      const out = await authorizer.canDeleteEach('mod', [{ authorId: OWNER, communityId: COMMUNITY }]);
+      const out = await authorizer.canDeleteEach('mod', [
+        { authorId: OWNER, communityId: COMMUNITY },
+      ]);
       expect(out).toEqual([false]);
     });
   });
@@ -240,8 +279,14 @@ describe('Content deletion permissions', () => {
     it('throws Forbidden with the same message whoever is refused', async () => {
       // The refusal must not disclose who outranks whom in a community the
       // caller may not even belong to.
-      const asMod = authorizer.assertCanDelete({ actorId: 'mod', authorId: OWNER, communityId: COMMUNITY }, 'post');
-      const asStranger = authorizer.assertCanDelete({ actorId: 'stranger', authorId: OWNER, communityId: COMMUNITY }, 'post');
+      const asMod = authorizer.assertCanDelete(
+        { actorId: 'mod', authorId: OWNER, communityId: COMMUNITY },
+        'post',
+      );
+      const asStranger = authorizer.assertCanDelete(
+        { actorId: 'stranger', authorId: OWNER, communityId: COMMUNITY },
+        'post',
+      );
 
       await expect(asMod).rejects.toThrow(ForbiddenException);
       await expect(asMod).rejects.toThrow('Not your post');
@@ -250,13 +295,19 @@ describe('Content deletion permissions', () => {
 
     it('names the right content type', async () => {
       await expect(
-        authorizer.assertCanDelete({ actorId: 'member', authorId: 'member2', communityId: COMMUNITY }, 'comment'),
+        authorizer.assertCanDelete(
+          { actorId: 'member', authorId: 'member2', communityId: COMMUNITY },
+          'comment',
+        ),
       ).rejects.toThrow('Not your comment');
     });
 
     it('returns the authority so the caller can word the notification', async () => {
       await expect(
-        authorizer.assertCanDelete({ actorId: 'mod', authorId: 'member', communityId: COMMUNITY }, 'comment'),
+        authorizer.assertCanDelete(
+          { actorId: 'mod', authorId: 'member', communityId: COMMUNITY },
+          'comment',
+        ),
       ).resolves.toBe('moderator');
     });
   });

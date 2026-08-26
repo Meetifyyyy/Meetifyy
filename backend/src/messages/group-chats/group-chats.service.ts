@@ -1,4 +1,12 @@
-import { Injectable, ForbiddenException, NotFoundException, BadRequestException, Inject, forwardRef, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+  Optional,
+} from '@nestjs/common';
 import { MessagingCoreService } from '../core/messaging-core.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BlocksService } from '../../users/blocks.service';
@@ -22,7 +30,13 @@ export class GroupChatsService extends MessagingCoreService {
     blocksService: BlocksService,
     @Optional() private readonly redisService?: RedisService,
   ) {
-    super(prisma, presenceService, domainEventService, mentionsService, blocksService);
+    super(
+      prisma,
+      presenceService,
+      domainEventService,
+      mentionsService,
+      blocksService,
+    );
     this.redis = this.redisService?.getClient() ?? null;
   }
 
@@ -35,16 +49,28 @@ export class GroupChatsService extends MessagingCoreService {
           userIds.map(async (uId) => {
             let cursor = '0';
             do {
-              const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', `user:conversations:${uId}:*`, 'COUNT', 50);
+              const [nextCursor, keys] = await redis.scan(
+                cursor,
+                'MATCH',
+                `user:conversations:${uId}:*`,
+                'COUNT',
+                50,
+              );
               cursor = nextCursor;
               if (keys && keys.length > 0) await redis.del(...keys);
             } while (cursor !== '0');
-          })
+          }),
         );
       } else {
         let cursor = '0';
         do {
-          const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', 'user:conversations:*', 'COUNT', 100);
+          const [nextCursor, keys] = await redis.scan(
+            cursor,
+            'MATCH',
+            'user:conversations:*',
+            'COUNT',
+            100,
+          );
           cursor = nextCursor;
           if (keys && keys.length > 0) await redis.del(...keys);
         } while (cursor !== '0');
@@ -52,12 +78,16 @@ export class GroupChatsService extends MessagingCoreService {
     } catch {}
   }
 
-  async getUserGroupConversations(userId: string, limit: number = 20, offset: number = 0) {
+  async getUserGroupConversations(
+    userId: string,
+    limit: number = 20,
+    offset: number = 0,
+  ) {
     const participants = await this.prisma.conversationParticipant.findMany({
       where: {
         userId,
         deletedAt: null,
-        conversation: { type: 'GROUP' }
+        conversation: { type: 'GROUP' },
       },
       // Pinned rows first (most recently pinned at the top), then by recent
       // activity. Ordering pinned-first in SQL rather than only in the client
@@ -100,16 +130,16 @@ export class GroupChatsService extends MessagingCoreService {
             visibility: true,
             allowSharing: true,
             editGroupPermission: true,
-            _count: { 
-              select: { 
-                participants: { 
-                  where: { leftAt: null, deletedAt: null } 
-                } 
-              } 
-            }
-          }
-        }
-      }
+            _count: {
+              select: {
+                participants: {
+                  where: { leftAt: null, deletedAt: null },
+                },
+              },
+            },
+          },
+        },
+      },
     });
 
     return (participants as any[]).map((p: any) => {
@@ -125,21 +155,28 @@ export class GroupChatsService extends MessagingCoreService {
       // exists for them anywhere else. Hide any preview at or before this
       // user's own cutoff; the next message they actually receive is after it
       // and shows normally.
-      const cutoff = (p as any).clearedAt as Date | null;
+      const cutoff = p.clearedAt as Date | null;
       const previewCleared = Boolean(
-        cutoff && conv.lastMessageAt && new Date(conv.lastMessageAt) <= new Date(cutoff)
+        cutoff &&
+        conv.lastMessageAt &&
+        new Date(conv.lastMessageAt) <= new Date(cutoff),
       );
 
-      const resolvedLastMsg = (conv.lastMessageAt && !previewCleared) ? {
-        id: conv.lastMessageId || null,
-        createdAt: conv.lastMessageAt,
-        senderId: conv.lastMessageSenderId || '',
-        senderName: conv.lastMessageSenderId === userId ? 'You' : '',
-        text: conv.lastMessageText || '',
-        type: conv.lastMessageType ? conv.lastMessageType.toLowerCase() : 'chat',
-        mediaUrl: null,
-        mediaType: null,
-      } : null;
+      const resolvedLastMsg =
+        conv.lastMessageAt && !previewCleared
+          ? {
+              id: conv.lastMessageId || null,
+              createdAt: conv.lastMessageAt,
+              senderId: conv.lastMessageSenderId || '',
+              senderName: conv.lastMessageSenderId === userId ? 'You' : '',
+              text: conv.lastMessageText || '',
+              type: conv.lastMessageType
+                ? conv.lastMessageType.toLowerCase()
+                : 'chat',
+              mediaUrl: null,
+              mediaType: null,
+            }
+          : null;
 
       return {
         id: pubId,
@@ -175,12 +212,18 @@ export class GroupChatsService extends MessagingCoreService {
     });
   }
 
-  async createGroup(userIds: string[], currentUserId: string, groupName: string) {
-    const filteredUserIds = (userIds || []).filter(id => id && id !== currentUserId);
+  async createGroup(
+    userIds: string[],
+    currentUserId: string,
+    groupName: string,
+  ) {
+    const filteredUserIds = (userIds || []).filter(
+      (id) => id && id !== currentUserId,
+    );
     const allParticipantIds = [...new Set([...filteredUserIds, currentUserId])];
-    const participantRows = allParticipantIds.map(id => ({
+    const participantRows = allParticipantIds.map((id) => ({
       userId: id,
-      role: id === currentUserId ? ('OWNER' as const) : ('MEMBER' as const)
+      role: id === currentUserId ? ('OWNER' as const) : ('MEMBER' as const),
     }));
 
     const newPubId = generatePublicId();
@@ -191,9 +234,9 @@ export class GroupChatsService extends MessagingCoreService {
         type: 'GROUP',
         ownerId: currentUserId,
         participants: {
-          create: participantRows
-        }
-      }
+          create: participantRows,
+        },
+      },
     });
 
     this.invalidateUserConversationsCache(allParticipantIds);
@@ -230,20 +273,28 @@ export class GroupChatsService extends MessagingCoreService {
     };
   }
 
-  async getBatchUnblockedAndUnmutedParticipants(conversationId: string, senderId: string) {
+  async getBatchUnblockedAndUnmutedParticipants(
+    conversationId: string,
+    senderId: string,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     const participants = await this.prisma.conversationParticipant.findMany({
       where: { conversationId: realConvId, deletedAt: null },
-      select: { userId: true, isMuted: true }
+      select: { userId: true, isMuted: true },
     });
 
-    const otherIds = participants.map(p => p.userId).filter(id => id !== senderId);
+    const otherIds = participants
+      .map((p) => p.userId)
+      .filter((id) => id !== senderId);
     // Only the NOTIFICATION fan-out is trimmed here. Group messages themselves
     // stay visible to everyone — hiding them would tear holes in a shared
     // conversation for people who are not party to the block.
-    const unblockedIds = await this.blocksService.filterBlockedUsers(senderId, otherIds);
-    const muteMap = new Map(participants.map(p => [p.userId, p.isMuted]));
-    const unmutedIds = unblockedIds.filter(id => !muteMap.get(id));
+    const unblockedIds = await this.blocksService.filterBlockedUsers(
+      senderId,
+      otherIds,
+    );
+    const muteMap = new Map(participants.map((p) => [p.userId, p.isMuted]));
+    const unmutedIds = unblockedIds.filter((id) => !muteMap.get(id));
 
     return { recipientIds: unblockedIds, unmutedRecipientIds: unmutedIds };
   }
@@ -260,7 +311,9 @@ export class GroupChatsService extends MessagingCoreService {
   }
   private async _invalidateGroupDetailsByRealId(realConvId: string) {
     if (!this.redis) return;
-    try { await this.redis.incr(this.groupDetailsVerKey(realConvId)); } catch {}
+    try {
+      await this.redis.incr(this.groupDetailsVerKey(realConvId));
+    } catch {}
   }
   async invalidateGroupDetailsCache(conversationId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
@@ -272,8 +325,11 @@ export class GroupChatsService extends MessagingCoreService {
 
     if (this.redis) {
       try {
-        const ver = (await this.redis.get(this.groupDetailsVerKey(realConvId))) || '0';
-        const cached = await this.redis.get(this.groupDetailsDataKey(realConvId, userId, ver));
+        const ver =
+          (await this.redis.get(this.groupDetailsVerKey(realConvId))) || '0';
+        const cached = await this.redis.get(
+          this.groupDetailsDataKey(realConvId, userId, ver),
+        );
         if (cached) return JSON.parse(cached);
       } catch {}
     }
@@ -281,16 +337,23 @@ export class GroupChatsService extends MessagingCoreService {
     const conv = await this.prisma.conversation.findFirst({
       where: {
         id: realConvId,
-        type: 'GROUP'
+        type: 'GROUP',
       },
       include: {
         participants: {
           where: { leftAt: null, deletedAt: null },
           include: {
-            user: { select: { id: true, username: true, displayName: true, avatar: true } }
-          }
-        }
-      }
+            user: {
+              select: {
+                id: true,
+                username: true,
+                displayName: true,
+                avatar: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!conv) {
@@ -307,29 +370,36 @@ export class GroupChatsService extends MessagingCoreService {
 
     // Filter out expired pending requests
     const now = new Date();
-    const pendingJoinRequests = await this.prisma.conversationJoinRequest.findMany({
-      where: {
-        conversationId: conv.id,
-        status: 'PENDING',
-        OR: [
-          { expiresAt: null },
-          { expiresAt: { gt: now } }
-        ]
-      },
-      include: {
-        user: { select: { id: true, username: true, displayName: true, avatar: true } }
-      }
-    });
-
-    // Clean up expired join requests in background
-    setImmediate(async () => {
-      await this.prisma.conversationJoinRequest.deleteMany({
+    const pendingJoinRequests =
+      await this.prisma.conversationJoinRequest.findMany({
         where: {
           conversationId: conv.id,
           status: 'PENDING',
-          expiresAt: { lte: now }
-        }
-      }).catch(() => {});
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatar: true,
+            },
+          },
+        },
+      });
+
+    // Clean up expired join requests in background
+    setImmediate(async () => {
+      await this.prisma.conversationJoinRequest
+        .deleteMany({
+          where: {
+            conversationId: conv.id,
+            status: 'PENDING',
+            expiresAt: { lte: now },
+          },
+        })
+        .catch(() => {});
     });
 
     // Deterministic role order: OWNER (0), ADMIN (1), MEMBER (2)
@@ -338,20 +408,32 @@ export class GroupChatsService extends MessagingCoreService {
       const rankA = roleRank[a.role as keyof typeof roleRank] ?? 99;
       const rankB = roleRank[b.role as keyof typeof roleRank] ?? 99;
       if (rankA !== rankB) return rankA - rankB;
-      const nameA = (a.user?.displayName || a.user?.username || '').toLowerCase();
-      const nameB = (b.user?.displayName || b.user?.username || '').toLowerCase();
+      const nameA = (
+        a.user?.displayName ||
+        a.user?.username ||
+        ''
+      ).toLowerCase();
+      const nameB = (
+        b.user?.displayName ||
+        b.user?.username ||
+        ''
+      ).toLowerCase();
       return nameA.localeCompare(nameB);
     });
 
-    const admins = sortedParticipants.filter((p: any) => p.role === 'ADMIN').map((p: any) => p.userId);
-    const members = sortedParticipants.filter((p: any) => p.role === 'MEMBER').map((p: any) => p.userId);
+    const admins = sortedParticipants
+      .filter((p: any) => p.role === 'ADMIN')
+      .map((p: any) => p.userId);
+    const members = sortedParticipants
+      .filter((p: any) => p.role === 'MEMBER')
+      .map((p: any) => p.userId);
 
     const memberDetails = sortedParticipants.map((p: any) => ({
       userId: p.userId,
       role: p.role,
       displayName: p.user?.displayName || p.user?.username || 'Member',
       username: p.user?.username || '',
-      avatar: p.user?.avatar || null
+      avatar: p.user?.avatar || null,
     }));
 
     const pendingRequests = pendingJoinRequests.map((req: any) => ({
@@ -361,7 +443,7 @@ export class GroupChatsService extends MessagingCoreService {
       displayName: req.user?.displayName || req.user?.username || '',
       avatar: req.user?.avatar || null,
       createdAt: req.createdAt,
-      expiresAt: req.expiresAt
+      expiresAt: req.expiresAt,
     }));
 
     const pubId = conv.publicId || conv.id;
@@ -389,34 +471,59 @@ export class GroupChatsService extends MessagingCoreService {
       status: conv.status || 'ACTIVE',
       createdAt: conv.createdAt,
       updatedAt: conv.updatedAt,
-      type: conv.type
+      type: conv.type,
     };
 
     if (this.redis) {
       try {
-        const ver = (await this.redis.get(this.groupDetailsVerKey(realConvId))) || '0';
-        this.redis.setex(this.groupDetailsDataKey(realConvId, userId, ver), 15, JSON.stringify(result)).catch(() => {});
+        const ver =
+          (await this.redis.get(this.groupDetailsVerKey(realConvId))) || '0';
+        this.redis
+          .setex(
+            this.groupDetailsDataKey(realConvId, userId, ver),
+            15,
+            JSON.stringify(result),
+          )
+          .catch(() => {});
       } catch {}
     }
 
     return result;
   }
 
-  async updateGroupInfo(conversationId: string, userId: string, data: { name?: string; description?: string; avatarKey?: string; avatar?: string }) {
+  async updateGroupInfo(
+    conversationId: string,
+    userId: string,
+    data: {
+      name?: string;
+      description?: string;
+      avatarKey?: string;
+      avatar?: string;
+    },
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
 
     const [participant, conversation, user] = await Promise.all([
       this.prisma.conversationParticipant.findUnique({
-        where: { userId_conversationId: { userId, conversationId: realConvId } }
+        where: {
+          userId_conversationId: { userId, conversationId: realConvId },
+        },
       }),
       this.prisma.conversation.findUnique({
         where: { id: realConvId },
-        select: { id: true, name: true, description: true, avatarKey: true, editGroupPermission: true, publicId: true }
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          avatarKey: true,
+          editGroupPermission: true,
+          publicId: true,
+        },
       }),
       this.prisma.user.findUnique({
         where: { id: userId },
-        select: { username: true, displayName: true }
-      })
+        select: { username: true, displayName: true },
+      }),
     ]);
 
     if (!participant) {
@@ -424,13 +531,22 @@ export class GroupChatsService extends MessagingCoreService {
     }
 
     const perm = (conversation?.editGroupPermission || '').toUpperCase();
-    const isAllowed = participant.role === 'OWNER' || participant.role === 'ADMIN' || perm === 'EVERYONE' || perm === 'ALL_MEMBERS' || perm === 'ALL';
+    const isAllowed =
+      participant.role === 'OWNER' ||
+      participant.role === 'ADMIN' ||
+      perm === 'EVERYONE' ||
+      perm === 'ALL_MEMBERS' ||
+      perm === 'ALL';
     if (!isAllowed) {
       throw new ForbiddenException('Only group admins can edit group details');
     }
 
     let avatarVal = data.avatarKey !== undefined ? data.avatarKey : data.avatar;
-    if (avatarVal && typeof avatarVal === 'string' && avatarVal.startsWith('blob:')) {
+    if (
+      avatarVal &&
+      typeof avatarVal === 'string' &&
+      avatarVal.startsWith('blob:')
+    ) {
       avatarVal = undefined;
     }
 
@@ -439,17 +555,19 @@ export class GroupChatsService extends MessagingCoreService {
         where: { id: realConvId },
         data: {
           ...(data.name !== undefined ? { name: data.name } : {}),
-          ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(data.description !== undefined
+            ? { description: data.description }
+            : {}),
           ...(avatarVal !== undefined ? { avatarKey: avatarVal } : {}),
-        }
+        },
       }),
       this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, leftAt: null, deletedAt: null },
-        select: { userId: true }
-      })
+        select: { userId: true },
+      }),
     ]);
 
-    const participantIds = participantRows.map(p => p.userId);
+    const participantIds = participantRows.map((p) => p.userId);
     this.invalidateUserConversationsCache(participantIds);
     this._invalidateGroupDetailsByRealId(realConvId).catch(() => {});
 
@@ -460,14 +578,23 @@ export class GroupChatsService extends MessagingCoreService {
       updated,
       convBefore: conversation,
       actorHandle,
-      participantIds
+      participantIds,
     };
   }
 
-  async addGroupMember(conversationId: string, requesterId: string, targetUserId: string) {
+  async addGroupMember(
+    conversationId: string,
+    requesterId: string,
+    targetUserId: string,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId: requesterId, conversationId: realConvId } }
+      where: {
+        userId_conversationId: {
+          userId: requesterId,
+          conversationId: realConvId,
+        },
+      },
     });
     if (!participant) {
       throw new ForbiddenException('Not a member of this conversation');
@@ -479,36 +606,64 @@ export class GroupChatsService extends MessagingCoreService {
       // Neutral by design. The earlier wording named the block relationship
       // outright and so disclosed it to the caller. The reason is withheld
       // here, exactly as it is on every other blocked surface.
-      throw new ForbiddenException('This user is not available to add to the group.');
+      throw new ForbiddenException(
+        'This user is not available to add to the group.',
+      );
     }
 
     await this.prisma.conversationParticipant.upsert({
-      where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
+      where: {
+        userId_conversationId: {
+          userId: targetUserId,
+          conversationId: realConvId,
+        },
+      },
       update: {
         leftAt: null,
         deletedAt: null,
         joinedAt: new Date(),
-        role: 'MEMBER'
+        role: 'MEMBER',
       } as any,
-      create: { userId: targetUserId, conversationId: realConvId, role: 'MEMBER' }
+      create: {
+        userId: targetUserId,
+        conversationId: realConvId,
+        role: 'MEMBER',
+      },
     });
 
     return { success: true };
   }
 
-  async removeGroupMember(conversationId: string, requesterId: string, targetUserId: string) {
+  async removeGroupMember(
+    conversationId: string,
+    requesterId: string,
+    targetUserId: string,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
 
     const [requester, target] = await Promise.all([
       this.prisma.conversationParticipant.findUnique({
-        where: { userId_conversationId: { userId: requesterId, conversationId: realConvId } }
+        where: {
+          userId_conversationId: {
+            userId: requesterId,
+            conversationId: realConvId,
+          },
+        },
       }),
       this.prisma.conversationParticipant.findUnique({
-        where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } }
-      })
+        where: {
+          userId_conversationId: {
+            userId: targetUserId,
+            conversationId: realConvId,
+          },
+        },
+      }),
     ]);
 
-    if (!requester || (requester.role !== 'OWNER' && requester.role !== 'ADMIN')) {
+    if (
+      !requester ||
+      (requester.role !== 'OWNER' && requester.role !== 'ADMIN')
+    ) {
       throw new ForbiddenException('Only group admins can remove members');
     }
 
@@ -521,12 +676,19 @@ export class GroupChatsService extends MessagingCoreService {
     }
 
     if (requester.role === 'ADMIN' && target.role === 'ADMIN') {
-      throw new ForbiddenException('Admins cannot remove other admins. Only the owner can remove admins.');
+      throw new ForbiddenException(
+        'Admins cannot remove other admins. Only the owner can remove admins.',
+      );
     }
 
     await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
-      data: { leftAt: new Date() } as any
+      where: {
+        userId_conversationId: {
+          userId: targetUserId,
+          conversationId: realConvId,
+        },
+      },
+      data: { leftAt: new Date() } as any,
     });
 
     return { success: true };
@@ -535,7 +697,7 @@ export class GroupChatsService extends MessagingCoreService {
   async leaveGroup(conversationId: string, userId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
     const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } }
+      where: { userId_conversationId: { userId, conversationId: realConvId } },
     });
 
     if (!participant || (participant as any).leftAt || participant.deletedAt) {
@@ -543,48 +705,69 @@ export class GroupChatsService extends MessagingCoreService {
     }
 
     await this.prisma.conversationParticipant.update({
-        where: { userId_conversationId: { userId, conversationId: realConvId } },
-        data: { leftAt: new Date() } as any
-      });
+      where: { userId_conversationId: { userId, conversationId: realConvId } },
+      data: { leftAt: new Date() } as any,
+    });
 
     if (participant.role === 'OWNER') {
       const oldestAdmin = await this.prisma.conversationParticipant.findFirst({
-        where: { conversationId: realConvId, deletedAt: null, leftAt: null, role: 'ADMIN' },
-        orderBy: { joinedAt: 'asc' }
+        where: {
+          conversationId: realConvId,
+          deletedAt: null,
+          leftAt: null,
+          role: 'ADMIN',
+        },
+        orderBy: { joinedAt: 'asc' },
       });
 
       if (oldestAdmin) {
         await this.prisma.$transaction([
           this.prisma.conversationParticipant.update({
-            where: { userId_conversationId: { userId: oldestAdmin.userId, conversationId: realConvId } },
-            data: { role: 'OWNER' }
+            where: {
+              userId_conversationId: {
+                userId: oldestAdmin.userId,
+                conversationId: realConvId,
+              },
+            },
+            data: { role: 'OWNER' },
           }),
           this.prisma.conversation.update({
             where: { id: realConvId },
-            data: { ownerId: oldestAdmin.userId }
-          })
+            data: { ownerId: oldestAdmin.userId },
+          }),
         ]);
       } else {
-        const oldestMember = await this.prisma.conversationParticipant.findFirst({
-          where: { conversationId: realConvId, deletedAt: null, leftAt: null, userId: { not: userId } },
-          orderBy: { joinedAt: 'asc' }
-        });
+        const oldestMember =
+          await this.prisma.conversationParticipant.findFirst({
+            where: {
+              conversationId: realConvId,
+              deletedAt: null,
+              leftAt: null,
+              userId: { not: userId },
+            },
+            orderBy: { joinedAt: 'asc' },
+          });
 
         if (oldestMember) {
           await this.prisma.$transaction([
             this.prisma.conversationParticipant.update({
-              where: { userId_conversationId: { userId: oldestMember.userId, conversationId: realConvId } },
-              data: { role: 'OWNER' }
+              where: {
+                userId_conversationId: {
+                  userId: oldestMember.userId,
+                  conversationId: realConvId,
+                },
+              },
+              data: { role: 'OWNER' },
             }),
             this.prisma.conversation.update({
               where: { id: realConvId },
-              data: { ownerId: oldestMember.userId }
-            })
+              data: { ownerId: oldestMember.userId },
+            }),
           ]);
         } else {
           await this.prisma.conversation.update({
             where: { id: realConvId },
-            data: { status: 'Closed' }
+            data: { status: 'Closed' },
           });
         }
       }
@@ -598,7 +781,7 @@ export class GroupChatsService extends MessagingCoreService {
 
     // Auth check FIRST — validate membership before any mutation
     const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } }
+      where: { userId_conversationId: { userId, conversationId: realConvId } },
     });
     if (!participant || participant.leftAt || participant.deletedAt) {
       throw new ForbiddenException('Not a member of this conversation');
@@ -610,7 +793,12 @@ export class GroupChatsService extends MessagingCoreService {
     // Whitelist admin-editable settings. Never spread the raw body into
     // conversation.update — that would let an admin mass-assign ANY column
     // (ownerId, status, type, expiresAt, lastMessageText, isInstantMatch, …).
-    const ALLOWED_SETTINGS = ['whoCanJoin', 'visibility', 'allowSharing', 'editGroupPermission'] as const;
+    const ALLOWED_SETTINGS = [
+      'whoCanJoin',
+      'visibility',
+      'allowSharing',
+      'editGroupPermission',
+    ] as const;
     const restData: any = {};
     for (const key of ALLOWED_SETTINGS) {
       if (data[key] !== undefined) restData[key] = data[key];
@@ -619,7 +807,9 @@ export class GroupChatsService extends MessagingCoreService {
     // Admin-only fields require OWNER or ADMIN role
     if (Object.keys(restData).length > 0) {
       if (participant.role !== 'OWNER' && participant.role !== 'ADMIN') {
-        throw new ForbiddenException('Only group admins can update these settings');
+        throw new ForbiddenException(
+          'Only group admins can update these settings',
+        );
       }
     }
 
@@ -628,29 +818,46 @@ export class GroupChatsService extends MessagingCoreService {
     if (groupUpdatesActive !== undefined) {
       ops.push(
         this.prisma.conversationParticipant.update({
-          where: { userId_conversationId: { userId, conversationId: realConvId } },
-          data: { groupUpdatesActive }
-        })
+          where: {
+            userId_conversationId: { userId, conversationId: realConvId },
+          },
+          data: { groupUpdatesActive },
+        }),
       );
     }
 
-    const updateConvPromise = Object.keys(restData).length > 0
-      ? this.prisma.conversation.update({
-          where: { id: realConvId },
-          data: restData,
-          select: { id: true, publicId: true, whoCanJoin: true, visibility: true, allowSharing: true, editGroupPermission: true }
-        })
-      : this.prisma.conversation.findUnique({
-          where: { id: realConvId },
-          select: { id: true, publicId: true, whoCanJoin: true, visibility: true, allowSharing: true, editGroupPermission: true }
-        });
+    const updateConvPromise =
+      Object.keys(restData).length > 0
+        ? this.prisma.conversation.update({
+            where: { id: realConvId },
+            data: restData,
+            select: {
+              id: true,
+              publicId: true,
+              whoCanJoin: true,
+              visibility: true,
+              allowSharing: true,
+              editGroupPermission: true,
+            },
+          })
+        : this.prisma.conversation.findUnique({
+            where: { id: realConvId },
+            select: {
+              id: true,
+              publicId: true,
+              whoCanJoin: true,
+              visibility: true,
+              allowSharing: true,
+              editGroupPermission: true,
+            },
+          });
 
     ops.push(updateConvPromise);
     ops.push(
       this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, leftAt: null, deletedAt: null },
-        select: { userId: true }
-      })
+        select: { userId: true },
+      }),
     );
 
     const results = await Promise.all(ops);
@@ -660,95 +867,156 @@ export class GroupChatsService extends MessagingCoreService {
     this.invalidateUserConversationsCache(participantIds);
     this._invalidateGroupDetailsByRealId(realConvId).catch(() => {});
 
-    return { success: true, conversationId: realConvId, updatedConv, participantIds };
+    return {
+      success: true,
+      conversationId: realConvId,
+      updatedConv,
+      participantIds,
+    };
   }
 
-  async updateGroupEditPermission(conversationId: string, userId: string, permission: string) {
+  async updateGroupEditPermission(
+    conversationId: string,
+    userId: string,
+    permission: string,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } }
+      where: { userId_conversationId: { userId, conversationId: realConvId } },
     });
-    if (!participant || (participant.role !== 'OWNER' && participant.role !== 'ADMIN')) {
+    if (
+      !participant ||
+      (participant.role !== 'OWNER' && participant.role !== 'ADMIN')
+    ) {
       throw new ForbiddenException('Only group admins can update settings');
     }
     const [updatedConv, participantRows] = await Promise.all([
       this.prisma.conversation.update({
         where: { id: realConvId },
         data: { editGroupPermission: permission },
-        select: { id: true, publicId: true, editGroupPermission: true }
+        select: { id: true, publicId: true, editGroupPermission: true },
       }),
       this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, leftAt: null, deletedAt: null },
-        select: { userId: true }
-      })
+        select: { userId: true },
+      }),
     ]);
 
-    const participantIds = participantRows.map(p => p.userId);
+    const participantIds = participantRows.map((p) => p.userId);
     this.invalidateUserConversationsCache(participantIds);
     this._invalidateGroupDetailsByRealId(realConvId).catch(() => {});
 
-    return { success: true, conversationId: realConvId, updatedConv, participantIds };
+    return {
+      success: true,
+      conversationId: realConvId,
+      updatedConv,
+      participantIds,
+    };
   }
 
   // changeGroupOwner / promoteToAdmin / demoteFromAdmin / endGroup are inherited
   // from MessagingCoreService (single source of truth, with target validation).
 
-  async acceptGroupJoinRequest(conversationId: string, userId: string, targetUserId: string) {
+  async acceptGroupJoinRequest(
+    conversationId: string,
+    userId: string,
+    targetUserId: string,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } }
+      where: { userId_conversationId: { userId, conversationId: realConvId } },
     });
-    if (!participant || (participant.role !== 'OWNER' && participant.role !== 'ADMIN')) {
+    if (
+      !participant ||
+      (participant.role !== 'OWNER' && participant.role !== 'ADMIN')
+    ) {
       throw new ForbiddenException('Only group admins can accept requests');
     }
 
     const joinRequest = await this.prisma.conversationJoinRequest.findUnique({
-      where: { conversationId_userId: { conversationId: realConvId, userId: targetUserId } }
+      where: {
+        conversationId_userId: {
+          conversationId: realConvId,
+          userId: targetUserId,
+        },
+      },
     });
-    
+
     if (!joinRequest) {
       throw new NotFoundException('Join request not found');
     }
-    
+
     if (joinRequest.expiresAt && joinRequest.expiresAt < new Date()) {
       await this.prisma.conversationJoinRequest.delete({
-        where: { conversationId_userId: { conversationId: realConvId, userId: targetUserId } }
+        where: {
+          conversationId_userId: {
+            conversationId: realConvId,
+            userId: targetUserId,
+          },
+        },
       });
       throw new BadRequestException('Join request has expired');
     }
 
     await this.prisma.$transaction([
       this.prisma.conversationJoinRequest.delete({
-        where: { conversationId_userId: { conversationId: realConvId, userId: targetUserId } }
+        where: {
+          conversationId_userId: {
+            conversationId: realConvId,
+            userId: targetUserId,
+          },
+        },
       }),
       this.prisma.conversationParticipant.upsert({
-        where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
+        where: {
+          userId_conversationId: {
+            userId: targetUserId,
+            conversationId: realConvId,
+          },
+        },
         update: {
           leftAt: null,
           deletedAt: null,
           joinedAt: new Date(),
-          role: 'MEMBER'
+          role: 'MEMBER',
         } as any,
-        create: { userId: targetUserId, conversationId: realConvId, role: 'MEMBER' }
-      })
+        create: {
+          userId: targetUserId,
+          conversationId: realConvId,
+          role: 'MEMBER',
+        },
+      }),
     ]);
     return { success: true };
   }
 
-  async declineGroupJoinRequest(conversationId: string, userId: string, targetUserId: string) {
+  async declineGroupJoinRequest(
+    conversationId: string,
+    userId: string,
+    targetUserId: string,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } }
+      where: { userId_conversationId: { userId, conversationId: realConvId } },
     });
-    if (!participant || (participant.role !== 'OWNER' && participant.role !== 'ADMIN')) {
+    if (
+      !participant ||
+      (participant.role !== 'OWNER' && participant.role !== 'ADMIN')
+    ) {
       throw new ForbiddenException('Only group admins can decline requests');
     }
 
-    await this.prisma.conversationJoinRequest.delete({
-      where: { conversationId_userId: { conversationId: realConvId, userId: targetUserId } }
-    }).catch(() => {});
+    await this.prisma.conversationJoinRequest
+      .delete({
+        where: {
+          conversationId_userId: {
+            conversationId: realConvId,
+            userId: targetUserId,
+          },
+        },
+      })
+      .catch(() => {});
 
     return { success: true };
   }
-
 }

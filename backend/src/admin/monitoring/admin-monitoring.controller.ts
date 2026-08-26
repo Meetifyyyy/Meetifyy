@@ -3,7 +3,12 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import { MonitoringRateLimitGuard } from '../../common/guards/monitoring-ratelimit.guard';
 import { AdminMonitoringService } from './admin-monitoring.service';
-import { ListErrorsDto, ListLogsDto, TimeseriesDto, WindowDto } from './dto/admin-monitoring.dto';
+import {
+  ListErrorsDto,
+  ListLogsDto,
+  TimeseriesDto,
+  WindowDto,
+} from './dto/admin-monitoring.dto';
 
 /**
  * Read-only monitoring API for the Admin Dashboard.

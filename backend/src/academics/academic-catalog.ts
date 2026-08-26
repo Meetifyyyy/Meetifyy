@@ -49,19 +49,40 @@ export const ACADEMIC_CATALOG: readonly AcademicCourse[] = [
     durationYears: 4,
     branches: [
       { id: 'cse', name: 'Computer Science & Engineering' },
-      { id: 'cse-ai-analytics', name: 'CSE (Specialization in AI and Analytics)' },
+      {
+        id: 'cse-ai-analytics',
+        name: 'CSE (Specialization in AI and Analytics)',
+      },
       { id: 'cse-aiml', name: 'CSE (Specialization in AIML)' },
       { id: 'ece', name: 'Electronics & Communication Engineering' },
-      { id: 'ec-minor-cs', name: 'Electronics & Communication (With Minor in Computer Science)' },
-      { id: 'ec-vlsi', name: 'Electronics & Communication (With Specialization in VLSI)' },
-      { id: 'electronics-computer', name: 'Electronics & Computer Engineering' },
+      {
+        id: 'ec-minor-cs',
+        name: 'Electronics & Communication (With Minor in Computer Science)',
+      },
+      {
+        id: 'ec-vlsi',
+        name: 'Electronics & Communication (With Specialization in VLSI)',
+      },
+      {
+        id: 'electronics-computer',
+        name: 'Electronics & Computer Engineering',
+      },
       { id: 'ee', name: 'Electrical Engineering' },
       { id: 'ee-minor-cs', name: 'Electrical Engineering (With Minor in CS)' },
-      { id: 'ee-ev', name: 'Electrical Engineering (With Specialization in Electric Vehicle Technology)' },
+      {
+        id: 'ee-ev',
+        name: 'Electrical Engineering (With Specialization in Electric Vehicle Technology)',
+      },
       { id: 'me', name: 'Mechanical Engineering' },
       { id: 'me-minor-cs', name: 'Mechanical Engineering (With Minor in CS)' },
-      { id: 'me-automobile', name: 'Mechanical Engineering (Specialization in Automobile)' },
-      { id: 'me-mechatronics', name: 'Mechanical Engineering (Specialization in Mechatronics)' },
+      {
+        id: 'me-automobile',
+        name: 'Mechanical Engineering (Specialization in Automobile)',
+      },
+      {
+        id: 'me-mechatronics',
+        name: 'Mechanical Engineering (Specialization in Mechatronics)',
+      },
       { id: 'civil', name: 'Civil Engineering' },
       { id: 'biotechnology', name: 'Biotechnology' },
     ],
@@ -73,11 +94,23 @@ export const ACADEMIC_CATALOG: readonly AcademicCourse[] = [
     branches: [
       { id: 'cse', name: 'Computer Science & Engineering' },
       { id: 'ece', name: 'Electronics & Communication Engineering' },
-      { id: 'ec-minor-cs', name: 'Electronics & Communication (With Minor in Computer Science)' },
-      { id: 'ec-vlsi', name: 'Electronics & Communication (With Specialization in VLSI)' },
-      { id: 'electronics-computer', name: 'Electronics & Computer Engineering' },
+      {
+        id: 'ec-minor-cs',
+        name: 'Electronics & Communication (With Minor in Computer Science)',
+      },
+      {
+        id: 'ec-vlsi',
+        name: 'Electronics & Communication (With Specialization in VLSI)',
+      },
+      {
+        id: 'electronics-computer',
+        name: 'Electronics & Computer Engineering',
+      },
       { id: 'ee', name: 'Electrical Engineering' },
-      { id: 'ee-ev', name: 'Electrical Engineering (With Specialization in Electric Vehicle Technology)' },
+      {
+        id: 'ee-ev',
+        name: 'Electrical Engineering (With Specialization in Electric Vehicle Technology)',
+      },
       { id: 'me', name: 'Mechanical Engineering' },
       { id: 'civil', name: 'Civil Engineering' },
       { id: 'biotechnology', name: 'Biotechnology' },
@@ -102,7 +135,10 @@ export const ACADEMIC_CATALOG: readonly AcademicCourse[] = [
       GENERAL,
       { id: 'management-science', name: 'Management Science' },
       { id: 'family-business', name: 'Family Business' },
-      { id: 'data-analytics-bi', name: 'Data Analytics and Business Intelligence' },
+      {
+        id: 'data-analytics-bi',
+        name: 'Data Analytics and Business Intelligence',
+      },
     ],
   },
   { id: 'bcom', name: 'B.Com', durationYears: 3, branches: [GENERAL] },
@@ -123,15 +159,38 @@ export const ACADEMIC_CATALOG: readonly AcademicCourse[] = [
       { id: 'biotechnology', name: 'Biotechnology' },
       { id: 'chemistry', name: 'Chemistry' },
       { id: 'physics', name: 'Physics' },
-      { id: 'mathematics-data-science', name: 'Mathematics (Specialization in Data Science)' },
+      {
+        id: 'mathematics-data-science',
+        name: 'Mathematics (Specialization in Data Science)',
+      },
     ],
   },
   // Agriculture is a 4-year honours programme, unlike the other B.Sc. streams.
-  { id: 'bsc-agriculture', name: 'B.Sc. (Hons.) Agriculture', durationYears: 4, branches: [GENERAL] },
+  {
+    id: 'bsc-agriculture',
+    name: 'B.Sc. (Hons.) Agriculture',
+    durationYears: 4,
+    branches: [GENERAL],
+  },
   { id: 'bpharm', name: 'B. Pharm', durationYears: 4, branches: [GENERAL] },
-  { id: 'bpharm-lateral', name: 'B. Pharm (Lateral Entry)', durationYears: 3, branches: [GENERAL] },
-  { id: 'ba-llb', name: 'BA LLB (Hons.)', durationYears: 5, branches: [GENERAL] },
-  { id: 'bba-llb', name: 'BBA LLB (Hons.)', durationYears: 5, branches: [GENERAL] },
+  {
+    id: 'bpharm-lateral',
+    name: 'B. Pharm (Lateral Entry)',
+    durationYears: 3,
+    branches: [GENERAL],
+  },
+  {
+    id: 'ba-llb',
+    name: 'BA LLB (Hons.)',
+    durationYears: 5,
+    branches: [GENERAL],
+  },
+  {
+    id: 'bba-llb',
+    name: 'BBA LLB (Hons.)',
+    durationYears: 5,
+    branches: [GENERAL],
+  },
   { id: 'bed', name: 'B.Ed.', durationYears: 2, branches: [GENERAL] },
   {
     id: 'bsc-bed-itep',
@@ -259,7 +318,9 @@ const COURSE_BY_ID = new Map<string, AcademicCourse>(
   ACADEMIC_CATALOG.map((c) => [c.id, c]),
 );
 
-export function findCourse(courseId: string | null | undefined): AcademicCourse | null {
+export function findCourse(
+  courseId: string | null | undefined,
+): AcademicCourse | null {
   if (!courseId) return null;
   return COURSE_BY_ID.get(courseId) ?? null;
 }
@@ -274,7 +335,9 @@ export function findBranch(
 }
 
 /** Valid Current Year values for a course, e.g. [1,2,3,4] for B.Tech. */
-export function validYearsForCourse(courseId: string | null | undefined): number[] {
+export function validYearsForCourse(
+  courseId: string | null | undefined,
+): number[] {
   const course = findCourse(courseId);
   if (!course) return [];
   return Array.from({ length: course.durationYears }, (_, i) => i + 1);
@@ -309,6 +372,7 @@ export function formatAcademicSummary(
   const parts = [course.name];
   // "General" carries no information next to the course name, so it is dropped.
   if (branch && branch.id !== GENERAL.id) parts.push(branch.name);
-  if (typeof currentYear === 'number' && currentYear > 0) parts.push(yearLabel(currentYear));
+  if (typeof currentYear === 'number' && currentYear > 0)
+    parts.push(yearLabel(currentYear));
   return parts.join(' • ');
 }

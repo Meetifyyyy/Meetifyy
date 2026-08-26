@@ -1,5 +1,16 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  HeadObjectCommand,
+  CopyObjectCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
@@ -16,19 +27,28 @@ export class CloudflareR2Provider implements StorageProvider {
   private readonly isConfigured: boolean;
 
   constructor() {
-    const { accountId, accessKeyId, secretAccessKey, bucketName, region } = config.storage.r2;
+    const { accountId, accessKeyId, secretAccessKey, bucketName, region } =
+      config.storage.r2;
     this.bucketName = bucketName;
     this.publicUrl = config.storage.publicUrl || config.storage.r2.publicUrl;
 
-    this.isConfigured =
-      !!(accountId && accessKeyId && secretAccessKey &&
-        accountId !== '' && accessKeyId !== '' && secretAccessKey !== '');
+    this.isConfigured = !!(
+      accountId &&
+      accessKeyId &&
+      secretAccessKey &&
+      accountId !== '' &&
+      accessKeyId !== '' &&
+      secretAccessKey !== ''
+    );
 
     if (this.isConfigured) {
       this.s3 = new S3Client({
         region,
         endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-        credentials: { accessKeyId: accessKeyId!, secretAccessKey: secretAccessKey! },
+        credentials: {
+          accessKeyId: accessKeyId,
+          secretAccessKey: secretAccessKey,
+        },
         // AWS SDK v3 (>= 3.729) can add default integrity checksums as SIGNED
         // headers on PutObject, including in presigned URLs — headers a browser
         // PUT cannot reproduce. WHEN_REQUIRED keeps presigned browser uploads to
@@ -40,14 +60,18 @@ export class CloudflareR2Provider implements StorageProvider {
       if (!this.publicUrl) {
         // Without a configured public host there is no correct URL to guess —
         // media is served through the API's own /api/media route instead.
-        this.logger.warn('STORAGE_PUBLIC_URL / R2_PUBLIC_URL is not set; media will be served via /api/media');
+        this.logger.warn(
+          'STORAGE_PUBLIC_URL / R2_PUBLIC_URL is not set; media will be served via /api/media',
+        );
       }
     }
   }
 
   private getLocalFilePath(key: string): string {
     const cwd = process.cwd();
-    const baseDir = cwd.endsWith('backend') ? path.join(cwd, 'uploads') : path.join(cwd, 'backend', 'uploads');
+    const baseDir = cwd.endsWith('backend')
+      ? path.join(cwd, 'uploads')
+      : path.join(cwd, 'backend', 'uploads');
     return path.resolve(baseDir, key);
   }
 
@@ -71,7 +95,13 @@ export class CloudflareR2Provider implements StorageProvider {
     expiresIn = 900,
     explicitKey?: string,
   ): Promise<{ uploadUrl: string; publicUrl: string; key: string }> {
-    const ext = filename.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'bin';
+    const ext =
+      filename
+        .split('.')
+        .pop()
+        ?.toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .slice(0, 10) || 'bin';
     // An explicit key (validated by the caller) lets a client upload a derived
     // variant — e.g. a `<uuid>_thumb.webp` thumbnail sharing the original's key.
     const key = explicitKey || `${folder}/${randomUUID()}.${ext}`;
@@ -81,37 +111,55 @@ export class CloudflareR2Provider implements StorageProvider {
       return { uploadUrl, publicUrl: `/api/media/${key}`, key };
     }
 
-    const command = new PutObjectCommand({ Bucket: this.bucketName, Key: key, ContentType: contentType, CacheControl: 'public, max-age=31536000, immutable' });
+    const command = new PutObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+      ContentType: contentType,
+      CacheControl: 'public, max-age=31536000, immutable',
+    });
     const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn });
     const filePublicUrl = this.getPublicUrl(key);
 
     return { uploadUrl, publicUrl: filePublicUrl, key };
   }
 
-  async createSignedDownloadUrl(key: string, expiresIn = config.storage.r2.signedUrlTtlSeconds): Promise<string> {
+  async createSignedDownloadUrl(
+    key: string,
+    expiresIn = config.storage.r2.signedUrlTtlSeconds,
+  ): Promise<string> {
     if (!this.isConfigured || !this.s3) return `/mock-download/${key}`;
     const command = new GetObjectCommand({ Bucket: this.bucketName, Key: key });
     return getSignedUrl(this.s3, command, { expiresIn });
   }
 
-  async createSignedUrls(keys: string[], expiresIn = config.storage.r2.signedUrlTtlSeconds): Promise<{ [key: string]: string }> {
+  async createSignedUrls(
+    keys: string[],
+    expiresIn = config.storage.r2.signedUrlTtlSeconds,
+  ): Promise<{ [key: string]: string }> {
     const result: { [key: string]: string } = {};
     if (!keys || keys.length === 0) return result;
 
     if (!this.isConfigured || !this.s3) {
-      keys.forEach(k => { result[k] = `/mock-download/${k}`; });
+      keys.forEach((k) => {
+        result[k] = `/mock-download/${k}`;
+      });
       return result;
     }
 
-    await Promise.all(keys.map(async (key) => {
-      try {
-        const command = new GetObjectCommand({ Bucket: this.bucketName, Key: key });
-        const url = await getSignedUrl(this.s3!, command, { expiresIn });
-        result[key] = url;
-      } catch (e) {
-        result[key] = `/mock-download/${key}`;
-      }
-    }));
+    await Promise.all(
+      keys.map(async (key) => {
+        try {
+          const command = new GetObjectCommand({
+            Bucket: this.bucketName,
+            Key: key,
+          });
+          const url = await getSignedUrl(this.s3!, command, { expiresIn });
+          result[key] = url;
+        } catch (e) {
+          result[key] = `/mock-download/${key}`;
+        }
+      }),
+    );
 
     return result;
   }
@@ -131,7 +179,9 @@ export class CloudflareR2Provider implements StorageProvider {
 
     if (!this.isConfigured || !this.s3) return true;
     try {
-      await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucketName, Key: key }));
+      await this.s3.send(
+        new DeleteObjectCommand({ Bucket: this.bucketName, Key: key }),
+      );
       return true;
     } catch (e) {
       this.logger.error(`Failed to delete object ${key}`, e);
@@ -160,7 +210,11 @@ export class CloudflareR2Provider implements StorageProvider {
    * propagates so the upload — and the post attached to it — fails loudly
    * instead of quietly producing a permanently broken image.
    */
-  async upload(key: string, fileBuffer: Buffer, contentType: string): Promise<string> {
+  async upload(
+    key: string,
+    fileBuffer: Buffer,
+    contentType: string,
+  ): Promise<string> {
     if (!this.isConfigured || !this.s3) {
       // No credentials: local-disk mode, for development only.
       this.saveToLocalDisk(key, fileBuffer);
@@ -168,10 +222,20 @@ export class CloudflareR2Provider implements StorageProvider {
     }
 
     try {
-      await this.s3.send(new PutObjectCommand({ Bucket: this.bucketName, Key: key, Body: fileBuffer, ContentType: contentType, CacheControl: 'public, max-age=31536000, immutable' }));
+      await this.s3.send(
+        new PutObjectCommand({
+          Bucket: this.bucketName,
+          Key: key,
+          Body: fileBuffer,
+          ContentType: contentType,
+          CacheControl: 'public, max-age=31536000, immutable',
+        }),
+      );
       return this.getPublicUrl(key);
     } catch (e: any) {
-      this.logger.error(`R2 upload failed for key ${key} in bucket ${this.bucketName}: ${e?.message || e}`);
+      this.logger.error(
+        `R2 upload failed for key ${key} in bucket ${this.bucketName}: ${e?.message || e}`,
+      );
       throw new ServiceUnavailableException('Upload failed, please try again');
     }
   }
@@ -181,9 +245,12 @@ export class CloudflareR2Provider implements StorageProvider {
     // R2 is configured let a leftover file from an earlier deploy mask an object
     // that was never actually stored — the image looked fine on the container
     // that had written it and 404'd on every other one.
-    if (!this.isConfigured || !this.s3) return fs.existsSync(this.getLocalFilePath(key));
+    if (!this.isConfigured || !this.s3)
+      return fs.existsSync(this.getLocalFilePath(key));
     try {
-      await this.s3.send(new HeadObjectCommand({ Bucket: this.bucketName, Key: key }));
+      await this.s3.send(
+        new HeadObjectCommand({ Bucket: this.bucketName, Key: key }),
+      );
       return true;
     } catch (e: any) {
       if (e.name === 'NotFound') return false;
@@ -202,7 +269,9 @@ export class CloudflareR2Provider implements StorageProvider {
 
     if (!this.isConfigured || !this.s3) return null;
     try {
-      const head = await this.s3.send(new HeadObjectCommand({ Bucket: this.bucketName, Key: key }));
+      const head = await this.s3.send(
+        new HeadObjectCommand({ Bucket: this.bucketName, Key: key }),
+      );
       return head;
     } catch (e) {
       return null;
@@ -212,11 +281,13 @@ export class CloudflareR2Provider implements StorageProvider {
   async copy(sourceKey: string, destinationKey: string): Promise<boolean> {
     if (!this.isConfigured || !this.s3) return true;
     try {
-      await this.s3.send(new CopyObjectCommand({
-        Bucket: this.bucketName,
-        CopySource: `${this.bucketName}/${sourceKey}`,
-        Key: destinationKey,
-      }));
+      await this.s3.send(
+        new CopyObjectCommand({
+          Bucket: this.bucketName,
+          CopySource: `${this.bucketName}/${sourceKey}`,
+          Key: destinationKey,
+        }),
+      );
       return true;
     } catch (e) {
       return false;

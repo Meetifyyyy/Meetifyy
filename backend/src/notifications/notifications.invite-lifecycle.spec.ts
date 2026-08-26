@@ -40,7 +40,12 @@ describe('NotificationsService - activity invite lifecycle', () => {
     type: 'ACTIVITY_INVITE',
     readAt: new Date(),
     metadata: { lifecycleStatus: 'PENDING', invitationId: 'inv-1' },
-    actor: { id: 'host-1', username: 'host', displayName: 'Host', avatar: null },
+    actor: {
+      id: 'host-1',
+      username: 'host',
+      displayName: 'Host',
+      avatar: null,
+    },
     ...overrides,
   });
 
@@ -53,7 +58,11 @@ describe('NotificationsService - activity invite lifecycle', () => {
       return Promise.resolve({ count: 1 });
     });
     mockPrisma.notification.findUnique.mockImplementation(({ where }: any) =>
-      Promise.resolve({ id: where.id, recipientId: 'user-1', ...(lastWrite || {}) }),
+      Promise.resolve({
+        id: where.id,
+        recipientId: 'user-1',
+        ...(lastWrite || {}),
+      }),
     );
 
     const module: TestingModule = await Test.createTestingModule({
@@ -63,7 +72,10 @@ describe('NotificationsService - activity invite lifecycle', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: DomainEventService, useValue: mockDomainEventService },
         { provide: ConfigService, useValue: { get: jest.fn() } },
-        { provide: RedisService, useValue: { getClient: jest.fn().mockReturnValue(null) } },
+        {
+          provide: RedisService,
+          useValue: { getClient: jest.fn().mockReturnValue(null) },
+        },
         {
           provide: BlocksService,
           useValue: {
@@ -84,7 +96,7 @@ describe('NotificationsService - activity invite lifecycle', () => {
     mockPrisma.notification.findMany.mockResolvedValue([row()]);
 
     await service.updateNotificationLifecycleStatus({
-      type: 'ACTIVITY_INVITE' as any,
+      type: 'ACTIVITY_INVITE',
       entityId: 'act-1',
       recipientIds: ['user-1'],
       status: 'ACCEPTED',
@@ -106,7 +118,7 @@ describe('NotificationsService - activity invite lifecycle', () => {
     mockPrisma.notification.findMany.mockResolvedValue([row()]);
 
     await service.updateNotificationLifecycleStatus({
-      type: 'ACTIVITY_INVITE' as any,
+      type: 'ACTIVITY_INVITE',
       entityId: 'act-1',
       status: 'DECLINED',
     });
@@ -124,7 +136,7 @@ describe('NotificationsService - activity invite lifecycle', () => {
     ]);
 
     await service.updateNotificationLifecycleStatus({
-      type: 'ACTIVITY_INVITE' as any,
+      type: 'ACTIVITY_INVITE',
       entityId: 'act-1',
       status: 'EXPIRED',
       onlyIfStatusIn: ['PENDING'],
@@ -138,13 +150,16 @@ describe('NotificationsService - activity invite lifecycle', () => {
     mockPrisma.notification.findMany.mockResolvedValue([row()]);
 
     await service.updateNotificationLifecycleStatus({
-      type: 'ACTIVITY_INVITE' as any,
+      type: 'ACTIVITY_INVITE',
       entityId: 'act-1',
       status: 'CANCELLED',
       onlyIfStatusIn: ['PENDING'],
     });
 
-    expect(mockPrisma.notification.updateMany.mock.calls[0][0].data.metadata.lifecycleStatus).toBe('CANCELLED');
+    expect(
+      mockPrisma.notification.updateMany.mock.calls[0][0].data.metadata
+        .lifecycleStatus,
+    ).toBe('CANCELLED');
   });
 
   it('stands down when a concurrent write already changed the row', async () => {
@@ -152,7 +167,7 @@ describe('NotificationsService - activity invite lifecycle', () => {
     mockPrisma.notification.updateMany.mockResolvedValueOnce({ count: 0 });
 
     const res = await service.updateNotificationLifecycleStatus({
-      type: 'ACTIVITY_INVITE' as any,
+      type: 'ACTIVITY_INVITE',
       entityId: 'act-1',
       status: 'ACCEPTED',
     });
@@ -166,11 +181,13 @@ describe('NotificationsService - activity invite lifecycle', () => {
     mockPrisma.notification.findMany.mockResolvedValue([row()]);
 
     await service.updateNotificationLifecycleStatus({
-      type: 'ACTIVITY_INVITE' as any,
+      type: 'ACTIVITY_INVITE',
       entityId: 'act-1',
       status: 'ACCEPTED',
     });
 
-    expect(mockPrisma.notification.updateMany.mock.calls[0][0].data.readAt).toBeUndefined();
+    expect(
+      mockPrisma.notification.updateMany.mock.calls[0][0].data.readAt,
+    ).toBeUndefined();
   });
 });

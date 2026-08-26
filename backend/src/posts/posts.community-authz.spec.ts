@@ -22,12 +22,23 @@ describe('PostsService — community post authorization', () => {
   let prisma: any;
 
   const community = (over: any = {}) => ({
-    id: COMMUNITY, deletedAt: null, isPrivate: false,
-    isCampusCommunity: false, collegeId: null, ownerId: 'owner', ...over,
+    id: COMMUNITY,
+    deletedAt: null,
+    isPrivate: false,
+    isCampusCommunity: false,
+    collegeId: null,
+    ownerId: 'owner',
+    ...over,
   });
 
-  const setup = ({ comm = community(), membership = null, user = { collegeId: 'col-1' } }: {
-    comm?: any; membership?: any; user?: any;
+  const setup = ({
+    comm = community(),
+    membership = null,
+    user = { collegeId: 'col-1' },
+  }: {
+    comm?: any;
+    membership?: any;
+    user?: any;
   } = {}) => {
     prisma = {
       community: { findUnique: jest.fn(async () => comm) },
@@ -35,13 +46,21 @@ describe('PostsService — community post authorization', () => {
       user: { findUnique: jest.fn(async () => user) },
     };
     service = new PostsService(
-      prisma, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
+      prisma,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
       // Deletion authorizer — unused by the write-path guard under test.
       {} as any,
     );
   };
 
-  const attempt = (userId: string) => (service as any).assertCanPostInCommunity(userId, COMMUNITY);
+  const attempt = (userId: string) =>
+    (service as any).assertCanPostInCommunity(userId, COMMUNITY);
 
   describe('a non-member', () => {
     it('is refused', async () => {
@@ -63,7 +82,10 @@ describe('PostsService — community post authorization', () => {
     });
 
     it('may post in a private community they belong to', async () => {
-      setup({ comm: community({ isPrivate: true }), membership: { role: 'MEMBER' } });
+      setup({
+        comm: community({ isPrivate: true }),
+        membership: { role: 'MEMBER' },
+      });
       await expect(attempt('member')).resolves.toBeUndefined();
     });
   });
@@ -82,14 +104,24 @@ describe('PostsService — community post authorization', () => {
     const campus = community({ isCampusCommunity: true, collegeId: 'col-1' });
 
     it('accepts a member from that college', async () => {
-      setup({ comm: campus, membership: { role: 'MEMBER' }, user: { collegeId: 'col-1' } });
+      setup({
+        comm: campus,
+        membership: { role: 'MEMBER' },
+        user: { collegeId: 'col-1' },
+      });
       await expect(attempt('member')).resolves.toBeUndefined();
     });
 
     it('refuses a member whose college no longer matches', async () => {
       // A membership row predating a college change must not grant access.
-      setup({ comm: campus, membership: { role: 'MEMBER' }, user: { collegeId: 'col-2' } });
-      await expect(attempt('member')).rejects.toThrow(/limited to verified students/i);
+      setup({
+        comm: campus,
+        membership: { role: 'MEMBER' },
+        user: { collegeId: 'col-2' },
+      });
+      await expect(attempt('member')).rejects.toThrow(
+        /limited to verified students/i,
+      );
     });
 
     it('refuses a member with no college at all', async () => {

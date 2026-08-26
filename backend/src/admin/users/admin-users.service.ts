@@ -192,7 +192,14 @@ export class AdminUsersService {
     return { success: true };
   }
 
-  async updateCapabilities(id: string, capabilities: { canPost?: boolean; canMessage?: boolean; canActivity?: boolean }) {
+  async updateCapabilities(
+    id: string,
+    capabilities: {
+      canPost?: boolean;
+      canMessage?: boolean;
+      canActivity?: boolean;
+    },
+  ) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 

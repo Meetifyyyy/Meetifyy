@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
@@ -39,7 +44,6 @@ const buildPool = () => {
   });
 };
 
-
 /**
  * `SELECT 1` is the pool warm-up and the periodic liveness probe. It fires
  * once per pooled connection, so a 15-connection pool printed fifteen
@@ -56,16 +60,26 @@ function isPoolPing(sql: string): boolean {
 function summarizeQuery(sql: string): string {
   const q = (sql || '').trim();
   const verb = (q.split(/\s+/, 1)[0] || 'QUERY').toUpperCase();
-  const table =
-    q.match(/(?:FROM|INTO|UPDATE)\s+"?(?:public"?\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?/i)?.[1];
+  const table = q.match(
+    /(?:FROM|INTO|UPDATE)\s+"?(?:public"?\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?/i,
+  )?.[1];
   return table ? `${verb} ${table}` : verb;
 }
 
 @Injectable()
-export class PrismaService extends PrismaClient<
-  { log: [{ emit: 'event', level: 'query' }, { emit: 'event', level: 'error' }, { emit: 'event', level: 'warn' }] },
-  'query' | 'error' | 'warn'
-> implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient<
+    {
+      log: [
+        { emit: 'event'; level: 'query' },
+        { emit: 'event'; level: 'error' },
+        { emit: 'event'; level: 'warn' },
+      ];
+    },
+    'query' | 'error' | 'warn'
+  >
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger('DB');
   private keepAliveTimer: NodeJS.Timeout | null = null;
   private isDestroyed = false;
@@ -106,7 +120,10 @@ export class PrismaService extends PrismaClient<
     // blip) is emitted on the Pool, not on a query. Without a listener Node
     // treats it as an unhandled 'error' event and terminates the process.
     this.pool.on('error', (err) => {
-      if (this.isDestroyed || err.message?.includes('Cannot use a pool after calling end')) {
+      if (
+        this.isDestroyed ||
+        err.message?.includes('Cannot use a pool after calling end')
+      ) {
         return;
       }
       this.logger.warn(`Postgres pool error (recovered): ${err.message}`);
@@ -122,7 +139,13 @@ export class PrismaService extends PrismaClient<
         try {
           return await next(params);
         } catch (error: any) {
-          if (this.isDestroyed || (error?.message && error.message.includes('Cannot use a pool after calling end on the pool'))) {
+          if (
+            this.isDestroyed ||
+            (error?.message &&
+              error.message.includes(
+                'Cannot use a pool after calling end on the pool',
+              ))
+          ) {
             return;
           }
           const isConnError =
@@ -130,18 +153,19 @@ export class PrismaService extends PrismaClient<
             error?.code === 'P1002' ||
             error?.code === 'P1008' ||
             error?.code === 'P1017' ||
-            (error?.message && (
-              error.message.includes("Can't reach database server") ||
-              error.message.includes('Timed out fetching a new connection') ||
-              error.message.includes('Connection pool timeout') ||
-              error.message.includes('EMAXCONNSESSION') ||
-              error.message.includes('max clients reached') ||
-              error.message.includes('ConnectionReset')
-            ));
+            (error?.message &&
+              (error.message.includes("Can't reach database server") ||
+                error.message.includes('Timed out fetching a new connection') ||
+                error.message.includes('Connection pool timeout') ||
+                error.message.includes('EMAXCONNSESSION') ||
+                error.message.includes('max clients reached') ||
+                error.message.includes('ConnectionReset')));
 
           if (isConnError && retries > 0) {
             retries--;
-            this.logger.warn(`Database transient connection issue (${error.code || 'network'}). Retrying... (${retries} attempts remaining)`);
+            this.logger.warn(
+              `Database transient connection issue (${error.code || 'network'}). Retrying... (${retries} attempts remaining)`,
+            );
             await new Promise((res) => setTimeout(res, 200));
             continue;
           }
@@ -159,7 +183,12 @@ export class PrismaService extends PrismaClient<
    * zero, which is the signal that queries are queueing for a connection
    * rather than running slowly.
    */
-  getPoolStats(): { active: number; idle: number; waiting: number; total: number } {
+  getPoolStats(): {
+    active: number;
+    idle: number;
+    waiting: number;
+    total: number;
+  } {
     const total = this.pool.totalCount ?? 0;
     const idle = this.pool.idleCount ?? 0;
     return {
@@ -169,7 +198,6 @@ export class PrismaService extends PrismaClient<
       waiting: this.pool.waitingCount ?? 0,
     };
   }
-
 
   async onModuleInit() {
     const logQueries = config.logging.logQueries;
@@ -183,7 +211,9 @@ export class PrismaService extends PrismaClient<
       // printed for slow queries, which is the case where you actually need to
       // read it.
       if (e.duration >= config.database.slowQueryMs) {
-        this.logger.warn(dbLine(summarizeQuery(e.query), e.duration, `SLOW · ${e.query}`));
+        this.logger.warn(
+          dbLine(summarizeQuery(e.query), e.duration, `SLOW · ${e.query}`),
+        );
       } else if (logQueries && !isPoolPing(e.query)) {
         this.logger.debug(dbLine(summarizeQuery(e.query), e.duration));
       }
@@ -198,7 +228,9 @@ export class PrismaService extends PrismaClient<
         (e.message &&
           (e.message.includes('P1001') ||
             e.message.includes("Can't reach database server") ||
-            e.message.includes('Cannot use a pool after calling end on the pool')))
+            e.message.includes(
+              'Cannot use a pool after calling end on the pool',
+            )))
       ) {
         return;
       }

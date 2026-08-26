@@ -20,24 +20,44 @@ describe('PostsService — comments', () => {
   let comments: Record<string, any>;
 
   const comment = (id: string, over: any = {}) => ({
-    id, postId: POST, parentId: null, authorId: AUTHOR, text: `c ${id}`,
-    isDeleted: false, likeCount: 0, createdAt: new Date(), ...over,
+    id,
+    postId: POST,
+    parentId: null,
+    authorId: AUTHOR,
+    text: `c ${id}`,
+    isDeleted: false,
+    likeCount: 0,
+    createdAt: new Date(),
+    ...over,
   });
 
   beforeEach(async () => {
     comments = {};
     prisma = {
       post: {
-        findUnique: jest.fn(async () => ({ id: POST, authorId: 'owner', deletedAt: null })),
+        findUnique: jest.fn(async () => ({
+          id: POST,
+          authorId: 'owner',
+          deletedAt: null,
+        })),
         update: jest.fn(async () => ({})),
       },
       comment: {
-        findUnique: jest.fn(async ({ where }: any) => comments[where.id] ?? null),
-        create: jest.fn(async ({ data }: any) => ({ ...comment('new'), ...data, author: { id: data.authorId, username: 'u' } })),
+        findUnique: jest.fn(
+          async ({ where }: any) => comments[where.id] ?? null,
+        ),
+        create: jest.fn(async ({ data }: any) => ({
+          ...comment('new'),
+          ...data,
+          author: { id: data.authorId, username: 'u' },
+        })),
         update: jest.fn(async ({ data }: any) => ({ ...data })),
         findMany: jest.fn(async () => []),
       },
-      commentLike: { deleteMany: jest.fn(async () => ({ count: 0 })), findMany: jest.fn(async () => []) },
+      commentLike: {
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+        findMany: jest.fn(async () => []),
+      },
       $transaction: jest.fn(async (fn: any) => fn(prisma)),
     };
 
@@ -49,14 +69,41 @@ describe('PostsService — comments', () => {
         // (posts.deletion-permissions.spec.ts). Here the author is always the
         // one deleting, so the authorizer answers 'author' and these cases stay
         // about what deletion does to the thread rather than who may do it.
-        { provide: ContentDeletionAuthorizer, useValue: { assertCanDelete: jest.fn(async () => 'author') } },
-        { provide: NotificationsService, useValue: { createNotification: jest.fn(async () => ({})) } },
-        { provide: NotificationFactory, useValue: { createComment: jest.fn(), createCommentReply: jest.fn() } },
-        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn(async () => []) } },
+        {
+          provide: ContentDeletionAuthorizer,
+          useValue: { assertCanDelete: jest.fn(async () => 'author') },
+        },
+        {
+          provide: NotificationsService,
+          useValue: { createNotification: jest.fn(async () => ({})) },
+        },
+        {
+          provide: NotificationFactory,
+          useValue: { createComment: jest.fn(), createCommentReply: jest.fn() },
+        },
+        {
+          provide: BlocksService,
+          useValue: { getExcludedUserIds: jest.fn(async () => []) },
+        },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
-        { provide: RedisService, useValue: { getClient: () => null, withLock: (_k: string, _t: number, fn: any) => fn() } },
-        { provide: MentionsService, useValue: { sanitize: jest.fn(async () => []), persistAndNotify: jest.fn() } },
-        { provide: StorageService, useValue: { exists: jest.fn(async () => true) } },
+        {
+          provide: RedisService,
+          useValue: {
+            getClient: () => null,
+            withLock: (_k: string, _t: number, fn: any) => fn(),
+          },
+        },
+        {
+          provide: MentionsService,
+          useValue: {
+            sanitize: jest.fn(async () => []),
+            persistAndNotify: jest.fn(),
+          },
+        },
+        {
+          provide: StorageService,
+          useValue: { exists: jest.fn(async () => true) },
+        },
       ],
     }).compile();
 
@@ -69,22 +116,30 @@ describe('PostsService — comments', () => {
       // parent it could never be rendered under, so the tree builder found no
       // parent and promoted it to a root on the wrong thread.
       comments['other'] = comment('other', { postId: 'post-2' });
-      await expect(service.addComment(POST, AUTHOR, 'hi', 'other')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.addComment(POST, AUTHOR, 'hi', 'other'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('refuses a parent that does not exist', async () => {
-      await expect(service.addComment(POST, AUTHOR, 'hi', 'ghost')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.addComment(POST, AUTHOR, 'hi', 'ghost'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('refuses to reply under a deleted comment', async () => {
       // Otherwise a tombstone gets resurrected as a visible placeholder.
       comments['gone'] = comment('gone', { isDeleted: true });
-      await expect(service.addComment(POST, AUTHOR, 'hi', 'gone')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.addComment(POST, AUTHOR, 'hi', 'gone'),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('accepts a live parent on the same post', async () => {
       comments['ok'] = comment('ok');
-      await expect(service.addComment(POST, AUTHOR, 'hi', 'ok')).resolves.toBeDefined();
+      await expect(
+        service.addComment(POST, AUTHOR, 'hi', 'ok'),
+      ).resolves.toBeDefined();
     });
 
     it('increments the post comment count by exactly one', async () => {
@@ -124,23 +179,39 @@ describe('PostsService — comments', () => {
       withReplies(1);
       await service.deleteComment('c1', AUTHOR);
       const { data } = prisma.comment.update.mock.calls[0][0];
-      expect(data).toMatchObject({ isDeleted: true, deletedByUser: true, text: '', likeCount: 0 });
+      expect(data).toMatchObject({
+        isDeleted: true,
+        deletedByUser: true,
+        text: '',
+        likeCount: 0,
+      });
     });
   });
 
   describe('tombstone pruning', () => {
-    const prune = (rows: any[]) => (service as any).pruneEmptyTombstones(rows).map((c: any) => c.id);
+    const prune = (rows: any[]) =>
+      (service as any).pruneEmptyTombstones(rows).map((c: any) => c.id);
 
     it('drops a deleted leaf', () => {
-      expect(prune([comment('a'), comment('b', { isDeleted: true })])).toEqual(['a']);
+      expect(prune([comment('a'), comment('b', { isDeleted: true })])).toEqual([
+        'a',
+      ]);
     });
 
     it('keeps a deleted comment that is holding replies up', () => {
-      expect(prune([comment('a', { isDeleted: true }), comment('a1', { parentId: 'a' })])).toEqual(['a', 'a1']);
+      expect(
+        prune([
+          comment('a', { isDeleted: true }),
+          comment('a1', { parentId: 'a' }),
+        ]),
+      ).toEqual(['a', 'a1']);
     });
 
     it('cascades once the last live descendant is gone', () => {
-      const rows = [comment('a', { isDeleted: true }), comment('b', { parentId: 'a', isDeleted: true })];
+      const rows = [
+        comment('a', { isDeleted: true }),
+        comment('b', { parentId: 'a', isDeleted: true }),
+      ];
       expect(prune(rows)).toEqual([]);
     });
 

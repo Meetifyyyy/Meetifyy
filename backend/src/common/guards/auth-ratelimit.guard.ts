@@ -1,4 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { RateLimiterRedis } from 'rate-limiter-flexible';
 import { RedisService } from '../../redis/redis.service';
 import { config } from '../../config';
@@ -56,7 +62,10 @@ export class AuthRateLimitGuard implements CanActivate {
         return true;
       }
       // rate-limiter-flexible throws a RateLimiterRes (not an Error) when exceeded.
-      throw new HttpException('Too many attempts. Please try again shortly.', HttpStatus.TOO_MANY_REQUESTS);
+      throw new HttpException(
+        'Too many attempts. Please try again shortly.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     return true;

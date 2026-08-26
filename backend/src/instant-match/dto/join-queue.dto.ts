@@ -67,7 +67,8 @@ export function parseJoinQueuePayload(userId: string, raw: any): JoinQueueDto {
 
   // `location` is optional; an absent or malformed block degrades to "no
   // location" rather than rejecting the whole join.
-  const location = raw.location && typeof raw.location === 'object' ? raw.location : {};
+  const location =
+    raw.location && typeof raw.location === 'object' ? raw.location : {};
 
   let area: string | null = null;
   if (typeof location.area === 'string' && location.area.trim()) {
@@ -85,13 +86,26 @@ export function parseJoinQueuePayload(userId: string, raw: any): JoinQueueDto {
     if (!isFiniteNumber(latitude) || !isFiniteNumber(longitude)) {
       throw new BadRequestException('Invalid coordinates');
     }
-    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    if (
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
       throw new BadRequestException('Invalid coordinates');
     }
     gps = { latitude, longitude };
   }
 
-  return { userId, campus, activity, timePreference, optionalDetail, area, gps };
+  return {
+    userId,
+    campus,
+    activity,
+    timePreference,
+    optionalDetail,
+    area,
+    gps,
+  };
 }
 
 export function parseMatchRespondPayload(raw: any): {
@@ -121,19 +135,25 @@ export function toQueueSnapshot(dto: JoinQueueDto): QueueSnapshot {
 export function readQueueSnapshot(value: unknown): QueueSnapshot | null {
   if (!value || typeof value !== 'object') return null;
   const v = value as Record<string, unknown>;
-  if (typeof v.activity !== 'string' || typeof v.timePreference !== 'string') return null;
+  if (typeof v.activity !== 'string' || typeof v.timePreference !== 'string')
+    return null;
   if (typeof v.campus !== 'string') return null;
   return {
     campus: v.campus,
     activity: v.activity,
     timePreference: v.timePreference,
-    optionalDetail: typeof v.optionalDetail === 'string' ? v.optionalDetail : null,
+    optionalDetail:
+      typeof v.optionalDetail === 'string' ? v.optionalDetail : null,
     area: typeof v.area === 'string' ? v.area : null,
     gps:
-      v.gps && typeof v.gps === 'object' &&
+      v.gps &&
+      typeof v.gps === 'object' &&
       isFiniteNumber((v.gps as any).latitude) &&
       isFiniteNumber((v.gps as any).longitude)
-        ? { latitude: (v.gps as any).latitude, longitude: (v.gps as any).longitude }
+        ? {
+            latitude: (v.gps as any).latitude,
+            longitude: (v.gps as any).longitude,
+          }
         : null,
   };
 }

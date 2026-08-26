@@ -3,9 +3,9 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RedisService } from '../redis/redis.service';
 
 export interface DomainEventPayload {
-  type: string;      // e.g., 'follow.created'
+  type: string; // e.g., 'follow.created'
   timestamp: string; // ISO string
-  data: any;         // Arbitrary payload
+  data: any; // Arbitrary payload
   targetUserIds?: string[]; // Optional array of user IDs to strictly target (for private events)
 }
 
@@ -44,7 +44,8 @@ export class DomainEventService {
       type,
       timestamp: new Date().toISOString(),
       data,
-      ...(resolvedTargets && resolvedTargets.length > 0 && { targetUserIds: resolvedTargets })
+      ...(resolvedTargets &&
+        resolvedTargets.length > 0 && { targetUserIds: resolvedTargets }),
     };
 
     // 1. Emit locally via EventEmitter2 (for internal services like Notifications)
@@ -56,7 +57,10 @@ export class DomainEventService {
       try {
         await pubClient.publish(this.CHANNEL_NAME, JSON.stringify(payload));
       } catch (err) {
-        this.logger.error(`Failed to publish domain event ${type} to Redis`, err);
+        this.logger.error(
+          `Failed to publish domain event ${type} to Redis`,
+          err,
+        );
       }
     }
   }

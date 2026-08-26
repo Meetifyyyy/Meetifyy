@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
@@ -57,21 +61,38 @@ describe('group invites', () => {
               upsert: jest.fn().mockResolvedValue({}),
               delete: jest.fn().mockResolvedValue({}),
             },
-            message: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
+            message: {
+              create: jest.fn(),
+              findFirst: jest.fn(),
+              findMany: jest.fn(),
+            },
             deletedMessage: { findMany: jest.fn() },
             block: { findFirst: jest.fn() },
             $transaction: jest.fn(),
           }),
         },
-        { provide: PresenceService, useValue: { setOnline: jest.fn(), setOffline: jest.fn(), getPresence: jest.fn() } },
+        {
+          provide: PresenceService,
+          useValue: {
+            setOnline: jest.fn(),
+            setOffline: jest.fn(),
+            getPresence: jest.fn(),
+          },
+        },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         {
           provide: MentionsService,
-          useValue: { sanitize: jest.fn().mockResolvedValue([]), persistAndNotify: jest.fn().mockResolvedValue(undefined) },
+          useValue: {
+            sanitize: jest.fn().mockResolvedValue([]),
+            persistAndNotify: jest.fn().mockResolvedValue(undefined),
+          },
         },
         {
           provide: RedisService,
-          useValue: { getClient: jest.fn().mockReturnValue(null), getSubClient: jest.fn().mockReturnValue(null) },
+          useValue: {
+            getClient: jest.fn().mockReturnValue(null),
+            getSubClient: jest.fn().mockReturnValue(null),
+          },
         },
         {
           provide: BlocksService,
@@ -88,7 +109,9 @@ describe('group invites', () => {
     service = module.get<MessagesService>(MessagesService);
     // resolveConversationId hits the DB and caches; the id mapping itself is
     // covered elsewhere, so it is stubbed to keep these tests on the invite.
-    jest.spyOn(service as any, 'resolveConversationId').mockResolvedValue(CONV_ID);
+    jest
+      .spyOn(service as any, 'resolveConversationId')
+      .mockResolvedValue(CONV_ID);
   });
 
   describe('joinGroupByInvite', () => {
@@ -103,7 +126,9 @@ describe('group invites', () => {
       expect(res.publicId).toBe('pub123');
       expect(prisma.conversationParticipant.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { userId_conversationId: { userId: USER_ID, conversationId: CONV_ID } },
+          where: {
+            userId_conversationId: { userId: USER_ID, conversationId: CONV_ID },
+          },
         }),
       );
     });
@@ -111,12 +136,18 @@ describe('group invites', () => {
     it('is idempotent for an existing member and never writes a second row', async () => {
       prisma.conversation.findFirst.mockResolvedValue(group());
       prisma.conversationParticipant.findUnique.mockResolvedValue({
-        role: 'MEMBER', leftAt: null, deletedAt: null,
+        role: 'MEMBER',
+        leftAt: null,
+        deletedAt: null,
       });
 
       const res = await service.joinGroupByInvite(CONV_ID, USER_ID);
 
-      expect(res).toMatchObject({ status: 'JOINED', alreadyMember: true, role: 'MEMBER' });
+      expect(res).toMatchObject({
+        status: 'JOINED',
+        alreadyMember: true,
+        role: 'MEMBER',
+      });
       expect(prisma.conversationParticipant.upsert).not.toHaveBeenCalled();
       expect(prisma.conversationJoinRequest.upsert).not.toHaveBeenCalled();
     });
@@ -124,14 +155,18 @@ describe('group invites', () => {
     it('revives the row of someone who previously left rather than inserting a duplicate', async () => {
       prisma.conversation.findFirst.mockResolvedValue(group());
       prisma.conversationParticipant.findUnique.mockResolvedValue({
-        role: 'MEMBER', leftAt: new Date(), deletedAt: null,
+        role: 'MEMBER',
+        leftAt: new Date(),
+        deletedAt: null,
       });
 
       const res = await service.joinGroupByInvite(CONV_ID, USER_ID);
 
       expect(res.status).toBe('JOINED');
       expect(prisma.conversationParticipant.upsert).toHaveBeenCalledTimes(1);
-      expect(prisma.conversationParticipant.upsert.mock.calls[0][0].update).toMatchObject({
+      expect(
+        prisma.conversationParticipant.upsert.mock.calls[0][0].update,
+      ).toMatchObject({
         leftAt: null,
         deletedAt: null,
       });
@@ -140,21 +175,31 @@ describe('group invites', () => {
     it('treats a concurrent-join unique violation as success', async () => {
       prisma.conversation.findFirst.mockResolvedValue(group());
       prisma.conversationParticipant.findUnique.mockResolvedValue(null);
-      prisma.conversationParticipant.upsert.mockRejectedValue({ code: 'P2002' });
+      prisma.conversationParticipant.upsert.mockRejectedValue({
+        code: 'P2002',
+      });
 
-      await expect(service.joinGroupByInvite(CONV_ID, USER_ID)).resolves.toMatchObject({ status: 'JOINED' });
+      await expect(
+        service.joinGroupByInvite(CONV_ID, USER_ID),
+      ).resolves.toMatchObject({ status: 'JOINED' });
     });
 
     it('propagates a genuine database failure instead of reporting success', async () => {
       prisma.conversation.findFirst.mockResolvedValue(group());
       prisma.conversationParticipant.findUnique.mockResolvedValue(null);
-      prisma.conversationParticipant.upsert.mockRejectedValue(Object.assign(new Error('db down'), { code: 'P1001' }));
+      prisma.conversationParticipant.upsert.mockRejectedValue(
+        Object.assign(new Error('db down'), { code: 'P1001' }),
+      );
 
-      await expect(service.joinGroupByInvite(CONV_ID, USER_ID)).rejects.toThrow('db down');
+      await expect(service.joinGroupByInvite(CONV_ID, USER_ID)).rejects.toThrow(
+        'db down',
+      );
     });
 
     it('creates a pending request when the group requires approval', async () => {
-      prisma.conversation.findFirst.mockResolvedValue(group({ whoCanJoin: 'APPROVAL' }));
+      prisma.conversation.findFirst.mockResolvedValue(
+        group({ whoCanJoin: 'APPROVAL' }),
+      );
       prisma.conversationParticipant.findUnique.mockResolvedValue(null);
 
       const res = await service.joinGroupByInvite(CONV_ID, USER_ID);
@@ -167,15 +212,21 @@ describe('group invites', () => {
     it.each(['Request required', 'APPROVAL_REQUIRED', 'approval'])(
       'treats legacy join-policy spelling %s as approval-required',
       async (spelling) => {
-        prisma.conversation.findFirst.mockResolvedValue(group({ whoCanJoin: spelling }));
+        prisma.conversation.findFirst.mockResolvedValue(
+          group({ whoCanJoin: spelling }),
+        );
         prisma.conversationParticipant.findUnique.mockResolvedValue(null);
 
-        await expect(service.joinGroupByInvite(CONV_ID, USER_ID)).resolves.toMatchObject({ status: 'PENDING' });
+        await expect(
+          service.joinGroupByInvite(CONV_ID, USER_ID),
+        ).resolves.toMatchObject({ status: 'PENDING' });
       },
     );
 
     it('re-requesting is duplicate-safe', async () => {
-      prisma.conversation.findFirst.mockResolvedValue(group({ whoCanJoin: 'APPROVAL' }));
+      prisma.conversation.findFirst.mockResolvedValue(
+        group({ whoCanJoin: 'APPROVAL' }),
+      );
       prisma.conversationParticipant.findUnique.mockResolvedValue(null);
 
       await service.joinGroupByInvite(CONV_ID, USER_ID);
@@ -184,7 +235,9 @@ describe('group invites', () => {
       // upsert keyed on (conversationId, userId) — two calls, still one row.
       expect(prisma.conversationJoinRequest.upsert).toHaveBeenCalledTimes(2);
       for (const call of prisma.conversationJoinRequest.upsert.mock.calls) {
-        expect(call[0].where).toEqual({ conversationId_userId: { conversationId: CONV_ID, userId: USER_ID } });
+        expect(call[0].where).toEqual({
+          conversationId_userId: { conversationId: CONV_ID, userId: USER_ID },
+        });
       }
     });
 
@@ -199,20 +252,35 @@ describe('group invites', () => {
 
     it('rejects a group that does not exist', async () => {
       prisma.conversation.findFirst.mockResolvedValue(null);
-      await expect(service.joinGroupByInvite(CONV_ID, USER_ID)).rejects.toThrow(NotFoundException);
+      await expect(service.joinGroupByInvite(CONV_ID, USER_ID)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
-    it.each(['CLOSED', 'ENDED', 'CANCELLED', 'EXPIRED'])('rejects a %s group', async (status) => {
-      prisma.conversation.findFirst.mockResolvedValue(group({ status }));
-      prisma.conversationParticipant.findUnique.mockResolvedValue(null);
-      await expect(service.joinGroupByInvite(CONV_ID, USER_ID)).rejects.toThrow(BadRequestException);
-    });
+    it.each(['CLOSED', 'ENDED', 'CANCELLED', 'EXPIRED'])(
+      'rejects a %s group',
+      async (status) => {
+        prisma.conversation.findFirst.mockResolvedValue(group({ status }));
+        prisma.conversationParticipant.findUnique.mockResolvedValue(null);
+        await expect(
+          service.joinGroupByInvite(CONV_ID, USER_ID),
+        ).rejects.toThrow(BadRequestException);
+      },
+    );
 
     it('lets an existing member of a closed group through, so the chat stays reachable', async () => {
-      prisma.conversation.findFirst.mockResolvedValue(group({ status: 'CLOSED' }));
-      prisma.conversationParticipant.findUnique.mockResolvedValue({ role: 'MEMBER', leftAt: null, deletedAt: null });
+      prisma.conversation.findFirst.mockResolvedValue(
+        group({ status: 'CLOSED' }),
+      );
+      prisma.conversationParticipant.findUnique.mockResolvedValue({
+        role: 'MEMBER',
+        leftAt: null,
+        deletedAt: null,
+      });
 
-      await expect(service.joinGroupByInvite(CONV_ID, USER_ID)).resolves.toMatchObject({ alreadyMember: true });
+      await expect(
+        service.joinGroupByInvite(CONV_ID, USER_ID),
+      ).resolves.toMatchObject({ alreadyMember: true });
     });
 
     it('rejects a user blocked by the group owner', async () => {
@@ -220,16 +288,22 @@ describe('group invites', () => {
       prisma.conversationParticipant.findUnique.mockResolvedValue(null);
       blocks.isBlocked.mockResolvedValue(true);
 
-      await expect(service.joinGroupByInvite(CONV_ID, USER_ID)).rejects.toThrow(ForbiddenException);
+      await expect(service.joinGroupByInvite(CONV_ID, USER_ID)).rejects.toThrow(
+        ForbiddenException,
+      );
       expect(prisma.conversationParticipant.upsert).not.toHaveBeenCalled();
     });
 
     it('rejects a malformed invite with no conversation id', async () => {
-      await expect(service.joinGroupByInvite('', USER_ID)).rejects.toThrow(NotFoundException);
+      await expect(service.joinGroupByInvite('', USER_ID)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('refuses an unauthenticated caller', async () => {
-      await expect(service.joinGroupByInvite(CONV_ID, '')).rejects.toThrow(ForbiddenException);
+      await expect(service.joinGroupByInvite(CONV_ID, '')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 
@@ -263,15 +337,25 @@ describe('group invites', () => {
 
     it('reports MEMBER for someone already in the group', async () => {
       prisma.conversation.findFirst.mockResolvedValue(group());
-      prisma.conversationParticipant.findUnique.mockResolvedValue({ role: 'ADMIN', leftAt: null, deletedAt: null });
+      prisma.conversationParticipant.findUnique.mockResolvedValue({
+        role: 'ADMIN',
+        leftAt: null,
+        deletedAt: null,
+      });
 
       const res = await service.getGroupInvitePreview(CONV_ID, USER_ID);
 
-      expect(res).toMatchObject({ isMember: true, myRole: 'ADMIN', joinState: 'MEMBER' });
+      expect(res).toMatchObject({
+        isMember: true,
+        myRole: 'ADMIN',
+        joinState: 'MEMBER',
+      });
     });
 
     it('reports REQUESTED while a request is live', async () => {
-      prisma.conversation.findFirst.mockResolvedValue(group({ whoCanJoin: 'APPROVAL' }));
+      prisma.conversation.findFirst.mockResolvedValue(
+        group({ whoCanJoin: 'APPROVAL' }),
+      );
       prisma.conversationParticipant.findUnique.mockResolvedValue(null);
       prisma.conversationJoinRequest.findUnique.mockResolvedValue({
         status: 'PENDING',
@@ -284,7 +368,9 @@ describe('group invites', () => {
     });
 
     it('ignores an expired request and offers the group again', async () => {
-      prisma.conversation.findFirst.mockResolvedValue(group({ whoCanJoin: 'APPROVAL' }));
+      prisma.conversation.findFirst.mockResolvedValue(
+        group({ whoCanJoin: 'APPROVAL' }),
+      );
       prisma.conversationParticipant.findUnique.mockResolvedValue(null);
       prisma.conversationJoinRequest.findUnique.mockResolvedValue({
         status: 'PENDING',
@@ -297,23 +383,33 @@ describe('group invites', () => {
     });
 
     it('reports CLOSED for an ended group', async () => {
-      prisma.conversation.findFirst.mockResolvedValue(group({ status: 'ENDED' }));
+      prisma.conversation.findFirst.mockResolvedValue(
+        group({ status: 'ENDED' }),
+      );
       prisma.conversationParticipant.findUnique.mockResolvedValue(null);
 
-      expect((await service.getGroupInvitePreview(CONV_ID, USER_ID)).joinState).toBe('CLOSED');
+      expect(
+        (await service.getGroupInvitePreview(CONV_ID, USER_ID)).joinState,
+      ).toBe('CLOSED');
     });
 
     it('reports BLOCKED ahead of the join policy', async () => {
-      prisma.conversation.findFirst.mockResolvedValue(group({ whoCanJoin: 'APPROVAL' }));
+      prisma.conversation.findFirst.mockResolvedValue(
+        group({ whoCanJoin: 'APPROVAL' }),
+      );
       prisma.conversationParticipant.findUnique.mockResolvedValue(null);
       blocks.isBlocked.mockResolvedValue(true);
 
-      expect((await service.getGroupInvitePreview(CONV_ID, USER_ID)).joinState).toBe('BLOCKED');
+      expect(
+        (await service.getGroupInvitePreview(CONV_ID, USER_ID)).joinState,
+      ).toBe('BLOCKED');
     });
 
     it('404s for a DM or a deleted conversation', async () => {
       prisma.conversation.findFirst.mockResolvedValue(null);
-      await expect(service.getGroupInvitePreview(CONV_ID, USER_ID)).rejects.toThrow(NotFoundException);
+      await expect(
+        service.getGroupInvitePreview(CONV_ID, USER_ID),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

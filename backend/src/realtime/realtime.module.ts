@@ -11,7 +11,15 @@ import { BlocksService } from '../users/blocks.service';
 
 @Global()
 @Module({
-  imports: [SupabaseModule, MessagesModule, PresenceModule, InstantMatchModule, PrismaModule, ActivityAccessModule, CommunitiesModule],
+  imports: [
+    SupabaseModule,
+    MessagesModule,
+    PresenceModule,
+    InstantMatchModule,
+    PrismaModule,
+    ActivityAccessModule,
+    CommunitiesModule,
+  ],
   providers: [RealtimeGateway, BlocksService],
   exports: [RealtimeGateway],
 })

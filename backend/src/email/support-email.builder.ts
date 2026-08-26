@@ -16,13 +16,17 @@ export const SUPPORT_EMAIL_JOBS = {
   reply: 'send-support-reply',
 } as const;
 
-export type SupportEmailJobName = (typeof SUPPORT_EMAIL_JOBS)[keyof typeof SUPPORT_EMAIL_JOBS];
+export type SupportEmailJobName =
+  (typeof SUPPORT_EMAIL_JOBS)[keyof typeof SUPPORT_EMAIL_JOBS];
 
 /**
  * Where the worker should record this message's delivery outcome. Null for the
  * internal notification, which has no user-visible row to annotate.
  */
-export type DeliveryTarget = { model: 'supportTicket' | 'supportMessage'; id: string } | null;
+export type DeliveryTarget = {
+  model: 'supportTicket' | 'supportMessage';
+  id: string;
+} | null;
 
 export interface BuiltEmail {
   to: string;
@@ -50,7 +54,10 @@ export class SupportEmailBuilder {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async build(jobName: SupportEmailJobName, rowId: string): Promise<BuiltEmail | null> {
+  async build(
+    jobName: SupportEmailJobName,
+    rowId: string,
+  ): Promise<BuiltEmail | null> {
     switch (jobName) {
       case SUPPORT_EMAIL_JOBS.requestReceived:
         return this.buildRequestReceived(rowId);
@@ -61,21 +68,32 @@ export class SupportEmailBuilder {
     }
   }
 
-  private async buildRequestReceived(ticketId: string): Promise<BuiltEmail | null> {
-    const ticket = await this.prisma.supportTicket.findUnique({ where: { id: ticketId } });
+  private async buildRequestReceived(
+    ticketId: string,
+  ): Promise<BuiltEmail | null> {
+    const ticket = await this.prisma.supportTicket.findUnique({
+      where: { id: ticketId },
+    });
     if (!ticket) {
-      this.logger.error(`support_email.ticket_missing ${JSON.stringify({ ticketId })}`);
+      this.logger.error(
+        `support_email.ticket_missing ${JSON.stringify({ ticketId })}`,
+      );
       return null;
     }
 
-    const mediaBaseUrl = config.app.apiBaseUrl || config.app.backendUrl || config.app.frontendUrl;
-    const attachments = resolveAttachmentItems(ticket.attachments, mediaBaseUrl);
+    const mediaBaseUrl =
+      config.app.apiBaseUrl || config.app.backendUrl || config.app.frontendUrl;
+    const attachments = resolveAttachmentItems(
+      ticket.attachments,
+      mediaBaseUrl,
+    );
 
     const element = createElement(SupportRequestReceivedEmail, {
       name: ticket.name,
       email: ticket.email,
       ticketNumber: ticket.ticketNumber,
-      categoryLabel: SUPPORT_CATEGORY_LABELS[ticket.category] || 'Support Request',
+      categoryLabel:
+        SUPPORT_CATEGORY_LABELS[ticket.category] || 'Support Request',
       subject: ticket.subject,
       description: ticket.description,
       attachments,
@@ -101,7 +119,9 @@ export class SupportEmailBuilder {
     });
 
     if (!message) {
-      this.logger.error(`support_email.message_missing ${JSON.stringify({ messageId })}`);
+      this.logger.error(
+        `support_email.message_missing ${JSON.stringify({ messageId })}`,
+      );
       return null;
     }
 
@@ -128,22 +148,42 @@ export class SupportEmailBuilder {
       text: await render(element, { plainText: true }),
       replyTo: undefined,
       deliveryTarget: { model: 'supportMessage', id: message.id },
-      logContext: { ticketNumber: ticket.ticketNumber, kind: 'admin-reply', messageId: message.id },
+      logContext: {
+        ticketNumber: ticket.ticketNumber,
+        kind: 'admin-reply',
+        messageId: message.id,
+      },
     };
   }
 }
 
 /** Resolves structured attachment metadata into clean names and accessible media links. */
-function resolveAttachmentItems(attachments: unknown, baseUrl: string): SupportAttachmentItem[] {
+function resolveAttachmentItems(
+  attachments: unknown,
+  baseUrl: string,
+): SupportAttachmentItem[] {
   if (!Array.isArray(attachments)) return [];
   const items: SupportAttachmentItem[] = [];
   for (const file of attachments) {
     if (!file || typeof file !== 'object') continue;
     const f = file as Record<string, unknown>;
-    const filename = typeof f.filename === 'string' && f.filename.length > 0 ? f.filename : 'attachment';
-    const key = typeof f.key === 'string' ? f.key : typeof f.storageKey === 'string' ? f.storageKey : undefined;
+    const filename =
+      typeof f.filename === 'string' && f.filename.length > 0
+        ? f.filename
+        : 'attachment';
+    const key =
+      typeof f.key === 'string'
+        ? f.key
+        : typeof f.storageKey === 'string'
+          ? f.storageKey
+          : undefined;
     const url = key ? `${baseUrl}/api/media/${key}` : undefined;
-    const size = typeof f.size === 'number' ? f.size : typeof f.fileSize === 'number' ? f.fileSize : undefined;
+    const size =
+      typeof f.size === 'number'
+        ? f.size
+        : typeof f.fileSize === 'number'
+          ? f.fileSize
+          : undefined;
     items.push({ filename, url, size });
   }
   return items;

@@ -22,7 +22,8 @@ export class AdminFlagsController {
 
   @Post()
   async upsertFlag(
-    @Body() dto: {
+    @Body()
+    dto: {
       key: string;
       enabled: boolean;
       description?: string;

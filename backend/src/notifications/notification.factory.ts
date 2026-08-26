@@ -12,12 +12,21 @@ export interface CreateNotificationDto {
   metadata: any;
   expiresAt?: Date;
   /** Pre-populated actor data — skips the actor DB re-fetch in createNotification */
-  prePopulatedActor?: { id: string; username: string; displayName: string | null; avatar: string | null };
+  prePopulatedActor?: {
+    id: string;
+    username: string;
+    displayName: string | null;
+    avatar: string | null;
+  };
 }
 
 @Injectable()
 export class NotificationFactory {
-  createLike(actor: any, post: any, postAuthorId: string): CreateNotificationDto {
+  createLike(
+    actor: any,
+    post: any,
+    postAuthorId: string,
+  ): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
     const actorUsername = actor?.username || '';
     return {
@@ -72,7 +81,8 @@ export class NotificationFactory {
     // No self-notifications, whatever the caller thinks it is doing.
     if (!opts.recipientId || opts.recipientId === actor?.id) return null;
 
-    const roleLabel = opts.removedBy === 'owner' ? 'the community owner' : 'a moderator';
+    const roleLabel =
+      opts.removedBy === 'owner' ? 'the community owner' : 'a moderator';
     const noun = opts.contentType === 'post' ? 'post' : 'comment';
     const where = opts.communityName ? ` in ${opts.communityName}` : '';
 
@@ -99,7 +109,9 @@ export class NotificationFactory {
         commentId: opts.contentType === 'comment' ? opts.entityId : null,
         communityId: opts.communityId || null,
         communityName: opts.communityName || null,
-        contentPreview: opts.contentPreview ? String(opts.contentPreview).substring(0, 80) : '',
+        contentPreview: opts.contentPreview
+          ? String(opts.contentPreview).substring(0, 80)
+          : '',
       },
     };
   }
@@ -149,7 +161,11 @@ export class NotificationFactory {
     };
   }
 
-  createCommentLike(actor: any, comment: any, commentAuthorId: string): CreateNotificationDto {
+  createCommentLike(
+    actor: any,
+    comment: any,
+    commentAuthorId: string,
+  ): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
     const actorUsername = actor?.username || '';
     return {
@@ -173,7 +189,12 @@ export class NotificationFactory {
     };
   }
 
-  createComment(actor: any, comment: any, post: any, postAuthorId: string): CreateNotificationDto {
+  createComment(
+    actor: any,
+    comment: any,
+    post: any,
+    postAuthorId: string,
+  ): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
     const actorUsername = actor?.username || '';
     return {
@@ -196,7 +217,12 @@ export class NotificationFactory {
     };
   }
 
-  createCommentReply(actor: any, comment: any, post: any, parentCommentAuthorId: string): CreateNotificationDto {
+  createCommentReply(
+    actor: any,
+    comment: any,
+    post: any,
+    parentCommentAuthorId: string,
+  ): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
     const actorUsername = actor?.username || '';
     return {
@@ -258,7 +284,11 @@ export class NotificationFactory {
    * fetch: the joiner's username and avatar, plus the activity's name and
    * cover image.
    */
-  createActivityJoin(actor: any, activity: any, activityCreatorId: string): CreateNotificationDto {
+  createActivityJoin(
+    actor: any,
+    activity: any,
+    activityCreatorId: string,
+  ): CreateNotificationDto {
     const actorUsername = actor?.username || actor?.displayName || 'Someone';
     return {
       recipientId: activityCreatorId,
@@ -298,11 +328,19 @@ export class NotificationFactory {
    * impossible for a deep-link path to pick the id up by accident and drag a
    * temporary match into the normal messaging surface.
    */
-  createMessage(actor: any, conversation: any, targetUserId: string, messageText?: string): CreateNotificationDto | null {
-    const isInstant = conversation?.type === 'INSTANT_MATCH' || conversation?.isInstantMatch === true;
+  createMessage(
+    actor: any,
+    conversation: any,
+    targetUserId: string,
+    messageText?: string,
+  ): CreateNotificationDto | null {
+    const isInstant =
+      conversation?.type === 'INSTANT_MATCH' ||
+      conversation?.isInstantMatch === true;
 
     if (isInstant) {
-      const instantActor = actor?.displayName || actor?.username || 'Your match';
+      const instantActor =
+        actor?.displayName || actor?.username || 'Your match';
       const instantSnippet = messageText ? messageText.substring(0, 80) : '';
       return {
         recipientId: targetUserId,
@@ -313,7 +351,9 @@ export class NotificationFactory {
         // not carry an id that /messages could route on.
         entityId: conversation?.matchId || conversation?.id,
         title: instantActor,
-        body: instantSnippet ? `${instantActor}: ${instantSnippet}` : `${instantActor} sent you a message.`,
+        body: instantSnippet
+          ? `${instantActor}: ${instantSnippet}`
+          : `${instantActor} sent you a message.`,
         metadata: {
           version: 1,
           chatType: 'instant',
@@ -333,9 +373,12 @@ export class NotificationFactory {
 
     const isGroup = conversation?.type === 'GROUP';
     const convName = conversation?.name || (isGroup ? 'Group' : actorName);
-    const convAvatar = conversation?.avatarMedia?.url || conversation?.avatarKey || null;
+    const convAvatar =
+      conversation?.avatarMedia?.url || conversation?.avatarKey || null;
 
-    const bodyText = textSnippet ? `${actorName}: ${textSnippet}` : `${actorName} sent you a message.`;
+    const bodyText = textSnippet
+      ? `${actorName}: ${textSnippet}`
+      : `${actorName} sent you a message.`;
     const titleText = isGroup ? convName : actorName;
     const pubId = conversation?.publicId || conversation?.id;
     const intId = conversation?.id;

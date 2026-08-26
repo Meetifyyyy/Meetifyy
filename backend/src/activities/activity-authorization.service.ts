@@ -1,4 +1,8 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ActivityVisibility, CrewActivityStatus, Prisma } from '@prisma/client';
 
 /**
@@ -72,7 +76,8 @@ export interface AuthDecision {
 
 /** Copy shown to a user who is denied — deliberately free of activity details. */
 export const ACCESS_DENIED_MESSAGES: Record<string, string> = {
-  COLLEGE_RESTRICTED: "You can't access this activity because it's from another college.",
+  COLLEGE_RESTRICTED:
+    "You can't access this activity because it's from another college.",
   PRIVATE: 'This activity is private and you do not have access.',
 };
 
@@ -87,18 +92,31 @@ export class ActivityAuthorizationService {
    * activity row, tied to this user, still PENDING or ACCEPTED, not revoked and
    * not past its expiry.
    */
-  isValidInvitation(invitation: InvitationAuthShape | null | undefined, userId: string): boolean {
+  isValidInvitation(
+    invitation: InvitationAuthShape | null | undefined,
+    userId: string,
+  ): boolean {
     if (!invitation) return false;
     if (invitation.inviteeId !== userId) return false;
-    if (invitation.status !== 'PENDING' && invitation.status !== 'ACCEPTED') return false;
+    if (invitation.status !== 'PENDING' && invitation.status !== 'ACCEPTED')
+      return false;
     if (invitation.revokedAt) return false;
-    if (invitation.expiresAt && new Date(invitation.expiresAt).getTime() <= Date.now()) return false;
+    if (
+      invitation.expiresAt &&
+      new Date(invitation.expiresAt).getTime() <= Date.now()
+    )
+      return false;
     return true;
   }
 
-  hasValidInvitation(user: UserAuthContext | null, activity: ActivityAuthTarget): boolean {
+  hasValidInvitation(
+    user: UserAuthContext | null,
+    activity: ActivityAuthTarget,
+  ): boolean {
     if (!user) return false;
-    return Boolean(activity.invitations?.some(inv => this.isValidInvitation(inv, user.id)));
+    return Boolean(
+      activity.invitations?.some((inv) => this.isValidInvitation(inv, user.id)),
+    );
   }
 
   /**
@@ -120,16 +138,26 @@ export class ActivityAuthorizationService {
     return Boolean(user && activity.creatorId === user.id);
   }
 
-  isMember(user: UserAuthContext | null, activity: ActivityAuthTarget): boolean {
+  isMember(
+    user: UserAuthContext | null,
+    activity: ActivityAuthTarget,
+  ): boolean {
     if (!user) return false;
-    return Boolean(activity.members?.some(m => m.userId === user.id && m.status === 'MEMBER'));
+    return Boolean(
+      activity.members?.some(
+        (m) => m.userId === user.id && m.status === 'MEMBER',
+      ),
+    );
   }
 
   /**
    * Same-college test. Both sides must be known: a user without a college, or an
    * activity whose host had no college, never satisfies a college restriction.
    */
-  private isSameCollege(user: UserAuthContext | null, activity: ActivityAuthTarget): boolean {
+  private isSameCollege(
+    user: UserAuthContext | null,
+    activity: ActivityAuthTarget,
+  ): boolean {
     if (!user?.collegeId || !activity.collegeId) return false;
     return user.collegeId === activity.collegeId;
   }
@@ -145,17 +173,26 @@ export class ActivityAuthorizationService {
    *   COLLEGE_ONLY → same college | valid invite | member → allow, else deny
    *   PRIVATE      → valid invite | member                → allow, else deny
    */
-  canView(user: UserAuthContext | null, activity: ActivityAuthTarget): AuthDecision {
+  canView(
+    user: UserAuthContext | null,
+    activity: ActivityAuthTarget,
+  ): AuthDecision {
     if (activity.visibility === ActivityVisibility.PUBLIC) return ALLOW;
 
     // Every restricted mode requires an identified caller.
     if (!user) {
       return {
         allowed: false,
-        reason: ACCESS_DENIED_MESSAGES[
-          activity.visibility === ActivityVisibility.PRIVATE ? 'PRIVATE' : 'COLLEGE_RESTRICTED'
-        ],
-        code: activity.visibility === ActivityVisibility.PRIVATE ? 'PRIVATE' : 'COLLEGE_RESTRICTED',
+        reason:
+          ACCESS_DENIED_MESSAGES[
+            activity.visibility === ActivityVisibility.PRIVATE
+              ? 'PRIVATE'
+              : 'COLLEGE_RESTRICTED'
+          ],
+        code:
+          activity.visibility === ActivityVisibility.PRIVATE
+            ? 'PRIVATE'
+            : 'COLLEGE_RESTRICTED',
       };
     }
 
@@ -164,7 +201,11 @@ export class ActivityAuthorizationService {
     if (this.hasValidInvitation(user, activity)) return ALLOW;
 
     if (activity.visibility === ActivityVisibility.PRIVATE) {
-      return { allowed: false, reason: ACCESS_DENIED_MESSAGES.PRIVATE, code: 'PRIVATE' };
+      return {
+        allowed: false,
+        reason: ACCESS_DENIED_MESSAGES.PRIVATE,
+        code: 'PRIVATE',
+      };
     }
 
     // COLLEGE_ONLY
@@ -191,7 +232,10 @@ export class ActivityAuthorizationService {
    * Either way the thrown body carries a code and generic copy only — never the
    * title, description, location, host or attendees.
    */
-  assertCanView(user: UserAuthContext | null, activity: ActivityAuthTarget): void {
+  assertCanView(
+    user: UserAuthContext | null,
+    activity: ActivityAuthTarget,
+  ): void {
     const decision = this.canView(user, activity);
     if (decision.allowed) return;
 
@@ -215,7 +259,10 @@ export class ActivityAuthorizationService {
    * organically surfaced; they reach their host and invitees through the
    * personal "My activities" / invitation lists instead.
    */
-  canDiscover(user: UserAuthContext | null, activity: ActivityAuthTarget): boolean {
+  canDiscover(
+    user: UserAuthContext | null,
+    activity: ActivityAuthTarget,
+  ): boolean {
     if (activity.deletedAt) return false;
     if (activity.visibility === ActivityVisibility.PRIVATE) return false;
     if (activity.visibility === ActivityVisibility.PUBLIC) return true;
@@ -235,9 +282,16 @@ export class ActivityAuthorizationService {
    * a user who may not see an activity may never join it — and then the ordinary
    * activity rules (status, capacity).
    */
-  canJoin(user: UserAuthContext | null, activity: ActivityAuthTarget): AuthDecision {
+  canJoin(
+    user: UserAuthContext | null,
+    activity: ActivityAuthTarget,
+  ): AuthDecision {
     if (!user) {
-      return { allowed: false, reason: 'Authentication required', code: 'AUTH_REQUIRED' };
+      return {
+        allowed: false,
+        reason: 'Authentication required',
+        code: 'AUTH_REQUIRED',
+      };
     }
 
     if (this.isHost(user, activity)) return ALLOW;
@@ -249,17 +303,31 @@ export class ActivityAuthorizationService {
     if (!viewDecision.allowed) return viewDecision;
 
     if (activity.deletedAt) {
-      return { allowed: false, reason: 'Activity not found', code: 'NOT_FOUND' };
+      return {
+        allowed: false,
+        reason: 'Activity not found',
+        code: 'NOT_FOUND',
+      };
     }
     if (activity.status === CrewActivityStatus.CANCELLED) {
-      return { allowed: false, reason: 'This activity has been cancelled', code: 'CANCELLED' };
+      return {
+        allowed: false,
+        reason: 'This activity has been cancelled',
+        code: 'CANCELLED',
+      };
     }
     if (activity.status !== CrewActivityStatus.OPEN) {
-      return { allowed: false, reason: 'Activity is not open for joining', code: 'NOT_OPEN' };
+      return {
+        allowed: false,
+        reason: 'Activity is not open for joining',
+        code: 'NOT_OPEN',
+      };
     }
 
     const currentMemberCount =
-      activity._count?.members ?? activity.members?.filter(m => m.status === 'MEMBER').length ?? 0;
+      activity._count?.members ??
+      activity.members?.filter((m) => m.status === 'MEMBER').length ??
+      0;
     if (activity.maxMembers && currentMemberCount >= activity.maxMembers) {
       return { allowed: false, reason: 'Activity is full', code: 'FULL' };
     }
@@ -270,11 +338,17 @@ export class ActivityAuthorizationService {
   // ── 4. MANAGE ──────────────────────────────────────────────────────────────
 
   /** Edit / cancel / end / invite / inspect invitation state. Host only. */
-  canManage(user: UserAuthContext | null, activity: ActivityAuthTarget): boolean {
+  canManage(
+    user: UserAuthContext | null,
+    activity: ActivityAuthTarget,
+  ): boolean {
     return this.isHost(user, activity);
   }
 
-  assertCanManage(user: UserAuthContext | null, activity: ActivityAuthTarget): void {
+  assertCanManage(
+    user: UserAuthContext | null,
+    activity: ActivityAuthTarget,
+  ): void {
     if (!this.canManage(user, activity)) {
       // Deliberately a 404: a non-host must not learn that the id exists.
       throw new NotFoundException('Activity not found or you are not the host');
@@ -313,7 +387,10 @@ export class ActivityAuthorizationService {
     ];
 
     if (user.collegeId) {
-      clauses.push({ visibility: ActivityVisibility.COLLEGE_ONLY, collegeId: user.collegeId });
+      clauses.push({
+        visibility: ActivityVisibility.COLLEGE_ONLY,
+        collegeId: user.collegeId,
+      });
     }
 
     return { OR: clauses };
@@ -331,14 +408,19 @@ export class ActivityAuthorizationService {
    * Restricting shareable pages to college-derived clauses makes the cached page
    * correct for every viewer with the same audience tag.
    */
-  sharedAudienceWhere(user: UserAuthContext | null): Prisma.CrewActivityWhereInput {
+  sharedAudienceWhere(
+    user: UserAuthContext | null,
+  ): Prisma.CrewActivityWhereInput {
     if (!user?.collegeId) {
       return { visibility: ActivityVisibility.PUBLIC };
     }
     return {
       OR: [
         { visibility: ActivityVisibility.PUBLIC },
-        { visibility: ActivityVisibility.COLLEGE_ONLY, collegeId: user.collegeId },
+        {
+          visibility: ActivityVisibility.COLLEGE_ONLY,
+          collegeId: user.collegeId,
+        },
       ],
     };
   }
@@ -355,7 +437,8 @@ export class ActivityAuthorizationService {
     }
 
     const discovery = this.discoveryWhere(user);
-    const discoveryClauses = (discovery.OR as Prisma.CrewActivityWhereInput[]) ?? [discovery];
+    const discoveryClauses =
+      (discovery.OR as Prisma.CrewActivityWhereInput[]) ?? [discovery];
 
     return {
       OR: [

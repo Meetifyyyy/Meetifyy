@@ -43,7 +43,9 @@ export class DevEmailController {
     @Body() body: Record<string, string>,
   ): Promise<{ ok: boolean; template: string; to: string }> {
     if (!config.features.enableDevEndpoints) {
-      throw new ForbiddenException('Dev email endpoint is disabled in production');
+      throw new ForbiddenException(
+        'Dev email endpoint is disabled in production',
+      );
     }
 
     const email = body.email || 'preview@mailpit.local';
@@ -92,7 +94,11 @@ export class DevEmailController {
         break;
 
       case 'admin-otp':
-        await this.emailService.sendAdminVerificationOtpEmail(email, name, '739201');
+        await this.emailService.sendAdminVerificationOtpEmail(
+          email,
+          name,
+          '739201',
+        );
         break;
 
       default:

@@ -1,9 +1,4 @@
-import {
-  Controller,
-  Get,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 

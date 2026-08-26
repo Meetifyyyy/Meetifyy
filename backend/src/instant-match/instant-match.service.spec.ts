@@ -1,5 +1,12 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { InstantMatchService, setRealtimeGatewayRef } from './instant-match.service';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  InstantMatchService,
+  setRealtimeGatewayRef,
+} from './instant-match.service';
 import { PrismaFake } from './testing/prisma-fake';
 
 /**
@@ -47,13 +54,11 @@ describe('InstantMatchService', () => {
     prisma.seedUser('carol');
 
     messages = {
-      createInstantMatchConversation: jest
-        .fn()
-        .mockResolvedValue({
-          id: 'pub-conv-1',
-          internalId: 'int-conv-1',
-          expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-        }),
+      createInstantMatchConversation: jest.fn().mockResolvedValue({
+        id: 'pub-conv-1',
+        internalId: 'int-conv-1',
+        expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+      }),
       registerInstantMatchGuard: jest.fn(),
     };
     emitter = {
@@ -65,7 +70,11 @@ describe('InstantMatchService', () => {
       emitInstantMatchChatEnded: jest.fn(),
     };
     setRealtimeGatewayRef(emitter);
-    service = new InstantMatchService(prisma as any, messages as any, blocksStubFor(prisma));
+    service = new InstantMatchService(
+      prisma as any,
+      messages as any,
+      blocksStubFor(prisma),
+    );
   });
 
   afterEach(() => setRealtimeGatewayRef(null));
@@ -89,20 +98,29 @@ describe('InstantMatchService', () => {
 
     it('refuses to re-queue a user who still has a live match to answer', async () => {
       prisma.seedSession({ userAId: 'alice', userBId: 'bob' });
-      await expect(service.joinQueue(joinDto('alice')))
-        .rejects.toThrow('Respond to your current match first');
+      await expect(service.joinQueue(joinDto('alice'))).rejects.toThrow(
+        'Respond to your current match first',
+      );
       expect(prisma.queue).toHaveLength(0);
     });
 
     it('allows re-queueing once the old match has resolved', async () => {
-      prisma.seedSession({ userAId: 'alice', userBId: 'bob', status: 'DECLINED' });
-      await expect(service.joinQueue(joinDto('alice'))).resolves.toBeUndefined();
+      prisma.seedSession({
+        userAId: 'alice',
+        userBId: 'bob',
+        status: 'DECLINED',
+      });
+      await expect(
+        service.joinQueue(joinDto('alice')),
+      ).resolves.toBeUndefined();
     });
 
     it('pushes the new queue depth to every waiter, not just the joiner', async () => {
       await service.joinQueue(joinDto('alice', { activity: 'chat' }));
       emitter.emitQueueStats.mockClear();
-      await service.joinQueue(joinDto('bob', { activity: 'chat', campus: 'campus-b' }));
+      await service.joinQueue(
+        joinDto('bob', { activity: 'chat', campus: 'campus-b' }),
+      );
 
       // The headline count is everyone searching, so a join anywhere changes
       // the number on every searching screen — including alice's.
@@ -113,9 +131,13 @@ describe('InstantMatchService', () => {
 
     it('tells each waiter how many share their own activity', async () => {
       await service.joinQueue(joinDto('alice', { activity: 'chat' }));
-      await service.joinQueue(joinDto('carol', { activity: 'gaming', campus: 'campus-b' }));
+      await service.joinQueue(
+        joinDto('carol', { activity: 'gaming', campus: 'campus-b' }),
+      );
       emitter.emitQueueStats.mockClear();
-      await service.joinQueue(joinDto('bob', { activity: 'chat', campus: 'campus-b' }));
+      await service.joinQueue(
+        joinDto('bob', { activity: 'chat', campus: 'campus-b' }),
+      );
 
       const byUser = new Map(
         emitter.emitQueueStats.mock.calls.map((c) => [c[0], c[1]]),
@@ -137,12 +159,15 @@ describe('InstantMatchService', () => {
       expect(prisma.queue).toHaveLength(0);
       expect(emitter.emitMatchFound).toHaveBeenCalledTimes(2);
 
-      const [[aliceId, alicePayload], [bobId, bobPayload]] = emitter.emitMatchFound.mock.calls;
+      const [[aliceId, alicePayload], [bobId, bobPayload]] =
+        emitter.emitMatchFound.mock.calls;
       expect([aliceId, bobId].sort()).toEqual(['alice', 'bob']);
       expect(alicePayload.matchId).toBe(bobPayload.matchId);
       // Each side is shown the *other* person.
       expect(alicePayload.candidate.id).not.toBe(alicePayload.matchId);
-      expect([alicePayload.candidate.id, bobPayload.candidate.id].sort()).toEqual(['alice', 'bob']);
+      expect(
+        [alicePayload.candidate.id, bobPayload.candidate.id].sort(),
+      ).toEqual(['alice', 'bob']);
     });
 
     it('sends an absolute deadline so a slow client cannot desync its countdown', async () => {
@@ -172,7 +197,10 @@ describe('InstantMatchService', () => {
       // area, GPS and time preference are all preferences — none of them may
       // leave a willing user searching indefinitely.
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-      prisma.seedQueueEntry('bob', { campus: 'campus-b', joinedAt: fiveMinutesAgo });
+      prisma.seedQueueEntry('bob', {
+        campus: 'campus-b',
+        joinedAt: fiveMinutesAgo,
+      });
 
       await service.joinQueue(joinDto('alice'));
 
@@ -189,10 +217,12 @@ describe('InstantMatchService', () => {
     it('does not let a missing location block an otherwise strong match', async () => {
       // Alice shared her area and GPS, Bob shared nothing. Withholding a
       // location must not read as being far away.
-      await service.joinQueue(joinDto('alice', {
-        area: 'library',
-        gps: { latitude: 27.6, longitude: 77.6 },
-      }));
+      await service.joinQueue(
+        joinDto('alice', {
+          area: 'library',
+          gps: { latitude: 27.6, longitude: 77.6 },
+        }),
+      );
       await service.joinQueue(joinDto('bob'));
       expect(prisma.sessions).toHaveLength(1);
     });
@@ -211,16 +241,24 @@ describe('InstantMatchService', () => {
 
       expect(prisma.sessions).toHaveLength(1);
       const session = prisma.sessions[0];
-      expect([session.userAId, session.userBId].sort()).toEqual(['alice', 'bob']);
+      expect([session.userAId, session.userBId].sort()).toEqual([
+        'alice',
+        'bob',
+      ]);
     });
 
     it('breaks a score tie toward whoever has waited longest', async () => {
-      prisma.seedQueueEntry('carol', { joinedAt: new Date(Date.now() - 60_000) });
+      prisma.seedQueueEntry('carol', {
+        joinedAt: new Date(Date.now() - 60_000),
+      });
       prisma.seedQueueEntry('bob', { joinedAt: new Date(Date.now() - 1_000) });
       await service.joinQueue(joinDto('alice'));
 
       const session = prisma.sessions[0];
-      expect([session.userAId, session.userBId].sort()).toEqual(['alice', 'carol']);
+      expect([session.userAId, session.userBId].sort()).toEqual([
+        'alice',
+        'carol',
+      ]);
     });
 
     it('never matches users who have blocked each other, in either direction', async () => {
@@ -231,10 +269,16 @@ describe('InstantMatchService', () => {
     });
 
     it('does not re-serve someone the user just declined', async () => {
-      prisma.seedSession({ userAId: 'alice', userBId: 'bob', status: 'DECLINED' });
+      prisma.seedSession({
+        userAId: 'alice',
+        userBId: 'bob',
+        status: 'DECLINED',
+      });
       await service.joinQueue(joinDto('alice'));
       await service.joinQueue(joinDto('bob'));
-      expect(prisma.sessions.filter((s) => s.status === 'PENDING')).toHaveLength(0);
+      expect(
+        prisma.sessions.filter((s) => s.status === 'PENDING'),
+      ).toHaveLength(0);
     });
 
     it('falls through to the next candidate when a pair claim loses its race', async () => {
@@ -253,26 +297,37 @@ describe('InstantMatchService', () => {
       await service.tryMatch('alice');
 
       expect(prisma.sessions).toHaveLength(1);
-      expect([prisma.sessions[0].userAId, prisma.sessions[0].userBId].sort())
-        .toEqual(['alice', 'carol']);
+      expect(
+        [prisma.sessions[0].userAId, prisma.sessions[0].userBId].sort(),
+      ).toEqual(['alice', 'carol']);
     });
 
     it('creates no session at all when every claim is lost', async () => {
       prisma.seedQueueEntry('bob');
       prisma.seedQueueEntry('alice');
-      prisma.onTransaction = () => { prisma.queue = prisma.queue.filter((e) => e.userId !== 'bob'); };
+      prisma.onTransaction = () => {
+        prisma.queue = prisma.queue.filter((e) => e.userId !== 'bob');
+      };
 
       await service.tryMatch('alice');
       expect(prisma.sessions).toHaveLength(0);
     });
 
     it('stores both sides’ requests on the session so either can be re-queued later', async () => {
-      await service.joinQueue(joinDto('alice', { area: 'library', optionalDetail: 'Physics' }));
+      await service.joinQueue(
+        joinDto('alice', { area: 'library', optionalDetail: 'Physics' }),
+      );
       await service.joinQueue(joinDto('bob', { area: 'hostel' }));
 
       const session = prisma.sessions[0];
-      expect(session.snapshotA).toMatchObject({ activity: 'study', campus: 'campus-a' });
-      expect(session.snapshotB).toMatchObject({ activity: 'study', campus: 'campus-a' });
+      expect(session.snapshotA).toMatchObject({
+        activity: 'study',
+        campus: 'campus-a',
+      });
+      expect(session.snapshotB).toMatchObject({
+        activity: 'study',
+        campus: 'campus-a',
+      });
     });
   });
 
@@ -280,31 +335,41 @@ describe('InstantMatchService', () => {
 
   describe('respondToMatch authorization', () => {
     it('rejects an unknown match id', async () => {
-      await expect(service.respondToMatch('alice', 'nope', 'accept'))
-        .rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.respondToMatch('alice', 'nope', 'accept'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('refuses a user who is not part of the match, even with a valid id', async () => {
       const session = prisma.seedSession({ userAId: 'alice', userBId: 'bob' });
-      await expect(service.respondToMatch('carol', session.id, 'accept'))
-        .rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.respondToMatch('carol', session.id, 'accept'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(messages.createInstantMatchConversation).not.toHaveBeenCalled();
     });
 
     it('refuses a match that already resolved', async () => {
-      const session = prisma.seedSession({ userAId: 'alice', userBId: 'bob', status: 'ACCEPTED' });
-      await expect(service.respondToMatch('alice', session.id, 'accept'))
-        .rejects.toThrow('Match is no longer active');
+      const session = prisma.seedSession({
+        userAId: 'alice',
+        userBId: 'bob',
+        status: 'ACCEPTED',
+      });
+      await expect(
+        service.respondToMatch('alice', session.id, 'accept'),
+      ).rejects.toThrow('Match is no longer active');
     });
 
     it('refuses — and expires — a match whose deadline has already passed', async () => {
       const session = prisma.seedSession({
-        userAId: 'alice', userBId: 'bob',
+        userAId: 'alice',
+        userBId: 'bob',
         expiresAt: new Date(Date.now() - 1),
-        snapshotA: snapshot(), snapshotB: snapshot(),
+        snapshotA: snapshot(),
+        snapshotB: snapshot(),
       });
-      await expect(service.respondToMatch('alice', session.id, 'accept'))
-        .rejects.toThrow('Match is no longer active');
+      await expect(
+        service.respondToMatch('alice', session.id, 'accept'),
+      ).rejects.toThrow('Match is no longer active');
       expect(prisma.sessions[0].status).toBe('EXPIRED');
       expect(messages.createInstantMatchConversation).not.toHaveBeenCalled();
     });
@@ -368,8 +433,9 @@ describe('InstantMatchService', () => {
       await service.respondToMatch('alice', sessionId, 'accept');
       await service.respondToMatch('alice', sessionId, 'accept');
       await service.respondToMatch('bob', sessionId, 'accept');
-      await expect(service.respondToMatch('bob', sessionId, 'accept'))
-        .rejects.toThrow('Match is no longer active');
+      await expect(
+        service.respondToMatch('bob', sessionId, 'accept'),
+      ).rejects.toThrow('Match is no longer active');
 
       expect(messages.createInstantMatchConversation).toHaveBeenCalledTimes(1);
       expect(emitter.emitMatchAccepted).toHaveBeenCalledTimes(2);
@@ -385,10 +451,13 @@ describe('InstantMatchService', () => {
     });
 
     it('rolls the match back to PENDING when the chat service fails, instead of stranding it', async () => {
-      messages.createInstantMatchConversation.mockRejectedValueOnce(new Error('db down'));
+      messages.createInstantMatchConversation.mockRejectedValueOnce(
+        new Error('db down'),
+      );
       await service.respondToMatch('alice', sessionId, 'accept');
-      await expect(service.respondToMatch('bob', sessionId, 'accept'))
-        .rejects.toThrow('Could not open your chat — try again');
+      await expect(
+        service.respondToMatch('bob', sessionId, 'accept'),
+      ).rejects.toThrow('Could not open your chat — try again');
 
       expect(prisma.sessions[0].status).toBe('PENDING');
       expect(emitter.emitMatchAccepted).not.toHaveBeenCalled();
@@ -433,7 +502,11 @@ describe('InstantMatchService', () => {
     });
 
     it('does not re-queue when there is no stored request to replay', async () => {
-      const legacy = prisma.seedSession({ userAId: 'alice', userBId: 'carol', snapshotB: null });
+      const legacy = prisma.seedSession({
+        userAId: 'alice',
+        userBId: 'carol',
+        snapshotB: null,
+      });
       await service.respondToMatch('alice', legacy.id, 'decline');
 
       expect(prisma.queue.map((e) => e.userId)).not.toContain('carol');
@@ -452,7 +525,9 @@ describe('InstantMatchService', () => {
     it('does not immediately re-pair the same two people after a decline', async () => {
       await service.respondToMatch('alice', sessionId, 'decline');
       await service.joinQueue(joinDto('alice'));
-      expect(prisma.sessions.filter((s) => s.status === 'PENDING')).toHaveLength(0);
+      expect(
+        prisma.sessions.filter((s) => s.status === 'PENDING'),
+      ).toHaveLength(0);
     });
   });
 
@@ -460,7 +535,9 @@ describe('InstantMatchService', () => {
 
   describe('expireStale', () => {
     it('drops queue entries past their TTL', async () => {
-      prisma.seedQueueEntry('alice', { expiresAt: new Date(Date.now() - 1000) });
+      prisma.seedQueueEntry('alice', {
+        expiresAt: new Date(Date.now() - 1000),
+      });
       prisma.seedQueueEntry('bob');
       await service.expireStale();
       expect(prisma.queue.map((e) => e.userId)).toEqual(['bob']);
@@ -468,16 +545,21 @@ describe('InstantMatchService', () => {
 
     it('expires a timed-out match and puts both users back to searching', async () => {
       prisma.seedSession({
-        userAId: 'alice', userBId: 'bob',
+        userAId: 'alice',
+        userBId: 'bob',
         expiresAt: new Date(Date.now() - 1000),
-        snapshotA: snapshot(), snapshotB: snapshot(),
+        snapshotA: snapshot(),
+        snapshotB: snapshot(),
       });
 
       await service.expireStale();
 
       expect(prisma.sessions[0].status).toBe('EXPIRED');
       expect(emitter.emitMatchDeclined).toHaveBeenCalledTimes(2);
-      expect(emitter.emitSearchResumed.mock.calls.flat().sort()).toEqual(['alice', 'bob']);
+      expect(emitter.emitSearchResumed.mock.calls.flat().sort()).toEqual([
+        'alice',
+        'bob',
+      ]);
     });
 
     it('leaves a still-live match alone', async () => {
@@ -489,9 +571,11 @@ describe('InstantMatchService', () => {
 
     it('notifies once when two sweeps overlap, so replicas do not double-fire', async () => {
       prisma.seedSession({
-        userAId: 'alice', userBId: 'bob',
+        userAId: 'alice',
+        userBId: 'bob',
         expiresAt: new Date(Date.now() - 1000),
-        snapshotA: snapshot(), snapshotB: snapshot(),
+        snapshotA: snapshot(),
+        snapshotB: snapshot(),
       });
 
       await Promise.all([service.expireStale(), service.expireStale()]);
@@ -500,13 +584,20 @@ describe('InstantMatchService', () => {
 
     it('re-pairs the two expired users only after the cooldown, not instantly', async () => {
       prisma.seedSession({
-        userAId: 'alice', userBId: 'bob',
+        userAId: 'alice',
+        userBId: 'bob',
         expiresAt: new Date(Date.now() - 1000),
-        snapshotA: snapshot(), snapshotB: snapshot(),
+        snapshotA: snapshot(),
+        snapshotB: snapshot(),
       });
       await service.expireStale();
-      expect(prisma.sessions.filter((s) => s.status === 'PENDING')).toHaveLength(0);
-      expect(prisma.queue.map((e) => e.userId).sort()).toEqual(['alice', 'bob']);
+      expect(
+        prisma.sessions.filter((s) => s.status === 'PENDING'),
+      ).toHaveLength(0);
+      expect(prisma.queue.map((e) => e.userId).sort()).toEqual([
+        'alice',
+        'bob',
+      ]);
     });
   });
 
@@ -515,7 +606,9 @@ describe('InstantMatchService', () => {
   describe('cancelQueue', () => {
     it('removes the entry and refreshes the bucket for everyone else', async () => {
       await service.joinQueue(joinDto('alice', { activity: 'chat' }));
-      await service.joinQueue(joinDto('carol', { activity: 'chat', campus: 'campus-b' }));
+      await service.joinQueue(
+        joinDto('carol', { activity: 'chat', campus: 'campus-b' }),
+      );
       emitter.emitQueueStats.mockClear();
 
       await service.cancelQueue('alice');
@@ -531,18 +624,21 @@ describe('InstantMatchService', () => {
   // ── Stats ──────────────────────────────────────────────────────────────────
 
   describe('getQueueStats', () => {
-    it('counts everyone searching, not just the viewer\'s activity', async () => {
+    it("counts everyone searching, not just the viewer's activity", async () => {
       prisma.seedQueueEntry('alice');
       prisma.seedQueueEntry('bob');
       prisma.seedQueueEntry('carol', { activity: 'gaming' });
       // Campus and time preference no longer partition the queue either.
-      prisma.seedQueueEntry('dave', { campus: 'campus-b', timePreference: 'today' });
+      prisma.seedQueueEntry('dave', {
+        campus: 'campus-b',
+        timePreference: 'today',
+      });
 
       const stats = await service.getQueueStats('study');
       expect(stats.count).toBe(4);
     });
 
-    it('reports how many of them share the viewer\'s activity', async () => {
+    it("reports how many of them share the viewer's activity", async () => {
       prisma.seedQueueEntry('alice');
       prisma.seedQueueEntry('bob');
       prisma.seedQueueEntry('carol', { activity: 'gaming' });
@@ -571,8 +667,12 @@ describe('InstantMatchService', () => {
     });
 
     it('derives the average wait from how long people have actually waited', async () => {
-      prisma.seedQueueEntry('alice', { joinedAt: new Date(Date.now() - 200_000) });
-      prisma.seedQueueEntry('bob', { joinedAt: new Date(Date.now() - 100_000) });
+      prisma.seedQueueEntry('alice', {
+        joinedAt: new Date(Date.now() - 200_000),
+      });
+      prisma.seedQueueEntry('bob', {
+        joinedAt: new Date(Date.now() - 100_000),
+      });
       const stats = await service.getQueueStats('study');
       expect(stats.avgWaitSecs).toBeGreaterThanOrEqual(140);
       expect(stats.avgWaitSecs).toBeLessThanOrEqual(160);
@@ -584,16 +684,24 @@ describe('InstantMatchService', () => {
   describe('getStateFor', () => {
     it('reports a clean slate for an idle user', async () => {
       expect(await service.getStateFor('alice')).toEqual({
-        queued: null, pendingMatch: null, recentMatch: null, stats: null,
+        queued: null,
+        pendingMatch: null,
+        recentMatch: null,
+        stats: null,
       });
     });
 
     it('restores an in-progress search after a reload', async () => {
-      await service.joinQueue(joinDto('alice', { area: 'library', optionalDetail: 'Physics' }));
+      await service.joinQueue(
+        joinDto('alice', { area: 'library', optionalDetail: 'Physics' }),
+      );
       const state = await service.getStateFor('alice');
 
       expect(state.queued).toMatchObject({
-        activity: 'study', timePreference: 'now', area: 'library', optionalDetail: 'Physics',
+        activity: 'study',
+        timePreference: 'now',
+        area: 'library',
+        optionalDetail: 'Physics',
       });
       expect(state.stats?.count).toBe(1);
       expect(state.pendingMatch).toBeNull();
@@ -606,12 +714,16 @@ describe('InstantMatchService', () => {
       const state = await service.getStateFor('alice');
       expect(state.pendingMatch?.candidate.id).toBe('bob');
       expect(state.pendingMatch?.matchId).toBe(prisma.sessions[0].id);
-      expect(state.pendingMatch?.expiresAt).toBe(prisma.sessions[0].expiresAt.getTime());
+      expect(state.pendingMatch?.expiresAt).toBe(
+        prisma.sessions[0].expiresAt.getTime(),
+      );
     });
 
     it('does not resurrect a match that already expired', async () => {
       prisma.seedSession({
-        userAId: 'alice', userBId: 'bob', expiresAt: new Date(Date.now() - 1),
+        userAId: 'alice',
+        userBId: 'bob',
+        expiresAt: new Date(Date.now() - 1),
       });
       expect((await service.getStateFor('alice')).pendingMatch).toBeNull();
     });
@@ -627,10 +739,14 @@ describe('InstantMatchService', () => {
   // ── Recent match ───────────────────────────────────────────────────────────
 
   describe('getRecentMatchFor', () => {
-    const accepted = (overrides = {}) => prisma.seedSession({
-      userAId: 'alice', userBId: 'bob', status: 'ACCEPTED',
-      conversationId: 'int-1', ...overrides,
-    });
+    const accepted = (overrides = {}) =>
+      prisma.seedSession({
+        userAId: 'alice',
+        userBId: 'bob',
+        status: 'ACCEPTED',
+        conversationId: 'int-1',
+        ...overrides,
+      });
 
     it('returns nothing when the user has never matched', async () => {
       expect(await service.getRecentMatchFor('alice')).toBeNull();
@@ -650,12 +766,22 @@ describe('InstantMatchService', () => {
     it('shows each side the other one', async () => {
       prisma.seedConversation('int-1');
       accepted();
-      expect((await service.getRecentMatchFor('bob'))?.candidate.id).toBe('alice');
+      expect((await service.getRecentMatchFor('bob'))?.candidate.id).toBe(
+        'alice',
+      );
     });
 
     it('ignores matches that were declined or expired', async () => {
-      prisma.seedSession({ userAId: 'alice', userBId: 'bob', status: 'DECLINED' });
-      prisma.seedSession({ userAId: 'alice', userBId: 'carol', status: 'EXPIRED' });
+      prisma.seedSession({
+        userAId: 'alice',
+        userBId: 'bob',
+        status: 'DECLINED',
+      });
+      prisma.seedSession({
+        userAId: 'alice',
+        userBId: 'carol',
+        status: 'EXPIRED',
+      });
       expect(await service.getRecentMatchFor('alice')).toBeNull();
     });
 
@@ -666,7 +792,9 @@ describe('InstantMatchService', () => {
     });
 
     it('still shows the pairing when the conversation has expired, but offers no link', async () => {
-      prisma.seedConversation('int-1', { expiresAt: new Date(Date.now() - 1000) });
+      prisma.seedConversation('int-1', {
+        expiresAt: new Date(Date.now() - 1000),
+      });
       accepted();
 
       const recent = await service.getRecentMatchFor('alice');
@@ -678,15 +806,23 @@ describe('InstantMatchService', () => {
       prisma.seedConversation('int-1');
       prisma.seedConversation('int-2');
       accepted({ createdAt: new Date(Date.now() - 60_000) });
-      accepted({ userBId: 'carol', conversationId: 'int-2', createdAt: new Date() });
+      accepted({
+        userBId: 'carol',
+        conversationId: 'int-2',
+        createdAt: new Date(),
+      });
 
-      expect((await service.getRecentMatchFor('alice'))?.candidate.id).toBe('carol');
+      expect((await service.getRecentMatchFor('alice'))?.candidate.id).toBe(
+        'carol',
+      );
     });
 
     it('is included in the resync snapshot', async () => {
       prisma.seedConversation('int-1');
       accepted();
-      expect((await service.getStateFor('alice')).recentMatch?.candidate.id).toBe('bob');
+      expect(
+        (await service.getStateFor('alice')).recentMatch?.candidate.id,
+      ).toBe('bob');
     });
   });
 

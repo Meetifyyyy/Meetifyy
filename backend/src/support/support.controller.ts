@@ -56,7 +56,10 @@ export class SupportController {
   @Get('meta')
   getFormMetadata() {
     return {
-      categories: PUBLIC_SUPPORT_CATEGORIES.map((value) => ({ value, label: SUPPORT_CATEGORY_LABELS[value] })),
+      categories: PUBLIC_SUPPORT_CATEGORIES.map((value) => ({
+        value,
+        label: SUPPORT_CATEGORY_LABELS[value],
+      })),
       attachments: {
         maxFiles: SUPPORT_ATTACHMENT_LIMITS.maxFiles,
         maxBytesPerFile: SUPPORT_ATTACHMENT_LIMITS.maxBytesPerFile,
@@ -92,7 +95,9 @@ export class SupportController {
     FileInterceptor('file', {
       limits: { fileSize: SUPPORT_ATTACHMENT_LIMITS.maxBytesPerFile, files: 1 },
       fileFilter: (_req, file, callback) => {
-        const allowed = (SUPPORT_ATTACHMENT_LIMITS.allowedMimeTypes as readonly string[]).includes(file.mimetype);
+        const allowed = (
+          SUPPORT_ATTACHMENT_LIMITS.allowedMimeTypes as readonly string[]
+        ).includes(file.mimetype);
         callback(null, allowed);
       },
     }),
@@ -101,7 +106,9 @@ export class SupportController {
     // Multer's fileFilter rejects by omitting the file rather than by raising,
     // so an unsupported type arrives here as "no file".
     if (!file) {
-      throw new BadRequestException('Attach a PNG, JPG, WEBP, GIF, PDF or TXT file of 10 MB or less.');
+      throw new BadRequestException(
+        'Attach a PNG, JPG, WEBP, GIF, PDF or TXT file of 10 MB or less.',
+      );
     }
     return this.storage.uploadSupportAttachment(file);
   }
@@ -110,7 +117,10 @@ export class SupportController {
   @Post('requests')
   async createRequest(@Body() dto: CreateSupportRequestDto, @Req() req: any) {
     return this.support.createRequest(dto, {
-      ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown',
+      ip:
+        (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+        req.ip ||
+        'unknown',
       userAgent: (req.headers['user-agent'] as string) ?? null,
       // Populated by OptionalAuthMiddleware when a valid session happens to be
       // present. Absent for the guest flow, which is the normal case.

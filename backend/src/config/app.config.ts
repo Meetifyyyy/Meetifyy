@@ -1,4 +1,15 @@
-import { ALL_ENVIRONMENTS, APP_ENV, IS_PRODUCTION, IS_STAGING, bool, csv, int, num, str, url } from './env';
+import {
+  ALL_ENVIRONMENTS,
+  APP_ENV,
+  IS_PRODUCTION,
+  IS_STAGING,
+  bool,
+  csv,
+  int,
+  num,
+  str,
+  url,
+} from './env';
 
 /**
  * Application-level configuration: identity, network binding, public URLs,
@@ -6,7 +17,9 @@ import { ALL_ENVIRONMENTS, APP_ENV, IS_PRODUCTION, IS_STAGING, bool, csv, int, n
  */
 
 const frontendUrl = url('FRONTEND_URL', { requiredIn: ALL_ENVIRONMENTS });
-const backendUrl = url('BACKEND_URL', { requiredIn: ['staging', 'production'] });
+const backendUrl = url('BACKEND_URL', {
+  requiredIn: ['staging', 'production'],
+});
 const adminUrl = url('ADMIN_URL');
 
 // The API base is derived from BACKEND_URL unless explicitly overridden — one
@@ -27,7 +40,9 @@ const corsOriginPatterns = csv('CORS_ORIGIN_PATTERNS');
 // Every browser-facing origin this API serves is trusted by default, so a
 // deployment that sets FRONTEND_URL/ADMIN_URL does not also have to repeat them
 // in CORS_ORIGINS.
-const allowedOrigins = Array.from(new Set([frontendUrl, adminUrl, ...corsOrigins].filter(Boolean)));
+const allowedOrigins = Array.from(
+  new Set([frontendUrl, adminUrl, ...corsOrigins].filter(Boolean)),
+);
 
 export const appConfigValues = {
   env: APP_ENV,
@@ -55,7 +70,9 @@ export const appConfigValues = {
      * production regardless of the variable — a production API must never treat
      * a developer machine as same-trust.
      */
-    allowLocalNetwork: IS_PRODUCTION ? false : bool('CORS_ALLOW_LOCAL_NETWORK', { default: 'true' }),
+    allowLocalNetwork: IS_PRODUCTION
+      ? false
+      : bool('CORS_ALLOW_LOCAL_NETWORK', { default: 'true' }),
     credentials: true,
   },
 

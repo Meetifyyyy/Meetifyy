@@ -1,12 +1,20 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { EmailDeliveryStatus, Prisma, SupportAuthorType, SupportPriority } from '@prisma/client';
+import {
+  EmailDeliveryStatus,
+  Prisma,
+  SupportAuthorType,
+  SupportPriority,
+} from '@prisma/client';
 import { createHash } from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { config } from '../config';
 import { CreateSupportRequestDto } from './dto/create-support-request.dto';
-import { DEFAULT_PRIORITY_BY_CATEGORY, SUPPORT_ATTACHMENT_LIMITS } from './support.constants';
+import {
+  DEFAULT_PRIORITY_BY_CATEGORY,
+  SUPPORT_ATTACHMENT_LIMITS,
+} from './support.constants';
 import { generateTicketNumber } from './utils/ticket-number.util';
 import { sanitizeFilename } from '../uploads/attachment-inspection.util';
 
@@ -22,14 +30,25 @@ import { sanitizeFilename } from '../uploads/attachment-inspection.util';
  */
 const CREDENTIAL_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   {
-    pattern: /\b(pass(?:word|phrase|wd)?|pwd|secret|api[_-]?key|token|otp|auth|credential)\b\s*(?:is|:|=|->)\s*\S+/gi,
+    pattern:
+      /\b(pass(?:word|phrase|wd)?|pwd|secret|api[_-]?key|token|otp|auth|credential)\b\s*(?:is|:|=|->)\s*\S+/gi,
     replacement: '$1: [redacted]',
   },
   // Bearer / JWT-shaped values, wherever they appear.
-  { pattern: /\bBearer\s+[A-Za-z0-9._~+/-]{16,}=*/g, replacement: 'Bearer [redacted]' },
-  { pattern: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, replacement: '[redacted token]' },
+  {
+    pattern: /\bBearer\s+[A-Za-z0-9._~+/-]{16,}=*/g,
+    replacement: 'Bearer [redacted]',
+  },
+  {
+    pattern:
+      /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
+    replacement: '[redacted token]',
+  },
   // Common provider key prefixes.
-  { pattern: /\b(sk|pk|rk|re)_(live|test)_[A-Za-z0-9]{16,}\b/g, replacement: '[redacted key]' },
+  {
+    pattern: /\b(sk|pk|rk|re)_(live|test)_[A-Za-z0-9]{16,}\b/g,
+    replacement: '[redacted key]',
+  },
 ];
 
 export interface RequestContext {
@@ -60,8 +79,14 @@ export class SupportService {
     // Honeypot. Answered with the same shape as a success so a scripted
     // submitter gets no signal that it was caught, but nothing is stored.
     if (dto.website && dto.website.trim().length > 0) {
-      this.logger.warn(`support.honeypot_tripped ${JSON.stringify({ ipHash: this.hashIp(context.ip) })}`);
-      return { ticketNumber: generateTicketNumber(), status: 'OPEN', createdAt: new Date().toISOString() };
+      this.logger.warn(
+        `support.honeypot_tripped ${JSON.stringify({ ipHash: this.hashIp(context.ip) })}`,
+      );
+      return {
+        ticketNumber: generateTicketNumber(),
+        status: 'OPEN',
+        createdAt: new Date().toISOString(),
+      };
     }
 
     const { text: description, redacted } = redactCredentials(dto.description);
@@ -75,8 +100,9 @@ export class SupportService {
       category: dto.category,
       subject,
       description,
-      attachments: attachments.length ? (attachments as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-      priority: DEFAULT_PRIORITY_BY_CATEGORY[dto.category] ?? SupportPriority.NORMAL,
+      attachments: attachments.length ? attachments : Prisma.DbNull,
+      priority:
+        DEFAULT_PRIORITY_BY_CATEGORY[dto.category] ?? SupportPriority.NORMAL,
       // Only trusted when the caller actually presented a valid session. An
       // anonymous submitter cannot claim to be an account by filling a field.
       userId: context.userId,
@@ -115,7 +141,9 @@ export class SupportService {
    * entropy - is what actually guarantees uniqueness, so the collision has to
    * be handled rather than assumed away.
    */
-  private async createTicketWithUniqueNumber(data: Omit<Prisma.SupportTicketUncheckedCreateInput, 'ticketNumber'>) {
+  private async createTicketWithUniqueNumber(
+    data: Omit<Prisma.SupportTicketUncheckedCreateInput, 'ticketNumber'>,
+  ) {
     for (let attempt = 0; attempt < 5; attempt++) {
       const ticketNumber = generateTicketNumber();
       try {
@@ -132,7 +160,10 @@ export class SupportService {
                 senderId: data.userId ?? null,
                 body: data.description,
                 isInternal: false,
-                attachments: data.attachments === Prisma.DbNull ? Prisma.DbNull : (data.attachments as Prisma.InputJsonValue),
+                attachments:
+                  data.attachments === Prisma.DbNull
+                    ? Prisma.DbNull
+                    : (data.attachments as Prisma.InputJsonValue),
               },
             },
           },
@@ -141,14 +172,20 @@ export class SupportService {
         const isTicketNumberCollision =
           error instanceof Prisma.PrismaClientKnownRequestError &&
           error.code === 'P2002' &&
-          (error.meta?.target as string[] | undefined)?.includes('ticketNumber');
+          (error.meta?.target as string[] | undefined)?.includes(
+            'ticketNumber',
+          );
 
         if (!isTicketNumberCollision) throw error;
-        this.logger.warn(`support.ticket_number_collision ${JSON.stringify({ ticketNumber, attempt })}`);
+        this.logger.warn(
+          `support.ticket_number_collision ${JSON.stringify({ ticketNumber, attempt })}`,
+        );
       }
     }
 
-    throw new Error('Could not allocate a unique support request ID after 5 attempts');
+    throw new Error(
+      'Could not allocate a unique support request ID after 5 attempts',
+    );
   }
 
   /**
@@ -163,7 +200,11 @@ export class SupportService {
    * the team through the Support section of the Admin Dashboard, so there is
    * no shared mailbox that has to exist for the queue to be seen.
    */
-  private async dispatchNewTicketEmails(ticket: { id: string; ticketNumber: string; email: string }) {
+  private async dispatchNewTicketEmails(ticket: {
+    id: string;
+    ticketNumber: string;
+    email: string;
+  }) {
     try {
       await this.email.sendSupportRequestReceivedEmail(ticket.id);
     } catch (error) {
@@ -176,7 +217,10 @@ export class SupportService {
       await this.prisma.supportTicket
         .update({
           where: { id: ticket.id },
-          data: { emailStatus: EmailDeliveryStatus.FAILED, emailError: 'Could not queue confirmation email' },
+          data: {
+            emailStatus: EmailDeliveryStatus.FAILED,
+            emailError: 'Could not queue confirmation email',
+          },
         })
         .catch(() => {});
     }
@@ -190,11 +234,15 @@ export class SupportService {
    * describe a 2 KB text file as a 5 MB image, and cannot reference an object
    * that was never uploaded through the support endpoint.
    */
-  private async resolveAttachments(refs: Array<{ key: string; filename?: string }>) {
+  private async resolveAttachments(
+    refs: Array<{ key: string; filename?: string }>,
+  ) {
     const keys = refs.map((ref) => ref.key);
     if (keys.length === 0) return [];
     if (keys.length > SUPPORT_ATTACHMENT_LIMITS.maxFiles) {
-      throw new BadRequestException(`You can attach at most ${SUPPORT_ATTACHMENT_LIMITS.maxFiles} files.`);
+      throw new BadRequestException(
+        `You can attach at most ${SUPPORT_ATTACHMENT_LIMITS.maxFiles} files.`,
+      );
     }
 
     const unique = Array.from(new Set(keys));
@@ -207,7 +255,9 @@ export class SupportService {
     });
 
     if (media.length !== unique.length) {
-      throw new BadRequestException('One or more attachments could not be found. Please re-upload and try again.');
+      throw new BadRequestException(
+        'One or more attachments could not be found. Please re-upload and try again.',
+      );
     }
 
     const filenamesByKey = new Map(refs.map((ref) => [ref.key, ref.filename]));
@@ -220,11 +270,17 @@ export class SupportService {
       // Display only, and sanitized rather than trusted: it travels into an
       // admin's browser and into two emails. Falls back to the extension when
       // the client sends nothing usable.
-      filename: sanitizeFilename(filenamesByKey.get(m.objectKey) || `attachment.${m.mimeType.split('/')[1] ?? 'bin'}`),
+      filename: sanitizeFilename(
+        filenamesByKey.get(m.objectKey) ||
+          `attachment.${m.mimeType.split('/')[1] ?? 'bin'}`,
+      ),
     }));
   }
 
-  private buildBrowserInfo(dto: CreateSupportRequestDto, context: RequestContext): Prisma.InputJsonValue {
+  private buildBrowserInfo(
+    dto: CreateSupportRequestDto,
+    context: RequestContext,
+  ): Prisma.InputJsonValue {
     return {
       ...(dto.browserInfo ?? {}),
       // The header is the authoritative record; the client-reported fields
@@ -239,7 +295,10 @@ export class SupportService {
    * on a record that support staff read routinely.
    */
   private hashIp(ip: string): string {
-    return createHash('sha256').update(`${config.support.ipHashSalt}:${ip}`).digest('hex').slice(0, 32);
+    return createHash('sha256')
+      .update(`${config.support.ipHashSalt}:${ip}`)
+      .digest('hex')
+      .slice(0, 32);
   }
 }
 
@@ -247,7 +306,10 @@ export class SupportService {
  * Applies the credential patterns above, reporting whether anything matched so
  * the user can be told their message was edited.
  */
-export function redactCredentials(input: string): { text: string; redacted: boolean } {
+export function redactCredentials(input: string): {
+  text: string;
+  redacted: boolean;
+} {
   let text = input ?? '';
   let redacted = false;
 

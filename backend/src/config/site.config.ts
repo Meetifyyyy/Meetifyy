@@ -22,7 +22,8 @@ export const siteConfigValues = {
   wordmarkUrl: assets.wordmarkUrl || `${frontendUrl}/wordmark.png`,
   logoUrl: assets.logoUrl || `${frontendUrl}/meetifyy_wordmark.png`,
   logoIconUrl: assets.logoIconUrl || `${frontendUrl}/logo.png`,
-  logoWhiteUrl: assets.logoWhiteUrl || `${frontendUrl}/meetifyy_wordmark_white.png`,
+  logoWhiteUrl:
+    assets.logoWhiteUrl || `${frontendUrl}/meetifyy_wordmark_white.png`,
   iconInstagramUrl: assets.iconInstagramUrl,
   iconLinkedinUrl: assets.iconLinkedinUrl,
   iconWebsiteUrl: assets.iconWebsiteUrl,
@@ -33,7 +34,9 @@ export const siteConfigValues = {
   verifyEmailUrl: authConfigValues.redirects.verifyEmailUrl,
   privacyUrl: `${frontendUrl}${str('PRIVACY_PATH', { default: '/privacy-policy' })}`,
   termsUrl: `${frontendUrl}${str('TERMS_PATH', { default: '/terms-and-conditions' })}`,
-  supportUrl: url('SUPPORT_URL', { default: `${frontendUrl}/help-and-support` }),
+  supportUrl: url('SUPPORT_URL', {
+    default: `${frontendUrl}/help-and-support`,
+  }),
 
   instagramUrl: url('INSTAGRAM_URL', {
     default: 'https://www.instagram.com/meetifyy.in?igsi=YzVoZ3drN29id2tn',
@@ -42,7 +45,10 @@ export const siteConfigValues = {
     default: 'https://www.linkedin.com/company/meetifyy/',
   }),
 
-  passwordResetExpiryMinutes: int('PASSWORD_RESET_EXPIRY_MINUTES', { default: '10', min: 1 }),
+  passwordResetExpiryMinutes: int('PASSWORD_RESET_EXPIRY_MINUTES', {
+    default: '10',
+    min: 1,
+  }),
   otpExpiryMinutes: int('OTP_EXPIRY_MINUTES', { default: '10', min: 1 }),
 };
 

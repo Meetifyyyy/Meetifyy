@@ -74,7 +74,8 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
         replyTo: config.email.replyTo ?? null,
         // A non-empty value here means every recipient is being rewritten.
         devRedirectTo: config.email.devRedirectTo || null,
-        smtpTarget: this.driver === 'resend' ? null : `${smtp.host}:${smtp.port}`,
+        smtpTarget:
+          this.driver === 'resend' ? null : `${smtp.host}:${smtp.port}`,
         resendFromDomain: this.driver === 'resend' ? resend.fromDomain : null,
       })}`,
     );
@@ -99,8 +100,13 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
         return;
       }
 
-      const domains = (data?.data ?? []) as Array<{ name: string; status: string }>;
-      const match = domains.find((entry) => entry.name.toLowerCase() === fromDomain);
+      const domains = (data?.data ?? []) as Array<{
+        name: string;
+        status: string;
+      }>;
+      const match = domains.find(
+        (entry) => entry.name.toLowerCase() === fromDomain,
+      );
 
       if (!match || match.status !== 'verified') {
         this.logger.error(
@@ -108,14 +114,18 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
             provider: 'resend',
             fromDomain,
             status: match?.status ?? 'not-found',
-            verifiedDomains: domains.filter((entry) => entry.status === 'verified').map((entry) => entry.name),
+            verifiedDomains: domains
+              .filter((entry) => entry.status === 'verified')
+              .map((entry) => entry.name),
             hint: 'EMAIL_FROM uses a domain that is not verified on this Resend account; every send will fail with 403',
           })}`,
         );
         return;
       }
 
-      this.logger.log(`email.domain_verified ${JSON.stringify({ provider: 'resend', fromDomain })}`);
+      this.logger.log(
+        `email.domain_verified ${JSON.stringify({ provider: 'resend', fromDomain })}`,
+      );
     } catch (error) {
       // A failed pre-flight must never stop the app from booting.
       this.logger.error(
@@ -183,63 +193,75 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
       deliveryTarget = built.deliveryTarget;
       extraLogContext = built.logContext;
     } else {
-    switch (job.name) {
-      case 'send-welcome-email':
-        subject = 'Welcome to Meetifyy!';
-        html = await render(createElement(WelcomeEmail, { name: job.data.name }));
-        break;
+      switch (job.name) {
+        case 'send-welcome-email':
+          subject = 'Welcome to Meetifyy!';
+          html = await render(
+            createElement(WelcomeEmail, { name: job.data.name }),
+          );
+          break;
 
-      case 'send-new-login-email':
-        subject = 'New login to your Meetifyy account';
-        html = await render(createElement(NewLoginEmail, { 
-          name: job.data.name,
-          device: job.data.device,
-          location: job.data.location,
-          time: job.data.time,
-          browser: job.data.browser,
-          os: job.data.os,
-          ip: job.data.ip,
-        }));
-        break;
+        case 'send-new-login-email':
+          subject = 'New login to your Meetifyy account';
+          html = await render(
+            createElement(NewLoginEmail, {
+              name: job.data.name,
+              device: job.data.device,
+              location: job.data.location,
+              time: job.data.time,
+              browser: job.data.browser,
+              os: job.data.os,
+              ip: job.data.ip,
+            }),
+          );
+          break;
 
-      case 'send-reset-password-email':
-        subject = 'Reset Your Password';
-        html = await render(createElement(ResetPasswordEmail, {
-          name: job.data.name,
-          resetLink: job.data.resetLink
-        }));
-        break;
+        case 'send-reset-password-email':
+          subject = 'Reset Your Password';
+          html = await render(
+            createElement(ResetPasswordEmail, {
+              name: job.data.name,
+              resetLink: job.data.resetLink,
+            }),
+          );
+          break;
 
-      case 'send-verification-otp':
-        subject = 'Verify your college email';
-        html = await render(createElement(VerificationOtpEmail, {
-          name: job.data.name,
-          otp: job.data.otp
-        }));
-        break;
+        case 'send-verification-otp':
+          subject = 'Verify your college email';
+          html = await render(
+            createElement(VerificationOtpEmail, {
+              name: job.data.name,
+              otp: job.data.otp,
+            }),
+          );
+          break;
 
-      case 'send-admin-verification-otp':
-        subject = 'Super Admin Access Code';
-        html = await render(createElement(AdminOtpEmail, {
-          name: job.data.name,
-          otp: job.data.otp
-        }));
-        break;
+        case 'send-admin-verification-otp':
+          subject = 'Super Admin Access Code';
+          html = await render(
+            createElement(AdminOtpEmail, {
+              name: job.data.name,
+              otp: job.data.otp,
+            }),
+          );
+          break;
 
-      case 'send-password-changed-email':
-        subject = 'Your Meetifyy Password Was Changed';
-        html = await render(createElement(PasswordChangedEmail, {
-          name: job.data.name,
-          time: job.data.time,
-          device: job.data.device,
-          ip: job.data.ip,
-        }));
-        break;
+        case 'send-password-changed-email':
+          subject = 'Your Meetifyy Password Was Changed';
+          html = await render(
+            createElement(PasswordChangedEmail, {
+              name: job.data.name,
+              time: job.data.time,
+              device: job.data.device,
+              ip: job.data.ip,
+            }),
+          );
+          break;
 
-      default:
-        this.logger.error(`Unknown job type: ${job.name}`);
-        throw new Error(`Unknown job type: ${job.name}`);
-    }
+        default:
+          this.logger.error(`Unknown job type: ${job.name}`);
+          throw new Error(`Unknown job type: ${job.name}`);
+      }
     }
 
     const { replyTo, devRedirectTo, fromName } = config.email;
@@ -280,8 +302,12 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
           ...(plainText ? { text: plainText } : {}),
           ...(effectiveReplyTo ? { replyTo: effectiveReplyTo } : {}),
         });
-        this.logger.log(`email.sent ${JSON.stringify({ ...context, messageId: info.messageId, status: 'accepted' })}`);
-        await this.recordDelivery(deliveryTarget, { messageId: info.messageId });
+        this.logger.log(
+          `email.sent ${JSON.stringify({ ...context, messageId: info.messageId, status: 'accepted' })}`,
+        );
+        await this.recordDelivery(deliveryTarget, {
+          messageId: info.messageId,
+        });
         return info;
       }
 
@@ -308,15 +334,23 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
         );
         // Rethrown as a real Error: the Resend error is a plain object, which
         // BullMQ records without a message or a stack.
-        throw new Error(`Resend rejected ${job.name} to ${to}: ${error.name} — ${error.message}`);
+        throw new Error(
+          `Resend rejected ${job.name} to ${to}: ${error.name} — ${error.message}`,
+        );
       }
 
       if (!data?.id) {
-        this.logger.error(`email.send_failed ${JSON.stringify({ ...context, status: 'no-message-id' })}`);
-        throw new Error(`Resend returned no message id for ${job.name} to ${to}`);
+        this.logger.error(
+          `email.send_failed ${JSON.stringify({ ...context, status: 'no-message-id' })}`,
+        );
+        throw new Error(
+          `Resend returned no message id for ${job.name} to ${to}`,
+        );
       }
 
-      this.logger.log(`email.sent ${JSON.stringify({ ...context, messageId: data.id, status: 'accepted' })}`);
+      this.logger.log(
+        `email.sent ${JSON.stringify({ ...context, messageId: data.id, status: 'accepted' })}`,
+      );
       await this.recordDelivery(deliveryTarget, { messageId: data.id });
       return data;
     } catch (error) {
@@ -327,7 +361,9 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
       // watching a ticket should see "not delivered" while the retries are
       // still running, not an ambiguous "pending" that may never resolve. A
       // later successful retry overwrites this with SENT.
-      await this.recordDelivery(deliveryTarget, { error: (error as Error).message });
+      await this.recordDelivery(deliveryTarget, {
+        error: (error as Error).message,
+      });
       // Rethrown so the job is retried and, once retries are exhausted,
       // surfaces through the `failed` worker event above.
       throw error;
@@ -344,11 +380,16 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
    * Never throws. A bookkeeping failure must not turn a delivered email into a
    * failed job, which would then be retried and deliver the message twice.
    */
-  private async recordDelivery(target: DeliveryTarget, outcome: { messageId?: string; error?: string }): Promise<void> {
+  private async recordDelivery(
+    target: DeliveryTarget,
+    outcome: { messageId?: string; error?: string },
+  ): Promise<void> {
     if (!target) return;
 
     const failed = Boolean(outcome.error);
-    const status = failed ? EmailDeliveryStatus.FAILED : EmailDeliveryStatus.SENT;
+    const status = failed
+      ? EmailDeliveryStatus.FAILED
+      : EmailDeliveryStatus.SENT;
     // Truncated: a provider error can be a full HTML response body, and this
     // column is read straight into an admin's browser.
     const emailError = outcome.error ? outcome.error.slice(0, 500) : null;
@@ -382,4 +423,3 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
     }
   }
 }
-

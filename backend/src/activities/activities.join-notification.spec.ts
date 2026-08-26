@@ -70,7 +70,10 @@ describe('Activity join → host notification', () => {
           avatar: 'avatars/ananya.webp',
         })),
       },
-      activityInvitation: { count: jest.fn(async () => 0), findMany: jest.fn(async () => []) },
+      activityInvitation: {
+        count: jest.fn(async () => 0),
+        findMany: jest.fn(async () => []),
+      },
       // xmax = 0 → the row was genuinely INSERTed, i.e. a real join.
       $queryRaw: jest.fn(async () => [{ inserted: true }]),
     };
@@ -85,10 +88,16 @@ describe('Activity join → host notification', () => {
         NotificationFactory,
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: notifications },
-        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn(async () => []) } },
+        {
+          provide: BlocksService,
+          useValue: { getExcludedUserIds: jest.fn(async () => []) },
+        },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
-        { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn() } },
+        {
+          provide: getQueueToken(NOTIFICATIONS_QUEUE),
+          useValue: { add: jest.fn() },
+        },
       ],
     }).compile();
 

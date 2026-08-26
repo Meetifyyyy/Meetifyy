@@ -1,5 +1,8 @@
 import { ForbiddenException } from '@nestjs/common';
-import { InstantMatchService, setRealtimeGatewayRef } from './instant-match.service';
+import {
+  InstantMatchService,
+  setRealtimeGatewayRef,
+} from './instant-match.service';
 import { PrismaFake } from './testing/prisma-fake';
 
 /**
@@ -41,7 +44,7 @@ describe('Instant Match chat lifecycle', () => {
       snapshotB: null,
       ...over,
     };
-    prisma.sessions.push(row as any);
+    prisma.sessions.push(row);
     return row;
   };
 
@@ -62,7 +65,11 @@ describe('Instant Match chat lifecycle', () => {
       emitInstantMatchChatEnded: jest.fn(),
     };
     setRealtimeGatewayRef(emitter);
-    service = new InstantMatchService(prisma as any, messages as any, blocksStubFor(prisma));
+    service = new InstantMatchService(
+      prisma as any,
+      messages,
+      blocksStubFor(prisma),
+    );
   });
 
   afterEach(() => setRealtimeGatewayRef(null));
@@ -72,8 +79,12 @@ describe('Instant Match chat lifecycle', () => {
   describe('getActiveChatSession', () => {
     it('returns the live chat for either participant', async () => {
       seedChat();
-      expect(await service.getActiveChatSession('alice')).toMatchObject({ id: 'm1' });
-      expect(await service.getActiveChatSession('bob')).toMatchObject({ id: 'm1' });
+      expect(await service.getActiveChatSession('alice')).toMatchObject({
+        id: 'm1',
+      });
+      expect(await service.getActiveChatSession('bob')).toMatchObject({
+        id: 'm1',
+      });
     });
 
     it('returns nothing for someone who is not in it', async () => {
@@ -107,12 +118,21 @@ describe('Instant Match chat lifecycle', () => {
       await service.leaveChatSession('alice');
 
       const byUser = new Map(
-        emitter.emitInstantMatchChatEnded.mock.calls.map((c: any[]) => [c[0], c[1]]),
+        emitter.emitInstantMatchChatEnded.mock.calls.map((c: any[]) => [
+          c[0],
+          c[1],
+        ]),
       );
       // The distinction the UI turns into two different screens — computing
       // it here means the client never has to get an id comparison right.
-      expect(byUser.get('alice')).toMatchObject({ endReason: 'you_left', isActive: false });
-      expect(byUser.get('bob')).toMatchObject({ endReason: 'they_left', isActive: false });
+      expect(byUser.get('alice')).toMatchObject({
+        endReason: 'you_left',
+        isActive: false,
+      });
+      expect(byUser.get('bob')).toMatchObject({
+        endReason: 'they_left',
+        isActive: false,
+      });
     });
 
     it('leaves no active chat behind for either user', async () => {
@@ -125,7 +145,9 @@ describe('Instant Match chat lifecycle', () => {
 
     it('refuses a stranger holding a match id', async () => {
       seedChat();
-      await expect(service.leaveChatSession('carol', 'm1')).rejects.toThrow(ForbiddenException);
+      await expect(service.leaveChatSession('carol', 'm1')).rejects.toThrow(
+        ForbiddenException,
+      );
       expect(prisma.sessions[0].chatStatus).toBe('ACTIVE');
     });
 
@@ -141,7 +163,9 @@ describe('Instant Match chat lifecycle', () => {
         // overwrite the winner's record of who walked away.
         expect(prisma.sessions[0].chatStatus).toBe('ENDED_BY_USER');
         expect(['alice', 'bob']).toContain(prisma.sessions[0].endedById);
-        expect(prisma.sessions.filter((s: any) => s.chatStatus === 'ENDED_BY_USER')).toHaveLength(1);
+        expect(
+          prisma.sessions.filter((s: any) => s.chatStatus === 'ENDED_BY_USER'),
+        ).toHaveLength(1);
       });
 
       it('notifies once, not twice per user', async () => {
@@ -165,7 +189,10 @@ describe('Instant Match chat lifecycle', () => {
       // The second call did nothing, but still answers with the true state
       // rather than an error — from the user's side the chat did end.
       expect(second.ended).toBe(false);
-      expect(second.session).toMatchObject({ endReason: 'you_left', isActive: false });
+      expect(second.session).toMatchObject({
+        endReason: 'you_left',
+        isActive: false,
+      });
       expect(emitter.emitInstantMatchChatEnded).toHaveBeenCalledTimes(2);
     });
   });
@@ -186,12 +213,20 @@ describe('Instant Match chat lifecycle', () => {
       seedChat({ chatExpiresAt: new Date(Date.now() - 1000) });
       const state = await service.getChatStateFor('alice');
 
-      expect(state).toMatchObject({ status: 'EXPIRED', endReason: 'expired', isActive: false });
+      expect(state).toMatchObject({
+        status: 'EXPIRED',
+        endReason: 'expired',
+        isActive: false,
+      });
       expect(state?.endedById).toBeNull();
     });
 
     it('does not re-expire a chat someone already left', async () => {
-      seedChat({ chatStatus: 'ENDED_BY_USER', endedById: 'bob', endedAt: new Date() });
+      seedChat({
+        chatStatus: 'ENDED_BY_USER',
+        endedById: 'bob',
+        endedAt: new Date(),
+      });
       await service.expireStaleChats();
 
       expect(prisma.sessions[0].chatStatus).toBe('ENDED_BY_USER');
@@ -200,12 +235,20 @@ describe('Instant Match chat lifecycle', () => {
 
     it('sweeps every chat whose window has closed', async () => {
       seedChat({ chatExpiresAt: new Date(Date.now() - 1000) });
-      seedChat({ id: 'm2', userAId: 'carol', userBId: 'dave', chatExpiresAt: new Date(Date.now() - 1) });
+      seedChat({
+        id: 'm2',
+        userAId: 'carol',
+        userBId: 'dave',
+        chatExpiresAt: new Date(Date.now() - 1),
+      });
       seedChat({ id: 'm3', userAId: 'erin', userBId: 'frank' });
 
       expect(await service.expireStaleChats()).toBe(2);
-      expect(prisma.sessions.map((s: any) => s.chatStatus))
-        .toEqual(['EXPIRED', 'EXPIRED', 'ACTIVE']);
+      expect(prisma.sessions.map((s: any) => s.chatStatus)).toEqual([
+        'EXPIRED',
+        'EXPIRED',
+        'ACTIVE',
+      ]);
     });
   });
 
@@ -237,7 +280,11 @@ describe('Instant Match chat lifecycle', () => {
     it('carries the deadline and the match reason for the chat header', async () => {
       seedChat();
       const state = await service.getChatStateFor('alice');
-      expect(state).toMatchObject({ matchReason: 'study', otherUserId: 'bob', isActive: true });
+      expect(state).toMatchObject({
+        matchReason: 'study',
+        otherUserId: 'bob',
+        isActive: true,
+      });
       expect(state?.expiresAt).toBeGreaterThan(Date.now());
     });
 
@@ -272,13 +319,17 @@ describe('Instant Match chat lifecycle', () => {
     it('lets them search again once they leave', async () => {
       seedChat();
       await service.leaveChatSession('alice');
-      await expect(service.joinQueue(joinDto('alice') as any)).resolves.toBeUndefined();
+      await expect(
+        service.joinQueue(joinDto('alice') as any),
+      ).resolves.toBeUndefined();
       expect(prisma.queue).toHaveLength(1);
     });
 
     it('lets them search again once the window closes', async () => {
       seedChat({ chatExpiresAt: new Date(Date.now() - 1) });
-      await expect(service.joinQueue(joinDto('alice') as any)).resolves.toBeUndefined();
+      await expect(
+        service.joinQueue(joinDto('alice') as any),
+      ).resolves.toBeUndefined();
       expect(prisma.queue).toHaveLength(1);
     });
   });
@@ -288,13 +339,16 @@ describe('Instant Match chat lifecycle', () => {
   describe('assertCanSendInChat', () => {
     it('allows a participant inside a live chat', async () => {
       seedChat();
-      await expect(service.assertCanSendInChat('alice', 'conv-1')).resolves.toBeUndefined();
+      await expect(
+        service.assertCanSendInChat('alice', 'conv-1'),
+      ).resolves.toBeUndefined();
     });
 
     it('refuses a non-participant who knows the conversation id', async () => {
       seedChat();
-      await expect(service.assertCanSendInChat('carol', 'conv-1'))
-        .rejects.toThrow(ForbiddenException);
+      await expect(
+        service.assertCanSendInChat('carol', 'conv-1'),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('refuses both sides once someone has left', async () => {
@@ -303,21 +357,28 @@ describe('Instant Match chat lifecycle', () => {
 
       // The stale-tab case: neither client may write, whatever its own UI
       // still believes.
-      await expect(service.assertCanSendInChat('alice', 'conv-1')).rejects.toThrow(/left/i);
-      await expect(service.assertCanSendInChat('bob', 'conv-1')).rejects.toThrow(/left/i);
+      await expect(
+        service.assertCanSendInChat('alice', 'conv-1'),
+      ).rejects.toThrow(/left/i);
+      await expect(
+        service.assertCanSendInChat('bob', 'conv-1'),
+      ).rejects.toThrow(/left/i);
     });
 
     it('refuses a message that arrives after the window closes', async () => {
       seedChat({ chatExpiresAt: new Date(Date.now() - 1) });
       // Sent one millisecond late by a client whose countdown had not ticked
       // over yet: the row decides, not the sender.
-      await expect(service.assertCanSendInChat('alice', 'conv-1')).rejects.toThrow(/expired/i);
+      await expect(
+        service.assertCanSendInChat('alice', 'conv-1'),
+      ).rejects.toThrow(/expired/i);
       expect(prisma.sessions[0].chatStatus).toBe('EXPIRED');
     });
 
     it('refuses a conversation with no session behind it', async () => {
-      await expect(service.assertCanSendInChat('alice', 'conv-ghost'))
-        .rejects.toThrow(ForbiddenException);
+      await expect(
+        service.assertCanSendInChat('alice', 'conv-ghost'),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });

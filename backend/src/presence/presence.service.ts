@@ -19,22 +19,36 @@ export class PresenceService {
     if (this.redis) {
       this.logger.log('Redis connected for Presence Service');
     } else {
-      this.logger.warn('Redis not configured. Presence features will be mocked in-memory.');
+      this.logger.warn(
+        'Redis not configured. Presence features will be mocked in-memory.',
+      );
     }
   }
 
-  private statusChangeListeners: Array<(userId: string, status: 'online' | 'offline', lastSeen: string) => void> = [];
+  private statusChangeListeners: Array<
+    (userId: string, status: 'online' | 'offline', lastSeen: string) => void
+  > = [];
 
   registerSocketValidator(validator: (socketId: string) => boolean) {
     this.socketValidator = validator;
   }
 
-  onStatusChange(listener: (userId: string, status: 'online' | 'offline', lastSeen: string) => void) {
+  onStatusChange(
+    listener: (
+      userId: string,
+      status: 'online' | 'offline',
+      lastSeen: string,
+    ) => void,
+  ) {
     this.statusChangeListeners.push(listener);
   }
 
-  private notifyStatusChange(userId: string, status: 'online' | 'offline', lastSeen: string) {
-    this.statusChangeListeners.forEach(listener => {
+  private notifyStatusChange(
+    userId: string,
+    status: 'online' | 'offline',
+    lastSeen: string,
+  ) {
+    this.statusChangeListeners.forEach((listener) => {
       try {
         listener(userId, status, lastSeen);
       } catch (err) {
@@ -46,7 +60,9 @@ export class PresenceService {
   private cleanPresence(presence: UserPresence | null): UserPresence | null {
     if (!presence) return null;
     if (this.socketValidator && Array.isArray(presence.socketIds)) {
-      presence.socketIds = presence.socketIds.filter(id => this.socketValidator!(id));
+      presence.socketIds = presence.socketIds.filter((id) =>
+        this.socketValidator!(id),
+      );
       if (presence.socketIds.length === 0) {
         presence.status = 'offline';
       }
@@ -75,21 +91,21 @@ export class PresenceService {
         const key = this.getPresenceKey(userId);
         const data = await this.redis.get(key);
         let presence: UserPresence | null = data ? JSON.parse(data) : null;
-        
+
         presence = this.cleanPresence(presence);
         const previousStatus = presence?.status || 'offline';
 
         if (!presence) {
           presence = { lastSeen: now, status: 'online', socketIds: [] };
         }
-        
+
         if (!presence.socketIds.includes(socketId)) {
           presence.socketIds.push(socketId);
         }
-        
+
         presence.lastSeen = now;
         presence.status = 'online';
-        
+
         await this.redis.set(key, JSON.stringify(presence), 'EX', 90);
 
         if (previousStatus !== 'online') {
@@ -128,9 +144,11 @@ export class PresenceService {
         const key = this.getPresenceKey(userId);
         const data = await this.redis.get(key);
         let presence: UserPresence | null = data ? JSON.parse(data) : null;
-        
+
         if (presence) {
-          presence.socketIds = presence.socketIds.filter(id => id !== socketId);
+          presence.socketIds = presence.socketIds.filter(
+            (id) => id !== socketId,
+          );
           presence = this.cleanPresence(presence);
           if (presence) {
             presence.lastSeen = new Date().toISOString();
@@ -142,16 +160,23 @@ export class PresenceService {
                 this.disconnectTimers.delete(userId);
                 try {
                   const currentData = await this.redis?.get(key);
-                  let currPresence: UserPresence | null = currentData ? JSON.parse(currentData) : null;
+                  let currPresence: UserPresence | null = currentData
+                    ? JSON.parse(currentData)
+                    : null;
                   currPresence = this.cleanPresence(currPresence);
                   if (!currPresence || currPresence.socketIds.length === 0) {
                     const now = new Date().toISOString();
                     const updatedPresence: UserPresence = {
                       lastSeen: now,
                       status: 'offline',
-                      socketIds: []
+                      socketIds: [],
                     };
-                    await this.redis?.set(key, JSON.stringify(updatedPresence), 'EX', 90);
+                    await this.redis?.set(
+                      key,
+                      JSON.stringify(updatedPresence),
+                      'EX',
+                      90,
+                    );
                     this.logger.log(`Offline user=${userId}`);
                     this.notifyStatusChange(userId, 'offline', now);
                   }
@@ -166,7 +191,9 @@ export class PresenceService {
       } else {
         let presence = this.memoryPresence.get(userId) || null;
         if (presence) {
-          presence.socketIds = presence.socketIds.filter(id => id !== socketId);
+          presence.socketIds = presence.socketIds.filter(
+            (id) => id !== socketId,
+          );
           presence = this.cleanPresence(presence);
           if (presence) {
             presence.lastSeen = new Date().toISOString();
@@ -183,7 +210,7 @@ export class PresenceService {
                   const updatedPresence: UserPresence = {
                     lastSeen: now,
                     status: 'offline',
-                    socketIds: []
+                    socketIds: [],
                   };
                   this.memoryPresence.set(userId, updatedPresence);
                   this.logger.log(`Offline user=${userId}`);
@@ -232,7 +259,7 @@ export class PresenceService {
     if (!userIds || userIds.length === 0) return result;
     try {
       if (this.redis) {
-        const keys = userIds.map(uId => this.getPresenceKey(uId));
+        const keys = userIds.map((uId) => this.getPresenceKey(uId));
         const values = await this.redis.mget(...keys);
         userIds.forEach((uId, idx) => {
           const val = values[idx];
@@ -245,7 +272,7 @@ export class PresenceService {
           }
         });
       } else {
-        userIds.forEach(uId => {
+        userIds.forEach((uId) => {
           let pres = this.memoryPresence.get(uId) || null;
           pres = this.cleanPresence(pres);
           if (pres) result.set(uId, pres);

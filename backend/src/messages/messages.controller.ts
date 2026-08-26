@@ -1,4 +1,18 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Req, Query, Delete, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  UseGuards,
+  Req,
+  Query,
+  Delete,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { DomainEventService } from '../events/domain-event.service';
@@ -18,7 +32,10 @@ export class MessagesController {
 
   @Delete('msg/:messageId/for-me')
   @UseGuards(JwtGuard)
-  async deleteMessageForMe(@Req() req: any, @Param('messageId') messageId: string) {
+  async deleteMessageForMe(
+    @Req() req: any,
+    @Param('messageId') messageId: string,
+  ) {
     const userId = req.user?.id;
     return this.messagesService.deleteMessageForMe(messageId, userId);
   }
@@ -32,23 +49,31 @@ export class MessagesController {
       const pubId = (result as any).publicId || result.conversationId;
       const participantIds = (result as any).participantIds || [];
       setImmediate(() => {
-        this.domainEventService.emit('message:updated', {
-          id: messageId,
-          conversationId: pubId,
-          publicId: pubId,
-          internalId: result.conversationId,
-          state: 'UNSENT',
-          text: 'This message was unsent',
-          mediaUrl: null,
-          mediaType: null,
-          inviteData: null,
-          replyTo: null
-        }, participantIds);
-        this.domainEventService.emit('conversation:updated', {
-          conversationId: pubId,
-          lastMessageText: 'This message was unsent',
-          updatedAt: new Date().toISOString()
-        }, participantIds);
+        this.domainEventService.emit(
+          'message:updated',
+          {
+            id: messageId,
+            conversationId: pubId,
+            publicId: pubId,
+            internalId: result.conversationId,
+            state: 'UNSENT',
+            text: 'This message was unsent',
+            mediaUrl: null,
+            mediaType: null,
+            inviteData: null,
+            replyTo: null,
+          },
+          participantIds,
+        );
+        this.domainEventService.emit(
+          'conversation:updated',
+          {
+            conversationId: pubId,
+            lastMessageText: 'This message was unsent',
+            updatedAt: new Date().toISOString(),
+          },
+          participantIds,
+        );
       });
     }
     return result;
@@ -56,12 +81,23 @@ export class MessagesController {
 
   @Post('msg/:messageId/forward')
   @UseGuards(JwtGuard)
-  async forwardMessage(@Req() req: any, @Param('messageId') messageId: string, @Body('targetConversationIds') targetConversationIds: string[]) {
+  async forwardMessage(
+    @Req() req: any,
+    @Param('messageId') messageId: string,
+    @Body('targetConversationIds') targetConversationIds: string[],
+  ) {
     const userId = req.user?.id;
-    if (!Array.isArray(targetConversationIds) || targetConversationIds.length === 0) {
+    if (
+      !Array.isArray(targetConversationIds) ||
+      targetConversationIds.length === 0
+    ) {
       throw new BadRequestException('targetConversationIds array is required');
     }
-    const result = await this.messagesService.forwardMessage(messageId, targetConversationIds, userId);
+    const result = await this.messagesService.forwardMessage(
+      messageId,
+      targetConversationIds,
+      userId,
+    );
 
     if (result.messages && Array.isArray(result.messages)) {
       for (const message of result.messages) {
@@ -69,8 +105,14 @@ export class MessagesController {
 
         // Batched block+mute resolution — replaces the per-participant
         // isUserBlockedBy / isUserConversationMuted N+1 loops.
-        const [{ recipientIds: unblockedParticipantIds, unmutedRecipientIds }, conv] = await Promise.all([
-          this.messagesService.getBatchUnblockedAndUnmutedParticipants(conversationId, userId),
+        const [
+          { recipientIds: unblockedParticipantIds, unmutedRecipientIds },
+          conv,
+        ] = await Promise.all([
+          this.messagesService.getBatchUnblockedAndUnmutedParticipants(
+            conversationId,
+            userId,
+          ),
           this.messagesService.getConversationById(conversationId),
         ]);
 
@@ -79,35 +121,57 @@ export class MessagesController {
           recipientIds: unblockedParticipantIds,
           unmutedRecipientIds,
         });
-        this.domainEventService.emit('conversation:updated', {
-          conversationId: message.conversationId,
-          publicId: message.publicId,
-          internalId: message.internalId,
-          // Lets clients skip a conversation that has no row in the Messages
-          // list at all, instead of reading its absence as a stale cache.
-          chatType: message.chatType || 'normal',
-          isInstantMatch: Boolean(message.isInstantMatch),
-          lastMessage: {
-            text: message.text || (message.mediaUrl ? (message.mediaType === 'image' ? 'Photo' : message.mediaType === 'video' ? 'Video' : 'Audio') : ''),
-            createdAt: message.createdAt,
-            senderId: userId
-          }
-        }, unblockedParticipantIds);
+        this.domainEventService.emit(
+          'conversation:updated',
+          {
+            conversationId: message.conversationId,
+            publicId: message.publicId,
+            internalId: message.internalId,
+            // Lets clients skip a conversation that has no row in the Messages
+            // list at all, instead of reading its absence as a stale cache.
+            chatType: message.chatType || 'normal',
+            isInstantMatch: Boolean(message.isInstantMatch),
+            lastMessage: {
+              text:
+                message.text ||
+                (message.mediaUrl
+                  ? message.mediaType === 'image'
+                    ? 'Photo'
+                    : message.mediaType === 'video'
+                      ? 'Video'
+                      : 'Audio'
+                  : ''),
+              createdAt: message.createdAt,
+              senderId: userId,
+            },
+          },
+          unblockedParticipantIds,
+        );
 
         // Notifications (only unmuted recipients)
         for (const pId of unmutedRecipientIds) {
-          this.notificationsService.createNotification(
-            this.notificationFactory.createMessage(
-              { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
-              conv || { id: conversationId, name: message.senderName },
-              pId,
-              message.text || 'Forwarded a message'
+          this.notificationsService
+            .createNotification(
+              this.notificationFactory.createMessage(
+                {
+                  id: userId,
+                  displayName: message.senderName,
+                  avatar: message.senderAvatar,
+                },
+                conv || { id: conversationId, name: message.senderName },
+                pId,
+                message.text || 'Forwarded a message',
+              ),
             )
-          ).catch(() => {});
+            .catch(() => {});
         }
 
         // Emit to sender (multi-device sync, never alerted)
-        this.domainEventService.emit('message:new', { ...message, alert: false }, [userId]);
+        this.domainEventService.emit(
+          'message:new',
+          { ...message, alert: false },
+          [userId],
+        );
       }
     }
 
@@ -116,13 +180,21 @@ export class MessagesController {
 
   @Get()
   @UseGuards(JwtGuard)
-  async getConversations(@Req() req: any, @Query('limit') limit?: string, @Query('offset') offset?: string) {
+  async getConversations(
+    @Req() req: any,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
     const userId = req.user?.id;
     const parsedLimit = limit ? parseInt(limit, 10) : 20;
     const parsedOffset = offset ? parseInt(offset, 10) : 0;
     const limitNum = isNaN(parsedLimit) ? 20 : parsedLimit;
     const offsetNum = isNaN(parsedOffset) ? 0 : parsedOffset;
-    return this.messagesService.getUserConversations(userId, limitNum, offsetNum);
+    return this.messagesService.getUserConversations(
+      userId,
+      limitNum,
+      offsetNum,
+    );
   }
 
   @Get(':conversationId')
@@ -131,11 +203,16 @@ export class MessagesController {
     @Req() req: any,
     @Param('conversationId') conversationId: string,
     @Query('before') beforeCursor?: string,
-    @Query('limit') limit?: string
+    @Query('limit') limit?: string,
   ) {
     const userId = req.user?.id;
     const limitNum = limit ? parseInt(limit, 10) : 50;
-    return this.messagesService.getConversationHistory(conversationId, userId, beforeCursor, limitNum);
+    return this.messagesService.getConversationHistory(
+      conversationId,
+      userId,
+      beforeCursor,
+      limitNum,
+    );
   }
 
   @Post(':id/messages')
@@ -143,15 +220,21 @@ export class MessagesController {
   async sendMessage(
     @Req() req: any,
     @Param('id') conversationId: string,
-    @Body() body: SendMessageDto
+    @Body() body: SendMessageDto,
   ) {
     const userId = req.user?.id;
-    const message = await this.messagesService.sendMessage(userId, conversationId, body);
+    const message = await this.messagesService.sendMessage(
+      userId,
+      conversationId,
+      body,
+    );
 
     const unblockedParticipantIds = message.recipientIds || [];
     const unmutedRecipientIds = message.unmutedRecipientIds || [];
 
-    const allParticipantIds = Array.from(new Set([userId, ...unblockedParticipantIds]));
+    const allParticipantIds = Array.from(
+      new Set([userId, ...unblockedParticipantIds]),
+    );
 
     // Emit to others. Muted recipients still receive the message (mute is not
     // a delivery filter) but receive it flagged `alert: false`.
@@ -159,38 +242,54 @@ export class MessagesController {
       recipientIds: unblockedParticipantIds,
       unmutedRecipientIds,
     });
-    this.domainEventService.emit('conversation:updated', {
-      conversationId: message.conversationId,
-      publicId: message.publicId,
-      internalId: message.internalId,
-      chatType: message.chatType || 'normal',
-      isInstantMatch: Boolean(message.isInstantMatch),
-      lastMessage: {
-        text: message.text || (message.inviteData ? (message.inviteData.groupName ? `Group invite: ${message.inviteData.groupName}` : 'Group invite') : ''),
-        createdAt: message.createdAt,
-        senderId: userId
-      }
-    }, allParticipantIds);
+    this.domainEventService.emit(
+      'conversation:updated',
+      {
+        conversationId: message.conversationId,
+        publicId: message.publicId,
+        internalId: message.internalId,
+        chatType: message.chatType || 'normal',
+        isInstantMatch: Boolean(message.isInstantMatch),
+        lastMessage: {
+          text:
+            message.text ||
+            (message.inviteData
+              ? message.inviteData.groupName
+                ? `Group invite: ${message.inviteData.groupName}`
+                : 'Group invite'
+              : ''),
+          createdAt: message.createdAt,
+          senderId: userId,
+        },
+      },
+      allParticipantIds,
+    );
 
     setImmediate(() => {
       for (const pId of unmutedRecipientIds) {
-        this.notificationsService.createNotification(
-          this.notificationFactory.createMessage(
-            { id: userId, displayName: message.senderName, avatar: message.senderAvatar },
-            // The type has to travel with the conversation stub. Passing only
-            // { id, name } left the factory unable to tell an Instant Match
-            // chat from a DM, so every Instant Match message produced a
-            // notification that deep-linked into Messages.
-            {
-              id: conversationId,
-              name: message.conversationName || message.senderName,
-              type: message.isInstantMatch ? 'INSTANT_MATCH' : undefined,
-              isInstantMatch: Boolean(message.isInstantMatch),
-            },
-            pId,
-            message.text
+        this.notificationsService
+          .createNotification(
+            this.notificationFactory.createMessage(
+              {
+                id: userId,
+                displayName: message.senderName,
+                avatar: message.senderAvatar,
+              },
+              // The type has to travel with the conversation stub. Passing only
+              // { id, name } left the factory unable to tell an Instant Match
+              // chat from a DM, so every Instant Match message produced a
+              // notification that deep-linked into Messages.
+              {
+                id: conversationId,
+                name: message.conversationName || message.senderName,
+                type: message.isInstantMatch ? 'INSTANT_MATCH' : undefined,
+                isInstantMatch: Boolean(message.isInstantMatch),
+              },
+              pId,
+              message.text,
+            ),
           )
-        ).catch(() => {});
+          .catch(() => {});
       }
     });
 
@@ -200,16 +299,20 @@ export class MessagesController {
   @Post()
   @UseGuards(JwtGuard)
   async startConversation(
-    @Req() req: any, 
-    @Query('userIds') userIdsQuery?: string, 
+    @Req() req: any,
+    @Query('userIds') userIdsQuery?: string,
     @Body('userIds') userIdsBody?: string[],
-    @Body('name') nameBody?: string
+    @Body('name') nameBody?: string,
   ) {
     const userId = req.user?.id;
     let targetUserIds: string[] = [];
     if (userIdsBody) {
       if (Array.isArray(userIdsBody)) {
-        targetUserIds = userIdsBody.map((item: any) => typeof item === 'string' ? item : (item?.id || item?.userId)).filter(Boolean);
+        targetUserIds = userIdsBody
+          .map((item: any) =>
+            typeof item === 'string' ? item : item?.id || item?.userId,
+          )
+          .filter(Boolean);
       } else if (typeof userIdsBody === 'string') {
         targetUserIds = [userIdsBody];
       } else if (typeof userIdsBody === 'object') {
@@ -219,12 +322,24 @@ export class MessagesController {
     } else if (userIdsQuery) {
       targetUserIds = userIdsQuery.split(',');
     }
-    const res = await this.messagesService.startConversation(targetUserIds, userId, nameBody);
+    const res = await this.messagesService.startConversation(
+      targetUserIds,
+      userId,
+      nameBody,
+    );
     if (targetUserIds.length > 0) {
-      const others = targetUserIds.filter(tId => tId && tId !== userId);
+      const others = targetUserIds.filter((tId) => tId && tId !== userId);
       if (others.length > 0) {
-        this.domainEventService.emit('group:member_added', { conversationId: res.id, userId }, others);
-        this.domainEventService.emit('conversation:updated', { conversationId: res.id }, others);
+        this.domainEventService.emit(
+          'group:member_added',
+          { conversationId: res.id, userId },
+          others,
+        );
+        this.domainEventService.emit(
+          'conversation:updated',
+          { conversationId: res.id },
+          others,
+        );
       }
     }
     return res;
@@ -234,15 +349,23 @@ export class MessagesController {
   @UseGuards(JwtGuard)
   async createInstantMatch(
     @Req() req: any,
-    @Body() body: { targetUserId: string; activity: string }
+    @Body() body: { targetUserId: string; activity: string },
   ) {
     const userId = req.user?.id;
-    return this.messagesService.createInstantMatchConversation(userId, body.targetUserId, body.activity);
+    return this.messagesService.createInstantMatchConversation(
+      userId,
+      body.targetUserId,
+      body.activity,
+    );
   }
 
   @Post(':id/react')
   @UseGuards(JwtGuard)
-  async reactToMessage(@Req() req: any, @Param('id') messageId: string, @Body('reaction') reaction: string) {
+  async reactToMessage(
+    @Req() req: any,
+    @Param('id') messageId: string,
+    @Body('reaction') reaction: string,
+  ) {
     const userId = req.user?.id;
     return this.messagesService.reactToMessage(messageId, userId, reaction);
   }
@@ -256,14 +379,22 @@ export class MessagesController {
 
   @Patch(':id/mute')
   @UseGuards(JwtGuard)
-  async muteConversation(@Req() req: any, @Param('id') conversationId: string, @Body('muted') muted: boolean) {
+  async muteConversation(
+    @Req() req: any,
+    @Param('id') conversationId: string,
+    @Body('muted') muted: boolean,
+  ) {
     const userId = req.user?.id;
     return this.messagesService.muteConversation(conversationId, userId, muted);
   }
 
   @Patch(':id/pin')
   @UseGuards(JwtGuard)
-  async pinConversation(@Req() req: any, @Param('id') conversationId: string, @Body('pinned') pinned: boolean) {
+  async pinConversation(
+    @Req() req: any,
+    @Param('id') conversationId: string,
+    @Body('pinned') pinned: boolean,
+  ) {
     const userId = req.user?.id;
     return this.messagesService.pinConversation(conversationId, userId, pinned);
   }
@@ -277,9 +408,15 @@ export class MessagesController {
 
   @Delete(':id/conversations')
   @UseGuards(JwtGuard)
-  async deleteConversation(@Req() req: any, @Param('id') conversationId: string) {
+  async deleteConversation(
+    @Req() req: any,
+    @Param('id') conversationId: string,
+  ) {
     const userId = req.user?.id;
-    return this.messagesService.deleteConversationForUser(conversationId, userId);
+    return this.messagesService.deleteConversationForUser(
+      conversationId,
+      userId,
+    );
   }
 
   /**
@@ -289,21 +426,43 @@ export class MessagesController {
    * reached nobody in real time. Kept in sync here rather than left as a quiet
    * trap for any client still on this route.
    */
-  private async emitRoleChanged(conversationId: string, targetUserId: string, newRole: string) {
+  private async emitRoleChanged(
+    conversationId: string,
+    targetUserId: string,
+    newRole: string,
+  ) {
     try {
-      const participantIds = await this.messagesService.getConversationParticipantIds(conversationId);
+      const participantIds =
+        await this.messagesService.getConversationParticipantIds(
+          conversationId,
+        );
       if (participantIds.length > 0) {
-        this.domainEventService.emit('group:role_changed', { conversationId, targetUserId, newRole }, participantIds);
+        this.domainEventService.emit(
+          'group:role_changed',
+          { conversationId, targetUserId, newRole },
+          participantIds,
+        );
       }
     } catch {
       // Never let a realtime emit fail the mutation that already committed.
     }
   }
 
-  private async broadcastSystemMessage(conversationId: string, senderId: string, text: string) {
+  private async broadcastSystemMessage(
+    conversationId: string,
+    senderId: string,
+    text: string,
+  ) {
     try {
-      const message = await this.messagesService.createSystemMessage(conversationId, senderId, text);
-      const participantIds = await this.messagesService.getConversationParticipantIds(conversationId);
+      const message = await this.messagesService.createSystemMessage(
+        conversationId,
+        senderId,
+        text,
+      );
+      const participantIds =
+        await this.messagesService.getConversationParticipantIds(
+          conversationId,
+        );
       this.domainEventService.emit('message:new', message, participantIds);
       return message;
     } catch {
@@ -316,26 +475,46 @@ export class MessagesController {
   async updateGroupInfo(
     @Req() req: any,
     @Param('id') conversationId: string,
-    @Body() body: { name?: string; description?: string; avatarKey?: string; avatar?: string }
+    @Body()
+    body: {
+      name?: string;
+      description?: string;
+      avatarKey?: string;
+      avatar?: string;
+    },
   ) {
     const userId = req.user?.id;
-    const realConvId = await this.messagesService.resolveConversationId(conversationId);
-    const convBefore = await this.messagesService.getConversationById(realConvId);
+    const realConvId =
+      await this.messagesService.resolveConversationId(conversationId);
+    const convBefore =
+      await this.messagesService.getConversationById(realConvId);
 
-    const result = await this.messagesService.updateGroupInfo(conversationId, userId, body);
+    const result = await this.messagesService.updateGroupInfo(
+      conversationId,
+      userId,
+      body,
+    );
     const actorHandle = await this.messagesService.getUserHandle(userId);
 
-    const newAvatar = body.avatarKey !== undefined ? body.avatarKey : body.avatar;
-    const avatarChanged = newAvatar !== undefined && newAvatar !== (convBefore?.avatarKey || null);
-    const nameChanged = body.name !== undefined && body.name !== (convBefore?.name || null);
-    const descChanged = body.description !== undefined && body.description !== (convBefore?.description || null);
+    const newAvatar =
+      body.avatarKey !== undefined ? body.avatarKey : body.avatar;
+    const avatarChanged =
+      newAvatar !== undefined && newAvatar !== (convBefore?.avatarKey || null);
+    const nameChanged =
+      body.name !== undefined && body.name !== (convBefore?.name || null);
+    const descChanged =
+      body.description !== undefined &&
+      body.description !== (convBefore?.description || null);
 
     let text = '';
-    if (avatarChanged && nameChanged) text = `${actorHandle} updated group avatar and name`;
+    if (avatarChanged && nameChanged)
+      text = `${actorHandle} updated group avatar and name`;
     else if (avatarChanged) text = `${actorHandle} changed group avatar`;
-    else if (nameChanged) text = `${actorHandle} changed group name to "${body.name}"`;
+    else if (nameChanged)
+      text = `${actorHandle} changed group name to "${body.name}"`;
     else if (descChanged) text = `${actorHandle} updated group description`;
-    else if (body.name || body.avatarKey || body.avatar || body.description) text = `${actorHandle} updated group details`;
+    else if (body.name || body.avatarKey || body.avatar || body.description)
+      text = `${actorHandle} updated group details`;
 
     if (text) {
       await this.broadcastSystemMessage(conversationId, userId, text);
@@ -343,18 +522,25 @@ export class MessagesController {
 
     if (result) {
       const pubId = (result as any).publicId || result.id;
-      const pIds = await this.messagesService.getConversationParticipantIds(result.id);
-      const avatarVal = (result as any).avatarKey || (result as any).avatar || null;
-      this.domainEventService.emit('conversation:updated', {
-        conversationId: pubId,
-        id: pubId,
-        publicId: pubId,
-        internalId: result.id,
-        name: result.name,
-        avatar: avatarVal,
-        avatarKey: avatarVal,
-        description: result.description
-      }, pIds);
+      const pIds = await this.messagesService.getConversationParticipantIds(
+        result.id,
+      );
+      const avatarVal =
+        (result as any).avatarKey || (result as any).avatar || null;
+      this.domainEventService.emit(
+        'conversation:updated',
+        {
+          conversationId: pubId,
+          id: pubId,
+          publicId: pubId,
+          internalId: result.id,
+          name: result.name,
+          avatar: avatarVal,
+          avatarKey: avatarVal,
+          description: result.description,
+        },
+        pIds,
+      );
     }
 
     return {
@@ -365,51 +551,92 @@ export class MessagesController {
 
   @Post(':id/members')
   @UseGuards(JwtGuard)
-  async addMember(@Req() req: any, @Param('id') conversationId: string, @Body('userId') targetUserId: string) {
+  async addMember(
+    @Req() req: any,
+    @Param('id') conversationId: string,
+    @Body('userId') targetUserId: string,
+  ) {
     const userId = req.user?.id;
-    const result = await this.messagesService.addGroupMember(conversationId, userId, targetUserId);
+    const result = await this.messagesService.addGroupMember(
+      conversationId,
+      userId,
+      targetUserId,
+    );
     const actorHandle = await this.messagesService.getUserHandle(userId);
     const targetHandle = await this.messagesService.getUserHandle(targetUserId);
-    await this.broadcastSystemMessage(conversationId, userId, `${actorHandle} added ${targetHandle} to the group`);
+    await this.broadcastSystemMessage(
+      conversationId,
+      userId,
+      `${actorHandle} added ${targetHandle} to the group`,
+    );
 
-    this.domainEventService.emit('group:member_added', { conversationId, userId: targetUserId }, [targetUserId]);
-    this.domainEventService.emit('conversation:updated', { conversationId }, [targetUserId]);
+    this.domainEventService.emit(
+      'group:member_added',
+      { conversationId, userId: targetUserId },
+      [targetUserId],
+    );
+    this.domainEventService.emit('conversation:updated', { conversationId }, [
+      targetUserId,
+    ]);
     return result;
   }
 
   @Delete(':id/members/:targetUserId')
   @UseGuards(JwtGuard)
-  async removeMember(@Req() req: any, @Param('id') conversationId: string, @Param('targetUserId') targetUserId: string) {
+  async removeMember(
+    @Req() req: any,
+    @Param('id') conversationId: string,
+    @Param('targetUserId') targetUserId: string,
+  ) {
     const userId = req.user?.id;
     // Mutate FIRST — if removal is rejected (not admin, target is owner, etc.)
     // we must not persist/broadcast an "X removed Y" system message.
-    const result = await this.messagesService.removeGroupMember(conversationId, userId, targetUserId);
+    const result = await this.messagesService.removeGroupMember(
+      conversationId,
+      userId,
+      targetUserId,
+    );
 
     const [targetHandle, actorHandle] = await Promise.all([
       this.messagesService.getUserHandle(targetUserId),
       this.messagesService.getUserHandle(userId),
     ]);
     const text = `${actorHandle} removed ${targetHandle} from the group`;
-    const message = await this.messagesService.createSystemMessage(conversationId, userId, text);
-
-    this.domainEventService.emit('group:member_removed', {
+    const message = await this.messagesService.createSystemMessage(
       conversationId,
-      targetUserId,
-      removedBy: userId,
-      message
-    }, [targetUserId]);
-    this.domainEventService.emit('message:new', message, [targetUserId]);
+      userId,
+      text,
+    );
 
-    const remainingParticipantIds = await this.messagesService.getConversationParticipantIds(conversationId);
-    const others = remainingParticipantIds.filter(pId => pId !== targetUserId);
-    if (others.length > 0) {
-      this.domainEventService.emit('message:new', message, others);
-      this.domainEventService.emit('group:member_removed', {
+    this.domainEventService.emit(
+      'group:member_removed',
+      {
         conversationId,
         targetUserId,
         removedBy: userId,
-        message
-      }, others);
+        message,
+      },
+      [targetUserId],
+    );
+    this.domainEventService.emit('message:new', message, [targetUserId]);
+
+    const remainingParticipantIds =
+      await this.messagesService.getConversationParticipantIds(conversationId);
+    const others = remainingParticipantIds.filter(
+      (pId) => pId !== targetUserId,
+    );
+    if (others.length > 0) {
+      this.domainEventService.emit('message:new', message, others);
+      this.domainEventService.emit(
+        'group:member_removed',
+        {
+          conversationId,
+          targetUserId,
+          removedBy: userId,
+          message,
+        },
+        others,
+      );
     }
 
     return result;
@@ -420,29 +647,45 @@ export class MessagesController {
   async leaveGroup(@Req() req: any, @Param('id') conversationId: string) {
     const userId = req.user?.id;
     // Mutate FIRST so a failed leave never leaves an orphan "X left" message.
-    const result = await this.messagesService.leaveGroup(conversationId, userId);
+    const result = await this.messagesService.leaveGroup(
+      conversationId,
+      userId,
+    );
 
     const actorHandle = await this.messagesService.getUserHandle(userId);
     const text = `${actorHandle} left the group`;
-    const message = await this.messagesService.createSystemMessage(conversationId, userId, text);
-
-    this.domainEventService.emit('group:member_removed', {
+    const message = await this.messagesService.createSystemMessage(
       conversationId,
-      targetUserId: userId,
-      removedBy: userId,
-      message
-    }, [userId]);
+      userId,
+      text,
+    );
 
-    const remainingParticipantIds = await this.messagesService.getConversationParticipantIds(conversationId);
-    const others = remainingParticipantIds.filter(pId => pId !== userId);
-    if (others.length > 0) {
-      this.domainEventService.emit('message:new', message, others);
-      this.domainEventService.emit('group:member_removed', {
+    this.domainEventService.emit(
+      'group:member_removed',
+      {
         conversationId,
         targetUserId: userId,
         removedBy: userId,
-        message
-      }, others);
+        message,
+      },
+      [userId],
+    );
+
+    const remainingParticipantIds =
+      await this.messagesService.getConversationParticipantIds(conversationId);
+    const others = remainingParticipantIds.filter((pId) => pId !== userId);
+    if (others.length > 0) {
+      this.domainEventService.emit('message:new', message, others);
+      this.domainEventService.emit(
+        'group:member_removed',
+        {
+          conversationId,
+          targetUserId: userId,
+          removedBy: userId,
+          message,
+        },
+        others,
+      );
     }
 
     return result;
@@ -450,63 +693,120 @@ export class MessagesController {
 
   @Patch(':id/settings')
   @UseGuards(JwtGuard)
-  async updateSettings(@Req() req: any, @Param('id') conversationId: string, @Body() body: any) {
+  async updateSettings(
+    @Req() req: any,
+    @Param('id') conversationId: string,
+    @Body() body: any,
+  ) {
     const userId = req.user?.id;
-    return this.messagesService.updateGroupSettings(conversationId, userId, body);
+    return this.messagesService.updateGroupSettings(
+      conversationId,
+      userId,
+      body,
+    );
   }
 
   @Patch(':id/permissions')
   @UseGuards(JwtGuard)
-  async updatePermissions(@Req() req: any, @Param('id') conversationId: string, @Body('permission') permission: string) {
+  async updatePermissions(
+    @Req() req: any,
+    @Param('id') conversationId: string,
+    @Body('permission') permission: string,
+  ) {
     const userId = req.user?.id;
-    return this.messagesService.updateGroupEditPermission(conversationId, userId, permission);
+    return this.messagesService.updateGroupEditPermission(
+      conversationId,
+      userId,
+      permission,
+    );
   }
 
   @Post(':id/owner')
   @UseGuards(JwtGuard)
-  async changeOwner(@Req() req: any, @Param('id') conversationId: string, @Body('targetUserId') targetUserId: string) {
+  async changeOwner(
+    @Req() req: any,
+    @Param('id') conversationId: string,
+    @Body('targetUserId') targetUserId: string,
+  ) {
     const userId = req.user?.id;
     const targetHandle = await this.messagesService.getUserHandle(targetUserId);
-    const result = await this.messagesService.changeGroupOwner(conversationId, userId, targetUserId);
+    const result = await this.messagesService.changeGroupOwner(
+      conversationId,
+      userId,
+      targetUserId,
+    );
     const actorHandle = await this.messagesService.getUserHandle(userId);
 
-    const participantIds = await this.messagesService.getConversationParticipantIds(conversationId);
+    const participantIds =
+      await this.messagesService.getConversationParticipantIds(conversationId);
     if (participantIds.length > 0) {
-      this.domainEventService.emit('conversation:updated', {
-        conversationId,
-        ownerId: targetUserId
-      }, participantIds);
+      this.domainEventService.emit(
+        'conversation:updated',
+        {
+          conversationId,
+          ownerId: targetUserId,
+        },
+        participantIds,
+      );
     }
 
-    await this.broadcastSystemMessage(conversationId, userId, `${actorHandle} transferred group ownership to ${targetHandle}`);
+    await this.broadcastSystemMessage(
+      conversationId,
+      userId,
+      `${actorHandle} transferred group ownership to ${targetHandle}`,
+    );
     return result;
   }
 
   @Post(':id/admins')
   @UseGuards(JwtGuard)
-  async promoteAdmin(@Req() req: any, @Param('id') conversationId: string, @Body('targetUserId') targetUserId: string) {
+  async promoteAdmin(
+    @Req() req: any,
+    @Param('id') conversationId: string,
+    @Body('targetUserId') targetUserId: string,
+  ) {
     const userId = req.user?.id;
     const [targetHandle, actorHandle] = await Promise.all([
       this.messagesService.getUserHandle(targetUserId),
-      this.messagesService.getUserHandle(userId)
+      this.messagesService.getUserHandle(userId),
     ]);
-    const result = await this.messagesService.promoteToAdmin(conversationId, userId, targetUserId);
+    const result = await this.messagesService.promoteToAdmin(
+      conversationId,
+      userId,
+      targetUserId,
+    );
     await this.emitRoleChanged(conversationId, targetUserId, 'ADMIN');
-    this.broadcastSystemMessage(conversationId, userId, `${actorHandle} promoted ${targetHandle} to Admin`).catch(() => {});
+    this.broadcastSystemMessage(
+      conversationId,
+      userId,
+      `${actorHandle} promoted ${targetHandle} to Admin`,
+    ).catch(() => {});
     return result;
   }
 
   @Delete(':id/admins/:targetUserId')
   @UseGuards(JwtGuard)
-  async demoteAdmin(@Req() req: any, @Param('id') conversationId: string, @Param('targetUserId') targetUserId: string) {
+  async demoteAdmin(
+    @Req() req: any,
+    @Param('id') conversationId: string,
+    @Param('targetUserId') targetUserId: string,
+  ) {
     const userId = req.user?.id;
     const [targetHandle, actorHandle] = await Promise.all([
       this.messagesService.getUserHandle(targetUserId),
-      this.messagesService.getUserHandle(userId)
+      this.messagesService.getUserHandle(userId),
     ]);
-    const result = await this.messagesService.demoteFromAdmin(conversationId, userId, targetUserId);
+    const result = await this.messagesService.demoteFromAdmin(
+      conversationId,
+      userId,
+      targetUserId,
+    );
     await this.emitRoleChanged(conversationId, targetUserId, 'MEMBER');
-    this.broadcastSystemMessage(conversationId, userId, `${actorHandle} demoted ${targetHandle} to Member`).catch(() => {});
+    this.broadcastSystemMessage(
+      conversationId,
+      userId,
+      `${actorHandle} demoted ${targetHandle} to Member`,
+    ).catch(() => {});
     return result;
   }
 
@@ -515,39 +815,70 @@ export class MessagesController {
   async endGroup(@Req() req: any, @Param('id') conversationId: string) {
     const userId = req.user?.id;
     const actorHandle = await this.messagesService.getUserHandle(userId);
-    await this.broadcastSystemMessage(conversationId, userId, `${actorHandle} closed the group`);
+    await this.broadcastSystemMessage(
+      conversationId,
+      userId,
+      `${actorHandle} closed the group`,
+    );
     return this.messagesService.endGroup(conversationId, userId);
   }
 
   @Post(':id/requests/:targetUserId/accept')
   @UseGuards(JwtGuard)
-  async acceptJoinRequest(@Req() req: any, @Param('id') conversationId: string, @Param('targetUserId') targetUserId: string) {
+  async acceptJoinRequest(
+    @Req() req: any,
+    @Param('id') conversationId: string,
+    @Param('targetUserId') targetUserId: string,
+  ) {
     const userId = req.user?.id;
     const targetHandle = await this.messagesService.getUserHandle(targetUserId);
-    const result = await this.messagesService.acceptGroupJoinRequest(conversationId, userId, targetUserId);
+    const result = await this.messagesService.acceptGroupJoinRequest(
+      conversationId,
+      userId,
+      targetUserId,
+    );
     const actorHandle = await this.messagesService.getUserHandle(userId);
     const text = `${actorHandle} approved ${targetHandle}'s request to join`;
     await this.broadcastSystemMessage(conversationId, userId, text);
 
-    this.domainEventService.emit('group:member_added', { conversationId, userId: targetUserId }, [targetUserId]);
+    this.domainEventService.emit(
+      'group:member_added',
+      { conversationId, userId: targetUserId },
+      [targetUserId],
+    );
     return result;
   }
 
   @Post(':id/requests/:targetUserId/decline')
   @UseGuards(JwtGuard)
-  async declineJoinRequest(@Req() req: any, @Param('id') conversationId: string, @Param('targetUserId') targetUserId: string) {
+  async declineJoinRequest(
+    @Req() req: any,
+    @Param('id') conversationId: string,
+    @Param('targetUserId') targetUserId: string,
+  ) {
     const userId = req.user?.id;
-    return this.messagesService.declineGroupJoinRequest(conversationId, userId, targetUserId);
+    return this.messagesService.declineGroupJoinRequest(
+      conversationId,
+      userId,
+      targetUserId,
+    );
   }
 
   @Post(':id/join')
   @UseGuards(JwtGuard)
   async joinGroup(@Req() req: any, @Param('id') conversationId: string) {
     const userId = req.user?.id;
-    const result = await this.messagesService.joinGroupByInvite(conversationId, userId);
+    const result = await this.messagesService.joinGroupByInvite(
+      conversationId,
+      userId,
+    );
     if (result.status === 'JOINED' && !result.alreadyMember) {
       const userHandle = await this.messagesService.getUserHandle(userId);
-      await this.broadcastSystemMessage(conversationId, userId, `${userHandle} joined the group`);
+      await this.broadcastSystemMessage(
+        conversationId,
+        userId,
+        `${userHandle} joined the group`,
+      );
     }
     return result;
   }
@@ -562,6 +893,9 @@ export class MessagesController {
   @Get(':id/invite')
   @UseGuards(JwtGuard)
   async getInvitePreview(@Req() req: any, @Param('id') conversationId: string) {
-    return this.messagesService.getGroupInvitePreview(conversationId, req.user?.id);
+    return this.messagesService.getGroupInvitePreview(
+      conversationId,
+      req.user?.id,
+    );
   }
 }

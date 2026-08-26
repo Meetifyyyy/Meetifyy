@@ -92,4 +92,8 @@ export class UpdateCampusEventDto {
 
 export type CampusEventScope = 'upcoming' | 'ongoing' | 'past';
 
-export const CAMPUS_EVENT_SCOPES: CampusEventScope[] = ['upcoming', 'ongoing', 'past'];
+export const CAMPUS_EVENT_SCOPES: CampusEventScope[] = [
+  'upcoming',
+  'ongoing',
+  'past',
+];

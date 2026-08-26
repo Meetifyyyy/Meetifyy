@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Param, Query, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Query,
+  Body,
+  UseGuards,
+} from '@nestjs/common';
 import { ActivityDiscussionService } from './activity-discussion.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -17,7 +25,12 @@ export class ActivityDiscussionController {
   ) {
     const parsed = parseInt(limit || '', 10);
     const limitNum = !isNaN(parsed) && parsed > 0 ? parsed : 20;
-    return this.discussionService.getMessages(activityId, user?.id, before, limitNum);
+    return this.discussionService.getMessages(
+      activityId,
+      user?.id,
+      before,
+      limitNum,
+    );
   }
 
   @Post()

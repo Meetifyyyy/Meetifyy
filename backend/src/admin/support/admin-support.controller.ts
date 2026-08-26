@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import { AdminSupportService } from './admin-support.service';
@@ -67,7 +77,10 @@ export class AdminSupportController {
   }
 
   @Patch(':id/priority')
-  updatePriority(@Param('id') id: string, @Body() dto: UpdateTicketPriorityDto) {
+  updatePriority(
+    @Param('id') id: string,
+    @Body() dto: UpdateTicketPriorityDto,
+  ) {
     return this.supportService.updateTicketPriority(id, dto);
   }
 
@@ -77,7 +90,11 @@ export class AdminSupportController {
   }
 
   @Post(':id/notes')
-  addNote(@Param('id') id: string, @Body() dto: AddInternalNoteDto, @Req() req: any) {
+  addNote(
+    @Param('id') id: string,
+    @Body() dto: AddInternalNoteDto,
+    @Req() req: any,
+  ) {
     return this.supportService.addInternalNote(id, dto, req.admin.id);
   }
 

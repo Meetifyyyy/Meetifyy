@@ -11,7 +11,9 @@ const PREFIX = 'MFT';
 const BODY_LENGTH = 6;
 
 /** Matches the format produced below; used to validate lookups. */
-export const TICKET_NUMBER_PATTERN = new RegExp(`^${PREFIX}-[${ALPHABET}]{${BODY_LENGTH}}$`);
+export const TICKET_NUMBER_PATTERN = new RegExp(
+  `^${PREFIX}-[${ALPHABET}]{${BODY_LENGTH}}$`,
+);
 
 /**
  * Generates a support request ID such as `MFT-8K4P2Q`.

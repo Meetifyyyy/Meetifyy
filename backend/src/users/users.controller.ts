@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Req, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  Req,
+  Query,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
@@ -16,7 +27,11 @@ export class UsersController {
   // ETag interceptor answers unchanged bodies with a 304, so this costs a
   // round-trip but not a payload. (Same reasoning as activities.controller.ts.)
   @CacheControl('private, no-cache')
-  async getAllUsers(@Req() req: any, @Query('limit') limit?: string, @Query('offset') offset?: string) {
+  async getAllUsers(
+    @Req() req: any,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
     const limitNum = limit ? parseInt(limit, 10) : 20;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
     return this.usersService.getAllUsers(limitNum, offsetNum, req.user?.id);
@@ -25,7 +40,11 @@ export class UsersController {
   @Get('connections')
   @UseGuards(JwtGuard)
   @CacheControl('private, no-cache')
-  async getConnections(@Req() req: any, @Query('q') query?: string, @Query('limit') limit?: string) {
+  async getConnections(
+    @Req() req: any,
+    @Query('q') query?: string,
+    @Query('limit') limit?: string,
+  ) {
     const limitNum = limit ? Math.min(parseInt(limit, 10), 100) : 50;
     return this.usersService.getConnections(req.user.id, query, limitNum);
   }
@@ -41,8 +60,15 @@ export class UsersController {
     @Query('communityId') communityId?: string,
     @Query('limit') limit?: string,
   ) {
-    const limitNum = limit ? Math.min(Math.max(parseInt(limit, 10) || 15, 1), 25) : 15;
-    return this.usersService.getMentionSuggestions(req.user.id, query || '', communityId, limitNum);
+    const limitNum = limit
+      ? Math.min(Math.max(parseInt(limit, 10) || 15, 1), 25)
+      : 15;
+    return this.usersService.getMentionSuggestions(
+      req.user.id,
+      query || '',
+      communityId,
+      limitNum,
+    );
   }
 
   // NOTE: same route-ordering requirement as mention-search above.
@@ -50,14 +76,20 @@ export class UsersController {
   @UseGuards(JwtGuard)
   @CacheControl('private, no-cache')
   async getOnlineFriends(@Req() req: any, @Query('limit') limit?: string) {
-    const limitNum = limit ? Math.min(Math.max(parseInt(limit, 10) || 6, 1), 20) : 6;
+    const limitNum = limit
+      ? Math.min(Math.max(parseInt(limit, 10) || 6, 1), 20)
+      : 6;
     return this.usersService.getOnlineFriends(req.user.id, limitNum);
   }
 
   @Get('campus')
   @UseGuards(JwtGuard)
   @CacheControl('private, no-cache')
-  async getCampusUsers(@Req() req: any, @Query('limit') limit?: string, @Query('offset') offset?: string) {
+  async getCampusUsers(
+    @Req() req: any,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
     const limitNum = limit ? parseInt(limit, 10) : 100;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
     return this.usersService.getCampusUsers(req.user.id, limitNum, offsetNum);
@@ -77,8 +109,11 @@ export class UsersController {
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
   ) {
-    const currentYear = year && /^\d+$/.test(year) ? parseInt(year, 10) : undefined;
-    const limitNum = limit ? Math.min(Math.max(parseInt(limit, 10) || 30, 1), 50) : 30;
+    const currentYear =
+      year && /^\d+$/.test(year) ? parseInt(year, 10) : undefined;
+    const limitNum = limit
+      ? Math.min(Math.max(parseInt(limit, 10) || 30, 1), 50)
+      : 30;
     return this.usersService.getDirectory(req.user.id, {
       search: search || undefined,
       course: course && course !== 'All' ? course : undefined,
@@ -120,7 +155,7 @@ export class UsersController {
   @UseGuards(JwtGuard)
   @CacheControl('private, no-cache')
   async getProfile(@Param('username') username: string, @Req() req: any) {
-    const currentUserId = req.user?.id; 
+    const currentUserId = req.user?.id;
     return this.usersService.getProfileByUsername(username, currentUserId);
   }
 
@@ -135,7 +170,12 @@ export class UsersController {
   ) {
     const limitNum = limit ? parseInt(limit, 10) : 50;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
-    return this.usersService.getFollowers(username, req.user?.id, limitNum, offsetNum);
+    return this.usersService.getFollowers(
+      username,
+      req.user?.id,
+      limitNum,
+      offsetNum,
+    );
   }
 
   @Get(':username/following')
@@ -149,7 +189,12 @@ export class UsersController {
   ) {
     const limitNum = limit ? parseInt(limit, 10) : 50;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
-    return this.usersService.getFollowing(username, req.user?.id, limitNum, offsetNum);
+    return this.usersService.getFollowing(
+      username,
+      req.user?.id,
+      limitNum,
+      offsetNum,
+    );
   }
 
   @Post(':username/follow')
@@ -168,13 +213,19 @@ export class UsersController {
 
   @Post('block/:targetUserId')
   @UseGuards(JwtGuard)
-  async blockUser(@Param('targetUserId') targetUserId: string, @Req() req: any) {
+  async blockUser(
+    @Param('targetUserId') targetUserId: string,
+    @Req() req: any,
+  ) {
     return this.usersService.blockUser(req.user.id, targetUserId);
   }
 
   @Delete('block/:targetUserId')
   @UseGuards(JwtGuard)
-  async unblockUser(@Param('targetUserId') targetUserId: string, @Req() req: any) {
+  async unblockUser(
+    @Param('targetUserId') targetUserId: string,
+    @Req() req: any,
+  ) {
     return this.usersService.unblockUser(req.user.id, targetUserId);
   }
 }

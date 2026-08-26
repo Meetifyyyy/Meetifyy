@@ -36,9 +36,11 @@ export const supportConfigValues = {
    * so a deployment with neither value configured is caught at boot.
    */
   ipHashSalt:
-    str('SUPPORT_IP_HASH_SALT') || authConfigValues.supabase.jwtSecret || authConfigValues.admin.accessSecret || '',
+    str('SUPPORT_IP_HASH_SALT') ||
+    authConfigValues.supabase.jwtSecret ||
+    authConfigValues.admin.accessSecret ||
+    '',
 };
-
 
 // A missing salt would reduce the stored hashes to a plain lookup of the IPv4
 // space, which is not meaningfully different from storing the address itself.

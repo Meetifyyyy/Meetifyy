@@ -1,9 +1,28 @@
-import { Controller, Post, Get, Delete, Body, Param, Query, UseGuards, Req, Res } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { Request, Response } from 'express';
 import { PostsService } from './posts.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { IsString, IsOptional, MaxLength, IsArray, IsObject, ValidateNested, ArrayMaxSize } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  MaxLength,
+  IsArray,
+  IsObject,
+  ValidateNested,
+  ArrayMaxSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { MentionDto } from '../common/dto/mention.dto';
 
@@ -72,7 +91,14 @@ export class PostsController {
     @CurrentUser() user: { id: string },
     @Body() dto: CreatePostDto,
   ) {
-    return this.postsService.createPost(user.id, dto.text, dto.mediaKey, dto.communityId, dto.poll, dto.mentions);
+    return this.postsService.createPost(
+      user.id,
+      dto.text,
+      dto.mediaKey,
+      dto.communityId,
+      dto.poll,
+      dto.mentions,
+    );
   }
 
   @Delete(':id')
@@ -112,7 +138,12 @@ export class PostsController {
     @Query('cursor') cursor?: string,
   ) {
     const parsedLimit = limit ? parseInt(limit, 10) : 10;
-    return this.postsService.getUserPosts(user.id, username, parsedLimit, cursor);
+    return this.postsService.getUserPosts(
+      user.id,
+      username,
+      parsedLimit,
+      cursor,
+    );
   }
 
   @Get(':id')
@@ -124,7 +155,7 @@ export class PostsController {
   ) {
     const ifNoneMatch = req.headers['if-none-match'];
     const meta = await this.postsService.getPostMeta(id);
-    
+
     if (meta) {
       const etag = `W/"${meta.updatedAt.getTime()}"`;
       if (ifNoneMatch === etag) {
@@ -133,23 +164,17 @@ export class PostsController {
       }
       res.setHeader('ETag', etag);
     }
-    
+
     return this.postsService.getPostById(id, user.id);
   }
 
   @Post(':id/like')
-  async like(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  async like(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.postsService.likePost(id, user.id);
   }
 
   @Post(':id/unlike')
-  async unlike(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  async unlike(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.postsService.unlikePost(id, user.id);
   }
 
@@ -170,7 +195,13 @@ export class PostsController {
     @Param('id') id: string,
     @Body() dto: CreateCommentDto,
   ) {
-    return this.postsService.addComment(id, user.id, dto.text, dto.parentId, dto.mentions);
+    return this.postsService.addComment(
+      id,
+      user.id,
+      dto.text,
+      dto.parentId,
+      dto.mentions,
+    );
   }
 
   @Post('comments/:commentId/like')
@@ -198,10 +229,7 @@ export class PostsController {
   }
 
   @Post(':id/bookmark')
-  async bookmark(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  async bookmark(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.postsService.bookmarkPost(id, user.id);
   }
 

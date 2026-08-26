@@ -54,24 +54,36 @@ describe('Crew discovery', () => {
           const rows = pool.slice(0, take ?? pool.length);
           // The hydration query asks for CARD_SELECT (which includes members);
           // the ranking query does not. Both just echo the pool here.
-          return select?.members ? rows.map(r => ({ ...r, members: [] })) : rows;
+          return select?.members
+            ? rows.map((r) => ({ ...r, members: [] }))
+            : rows;
         }),
       },
       crewActivityMember: {
         findMany: jest.fn(async ({ where }: any) => {
           if (where?.userId && where.userId.in) return friendMemberships;
-          if (where?.userId === ME && where?.status === 'MEMBER' && !where.activityId) return [];
+          if (
+            where?.userId === ME &&
+            where?.status === 'MEMBER' &&
+            !where.activityId
+          )
+            return [];
           return [];
         }),
       },
       user: {
-        findUnique: jest.fn(async () => ({ id: ME, collegeId: GLA, interests: [], college: { name: 'GLA' } })),
+        findUnique: jest.fn(async () => ({
+          id: ME,
+          collegeId: GLA,
+          interests: [],
+          college: { name: 'GLA' },
+        })),
       },
       follow: {
         findMany: jest.fn(async ({ where }: any) =>
           where.followerId === ME
-            ? follows.filter(f => f.followerId === ME)
-            : follows.filter(f => f.followingId === ME),
+            ? follows.filter((f) => f.followerId === ME)
+            : follows.filter((f) => f.followingId === ME),
         ),
       },
       conversationParticipant: { findMany: jest.fn(async () => []) },
@@ -85,17 +97,24 @@ describe('Crew discovery', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: {} },
         { provide: NotificationFactory, useValue: {} },
-        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn(async () => blockedIds) } },
+        {
+          provide: BlocksService,
+          useValue: { getExcludedUserIds: jest.fn(async () => blockedIds) },
+        },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
-        { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn() } },
+        {
+          provide: getQueueToken(NOTIFICATIONS_QUEUE),
+          useValue: { add: jest.fn() },
+        },
       ],
     }).compile();
 
     service = module.get(ActivitiesService);
   });
 
-  const order = async () => (await service.getForYouFeed(ME, 50)).activities.map((a: any) => a.id);
+  const order = async () =>
+    (await service.getForYouFeed(ME, 50)).activities.map((a: any) => a.id);
 
   describe('For You ranking', () => {
     it('ranks an activity hosted by a mutual above an unrelated one', async () => {
@@ -137,9 +156,15 @@ describe('Crew discovery', () => {
 
     it('lifts an activity matching a stated interest', async () => {
       prisma.user.findUnique.mockResolvedValue({
-        id: ME, collegeId: GLA, interests: ['badminton'], college: { name: 'GLA' },
+        id: ME,
+        collegeId: GLA,
+        interests: ['badminton'],
+        college: { name: 'GLA' },
       });
-      pool = [act('other'), act('sport', { title: 'Evening Badminton doubles' })];
+      pool = [
+        act('other'),
+        act('sport', { title: 'Evening Badminton doubles' }),
+      ];
       expect(await order()).toEqual(['sport', 'other']);
     });
 
@@ -161,7 +186,9 @@ describe('Crew discovery', () => {
     it('builds its candidate pool through the discovery policy', async () => {
       pool = [act('a')];
       await service.getForYouFeed(ME, 20);
-      const where = JSON.stringify(prisma.crewActivity.findMany.mock.calls[0][0].where);
+      const where = JSON.stringify(
+        prisma.crewActivity.findMany.mock.calls[0][0].where,
+      );
       expect(where).not.toContain('"PRIVATE"');
       expect(where).toContain('COLLEGE_ONLY');
       // Only activities that have not started yet are eligible.
@@ -171,7 +198,9 @@ describe('Crew discovery', () => {
     it('re-applies the policy and the not-started rule when hydrating a page', async () => {
       pool = [act('a')];
       await service.getForYouFeed(ME, 20);
-      const hydrationWhere = JSON.stringify(prisma.crewActivity.findMany.mock.calls[1][0].where);
+      const hydrationWhere = JSON.stringify(
+        prisma.crewActivity.findMany.mock.calls[1][0].where,
+      );
       expect(hydrationWhere).not.toContain('"PRIVATE"');
       expect(hydrationWhere).toContain('startDate');
       expect(hydrationWhere).toContain('"OPEN"');
@@ -186,7 +215,9 @@ describe('Crew discovery', () => {
       pool = [act('a')];
       await service.getForYouFeed(ME, 20);
 
-      const hydrationWhere = JSON.stringify(prisma.crewActivity.findMany.mock.calls[1][0].where);
+      const hydrationWhere = JSON.stringify(
+        prisma.crewActivity.findMany.mock.calls[1][0].where,
+      );
       expect(hydrationWhere).toContain('blocked-host');
       expect(hydrationWhere).toContain('notIn');
     });
@@ -201,7 +232,9 @@ describe('Crew discovery', () => {
   describe('For You pagination', () => {
     beforeEach(() => {
       pool = Array.from({ length: 12 }, (_, i) =>
-        act(`a${String(i).padStart(2, '0')}`, { startDate: new Date(Date.now() + (i + 1) * day) }),
+        act(`a${String(i).padStart(2, '0')}`, {
+          startDate: new Date(Date.now() + (i + 1) * day),
+        }),
       );
     });
 
@@ -233,11 +266,19 @@ describe('Crew discovery', () => {
 
   describe('the "All" tab payload', () => {
     it('returns the three subsections, each capped at five with a hasMore flag', async () => {
-      pool = Array.from({ length: 9 }, (_, i) => act(`a${i}`, { collegeId: GLA, maxMembers: 2 }));
+      pool = Array.from({ length: 9 }, (_, i) =>
+        act(`a${i}`, { collegeId: GLA, maxMembers: 2 }),
+      );
       const res: any = await service.getCrewDiscover(ME);
 
       expect(Object.keys(res)).toEqual(
-        expect.arrayContaining(['forYou', 'college', 'oneOnOne', 'collegeName', 'collegeId']),
+        expect.arrayContaining([
+          'forYou',
+          'college',
+          'oneOnOne',
+          'collegeName',
+          'collegeId',
+        ]),
       );
       for (const key of ['forYou', 'college', 'oneOnOne']) {
         expect(res[key].items.length).toBeLessThanOrEqual(5);
@@ -246,18 +287,31 @@ describe('Crew discovery', () => {
     });
 
     it('does not repeat an activity across subsections', async () => {
-      pool = Array.from({ length: 6 }, (_, i) => act(`a${i}`, { collegeId: GLA, maxMembers: 2 }));
+      pool = Array.from({ length: 6 }, (_, i) =>
+        act(`a${i}`, { collegeId: GLA, maxMembers: 2 }),
+      );
       const res: any = await service.getCrewDiscover(ME);
-      const ids = [...res.forYou.items, ...res.college.items, ...res.oneOnOne.items].map((a: any) => a.id);
+      const ids = [
+        ...res.forYou.items,
+        ...res.college.items,
+        ...res.oneOnOne.items,
+      ].map((a: any) => a.id);
       expect(new Set(ids).size).toBe(ids.length);
     });
 
     it('scopes each section correctly and to not-yet-started activities', async () => {
       pool = [act('a', { collegeId: GLA, maxMembers: 2 })];
       await service.getCrewDiscover(ME);
-      const wheres = prisma.crewActivity.findMany.mock.calls.map((c: any) => JSON.stringify(c[0].where));
-      const collegeWhere = wheres.find((w: string) => w.includes(`"collegeId":"${GLA}"`) && !w.includes('maxMembers'));
-      const oneOnOneWhere = wheres.find((w: string) => w.includes('"maxMembers":2'));
+      const wheres = prisma.crewActivity.findMany.mock.calls.map((c: any) =>
+        JSON.stringify(c[0].where),
+      );
+      const collegeWhere = wheres.find(
+        (w: string) =>
+          w.includes(`"collegeId":"${GLA}"`) && !w.includes('maxMembers'),
+      );
+      const oneOnOneWhere = wheres.find((w: string) =>
+        w.includes('"maxMembers":2'),
+      );
       expect(collegeWhere).toBeDefined();
       expect(oneOnOneWhere).toBeDefined();
       for (const w of wheres) {

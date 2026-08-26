@@ -31,7 +31,7 @@ export class AuthController {
     return {
       message: 'Profile synchronized successfully',
       user: syncedUser,
-      meta: (syncedUser as any).meta || {},
+      meta: syncedUser.meta || {},
     };
   }
 
@@ -46,20 +46,29 @@ export class AuthController {
   async login(@Body() body: LoginDto, @Req() req: Request) {
     const result = await this.authService.login(body.identifier, body.password);
     // Fire-and-forget — do not block login on the notification email.
-    this.sendLoginNotification(result.user.email, result.user.displayName || result.user.email, req)
-      .catch(() => {});
+    this.sendLoginNotification(
+      result.user.email,
+      result.user.displayName || result.user.email,
+      req,
+    ).catch(() => {});
     return result;
   }
 
   /** Builds device/UA/IP context and queues the new-login email. Never awaited by callers. */
-  private async sendLoginNotification(email: string, name: string, req: Request) {
+  private async sendLoginNotification(
+    email: string,
+    name: string,
+    req: Request,
+  ) {
     const rawUA = (req.headers['user-agent'] as string) || '';
     const parser = new UAParser(rawUA);
     const ua = parser.getResult();
 
     const browserName = ua.browser?.name || 'Unknown Browser';
     const browserVersion = ua.browser?.major || '';
-    const browser = browserVersion ? `${browserName} ${browserVersion}` : browserName;
+    const browser = browserVersion
+      ? `${browserName} ${browserVersion}`
+      : browserName;
 
     const osName = ua.os?.name || 'Unknown OS';
     const osVersion = ua.os?.version || '';
@@ -80,11 +89,26 @@ export class AuthController {
       'Unknown';
 
     const loginTime = new Date().toLocaleString('en-US', {
-      weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
     });
 
-    await this.emailService.sendNewLoginEmail(email, name, device, 'Unknown Location', loginTime, browser, os, ip);
+    await this.emailService.sendNewLoginEmail(
+      email,
+      name,
+      device,
+      'Unknown Location',
+      loginTime,
+      browser,
+      os,
+      ip,
+    );
   }
 
   @Post('check-username')
@@ -108,7 +132,10 @@ export class AuthController {
 
   @Post('events/login')
   @UseGuards(JwtGuard)
-  async triggerLoginEmail(@Body() body: TriggerLoginEmailDto, @Req() req: Request) {
+  async triggerLoginEmail(
+    @Body() body: TriggerLoginEmailDto,
+    @Req() req: Request,
+  ) {
     // Parse User-Agent from the request header for accurate device/browser/OS info
     const rawUA = body.userAgent || req.headers['user-agent'] || '';
     const parser = new UAParser(rawUA);
@@ -116,7 +143,9 @@ export class AuthController {
 
     const browserName = uaResult.browser?.name || 'Unknown Browser';
     const browserVersion = uaResult.browser?.major || '';
-    const browser = body.browser || (browserVersion ? `${browserName} ${browserVersion}` : browserName);
+    const browser =
+      body.browser ||
+      (browserVersion ? `${browserName} ${browserVersion}` : browserName);
 
     const osName = uaResult.os?.name || 'Unknown OS';
     const osVersion = uaResult.os?.version || '';
@@ -139,10 +168,11 @@ export class AuthController {
     }
 
     // Derive real client IP (Render/proxied environments send x-forwarded-for)
-    const ip = body.ip
-      || (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
-      || req.socket?.remoteAddress
-      || 'Unknown';
+    const ip =
+      body.ip ||
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      'Unknown';
 
     // Format login time in the user's local timezone sent from the browser
     let loginTime: string;
@@ -204,7 +234,9 @@ export class AuthController {
 
     const browserName = uaResult.browser?.name || 'Unknown Browser';
     const browserVersion = uaResult.browser?.major || '';
-    const browser = browserVersion ? `${browserName} ${browserVersion}` : browserName;
+    const browser = browserVersion
+      ? `${browserName} ${browserVersion}`
+      : browserName;
 
     const deviceType = uaResult.device?.type;
     const deviceModel = uaResult.device?.model;
@@ -252,6 +284,10 @@ export class AuthController {
   @Post('request-college')
   async requestCollege(@Body() body: CreateCollegeRequestDto) {
     const request = await this.authService.createCollegeRequest(body);
-    return { success: true, message: 'Campus request submitted successfully', request };
+    return {
+      success: true,
+      message: 'Campus request submitted successfully',
+      request,
+    };
   }
 }

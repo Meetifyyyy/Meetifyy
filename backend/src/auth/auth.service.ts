@@ -1,4 +1,12 @@
-import { Injectable, UnauthorizedException, NotFoundException, ConflictException, BadRequestException, Logger, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
@@ -13,7 +21,10 @@ import { validateBirthday } from '../common/utils/birthday-validation.util';
  * Automatically evicts the least-recently-used entry when the cap is reached,
  * preventing unbounded memory growth that the previous plain Map caused.
  */
-const syncCache = new LruCache<string, { data: any; timestamp: number }>(10000, 60000);
+const syncCache = new LruCache<string, { data: any; timestamp: number }>(
+  10000,
+  60000,
+);
 
 export function clearAuthSyncCache(userId?: string) {
   if (userId) {
@@ -148,45 +159,73 @@ export class AuthService {
 
       // Perform domain lookup for college auto-linking, but DO NOT block existing accounts
       // if their domain was later deactivated/removed from admin portal.
-      const domainCheck = await this.domainValidatorService.validateDomain(row.email);
+      const domainCheck = await this.domainValidatorService.validateDomain(
+        row.email,
+      );
       if (!domainCheck.isValid) {
-        this.logger.log(`Existing user ${row.id} (${row.email}) logged in with unapproved/removed domain`);
+        this.logger.log(
+          `Existing user ${row.id} (${row.email}) logged in with unapproved/removed domain`,
+        );
       }
 
-      const settings = row.settings_id ? {
-        id: row.settings_id,
-        userId: row.id,
-        emailNotifs: row.emailNotifs,
-        pushNotifs: row.pushNotifs,
-        privateProfile: row.privateProfile,
-        showOnlineStatus: row.showOnlineStatus,
-        showLastSeen: row.showLastSeen,
-        whoCanSeeOnline: row.whoCanSeeOnline,
-        whoCanSeeLastSeen: row.whoCanSeeLastSeen,
-        readReceipts: row.readReceipts,
-      } : null;
+      const settings = row.settings_id
+        ? {
+            id: row.settings_id,
+            userId: row.id,
+            emailNotifs: row.emailNotifs,
+            pushNotifs: row.pushNotifs,
+            privateProfile: row.privateProfile,
+            showOnlineStatus: row.showOnlineStatus,
+            showLastSeen: row.showLastSeen,
+            whoCanSeeOnline: row.whoCanSeeOnline,
+            whoCanSeeLastSeen: row.whoCanSeeLastSeen,
+            readReceipts: row.readReceipts,
+          }
+        : null;
 
-      let college = row.college_id ? { id: row.college_id, name: row.college_name } : null;
+      let college = row.college_id
+        ? { id: row.college_id, name: row.college_name }
+        : null;
 
       // If user has no collegeId assigned or domain mapping changed, auto-link to active matching college
-      if (domainCheck.isValid && domainCheck.info?.collegeId && row.college_id !== domainCheck.info.collegeId) {
+      if (
+        domainCheck.isValid &&
+        domainCheck.info?.collegeId &&
+        row.college_id !== domainCheck.info.collegeId
+      ) {
         row.college_id = domainCheck.info.collegeId;
         row.college_name = domainCheck.info.collegeName;
-        college = { id: domainCheck.info.collegeId, name: domainCheck.info.collegeName };
-        this.prisma.user.update({
-          where: { id: row.id },
-          data: { collegeId: domainCheck.info.collegeId },
-        }).catch((err) => this.logger.error(`Failed to auto-link user collegeId: ${err.message}`));
+        college = {
+          id: domainCheck.info.collegeId,
+          name: domainCheck.info.collegeName,
+        };
+        this.prisma.user
+          .update({
+            where: { id: row.id },
+            data: { collegeId: domainCheck.info.collegeId },
+          })
+          .catch((err) =>
+            this.logger.error(
+              `Failed to auto-link user collegeId: ${err.message}`,
+            ),
+          );
       }
 
       // Auto-heal legacy / fallback usernames or displayNames starting with user_
-      const isRandomUsername = typeof row.username === 'string' && row.username.startsWith('user_');
-      const isRandomDisplayName = typeof row.displayName === 'string' && row.displayName.startsWith('user_');
+      const isRandomUsername =
+        typeof row.username === 'string' && row.username.startsWith('user_');
+      const isRandomDisplayName =
+        typeof row.displayName === 'string' &&
+        row.displayName.startsWith('user_');
 
       if (isRandomUsername || isRandomDisplayName) {
         try {
           let meta = user.user_metadata || {};
-          const { data: { user: adminUser } } = await this.supabaseService.client.auth.admin.getUserById(user.id).catch(() => ({ data: { user: null } }));
+          const {
+            data: { user: adminUser },
+          } = await this.supabaseService.client.auth.admin
+            .getUserById(user.id)
+            .catch(() => ({ data: { user: null } }));
           if (adminUser?.user_metadata) {
             meta = { ...adminUser.user_metadata, ...meta };
           }
@@ -195,16 +234,26 @@ export class AuthService {
           let healDisplayName = row.displayName;
 
           if (isRandomUsername) {
-            const candidate = meta.username ||
-              (row.email && !row.email.endsWith('@meetifyy.user') ? row.email.split('@')[0] : null) ||
+            const candidate =
+              meta.username ||
+              (row.email && !row.email.endsWith('@meetifyy.user')
+                ? row.email.split('@')[0]
+                : null) ||
               (row.collegeEmail ? row.collegeEmail.split('@')[0] : null) ||
-              (user.email && !user.email.endsWith('@meetifyy.user') ? user.email.split('@')[0] : null);
+              (user.email && !user.email.endsWith('@meetifyy.user')
+                ? user.email.split('@')[0]
+                : null);
 
             if (candidate) {
-              let clean = candidate.trim().toLowerCase().replace(/[^a-z0-9_.]/g, '_');
+              let clean = candidate
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9_.]/g, '_');
               if (clean.length >= 3) {
                 clean = clean.slice(0, 30);
-                const existing = await this.prisma.user.findUnique({ where: { username: clean } });
+                const existing = await this.prisma.user.findUnique({
+                  where: { username: clean },
+                });
                 if (!existing || existing.id === row.id) {
                   healUsername = clean;
                 }
@@ -213,17 +262,32 @@ export class AuthService {
           }
 
           if (isRandomDisplayName || healDisplayName === row.username) {
-            const rawTargetName = meta.displayName ||
-              (meta.firstName ? `${meta.firstName} ${meta.lastName || ''}`.trim() : null) ||
-              (healUsername && !healUsername.startsWith('user_') ? healUsername : null) ||
-              (row.email && !row.email.endsWith('@meetifyy.user') ? row.email.split('@')[0] : null);
+            const rawTargetName =
+              meta.displayName ||
+              (meta.firstName
+                ? `${meta.firstName} ${meta.lastName || ''}`.trim()
+                : null) ||
+              (healUsername && !healUsername.startsWith('user_')
+                ? healUsername
+                : null) ||
+              (row.email && !row.email.endsWith('@meetifyy.user')
+                ? row.email.split('@')[0]
+                : null);
 
             if (rawTargetName && !rawTargetName.startsWith('user_')) {
-              healDisplayName = rawTargetName.replace(/[._]/g, ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ').slice(0, 30);
+              healDisplayName = rawTargetName
+                .replace(/[._]/g, ' ')
+                .split(' ')
+                .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(' ')
+                .slice(0, 30);
             }
           }
 
-          if (healUsername !== row.username || healDisplayName !== row.displayName) {
+          if (
+            healUsername !== row.username ||
+            healDisplayName !== row.displayName
+          ) {
             await this.prisma.user.update({
               where: { id: row.id },
               data: {
@@ -234,10 +298,14 @@ export class AuthService {
             row.username = healUsername;
             row.displayName = healDisplayName;
             this.syncCache.delete(row.id);
-            this.logger.log(`Auto-healed user handle for userId=${row.id}: username="${healUsername}", displayName="${healDisplayName}"`);
+            this.logger.log(
+              `Auto-healed user handle for userId=${row.id}: username="${healUsername}", displayName="${healDisplayName}"`,
+            );
           }
         } catch (healErr) {
-          this.logger.warn(`Auto-heal failed for userId=${row.id}: ${healErr.message}`);
+          this.logger.warn(
+            `Auto-heal failed for userId=${row.id}: ${healErr.message}`,
+          );
         }
       }
 
@@ -299,14 +367,19 @@ export class AuthService {
       // the admin API before blocking. This only runs on the new-account path
       // (no Prisma row yet), so it's off the hot request route.
       try {
-        const { data } = await this.supabaseService.client.auth.admin.getUserById(user.id);
-        emailConfirmedAt = (data?.user as any)?.email_confirmed_at || (data?.user as any)?.confirmed_at;
+        const { data } =
+          await this.supabaseService.client.auth.admin.getUserById(user.id);
+        emailConfirmedAt =
+          (data?.user as any)?.email_confirmed_at ||
+          (data?.user as any)?.confirmed_at;
       } catch {
         // Admin lookup failed — fall through to the block below (fail safe).
       }
     }
     if (!emailConfirmedAt) {
-      this.logger.warn(`Blocked account creation for unverified session userId=${user.id}`);
+      this.logger.warn(
+        `Blocked account creation for unverified session userId=${user.id}`,
+      );
       throw new UnauthorizedException(
         'Email verification required. Please complete the OTP verification step to create your account.',
       );
@@ -316,12 +389,18 @@ export class AuthService {
     let sbUser = user;
     if ((!sbUser.user_metadata?.username || !sbUser.email) && sbUser.id) {
       try {
-        const { data: { user: adminUser }, error } = await this.supabaseService.client.auth.admin.getUserById(user.id);
+        const {
+          data: { user: adminUser },
+          error,
+        } = await this.supabaseService.client.auth.admin.getUserById(user.id);
         if (!error && adminUser) {
           sbUser = {
             ...sbUser,
             ...adminUser,
-            user_metadata: { ...(sbUser.user_metadata || {}), ...(adminUser.user_metadata || {}) },
+            user_metadata: {
+              ...(sbUser.user_metadata || {}),
+              ...(adminUser.user_metadata || {}),
+            },
           };
         }
       } catch (err) {
@@ -333,23 +412,32 @@ export class AuthService {
       throw new UnauthorizedException('Could not retrieve Supabase user info');
     }
 
-    let rawUsername = sbUser.user_metadata?.username || sbUser.email?.split('@')[0] || `user_${user.id.slice(0, 8)}`;
-    let username = rawUsername.trim().toLowerCase().replace(/[^a-z0-9_.]/g, '_');
+    const rawUsername =
+      sbUser.user_metadata?.username ||
+      sbUser.email?.split('@')[0] ||
+      `user_${user.id.slice(0, 8)}`;
+    let username = rawUsername
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_.]/g, '_');
     if (username.length < 3) {
       username = `user_${user.id.slice(0, 8)}`;
     }
     username = username.slice(0, 30);
 
-    const displayName = sbUser.user_metadata?.displayName || (
-      sbUser.user_metadata?.firstName
+    const displayName =
+      sbUser.user_metadata?.displayName ||
+      (sbUser.user_metadata?.firstName
         ? `${sbUser.user_metadata.firstName} ${sbUser.user_metadata.lastName || ''}`.trim()
-        : username
-    );
+        : username);
 
-    let email = sbUser.email || '';
-    const domainValidation = await this.domainValidatorService.validateDomain(email);
+    const email = sbUser.email || '';
+    const domainValidation =
+      await this.domainValidatorService.validateDomain(email);
     if (!domainValidation.isValid) {
-      this.logger.warn(`Account creation rejected for ${email}: ${domainValidation.reason}`);
+      this.logger.warn(
+        `Account creation rejected for ${email}: ${domainValidation.reason}`,
+      );
       throw new UnauthorizedException(domainValidation.reason);
     }
     const collegeId = domainValidation.info?.collegeId || null;
@@ -372,10 +460,16 @@ export class AuthService {
       this.logger.warn(
         `Email conflict on sync email=${email} staleId=${existingUserByEmail.id} — renaming stale record`,
       );
-      await this.prisma.user.update({
-        where: { id: existingUserByEmail.id },
-        data: { email: `legacy_${Date.now()}_${existingUserByEmail.email}` },
-      }).catch((err) => this.logger.error(`Failed to rename conflicting email record: ${err.message}`));
+      await this.prisma.user
+        .update({
+          where: { id: existingUserByEmail.id },
+          data: { email: `legacy_${Date.now()}_${existingUserByEmail.email}` },
+        })
+        .catch((err) =>
+          this.logger.error(
+            `Failed to rename conflicting email record: ${err.message}`,
+          ),
+        );
     }
 
     // Resolve username conflict (if another user has the same username but a different email)
@@ -386,7 +480,9 @@ export class AuthService {
 
     const userBirthday = sbUser.user_metadata?.birthday;
     if (!userBirthday) {
-      this.logger.warn(`Account creation rejected for ${email}: Date of birth is required.`);
+      this.logger.warn(
+        `Account creation rejected for ${email}: Date of birth is required.`,
+      );
       throw new BadRequestException('Date of birth is required.');
     }
     validateBirthday(userBirthday);
@@ -408,16 +504,18 @@ export class AuthService {
           // the row like any uploaded image rather than substituted at render
           // time. The profile cover is a deliberately different design from
           // the community one, so the two surfaces never look alike.
-          avatar: sbUser.user_metadata?.avatar || this.defaultAssets.refFor('profile-avatar'),
+          avatar:
+            sbUser.user_metadata?.avatar ||
+            this.defaultAssets.refFor('profile-avatar'),
           cover: this.defaultAssets.refFor('profile-cover'),
           collegeId: collegeId,
           collegeEmail: email,
           birthday: userBirthday,
           settings: {
-            create: {}
+            create: {},
           },
           notificationPrefs: {
-            create: {}
+            create: {},
           },
         },
         include: {
@@ -425,10 +523,10 @@ export class AuthService {
           college: { select: { id: true, name: true } },
           following: {
             select: {
-              following: { select: { username: true } }
-            }
-          }
-        }
+              following: { select: { username: true } },
+            },
+          },
+        },
       });
     } catch (err: any) {
       userRecord = await this.prisma.user.findUnique({
@@ -438,18 +536,19 @@ export class AuthService {
           college: { select: { id: true, name: true } },
           following: {
             select: {
-              following: { select: { username: true } }
-            }
-          }
-        }
+              following: { select: { username: true } },
+            },
+          },
+        },
       });
       if (!userRecord) {
         throw err;
       }
     }
-    
+
     this.logger.log(`User login ${userRecord.username}`);
-    const followingList = userRecord.following?.map((f: any) => f.following.username) || [];
+    const followingList =
+      userRecord.following?.map((f: any) => f.following.username) || [];
     const result = { ...userRecord, followingList };
     this.syncCache.set(user.id, { data: result, timestamp: Date.now() });
     return result;
@@ -473,7 +572,13 @@ export class AuthService {
     identifier: string,
     password: string,
   ): Promise<{
-    session: { access_token: string; refresh_token: string; expires_at?: number; expires_in?: number; token_type?: string };
+    session: {
+      access_token: string;
+      refresh_token: string;
+      expires_at?: number;
+      expires_in?: number;
+      token_type?: string;
+    };
     user: { id: string; email: string; displayName?: string };
   }> {
     if (!this.supabaseService.isConfigured) {
@@ -498,10 +603,11 @@ export class AuthService {
       email = found.email;
     }
 
-    const { data, error } = await this.supabaseService.client.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { data, error } =
+      await this.supabaseService.client.auth.signInWithPassword({
+        email,
+        password,
+      });
 
     if (error || !data?.session || !data?.user) {
       throw new UnauthorizedException('Invalid username/email or password.');
@@ -524,17 +630,48 @@ export class AuthService {
     };
   }
 
-  async checkUsernameAvailability(username: string): Promise<{ available: boolean; reason?: string }> {
+  async checkUsernameAvailability(
+    username: string,
+  ): Promise<{ available: boolean; reason?: string }> {
     const trimmed = (username || '').trim().toLowerCase();
     const usernameRegex = /^[a-z0-9_.]{3,30}$/;
     if (!usernameRegex.test(trimmed)) {
-      return { available: false, reason: 'Must be 3-30 characters with lowercase letters, numbers, _, or .' };
+      return {
+        available: false,
+        reason:
+          'Must be 3-30 characters with lowercase letters, numbers, _, or .',
+      };
     }
 
     const reserved = new Set([
-      'admin', 'administrator', 'meetify', 'meetifyy', 'help', 'support', 'root', 'api', 
-      'auth', 'settings', 'home', 'campus', 'crew', 'profile', 'null', 'undefined', 
-      'login', 'signup', 'onboarding', 'terms', 'privacy', 'about', 'contact', 'official', 'system', 'explore', 'feed', 'search'
+      'admin',
+      'administrator',
+      'meetify',
+      'meetifyy',
+      'help',
+      'support',
+      'root',
+      'api',
+      'auth',
+      'settings',
+      'home',
+      'campus',
+      'crew',
+      'profile',
+      'null',
+      'undefined',
+      'login',
+      'signup',
+      'onboarding',
+      'terms',
+      'privacy',
+      'about',
+      'contact',
+      'official',
+      'system',
+      'explore',
+      'feed',
+      'search',
     ]);
 
     if (reserved.has(trimmed)) {
@@ -553,16 +690,22 @@ export class AuthService {
     return { available: true };
   }
 
-  async checkEmailAvailability(email: string): Promise<{ available: boolean; reason?: string }> {
+  async checkEmailAvailability(
+    email: string,
+  ): Promise<{ available: boolean; reason?: string }> {
     // Cheapest check first — reject malformed input before any DB / domain work.
     const trimmed = (email || '').trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmed)) {
-      return { available: false, reason: 'Please enter a valid email address.' };
+      return {
+        available: false,
+        reason: 'Please enter a valid email address.',
+      };
     }
 
     // Domain gating (approved-college check) — served from an O(1) in-memory cache.
-    const domainValidation = await this.domainValidatorService.validateDomain(trimmed);
+    const domainValidation =
+      await this.domainValidatorService.validateDomain(trimmed);
     if (!domainValidation.isValid) {
       return { available: false, reason: domainValidation.reason };
     }
@@ -573,16 +716,16 @@ export class AuthService {
     // a case-insensitive sequential scan over the whole User table.
     const existingPrismaUser = await this.prisma.user.findFirst({
       where: {
-        OR: [
-          { email: trimmed },
-          { collegeEmail: trimmed },
-        ],
+        OR: [{ email: trimmed }, { collegeEmail: trimmed }],
       },
       select: { id: true },
     });
 
     if (existingPrismaUser) {
-      return { available: false, reason: 'This email is already registered. Please sign in.' };
+      return {
+        available: false,
+        reason: 'This email is already registered. Please sign in.',
+      };
     }
 
     // NOTE: A pending (unverified) Supabase signup for this email is surfaced to
@@ -604,7 +747,7 @@ export class AuthService {
         orderBy: { createdAt: 'desc' },
         take: 200,
       });
-      return rows.map(r => r.postId);
+      return rows.map((r) => r.postId);
     } catch {
       return [];
     }
@@ -619,7 +762,7 @@ export class AuthService {
         orderBy: { createdAt: 'desc' },
         take: 200,
       });
-      return rows.map(r => r.activityId);
+      return rows.map((r) => r.activityId);
     } catch {
       return [];
     }
@@ -661,9 +804,16 @@ export class AuthService {
       } catch {}
     }
 
-    const count = await this.prisma.notification.count({
-      where: { recipientId: userId, readAt: null, deletedAt: null, type: { not: 'MESSAGE' as any } },
-    }).catch(() => 0);
+    const count = await this.prisma.notification
+      .count({
+        where: {
+          recipientId: userId,
+          readAt: null,
+          deletedAt: null,
+          type: { not: 'MESSAGE' as any },
+        },
+      })
+      .catch(() => 0);
 
     if (redis) {
       redis.set(redisKey, count.toString(), 'EX', 3600).catch(() => {});
@@ -689,16 +839,32 @@ export class AuthService {
     const personalEmail = sanitizeStr(dto.personalEmail).toLowerCase();
 
     if (!name || name.length < 2 || name.length > 80) {
-      throw new BadRequestException('Please enter a valid full name (2-80 characters).');
+      throw new BadRequestException(
+        'Please enter a valid full name (2-80 characters).',
+      );
     }
     if (!collegeName || collegeName.length < 3 || collegeName.length > 120) {
-      throw new BadRequestException('Please enter a valid college name (3-120 characters).');
+      throw new BadRequestException(
+        'Please enter a valid college name (3-120 characters).',
+      );
     }
-    if (!personalEmail || !personalEmail.includes('@') || personalEmail.length > 100) {
-      throw new BadRequestException('Please enter a valid personal email address.');
+    if (
+      !personalEmail ||
+      !personalEmail.includes('@') ||
+      personalEmail.length > 100
+    ) {
+      throw new BadRequestException(
+        'Please enter a valid personal email address.',
+      );
     }
-    if (!collegeEmail || !collegeEmail.includes('@') || collegeEmail.length > 100) {
-      throw new BadRequestException('Please enter a valid college email address.');
+    if (
+      !collegeEmail ||
+      !collegeEmail.includes('@') ||
+      collegeEmail.length > 100
+    ) {
+      throw new BadRequestException(
+        'Please enter a valid college email address.',
+      );
     }
 
     return this.prisma.collegeRequest.create({
@@ -712,4 +878,3 @@ export class AuthService {
     });
   }
 }
-

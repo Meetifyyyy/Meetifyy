@@ -50,7 +50,9 @@ export class NotificationsProcessor extends WorkerHost {
       if (job.name === 'follow-notification') {
         await this.handleFollowNotification(job.data as FollowNotifJob);
       } else if (job.name === 'activity-invitations') {
-        await this.handleActivityInvitations(job.data as ActivityInvitationsJob);
+        await this.handleActivityInvitations(
+          job.data as ActivityInvitationsJob,
+        );
       }
     } catch (err) {
       this.logger.error(`Job ${job.name} failed: ${err.message}`, err.stack);
@@ -63,7 +65,7 @@ export class NotificationsProcessor extends WorkerHost {
     await this.notificationsService.createNotification({
       recipientId: followingId,
       actorId: followerId,
-      type: 'FOLLOW' as any,
+      type: 'FOLLOW',
       entityType: undefined,
       entityId: followerId,
       title: 'New Follower',

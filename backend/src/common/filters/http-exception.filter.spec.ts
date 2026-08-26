@@ -1,4 +1,9 @@
-import { ForbiddenException, NotFoundException, BadRequestException, ArgumentsHost } from '@nestjs/common';
+import {
+  ForbiddenException,
+  NotFoundException,
+  BadRequestException,
+  ArgumentsHost,
+} from '@nestjs/common';
 import { HttpExceptionFilter } from './http-exception.filter';
 
 /**
@@ -15,7 +20,11 @@ describe('HttpExceptionFilter', () => {
     const host = {
       switchToHttp: () => ({
         getResponse: () => ({ status, json, headersSent: false }),
-        getRequest: () => ({ method: 'GET', url: '/api/activities/act-1', body: {} }),
+        getRequest: () => ({
+          method: 'GET',
+          url: '/api/activities/act-1',
+          body: {},
+        }),
       }),
     } as unknown as ArgumentsHost;
 
@@ -29,7 +38,8 @@ describe('HttpExceptionFilter', () => {
         statusCode: 403,
         error: 'Forbidden',
         code: 'COLLEGE_RESTRICTED',
-        message: "You can't access this activity because it's from another college.",
+        message:
+          "You can't access this activity because it's from another college.",
       }),
     );
     expect(status).toHaveBeenCalledWith(403);
@@ -39,14 +49,22 @@ describe('HttpExceptionFilter', () => {
 
   it('passes the PRIVATE code through', () => {
     const { body } = run(
-      new ForbiddenException({ statusCode: 403, code: 'PRIVATE', message: 'This activity is private and you do not have access.' }),
+      new ForbiddenException({
+        statusCode: 403,
+        code: 'PRIVATE',
+        message: 'This activity is private and you do not have access.',
+      }),
     );
     expect(body.code).toBe('PRIVATE');
   });
 
   it('omits `code` entirely for ordinary exceptions', () => {
-    expect(run(new NotFoundException('Activity not found')).body).not.toHaveProperty('code');
-    expect(run(new BadRequestException('Title is required')).body).not.toHaveProperty('code');
+    expect(
+      run(new NotFoundException('Activity not found')).body,
+    ).not.toHaveProperty('code');
+    expect(
+      run(new BadRequestException('Title is required')).body,
+    ).not.toHaveProperty('code');
   });
 
   it('never echoes extra fields from the thrown body', () => {
@@ -59,11 +77,19 @@ describe('HttpExceptionFilter', () => {
         attendees: ['user-1'],
       } as any),
     );
-    expect(Object.keys(body).sort()).toEqual(['code', 'message', 'path', 'statusCode', 'timestamp']);
+    expect(Object.keys(body).sort()).toEqual([
+      'code',
+      'message',
+      'path',
+      'statusCode',
+      'timestamp',
+    ]);
   });
 
   it('reports a non-HTTP error as a 500 without leaking its content', () => {
-    const { status, body } = run(new Error('connect ECONNREFUSED 10.0.0.1:5432'));
+    const { status, body } = run(
+      new Error('connect ECONNREFUSED 10.0.0.1:5432'),
+    );
     expect(status).toHaveBeenCalledWith(500);
     expect(body.message).toBe('Internal server error');
   });
@@ -78,11 +104,22 @@ describe('HttpExceptionFilter — one line per failure', () => {
   const { LOG_CAUSE } = require('../logging/log-format');
 
   function run(exception: any) {
-    const filter = new (require('./http-exception.filter').HttpExceptionFilter)();
-    const req: any = { method: 'GET', url: '/api/thing', body: {}, id: 'req-1', user: { id: 'u1' } };
+    const filter =
+      new (require('./http-exception.filter').HttpExceptionFilter)();
+    const req: any = {
+      method: 'GET',
+      url: '/api/thing',
+      body: {},
+      id: 'req-1',
+      user: { id: 'u1' },
+    };
     const res: any = { status: () => res, json: () => res, headersSent: false };
-    const errorSpy = jest.spyOn((filter as any).logger, 'error').mockImplementation(() => {});
-    const warnSpy = jest.spyOn((filter as any).logger, 'warn').mockImplementation(() => {});
+    const errorSpy = jest
+      .spyOn(filter.logger, 'error')
+      .mockImplementation(() => {});
+    const warnSpy = jest
+      .spyOn(filter.logger, 'warn')
+      .mockImplementation(() => {});
     filter.catch(exception, {
       switchToHttp: () => ({ getResponse: () => res, getRequest: () => req }),
     } as any);
@@ -91,7 +128,9 @@ describe('HttpExceptionFilter — one line per failure', () => {
 
   it('does not log a 4xx itself — it hands the cause to the response line', () => {
     const { NotFoundException } = require('@nestjs/common');
-    const { req, errorSpy, warnSpy } = run(new NotFoundException('Thing not found'));
+    const { req, errorSpy, warnSpy } = run(
+      new NotFoundException('Thing not found'),
+    );
 
     expect(warnSpy).not.toHaveBeenCalled();
     expect(errorSpy).not.toHaveBeenCalled();

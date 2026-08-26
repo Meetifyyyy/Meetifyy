@@ -10,14 +10,24 @@ import { Response, Request } from 'express';
 import { httpLine, LOG_CAUSE } from '../logging/log-format';
 
 const SENSITIVE_FIELDS = new Set([
-  'password', 'newpassword', 'confirmpassword', 'accesstoken', 'refreshtoken', 
-  'authorization', 'cookie', 'otp', 'verificationcode', 'secret', 'apikey', 'token'
+  'password',
+  'newpassword',
+  'confirmpassword',
+  'accesstoken',
+  'refreshtoken',
+  'authorization',
+  'cookie',
+  'otp',
+  'verificationcode',
+  'secret',
+  'apikey',
+  'token',
 ]);
 
 function redact(obj: any): any {
   if (!obj || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(redact);
-  
+
   const copy = { ...obj };
   for (const key of Object.keys(copy)) {
     if (SENSITIVE_FIELDS.has(key.toLowerCase())) {
@@ -28,7 +38,6 @@ function redact(obj: any): any {
   }
   return copy;
 }
-
 
 /**
  * Unwrap the thing that actually went wrong.
@@ -42,7 +51,10 @@ function rootCause(exception: unknown): string {
     // Prisma renders a multi-line message with the offending call and a code
     // frame. The last non-empty line is the actual complaint
     // ("The column `x` does not exist in the current database.").
-    const lines = exception.message.split('\n').map((l) => l.trim()).filter(Boolean);
+    const lines = exception.message
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
     return lines[lines.length - 1] || exception.message;
   }
   return String(exception);
@@ -87,9 +99,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
       bodySnippet = `body=${JSON.stringify(redact(request.body))}`;
     }
 
-    const cause = status >= 500
-      ? rootCause(exception)
-      : (typeof message === 'object' ? JSON.stringify(redact(message)) : String(message));
+    const cause =
+      status >= 500
+        ? rootCause(exception)
+        : typeof message === 'object'
+          ? JSON.stringify(redact(message))
+          : String(message);
 
     if (status >= 500) {
       // 5xx is logged here because this is the only place with the stack.
@@ -122,7 +137,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // PRIVATE), so clients can pick the right UI state without parsing the
     // human-readable message. Nothing else from the thrown body is echoed.
     const errorCode =
-      typeof message === 'object' && message !== null && typeof (message as any).code === 'string'
+      typeof message === 'object' &&
+      message !== null &&
+      typeof (message as any).code === 'string'
         ? (message as any).code
         : undefined;
 

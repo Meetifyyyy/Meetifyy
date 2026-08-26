@@ -10,7 +10,10 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BlocksService } from '../users/blocks.service';
 import { MessagesService } from '../messages/messages.service';
-import { computeCompatibility, relaxedThreshold } from './instant-match.scoring';
+import {
+  computeCompatibility,
+  relaxedThreshold,
+} from './instant-match.scoring';
 import {
   JoinQueueDto,
   QueueSnapshot,
@@ -171,7 +174,10 @@ export interface InstantMatchChatState {
 export interface InstantMatchEmitter {
   emitMatchFound(userId: string, p: MatchFoundPayload): void;
   emitMatchAccepted(userId: string, p: MatchAcceptedPayload): void;
-  emitMatchDeclined(userId: string, p: { reason: string; requeued: boolean }): void;
+  emitMatchDeclined(
+    userId: string,
+    p: { reason: string; requeued: boolean },
+  ): void;
   emitSearchResumed(userId: string): void;
   emitQueueStats(userId: string, stats: QueueStats): void;
   emitInstantMatchChatEnded(userId: string, state: InstantMatchChatState): void;
@@ -263,13 +269,15 @@ export class InstantMatchService implements OnModuleInit {
     } catch (err) {
       this.logger.error(
         `Queued ${dto.userId}, but the immediate match attempt failed`,
-        err as any,
+        err,
       );
     }
   }
 
   async cancelQueue(userId: string): Promise<void> {
-    const entry = await this.prisma.matchQueueEntry.findUnique({ where: { userId } });
+    const entry = await this.prisma.matchQueueEntry.findUnique({
+      where: { userId },
+    });
     if (!entry) return;
 
     await this.prisma.matchQueueEntry.deleteMany({ where: { userId } });
@@ -287,7 +295,9 @@ export class InstantMatchService implements OnModuleInit {
    * instead of giving up and leaving the user waiting a full sweep cycle.
    */
   async tryMatch(userId: string): Promise<void> {
-    const myEntry = await this.prisma.matchQueueEntry.findUnique({ where: { userId } });
+    const myEntry = await this.prisma.matchQueueEntry.findUnique({
+      where: { userId },
+    });
     if (!myEntry) return;
     if (myEntry.expiresAt.getTime() <= Date.now()) return;
 
@@ -302,7 +312,10 @@ export class InstantMatchService implements OnModuleInit {
     const candidates = await this.prisma.matchQueueEntry.findMany({
       where: {
         activity: myEntry.activity,
-        userId: { not: userId, notIn: excludedIds.length ? excludedIds : undefined },
+        userId: {
+          not: userId,
+          notIn: excludedIds.length ? excludedIds : undefined,
+        },
         expiresAt: { gt: new Date() },
       },
       include: { user: { select: USER_CARD_SELECT } },
@@ -332,7 +345,11 @@ export class InstantMatchService implements OnModuleInit {
       .map((candidate) => {
         const { score, breakdown } = computeCompatibility(
           myContext,
-          this.toScoringContext(candidate, candidate.user, history.get(candidate.userId) ?? 0),
+          this.toScoringContext(
+            candidate,
+            candidate.user,
+            history.get(candidate.userId) ?? 0,
+          ),
         );
         // Whoever has waited longer sets the bar: a five-minute waiter should
         // not be held back by a partner who joined ten seconds ago.
@@ -340,15 +357,21 @@ export class InstantMatchService implements OnModuleInit {
           now - myEntry.joinedAt.getTime(),
           now - candidate.joinedAt.getTime(),
         );
-        return { candidate, score, breakdown, threshold: relaxedThreshold(waitedMs) };
+        return {
+          candidate,
+          score,
+          breakdown,
+          threshold: relaxedThreshold(waitedMs),
+        };
       })
       .filter((r) => r.score >= r.threshold)
       // Best compatibility first; ties break toward whoever has been waiting
       // longest, so the queue stays fair instead of favouring whatever order
       // Postgres returned.
-      .sort((a, b) =>
-        b.score - a.score ||
-        a.candidate.joinedAt.getTime() - b.candidate.joinedAt.getTime(),
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          a.candidate.joinedAt.getTime() - b.candidate.joinedAt.getTime(),
       );
 
     if (ranked.length === 0) return;
@@ -383,7 +406,7 @@ export class InstantMatchService implements OnModuleInit {
 
       this.logger.log(
         `match:created ${session.id} ${userId} <> ${candidate.userId} ` +
-        `score=${score} ${JSON.stringify(breakdown)}`,
+          `score=${score} ${JSON.stringify(breakdown)}`,
       );
 
       // Both are out of the queue now — refresh the depth for everyone left.
@@ -395,11 +418,21 @@ export class InstantMatchService implements OnModuleInit {
   /** Shapes a queue entry plus its owner's profile into scorer input. */
   private toScoringContext(
     entry: {
-      campus: string; activity: string; timePreference: string;
-      optionalDetail: string | null; area: string | null;
-      latitude: number | null; longitude: number | null; joinedAt: Date;
+      campus: string;
+      activity: string;
+      timePreference: string;
+      optionalDetail: string | null;
+      area: string | null;
+      latitude: number | null;
+      longitude: number | null;
+      joinedAt: Date;
     },
-    user: { interests: string[]; course: string | null; branch: string | null; currentYear: number | null },
+    user: {
+      interests: string[];
+      course: string | null;
+      branch: string | null;
+      currentYear: number | null;
+    },
     priorConversations: number | null = null,
   ) {
     return {
@@ -466,12 +499,18 @@ export class InstantMatchService implements OnModuleInit {
     candidate: { userId: string },
     timerSecs: number,
   ): Promise<{ id: string; expiresAt: Date } | null> {
-    const expiresAt = new Date(Date.now() + timerSecs * 1000 + ACCEPT_TIMER_GRACE_MS);
+    const expiresAt = new Date(
+      Date.now() + timerSecs * 1000 + ACCEPT_TIMER_GRACE_MS,
+    );
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const a = await tx.matchQueueEntry.findUnique({ where: { userId: myEntry.userId } });
-        const b = await tx.matchQueueEntry.findUnique({ where: { userId: candidate.userId } });
+        const a = await tx.matchQueueEntry.findUnique({
+          where: { userId: myEntry.userId },
+        });
+        const b = await tx.matchQueueEntry.findUnique({
+          where: { userId: candidate.userId },
+        });
         if (!a || !b) throw new PairClaimLost();
 
         const removed = await tx.matchQueueEntry.deleteMany({
@@ -485,8 +524,12 @@ export class InstantMatchService implements OnModuleInit {
             userBId: b.userId,
             activity: a.activity,
             expiresAt,
-            snapshotA: this.entryToSnapshot(a) as unknown as Prisma.InputJsonValue,
-            snapshotB: this.entryToSnapshot(b) as unknown as Prisma.InputJsonValue,
+            snapshotA: this.entryToSnapshot(
+              a,
+            ) as unknown as Prisma.InputJsonValue,
+            snapshotB: this.entryToSnapshot(
+              b,
+            ) as unknown as Prisma.InputJsonValue,
           },
           select: { id: true, expiresAt: true },
         });
@@ -504,7 +547,9 @@ export class InstantMatchService implements OnModuleInit {
     matchId: string,
     action: 'accept' | 'decline',
   ): Promise<void> {
-    const session = await this.prisma.matchSession.findUnique({ where: { id: matchId } });
+    const session = await this.prisma.matchSession.findUnique({
+      where: { id: matchId },
+    });
     if (!session) throw new NotFoundException('Match session not found');
 
     const isUserA = session.userAId === userId;
@@ -532,7 +577,13 @@ export class InstantMatchService implements OnModuleInit {
   }
 
   private async declineSession(
-    session: { id: string; userAId: string; userBId: string; snapshotA: unknown; snapshotB: unknown },
+    session: {
+      id: string;
+      userAId: string;
+      userBId: string;
+      snapshotA: unknown;
+      snapshotB: unknown;
+    },
     userId: string,
   ): Promise<void> {
     // Conditional update = the transition claim. Exactly one caller can move
@@ -544,7 +595,8 @@ export class InstantMatchService implements OnModuleInit {
     });
     if (claimed.count !== 1) return;
 
-    const otherUserId = session.userAId === userId ? session.userBId : session.userAId;
+    const otherUserId =
+      session.userAId === userId ? session.userBId : session.userAId;
     const otherSnapshot = readQueueSnapshot(
       session.userAId === userId ? session.snapshotB : session.snapshotA,
     );
@@ -562,7 +614,9 @@ export class InstantMatchService implements OnModuleInit {
       requeued,
     });
 
-    this.logger.log(`match:declined ${session.id} by=${userId} requeued=${requeued}`);
+    this.logger.log(
+      `match:declined ${session.id} by=${userId} requeued=${requeued}`,
+    );
 
     if (requeued) await this.tryMatch(otherUserId);
   }
@@ -579,7 +633,12 @@ export class InstantMatchService implements OnModuleInit {
 
     const fresh = await this.prisma.matchSession.findUnique({
       where: { id: session.id },
-      select: { aAccepted: true, bAccepted: true, status: true, conversationId: true },
+      select: {
+        aAccepted: true,
+        bAccepted: true,
+        status: true,
+        conversationId: true,
+      },
     });
     if (!fresh || fresh.status !== 'PENDING') return;
     if (!fresh.aAccepted || !fresh.bAccepted) {
@@ -609,7 +668,10 @@ export class InstantMatchService implements OnModuleInit {
         where: { id: session.id, status: 'ACCEPTED' },
         data: { status: 'PENDING' },
       });
-      this.logger.error(`match:accept failed to open conversation ${session.id}`, err as any);
+      this.logger.error(
+        `match:accept failed to open conversation ${session.id}`,
+        err,
+      );
       throw new BadRequestException('Could not open your chat — try again');
     }
 
@@ -633,8 +695,14 @@ export class InstantMatchService implements OnModuleInit {
     // the chat header from this alone, which is what lets "Open chat" work
     // on a fresh device that has never seen the match:found event.
     const [userA, userB] = await Promise.all([
-      this.prisma.user.findUnique({ where: { id: session.userAId }, select: USER_CARD_SELECT }),
-      this.prisma.user.findUnique({ where: { id: session.userBId }, select: USER_CARD_SELECT }),
+      this.prisma.user.findUnique({
+        where: { id: session.userAId },
+        select: USER_CARD_SELECT,
+      }),
+      this.prisma.user.findUnique({
+        where: { id: session.userBId },
+        select: USER_CARD_SELECT,
+      }),
     ]);
 
     const base = {
@@ -691,7 +759,8 @@ export class InstantMatchService implements OnModuleInit {
     // lazily when they next read their state — correctness does not depend on
     // this having run.
     const chatsEnded = await this.expireStaleChats();
-    if (chatsEnded > 0) this.logger.log(`instant-match:chats-expired ${chatsEnded}`);
+    if (chatsEnded > 0)
+      this.logger.log(`instant-match:chats-expired ${chatsEnded}`);
   }
 
   /**
@@ -708,7 +777,12 @@ export class InstantMatchService implements OnModuleInit {
 
     const session = await this.prisma.matchSession.findUnique({
       where: { id: sessionId },
-      select: { userAId: true, userBId: true, snapshotA: true, snapshotB: true },
+      select: {
+        userAId: true,
+        userBId: true,
+        snapshotA: true,
+        snapshotB: true,
+      },
     });
     if (!session) return false;
 
@@ -720,7 +794,9 @@ export class InstantMatchService implements OnModuleInit {
     for (const [uid, snap] of sides) {
       const requeued = await this.requeue(uid, readQueueSnapshot(snap));
       realtimeGatewayRef?.emitMatchDeclined(uid, {
-        reason: requeued ? 'Match timed out — back to searching' : 'Match timed out',
+        reason: requeued
+          ? 'Match timed out — back to searching'
+          : 'Match timed out',
         requeued,
       });
       if (requeued) await this.tryMatch(uid);
@@ -736,7 +812,10 @@ export class InstantMatchService implements OnModuleInit {
    * so a user whose sheet is minimised — or whose socket dropped — is not
    * silently removed from matching when the other side declines.
    */
-  private async requeue(userId: string, snapshot: QueueSnapshot | null): Promise<boolean> {
+  private async requeue(
+    userId: string,
+    snapshot: QueueSnapshot | null,
+  ): Promise<boolean> {
     if (!snapshot) return false;
 
     try {
@@ -760,7 +839,7 @@ export class InstantMatchService implements OnModuleInit {
       await this.broadcastQueueStats();
       return true;
     } catch (err) {
-      this.logger.error(`Failed to re-queue ${userId}`, err as any);
+      this.logger.error(`Failed to re-queue ${userId}`, err);
       return false;
     }
   }
@@ -794,11 +873,18 @@ export class InstantMatchService implements OnModuleInit {
       ? entries.filter((e) => e.activity === activity).length
       : 0;
 
-    if (entries.length === 0) return { count: 0, sameActivity: 0, avgWaitSecs: 60 };
+    if (entries.length === 0)
+      return { count: 0, sameActivity: 0, avgWaitSecs: 60 };
 
     const now = Date.now();
-    const totalWait = entries.reduce((sum, e) => sum + (now - e.joinedAt.getTime()), 0);
-    const avgWaitSecs = Math.max(30, Math.round(totalWait / entries.length / 1000));
+    const totalWait = entries.reduce(
+      (sum, e) => sum + (now - e.joinedAt.getTime()),
+      0,
+    );
+    const avgWaitSecs = Math.max(
+      30,
+      Math.round(totalWait / entries.length / 1000),
+    );
 
     return { count: entries.length, sameActivity, avgWaitSecs };
   }
@@ -834,7 +920,9 @@ export class InstantMatchService implements OnModuleInit {
       }
     } catch (err) {
       // Stats are cosmetic — never let them break a join or a match.
-      this.logger.warn(`Failed to broadcast queue stats: ${(err as Error)?.message}`);
+      this.logger.warn(
+        `Failed to broadcast queue stats: ${(err as Error)?.message}`,
+      );
     }
   }
 
@@ -856,7 +944,8 @@ export class InstantMatchService implements OnModuleInit {
 
     let pendingMatch: MatchFoundPayload | null = null;
     if (session) {
-      const otherId = session.userAId === userId ? session.userBId : session.userAId;
+      const otherId =
+        session.userAId === userId ? session.userBId : session.userAId;
       const other = await this.prisma.user.findUnique({
         where: { id: otherId },
         select: USER_CARD_SELECT,
@@ -870,15 +959,16 @@ export class InstantMatchService implements OnModuleInit {
           candidate: this.toCandidateDto(other),
           activity: session.activity,
           area: snapshot?.area ?? null,
-          timer: getAcceptTimerSecs(session.activity, snapshot?.timePreference ?? 'now'),
+          timer: getAcceptTimerSecs(
+            session.activity,
+            snapshot?.timePreference ?? 'now',
+          ),
           expiresAt: session.expiresAt.getTime(),
         };
       }
     }
 
-    const stats = live
-      ? await this.getQueueStats(live.activity)
-      : null;
+    const stats = live ? await this.getQueueStats(live.activity) : null;
 
     return {
       queued: live
@@ -915,7 +1005,8 @@ export class InstantMatchService implements OnModuleInit {
     });
     if (!session) return null;
 
-    const otherId = session.userAId === userId ? session.userBId : session.userAId;
+    const otherId =
+      session.userAId === userId ? session.userBId : session.userAId;
     const other = await this.prisma.user.findUnique({
       where: { id: otherId },
       select: USER_CARD_SELECT,
@@ -970,7 +1061,9 @@ export class InstantMatchService implements OnModuleInit {
    * run, which is what keeps an offline user from returning to a chat the
    * clock says is dead and the database says is alive.
    */
-  async getActiveChatSession(userId: string): Promise<InstantMatchSession | null> {
+  async getActiveChatSession(
+    userId: string,
+  ): Promise<InstantMatchSession | null> {
     const session = await this.prisma.matchSession.findFirst({
       where: {
         status: 'ACCEPTED',
@@ -986,7 +1079,7 @@ export class InstantMatchService implements OnModuleInit {
       await this.expireChatSession(session.id);
       return null;
     }
-    return session as InstantMatchSession;
+    return session;
   }
 
   /**
@@ -1013,17 +1106,19 @@ export class InstantMatchService implements OnModuleInit {
     let current = session;
     if (current.chatStatus === 'ACTIVE' && this.isPastWindow(current)) {
       await this.expireChatSession(current.id);
-      current = { ...current, chatStatus: 'EXPIRED' } as typeof current;
+      current = { ...current, chatStatus: 'EXPIRED' };
     }
 
-    return this.toChatState(current as InstantMatchSession, userId);
+    return this.toChatState(current, userId);
   }
 
   /** True once the 24h window has closed. A session with no recorded window
    *  (impossible for rows written after the migration) is treated as open,
    *  so a data gap can never silently lock a live chat. */
   private isPastWindow(session: { chatExpiresAt: Date | null }): boolean {
-    return Boolean(session.chatExpiresAt && session.chatExpiresAt.getTime() <= Date.now());
+    return Boolean(
+      session.chatExpiresAt && session.chatExpiresAt.getTime() <= Date.now(),
+    );
   }
 
   /**
@@ -1053,7 +1148,8 @@ export class InstantMatchService implements OnModuleInit {
       return { ended: false, session: await this.getChatStateFor(userId) };
     }
 
-    const isParticipant = session.userAId === userId || session.userBId === userId;
+    const isParticipant =
+      session.userAId === userId || session.userBId === userId;
     if (!isParticipant) {
       // Knowing a match id must not let a third party end someone's chat.
       throw new ForbiddenException('Not part of this match');
@@ -1068,7 +1164,9 @@ export class InstantMatchService implements OnModuleInit {
       },
     });
 
-    const fresh = await this.prisma.matchSession.findUnique({ where: { id: session.id } });
+    const fresh = await this.prisma.matchSession.findUnique({
+      where: { id: session.id },
+    });
     if (!fresh) return { ended: false, session: null };
 
     if (claimed.count === 1) {
@@ -1076,12 +1174,12 @@ export class InstantMatchService implements OnModuleInit {
       // Close the conversation itself too, so any path that reads the
       // conversation rather than the session also sees a dead chat.
       await this.closeConversation(fresh.conversationId);
-      this.notifyChatEnded(fresh as InstantMatchSession);
+      this.notifyChatEnded(fresh);
     }
 
     return {
       ended: claimed.count === 1,
-      session: this.toChatState(fresh as InstantMatchSession, userId),
+      session: this.toChatState(fresh, userId),
     };
   }
 
@@ -1094,16 +1192,20 @@ export class InstantMatchService implements OnModuleInit {
     });
     if (claimed.count !== 1) return false;
 
-    const fresh = await this.prisma.matchSession.findUnique({ where: { id: sessionId } });
+    const fresh = await this.prisma.matchSession.findUnique({
+      where: { id: sessionId },
+    });
     if (!fresh) return false;
 
     this.logger.log(`instant-match:chat-expired ${sessionId}`);
     await this.closeConversation(fresh.conversationId);
-    this.notifyChatEnded(fresh as InstantMatchSession);
+    this.notifyChatEnded(fresh);
     return true;
   }
 
-  private async closeConversation(conversationId: string | null): Promise<void> {
+  private async closeConversation(
+    conversationId: string | null,
+  ): Promise<void> {
     if (!conversationId) return;
     try {
       await this.prisma.conversation.updateMany({
@@ -1120,7 +1222,10 @@ export class InstantMatchService implements OnModuleInit {
    *  so a dropped event costs a moment's staleness and nothing more. */
   private notifyChatEnded(session: InstantMatchSession): void {
     for (const uid of [session.userAId, session.userBId]) {
-      realtimeGatewayRef?.emitInstantMatchChatEnded(uid, this.toChatState(session, uid));
+      realtimeGatewayRef?.emitInstantMatchChatEnded(
+        uid,
+        this.toChatState(session, uid),
+      );
     }
   }
 
@@ -1131,12 +1236,19 @@ export class InstantMatchService implements OnModuleInit {
    * left" are different screens, and the difference must not be computed on
    * the client from an id comparison it might get wrong.
    */
-  private toChatState(session: InstantMatchSession, viewerId: string): InstantMatchChatState {
-    const otherUserId = session.userAId === viewerId ? session.userBId : session.userAId;
-    const endedByMe = Boolean(session.endedById && session.endedById === viewerId);
+  private toChatState(
+    session: InstantMatchSession,
+    viewerId: string,
+  ): InstantMatchChatState {
+    const otherUserId =
+      session.userAId === viewerId ? session.userBId : session.userAId;
+    const endedByMe = Boolean(
+      session.endedById && session.endedById === viewerId,
+    );
 
     let reason: InstantMatchEndReason | null = null;
-    if (session.chatStatus === 'ENDED_BY_USER') reason = endedByMe ? 'you_left' : 'they_left';
+    if (session.chatStatus === 'ENDED_BY_USER')
+      reason = endedByMe ? 'you_left' : 'they_left';
     else if (session.chatStatus === 'EXPIRED') reason = 'expired';
 
     return {
@@ -1162,7 +1274,10 @@ export class InstantMatchService implements OnModuleInit {
    * there is no route — socket or HTTP, first tab or fifth — that reaches a
    * message insert without passing through here.
    */
-  async assertCanSendInChat(userId: string, conversationId: string): Promise<void> {
+  async assertCanSendInChat(
+    userId: string,
+    conversationId: string,
+  ): Promise<void> {
     const session = await this.prisma.matchSession.findFirst({
       where: { conversationId },
       orderBy: { createdAt: 'desc' },
@@ -1170,7 +1285,8 @@ export class InstantMatchService implements OnModuleInit {
 
     // A conversation typed INSTANT_MATCH with no session behind it is
     // corrupt state; refusing the write is the safe reading.
-    if (!session) throw new ForbiddenException('This Instant Match chat has ended');
+    if (!session)
+      throw new ForbiddenException('This Instant Match chat has ended');
 
     if (session.userAId !== userId && session.userBId !== userId) {
       throw new ForbiddenException('Not part of this match');
@@ -1257,9 +1373,15 @@ export class InstantMatchService implements OnModuleInit {
   }
 
   private toCandidateDto(u: {
-    id: string; username: string; displayName: string; avatar: string | null;
-    course: string | null; branch: string | null; currentYear: number | null;
-    interests: string[]; bio: string | null;
+    id: string;
+    username: string;
+    displayName: string;
+    avatar: string | null;
+    course: string | null;
+    branch: string | null;
+    currentYear: number | null;
+    interests: string[];
+    bio: string | null;
   }): MatchCandidateDto {
     return {
       id: u.id,
@@ -1275,9 +1397,13 @@ export class InstantMatchService implements OnModuleInit {
   }
 
   private entryToSnapshot(entry: {
-    campus: string; activity: string; timePreference: string;
-    optionalDetail: string | null; area: string | null;
-    latitude: number | null; longitude: number | null;
+    campus: string;
+    activity: string;
+    timePreference: string;
+    optionalDetail: string | null;
+    area: string | null;
+    latitude: number | null;
+    longitude: number | null;
   }): QueueSnapshot {
     return toQueueSnapshot({
       userId: '',

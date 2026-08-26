@@ -46,10 +46,19 @@ export class ModerationService {
       }
 
       // 2. Validate target existence via Target Resolver
-      const targetExists = await this.targetResolver.exists(dto.targetType, dto.targetId, reporterId);
+      const targetExists = await this.targetResolver.exists(
+        dto.targetType,
+        dto.targetId,
+        reporterId,
+      );
       if (!targetExists) {
-        Sentry.captureMessage(`Report submit failed: Target missing [${dto.targetType}:${dto.targetId}]`, 'warning');
-        throw new NotFoundException(`The reported ${dto.targetType.toLowerCase()} could not be found.`);
+        Sentry.captureMessage(
+          `Report submit failed: Target missing [${dto.targetType}:${dto.targetId}]`,
+          'warning',
+        );
+        throw new NotFoundException(
+          `The reported ${dto.targetType.toLowerCase()} could not be found.`,
+        );
       }
 
       // 3. Multi-window rate limit check
@@ -72,7 +81,9 @@ export class ModerationService {
       });
 
       if (existingActiveReport) {
-        throw new ConflictException('You have already submitted an active report for this item.');
+        throw new ConflictException(
+          'You have already submitted an active report for this item.',
+        );
       }
 
       // 5. Build metadata object
@@ -142,7 +153,10 @@ export class ModerationService {
 
       this.logger.error('Unexpected failure during report submission', error);
       Sentry.captureException(error);
-      throw new HttpException('Failed to process report submission.', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        'Failed to process report submission.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -173,7 +187,11 @@ export class ModerationService {
       where.OR = [
         { description: { contains: query.search, mode: 'insensitive' } },
         { targetId: { contains: query.search, mode: 'insensitive' } },
-        { reporter: { username: { contains: query.search, mode: 'insensitive' } } },
+        {
+          reporter: {
+            username: { contains: query.search, mode: 'insensitive' },
+          },
+        },
       ];
     }
 
@@ -213,27 +231,37 @@ export class ModerationService {
    * Super Admin Dashboard: Moderation Analytics & Stats
    */
   async getReportStats() {
-    const [statusCounts, priorityCounts, targetTypeCounts, total] = await Promise.all([
-      this.prisma.report.groupBy({
-        by: ['status'],
-        _count: { _all: true },
-      }),
-      this.prisma.report.groupBy({
-        by: ['priority'],
-        _count: { _all: true },
-      }),
-      this.prisma.report.groupBy({
-        by: ['targetType'],
-        _count: { _all: true },
-      }),
-      this.prisma.report.count(),
-    ]);
+    const [statusCounts, priorityCounts, targetTypeCounts, total] =
+      await Promise.all([
+        this.prisma.report.groupBy({
+          by: ['status'],
+          _count: { _all: true },
+        }),
+        this.prisma.report.groupBy({
+          by: ['priority'],
+          _count: { _all: true },
+        }),
+        this.prisma.report.groupBy({
+          by: ['targetType'],
+          _count: { _all: true },
+        }),
+        this.prisma.report.count(),
+      ]);
 
     return {
       total,
-      byStatus: statusCounts.reduce((acc, curr) => ({ ...acc, [curr.status]: curr._count._all }), {}),
-      byPriority: priorityCounts.reduce((acc, curr) => ({ ...acc, [curr.priority]: curr._count._all }), {}),
-      byTargetType: targetTypeCounts.reduce((acc, curr) => ({ ...acc, [curr.targetType]: curr._count._all }), {}),
+      byStatus: statusCounts.reduce(
+        (acc, curr) => ({ ...acc, [curr.status]: curr._count._all }),
+        {},
+      ),
+      byPriority: priorityCounts.reduce(
+        (acc, curr) => ({ ...acc, [curr.priority]: curr._count._all }),
+        {},
+      ),
+      byTargetType: targetTypeCounts.reduce(
+        (acc, curr) => ({ ...acc, [curr.targetType]: curr._count._all }),
+        {},
+      ),
     };
   }
 
@@ -261,7 +289,10 @@ export class ModerationService {
       throw new NotFoundException(`Report with ID ${id} not found.`);
     }
 
-    const targetContent = await this.targetResolver.resolveAndFetch(report.targetType, report.targetId);
+    const targetContent = await this.targetResolver.resolveAndFetch(
+      report.targetType,
+      report.targetId,
+    );
 
     return {
       ...report,
@@ -280,7 +311,10 @@ export class ModerationService {
 
     const data: any = { ...dto };
 
-    if (dto.status === ReportStatus.RESOLVED || dto.status === ReportStatus.REJECTED) {
+    if (
+      dto.status === ReportStatus.RESOLVED ||
+      dto.status === ReportStatus.REJECTED
+    ) {
       data.resolvedAt = new Date();
       if (adminUserId) data.resolvedBy = adminUserId;
     }
@@ -308,10 +342,14 @@ export class ModerationService {
     const data: any = {};
     if (dto.status) data.status = dto.status;
     if (dto.priority) data.priority = dto.priority;
-    if (dto.assignedModeratorId) data.assignedModeratorId = dto.assignedModeratorId;
+    if (dto.assignedModeratorId)
+      data.assignedModeratorId = dto.assignedModeratorId;
     if (dto.resolution) data.resolution = dto.resolution;
 
-    if (dto.status === ReportStatus.RESOLVED || dto.status === ReportStatus.REJECTED) {
+    if (
+      dto.status === ReportStatus.RESOLVED ||
+      dto.status === ReportStatus.REJECTED
+    ) {
       data.resolvedAt = new Date();
       if (adminUserId) data.resolvedBy = adminUserId;
     }

@@ -42,10 +42,7 @@ import { PrismaService } from '../prisma/prisma.service';
 const ASSET_VERSION = 'v2';
 
 export type DefaultAssetName =
-  | 'community-cover'
-  | 'profile-cover'
-  | 'community-avatar'
-  | 'profile-avatar';
+  'community-cover' | 'profile-cover' | 'community-avatar' | 'profile-avatar';
 
 const ASSETS: DefaultAssetName[] = [
   'community-cover',
@@ -64,11 +61,13 @@ export class DefaultAssetsService implements OnModuleInit {
   private readonly keys = new Map<DefaultAssetName, string>();
 
   constructor(
-    @Inject('STORAGE_PROVIDER') private readonly storageProvider: StorageProvider,
+    @Inject('STORAGE_PROVIDER')
+    private readonly storageProvider: StorageProvider,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {
-    this.providerName = this.config.get<string>('app.storageProvider') || 'supabase';
+    this.providerName =
+      this.config.get<string>('app.storageProvider') || 'supabase';
     this.bucketName =
       this.providerName === 'r2'
         ? this.config.get<string>('r2.bucketName') || 'meetifyy-dev'
@@ -85,7 +84,9 @@ export class DefaultAssetsService implements OnModuleInit {
       await this.repointOutdatedDefaults();
     } catch (err: any) {
       if (err?.message?.includes('Cannot use a pool after calling end')) return;
-      this.logger.error(`Could not publish default assets: ${(err as Error)?.message}`);
+      this.logger.error(
+        `Could not publish default assets: ${(err as Error)?.message}`,
+      );
     }
   }
 
@@ -108,9 +109,10 @@ export class DefaultAssetsService implements OnModuleInit {
     // `x = NULL` is never true — so a NULL column never matched and the
     // backfill silently updated nothing at all. An explicit OR is the only
     // form that catches both.
-    const isMissing = (field: string) => ({
-      OR: [{ [field]: null }, { [field]: '' }],
-    }) as any;
+    const isMissing = (field: string) =>
+      ({
+        OR: [{ [field]: null }, { [field]: '' }],
+      }) as any;
 
     const communityAvatar = this.refFor('community-avatar');
     const communityCover = this.refFor('community-cover');
@@ -148,7 +150,8 @@ export class DefaultAssetsService implements OnModuleInit {
       if (count) results.push(`${count} profile covers`);
     }
 
-    if (results.length) this.logger.log(`Backfilled defaults: ${results.join(', ')}`);
+    if (results.length)
+      this.logger.log(`Backfilled defaults: ${results.join(', ')}`);
   }
 
   /**
@@ -177,7 +180,10 @@ export class DefaultAssetsService implements OnModuleInit {
     const move = async (
       name: DefaultAssetName,
       field: string,
-      updateMany: (args: { where: any; data: any }) => Promise<{ count: number }>,
+      updateMany: (args: {
+        where: any;
+        data: any;
+      }) => Promise<{ count: number }>,
     ): Promise<void> => {
       const current = this.refFor(name);
       // Nothing published means nothing to point at. Rewriting refs against a
@@ -187,7 +193,11 @@ export class DefaultAssetsService implements OnModuleInit {
       const { count } = await updateMany({
         where: {
           AND: [
-            { [field]: { startsWith: `/api/media/${this.storageKeyPrefix(name)}` } },
+            {
+              [field]: {
+                startsWith: `/api/media/${this.storageKeyPrefix(name)}`,
+              },
+            },
             { NOT: { [field]: current } },
           ],
         },
@@ -196,17 +206,27 @@ export class DefaultAssetsService implements OnModuleInit {
       if (count) results.push(`${count} ${name}`);
     };
 
-    await move('profile-cover', 'cover', (args) => this.prisma.user.updateMany(args as any));
-    await move('community-cover', 'coverKey', (args) => this.prisma.community.updateMany(args as any));
+    await move('profile-cover', 'cover', (args) =>
+      this.prisma.user.updateMany(args),
+    );
+    await move('community-cover', 'coverKey', (args) =>
+      this.prisma.community.updateMany(args),
+    );
     // The avatars carry the same artwork across this bump, but they are moved
     // too: leaving them on the old key would mean a row holding a default that
     // is not *the* default, and the next redesign would have two generations
     // to chase instead of one.
-    await move('profile-avatar', 'avatar', (args) => this.prisma.user.updateMany(args as any));
-    await move('community-avatar', 'avatarKey', (args) => this.prisma.community.updateMany(args as any));
+    await move('profile-avatar', 'avatar', (args) =>
+      this.prisma.user.updateMany(args),
+    );
+    await move('community-avatar', 'avatarKey', (args) =>
+      this.prisma.community.updateMany(args),
+    );
 
     if (results.length) {
-      this.logger.log(`Moved onto ${ASSET_VERSION} defaults: ${results.join(', ')}`);
+      this.logger.log(
+        `Moved onto ${ASSET_VERSION} defaults: ${results.join(', ')}`,
+      );
     }
   }
 
@@ -241,7 +261,9 @@ export class DefaultAssetsService implements OnModuleInit {
     for (const name of ASSETS) {
       const key = this.storageKey(name);
       try {
-        const alreadyThere = await this.storageProvider.exists(key).catch(() => false);
+        const alreadyThere = await this.storageProvider
+          .exists(key)
+          .catch(() => false);
 
         if (!alreadyThere) {
           const filePath = this.assetPath(name);
@@ -251,13 +273,17 @@ export class DefaultAssetsService implements OnModuleInit {
           }
           const buffer = fs.readFileSync(filePath);
           await this.storageProvider.upload(key, buffer, 'image/webp');
-          this.logger.log(`Published default asset ${key} (${buffer.length} bytes)`);
+          this.logger.log(
+            `Published default asset ${key} (${buffer.length} bytes)`,
+          );
         }
 
         await this.registerMedia(name, key);
         this.keys.set(name, key);
       } catch (err) {
-        this.logger.error(`Failed to publish default asset ${name}: ${(err as Error)?.message}`);
+        this.logger.error(
+          `Failed to publish default asset ${name}: ${(err as Error)?.message}`,
+        );
       }
     }
   }
@@ -267,7 +293,10 @@ export class DefaultAssetsService implements OnModuleInit {
    * upload. `ownerId` is deliberately null — these belong to no user, and
    * the ownership check that guards deletion therefore refuses everyone.
    */
-  private async registerMedia(name: DefaultAssetName, key: string): Promise<void> {
+  private async registerMedia(
+    name: DefaultAssetName,
+    key: string,
+  ): Promise<void> {
     const dimensions = name.endsWith('cover')
       ? { width: 1600, height: 400 }
       : { width: 512, height: 512 };
@@ -309,7 +338,15 @@ export class DefaultAssetsService implements OnModuleInit {
   private assetPath(name: DefaultAssetName): string {
     const candidates = [
       path.join(__dirname, '..', '..', 'assets', 'defaults', `${name}.webp`),
-      path.join(__dirname, '..', '..', '..', 'assets', 'defaults', `${name}.webp`),
+      path.join(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        'assets',
+        'defaults',
+        `${name}.webp`,
+      ),
       path.join(process.cwd(), 'assets', 'defaults', `${name}.webp`),
     ];
     return candidates.find((p) => fs.existsSync(p)) ?? candidates[0];

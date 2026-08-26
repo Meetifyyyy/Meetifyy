@@ -1,10 +1,20 @@
 import { Transform } from 'class-transformer';
-import { IsIn, IsInt, IsISO8601, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export type TimeWindow = '1h' | '24h' | '7d';
 
-const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
-const toInt = ({ value }: { value: unknown }) => (value === undefined || value === '' ? undefined : Number(value));
+const trim = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim() : value;
+const toInt = ({ value }: { value: unknown }) =>
+  value === undefined || value === '' ? undefined : Number(value);
 
 /**
  * Every query parameter is validated against a fixed set rather than passed
@@ -30,7 +40,22 @@ export class WindowDto {
 export class ListLogsDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(300) route?: string;
 
-  @IsOptional() @Transform(trim) @IsIn(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD', 'get', 'post', 'put', 'patch', 'delete'])
+  @IsOptional()
+  @Transform(trim)
+  @IsIn([
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS',
+    'HEAD',
+    'get',
+    'post',
+    'put',
+    'patch',
+    'delete',
+  ])
   method?: string;
 
   /** A full status (404) or a class (4 meaning 4xx). */

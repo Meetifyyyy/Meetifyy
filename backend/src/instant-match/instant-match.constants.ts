@@ -8,21 +8,39 @@
  */
 
 export const MATCH_ACTIVITIES = [
-  'study', 'coding', 'sports', 'coffee', 'food', 'gaming',
-  'walk', 'movie', 'event', 'chat', 'library', 'other',
+  'study',
+  'coding',
+  'sports',
+  'coffee',
+  'food',
+  'gaming',
+  'walk',
+  'movie',
+  'event',
+  'chat',
+  'library',
+  'other',
 ] as const;
 
 export type MatchActivity = (typeof MATCH_ACTIVITIES)[number];
 
-export const OUTDOOR_ACTIVITIES: ReadonlySet<string> = new Set(['sports', 'walk']);
+export const OUTDOOR_ACTIVITIES: ReadonlySet<string> = new Set([
+  'sports',
+  'walk',
+]);
 
 export const TIME_PREFERENCES = ['now', '30min', 'today'] as const;
 
 export type TimePreference = (typeof TIME_PREFERENCES)[number];
 
 export const CAMPUS_AREAS = [
-  'library', 'cafeteria', 'hostel', 'academic_block',
-  'sports_complex', 'main_gate', 'other',
+  'library',
+  'cafeteria',
+  'hostel',
+  'academic_block',
+  'sports_complex',
+  'main_gate',
+  'other',
 ] as const;
 
 /** Accept-window in seconds, by activity category. */
@@ -53,7 +71,12 @@ export const EXPIRY_SWEEP_MS = 10_000;
 export const RATE_LIMIT_JOIN = { points: 10, windowMs: 60_000 };
 export const RATE_LIMIT_RESPOND = { points: 30, windowMs: 60_000 };
 
-export function getAcceptTimerSecs(activity: string, timePreference: string): number {
+export function getAcceptTimerSecs(
+  activity: string,
+  timePreference: string,
+): number {
   if (timePreference === 'today') return ACCEPT_TIMER_TODAY;
-  return OUTDOOR_ACTIVITIES.has(activity) ? ACCEPT_TIMER_OUTDOOR : ACCEPT_TIMER_INDOOR;
+  return OUTDOOR_ACTIVITIES.has(activity)
+    ? ACCEPT_TIMER_OUTDOOR
+    : ACCEPT_TIMER_INDOOR;
 }

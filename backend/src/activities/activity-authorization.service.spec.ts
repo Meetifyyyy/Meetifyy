@@ -30,7 +30,7 @@ describe('ActivityAuthorizationService', () => {
     creatorId: host.id,
     collegeId: GLA,
     visibility,
-    status: 'OPEN' as any,
+    status: 'OPEN',
     maxMembers: null,
     members: [],
     invitations: [],
@@ -71,7 +71,10 @@ describe('ActivityAuthorizationService', () => {
     it('is viewable/discoverable with no authenticated user, but not joinable', () => {
       expect(policy.canView(null, act).allowed).toBe(true);
       expect(policy.canDiscover(null, act)).toBe(true);
-      expect(policy.canJoin(null, act)).toMatchObject({ allowed: false, code: 'AUTH_REQUIRED' });
+      expect(policy.canJoin(null, act)).toMatchObject({
+        allowed: false,
+        code: 'AUTH_REQUIRED',
+      });
     });
 
     it('ignores a stray shareToCampus flag — visibility is the only authority', () => {
@@ -115,12 +118,17 @@ describe('ActivityAuthorizationService', () => {
     });
 
     it('denies an anonymous viewer', () => {
-      expect(policy.canView(null, act)).toMatchObject({ allowed: false, code: 'COLLEGE_RESTRICTED' });
+      expect(policy.canView(null, act)).toMatchObject({
+        allowed: false,
+        code: 'COLLEGE_RESTRICTED',
+      });
       expect(policy.canDiscover(null, act)).toBe(false);
     });
 
     it('allows an other-college viewer holding a live invitation', () => {
-      const invited = activity('COLLEGE_ONLY', { invitations: [liveInvite(otherCollege.id)] });
+      const invited = activity('COLLEGE_ONLY', {
+        invitations: [liveInvite(otherCollege.id)],
+      });
       expect(policy.canView(otherCollege, invited).allowed).toBe(true);
       expect(policy.canDiscover(otherCollege, invited)).toBe(true);
       expect(policy.canJoin(otherCollege, invited).allowed).toBe(true);
@@ -132,7 +140,9 @@ describe('ActivityAuthorizationService', () => {
     });
 
     it('rejects an invitation issued to a different user', () => {
-      const invited = activity('COLLEGE_ONLY', { invitations: [liveInvite('someone-else')] });
+      const invited = activity('COLLEGE_ONLY', {
+        invitations: [liveInvite('someone-else')],
+      });
       expect(policy.canView(otherCollege, invited).allowed).toBe(false);
     });
 
@@ -146,7 +156,11 @@ describe('ActivityAuthorizationService', () => {
 
     it('rejects an expired invitation', () => {
       const invited = activity('COLLEGE_ONLY', {
-        invitations: [liveInvite(otherCollege.id, { expiresAt: new Date(Date.now() - 1000) })],
+        invitations: [
+          liveInvite(otherCollege.id, {
+            expiresAt: new Date(Date.now() - 1000),
+          }),
+        ],
       });
       expect(policy.canView(otherCollege, invited).allowed).toBe(false);
     });
@@ -191,23 +205,36 @@ describe('ActivityAuthorizationService', () => {
     });
 
     it('denies a same-college viewer who was not invited', () => {
-      expect(policy.canView(sameCollege, act)).toMatchObject({ allowed: false, code: 'PRIVATE' });
-      expect(policy.canJoin(sameCollege, act)).toMatchObject({ allowed: false, code: 'PRIVATE' });
+      expect(policy.canView(sameCollege, act)).toMatchObject({
+        allowed: false,
+        code: 'PRIVATE',
+      });
+      expect(policy.canJoin(sameCollege, act)).toMatchObject({
+        allowed: false,
+        code: 'PRIVATE',
+      });
     });
 
     it('denies an other-college viewer who was not invited', () => {
-      expect(policy.canView(otherCollege, act)).toMatchObject({ allowed: false, code: 'PRIVATE' });
+      expect(policy.canView(otherCollege, act)).toMatchObject({
+        allowed: false,
+        code: 'PRIVATE',
+      });
       expect(policy.canJoin(otherCollege, act).allowed).toBe(false);
     });
 
     it('allows an explicitly invited viewer to view and join', () => {
-      const invited = activity('PRIVATE', { invitations: [liveInvite(otherCollege.id)] });
+      const invited = activity('PRIVATE', {
+        invitations: [liveInvite(otherCollege.id)],
+      });
       expect(policy.canView(otherCollege, invited).allowed).toBe(true);
       expect(policy.canJoin(otherCollege, invited).allowed).toBe(true);
     });
 
     it('is never organically discoverable — not even by the host or an invitee', () => {
-      const invited = activity('PRIVATE', { invitations: [liveInvite(otherCollege.id)] });
+      const invited = activity('PRIVATE', {
+        invitations: [liveInvite(otherCollege.id)],
+      });
       expect(policy.canDiscover(host, act)).toBe(false);
       expect(policy.canDiscover(sameCollege, act)).toBe(false);
       expect(policy.canDiscover(otherCollege, invited)).toBe(false);
@@ -218,18 +245,27 @@ describe('ActivityAuthorizationService', () => {
   // ── Join-specific rules ────────────────────────────────────────────────────
   describe('canJoin — activity rules', () => {
     it('rejects a cancelled activity', () => {
-      const act = activity('PUBLIC', { status: 'CANCELLED' as any });
-      expect(policy.canJoin(sameCollege, act)).toMatchObject({ allowed: false, code: 'CANCELLED' });
+      const act = activity('PUBLIC', { status: 'CANCELLED' });
+      expect(policy.canJoin(sameCollege, act)).toMatchObject({
+        allowed: false,
+        code: 'CANCELLED',
+      });
     });
 
     it('rejects an ended activity', () => {
-      const act = activity('PUBLIC', { status: 'ENDED' as any });
-      expect(policy.canJoin(sameCollege, act)).toMatchObject({ allowed: false, code: 'NOT_OPEN' });
+      const act = activity('PUBLIC', { status: 'ENDED' });
+      expect(policy.canJoin(sameCollege, act)).toMatchObject({
+        allowed: false,
+        code: 'NOT_OPEN',
+      });
     });
 
     it('rejects a full activity', () => {
       const act = activity('PUBLIC', { maxMembers: 2, _count: { members: 2 } });
-      expect(policy.canJoin(sameCollege, act)).toMatchObject({ allowed: false, code: 'FULL' });
+      expect(policy.canJoin(sameCollege, act)).toMatchObject({
+        allowed: false,
+        code: 'FULL',
+      });
     });
 
     it('does not let an invitation override capacity or status', () => {
@@ -238,10 +274,13 @@ describe('ActivityAuthorizationService', () => {
         _count: { members: 2 },
         invitations: [liveInvite(otherCollege.id)],
       });
-      expect(policy.canJoin(otherCollege, full)).toMatchObject({ allowed: false, code: 'FULL' });
+      expect(policy.canJoin(otherCollege, full)).toMatchObject({
+        allowed: false,
+        code: 'FULL',
+      });
 
       const cancelled = activity('PRIVATE', {
-        status: 'CANCELLED' as any,
+        status: 'CANCELLED',
         invitations: [liveInvite(otherCollege.id)],
       });
       expect(policy.canJoin(otherCollege, cancelled)).toMatchObject({
@@ -298,17 +337,23 @@ describe('ActivityAuthorizationService', () => {
     });
 
     it('does not throw for an authorized viewer', () => {
-      expect(() => policy.assertCanView(sameCollege, activity('PUBLIC'))).not.toThrow();
+      expect(() =>
+        policy.assertCanView(sameCollege, activity('PUBLIC')),
+      ).not.toThrow();
     });
   });
 
   describe('assertCanManage', () => {
     it('answers 404 (not 403) to a non-host so the id is not confirmed', () => {
-      expect(() => policy.assertCanManage(sameCollege, activity('PUBLIC'))).toThrow(NotFoundException);
+      expect(() =>
+        policy.assertCanManage(sameCollege, activity('PUBLIC')),
+      ).toThrow(NotFoundException);
     });
 
     it('allows the host', () => {
-      expect(() => policy.assertCanManage(host, activity('PRIVATE'))).not.toThrow();
+      expect(() =>
+        policy.assertCanManage(host, activity('PRIVATE')),
+      ).not.toThrow();
     });
   });
 
@@ -328,7 +373,10 @@ describe('ActivityAuthorizationService', () => {
       expect(clauses).toEqual(
         expect.arrayContaining([
           { visibility: 'PUBLIC' },
-          expect.objectContaining({ visibility: 'COLLEGE_ONLY', collegeId: GLA }),
+          expect.objectContaining({
+            visibility: 'COLLEGE_ONLY',
+            collegeId: GLA,
+          }),
         ]),
       );
       expect(JSON.stringify(clauses)).toContain('invitations');
@@ -343,7 +391,9 @@ describe('ActivityAuthorizationService', () => {
 
   describe('sharedAudienceWhere', () => {
     it('depends only on the viewer’s college, never on their identity', () => {
-      const serialized = JSON.stringify(policy.sharedAudienceWhere(sameCollege));
+      const serialized = JSON.stringify(
+        policy.sharedAudienceWhere(sameCollege),
+      );
       expect(serialized).not.toContain(sameCollege.id);
       expect(serialized).not.toContain('invitations');
       expect(serialized).not.toContain('members');
@@ -360,12 +410,18 @@ describe('ActivityAuthorizationService', () => {
     });
 
     it('never admits PRIVATE', () => {
-      expect(JSON.stringify(policy.sharedAudienceWhere(sameCollege))).not.toContain('PRIVATE');
+      expect(
+        JSON.stringify(policy.sharedAudienceWhere(sameCollege)),
+      ).not.toContain('PRIVATE');
     });
 
     it('falls back to PUBLIC-only without a college or a viewer', () => {
-      expect(policy.sharedAudienceWhere(noCollege)).toEqual({ visibility: 'PUBLIC' });
-      expect(policy.sharedAudienceWhere(null)).toEqual({ visibility: 'PUBLIC' });
+      expect(policy.sharedAudienceWhere(noCollege)).toEqual({
+        visibility: 'PUBLIC',
+      });
+      expect(policy.sharedAudienceWhere(null)).toEqual({
+        visibility: 'PUBLIC',
+      });
     });
   });
 

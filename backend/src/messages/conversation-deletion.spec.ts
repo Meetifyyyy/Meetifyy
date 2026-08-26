@@ -23,8 +23,14 @@ describe('MessagesService — deleting a conversation', () => {
   beforeEach(async () => {
     prisma = {
       conversation: {
-        findFirst: jest.fn(async () => ({ id: 'conv-internal', publicId: 'conv-public' })),
-        findUnique: jest.fn(async () => ({ id: 'conv-internal', publicId: 'conv-public' })),
+        findFirst: jest.fn(async () => ({
+          id: 'conv-internal',
+          publicId: 'conv-public',
+        })),
+        findUnique: jest.fn(async () => ({
+          id: 'conv-internal',
+          publicId: 'conv-public',
+        })),
       },
       conversationParticipant: {
         update: jest.fn(async ({ data }: any) => ({ ...data })),
@@ -32,21 +38,52 @@ describe('MessagesService — deleting a conversation', () => {
         findUnique: jest.fn(),
         findMany: jest.fn(async () => []),
       },
-      message: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(async () => []) },
+      message: {
+        create: jest.fn(),
+        findFirst: jest.fn(),
+        findMany: jest.fn(async () => []),
+      },
       block: { findFirst: jest.fn() },
       deletedMessage: { findMany: jest.fn(async () => []) },
-      $transaction: jest.fn(async (ops: any) => (Array.isArray(ops) ? ops : ops(prisma))),
+      $transaction: jest.fn(async (ops: any) =>
+        Array.isArray(ops) ? ops : ops(prisma),
+      ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MessagesService,
         { provide: PrismaService, useValue: prisma },
-        { provide: PresenceService, useValue: { setOnline: jest.fn(), setOffline: jest.fn(), getPresence: jest.fn() } },
+        {
+          provide: PresenceService,
+          useValue: {
+            setOnline: jest.fn(),
+            setOffline: jest.fn(),
+            getPresence: jest.fn(),
+          },
+        },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
-        { provide: MentionsService, useValue: { sanitize: jest.fn().mockResolvedValue([]), persistAndNotify: jest.fn() } },
-        { provide: RedisService, useValue: { getClient: jest.fn().mockReturnValue(null), getSubClient: jest.fn().mockReturnValue(null) } },
-        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn().mockResolvedValue([]), invalidateBlockCache: jest.fn() } },
+        {
+          provide: MentionsService,
+          useValue: {
+            sanitize: jest.fn().mockResolvedValue([]),
+            persistAndNotify: jest.fn(),
+          },
+        },
+        {
+          provide: RedisService,
+          useValue: {
+            getClient: jest.fn().mockReturnValue(null),
+            getSubClient: jest.fn().mockReturnValue(null),
+          },
+        },
+        {
+          provide: BlocksService,
+          useValue: {
+            getExcludedUserIds: jest.fn().mockResolvedValue([]),
+            invalidateBlockCache: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -63,11 +100,15 @@ describe('MessagesService — deleting a conversation', () => {
     expect(data.clearedAt.getTime()).toBe(data.deletedAt.getTime());
   });
 
-  it('touches only the deleting participant\'s own row', async () => {
+  it("touches only the deleting participant's own row", async () => {
     await service.deleteConversationForUser('conv-public', 'user-1');
 
-    const { where } = prisma.conversationParticipant.updateMany.mock.calls[0][0];
-    expect(where).toEqual({ userId: 'user-1', conversationId: 'conv-internal' });
+    const { where } =
+      prisma.conversationParticipant.updateMany.mock.calls[0][0];
+    expect(where).toEqual({
+      userId: 'user-1',
+      conversationId: 'conv-internal',
+    });
   });
 
   /**
@@ -77,18 +118,23 @@ describe('MessagesService — deleting a conversation', () => {
    * user whose chat is already gone.
    */
   it('is idempotent when the membership row no longer matches', async () => {
-    prisma.conversationParticipant.updateMany.mockResolvedValueOnce({ count: 0 });
+    prisma.conversationParticipant.updateMany.mockResolvedValueOnce({
+      count: 0,
+    });
 
-    await expect(service.deleteConversationForUser('conv-public', 'user-1'))
-      .resolves.toEqual(expect.objectContaining({ success: true }));
+    await expect(
+      service.deleteConversationForUser('conv-public', 'user-1'),
+    ).resolves.toEqual(expect.objectContaining({ success: true }));
   });
 
-  it('never deletes the conversation itself or anyone\'s messages', async () => {
+  it("never deletes the conversation itself or anyone's messages", async () => {
     await service.deleteConversationForUser('conv-public', 'user-1');
 
-    expect(prisma.conversation.findFirst).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.anything() }));
+    expect(prisma.conversation.findFirst).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.anything() }),
+    );
     expect(prisma.message.create).not.toHaveBeenCalled();
-    expect((prisma.message as any).deleteMany).toBeUndefined();
+    expect(prisma.message.deleteMany).toBeUndefined();
   });
 });
 
@@ -104,8 +150,14 @@ describe('MessagingCoreService — per-user conversation actions', () => {
   beforeEach(async () => {
     prisma = {
       conversation: {
-        findFirst: jest.fn(async () => ({ id: 'conv-internal', publicId: 'conv-public' })),
-        findUnique: jest.fn(async () => ({ id: 'conv-internal', publicId: 'conv-public' })),
+        findFirst: jest.fn(async () => ({
+          id: 'conv-internal',
+          publicId: 'conv-public',
+        })),
+        findUnique: jest.fn(async () => ({
+          id: 'conv-internal',
+          publicId: 'conv-public',
+        })),
       },
       conversationParticipant: {
         update: jest.fn(),
@@ -113,34 +165,69 @@ describe('MessagingCoreService — per-user conversation actions', () => {
         findUnique: jest.fn(),
         findMany: jest.fn(async () => []),
       },
-      message: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(async () => []) },
+      message: {
+        create: jest.fn(),
+        findFirst: jest.fn(),
+        findMany: jest.fn(async () => []),
+      },
       block: { findFirst: jest.fn() },
       deletedMessage: { findMany: jest.fn(async () => []) },
-      $transaction: jest.fn(async (ops: any) => (Array.isArray(ops) ? ops : ops(prisma))),
+      $transaction: jest.fn(async (ops: any) =>
+        Array.isArray(ops) ? ops : ops(prisma),
+      ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MessagesService,
         { provide: PrismaService, useValue: prisma },
-        { provide: PresenceService, useValue: { setOnline: jest.fn(), setOffline: jest.fn(), getPresence: jest.fn() } },
+        {
+          provide: PresenceService,
+          useValue: {
+            setOnline: jest.fn(),
+            setOffline: jest.fn(),
+            getPresence: jest.fn(),
+          },
+        },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
-        { provide: MentionsService, useValue: { sanitize: jest.fn().mockResolvedValue([]), persistAndNotify: jest.fn() } },
-        { provide: RedisService, useValue: { getClient: jest.fn().mockReturnValue(null), getSubClient: jest.fn().mockReturnValue(null) } },
-        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn().mockResolvedValue([]), invalidateBlockCache: jest.fn() } },
+        {
+          provide: MentionsService,
+          useValue: {
+            sanitize: jest.fn().mockResolvedValue([]),
+            persistAndNotify: jest.fn(),
+          },
+        },
+        {
+          provide: RedisService,
+          useValue: {
+            getClient: jest.fn().mockReturnValue(null),
+            getSubClient: jest.fn().mockReturnValue(null),
+          },
+        },
+        {
+          provide: BlocksService,
+          useValue: {
+            getExcludedUserIds: jest.fn().mockResolvedValue([]),
+            invalidateBlockCache: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
     service = module.get(MessagesService);
   });
 
-  const lastCall = () => prisma.conversationParticipant.updateMany.mock.calls.at(-1)[0];
+  const lastCall = () =>
+    prisma.conversationParticipant.updateMany.mock.calls.at(-1)[0];
 
   it('clears history for one user without hiding the conversation', async () => {
     await service.clearChatForUser('conv-public', 'user-1');
 
     const { where, data } = lastCall();
-    expect(where).toEqual({ userId: 'user-1', conversationId: 'conv-internal' });
+    expect(where).toEqual({
+      userId: 'user-1',
+      conversationId: 'conv-internal',
+    });
     expect(data.clearedAt).toBeInstanceOf(Date);
     // Delete's marker, and only Delete's — clearing must leave the row visible.
     expect(data).not.toHaveProperty('deletedAt');
@@ -148,7 +235,10 @@ describe('MessagingCoreService — per-user conversation actions', () => {
 
   it('stamps pinnedAt on pin and clears it on unpin', async () => {
     await service.pinConversation('conv-public', 'user-1', true);
-    expect(lastCall().data).toEqual({ isPinned: true, pinnedAt: expect.any(Date) });
+    expect(lastCall().data).toEqual({
+      isPinned: true,
+      pinnedAt: expect.any(Date),
+    });
 
     await service.pinConversation('conv-public', 'user-1', false);
     expect(lastCall().data).toEqual({ isPinned: false, pinnedAt: null });
@@ -158,12 +248,17 @@ describe('MessagingCoreService — per-user conversation actions', () => {
     await service.muteConversation('conv-public', 'user-1', true);
 
     const { where, data } = lastCall();
-    expect(where).toEqual({ userId: 'user-1', conversationId: 'conv-internal' });
+    expect(where).toEqual({
+      userId: 'user-1',
+      conversationId: 'conv-internal',
+    });
     expect(data).toEqual({ isMuted: true });
   });
 
-  it('busts the caller\'s conversation-list cache after every action', async () => {
-    const spy = jest.spyOn(service, 'invalidateUserConversationsCache').mockResolvedValue(undefined);
+  it("busts the caller's conversation-list cache after every action", async () => {
+    const spy = jest
+      .spyOn(service, 'invalidateUserConversationsCache')
+      .mockResolvedValue(undefined);
 
     await service.muteConversation('conv-public', 'user-1', true);
     await service.pinConversation('conv-public', 'user-1', true);

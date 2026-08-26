@@ -30,7 +30,8 @@ export class AdminUsersController {
       search,
       accountStatus,
       collegeId,
-      emailVerified: emailVerified !== undefined ? emailVerified === 'true' : undefined,
+      emailVerified:
+        emailVerified !== undefined ? emailVerified === 'true' : undefined,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
     });
@@ -96,7 +97,12 @@ export class AdminUsersController {
   @Patch(':id/capabilities')
   async updateCapabilities(
     @Param('id') id: string,
-    @Body() capabilities: { canPost?: boolean; canMessage?: boolean; canActivity?: boolean },
+    @Body()
+    capabilities: {
+      canPost?: boolean;
+      canMessage?: boolean;
+      canActivity?: boolean;
+    },
   ) {
     return this.usersService.updateCapabilities(id, capabilities);
   }

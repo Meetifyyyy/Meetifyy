@@ -1,4 +1,10 @@
-import { Injectable, OnModuleInit, Logger, BadRequestException, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  Logger,
+  BadRequestException,
+  Optional,
+} from '@nestjs/common';
 import { domainToASCII } from 'node:url';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
@@ -64,7 +70,11 @@ export class DomainValidatorService implements OnModuleInit {
 
     // Convert domain to ASCII using official WHATWG domainToASCII parser
     const asciiDomain = domainToASCII(cleaned);
-    if (!asciiDomain || asciiDomain.includes(' ') || asciiDomain.includes('/')) {
+    if (
+      !asciiDomain ||
+      asciiDomain.includes(' ') ||
+      asciiDomain.includes('/')
+    ) {
       throw new BadRequestException('Invalid email domain structure.');
     }
 
@@ -88,7 +98,9 @@ export class DomainValidatorService implements OnModuleInit {
     // Check for single @ symbol
     const parts = sanitizedEmail.split('@');
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
-      throw new BadRequestException('Please enter a valid email address format.');
+      throw new BadRequestException(
+        'Please enter a valid email address format.',
+      );
     }
 
     const localPart = parts[0];
@@ -148,7 +160,9 @@ export class DomainValidatorService implements OnModuleInit {
 
       this.domainCache = newMap;
       this.lastCacheTime = Date.now();
-      this.logger.log(`Domain cache reloaded with ${newMap.size} active approved domains.`);
+      this.logger.log(
+        `Domain cache reloaded with ${newMap.size} active approved domains.`,
+      );
 
       // Sync to Redis if available for multi-instance horizontal scaling
       const redis = this.redisService?.getClient();
@@ -162,11 +176,16 @@ export class DomainValidatorService implements OnModuleInit {
         // indefinitely if refreshDomainCache fails before the next scheduled run.
         pipeline.expire('cache:approved_domains', 300); // 5-minute safety TTL
         await pipeline.exec().catch((err) => {
-          this.logger.warn(`Redis sync error for approved domains: ${err.message}`);
+          this.logger.warn(
+            `Redis sync error for approved domains: ${err.message}`,
+          );
         });
       }
     } catch (err: any) {
-      this.logger.error(`Failed to refresh domain cache: ${err.message}`, err.stack);
+      this.logger.error(
+        `Failed to refresh domain cache: ${err.message}`,
+        err.stack,
+      );
     }
   }
 

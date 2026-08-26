@@ -24,10 +24,14 @@ describe('emitMessageNew', () => {
   it('delivers to muted recipients too, flagged not to alert', () => {
     const { calls, service } = makeService();
 
-    emitMessageNew(service, { id: 'm1', text: 'hi' }, {
-      recipientIds: ['alice', 'bob'],
-      unmutedRecipientIds: ['alice'],
-    });
+    emitMessageNew(
+      service,
+      { id: 'm1', text: 'hi' },
+      {
+        recipientIds: ['alice', 'bob'],
+        unmutedRecipientIds: ['alice'],
+      },
+    );
 
     const delivered = calls.flatMap((c) => c.targets || []);
     expect(delivered.sort()).toEqual(['alice', 'bob']);
@@ -43,11 +47,15 @@ describe('emitMessageNew', () => {
   it('never alerts the sender on their own other devices', () => {
     const { calls, service } = makeService();
 
-    emitMessageNew(service, { id: 'm1' }, {
-      recipientIds: ['alice'],
-      unmutedRecipientIds: ['alice'],
-      senderId: 'sender',
-    });
+    emitMessageNew(
+      service,
+      { id: 'm1' },
+      {
+        recipientIds: ['alice'],
+        unmutedRecipientIds: ['alice'],
+        senderId: 'sender',
+      },
+    );
 
     const own = calls.find((c) => c.targets?.includes('sender'));
     expect(own!.data.alert).toBe(false);
@@ -55,7 +63,11 @@ describe('emitMessageNew', () => {
 
   it('emits nothing for an empty recipient list', () => {
     const { calls, service } = makeService();
-    emitMessageNew(service, { id: 'm1' }, { recipientIds: [], unmutedRecipientIds: [] });
+    emitMessageNew(
+      service,
+      { id: 'm1' },
+      { recipientIds: [], unmutedRecipientIds: [] },
+    );
     expect(calls).toHaveLength(0);
   });
 });

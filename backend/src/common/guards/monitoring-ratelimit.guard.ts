@@ -1,4 +1,11 @@
-import { CanActivate, ExecutionContext, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { RateLimiterRedis } from 'rate-limiter-flexible';
 
 import { RedisService } from '../../redis/redis.service';
@@ -51,7 +58,9 @@ export class MonitoringRateLimitGuard implements CanActivate {
       return true;
     } catch (error) {
       if (error instanceof Error) {
-        this.logger.warn(`monitoring.ratelimit_unavailable ${JSON.stringify({ error: error.message })}`);
+        this.logger.warn(
+          `monitoring.ratelimit_unavailable ${JSON.stringify({ error: error.message })}`,
+        );
         return true;
       }
       throw new HttpException(

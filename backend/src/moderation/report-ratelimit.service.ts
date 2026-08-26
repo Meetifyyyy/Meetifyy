@@ -43,7 +43,9 @@ export class ReportRateLimitService {
     }
   }
 
-  async checkRateLimit(userId: string): Promise<{ success: boolean; limitType?: string }> {
+  async checkRateLimit(
+    userId: string,
+  ): Promise<{ success: boolean; limitType?: string }> {
     if (!this.shortLimiter || !this.dailyLimiter || !this.monthlyLimiter) {
       return { success: true }; // Fail open if Redis not configured
     }

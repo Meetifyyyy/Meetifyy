@@ -33,7 +33,12 @@ export class ModerationController {
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string,
   ) {
-    return this.moderationService.submitReport(req.user.id, body, ip, userAgent);
+    return this.moderationService.submitReport(
+      req.user.id,
+      body,
+      ip,
+      userAgent,
+    );
   }
 
   /**

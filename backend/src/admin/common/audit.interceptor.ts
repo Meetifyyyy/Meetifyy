@@ -24,7 +24,11 @@ export class AuditInterceptor implements NestInterceptor {
 
     // Skip auth endpoints like login/refresh to prevent logging passwords/tokens
     const url = req.originalUrl || req.url || '';
-    if (url.includes('/admin/auth/login') || url.includes('/admin/auth/refresh') || url.includes('/admin/auth/verify-otp')) {
+    if (
+      url.includes('/admin/auth/login') ||
+      url.includes('/admin/auth/refresh') ||
+      url.includes('/admin/auth/verify-otp')
+    ) {
       return next.handle();
     }
 
@@ -48,7 +52,11 @@ export class AuditInterceptor implements NestInterceptor {
         else if (url.includes('/admin/settings')) targetType = 'SYSTEM_SETTING';
         else if (url.includes('/admin/content')) targetType = 'CONTENT';
 
-        if (!targetId && responseData && (responseData.id || responseData.key)) {
+        if (
+          !targetId &&
+          responseData &&
+          (responseData.id || responseData.key)
+        ) {
           targetId = responseData.id || responseData.key;
         }
 
@@ -59,10 +67,12 @@ export class AuditInterceptor implements NestInterceptor {
         else if (url.includes('/restore')) action = 'USER_RESTORE';
         else if (url.includes('/verify-email')) action = 'USER_VERIFY_EMAIL';
         else if (url.includes('/reset-college')) action = 'USER_RESET_COLLEGE';
-        else if (url.includes('/capabilities')) action = 'USER_UPDATE_CAPABILITIES';
+        else if (url.includes('/capabilities'))
+          action = 'USER_UPDATE_CAPABILITIES';
         else if (url.includes('/force-logout')) action = 'USER_FORCE_LOGOUT';
         else if (url.includes('/campus-rep')) action = 'USER_SET_CAMPUS_REP';
-        else if (url.includes('/status')) action = `${targetType}_STATUS_CHANGE`;
+        else if (url.includes('/status'))
+          action = `${targetType}_STATUS_CHANGE`;
         else if (url.includes('/domains')) action = 'COLLEGE_DOMAIN_CHANGE';
         else if (url.includes('/reply')) action = 'SUPPORT_TICKET_REPLY';
 
@@ -82,7 +92,10 @@ export class AuditInterceptor implements NestInterceptor {
               targetId: targetId ? String(targetId) : null,
               oldValue: Prisma.JsonNull,
               newValue: sanitizedBody,
-              ip: (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0',
+              ip:
+                (req.headers['x-forwarded-for'] as string) ||
+                req.ip ||
+                '0.0.0.0',
               endpoint: url,
               httpMethod: method,
               requestId: (req.headers['x-request-id'] as string) || null,

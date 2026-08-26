@@ -13,7 +13,11 @@ import { BadRequestException } from '@nestjs/common';
  * @param birthdayStr Date string in 'YYYY-MM-DD' format
  */
 export function validateBirthday(birthdayStr: string): void {
-  if (!birthdayStr || typeof birthdayStr !== 'string' || birthdayStr.trim() === '') {
+  if (
+    !birthdayStr ||
+    typeof birthdayStr !== 'string' ||
+    birthdayStr.trim() === ''
+  ) {
     throw new BadRequestException('Date of birth is required.');
   }
 
@@ -32,11 +36,17 @@ export function validateBirthday(birthdayStr: string): void {
 
   const currentYear = new Date().getFullYear();
   if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1950 || y > currentYear) {
-    throw new BadRequestException(`Year of birth must be between 1950 and ${currentYear}.`);
+    throw new BadRequestException(
+      `Year of birth must be between 1950 and ${currentYear}.`,
+    );
   }
 
   const dateObj = new Date(y, m - 1, d);
-  if (dateObj.getFullYear() !== y || dateObj.getMonth() !== m - 1 || dateObj.getDate() !== d) {
+  if (
+    dateObj.getFullYear() !== y ||
+    dateObj.getMonth() !== m - 1 ||
+    dateObj.getDate() !== d
+  ) {
     throw new BadRequestException('Please enter a valid date of birth.');
   }
 

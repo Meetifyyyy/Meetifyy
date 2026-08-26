@@ -35,7 +35,11 @@ describe('Activity access enforcement (service level)', () => {
   let blockedIds: string[];
   let activityRow: any;
 
-  const baseActivity = (visibility: string, invitations: any[] = [], members: any[] = []) => ({
+  const baseActivity = (
+    visibility: string,
+    invitations: any[] = [],
+    members: any[] = [],
+  ) => ({
     id: 'act-1',
     creatorId: 'host-1',
     collegeId: GLA,
@@ -51,7 +55,12 @@ describe('Activity access enforcement (service level)', () => {
     participationType: 'OPEN',
     members,
     invitations,
-    creator: { id: 'host-1', username: 'host', displayName: 'Host', avatar: null },
+    creator: {
+      id: 'host-1',
+      username: 'host',
+      displayName: 'Host',
+      avatar: null,
+    },
     _count: { members: members.length || 1 },
   });
 
@@ -62,16 +71,21 @@ describe('Activity access enforcement (service level)', () => {
       crewActivity: {
         findUnique: jest.fn(async ({ include, where }: any) => {
           if (!activityRow) return null;
-          if (where?.creatorId && where.creatorId !== activityRow.creatorId) return null;
+          if (where?.creatorId && where.creatorId !== activityRow.creatorId)
+            return null;
           // Emulate Prisma's per-relation `where` filtering for the caller's own rows.
           const row = { ...activityRow };
           const inviteeFilter = include?.invitations?.where?.inviteeId;
           if (inviteeFilter !== undefined) {
-            row.invitations = row.invitations.filter((i: any) => i.inviteeId === inviteeFilter);
+            row.invitations = row.invitations.filter(
+              (i: any) => i.inviteeId === inviteeFilter,
+            );
           }
           const memberFilter = include?.members?.where?.userId;
           if (memberFilter !== undefined) {
-            row.members = row.members.filter((m: any) => m.userId === memberFilter);
+            row.members = row.members.filter(
+              (m: any) => m.userId === memberFilter,
+            );
           }
           return row;
         }),
@@ -95,7 +109,12 @@ describe('Activity access enforcement (service level)', () => {
           id: 'msg-1',
           ...data,
           createdAt: new Date(),
-          user: { id: data.userId, username: 'u', displayName: 'U', avatar: null },
+          user: {
+            id: data.userId,
+            username: 'u',
+            displayName: 'U',
+            avatar: null,
+          },
         })),
       },
       $queryRaw: jest.fn(async () => [{ inserted: true }]),
@@ -109,12 +128,18 @@ describe('Activity access enforcement (service level)', () => {
         ActivityDiscussionService,
         ActivityAuthorizationService,
         { provide: PrismaService, useValue: prisma },
-        { provide: NotificationsService, useValue: {
-          createNotification: jest.fn(),
-          cancelNotificationByCriteria: jest.fn(),
-          updateNotificationLifecycleStatus: jest.fn().mockResolvedValue([]),
-        } },
-        { provide: NotificationFactory, useValue: { createActivityJoin: jest.fn() } },
+        {
+          provide: NotificationsService,
+          useValue: {
+            createNotification: jest.fn(),
+            cancelNotificationByCriteria: jest.fn(),
+            updateNotificationLifecycleStatus: jest.fn().mockResolvedValue([]),
+          },
+        },
+        {
+          provide: NotificationFactory,
+          useValue: { createActivityJoin: jest.fn() },
+        },
         {
           provide: BlocksService,
           useValue: {
@@ -124,18 +149,27 @@ describe('Activity access enforcement (service level)', () => {
             filterBlockedUsers: jest.fn(async (_u: string, ids: string[]) =>
               ids.filter((id) => !blockedIds.includes(id)),
             ),
-            injectBlockFilter: jest.fn(async (_u: string, where: any, field = 'id') => {
-              if (blockedIds.length === 0) return where;
-              const existing = where.AND;
-              const and = Array.isArray(existing) ? [...existing] : existing ? [existing] : [];
-              and.push({ [field]: { notIn: blockedIds } });
-              return { ...where, AND: and };
-            }),
+            injectBlockFilter: jest.fn(
+              async (_u: string, where: any, field = 'id') => {
+                if (blockedIds.length === 0) return where;
+                const existing = where.AND;
+                const and = Array.isArray(existing)
+                  ? [...existing]
+                  : existing
+                    ? [existing]
+                    : [];
+                and.push({ [field]: { notIn: blockedIds } });
+                return { ...where, AND: and };
+              },
+            ),
           },
         },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
-        { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn() } },
+        {
+          provide: getQueueToken(NOTIFICATIONS_QUEUE),
+          useValue: { add: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -162,13 +196,18 @@ describe('Activity access enforcement (service level)', () => {
     it('404s for a non-attendee who has blocked the host', async () => {
       activityRow = baseActivity('PUBLIC');
       blockedIds = ['host-1'];
-      await expect(service.getActivityById('act-1', 'user-other')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.getActivityById('act-1', 'user-other'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('still serves the essentials to an attendee who has blocked the host', async () => {
       activityRow = baseActivity('PUBLIC');
       blockedIds = ['host-1'];
-      prisma.crewActivityMember.findUnique = jest.fn(async () => ({ userId: 'user-other', status: 'MEMBER' }));
+      prisma.crewActivityMember.findUnique = jest.fn(async () => ({
+        userId: 'user-other',
+        status: 'MEMBER',
+      }));
 
       const res: any = await service.getActivityById('act-1', 'user-other');
 
@@ -181,7 +220,10 @@ describe('Activity access enforcement (service level)', () => {
     it('withholds the host identity from that attendee', async () => {
       activityRow = baseActivity('PUBLIC');
       blockedIds = ['host-1'];
-      prisma.crewActivityMember.findUnique = jest.fn(async () => ({ userId: 'user-other', status: 'MEMBER' }));
+      prisma.crewActivityMember.findUnique = jest.fn(async () => ({
+        userId: 'user-other',
+        status: 'MEMBER',
+      }));
 
       const res: any = await service.getActivityById('act-1', 'user-other');
 
@@ -192,7 +234,10 @@ describe('Activity access enforcement (service level)', () => {
 
     it('leaves the host visible when there is no block', async () => {
       activityRow = baseActivity('PUBLIC');
-      prisma.crewActivityMember.findUnique = jest.fn(async () => ({ userId: 'user-other', status: 'MEMBER' }));
+      prisma.crewActivityMember.findUnique = jest.fn(async () => ({
+        userId: 'user-other',
+        status: 'MEMBER',
+      }));
 
       const res: any = await service.getActivityById('act-1', 'user-other');
 
@@ -210,35 +255,55 @@ describe('Activity access enforcement (service level)', () => {
 
     it('denies a College activity to another college, with no details', async () => {
       activityRow = baseActivity('COLLEGE_ONLY');
-      await expectDenied(() => service.getActivityById('act-1', 'user-other'), 'COLLEGE_RESTRICTED');
+      await expectDenied(
+        () => service.getActivityById('act-1', 'user-other'),
+        'COLLEGE_RESTRICTED',
+      );
     });
 
     it('serves a College activity to the same college', async () => {
       activityRow = baseActivity('COLLEGE_ONLY');
-      await expect(service.getActivityById('act-1', 'user-same')).resolves.toMatchObject({ id: 'act-1' });
+      await expect(
+        service.getActivityById('act-1', 'user-same'),
+      ).resolves.toMatchObject({ id: 'act-1' });
     });
 
     it('serves a College activity to an invited outsider', async () => {
       activityRow = baseActivity('COLLEGE_ONLY', [
-        { inviteeId: 'user-other', status: 'PENDING', revokedAt: null, expiresAt: null },
+        {
+          inviteeId: 'user-other',
+          status: 'PENDING',
+          revokedAt: null,
+          expiresAt: null,
+        },
       ]);
-      await expect(service.getActivityById('act-1', 'user-other')).resolves.toMatchObject({ isInvited: true });
+      await expect(
+        service.getActivityById('act-1', 'user-other'),
+      ).resolves.toMatchObject({ isInvited: true });
     });
 
     it('denies a College activity once the invitation is revoked', async () => {
       activityRow = baseActivity('COLLEGE_ONLY', [
-        { inviteeId: 'user-other', status: 'PENDING', revokedAt: new Date(), expiresAt: null },
+        {
+          inviteeId: 'user-other',
+          status: 'PENDING',
+          revokedAt: new Date(),
+          expiresAt: null,
+        },
       ]);
-      await expectDenied(() => service.getActivityById('act-1', 'user-other'), 'COLLEGE_RESTRICTED');
+      await expectDenied(
+        () => service.getActivityById('act-1', 'user-other'),
+        'COLLEGE_RESTRICTED',
+      );
     });
 
     it('404s a Private activity for an uninvited same-college viewer', async () => {
       activityRow = baseActivity('PRIVATE');
       // Existence itself is restricted, so the denial is indistinguishable
       // from a bad id — no code, no copy, no details.
-      await expect(service.getActivityById('act-1', 'user-same')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.getActivityById('act-1', 'user-same'),
+      ).rejects.toBeInstanceOf(NotFoundException);
       try {
         await service.getActivityById('act-1', 'user-same');
       } catch (err: any) {
@@ -250,12 +315,19 @@ describe('Activity access enforcement (service level)', () => {
 
     it('gives the host full access to a Private activity', async () => {
       activityRow = baseActivity('PRIVATE');
-      await expect(service.getActivityById('act-1', 'host-1')).resolves.toMatchObject({ id: 'act-1' });
+      await expect(
+        service.getActivityById('act-1', 'host-1'),
+      ).resolves.toMatchObject({ id: 'act-1' });
     });
 
     it('never returns another user’s invitation rows', async () => {
       activityRow = baseActivity('PUBLIC', [
-        { inviteeId: 'user-same', status: 'PENDING', revokedAt: null, expiresAt: null },
+        {
+          inviteeId: 'user-same',
+          status: 'PENDING',
+          revokedAt: null,
+          expiresAt: null,
+        },
       ]);
       const res: any = await service.getActivityById('act-1', 'user-other');
       expect(res.invitations).toBeUndefined();
@@ -265,40 +337,62 @@ describe('Activity access enforcement (service level)', () => {
   describe('POST /api/activities/:id/join', () => {
     it('rejects a direct API join on a College activity from another college', async () => {
       activityRow = baseActivity('COLLEGE_ONLY');
-      await expect(service.joinActivity('act-1', 'user-other')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.joinActivity('act-1', 'user-other'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
 
     it('rejects a direct API join on a Private activity without confirming it exists', async () => {
       activityRow = baseActivity('PRIVATE');
-      await expect(service.joinActivity('act-1', 'user-same')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.joinActivity('act-1', 'user-same'),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
 
     it('allows an invited outsider to join a Private activity', async () => {
       activityRow = baseActivity('PRIVATE', [
-        { inviteeId: 'user-other', status: 'PENDING', revokedAt: null, expiresAt: null },
+        {
+          inviteeId: 'user-other',
+          status: 'PENDING',
+          revokedAt: null,
+          expiresAt: null,
+        },
       ]);
-      await expect(service.joinActivity('act-1', 'user-other')).resolves.toEqual({ success: true });
+      await expect(
+        service.joinActivity('act-1', 'user-other'),
+      ).resolves.toEqual({ success: true });
       expect(prisma.$queryRaw).toHaveBeenCalled();
     });
 
     it('rejects an expired invitation', async () => {
       activityRow = baseActivity('PRIVATE', [
-        { inviteeId: 'user-other', status: 'PENDING', revokedAt: null, expiresAt: new Date(Date.now() - 1000) },
+        {
+          inviteeId: 'user-other',
+          status: 'PENDING',
+          revokedAt: null,
+          expiresAt: new Date(Date.now() - 1000),
+        },
       ]);
       // An expired invitation leaves the caller in the same position as someone
       // who was never invited, so they get the same 404.
-      await expect(service.joinActivity('act-1', 'user-other')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.joinActivity('act-1', 'user-other'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('lets anyone join an Anyone activity, and is idempotent under repeats', async () => {
       activityRow = baseActivity('PUBLIC');
-      await expect(service.joinActivity('act-1', 'user-other')).resolves.toEqual({ success: true });
+      await expect(
+        service.joinActivity('act-1', 'user-other'),
+      ).resolves.toEqual({ success: true });
       // The insert is an ON CONFLICT upsert, so a rapid repeat is a no-op rather
       // than a duplicate attendance row.
       prisma.$queryRaw.mockResolvedValueOnce([{ inserted: false }]);
-      await expect(service.joinActivity('act-1', 'user-other')).resolves.toEqual({ success: true });
+      await expect(
+        service.joinActivity('act-1', 'user-other'),
+      ).resolves.toEqual({ success: true });
       const sql = String(prisma.$queryRaw.mock.calls[0][0].join(' '));
       expect(sql).toContain('ON CONFLICT');
     });
@@ -307,7 +401,9 @@ describe('Activity access enforcement (service level)', () => {
   describe('POST /api/activities/:id/bookmark', () => {
     it('refuses to bookmark an activity the user may not view', async () => {
       activityRow = baseActivity('COLLEGE_ONLY');
-      await expect(service.bookmarkActivity('act-1', 'user-other')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.bookmarkActivity('act-1', 'user-other'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 
@@ -318,29 +414,39 @@ describe('Activity access enforcement (service level)', () => {
       // Private denials are 404s everywhere the policy is applied, not just on
       // the detail endpoint — the discussion must not disclose what the detail
       // endpoint withholds.
-      await expect(discussion.getMessages('act-1', 'user-other')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        discussion.getMessages('act-1', 'user-other'),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.activityDiscussionMessage.findMany).not.toHaveBeenCalled();
     });
 
     it('refuses to read the discussion of a college-restricted activity', async () => {
       activityRow = baseActivity('COLLEGE_ONLY');
       prisma.crewActivity.findFirst.mockImplementation(async () => activityRow);
-      await expect(discussion.getMessages('act-1', 'user-other')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        discussion.getMessages('act-1', 'user-other'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.activityDiscussionMessage.findMany).not.toHaveBeenCalled();
     });
 
     it('refuses to post into the discussion of a restricted activity', async () => {
       activityRow = baseActivity('COLLEGE_ONLY');
       prisma.crewActivity.findFirst.mockImplementation(async () => activityRow);
-      await expect(discussion.sendMessage('act-1', 'user-other', 'hello')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        discussion.sendMessage('act-1', 'user-other', 'hello'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.activityDiscussionMessage.create).not.toHaveBeenCalled();
     });
 
     it('allows a same-college member to read and post', async () => {
       activityRow = baseActivity('COLLEGE_ONLY');
       prisma.crewActivity.findFirst.mockImplementation(async () => activityRow);
-      await expect(discussion.getMessages('act-1', 'user-same')).resolves.toMatchObject({ messages: [] });
-      await expect(discussion.sendMessage('act-1', 'user-same', 'hi')).resolves.toMatchObject({ text: 'hi' });
+      await expect(
+        discussion.getMessages('act-1', 'user-same'),
+      ).resolves.toMatchObject({ messages: [] });
+      await expect(
+        discussion.sendMessage('act-1', 'user-same', 'hi'),
+      ).resolves.toMatchObject({ text: 'hi' });
     });
   });
 
@@ -354,7 +460,9 @@ describe('Activity access enforcement (service level)', () => {
         userId: 'user-other',
         status: 'MEMBER',
       }));
-      await expect(service.getActivityById('act-1', 'user-other')).resolves.toMatchObject({ id: 'act-1' });
+      await expect(
+        service.getActivityById('act-1', 'user-other'),
+      ).resolves.toMatchObject({ id: 'act-1' });
     });
 
     it('reports the authoritative attendee count alongside the capped page', async () => {
@@ -368,7 +476,9 @@ describe('Activity access enforcement (service level)', () => {
     it('refuses the attendee list to an unauthorized viewer', async () => {
       activityRow = baseActivity('COLLEGE_ONLY');
       prisma.crewActivityMember.findMany = jest.fn(async () => []);
-      await expect(service.getAttendees('act-1', 'user-other')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.getAttendees('act-1', 'user-other'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prisma.crewActivityMember.findMany).not.toHaveBeenCalled();
     });
 
@@ -380,7 +490,12 @@ describe('Activity access enforcement (service level)', () => {
           userId: `u${i}`,
           status: 'MEMBER',
           joinedAt,
-          user: { id: `u${i}`, username: `u${i}`, displayName: `U${i}`, avatar: null },
+          user: {
+            id: `u${i}`,
+            username: `u${i}`,
+            displayName: `U${i}`,
+            avatar: null,
+          },
         })),
       );
       const res = await service.getAttendees('act-1', 'user-same', 30);
@@ -394,24 +509,38 @@ describe('Activity access enforcement (service level)', () => {
   describe('host-only management', () => {
     it('hides invitation status from a non-host', async () => {
       activityRow = baseActivity('PUBLIC');
-      await expect(service.getInvitationStatuses('act-1', 'user-other')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.getInvitationStatuses('act-1', 'user-other'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('rejects a visibility change from a non-host', async () => {
       activityRow = baseActivity('PUBLIC');
-      await expect(service.updateActivityVisibility('act-1', 'user-other', 'PRIVATE')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.updateActivityVisibility('act-1', 'user-other', 'PRIVATE'),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.crewActivity.update).not.toHaveBeenCalled();
     });
 
     it('rejects an unknown visibility value', async () => {
       activityRow = baseActivity('PUBLIC');
-      await expect(service.updateActivityVisibility('act-1', 'host-1', 'EVERYONE')).rejects.toThrow();
+      await expect(
+        service.updateActivityVisibility('act-1', 'host-1', 'EVERYONE'),
+      ).rejects.toThrow();
     });
 
     it('applies a host visibility change and announces it for cache/socket eviction', async () => {
       activityRow = baseActivity('PUBLIC');
-      const res = await service.updateActivityVisibility('act-1', 'host-1', 'COLLEGE_ONLY');
-      expect(res).toMatchObject({ success: true, visibility: 'COLLEGE_ONLY', shareToCampus: true });
+      const res = await service.updateActivityVisibility(
+        'act-1',
+        'host-1',
+        'COLLEGE_ONLY',
+      );
+      expect(res).toMatchObject({
+        success: true,
+        visibility: 'COLLEGE_ONLY',
+        shareToCampus: true,
+      });
     });
   });
 
@@ -431,7 +560,9 @@ describe('Activity access enforcement (service level)', () => {
       // clause keyed to this individual user.
       prisma.crewActivity.findMany = jest.fn(async () => []);
       await service.getAllActivities('user-other', 20, undefined, 'public');
-      const where = JSON.stringify(prisma.crewActivity.findMany.mock.calls[0][0].where);
+      const where = JSON.stringify(
+        prisma.crewActivity.findMany.mock.calls[0][0].where,
+      );
       expect(where).not.toContain('user-other');
       expect(where).not.toContain('invitations');
       expect(where).not.toContain('members');
@@ -441,7 +572,9 @@ describe('Activity access enforcement (service level)', () => {
       prisma.activityInvitation.count.mockResolvedValueOnce(1);
       prisma.crewActivity.findMany = jest.fn(async () => []);
       await service.getAllActivities('user-other', 20, undefined, 'public');
-      const where = JSON.stringify(prisma.crewActivity.findMany.mock.calls[0][0].where);
+      const where = JSON.stringify(
+        prisma.crewActivity.findMany.mock.calls[0][0].where,
+      );
       expect(where).toContain('invitations');
       expect(where).toContain('user-other');
       expect(where).not.toContain('"PRIVATE"');
@@ -450,7 +583,9 @@ describe('Activity access enforcement (service level)', () => {
     it('restricts the college scope to the viewer’s own college', async () => {
       prisma.crewActivity.findMany = jest.fn(async () => []);
       await service.getAllActivities('user-same', 20, undefined, 'college');
-      const where = JSON.stringify(prisma.crewActivity.findMany.mock.calls[0][0].where);
+      const where = JSON.stringify(
+        prisma.crewActivity.findMany.mock.calls[0][0].where,
+      );
       expect(where).toContain(GLA);
       expect(where).not.toContain(OTHER);
       // "Anyone" activities from that college are eligible in the college scope.
@@ -458,9 +593,17 @@ describe('Activity access enforcement (service level)', () => {
     });
 
     it('returns nothing in the college scope for a viewer with no college', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce({ id: 'user-nc', collegeId: null });
+      prisma.user.findUnique.mockResolvedValueOnce({
+        id: 'user-nc',
+        collegeId: null,
+      });
       prisma.crewActivity.findMany = jest.fn(async () => []);
-      const res = await service.getAllActivities('user-nc', 20, undefined, 'college');
+      const res = await service.getAllActivities(
+        'user-nc',
+        20,
+        undefined,
+        'college',
+      );
       expect(res).toEqual({ activities: [], nextCursor: undefined });
       expect(prisma.crewActivity.findMany).not.toHaveBeenCalled();
     });

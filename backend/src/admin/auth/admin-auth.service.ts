@@ -44,7 +44,11 @@ export class AdminAuthService implements OnModuleInit {
    * across replicas; fails OPEN if Redis is unavailable (never lock admins out
    * due to infra). Throws HTTP 429 when the window limit is exceeded.
    */
-  private async enforceRateLimit(bucket: string, max: number, windowSec: number) {
+  private async enforceRateLimit(
+    bucket: string,
+    max: number,
+    windowSec: number,
+  ) {
     const client = this.redisService?.getClient?.();
     if (!client) return; // fail-open when Redis isn't configured
     const key = `admin-auth-rl:${bucket}`;
@@ -83,9 +87,14 @@ export class AdminAuthService implements OnModuleInit {
         return;
       }
 
-      const existing = await this.prisma.superAdmin.findUnique({ where: { email } });
+      const existing = await this.prisma.superAdmin.findUnique({
+        where: { email },
+      });
       if (existing) {
-        const isSamePassword = await bcrypt.compare(pass, existing.passwordHash);
+        const isSamePassword = await bcrypt.compare(
+          pass,
+          existing.passwordHash,
+        );
         if (isSamePassword && existing.isActive) {
           return;
         }
@@ -116,7 +125,9 @@ export class AdminAuthService implements OnModuleInit {
   private getAccessSecret(): string {
     const secret = config.auth.admin.accessSecret;
     if (!secret) {
-      throw new UnauthorizedException('ADMIN_JWT_ACCESS_SECRET is missing in server environment');
+      throw new UnauthorizedException(
+        'ADMIN_JWT_ACCESS_SECRET is missing in server environment',
+      );
     }
     return secret;
   }
@@ -124,7 +135,9 @@ export class AdminAuthService implements OnModuleInit {
   private getRefreshSecret(): string {
     const secret = config.auth.admin.refreshSecret;
     if (!secret) {
-      throw new UnauthorizedException('ADMIN_JWT_REFRESH_SECRET is missing in server environment');
+      throw new UnauthorizedException(
+        'ADMIN_JWT_REFRESH_SECRET is missing in server environment',
+      );
     }
     return secret;
   }
@@ -132,7 +145,9 @@ export class AdminAuthService implements OnModuleInit {
   private getPendingSecret(): string {
     const secret = config.auth.admin.pendingSecret;
     if (!secret) {
-      throw new UnauthorizedException('ADMIN_JWT_PENDING_SECRET is missing in server environment');
+      throw new UnauthorizedException(
+        'ADMIN_JWT_PENDING_SECRET is missing in server environment',
+      );
     }
     return secret;
   }
@@ -157,30 +172,34 @@ export class AdminAuthService implements OnModuleInit {
     });
 
     if (!admin || !admin.isActive) {
-      this.prisma.loginAudit.create({
-        data: {
-          email,
-          success: false,
-          failureReason: 'INVALID_CREDENTIALS_OR_INACTIVE',
-          ip,
-          userAgent,
-        },
-      }).catch(() => {});
+      this.prisma.loginAudit
+        .create({
+          data: {
+            email,
+            success: false,
+            failureReason: 'INVALID_CREDENTIALS_OR_INACTIVE',
+            ip,
+            userAgent,
+          },
+        })
+        .catch(() => {});
       throw new UnauthorizedException('Invalid admin credentials');
     }
 
     const isMatch = await bcrypt.compare(dto.password, admin.passwordHash);
     if (!isMatch) {
-      this.prisma.loginAudit.create({
-        data: {
-          adminId: admin.id,
-          email,
-          success: false,
-          failureReason: 'INVALID_PASSWORD',
-          ip,
-          userAgent,
-        },
-      }).catch(() => {});
+      this.prisma.loginAudit
+        .create({
+          data: {
+            adminId: admin.id,
+            email,
+            success: false,
+            failureReason: 'INVALID_PASSWORD',
+            ip,
+            userAgent,
+          },
+        })
+        .catch(() => {});
       throw new UnauthorizedException('Invalid admin credentials');
     }
 
@@ -202,9 +221,14 @@ export class AdminAuthService implements OnModuleInit {
     ]);
 
     // Dispatch OTP email asynchronously (non-blocking)
-    this.emailService.sendAdminVerificationOtpEmail(admin.email, admin.name, rawOtp).catch((emailErr) => {
-      this.logger.error(`Failed to send admin OTP email to ${admin.email}`, emailErr);
-    });
+    this.emailService
+      .sendAdminVerificationOtpEmail(admin.email, admin.name, rawOtp)
+      .catch((emailErr) => {
+        this.logger.error(
+          `Failed to send admin OTP email to ${admin.email}`,
+          emailErr,
+        );
+      });
 
     // Issue short-lived pendingToken for OTP step
     const pendingToken = jwt.sign(
@@ -233,7 +257,9 @@ export class AdminAuthService implements OnModuleInit {
     try {
       payload = jwt.verify(dto.pendingToken, this.getPendingSecret());
     } catch (err) {
-      throw new UnauthorizedException('Verification session expired or invalid');
+      throw new UnauthorizedException(
+        'Verification session expired or invalid',
+      );
     }
 
     if (payload.step !== 'OTP') {
@@ -254,12 +280,16 @@ export class AdminAuthService implements OnModuleInit {
     });
 
     if (!otpRecord || otpRecord.expiresAt < new Date()) {
-      throw new UnauthorizedException('Verification code has expired. Please login again.');
+      throw new UnauthorizedException(
+        'Verification code has expired. Please login again.',
+      );
     }
 
     if (otpRecord.attempts >= 5) {
       await this.prisma.adminOtp.delete({ where: { id: otpRecord.id } });
-      throw new UnauthorizedException('Too many failed attempts. Please login again.');
+      throw new UnauthorizedException(
+        'Too many failed attempts. Please login again.',
+      );
     }
 
     const inputHash = this.hashOtp(dto.otp);
@@ -347,13 +377,18 @@ export class AdminAuthService implements OnModuleInit {
   private async createAdminSession(admin: any, ip: string, userAgent: string) {
     const parser = new UAParser(userAgent);
     const ua = parser.getResult();
-    const browser = `${ua.browser.name || 'Unknown'} ${ua.browser.version || ''}`.trim();
+    const browser =
+      `${ua.browser.name || 'Unknown'} ${ua.browser.version || ''}`.trim();
     const os = `${ua.os.name || 'Unknown'} ${ua.os.version || ''}`.trim();
-    const deviceName = `${ua.device.vendor || ''} ${ua.device.model || ua.os.name || 'Desktop'}`.trim();
+    const deviceName =
+      `${ua.device.vendor || ''} ${ua.device.model || ua.os.name || 'Desktop'}`.trim();
 
     // Use fast SHA-256 for high-entropy random refresh tokens
     const rawRefreshToken = crypto.randomBytes(64).toString('hex');
-    const refreshHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
+    const refreshHash = crypto
+      .createHash('sha256')
+      .update(rawRefreshToken)
+      .digest('hex');
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
     const session = await this.prisma.superAdminSession.create({
@@ -371,7 +406,12 @@ export class AdminAuthService implements OnModuleInit {
 
     // Sign Access Token (15 mins)
     const accessToken = jwt.sign(
-      { sub: admin.id, email: admin.email, name: admin.name, sessionId: session.id },
+      {
+        sub: admin.id,
+        email: admin.email,
+        name: admin.name,
+        sessionId: session.id,
+      },
       this.getAccessSecret(),
       { expiresIn: '15m' },
     );
@@ -453,10 +493,15 @@ export class AdminAuthService implements OnModuleInit {
     if (session.refreshHash.startsWith('$2')) {
       isMatch = await bcrypt.compare(payload.tokenKey, session.refreshHash);
     } else {
-      const computedHash = crypto.createHash('sha256').update(payload.tokenKey).digest('hex');
+      const computedHash = crypto
+        .createHash('sha256')
+        .update(payload.tokenKey)
+        .digest('hex');
       const hashBuf = Buffer.from(computedHash, 'utf8');
       const storedBuf = Buffer.from(session.refreshHash, 'utf8');
-      isMatch = hashBuf.length === storedBuf.length && crypto.timingSafeEqual(hashBuf, storedBuf);
+      isMatch =
+        hashBuf.length === storedBuf.length &&
+        crypto.timingSafeEqual(hashBuf, storedBuf);
     }
 
     if (!isMatch) {
@@ -479,12 +524,17 @@ export class AdminAuthService implements OnModuleInit {
         })
         .catch(() => {});
 
-      throw new UnauthorizedException('Security alert: Token reuse detected. Sessions revoked.');
+      throw new UnauthorizedException(
+        'Security alert: Token reuse detected. Sessions revoked.',
+      );
     }
 
     // Rotate refresh token with SHA-256
     const newRawRefreshToken = crypto.randomBytes(64).toString('hex');
-    const newRefreshHash = crypto.createHash('sha256').update(newRawRefreshToken).digest('hex');
+    const newRefreshHash = crypto
+      .createHash('sha256')
+      .update(newRawRefreshToken)
+      .digest('hex');
 
     await this.prisma.superAdminSession.update({
       where: { id: session.id },
@@ -497,13 +547,22 @@ export class AdminAuthService implements OnModuleInit {
     });
 
     const newAccessToken = jwt.sign(
-      { sub: session.admin.id, email: session.admin.email, name: session.admin.name, sessionId: session.id },
+      {
+        sub: session.admin.id,
+        email: session.admin.email,
+        name: session.admin.name,
+        sessionId: session.id,
+      },
       this.getAccessSecret(),
       { expiresIn: '15m' },
     );
 
     const newRefreshToken = jwt.sign(
-      { sub: session.admin.id, sessionId: session.id, tokenKey: newRawRefreshToken },
+      {
+        sub: session.admin.id,
+        sessionId: session.id,
+        tokenKey: newRawRefreshToken,
+      },
       this.getRefreshSecret(),
       { expiresIn: '30d' },
     );
@@ -519,10 +578,12 @@ export class AdminAuthService implements OnModuleInit {
    */
   async logout(sessionId: string) {
     if (sessionId) {
-      await this.prisma.superAdminSession.update({
-        where: { id: sessionId },
-        data: { revoked: true, revokedReason: 'LOGOUT' },
-      }).catch(() => {});
+      await this.prisma.superAdminSession
+        .update({
+          where: { id: sessionId },
+          data: { revoked: true, revokedReason: 'LOGOUT' },
+        })
+        .catch(() => {});
     }
     return { success: true, message: 'Logged out successfully' };
   }

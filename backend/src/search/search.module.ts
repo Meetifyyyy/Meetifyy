@@ -8,6 +8,6 @@ import { ActivityAccessModule } from '../activities/activity-access.module';
 @Module({
   imports: [UsersModule, RedisModule, ActivityAccessModule],
   controllers: [SearchController],
-  providers: [SearchService]
+  providers: [SearchService],
 })
 export class SearchModule {}

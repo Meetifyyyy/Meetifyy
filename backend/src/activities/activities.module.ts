@@ -28,7 +28,6 @@ import { PresenceModule } from '../presence/presence.module';
   ],
   controllers: [ActivitiesController, ActivityDiscussionController],
   providers: [ActivitiesService, ActivityDiscussionService],
-  exports: [ActivitiesService, ActivityAccessModule]
+  exports: [ActivitiesService, ActivityAccessModule],
 })
 export class ActivitiesModule {}
-

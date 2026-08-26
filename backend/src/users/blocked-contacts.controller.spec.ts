@@ -1,5 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BlockedContactsController, BlocksController } from './blocked-contacts.controller';
+import {
+  BlockedContactsController,
+  BlocksController,
+} from './blocked-contacts.controller';
 import { UsersService } from './users.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 
@@ -15,7 +18,11 @@ describe('Blocked contacts endpoints', () => {
 
   beforeEach(async () => {
     usersService = {
-      getBlockedContacts: jest.fn(async () => ({ contacts: [], hasMore: false, nextOffset: null })),
+      getBlockedContacts: jest.fn(async () => ({
+        contacts: [],
+        hasMore: false,
+        nextOffset: null,
+      })),
       unblockUser: jest.fn(async () => ({ success: true, blocked: false })),
     };
 
@@ -37,7 +44,11 @@ describe('Blocked contacts endpoints', () => {
     it('reads the list for the JWT subject, never a caller-supplied id', async () => {
       await blockedContacts.getBlockedContacts({ user: { id: 'alice' } });
 
-      expect(usersService.getBlockedContacts).toHaveBeenCalledWith('alice', 20, 0);
+      expect(usersService.getBlockedContacts).toHaveBeenCalledWith(
+        'alice',
+        20,
+        0,
+      );
     });
 
     it('defaults to 20 per page', async () => {
@@ -46,17 +57,36 @@ describe('Blocked contacts endpoints', () => {
     });
 
     it('passes through pagination parameters', async () => {
-      await blockedContacts.getBlockedContacts({ user: { id: 'alice' } }, '15', '40');
-      expect(usersService.getBlockedContacts).toHaveBeenCalledWith('alice', 15, 40);
+      await blockedContacts.getBlockedContacts(
+        { user: { id: 'alice' } },
+        '15',
+        '40',
+      );
+      expect(usersService.getBlockedContacts).toHaveBeenCalledWith(
+        'alice',
+        15,
+        40,
+      );
     });
 
     it('falls back to defaults on unparseable pagination input', async () => {
-      await blockedContacts.getBlockedContacts({ user: { id: 'alice' } }, 'abc', 'xyz');
-      expect(usersService.getBlockedContacts).toHaveBeenCalledWith('alice', 20, 0);
+      await blockedContacts.getBlockedContacts(
+        { user: { id: 'alice' } },
+        'abc',
+        'xyz',
+      );
+      expect(usersService.getBlockedContacts).toHaveBeenCalledWith(
+        'alice',
+        20,
+        0,
+      );
     });
 
     it('is protected by JwtGuard', () => {
-      const guards = Reflect.getMetadata('__guards__', BlockedContactsController.prototype.getBlockedContacts);
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        BlockedContactsController.prototype.getBlockedContacts,
+      );
       expect(guards?.[0]).toBe(JwtGuard);
     });
   });
@@ -77,13 +107,18 @@ describe('Blocked contacts endpoints', () => {
       // Everything the endpoint does happens inside unblockUser, which is
       // asserted in blocking.spec.ts to remove only the block row. Nothing else
       // is invoked here, so there is no path that could re-follow or re-match.
-      expect(Object.keys(usersService).filter((k) => usersService[k].mock.calls.length)).toEqual([
-        'unblockUser',
-      ]);
+      expect(
+        Object.keys(usersService).filter(
+          (k) => usersService[k].mock.calls.length,
+        ),
+      ).toEqual(['unblockUser']);
     });
 
     it('is protected by JwtGuard', () => {
-      const guards = Reflect.getMetadata('__guards__', BlocksController.prototype.unblock);
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        BlocksController.prototype.unblock,
+      );
       expect(guards?.[0]).toBe(JwtGuard);
     });
   });

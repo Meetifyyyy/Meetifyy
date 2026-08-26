@@ -1,4 +1,12 @@
-import { IS_PRODUCTION, IS_STAGING, email, int, invariant, oneOf, str } from './env';
+import {
+  IS_PRODUCTION,
+  IS_STAGING,
+  email,
+  int,
+  invariant,
+  oneOf,
+  str,
+} from './env';
 import { appConfigValues } from './app.config';
 
 /**
@@ -17,13 +25,18 @@ const driver = oneOf('EMAIL_DRIVER', ['mailpit', 'smtp', 'resend'] as const, {
 });
 
 const fromEmail =
-  email('EMAIL_FROM', { requiredIn: ['staging', 'production'] }) || str('RESEND_FROM_EMAIL') || 'noreply@meetifyy.app';
+  email('EMAIL_FROM', { requiredIn: ['staging', 'production'] }) ||
+  str('RESEND_FROM_EMAIL') ||
+  'noreply@meetifyy.app';
 const fromName = str('EMAIL_FROM_NAME', { default: appConfigValues.name });
 const smtpPort = int('SMTP_PORT', { default: '1025', min: 1, max: 65535 });
 
 // A deployed environment still pointed at Mailpit would queue mail into a local
 // SMTP port that does not exist there and drop every message silently.
-invariant(!isDeployed || driver !== 'mailpit', 'Invalid EMAIL_DRIVER: "mailpit" cannot be used in staging or production');
+invariant(
+  !isDeployed || driver !== 'mailpit',
+  'Invalid EMAIL_DRIVER: "mailpit" cannot be used in staging or production',
+);
 invariant(
   driver !== 'resend' || !!str('RESEND_API_KEY'),
   'Missing required environment variable: RESEND_API_KEY (required when EMAIL_DRIVER=resend)',
@@ -47,13 +60,18 @@ export const emailConfigValues = {
   driver,
 
   /** Default From header, assembled as `Name <address>`. */
-  from: fromEmail && !fromEmail.includes('<') ? `${fromName} <${fromEmail}>` : fromEmail,
+  from:
+    fromEmail && !fromEmail.includes('<')
+      ? `${fromName} <${fromEmail}>`
+      : fromEmail,
   fromEmail,
   fromName,
   replyTo: str('EMAIL_REPLY_TO') || undefined,
 
   /** From header for security-sensitive mail (admin OTP, password changes). */
-  securityFrom: str('EMAIL_SECURITY_FROM') || (fromEmail ? `${fromName} Security <${fromEmail}>` : ''),
+  securityFrom:
+    str('EMAIL_SECURITY_FROM') ||
+    (fromEmail ? `${fromName} Security <${fromEmail}>` : ''),
 
   /**
    * Development-only safety valve: when set, every outgoing message is
@@ -80,7 +98,9 @@ export const emailConfigValues = {
      * domain is not verified on the account, so this is checked once at boot
      * rather than discovered one bounced job at a time.
      */
-    fromDomain: senderAddress.includes('@') ? senderAddress.split('@')[1].toLowerCase() : '',
+    fromDomain: senderAddress.includes('@')
+      ? senderAddress.split('@')[1].toLowerCase()
+      : '',
   },
 };
 

@@ -1,4 +1,10 @@
-import { IsEmail, IsString, MinLength, MaxLength, IsOptional } from 'class-validator';
+import {
+  IsEmail,
+  IsString,
+  MinLength,
+  MaxLength,
+  IsOptional,
+} from 'class-validator';
 
 export class AdminLoginDto {
   @IsEmail({}, { message: 'Valid email required' })

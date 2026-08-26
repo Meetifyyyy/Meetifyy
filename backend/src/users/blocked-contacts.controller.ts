@@ -1,4 +1,12 @@
-import { Controller, Get, Delete, Param, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Delete,
+  Param,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 
@@ -39,7 +47,10 @@ export class BlocksController {
 
   @Delete(':blockedUserId')
   @UseGuards(JwtGuard)
-  async unblock(@Param('blockedUserId') blockedUserId: string, @Req() req: any) {
+  async unblock(
+    @Param('blockedUserId') blockedUserId: string,
+    @Req() req: any,
+  ) {
     // Silent by design: unblocking dispatches no notification, so the other
     // user never learns they were on the list or that they came off it.
     return this.usersService.unblockUser(req.user.id, blockedUserId);

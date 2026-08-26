@@ -1,4 +1,19 @@
-import { Controller, Post, Put, Body, UseGuards, Req, Get, Param, Query, Res, UseInterceptors, UploadedFile, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Put,
+  Body,
+  UseGuards,
+  Req,
+  Get,
+  Param,
+  Query,
+  Res,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { StorageService } from './uploads.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -46,21 +61,29 @@ export class UploadsController {
   constructor(private readonly storageService: StorageService) {}
 
   /** `url: null` records a short-lived negative result. */
-  private static readonly mediaUrlCache = new Map<string, { url: string | null; expiresAt: number }>();
+  private static readonly mediaUrlCache = new Map<
+    string,
+    { url: string | null; expiresAt: number }
+  >();
 
   /**
    * De-duplicates concurrent resolutions of the same key. A feed rendering the
    * same avatar in twenty places would otherwise fire twenty parallel
    * HeadObject calls for one answer; they now share a single in-flight promise.
    */
-  private static readonly mediaUrlInFlight = new Map<string, Promise<string | null>>();
+  private static readonly mediaUrlInFlight = new Map<
+    string,
+    Promise<string | null>
+  >();
 
   /**
    * Returns `{ url }` on a cache hit (where `url` may be null for a cached
    * miss), or `undefined` when nothing valid is cached. The wrapper object is
    * what lets a cached negative be told apart from "not cached".
    */
-  private static getCachedMediaUrl(key: string): { url: string | null } | undefined {
+  private static getCachedMediaUrl(
+    key: string,
+  ): { url: string | null } | undefined {
     const hit = UploadsController.mediaUrlCache.get(key);
     if (hit && hit.expiresAt > Date.now()) return { url: hit.url };
     if (hit) UploadsController.mediaUrlCache.delete(key);
@@ -122,17 +145,22 @@ export class UploadsController {
    */
   @UseGuards(JwtGuard)
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file', {
-    limits: { fileSize: 50 * 1024 * 1024 },
-    fileFilter: (_req, file, callback) => {
-      const allowed = /^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|ogg)|audio\/(mpeg|wav|webm|ogg))$/i.test(file.mimetype);
-      callback(null, allowed);
-    },
-  }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 50 * 1024 * 1024 },
+      fileFilter: (_req, file, callback) => {
+        const allowed =
+          /^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|ogg)|audio\/(mpeg|wav|webm|ogg))$/i.test(
+            file.mimetype,
+          );
+        callback(null, allowed);
+      },
+    }),
+  )
   async upload(
     @UploadedFile() file: Express.Multer.File,
     @Body('folder') folder: string = 'general',
-    @Req() req: any
+    @Req() req: any,
   ) {
     if (!file) throw new BadRequestException('No file provided');
     const userId = req.user.id;
@@ -154,13 +182,23 @@ export class UploadsController {
     @Body('width') width: number | undefined,
     @Body('height') height: number | undefined,
     @Body('duration') duration: number | undefined,
-    @Req() req: any
+    @Req() req: any,
   ) {
     if (!filename || !contentType) {
       throw new BadRequestException('filename and contentType are required');
     }
     const userId = req.user.id;
-    return this.storageService.getPresignedUrl(userId, filename, contentType, folder, fileSize, variantKey, width, height, duration);
+    return this.storageService.getPresignedUrl(
+      userId,
+      filename,
+      contentType,
+      folder,
+      fileSize,
+      variantKey,
+      width,
+      height,
+      duration,
+    );
   }
 
   /**
@@ -175,20 +213,25 @@ export class UploadsController {
     @Res() res: Response,
   ) {
     if (!key) throw new BadRequestException('Key parameter is required');
-    if (!this.storageService.isSafeStorageKey(key)) throw new BadRequestException('Invalid storage key');
+    if (!this.storageService.isSafeStorageKey(key))
+      throw new BadRequestException('Invalid storage key');
     const userId = (req as any).user?.id;
     if (!userId || !(await this.storageService.userOwnsMediaKey(key, userId))) {
       throw new ForbiddenException('You are not allowed to upload to this key');
     }
 
     const cwd = process.cwd();
-    const uploadsDir = cwd.endsWith('backend') ? path.join(cwd, 'uploads') : path.join(cwd, 'backend', 'uploads');
+    const uploadsDir = cwd.endsWith('backend')
+      ? path.join(cwd, 'uploads')
+      : path.join(cwd, 'backend', 'uploads');
     const resolvedUploadsDir = path.resolve(uploadsDir);
     const filePath = path.resolve(resolvedUploadsDir, key);
-    if (!filePath.startsWith(`${resolvedUploadsDir}${path.sep}`)) throw new BadRequestException('Invalid storage path');
+    if (!filePath.startsWith(`${resolvedUploadsDir}${path.sep}`))
+      throw new BadRequestException('Invalid storage path');
     const maxUploadBytes = 25 * 1024 * 1024;
     const declaredLength = Number(req.headers['content-length'] || 0);
-    if (declaredLength > maxUploadBytes) throw new BadRequestException('File is too large');
+    if (declaredLength > maxUploadBytes)
+      throw new BadRequestException('File is too large');
     const folderPath = path.dirname(filePath);
 
     if (!fs.existsSync(folderPath)) {
@@ -205,14 +248,17 @@ export class UploadsController {
         req.unpipe(writeStream);
         writeStream.destroy();
         req.destroy();
-        if (!res.headersSent) res.status(413).json({ error: 'File is too large' });
+        if (!res.headersSent)
+          res.status(413).json({ error: 'File is too large' });
       }
     });
     req.pipe(writeStream);
 
     writeStream.on('finish', () => {
       if (tooLarge) return;
-      return res.status(200).json({ status: 'ok', key, publicUrl: `/api/media/${key}` });
+      return res
+        .status(200)
+        .json({ status: 'ok', key, publicUrl: `/api/media/${key}` });
     });
 
     writeStream.on('error', (err) => {
@@ -235,11 +281,24 @@ export class UploadsController {
     if (!keys || !Array.isArray(keys)) {
       throw new BadRequestException('keys must be an array of strings');
     }
-    if (keys.length === 0 || keys.length > 100 || keys.some((key) => !this.storageService.isSafeStorageKey(key))) {
-      throw new BadRequestException('keys must contain 1 to 100 valid storage keys');
+    if (
+      keys.length === 0 ||
+      keys.length > 100 ||
+      keys.some((key) => !this.storageService.isSafeStorageKey(key))
+    ) {
+      throw new BadRequestException(
+        'keys must contain 1 to 100 valid storage keys',
+      );
     }
-    const safeExpiresIn = Math.min(Math.max(Number(expiresIn) || 3600, 60), 3600);
-    return this.storageService.getSignedUrlsForUser(keys, safeExpiresIn, req.user.id);
+    const safeExpiresIn = Math.min(
+      Math.max(Number(expiresIn) || 3600, 60),
+      3600,
+    );
+    return this.storageService.getSignedUrlsForUser(
+      keys,
+      safeExpiresIn,
+      req.user.id,
+    );
   }
 
   /**
@@ -248,17 +307,16 @@ export class UploadsController {
    */
   @UseGuards(JwtGuard)
   @Post('confirm')
-  async confirmUpload(
-    @Body('key') key: string,
-    @Req() req: any
-  ) {
+  async confirmUpload(@Body('key') key: string, @Req() req: any) {
     if (!key) {
       throw new BadRequestException('key is required');
     }
     const userId = req.user.id;
     const result = await this.storageService.confirmUpload(key, userId);
     if (!result) {
-      throw new BadRequestException('Failed to confirm upload. Object might not exist.');
+      throw new BadRequestException(
+        'Failed to confirm upload. Object might not exist.',
+      );
     }
     return result;
   }
@@ -270,20 +328,21 @@ export class UploadsController {
    */
   @UseGuards(JwtGuard)
   @Post('discard')
-  async discardUpload(
-    @Body('key') key: string,
-    @Req() req: any,
-  ) {
+  async discardUpload(@Body('key') key: string, @Req() req: any) {
     if (!key) throw new BadRequestException('key is required');
     return this.storageService.discardOwnedUnattached(key, req.user.id);
   }
 
-  private async handleGetMedia(key: string, folder: string | undefined, res: Response) {
+  private async handleGetMedia(
+    key: string,
+    folder: string | undefined,
+    res: Response,
+  ) {
     if (!this.storageService.isSafeStorageKey(key)) {
       return this.sendMediaMiss(res, 400);
     }
     const cwd = process.cwd();
-    
+
     // Check multiple potential uploads locations on local disk
     const pathsToCheck = [
       path.join(cwd, 'uploads', key),
@@ -332,20 +391,29 @@ export class UploadsController {
       }
     }
 
-    if (folder === 'avatars' || folder === 'avatar' || folder === 'users' || key.includes('avatar')) {
+    if (
+      folder === 'avatars' ||
+      folder === 'avatar' ||
+      folder === 'users' ||
+      key.includes('avatar')
+    ) {
       res.setHeader('Content-Type', 'image/svg+xml');
       res.setHeader('Cache-Control', 'public, max-age=86400');
-      return res.send(`
+      return res.send(
+        `
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
           <circle cx="50" cy="50" r="50" fill="#e2e8f0"/>
           <path d="M50 42 a 16 16 0 1 0 0 -32 a 16 16 0 1 0 0 32 Z M50 50 c -22 0 -36 14 -36 28 v 12 h 72 v -12 c 0 -14 -14 -28 -36 -28 Z" fill="#94a3b8"/>
         </svg>
-      `.trim());
+      `.trim(),
+      );
     }
 
     if (folder === 'posts' || key.includes('posts/') || key.includes('post')) {
       res.setHeader('Cache-Control', 'public, max-age=86400');
-      return res.redirect('https://images.unsplash.com/photo-1517842645767-c639042777db?w=800&auto=format&fit=crop&q=80');
+      return res.redirect(
+        'https://images.unsplash.com/photo-1517842645767-c639042777db?w=800&auto=format&fit=crop&q=80',
+      );
     }
 
     return this.sendMediaMiss(res, 404);

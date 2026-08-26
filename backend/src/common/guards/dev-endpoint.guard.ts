@@ -1,4 +1,10 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
 import { config } from '../../config';
 
@@ -33,9 +39,14 @@ export class DevEndpointGuard implements CanActivate {
 
     if (token) {
       const provided = request.headers['x-dev-token'];
-      if (typeof provided === 'string' && equalsConstantTime(provided, token)) return true;
-      this.logger.warn(`dev_endpoint_denied ${JSON.stringify({ path: request.url, reason: 'bad-token' })}`);
-      throw new ForbiddenException('Dev endpoints require a valid x-dev-token header');
+      if (typeof provided === 'string' && equalsConstantTime(provided, token))
+        return true;
+      this.logger.warn(
+        `dev_endpoint_denied ${JSON.stringify({ path: request.url, reason: 'bad-token' })}`,
+      );
+      throw new ForbiddenException(
+        'Dev endpoints require a valid x-dev-token header',
+      );
     }
 
     if (isLoopback(remoteAddress(request))) return true;
@@ -51,14 +62,22 @@ export class DevEndpointGuard implements CanActivate {
 
 /** The address the request actually arrived from; proxy headers are never trusted here. */
 function remoteAddress(request: any): string {
-  return (request.socket?.remoteAddress || request.raw?.socket?.remoteAddress || '').toString();
+  return (
+    request.socket?.remoteAddress ||
+    request.raw?.socket?.remoteAddress ||
+    ''
+  ).toString();
 }
 
 function isLoopback(address: string): boolean {
   if (!address) return false;
   // Node reports IPv4 loopback over a dual-stack socket as ::ffff:127.0.0.1.
   const normalized = address.replace(/^::ffff:/, '');
-  return normalized === '127.0.0.1' || normalized === '::1' || normalized.startsWith('127.');
+  return (
+    normalized === '127.0.0.1' ||
+    normalized === '::1' ||
+    normalized.startsWith('127.')
+  );
 }
 
 function equalsConstantTime(a: string, b: string): boolean {

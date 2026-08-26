@@ -16,16 +16,24 @@ export class SupabaseService implements OnModuleInit {
     const anonKey = config.auth.supabase.anonKey;
 
     if (!url || url.includes('placeholder')) {
-      this.logger.warn('Supabase URL is placeholder. Using local fallback simulation.');
+      this.logger.warn(
+        'Supabase URL is placeholder. Using local fallback simulation.',
+      );
       return;
     }
 
-    const validServiceRoleKey = serviceRoleKey && !serviceRoleKey.includes('placeholder') ? serviceRoleKey : null;
-    const validAnonKey = anonKey && !anonKey.includes('placeholder') ? anonKey : null;
+    const validServiceRoleKey =
+      serviceRoleKey && !serviceRoleKey.includes('placeholder')
+        ? serviceRoleKey
+        : null;
+    const validAnonKey =
+      anonKey && !anonKey.includes('placeholder') ? anonKey : null;
     const keyToUse = validServiceRoleKey || validAnonKey;
 
     if (!keyToUse) {
-      this.logger.warn('Supabase keys are placeholder or missing. Using local fallback simulation.');
+      this.logger.warn(
+        'Supabase keys are placeholder or missing. Using local fallback simulation.',
+      );
       return;
     }
 
@@ -36,7 +44,9 @@ export class SupabaseService implements OnModuleInit {
           autoRefreshToken: false,
         },
       });
-      this.logger.log(`Supabase client initialized (${validServiceRoleKey ? 'admin' : 'anon fallback'}).`);
+      this.logger.log(
+        `Supabase client initialized (${validServiceRoleKey ? 'admin' : 'anon fallback'}).`,
+      );
     } catch (error) {
       this.logger.error('Failed to initialize Supabase client', error);
     }
@@ -44,7 +54,9 @@ export class SupabaseService implements OnModuleInit {
 
   get client(): SupabaseClient {
     if (!this.supabaseClient) {
-      throw new Error('Supabase client is not initialized due to placeholder config.');
+      throw new Error(
+        'Supabase client is not initialized due to placeholder config.',
+      );
     }
     return this.supabaseClient;
   }

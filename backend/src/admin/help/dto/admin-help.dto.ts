@@ -14,7 +14,8 @@ import {
 } from 'class-validator';
 import { HelpContentStatus } from '@prisma/client';
 
-const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+const trim = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim() : value;
 
 /**
  * Slugs appear in public URLs and are matched exactly, so the shape is pinned
@@ -34,7 +35,11 @@ export class CreateHelpCategoryDto {
   @Matches(SLUG_PATTERN, { message: SLUG_MESSAGE })
   slug?: string;
 
-  @IsOptional() @Transform(trim) @IsString() @MaxLength(500) description?: string;
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(500)
+  description?: string;
 
   /** Icon name resolved against the dashboard's allow-list; free text is not rendered. */
   @IsOptional() @Transform(trim) @IsString() @MaxLength(60) icon?: string;
@@ -45,7 +50,12 @@ export class CreateHelpCategoryDto {
 }
 
 export class UpdateHelpCategoryDto extends CreateHelpCategoryDto {
-  @IsOptional() @Transform(trim) @IsString() @MinLength(2) @MaxLength(120) declare title: string;
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  declare title: string;
 }
 
 export class CreateHelpArticleDto {
@@ -63,7 +73,10 @@ export class CreateHelpArticleDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(500) summary?: string;
 
   /** Rich text. Sanitized server-side before it is stored. */
-  @IsString() @MinLength(1, { message: 'Write an answer' }) @MaxLength(100000) body: string;
+  @IsString()
+  @MinLength(1, { message: 'Write an answer' })
+  @MaxLength(100000)
+  body: string;
 
   @IsOptional()
   @IsArray()
@@ -74,7 +87,11 @@ export class CreateHelpArticleDto {
     Array.isArray(value)
       ? // Normalised on the way in so search can match them without having to
         // lower-case a column at query time.
-        Array.from(new Set(value.map((v) => String(v).trim().toLowerCase()).filter(Boolean)))
+        Array.from(
+          new Set(
+            value.map((v) => String(v).trim().toLowerCase()).filter(Boolean),
+          ),
+        )
       : value,
   )
   keywords?: string[];
@@ -85,8 +102,17 @@ export class CreateHelpArticleDto {
 }
 
 export class UpdateHelpArticleDto extends CreateHelpArticleDto {
-  @IsOptional() @Transform(trim) @IsString() @MaxLength(60) declare categoryId: string;
-  @IsOptional() @Transform(trim) @IsString() @MinLength(3) @MaxLength(300) declare question: string;
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(60)
+  declare categoryId: string;
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(300)
+  declare question: string;
   @IsOptional() @IsString() @MaxLength(100000) declare body: string;
 }
 

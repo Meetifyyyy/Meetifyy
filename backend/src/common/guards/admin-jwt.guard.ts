@@ -33,7 +33,9 @@ export class AdminJwtGuard implements CanActivate {
     // 2. Verify JWT signature
     const secret = config.auth.admin.accessSecret;
     if (!secret) {
-      throw new UnauthorizedException('ADMIN_JWT_ACCESS_SECRET is missing in server environment');
+      throw new UnauthorizedException(
+        'ADMIN_JWT_ACCESS_SECRET is missing in server environment',
+      );
     }
 
     let payload: any;
@@ -51,7 +53,13 @@ export class AdminJwtGuard implements CanActivate {
     const [admin, session] = await Promise.all([
       this.prisma.superAdmin.findUnique({
         where: { id: payload.sub },
-        select: { id: true, email: true, name: true, isActive: true, totpEnabled: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          isActive: true,
+          totpEnabled: true,
+        },
       }),
       this.prisma.superAdminSession.findUnique({
         where: { id: payload.sessionId },
@@ -73,7 +81,11 @@ export class AdminJwtGuard implements CanActivate {
       const csrfHeader = request.headers['x-csrf-token'];
       const csrfCookie = request.cookies?.admin_csrf;
 
-      if (!csrfCookie || typeof csrfHeader !== 'string' || csrfHeader !== csrfCookie) {
+      if (
+        !csrfCookie ||
+        typeof csrfHeader !== 'string' ||
+        csrfHeader !== csrfCookie
+      ) {
         throw new ForbiddenException('CSRF validation failed');
       }
     }

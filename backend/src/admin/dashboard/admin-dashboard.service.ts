@@ -10,7 +10,11 @@ export class AdminDashboardService {
 
   async getStats() {
     const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
 
     const [
       totalUsers,
@@ -25,9 +29,13 @@ export class AdminDashboardService {
       openSupportTickets,
     ] = await Promise.all([
       this.prisma.user.count({ where: { deletedAt: null } }),
-      this.prisma.user.count({ where: { lastSeenAt: { gte: startOfToday }, deletedAt: null } }),
+      this.prisma.user.count({
+        where: { lastSeenAt: { gte: startOfToday }, deletedAt: null },
+      }),
       this.prisma.user.count({ where: { createdAt: { gte: startOfToday } } }),
-      this.prisma.user.count({ where: { emailVerified: true, deletedAt: null } }),
+      this.prisma.user.count({
+        where: { emailVerified: true, deletedAt: null },
+      }),
       this.prisma.college.count({ where: { deletedAt: null } }),
       this.prisma.post.count({ where: { deletedAt: null } }),
       this.prisma.community.count({ where: { deletedAt: null } }),
@@ -51,13 +59,20 @@ export class AdminDashboardService {
   }
 
   async getPlatformStatus() {
-    const checks: Record<string, { status: 'UP' | 'DOWN'; latencyMs?: number; detail?: string }> = {};
+    const checks: Record<
+      string,
+      { status: 'UP' | 'DOWN'; latencyMs?: number; detail?: string }
+    > = {};
 
     // 1. Live Database Connectivity & Latency Check
     const dbStart = Date.now();
     try {
       await this.prisma.user.count({ take: 1 });
-      checks.database = { status: 'UP', latencyMs: Date.now() - dbStart, detail: 'PostgreSQL' };
+      checks.database = {
+        status: 'UP',
+        latencyMs: Date.now() - dbStart,
+        detail: 'PostgreSQL',
+      };
     } catch (err: any) {
       checks.database = { status: 'DOWN', detail: err.message };
     }

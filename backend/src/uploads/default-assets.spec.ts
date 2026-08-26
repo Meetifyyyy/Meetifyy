@@ -17,8 +17,18 @@ describe('default asset backfill', () => {
     const communities: any[] = [];
     const users: any[] = [];
     const prisma = {
-      community: { updateMany: jest.fn(async (args: any) => { communities.push(args); return { count: 1 }; }) },
-      user: { updateMany: jest.fn(async (args: any) => { users.push(args); return { count: 1 }; }) },
+      community: {
+        updateMany: jest.fn(async (args: any) => {
+          communities.push(args);
+          return { count: 1 };
+        }),
+      },
+      user: {
+        updateMany: jest.fn(async (args: any) => {
+          users.push(args);
+          return { count: 1 };
+        }),
+      },
       media: { upsert: jest.fn() },
     };
     const service = new DefaultAssetsService(
@@ -27,7 +37,12 @@ describe('default asset backfill', () => {
       { get: () => undefined } as any,
     );
     // Pretend the four assets published successfully.
-    for (const n of ['community-cover', 'profile-cover', 'community-avatar', 'profile-avatar']) {
+    for (const n of [
+      'community-cover',
+      'profile-cover',
+      'community-avatar',
+      'profile-avatar',
+    ]) {
       (service as any).keys.set(n, `defaults/${n}-v1.webp`);
     }
     return { service, prisma, communities, users };
@@ -43,7 +58,9 @@ describe('default asset backfill', () => {
     const { communities } = await run();
     const coverCall = communities.find((c) => 'coverKey' in c.data);
 
-    expect(coverCall.where).toEqual({ OR: [{ coverKey: null }, { coverKey: '' }] });
+    expect(coverCall.where).toEqual({
+      OR: [{ coverKey: null }, { coverKey: '' }],
+    });
     // The shape that silently matched nothing.
     expect(JSON.stringify(coverCall.where)).not.toContain('"in"');
   });
@@ -57,8 +74,14 @@ describe('default asset backfill', () => {
 
   it('fills all four fields', async () => {
     const { communities, users } = await run();
-    expect(communities.map((c) => Object.keys(c.data)[0]).sort()).toEqual(['avatarKey', 'coverKey']);
-    expect(users.map((c) => Object.keys(c.data)[0]).sort()).toEqual(['avatar', 'cover']);
+    expect(communities.map((c) => Object.keys(c.data)[0]).sort()).toEqual([
+      'avatarKey',
+      'coverKey',
+    ]);
+    expect(users.map((c) => Object.keys(c.data)[0]).sort()).toEqual([
+      'avatar',
+      'cover',
+    ]);
   });
 
   it('writes an /api/media/ reference, the same shape an upload gets', async () => {
@@ -66,7 +89,9 @@ describe('default asset backfill', () => {
     // upload — which is the one thing this feature must not allow.
     const { communities } = await run();
     for (const call of communities) {
-      expect(Object.values(call.data)[0]).toMatch(/^\/api\/media\/defaults\/.+\.webp$/);
+      expect(Object.values(call.data)[0]).toMatch(
+        /^\/api\/media\/defaults\/.+\.webp$/,
+      );
     }
   });
 
@@ -81,7 +106,6 @@ describe('default asset backfill', () => {
   });
 });
 
-
 /**
  * Moving existing records onto a new version of the artwork.
  *
@@ -94,12 +118,31 @@ describe('repointing records onto the current defaults', () => {
   const buildService = (version = 'v2') => {
     const calls: Array<{ model: string; args: any }> = [];
     const prisma = {
-      community: { updateMany: jest.fn(async (args: any) => { calls.push({ model: 'community', args }); return { count: 2 }; }) },
-      user: { updateMany: jest.fn(async (args: any) => { calls.push({ model: 'user', args }); return { count: 3 }; }) },
+      community: {
+        updateMany: jest.fn(async (args: any) => {
+          calls.push({ model: 'community', args });
+          return { count: 2 };
+        }),
+      },
+      user: {
+        updateMany: jest.fn(async (args: any) => {
+          calls.push({ model: 'user', args });
+          return { count: 3 };
+        }),
+      },
       media: { upsert: jest.fn() },
     };
-    const service = new DefaultAssetsService({} as any, prisma as any, { get: () => undefined } as any);
-    for (const n of ['community-cover', 'profile-cover', 'community-avatar', 'profile-avatar']) {
+    const service = new DefaultAssetsService(
+      {} as any,
+      prisma as any,
+      { get: () => undefined } as any,
+    );
+    for (const n of [
+      'community-cover',
+      'profile-cover',
+      'community-avatar',
+      'profile-avatar',
+    ]) {
       (service as any).keys.set(n, `defaults/${n}-${version}.webp`);
     }
     return { service, prisma, calls };
@@ -109,8 +152,13 @@ describe('repointing records onto the current defaults', () => {
     const ctx = buildService();
     await (ctx.service as any).repointOutdatedDefaults();
     /** The update issued for one column, or a failure naming what is missing. */
-    const callFor = (model: string, field: string): { where: any; data: any } => {
-      const hit = ctx.calls.find((c) => c.model === model && field in c.args.data);
+    const callFor = (
+      model: string,
+      field: string,
+    ): { where: any; data: any } => {
+      const hit = ctx.calls.find(
+        (c) => c.model === model && field in c.args.data,
+      );
       if (!hit) throw new Error(`no ${model}.${field} update was issued`);
       return hit.args;
     };
@@ -122,23 +170,33 @@ describe('repointing records onto the current defaults', () => {
     const [prefixClause, notClause] = where.AND;
     const prefix = prefixClause[field].startsWith;
     const current = notClause.NOT[field];
-    return typeof value === 'string' && value.startsWith(prefix) && value !== current;
+    return (
+      typeof value === 'string' && value.startsWith(prefix) && value !== current
+    );
   };
 
   it('moves user covers and community covers onto the current version', async () => {
     const { callFor } = await run();
 
-    expect(callFor('user', 'cover').data.cover).toBe('/api/media/defaults/profile-cover-v2.webp');
-    expect(callFor('community', 'coverKey').data.coverKey).toBe('/api/media/defaults/community-cover-v2.webp');
+    expect(callFor('user', 'cover').data.cover).toBe(
+      '/api/media/defaults/profile-cover-v2.webp',
+    );
+    expect(callFor('community', 'coverKey').data.coverKey).toBe(
+      '/api/media/defaults/community-cover-v2.webp',
+    );
   });
 
   it('selects exactly the rows still on an older default', async () => {
     const { callFor } = await run();
     const { where } = callFor('user', 'cover');
 
-    expect(matches(where, 'cover', '/api/media/defaults/profile-cover-v1.webp')).toBe(true);
+    expect(
+      matches(where, 'cover', '/api/media/defaults/profile-cover-v1.webp'),
+    ).toBe(true);
     // Already current — updating it again would be pure write amplification.
-    expect(matches(where, 'cover', '/api/media/defaults/profile-cover-v2.webp')).toBe(false);
+    expect(
+      matches(where, 'cover', '/api/media/defaults/profile-cover-v2.webp'),
+    ).toBe(false);
   });
 
   it('cannot match a picture the user actually chose', async () => {
@@ -166,8 +224,12 @@ describe('repointing records onto the current defaults', () => {
     const cover = callFor('user', 'cover').where;
     const avatar = callFor('user', 'avatar').where;
 
-    expect(matches(cover, 'cover', '/api/media/defaults/profile-avatar-v1.webp')).toBe(false);
-    expect(matches(avatar, 'avatar', '/api/media/defaults/profile-cover-v1.webp')).toBe(false);
+    expect(
+      matches(cover, 'cover', '/api/media/defaults/profile-avatar-v1.webp'),
+    ).toBe(false);
+    expect(
+      matches(avatar, 'avatar', '/api/media/defaults/profile-cover-v1.webp'),
+    ).toBe(false);
   });
 
   it('is idempotent: a second run has nothing left to match', async () => {

@@ -31,7 +31,9 @@ describe('acceptInvitation', () => {
 
   beforeEach(async () => {
     joinCalls = 0;
-    notifications = { updateNotificationLifecycleStatus: jest.fn(async () => []) };
+    notifications = {
+      updateNotificationLifecycleStatus: jest.fn(async () => []),
+    };
     membership = null;
     invitation = {
       id: INV,
@@ -51,8 +53,10 @@ describe('acceptInvitation', () => {
         // The service writes conditionally (updateMany with a status guard) so
         // a concurrent cancellation cannot be overwritten.
         updateMany: jest.fn(async ({ where, data }: any) => {
-          const allowed = where?.status?.in ?? (where?.status ? [where.status] : null);
-          if (allowed && !allowed.includes(invitation.status)) return { count: 0 };
+          const allowed =
+            where?.status?.in ?? (where?.status ? [where.status] : null);
+          if (allowed && !allowed.includes(invitation.status))
+            return { count: 0 };
           invitation = { ...invitation, ...data };
           return { count: 1 };
         }),
@@ -82,10 +86,16 @@ describe('acceptInvitation', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: notifications },
         { provide: NotificationFactory, useValue: {} },
-        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn(async () => []) } },
+        {
+          provide: BlocksService,
+          useValue: { getExcludedUserIds: jest.fn(async () => []) },
+        },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
-        { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn() } },
+        {
+          provide: getQueueToken(NOTIFICATIONS_QUEUE),
+          useValue: { add: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -110,9 +120,13 @@ describe('acceptInvitation', () => {
   });
 
   it('does not record acceptance when the join is refused', async () => {
-    (service as any).joinActivity.mockRejectedValueOnce(new Error('Activity is full'));
+    (service as any).joinActivity.mockRejectedValueOnce(
+      new Error('Activity is full'),
+    );
 
-    await expect(service.acceptInvitation(INV, ME)).rejects.toThrow('Activity is full');
+    await expect(service.acceptInvitation(INV, ME)).rejects.toThrow(
+      'Activity is full',
+    );
     expect(invitation.status).toBe('PENDING');
     expect(prisma.activityInvitation.updateMany).not.toHaveBeenCalled();
   });
@@ -122,7 +136,11 @@ describe('acceptInvitation', () => {
     const second = await service.acceptInvitation(INV, ME);
 
     expect(joinCalls).toBe(1);
-    expect(second).toMatchObject({ success: true, activityId: ACT, alreadyJoined: true });
+    expect(second).toMatchObject({
+      success: true,
+      activityId: ACT,
+      alreadyJoined: true,
+    });
   });
 
   it('still settles the notification on the already-joined fast path', async () => {
@@ -135,15 +153,27 @@ describe('acceptInvitation', () => {
 
     await service.acceptInvitation(INV, ME);
 
-    expect(notifications.updateNotificationLifecycleStatus).toHaveBeenCalledWith(
-      expect.objectContaining({ entityId: ACT, status: 'ACCEPTED', recipientIds: [ME] }),
+    expect(
+      notifications.updateNotificationLifecycleStatus,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityId: ACT,
+        status: 'ACCEPTED',
+        recipientIds: [ME],
+      }),
     );
   });
 
   it('marks the notification accepted on the normal path', async () => {
     await service.acceptInvitation(INV, ME);
-    expect(notifications.updateNotificationLifecycleStatus).toHaveBeenCalledWith(
-      expect.objectContaining({ entityId: ACT, status: 'ACCEPTED', recipientIds: [ME] }),
+    expect(
+      notifications.updateNotificationLifecycleStatus,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityId: ACT,
+        status: 'ACCEPTED',
+        recipientIds: [ME],
+      }),
     );
   });
 
@@ -158,19 +188,25 @@ describe('acceptInvitation', () => {
   });
 
   it('refuses an invitation belonging to somebody else', async () => {
-    await expect(service.acceptInvitation(INV, 'someone-else')).rejects.toThrow(NotFoundException);
+    await expect(service.acceptInvitation(INV, 'someone-else')).rejects.toThrow(
+      NotFoundException,
+    );
     expect(joinCalls).toBe(0);
   });
 
   it('refuses a revoked invitation', async () => {
     invitation = { ...invitation, revokedAt: new Date() };
-    await expect(service.acceptInvitation(INV, ME)).rejects.toThrow(NotFoundException);
+    await expect(service.acceptInvitation(INV, ME)).rejects.toThrow(
+      NotFoundException,
+    );
     expect(joinCalls).toBe(0);
   });
 
   it('refuses an expired invitation', async () => {
     invitation = { ...invitation, expiresAt: new Date(Date.now() - 1000) };
-    await expect(service.acceptInvitation(INV, ME)).rejects.toThrow(NotFoundException);
+    await expect(service.acceptInvitation(INV, ME)).rejects.toThrow(
+      NotFoundException,
+    );
     expect(joinCalls).toBe(0);
   });
 
@@ -184,7 +220,9 @@ describe('acceptInvitation', () => {
     });
 
     it('refuses the accept and settles the invitation as expired', async () => {
-      await expect(service.acceptInvitation(INV, ME)).rejects.toThrow(/already started/i);
+      await expect(service.acceptInvitation(INV, ME)).rejects.toThrow(
+        /already started/i,
+      );
       expect(joinCalls).toBe(0);
       // Settled, not left PENDING: the row must stop offering a choice that the
       // join endpoint would refuse anyway.
@@ -192,13 +230,19 @@ describe('acceptInvitation', () => {
     });
 
     it('refuses the decline too, so both buttons agree', async () => {
-      await expect(service.declineInvitation(INV, ME)).rejects.toThrow(/already started/i);
+      await expect(service.declineInvitation(INV, ME)).rejects.toThrow(
+        /already started/i,
+      );
       expect(invitation.status).toBe('EXPIRED');
     });
 
     it('marks the invite notification expired rather than deleting it', async () => {
-      await expect(service.acceptInvitation(INV, ME)).rejects.toThrow(/already started/i);
-      expect(notifications.updateNotificationLifecycleStatus).toHaveBeenCalledWith(
+      await expect(service.acceptInvitation(INV, ME)).rejects.toThrow(
+        /already started/i,
+      );
+      expect(
+        notifications.updateNotificationLifecycleStatus,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           entityId: ACT,
           status: 'EXPIRED',
@@ -224,7 +268,9 @@ describe('acceptInvitation', () => {
 
   it('refuses a declined invitation rather than silently re-joining', async () => {
     invitation = { ...invitation, status: 'DECLINED' };
-    await expect(service.acceptInvitation(INV, ME)).rejects.toThrow(NotFoundException);
+    await expect(service.acceptInvitation(INV, ME)).rejects.toThrow(
+      NotFoundException,
+    );
     expect(joinCalls).toBe(0);
   });
 });
@@ -264,10 +310,18 @@ describe('inviteFriends — already-accepted invitees', () => {
         })),
       },
       activityInvitation: {
-        findMany: jest.fn(async () => (existingInvitation ? [existingInvitation] : [])),
+        findMany: jest.fn(async () =>
+          existingInvitation ? [existingInvitation] : [],
+        ),
         createMany: jest.fn(async () => ({ count: 1 })),
       },
-      user: { findUnique: jest.fn(async () => ({ id: HOST, displayName: 'Host', username: 'host' })) },
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: HOST,
+          displayName: 'Host',
+          username: 'host',
+        })),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -275,12 +329,21 @@ describe('inviteFriends — already-accepted invitees', () => {
         ActivitiesService,
         ActivityAuthorizationService,
         { provide: PrismaService, useValue: prisma },
-        { provide: NotificationsService, useValue: { createActivityInviteNotifications: jest.fn() } },
+        {
+          provide: NotificationsService,
+          useValue: { createActivityInviteNotifications: jest.fn() },
+        },
         { provide: NotificationFactory, useValue: {} },
-        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn(async () => []) } },
+        {
+          provide: BlocksService,
+          useValue: { getExcludedUserIds: jest.fn(async () => []) },
+        },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
-        { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn(async () => ({})) } },
+        {
+          provide: getQueueToken(NOTIFICATIONS_QUEUE),
+          useValue: { add: jest.fn(async () => ({})) },
+        },
       ],
     }).compile();
 
@@ -288,7 +351,12 @@ describe('inviteFriends — already-accepted invitees', () => {
   });
 
   it('refuses to re-invite someone whose invitation is ACCEPTED', async () => {
-    existingInvitation = { inviteeId: INVITEE, activityId: ACT, status: 'ACCEPTED', respondedAt: new Date() };
+    existingInvitation = {
+      inviteeId: INVITEE,
+      activityId: ACT,
+      status: 'ACCEPTED',
+      respondedAt: new Date(),
+    };
 
     const res = await service.inviteFriends(ACT, HOST, [INVITEE]);
 

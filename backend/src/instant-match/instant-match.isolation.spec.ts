@@ -17,8 +17,11 @@ describe('Instant Match isolation from normal Messages', () => {
     // these filters exist at all, and that they name types rather than the
     // legacy isInstantMatch flag.
     const readSource = (path: string) =>
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      require('fs').readFileSync(require('path').join(__dirname, '..', path), 'utf8');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require('fs').readFileSync(
+        require('path').join(__dirname, '..', path),
+        'utf8',
+      );
 
     it('excludes Instant Match from the main conversation list', () => {
       const src = readSource('messages/messages.service.ts');
@@ -53,29 +56,59 @@ describe('Instant Match isolation from normal Messages', () => {
       // must be routable ONLY to the Instant Match chat. A conversationId is
       // what deep-links into Messages, where this conversation does not
       // exist, so there deliberately isn't one to route on.
-      const dto = factory.createMessage(actor, { id: 'c1', type: 'INSTANT_MATCH' }, 'bob', 'hi');
+      const dto = factory.createMessage(
+        actor,
+        { id: 'c1', type: 'INSTANT_MATCH' },
+        'bob',
+        'hi',
+      );
       expect(dto).not.toBeNull();
-      expect(dto?.metadata).toMatchObject({ chatType: 'instant', isInstantMatch: true });
+      expect(dto?.metadata).toMatchObject({
+        chatType: 'instant',
+        isInstantMatch: true,
+      });
       expect(dto?.metadata).not.toHaveProperty('conversationId');
       expect(dto?.metadata).not.toHaveProperty('publicId');
       expect(dto?.metadata).not.toHaveProperty('internalId');
     });
 
     it('does the same for a legacy row carrying only the old flag', () => {
-      const dto = factory.createMessage(actor, { id: 'c1', type: 'DM', isInstantMatch: true }, 'bob', 'hi');
-      expect(dto?.metadata).toMatchObject({ chatType: 'instant', isInstantMatch: true });
+      const dto = factory.createMessage(
+        actor,
+        { id: 'c1', type: 'DM', isInstantMatch: true },
+        'bob',
+        'hi',
+      );
+      expect(dto?.metadata).toMatchObject({
+        chatType: 'instant',
+        isInstantMatch: true,
+      });
       expect(dto?.metadata).not.toHaveProperty('conversationId');
     });
 
     it('still builds one for a normal DM, marked normal and routable by id', () => {
-      const dto = factory.createMessage(actor, { id: 'c2', type: 'DM' }, 'bob', 'hi');
+      const dto = factory.createMessage(
+        actor,
+        { id: 'c2', type: 'DM' },
+        'bob',
+        'hi',
+      );
       expect(dto).not.toBeNull();
       expect(dto).toMatchObject({ recipientId: 'bob', type: 'MESSAGE' });
-      expect(dto?.metadata).toMatchObject({ chatType: 'normal', isInstantMatch: false, conversationId: 'c2' });
+      expect(dto?.metadata).toMatchObject({
+        chatType: 'normal',
+        isInstantMatch: false,
+        conversationId: 'c2',
+      });
     });
 
     it('still builds one for a group', () => {
-      const dto = factory.createMessage(actor, { id: 'c3', type: 'GROUP', name: 'Crew' }, 'bob', 'hi');
+      const dto = factory.createMessage(
+        actor,
+        { id: 'c3', type: 'GROUP', name: 'Crew' },
+        'bob',
+        'hi',
+      );
       expect(dto).not.toBeNull();
       expect(dto?.metadata).toMatchObject({ isGroup: true });
     });

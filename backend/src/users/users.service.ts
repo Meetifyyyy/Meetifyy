@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -7,10 +12,16 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from './blocks.service';
 import { PresenceService } from '../presence/presence.service';
-import { checkPresenceVisibility, resolvePresenceVisibilityForViewer } from './privacy.helper';
+import {
+  checkPresenceVisibility,
+  resolvePresenceVisibilityForViewer,
+} from './privacy.helper';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { NOTIFICATIONS_QUEUE, FollowNotifJob } from '../notifications/notifications.processor';
+import {
+  NOTIFICATIONS_QUEUE,
+  FollowNotifJob,
+} from '../notifications/notifications.processor';
 import { clearAuthSyncCache } from '../auth/auth.service';
 import { validateBirthday } from '../common/utils/birthday-validation.util';
 import { AcademicsService } from '../academics/academics.service';
@@ -39,7 +50,11 @@ export class UsersService {
    * each other's status here.
    */
   async getAllUsers(limit: number, offset: number, currentUserId?: string) {
-    const where = await this.blocksService.injectBlockFilter(currentUserId, {}, 'id');
+    const where = await this.blocksService.injectBlockFilter(
+      currentUserId,
+      {},
+      'id',
+    );
     const users = await this.prisma.user.findMany({
       where,
       take: limit,
@@ -59,14 +74,14 @@ export class UsersService {
         settings: {
           select: {
             showOnlineStatus: true,
-            whoCanSeeOnline: true
-          }
-        }
+            whoCanSeeOnline: true,
+          },
+        },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
 
-    const userIds = users.map(u => u.id);
+    const userIds = users.map((u) => u.id);
     const presenceMap = await this.presenceService.getPresenceMany(userIds);
 
     // Honour each target's own presence rules (and the block list) rather than
@@ -84,7 +99,7 @@ export class UsersService {
         )
       : new Set<string>();
 
-    return users.map(u => {
+    return users.map((u) => {
       const pres = presenceMap.get(u.id);
       const canSee = visibleIds.has(u.id);
       const isOnline = canSee && pres?.status === 'online';
@@ -92,12 +107,16 @@ export class UsersService {
         ...u,
         isOnline,
         online: isOnline,
-        lastActive: canSee ? (pres?.lastSeen || null) : null,
+        lastActive: canSee ? pres?.lastSeen || null : null,
       };
     });
   }
 
-  async getCampusUsers(userIdOrCollegeId: string, limit: number, offset: number) {
+  async getCampusUsers(
+    userIdOrCollegeId: string,
+    limit: number,
+    offset: number,
+  ) {
     if (!userIdOrCollegeId) return [];
     let collegeId = userIdOrCollegeId;
     let excludeUserId: string | undefined = undefined;
@@ -105,7 +124,7 @@ export class UsersService {
     // Check if the argument is a userId by performing a database lookup
     const targetUser = await this.prisma.user.findUnique({
       where: { id: userIdOrCollegeId },
-      select: { collegeId: true }
+      select: { collegeId: true },
     });
     if (targetUser) {
       if (!targetUser.collegeId) return [];
@@ -116,7 +135,7 @@ export class UsersService {
     const users = await this.prisma.user.findMany({
       where: {
         collegeId,
-        ...(excludeUserId ? { id: { not: excludeUserId } } : {})
+        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
       },
       take: limit,
       skip: offset,
@@ -135,17 +154,17 @@ export class UsersService {
         settings: {
           select: {
             showOnlineStatus: true,
-            whoCanSeeOnline: true
-          }
-        }
+            whoCanSeeOnline: true,
+          },
+        },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
 
-    const userIds = users.map(u => u.id);
+    const userIds = users.map((u) => u.id);
     const presenceMap = await this.presenceService.getPresenceMany(userIds);
 
-    return users.map(u => {
+    return users.map((u) => {
       const pres = presenceMap.get(u.id);
       const isOnline = pres?.status === 'online';
       return {
@@ -168,10 +187,20 @@ export class UsersService {
    */
   async getDirectory(
     userId: string,
-    opts: { search?: string; course?: string; branch?: string; currentYear?: number; limit?: number; cursor?: string } = {},
+    opts: {
+      search?: string;
+      course?: string;
+      branch?: string;
+      currentYear?: number;
+      limit?: number;
+      cursor?: string;
+    } = {},
   ): Promise<{ users: any[]; nextCursor?: string }> {
     if (!userId) return { users: [], nextCursor: undefined };
-    const me = await this.prisma.user.findUnique({ where: { id: userId }, select: { collegeId: true } });
+    const me = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { collegeId: true },
+    });
     if (!me?.collegeId) return { users: [], nextCursor: undefined };
 
     const limit = Math.min(Math.max(Number(opts.limit) || 30, 1), 50);
@@ -203,9 +232,10 @@ export class UsersService {
       ...(search
         ? {
             OR: [
-              { displayName: { contains: search, mode: 'insensitive' as const } },
+              {
+                displayName: { contains: search, mode: 'insensitive' as const },
+              },
               { username: { contains: search, mode: 'insensitive' as const } },
-
             ],
           }
         : {}),
@@ -214,7 +244,11 @@ export class UsersService {
 
     // Blocked users must not appear in the campus directory, in either
     // direction. Applied to the query so the page size stays honest.
-    const directoryWhere = await this.blocksService.injectBlockFilter(userId, where, 'id');
+    const directoryWhere = await this.blocksService.injectBlockFilter(
+      userId,
+      where,
+      'id',
+    );
 
     const rows = await this.prisma.user.findMany({
       where: directoryWhere,
@@ -239,9 +273,14 @@ export class UsersService {
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
     const last = pageRows[pageRows.length - 1];
-    const nextCursor = hasMore && last ? `${new Date(last.createdAt).toISOString()}|${last.id}` : undefined;
+    const nextCursor =
+      hasMore && last
+        ? `${new Date(last.createdAt).toISOString()}|${last.id}`
+        : undefined;
 
-    const presenceMap = await this.presenceService.getPresenceMany(pageRows.map(u => u.id));
+    const presenceMap = await this.presenceService.getPresenceMany(
+      pageRows.map((u) => u.id),
+    );
     // The directory selected each row's presence settings and then reported raw
     // presence anyway. Resolve them properly, which also applies the block list.
     const visibleIds = await resolvePresenceVisibilityForViewer(
@@ -259,7 +298,12 @@ export class UsersService {
       const pres = presenceMap.get(u.id);
       const canSee = visibleIds.has(u.id);
       const isOnline = canSee && pres?.status === 'online';
-      return { ...u, isOnline, online: isOnline, lastActive: canSee ? (pres?.lastSeen || null) : null };
+      return {
+        ...u,
+        isOnline,
+        online: isOnline,
+        lastActive: canSee ? pres?.lastSeen || null : null,
+      };
     });
 
     return { users, nextCursor };
@@ -290,13 +334,17 @@ export class UsersService {
         currentYear: true,
         profileCompleted: true,
         settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
-      }
+      },
     });
     // Same body as the block case below, so the two are indistinguishable.
-    if (!user) throw new NotFoundException('This profile isn\'t available.');
+    if (!user) throw new NotFoundException("This profile isn't available.");
 
-    if (currentUserId && currentUserId !== id && (await this.blocksService.isBlocked(currentUserId, id))) {
-      throw new NotFoundException('This profile isn\'t available.');
+    if (
+      currentUserId &&
+      currentUserId !== id &&
+      (await this.blocksService.isBlocked(currentUserId, id))
+    ) {
+      throw new NotFoundException("This profile isn't available.");
     }
 
     const canSeeOnline = currentUserId
@@ -310,14 +358,16 @@ export class UsersService {
         )
       : false;
 
-    const pres = canSeeOnline ? await this.presenceService.getPresence(id) : null;
+    const pres = canSeeOnline
+      ? await this.presenceService.getPresence(id)
+      : null;
     const isOnline = canSeeOnline && pres?.status === 'online';
     const { settings: _settings, ...publicUser } = user as any;
     return {
       ...publicUser,
       isOnline,
       online: isOnline,
-      lastActive: canSeeOnline ? (pres?.lastSeen || null) : null,
+      lastActive: canSeeOnline ? pres?.lastSeen || null : null,
     };
   }
 
@@ -325,13 +375,13 @@ export class UsersService {
     const cleanUsername = username.trim().toLowerCase();
 
     // 1. Find user by exact username (case-insensitive), or ID, or email prefix, or handle prefix, or displayName
-    let targetUser = await this.prisma.user.findFirst({
+    const targetUser = await this.prisma.user.findFirst({
       where: {
         OR: [
           { username: { equals: cleanUsername, mode: 'insensitive' } },
           { id: cleanUsername },
           { email: { equals: cleanUsername, mode: 'insensitive' } },
-          { collegeEmail: { equals: cleanUsername, mode: 'insensitive' } }
+          { collegeEmail: { equals: cleanUsername, mode: 'insensitive' } },
         ],
       },
       include: {
@@ -359,7 +409,7 @@ export class UsersService {
     });
 
     if (!targetUser) {
-      throw new NotFoundException('This profile isn\'t available.');
+      throw new NotFoundException("This profile isn't available.");
     }
 
     let isFollowing = false;
@@ -369,19 +419,37 @@ export class UsersService {
     // batch instead of sequentially — collapses the block-check, both follow
     // lookups, presence read and visibility check from ~3-4 sequential
     // backend↔DB round trips into a single round trip's worth of latency.
-    const needsRelational = Boolean(currentUserId && currentUserId !== targetUser.id);
-    const [isBlockedPair, followRecord, followedByRecord, presence, canSeeOnline] = await Promise.all([
+    const needsRelational = Boolean(
+      currentUserId && currentUserId !== targetUser.id,
+    );
+    const [
+      isBlockedPair,
+      followRecord,
+      followedByRecord,
+      presence,
+      canSeeOnline,
+    ] = await Promise.all([
       needsRelational
         ? this.blocksService.isBlocked(currentUserId!, targetUser.id)
         : Promise.resolve(false),
       needsRelational
         ? this.prisma.follow.findUnique({
-            where: { followerId_followingId: { followerId: currentUserId!, followingId: targetUser.id } },
+            where: {
+              followerId_followingId: {
+                followerId: currentUserId!,
+                followingId: targetUser.id,
+              },
+            },
           })
         : Promise.resolve(null),
       needsRelational
         ? this.prisma.follow.findUnique({
-            where: { followerId_followingId: { followerId: targetUser.id, followingId: currentUserId! } },
+            where: {
+              followerId_followingId: {
+                followerId: targetUser.id,
+                followingId: currentUserId!,
+              },
+            },
           })
         : Promise.resolve(null),
       this.presenceService.getPresence(targetUser.id),
@@ -400,12 +468,12 @@ export class UsersService {
       // profile-not-found above. If the two differed, comparing responses would
       // let a user tell "this account blocked me" apart from "no such account"
       // — which is exactly the disclosure the neutral 404 exists to prevent.
-      throw new NotFoundException('This profile isn\'t available.');
+      throw new NotFoundException("This profile isn't available.");
     }
     isFollowing = !!followRecord;
     isFollowedBy = !!followedByRecord;
 
-    const isOnline = canSeeOnline ? (presence?.status === 'online') : false;
+    const isOnline = canSeeOnline ? presence?.status === 'online' : false;
 
     const settings = targetUser.settings
       ? {
@@ -453,7 +521,7 @@ export class UsersService {
   async followUser(followerId: string, followingUsername: string) {
     const t0 = performance.now();
     const cleanUsername = followingUsername.trim().toLowerCase();
-    
+
     // Single atomic CTE query combining: user lookup + block check + follow insert + count calculation
     // Reduces database network round-trips from 4 down to 1!
     const rows: any[] = await this.prisma.$queryRaw`
@@ -528,25 +596,35 @@ export class UsersService {
           avatar: res.followerAvatar,
         },
       };
-      this.notifQueue.add('follow-notification', jobData, {
-        removeOnComplete: true,
-        removeOnFail: { count: 50 },
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 1000 },
-      }).catch(err => this.logger.warn('Failed to enqueue follow notification', err));
+      this.notifQueue
+        .add('follow-notification', jobData, {
+          removeOnComplete: true,
+          removeOnFail: { count: 50 },
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 1000 },
+        })
+        .catch((err) =>
+          this.logger.warn('Failed to enqueue follow notification', err),
+        );
 
       // Async non-blocking domain event broadcast
-      this.domainEventService.emit('follow.created', {
-        followerId,
-        followingId: res.targetId,
-        followingUsername: res.targetUsername,
-        followerStats: { followingCount: res.currentFollowing },
-        targetStats: { followersCount: res.targetFollowers },
-      }).catch(err => this.logger.warn('Failed to emit follow.created event', err));
+      this.domainEventService
+        .emit('follow.created', {
+          followerId,
+          followingId: res.targetId,
+          followingUsername: res.targetUsername,
+          followerStats: { followingCount: res.currentFollowing },
+          targetStats: { followersCount: res.targetFollowers },
+        })
+        .catch((err) =>
+          this.logger.warn('Failed to emit follow.created event', err),
+        );
     }
 
     const tEnd = performance.now();
-    this.logger.log(`[TIMING followUser] singleQueryDb=${(tDb - t0).toFixed(1)}ms total=${(tEnd - t0).toFixed(1)}ms (1 round-trip)`);
+    this.logger.log(
+      `[TIMING followUser] singleQueryDb=${(tDb - t0).toFixed(1)}ms total=${(tEnd - t0).toFixed(1)}ms (1 round-trip)`,
+    );
 
     return {
       success: true,
@@ -564,7 +642,7 @@ export class UsersService {
   async unfollowUser(followerId: string, followingUsername: string) {
     const t0 = performance.now();
     const cleanUsername = followingUsername.trim().toLowerCase();
-    
+
     // Single atomic CTE query combining: user lookup + follow delete + count calculation
     // Reduces database network round-trips from 3 down to 1!
     const rows: any[] = await this.prisma.$queryRaw`
@@ -599,17 +677,23 @@ export class UsersService {
     const res = rows[0];
 
     if (res.unfollowed) {
-      this.domainEventService.emit('follow.deleted', {
-        followerId,
-        followingId: res.targetId,
-        followingUsername: res.targetUsername,
-        followerStats: { followingCount: res.currentFollowing },
-        targetStats: { followersCount: res.targetFollowers },
-      }).catch(err => this.logger.warn('Failed to emit follow.deleted event', err));
+      this.domainEventService
+        .emit('follow.deleted', {
+          followerId,
+          followingId: res.targetId,
+          followingUsername: res.targetUsername,
+          followerStats: { followingCount: res.currentFollowing },
+          targetStats: { followersCount: res.targetFollowers },
+        })
+        .catch((err) =>
+          this.logger.warn('Failed to emit follow.deleted event', err),
+        );
     }
 
     const tEnd = performance.now();
-    this.logger.log(`[TIMING unfollowUser] singleQueryDb=${(tDb - t0).toFixed(1)}ms total=${(tEnd - t0).toFixed(1)}ms (1 round-trip)`);
+    this.logger.log(
+      `[TIMING unfollowUser] singleQueryDb=${(tDb - t0).toFixed(1)}ms total=${(tEnd - t0).toFixed(1)}ms (1 round-trip)`,
+    );
 
     return {
       success: true,
@@ -624,7 +708,12 @@ export class UsersService {
     };
   }
 
-  async getFollowers(username: string, currentUserId?: string, limit = 20, offset = 0) {
+  async getFollowers(
+    username: string,
+    currentUserId?: string,
+    limit = 20,
+    offset = 0,
+  ) {
     const cleanUsername = username.trim().toLowerCase();
 
     const targetUser = await this.prisma.user.findUnique({
@@ -639,9 +728,10 @@ export class UsersService {
     const excludedUserIds = currentUserId
       ? await this.blocksService.getExcludedUserIds(currentUserId)
       : [];
-    const followerBlockFilter = excludedUserIds.length > 0
-      ? Prisma.sql`AND f."followerId" NOT IN (${Prisma.join(excludedUserIds)})`
-      : Prisma.empty;
+    const followerBlockFilter =
+      excludedUserIds.length > 0
+        ? Prisma.sql`AND f."followerId" NOT IN (${Prisma.join(excludedUserIds)})`
+        : Prisma.empty;
 
     const rows: any[] = await this.prisma.$queryRaw`
       SELECT 
@@ -665,10 +755,10 @@ export class UsersService {
       LIMIT ${limit} OFFSET ${offset};
     `;
 
-    const userIds = rows.map(r => r.id);
+    const userIds = rows.map((r) => r.id);
     const presenceMap = await this.presenceService.getPresenceMany(userIds);
 
-    return rows.map(r => {
+    return rows.map((r) => {
       const pres = presenceMap.get(r.id);
       const isOnline = pres?.status === 'online';
       return {
@@ -686,7 +776,12 @@ export class UsersService {
     });
   }
 
-  async getFollowing(username: string, currentUserId?: string, limit = 20, offset = 0) {
+  async getFollowing(
+    username: string,
+    currentUserId?: string,
+    limit = 20,
+    offset = 0,
+  ) {
     const cleanUsername = username.trim().toLowerCase();
 
     const targetUser = await this.prisma.user.findUnique({
@@ -699,9 +794,10 @@ export class UsersService {
     const excludedUserIds = currentUserId
       ? await this.blocksService.getExcludedUserIds(currentUserId)
       : [];
-    const followingBlockFilter = excludedUserIds.length > 0
-      ? Prisma.sql`AND f."followingId" NOT IN (${Prisma.join(excludedUserIds)})`
-      : Prisma.empty;
+    const followingBlockFilter =
+      excludedUserIds.length > 0
+        ? Prisma.sql`AND f."followingId" NOT IN (${Prisma.join(excludedUserIds)})`
+        : Prisma.empty;
 
     const rows: any[] = await this.prisma.$queryRaw`
       SELECT 
@@ -725,10 +821,10 @@ export class UsersService {
       LIMIT ${limit} OFFSET ${offset};
     `;
 
-    const userIds = rows.map(r => r.id);
+    const userIds = rows.map((r) => r.id);
     const presenceMap = await this.presenceService.getPresenceMany(userIds);
 
-    return rows.map(r => {
+    return rows.map((r) => {
       const pres = presenceMap.get(r.id);
       const isOnline = pres?.status === 'online';
       return {
@@ -748,40 +844,58 @@ export class UsersService {
 
   async updateProfile(userId: string, data: any, userEmail?: string) {
     // Only allow updating valid user profile fields
-    const { displayName, username, bio, avatar, cover, location, profileCompleted, interests, birthday } = data;
+    const {
+      displayName,
+      username,
+      bio,
+      avatar,
+      cover,
+      location,
+      profileCompleted,
+      interests,
+      birthday,
+    } = data;
     const updateData: any = {};
     if (displayName !== undefined) {
-      const trimmedDisplayName = typeof displayName === 'string' ? displayName.trim() : '';
+      const trimmedDisplayName =
+        typeof displayName === 'string' ? displayName.trim() : '';
       if (trimmedDisplayName.length > 30) {
         throw new BadRequestException('Name cannot exceed 30 characters');
       }
       updateData.displayName = trimmedDisplayName;
     }
-    
+
     if (username !== undefined) {
-      const trimmedUsername = typeof username === 'string' ? username.trim().toLowerCase() : '';
+      const trimmedUsername =
+        typeof username === 'string' ? username.trim().toLowerCase() : '';
       if (trimmedUsername.length > 30) {
         throw new BadRequestException('Username cannot exceed 30 characters');
       }
       // Coupling reminder: If this validation regex is updated, keep the sanitizer in auth.service.ts in sync.
       const usernameRegex = /^[a-z0-9_.]{3,30}$/;
       if (!usernameRegex.test(trimmedUsername)) {
-        throw new BadRequestException('Username must be 3-30 characters long and contain only lowercase letters, numbers, underscores, and dots.');
+        throw new BadRequestException(
+          'Username must be 3-30 characters long and contain only lowercase letters, numbers, underscores, and dots.',
+        );
       }
-      
+
       // Check if username is already taken by someone else
-      const existing = await this.prisma.user.findUnique({ where: { username: trimmedUsername } });
+      const existing = await this.prisma.user.findUnique({
+        where: { username: trimmedUsername },
+      });
       if (existing && existing.id !== userId) {
         throw new BadRequestException('Username is already taken.');
       }
-      
+
       updateData.username = trimmedUsername;
     }
-    
+
     if (bio !== undefined) {
       const trimmedBio = typeof bio === 'string' ? bio.trim() : '';
       if (trimmedBio.length > 200) {
-        throw new BadRequestException('Description cannot exceed 200 characters');
+        throw new BadRequestException(
+          'Description cannot exceed 200 characters',
+        );
       }
       updateData.bio = trimmedBio;
     }
@@ -793,7 +907,7 @@ export class UsersService {
       validateBirthday(birthday);
       updateData.birthday = birthday.trim();
     }
-    
+
     if (avatar !== undefined) {
       updateData.avatar = avatar;
       if (avatar && typeof avatar === 'string') {
@@ -809,12 +923,12 @@ export class UsersService {
               mimeType: 'image/jpeg',
               fileSize: 0,
               ownerId: userId,
-            }
+            },
           };
         }
       }
     }
-    
+
     if (cover !== undefined) {
       updateData.cover = cover;
       if (cover && typeof cover === 'string') {
@@ -830,17 +944,21 @@ export class UsersService {
               mimeType: 'image/jpeg',
               fileSize: 0,
               ownerId: userId,
-            }
+            },
           };
         }
       }
     }
-    
+
     // Academic information is validated against the official GLA catalogue on the
     // server, so a handcrafted request cannot pair a course with another course's
     // branch or a year beyond the course duration. Absent fields leave the stored
     // values untouched, which lets a settings save that only edits a bio omit them.
-    let academic: { course: string; branch: string; currentYear: number } | null = null;
+    let academic: {
+      course: string;
+      branch: string;
+      currentYear: number;
+    } | null = null;
     try {
       academic = this.academicsService.validateIfPresent({
         course: data.course,
@@ -866,21 +984,39 @@ export class UsersService {
     }
 
     if (location !== undefined) updateData.location = location;
-    if (profileCompleted !== undefined) updateData.profileCompleted = profileCompleted;
-    if (Array.isArray(interests)) updateData.interests = interests.filter(i => typeof i === 'string');
+    if (profileCompleted !== undefined)
+      updateData.profileCompleted = profileCompleted;
+    if (Array.isArray(interests))
+      updateData.interests = interests.filter((i) => typeof i === 'string');
 
-    const realEmail = userEmail && !userEmail.endsWith('@meetifyy.user') ? userEmail.trim().toLowerCase() : (data.email || `${userId}@meetifyy.user`);
+    const realEmail =
+      userEmail && !userEmail.endsWith('@meetifyy.user')
+        ? userEmail.trim().toLowerCase()
+        : data.email || `${userId}@meetifyy.user`;
 
     const existingUserRecord = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { email: true, username: true, displayName: true },
     });
 
-    const fallbackUsername = updateData.username || existingUserRecord?.username || realEmail.split('@')[0] || `user_${userId.slice(0, 8)}`;
-    const fallbackDisplayName = updateData.displayName || existingUserRecord?.displayName || fallbackUsername;
+    const fallbackUsername =
+      updateData.username ||
+      existingUserRecord?.username ||
+      realEmail.split('@')[0] ||
+      `user_${userId.slice(0, 8)}`;
+    const fallbackDisplayName =
+      updateData.displayName ||
+      existingUserRecord?.displayName ||
+      fallbackUsername;
 
     // Auto-heal email if existing record has fallback
-    if (existingUserRecord && (existingUserRecord.email.endsWith('@meetifyy.user') || !existingUserRecord.email) && realEmail && !realEmail.endsWith('@meetifyy.user')) {
+    if (
+      existingUserRecord &&
+      (existingUserRecord.email.endsWith('@meetifyy.user') ||
+        !existingUserRecord.email) &&
+      realEmail &&
+      !realEmail.endsWith('@meetifyy.user')
+    ) {
       updateData.email = realEmail;
     }
 
@@ -927,17 +1063,25 @@ export class UsersService {
     // and share pickers — so without this every other client kept showing the
     // old image until each of its queries happened to refetch. Fire-and-forget:
     // the profile is already saved, and a realtime failure must not undo that.
-    if (avatar !== undefined || cover !== undefined || displayName !== undefined) {
-      this.domainEventService.emit('user.updated', {
-        // Deliberately `id`, not `userId`: DomainEventService treats a `userId`
-        // field as "target only this user", which is the opposite of what this
-        // event needs.
-        id: updated.id,
-        username: updated.username,
-        avatar: updated.avatar ?? null,
-        cover: updated.cover ?? null,
-        displayName: updated.displayName ?? null,
-      }).catch((err) => this.logger.warn(`Failed to broadcast user.updated: ${err?.message}`));
+    if (
+      avatar !== undefined ||
+      cover !== undefined ||
+      displayName !== undefined
+    ) {
+      this.domainEventService
+        .emit('user.updated', {
+          // Deliberately `id`, not `userId`: DomainEventService treats a `userId`
+          // field as "target only this user", which is the opposite of what this
+          // event needs.
+          id: updated.id,
+          username: updated.username,
+          avatar: updated.avatar ?? null,
+          cover: updated.cover ?? null,
+          displayName: updated.displayName ?? null,
+        })
+        .catch((err) =>
+          this.logger.warn(`Failed to broadcast user.updated: ${err?.message}`),
+        );
     }
 
     return updated;
@@ -953,24 +1097,36 @@ export class UsersService {
 
   async updateSettings(userId: string, data: any) {
     const payload: any = {};
-    if (typeof data.emailNotifs === 'boolean') payload.emailNotifs = data.emailNotifs;
-    if (typeof data.pushNotifs === 'boolean') payload.pushNotifs = data.pushNotifs;
-    if (typeof data.privateProfile === 'boolean') payload.privateProfile = data.privateProfile;
-    if (typeof data.showOnlineStatus === 'boolean') payload.showOnlineStatus = data.showOnlineStatus;
-    if (typeof data.readReceipts === 'boolean') payload.readReceipts = data.readReceipts;
+    if (typeof data.emailNotifs === 'boolean')
+      payload.emailNotifs = data.emailNotifs;
+    if (typeof data.pushNotifs === 'boolean')
+      payload.pushNotifs = data.pushNotifs;
+    if (typeof data.privateProfile === 'boolean')
+      payload.privateProfile = data.privateProfile;
+    if (typeof data.showOnlineStatus === 'boolean')
+      payload.showOnlineStatus = data.showOnlineStatus;
+    if (typeof data.readReceipts === 'boolean')
+      payload.readReceipts = data.readReceipts;
 
     const validWho = ['everyone', 'following', 'mutual', 'nobody'];
-    if (typeof data.whoCanSeeOnline === 'string' && validWho.includes(data.whoCanSeeOnline)) {
+    if (
+      typeof data.whoCanSeeOnline === 'string' &&
+      validWho.includes(data.whoCanSeeOnline)
+    ) {
       payload.whoCanSeeOnline = data.whoCanSeeOnline;
     }
 
     const updated = await this.prisma.userSettings.upsert({
       where: { userId },
       create: { userId, ...payload },
-      update: { ...payload }
+      update: { ...payload },
     });
 
-    this.domainEventService.emit('user.settings_updated', { userId, settings: updated }, [userId]);
+    this.domainEventService.emit(
+      'user.settings_updated',
+      { userId, settings: updated },
+      [userId],
+    );
 
     // C-4 fix: Immediately evict the cached notification preferences so that any
     // changes to notification opt-in/out take effect on the next notification delivery
@@ -981,7 +1137,8 @@ export class UsersService {
   }
 
   async blockUser(blockerId: string, blockedId: string) {
-    if (blockerId === blockedId) throw new BadRequestException('Cannot block yourself');
+    if (blockerId === blockedId)
+      throw new BadRequestException('Cannot block yourself');
 
     // The block row and its immediate side effects go in one transaction: a
     // block that lands without severing the follow edges would leave the pair
@@ -1070,7 +1227,9 @@ export class UsersService {
       try {
         // The emit is awaited by nobody and may be a synchronous mock, so the
         // result is normalised before a rejection handler is attached.
-        Promise.resolve(this.domainEventService.emit(type, data, targets)).catch(() => {});
+        Promise.resolve(
+          this.domainEventService.emit(type, data, targets),
+        ).catch(() => {});
       } catch {
         // Realtime is best-effort here; the block itself has already committed.
       }
@@ -1078,13 +1237,27 @@ export class UsersService {
 
     // The blocker's own view: they placed it.
     push(
-      { blocked, actorId: blockerId, targetUserId: blockedId, otherUserId: blockedId, isBlockedByMe: blocked, isBlockedByThem: false },
+      {
+        blocked,
+        actorId: blockerId,
+        targetUserId: blockedId,
+        otherUserId: blockedId,
+        isBlockedByMe: blocked,
+        isBlockedByThem: false,
+      },
       [blockerId],
     );
 
     // The blocked user's view: it was placed on them.
     push(
-      { blocked, actorId: blockerId, targetUserId: blockerId, otherUserId: blockerId, isBlockedByMe: false, isBlockedByThem: blocked },
+      {
+        blocked,
+        actorId: blockerId,
+        targetUserId: blockerId,
+        otherUserId: blockerId,
+        isBlockedByMe: false,
+        isBlockedByThem: blocked,
+      },
       [blockedId],
     );
   }
@@ -1107,7 +1280,11 @@ export class UsersService {
     const skip = Math.max(offset, 0);
 
     // One extra row tells us whether another page exists without a COUNT.
-    const rows = await this.blocksService.listBlockedContacts(blockerId, take, skip);
+    const rows = await this.blocksService.listBlockedContacts(
+      blockerId,
+      take,
+      skip,
+    );
 
     const hasMore = rows.length > take;
     const page = hasMore ? rows.slice(0, take) : rows;
@@ -1158,7 +1335,8 @@ export class UsersService {
     const COMMON_LIMITS = [20, 30, 50];
     const keys: string[] = [];
     for (const uid of userIds) {
-      for (const lim of COMMON_LIMITS) keys.push(`user:conversations:${uid}:${lim}:0`);
+      for (const lim of COMMON_LIMITS)
+        keys.push(`user:conversations:${uid}:${lim}:0`);
     }
     if (keys.length > 0) await redis.del(...keys).catch(() => {});
   }
@@ -1233,19 +1411,39 @@ export class UsersService {
    * membership) is computed with indexed, batched queries instead of an
    * O(users) client-side loop.
    */
-  async getMentionSuggestions(userId: string, query: string, communityId?: string, limit: number = 15) {
+  async getMentionSuggestions(
+    userId: string,
+    query: string,
+    communityId?: string,
+    limit: number = 15,
+  ) {
     const cleanQuery = (query || '').trim().toLowerCase();
 
     // Stage 1 — everything that depends on nothing but `userId`. The block
     // lookup used to be awaited on its own before this batch even started,
     // adding a full round-trip to every request; only the candidate query
     // actually needs its result, so it runs here alongside the rest.
-    const [excludedUserIds, followingRows, followerRows, communityMemberRows, recentConvs] = await Promise.all([
+    const [
+      excludedUserIds,
+      followingRows,
+      followerRows,
+      communityMemberRows,
+      recentConvs,
+    ] = await Promise.all([
       this.blocksService.getExcludedUserIds(userId),
-      this.prisma.follow.findMany({ where: { followerId: userId }, select: { followingId: true } }),
-      this.prisma.follow.findMany({ where: { followingId: userId }, select: { followerId: true } }),
+      this.prisma.follow.findMany({
+        where: { followerId: userId },
+        select: { followingId: true },
+      }),
+      this.prisma.follow.findMany({
+        where: { followingId: userId },
+        select: { followerId: true },
+      }),
       communityId
-        ? this.prisma.communityMember.findMany({ where: { communityId }, select: { userId: true } })
+        ? this.prisma.communityMember.findMany({
+            where: { communityId },
+            select: { userId: true },
+          })
         : Promise.resolve([] as { userId: string }[]),
       this.prisma.conversationParticipant.findMany({
         where: { userId, deletedAt: null },
@@ -1279,12 +1477,23 @@ export class UsersService {
       this.prisma.user.findMany({
         where: whereClause,
         take: UsersService.MENTION_CANDIDATE_POOL,
-        select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatar: true,
+          isCampusRep: true,
+          collegeId: true,
+          college: { select: { id: true, name: true } },
+        },
         orderBy: { createdAt: 'desc' },
       }),
       recentConvIds.length > 0
         ? this.prisma.conversationParticipant.findMany({
-            where: { conversationId: { in: recentConvIds }, userId: { not: userId } },
+            where: {
+              conversationId: { in: recentConvIds },
+              userId: { not: userId },
+            },
             select: { userId: true },
           })
         : Promise.resolve([] as { userId: string }[]),
@@ -1295,29 +1504,45 @@ export class UsersService {
     const followingIds = followingRows.map((f) => f.followingId);
     const followingSet = new Set(followingIds);
     const followerSet = new Set(followerRows.map((f) => f.followerId));
-    const communityMemberSet = new Set(communityMemberRows.map((m) => m.userId));
+    const communityMemberSet = new Set(
+      communityMemberRows.map((m) => m.userId),
+    );
 
-    const recentChatUserIdSet = new Set(recentParticipants.map((p) => p.userId));
+    const recentChatUserIdSet = new Set(
+      recentParticipants.map((p) => p.userId),
+    );
 
     // Mutual-connection count per candidate: how many people I follow also
     // follow that candidate. One batched query for the whole candidate set
     // instead of an N+1 per-row lookup.
     const candidateIds = candidates.map((c) => c.id);
-    const mutualRows = followingIds.length > 0 && candidateIds.length > 0
-      ? await this.prisma.follow.findMany({
-          where: { followerId: { in: followingIds }, followingId: { in: candidateIds } },
-          select: { followingId: true },
-        })
-      : [];
+    const mutualRows =
+      followingIds.length > 0 && candidateIds.length > 0
+        ? await this.prisma.follow.findMany({
+            where: {
+              followerId: { in: followingIds },
+              followingId: { in: candidateIds },
+            },
+            select: { followingId: true },
+          })
+        : [];
     const mutualCountMap = new Map<string, number>();
-    mutualRows.forEach((m) => mutualCountMap.set(m.followingId, (mutualCountMap.get(m.followingId) || 0) + 1));
+    mutualRows.forEach((m) =>
+      mutualCountMap.set(
+        m.followingId,
+        (mutualCountMap.get(m.followingId) || 0) + 1,
+      ),
+    );
 
     const scored = candidates.map((u) => {
       const uname = u.username.toLowerCase();
       const dname = (u.displayName || '').toLowerCase();
       let score = 0;
 
-      if (cleanQuery && (uname.startsWith(cleanQuery) || dname.startsWith(cleanQuery))) {
+      if (
+        cleanQuery &&
+        (uname.startsWith(cleanQuery) || dname.startsWith(cleanQuery))
+      ) {
         score += 500;
       }
 
@@ -1370,7 +1595,7 @@ export class UsersService {
     const candidates = await this.prisma.user.findMany({
       where: {
         accountStatus: 'ACTIVE',
-        followers: { some: { followerId: userId } },  // I follow them
+        followers: { some: { followerId: userId } }, // I follow them
         following: { some: { followingId: userId } }, // they follow me
       },
       select: {
@@ -1386,11 +1611,15 @@ export class UsersService {
     });
     if (candidates.length === 0) return [];
 
-    const presenceMap = await this.presenceService.getPresenceMany(candidates.map((u) => u.id));
+    const presenceMap = await this.presenceService.getPresenceMany(
+      candidates.map((u) => u.id),
+    );
 
     // Only bother with a privacy check for users actually reporting online —
     // avoids doing visibility work for the (usually majority) offline mutuals.
-    const onlineCandidates = candidates.filter((u) => presenceMap.get(u.id)?.status === 'online');
+    const onlineCandidates = candidates.filter(
+      (u) => presenceMap.get(u.id)?.status === 'online',
+    );
     if (onlineCandidates.length === 0) return [];
 
     // One batched visibility resolution instead of a sequential
@@ -1408,10 +1637,22 @@ export class UsersService {
       this.blocksService,
     );
 
-    const results: Array<{ id: string; username: string; displayName: string; avatar: string | null; isOnline: true }> = [];
+    const results: Array<{
+      id: string;
+      username: string;
+      displayName: string;
+      avatar: string | null;
+      isOnline: true;
+    }> = [];
     for (const u of onlineCandidates) {
       if (!visibleIds.has(u.id)) continue;
-      results.push({ id: u.id, username: u.username, displayName: u.displayName, avatar: u.avatar, isOnline: true });
+      results.push({
+        id: u.id,
+        username: u.username,
+        displayName: u.displayName,
+        avatar: u.avatar,
+        isOnline: true,
+      });
       if (results.length >= limit) break;
     }
 

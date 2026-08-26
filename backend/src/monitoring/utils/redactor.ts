@@ -19,27 +19,45 @@ const REDACTED = '[redacted]';
 /** Values that look like a credential wherever they appear in a string. */
 const SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   // Bearer tokens and JWTs.
-  { pattern: /\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/gi, replacement: `Bearer ${REDACTED}` },
-  { pattern: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\b/g, replacement: REDACTED },
+  {
+    pattern: /\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/gi,
+    replacement: `Bearer ${REDACTED}`,
+  },
+  {
+    pattern: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\b/g,
+    replacement: REDACTED,
+  },
   // Provider key prefixes.
-  { pattern: /\b(sk|pk|rk|re)_(live|test)_[A-Za-z0-9]{8,}\b/g, replacement: REDACTED },
+  {
+    pattern: /\b(sk|pk|rk|re)_(live|test)_[A-Za-z0-9]{8,}\b/g,
+    replacement: REDACTED,
+  },
   // Connection strings carrying credentials.
-  { pattern: /\b([a-z][a-z0-9+.-]*:\/\/)[^:\s/@]+:[^@\s]+@/gi, replacement: `$1${REDACTED}@` },
+  {
+    pattern: /\b([a-z][a-z0-9+.-]*:\/\/)[^:\s/@]+:[^@\s]+@/gi,
+    replacement: `$1${REDACTED}@`,
+  },
   // key=value / key: value pairs whose key names a secret.
   {
-    pattern: /\b(password|passwd|pwd|secret|token|api[_-]?key|authorization|otp|cookie)\b\s*[:=]\s*("[^"]*"|'[^']*'|\S+)/gi,
+    pattern:
+      /\b(password|passwd|pwd|secret|token|api[_-]?key|authorization|otp|cookie)\b\s*[:=]\s*("[^"]*"|'[^']*'|\S+)/gi,
     replacement: `$1=${REDACTED}`,
   },
   // Bare email addresses. `userId` is the only identifier these tables carry,
   // so an address reaching an error message is a leak even though it is not a
   // credential.
-  { pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, replacement: REDACTED },
+  {
+    pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+    replacement: REDACTED,
+  },
 ];
 
 /** True when a key names something that must never be stored. */
 export function isRedactedField(key: string): boolean {
   const normalized = key.toLowerCase().replace(/[-_\s]/g, '');
-  return config.monitoring.redactFields.some((field) => normalized === field.replace(/[-_\s]/g, ''));
+  return config.monitoring.redactFields.some(
+    (field) => normalized === field.replace(/[-_\s]/g, ''),
+  );
 }
 
 /**
@@ -49,7 +67,10 @@ export function isRedactedField(key: string): boolean {
  * or a third-party library can quote the input that caused it, and that input
  * is exactly what must not be persisted.
  */
-export function redactText(input: string | null | undefined, maxLength = 2000): string {
+export function redactText(
+  input: string | null | undefined,
+  maxLength = 2000,
+): string {
   if (!input) return '';
   let text = String(input);
   for (const { pattern, replacement } of SECRET_PATTERNS) {
@@ -71,12 +92,17 @@ export function redactObject(value: unknown, depth = 0): unknown {
 
   if (typeof value === 'string') return redactText(value, 500);
   if (typeof value === 'number' || typeof value === 'boolean') return value;
-  if (Array.isArray(value)) return value.slice(0, 20).map((entry) => redactObject(entry, depth + 1));
+  if (Array.isArray(value))
+    return value.slice(0, 20).map((entry) => redactObject(entry, depth + 1));
 
   if (typeof value === 'object') {
     const out: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = isRedactedField(key) ? REDACTED : redactObject(entry, depth + 1);
+    for (const [key, entry] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      out[key] = isRedactedField(key)
+        ? REDACTED
+        : redactObject(entry, depth + 1);
     }
     return out;
   }
@@ -101,7 +127,12 @@ export function normalizeRoutePath(path: string): string {
       .split('/')
       .map((segment) => {
         if (!segment) return segment;
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) return ':id';
+        if (
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            segment,
+          )
+        )
+          return ':id';
         if (/^\d+$/.test(segment)) return ':id';
         // Long opaque strings are object keys, public ids and hashes.
         if (/^[0-9a-f]{24,}$/i.test(segment)) return ':id';

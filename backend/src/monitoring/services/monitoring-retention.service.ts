@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { config } from '../../config';
@@ -16,7 +21,9 @@ import { config } from '../../config';
  * new dependency.
  */
 @Injectable()
-export class MonitoringRetentionService implements OnModuleInit, OnModuleDestroy {
+export class MonitoringRetentionService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(MonitoringRetentionService.name);
   private timer: NodeJS.Timeout | null = null;
   private running = false;
@@ -28,7 +35,10 @@ export class MonitoringRetentionService implements OnModuleInit, OnModuleDestroy
 
     // Deliberately not run at boot: a deploy loop would then issue a delete
     // sweep per restart. The first pass happens one interval in.
-    this.timer = setInterval(() => void this.prune(), config.monitoring.retentionIntervalMs);
+    this.timer = setInterval(
+      () => void this.prune(),
+      config.monitoring.retentionIntervalMs,
+    );
     this.timer.unref?.();
 
     this.logger.log(
@@ -49,11 +59,17 @@ export class MonitoringRetentionService implements OnModuleInit, OnModuleDestroy
    * Exposed so the admin API and the seed script can trigger a sweep without
    * waiting for the timer.
    */
-  async prune(): Promise<{ requests: number; errors: number; metrics: number } | null> {
+  async prune(): Promise<{
+    requests: number;
+    errors: number;
+    metrics: number;
+  } | null> {
     if (this.running) return null;
     this.running = true;
 
-    const cutoff = new Date(Date.now() - config.monitoring.retentionDays * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(
+      Date.now() - config.monitoring.retentionDays * 24 * 60 * 60 * 1000,
+    );
     const where = { createdAt: { lt: cutoff } };
 
     try {
@@ -63,15 +79,23 @@ export class MonitoringRetentionService implements OnModuleInit, OnModuleDestroy
       const errors = await this.prisma.errorLog.deleteMany({ where });
       const metrics = await this.prisma.systemMetric.deleteMany({ where });
 
-      const result = { requests: requests.count, errors: errors.count, metrics: metrics.count };
+      const result = {
+        requests: requests.count,
+        errors: errors.count,
+        metrics: metrics.count,
+      };
 
       if (result.requests || result.errors || result.metrics) {
-        this.logger.log(`monitoring.retention_pruned ${JSON.stringify({ cutoff: cutoff.toISOString(), ...result })}`);
+        this.logger.log(
+          `monitoring.retention_pruned ${JSON.stringify({ cutoff: cutoff.toISOString(), ...result })}`,
+        );
       }
 
       return result;
     } catch (error) {
-      this.logger.error(`monitoring.retention_failed ${JSON.stringify({ error: (error as Error).message })}`);
+      this.logger.error(
+        `monitoring.retention_failed ${JSON.stringify({ error: (error as Error).message })}`,
+      );
       return null;
     } finally {
       this.running = false;

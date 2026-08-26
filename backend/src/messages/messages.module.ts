@@ -20,7 +20,6 @@ import { BlocksService } from '../users/blocks.service';
   ],
   controllers: [MessagesController],
   providers: [MessagesService, BlocksService],
-  exports: [MessagesService]
+  exports: [MessagesService],
 })
 export class MessagesModule {}
-

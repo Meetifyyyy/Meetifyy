@@ -38,26 +38,26 @@ export class AdminCollegesController {
   }
 
   @Post()
-  async createCollege(@Body() dto: {
-    name: string;
-    shortName?: string;
-    slug?: string;
-    domains: string[];
-    city?: string;
-    state?: string;
-    country?: string;
-    logoKey?: string;
-    bannerKey?: string;
-    isPrivate?: boolean;
-  }) {
+  async createCollege(
+    @Body()
+    dto: {
+      name: string;
+      shortName?: string;
+      slug?: string;
+      domains: string[];
+      city?: string;
+      state?: string;
+      country?: string;
+      logoKey?: string;
+      bannerKey?: string;
+      isPrivate?: boolean;
+    },
+  ) {
     return this.collegesService.createCollege(dto);
   }
 
   @Patch(':id')
-  async updateCollege(
-    @Param('id') id: string,
-    @Body() dto: any,
-  ) {
+  async updateCollege(@Param('id') id: string, @Body() dto: any) {
     return this.collegesService.updateCollege(id, dto);
   }
 

@@ -15,7 +15,10 @@ export const appConfig = registerAs('app', () => ({
   storageProvider: config.storage.provider,
 }));
 
-export const supabaseConfig = registerAs('supabase', () => config.auth.supabase);
+export const supabaseConfig = registerAs(
+  'supabase',
+  () => config.auth.supabase,
+);
 export const authConfig = registerAs('auth', () => config.auth);
 export const databaseConfig = registerAs('database', () => config.database);
 export const redisConfig = registerAs('redis', () => config.redis);

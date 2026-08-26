@@ -52,7 +52,16 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
         { provide: DomainEventService, useValue: mockDomainEventService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: RedisService, useValue: mockRedisService },
-        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn().mockResolvedValue([]), isBlocked: jest.fn().mockResolvedValue(false), filterBlockedUsers: jest.fn(async (_u, ids) => ids), injectBlockFilter: jest.fn(async (_u, w) => w), invalidateBlockCache: jest.fn() } },
+        {
+          provide: BlocksService,
+          useValue: {
+            getExcludedUserIds: jest.fn().mockResolvedValue([]),
+            isBlocked: jest.fn().mockResolvedValue(false),
+            filterBlockedUsers: jest.fn(async (_u, ids) => ids),
+            injectBlockFilter: jest.fn(async (_u, w) => w),
+            invalidateBlockCache: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -64,12 +73,15 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
   it('should cancel existing notification when follow.deleted event is emitted', async () => {
     const existingNotif = { id: 'notif-100', readAt: null };
     mockPrisma.notification.findFirst.mockResolvedValue(existingNotif);
-    mockPrisma.notification.update.mockResolvedValue({ ...existingNotif, deletedAt: new Date() });
+    mockPrisma.notification.update.mockResolvedValue({
+      ...existingNotif,
+      deletedAt: new Date(),
+    });
 
     eventEmitter.emit('follow.deleted', {
       type: 'follow.deleted',
       timestamp: new Date().toISOString(),
-      data: { followerId: 'user-A', followingId: 'user-B' }
+      data: { followerId: 'user-A', followingId: 'user-B' },
     });
 
     // Wait microtasks for async handler
@@ -82,28 +94,35 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
         entityId: 'user-A',
         type: 'FOLLOW',
         deletedAt: null,
-      }
+      },
     });
     expect(mockPrisma.notification.update).toHaveBeenCalledWith({
       where: { id: 'notif-100' },
-      data: { deletedAt: expect.any(Date) }
+      data: { deletedAt: expect.any(Date) },
     });
-    expect(mockDomainEventService.emit).toHaveBeenCalledWith('notification:cancelled', {
-      notificationId: 'notif-100',
-      recipientId: 'user-B',
-    }, ['user-B']);
+    expect(mockDomainEventService.emit).toHaveBeenCalledWith(
+      'notification:cancelled',
+      {
+        notificationId: 'notif-100',
+        recipientId: 'user-B',
+      },
+      ['user-B'],
+    );
   });
 
   it('should cancel existing post like notification when post.unliked event is emitted', async () => {
     mockPrisma.post.findUnique.mockResolvedValue({ authorId: 'author-1' });
     const existingNotif = { id: 'notif-200', readAt: null };
     mockPrisma.notification.findFirst.mockResolvedValue(existingNotif);
-    mockPrisma.notification.update.mockResolvedValue({ ...existingNotif, deletedAt: new Date() });
+    mockPrisma.notification.update.mockResolvedValue({
+      ...existingNotif,
+      deletedAt: new Date(),
+    });
 
     eventEmitter.emit('post.unliked', {
       type: 'post.unliked',
       timestamp: new Date().toISOString(),
-      data: { postId: 'post-99', userId: 'user-liker' }
+      data: { postId: 'post-99', userId: 'user-liker' },
     });
 
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -115,11 +134,11 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
         entityId: 'post-99',
         type: 'LIKE',
         deletedAt: null,
-      }
+      },
     });
     expect(mockPrisma.notification.update).toHaveBeenCalledWith({
       where: { id: 'notif-200' },
-      data: { deletedAt: expect.any(Date) }
+      data: { deletedAt: expect.any(Date) },
     });
   });
 });

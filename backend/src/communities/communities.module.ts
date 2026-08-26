@@ -9,7 +9,13 @@ import { BlocksService } from '../users/blocks.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [PrismaModule, SupabaseModule, PresenceModule, RedisModule, NotificationsModule],
+  imports: [
+    PrismaModule,
+    SupabaseModule,
+    PresenceModule,
+    RedisModule,
+    NotificationsModule,
+  ],
   controllers: [CommunitiesController],
   // BlocksService is provided directly rather than via UsersModule; its cache is
   // static, so every copy shares one map. (This once also avoided pulling in

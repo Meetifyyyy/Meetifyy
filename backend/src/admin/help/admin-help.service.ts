@@ -1,8 +1,16 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { HelpContentStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { htmlToPlainText, sanitizeArticleHtml } from '../../common/utils/sanitize-html.util';
+import {
+  htmlToPlainText,
+  sanitizeArticleHtml,
+} from '../../common/utils/sanitize-html.util';
 import {
   CreateHelpArticleDto,
   CreateHelpCategoryDto,
@@ -42,7 +50,9 @@ export class AdminHelpService {
       where: { status: HelpContentStatus.PUBLISHED },
       _count: { _all: true },
     });
-    const publishedByCategory = new Map(published.map((row) => [row.categoryId, row._count._all]));
+    const publishedByCategory = new Map(
+      published.map((row) => [row.categoryId, row._count._all]),
+    );
 
     return categories.map((category) => ({
       ...category,
@@ -52,7 +62,10 @@ export class AdminHelpService {
   }
 
   async createCategory(dto: CreateHelpCategoryDto) {
-    const slug = await this.ensureUniqueSlug('helpCategory', dto.slug || slugify(dto.title));
+    const slug = await this.ensureUniqueSlug(
+      'helpCategory',
+      dto.slug || slugify(dto.title),
+    );
     const status = dto.status ?? HelpContentStatus.DRAFT;
 
     return this.prisma.helpCategory.create({
@@ -69,14 +82,19 @@ export class AdminHelpService {
   }
 
   async updateCategory(id: string, dto: UpdateHelpCategoryDto) {
-    const existing = await this.prisma.helpCategory.findUnique({ where: { id } });
+    const existing = await this.prisma.helpCategory.findUnique({
+      where: { id },
+    });
     if (!existing) throw new NotFoundException('Help category not found');
 
     // The slug is only regenerated when the admin explicitly changes it.
     // Silently re-slugging on a title edit would break every link already
     // published to a category, which is exactly the kind of breakage a CMS
     // must not cause as a side effect of fixing a typo.
-    const slug = dto.slug && dto.slug !== existing.slug ? await this.ensureUniqueSlug('helpCategory', dto.slug, id) : undefined;
+    const slug =
+      dto.slug && dto.slug !== existing.slug
+        ? await this.ensureUniqueSlug('helpCategory', dto.slug, id)
+        : undefined;
 
     const status = dto.status;
 
@@ -85,10 +103,14 @@ export class AdminHelpService {
       data: {
         ...(slug ? { slug } : {}),
         ...(dto.title !== undefined ? { title: dto.title } : {}),
-        ...(dto.description !== undefined ? { description: dto.description || null } : {}),
+        ...(dto.description !== undefined
+          ? { description: dto.description || null }
+          : {}),
         ...(dto.icon !== undefined ? { icon: dto.icon || null } : {}),
         ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
-        ...(status ? { status, ...statusTimestamps(status, existing.publishedAt) } : {}),
+        ...(status
+          ? { status, ...statusTimestamps(status, existing.publishedAt) }
+          : {}),
       },
     });
   }
@@ -99,20 +121,32 @@ export class AdminHelpService {
       select: {
         id: true,
         publishedAt: true,
-        _count: { select: { articles: { where: { status: HelpContentStatus.PUBLISHED } } } },
+        _count: {
+          select: {
+            articles: { where: { status: HelpContentStatus.PUBLISHED } },
+          },
+        },
       },
     });
     if (!category) throw new NotFoundException('Help category not found');
 
     // Publishing an empty category would put a heading with nothing under it
     // on the public page.
-    if (dto.status === HelpContentStatus.PUBLISHED && category._count.articles === 0) {
-      throw new BadRequestException('Publish at least one article in this category before publishing the category.');
+    if (
+      dto.status === HelpContentStatus.PUBLISHED &&
+      category._count.articles === 0
+    ) {
+      throw new BadRequestException(
+        'Publish at least one article in this category before publishing the category.',
+      );
     }
 
     return this.prisma.helpCategory.update({
       where: { id },
-      data: { status: dto.status, ...statusTimestamps(dto.status, category.publishedAt) },
+      data: {
+        status: dto.status,
+        ...statusTimestamps(dto.status, category.publishedAt),
+      },
     });
   }
 
@@ -169,12 +203,15 @@ export class AdminHelpService {
 
   async listArticles(query: ListHelpContentDto) {
     const where: Prisma.HelpArticleWhereInput = {};
-    if (query.status) where.status = query.status as HelpContentStatus;
+    if (query.status) where.status = query.status;
     if (query.categoryId) where.categoryId = query.categoryId;
     if (query.featuredOnly) where.isFeatured = true;
 
     if (query.search?.trim()) {
-      const contains = { contains: query.search.trim(), mode: Prisma.QueryMode.insensitive } as const;
+      const contains = {
+        contains: query.search.trim(),
+        mode: Prisma.QueryMode.insensitive,
+      } as const;
       where.OR = [
         { question: contains },
         { summary: contains },
@@ -185,15 +222,27 @@ export class AdminHelpService {
 
     return this.prisma.helpArticle.findMany({
       where,
-      orderBy: [{ categoryId: 'asc' }, { sortOrder: 'asc' }, { question: 'asc' }],
-      include: { category: { select: { id: true, title: true, slug: true, status: true } } },
+      orderBy: [
+        { categoryId: 'asc' },
+        { sortOrder: 'asc' },
+        { question: 'asc' },
+      ],
+      include: {
+        category: {
+          select: { id: true, title: true, slug: true, status: true },
+        },
+      },
     });
   }
 
   async getArticle(id: string) {
     const article = await this.prisma.helpArticle.findUnique({
       where: { id },
-      include: { category: { select: { id: true, title: true, slug: true, status: true } } },
+      include: {
+        category: {
+          select: { id: true, title: true, slug: true, status: true },
+        },
+      },
     });
     if (!article) throw new NotFoundException('Help article not found');
     return article;
@@ -202,12 +251,17 @@ export class AdminHelpService {
   async createArticle(dto: CreateHelpArticleDto) {
     await this.requireCategory(dto.categoryId);
 
-    const slug = await this.ensureUniqueSlug('helpArticle', dto.slug || slugify(dto.question));
+    const slug = await this.ensureUniqueSlug(
+      'helpArticle',
+      dto.slug || slugify(dto.question),
+    );
     const status = dto.status ?? HelpContentStatus.DRAFT;
     const body = sanitizeArticleHtml(dto.body);
 
     if (htmlToPlainText(body).length === 0) {
-      throw new BadRequestException('The answer is empty once formatting is removed.');
+      throw new BadRequestException(
+        'The answer is empty once formatting is removed.',
+      );
     }
 
     return this.prisma.helpArticle.create({
@@ -218,30 +272,42 @@ export class AdminHelpService {
         summary: dto.summary ?? null,
         body,
         keywords: dto.keywords ?? [],
-        sortOrder: dto.sortOrder ?? (await this.nextArticleSortOrder(dto.categoryId)),
+        sortOrder:
+          dto.sortOrder ?? (await this.nextArticleSortOrder(dto.categoryId)),
         isFeatured: dto.isFeatured ?? false,
         status,
         ...statusTimestamps(status),
       },
-      include: { category: { select: { id: true, title: true, slug: true, status: true } } },
+      include: {
+        category: {
+          select: { id: true, title: true, slug: true, status: true },
+        },
+      },
     });
   }
 
   async updateArticle(id: string, dto: UpdateHelpArticleDto) {
-    const existing = await this.prisma.helpArticle.findUnique({ where: { id } });
+    const existing = await this.prisma.helpArticle.findUnique({
+      where: { id },
+    });
     if (!existing) throw new NotFoundException('Help article not found');
 
     if (dto.categoryId && dto.categoryId !== existing.categoryId) {
       await this.requireCategory(dto.categoryId);
     }
 
-    const slug = dto.slug && dto.slug !== existing.slug ? await this.ensureUniqueSlug('helpArticle', dto.slug, id) : undefined;
+    const slug =
+      dto.slug && dto.slug !== existing.slug
+        ? await this.ensureUniqueSlug('helpArticle', dto.slug, id)
+        : undefined;
 
     let body: string | undefined;
     if (dto.body !== undefined) {
       body = sanitizeArticleHtml(dto.body);
       if (htmlToPlainText(body).length === 0) {
-        throw new BadRequestException('The answer is empty once formatting is removed.');
+        throw new BadRequestException(
+          'The answer is empty once formatting is removed.',
+        );
       }
     }
 
@@ -256,30 +322,51 @@ export class AdminHelpService {
         ...(dto.keywords !== undefined ? { keywords: dto.keywords } : {}),
         ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
         ...(dto.isFeatured !== undefined ? { isFeatured: dto.isFeatured } : {}),
-        ...(dto.status ? { status: dto.status, ...statusTimestamps(dto.status, existing.publishedAt) } : {}),
+        ...(dto.status
+          ? {
+              status: dto.status,
+              ...statusTimestamps(dto.status, existing.publishedAt),
+            }
+          : {}),
       },
-      include: { category: { select: { id: true, title: true, slug: true, status: true } } },
+      include: {
+        category: {
+          select: { id: true, title: true, slug: true, status: true },
+        },
+      },
     });
   }
 
   async setArticleStatus(id: string, dto: SetHelpStatusDto) {
     const article = await this.prisma.helpArticle.findUnique({
       where: { id },
-      select: { id: true, publishedAt: true, category: { select: { id: true, status: true, title: true } } },
+      select: {
+        id: true,
+        publishedAt: true,
+        category: { select: { id: true, status: true, title: true } },
+      },
     });
     if (!article) throw new NotFoundException('Help article not found');
 
     const result = await this.prisma.helpArticle.update({
       where: { id },
-      data: { status: dto.status, ...statusTimestamps(dto.status, article.publishedAt) },
-      include: { category: { select: { id: true, title: true, slug: true, status: true } } },
+      data: {
+        status: dto.status,
+        ...statusTimestamps(dto.status, article.publishedAt),
+      },
+      include: {
+        category: {
+          select: { id: true, title: true, slug: true, status: true },
+        },
+      },
     });
 
     // Publishing into an unpublished category is not an error - an admin often
     // prepares articles first - but it does mean the article is not actually
     // visible yet, which they need to be told.
     const hidden =
-      dto.status === HelpContentStatus.PUBLISHED && article.category.status !== HelpContentStatus.PUBLISHED;
+      dto.status === HelpContentStatus.PUBLISHED &&
+      article.category.status !== HelpContentStatus.PUBLISHED;
 
     return {
       ...result,
@@ -290,7 +377,10 @@ export class AdminHelpService {
   }
 
   async deleteArticle(id: string) {
-    const article = await this.prisma.helpArticle.findUnique({ where: { id }, select: { id: true } });
+    const article = await this.prisma.helpArticle.findUnique({
+      where: { id },
+      select: { id: true },
+    });
     if (!article) throw new NotFoundException('Help article not found');
     await this.prisma.helpArticle.delete({ where: { id } });
     return { id, deleted: true };
@@ -309,13 +399,20 @@ export class AdminHelpService {
    */
   previewArticle(body: string) {
     const sanitized = sanitizeArticleHtml(body);
-    return { html: sanitized, plainText: htmlToPlainText(sanitized), wasModified: sanitized !== body };
+    return {
+      html: sanitized,
+      plainText: htmlToPlainText(sanitized),
+      wasModified: sanitized !== body,
+    };
   }
 
   // ── Shared helpers ───────────────────────────────────────────────────────
 
   private async requireCategory(id: string) {
-    const category = await this.prisma.helpCategory.findUnique({ where: { id }, select: { id: true } });
+    const category = await this.prisma.helpCategory.findUnique({
+      where: { id },
+      select: { id: true },
+    });
     if (!category) throw new NotFoundException('Help category not found');
     return category;
   }
@@ -327,24 +424,39 @@ export class AdminHelpService {
    * admin a raw constraint violation for the ordinary case of two articles
    * with similar titles.
    */
-  private async ensureUniqueSlug(model: 'helpCategory' | 'helpArticle', base: string, excludeId?: string): Promise<string> {
+  private async ensureUniqueSlug(
+    model: 'helpCategory' | 'helpArticle',
+    base: string,
+    excludeId?: string,
+  ): Promise<string> {
     const root = (slugify(base) || 'item').slice(0, 100);
 
     for (let suffix = 0; suffix < 50; suffix++) {
       const candidate = suffix === 0 ? root : `${root}-${suffix + 1}`;
       const clash =
         model === 'helpCategory'
-          ? await this.prisma.helpCategory.findUnique({ where: { slug: candidate }, select: { id: true } })
-          : await this.prisma.helpArticle.findUnique({ where: { slug: candidate }, select: { id: true } });
+          ? await this.prisma.helpCategory.findUnique({
+              where: { slug: candidate },
+              select: { id: true },
+            })
+          : await this.prisma.helpArticle.findUnique({
+              where: { slug: candidate },
+              select: { id: true },
+            });
 
       if (!clash || clash.id === excludeId) return candidate;
     }
 
-    throw new ConflictException('Could not derive a unique URL for this item. Set one explicitly.');
+    throw new ConflictException(
+      'Could not derive a unique URL for this item. Set one explicitly.',
+    );
   }
 
   private async nextCategorySortOrder(): Promise<number> {
-    const last = await this.prisma.helpCategory.findFirst({ orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } });
+    const last = await this.prisma.helpCategory.findFirst({
+      orderBy: { sortOrder: 'desc' },
+      select: { sortOrder: true },
+    });
     return (last?.sortOrder ?? -1) + 1;
   }
 
@@ -364,19 +476,30 @@ export class AdminHelpService {
    * that matches neither what the admin dragged nor what it was before, and
    * the UI has no way to tell that happened.
    */
-  private async applyOrder(model: 'helpCategory' | 'helpArticle', dto: ReorderDto) {
+  private async applyOrder(
+    model: 'helpCategory' | 'helpArticle',
+    dto: ReorderDto,
+  ) {
     if (dto.items.length === 0) return;
 
     const ids = dto.items.map((item) => item.id);
     if (new Set(ids).size !== ids.length) {
-      throw new BadRequestException('The same item appears more than once in the new order.');
+      throw new BadRequestException(
+        'The same item appears more than once in the new order.',
+      );
     }
 
     await this.prisma.$transaction(
       dto.items.map((item) =>
         model === 'helpCategory'
-          ? this.prisma.helpCategory.update({ where: { id: item.id }, data: { sortOrder: item.sortOrder } })
-          : this.prisma.helpArticle.update({ where: { id: item.id }, data: { sortOrder: item.sortOrder } }),
+          ? this.prisma.helpCategory.update({
+              where: { id: item.id },
+              data: { sortOrder: item.sortOrder },
+            })
+          : this.prisma.helpArticle.update({
+              where: { id: item.id },
+              data: { sortOrder: item.sortOrder },
+            }),
       ),
     );
   }
@@ -391,10 +514,16 @@ export class AdminHelpService {
  * time someone fixed a typo in it. `archivedAt` is cleared on any move back
  * out of ARCHIVED.
  */
-function statusTimestamps(status: HelpContentStatus, existingPublishedAt?: Date | null) {
+function statusTimestamps(
+  status: HelpContentStatus,
+  existingPublishedAt?: Date | null,
+) {
   switch (status) {
     case HelpContentStatus.PUBLISHED:
-      return { publishedAt: existingPublishedAt ?? new Date(), archivedAt: null };
+      return {
+        publishedAt: existingPublishedAt ?? new Date(),
+        archivedAt: null,
+      };
     case HelpContentStatus.ARCHIVED:
       return { archivedAt: new Date() };
     case HelpContentStatus.DRAFT:
@@ -404,13 +533,15 @@ function statusTimestamps(status: HelpContentStatus, existingPublishedAt?: Date 
 
 /** Title → URL segment. */
 function slugify(value: string): string {
-  return String(value ?? '')
-    // Decompose, then drop the combining marks, so "Sécurité" becomes
-    // "securite" rather than losing the accented letters entirely.
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 100);
+  return (
+    String(value ?? '')
+      // Decompose, then drop the combining marks, so "Sécurité" becomes
+      // "securite" rather than losing the accented letters entirely.
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 100)
+  );
 }

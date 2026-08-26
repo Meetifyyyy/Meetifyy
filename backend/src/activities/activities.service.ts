@@ -1,4 +1,14 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef, OnModuleInit, Optional } from '@nestjs/common'; 
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+  Inject,
+  forwardRef,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
@@ -7,7 +17,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
 import { DomainEventService } from '../events/domain-event.service';
-import { ActivityAuthorizationService, UserAuthContext } from './activity-authorization.service';
+import {
+  ActivityAuthorizationService,
+  UserAuthContext,
+} from './activity-authorization.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { RedisService } from '../redis/redis.service';
 import { ActivityVisibility } from '@prisma/client';
@@ -25,11 +38,12 @@ export class ActivitiesService implements OnModuleInit {
     private readonly domainEventService: DomainEventService,
     private readonly activityAuthorizationService: ActivityAuthorizationService,
     @Optional() private readonly redisService?: RedisService,
-    @Optional() @InjectQueue(NOTIFICATIONS_QUEUE) private readonly notifQueue?: Queue,
+    @Optional()
+    @InjectQueue(NOTIFICATIONS_QUEUE)
+    private readonly notifQueue?: Queue,
   ) {
     this.redis = this.redisService?.getClient() ?? null;
   }
-
 
   /** Tag-Set name that tracks all live activity feed cache keys. */
   private static readonly FEED_TAG = 'activities:tag:feed';
@@ -101,7 +115,7 @@ export class ActivitiesService implements OnModuleInit {
       if (stale.length === 0) return;
 
       await this.prisma.activityInvitation.updateMany({
-        where: { id: { in: stale.map(i => i.id) } },
+        where: { id: { in: stale.map((i) => i.id) } },
         data: { status: 'EXPIRED' },
       });
 
@@ -185,18 +199,18 @@ export class ActivitiesService implements OnModuleInit {
             { endDate: { lte: now } },
             {
               endDate: null,
-              startDate: { lte: new Date(now.getTime() - 3 * 60 * 60 * 1000) }
-            }
-          ]
+              startDate: { lte: new Date(now.getTime() - 3 * 60 * 60 * 1000) },
+            },
+          ],
         },
-        select: { id: true }
+        select: { id: true },
       });
 
       if (expiredList && expiredList.length > 0) {
-        const expiredIds = expiredList.map(a => a.id);
+        const expiredIds = expiredList.map((a) => a.id);
         await this.prisma.crewActivity.updateMany({
           where: { id: { in: expiredIds } },
-          data: { status: 'ENDED' }
+          data: { status: 'ENDED' },
         });
 
         // Read the outstanding invitees first: after the updateMany below there
@@ -210,7 +224,7 @@ export class ActivitiesService implements OnModuleInit {
 
         await this.prisma.activityInvitation.updateMany({
           where: { activityId: { in: expiredIds }, status: 'PENDING' },
-          data: { status: 'EXPIRED' }
+          data: { status: 'EXPIRED' },
         });
 
         const inviteesByActivity = new Map<string, string[]>();
@@ -224,7 +238,10 @@ export class ActivitiesService implements OnModuleInit {
         }
 
         for (const actId of expiredIds) {
-          this.domainEventService.emit('activity.updated', { id: actId, status: 'ENDED' });
+          this.domainEventService.emit('activity.updated', {
+            id: actId,
+            status: 'ENDED',
+          });
         }
       }
     } catch (err) {
@@ -244,7 +261,10 @@ export class ActivitiesService implements OnModuleInit {
 
     // 2. ISO date string
     const parsed = new Date(cursor);
-    if (!isNaN(parsed.getTime()) && (cursor.includes('T') || cursor.includes('-') || !isNaN(Number(cursor)))) {
+    if (
+      !isNaN(parsed.getTime()) &&
+      (cursor.includes('T') || cursor.includes('-') || !isNaN(Number(cursor)))
+    ) {
       return parsed;
     }
 
@@ -265,7 +285,9 @@ export class ActivitiesService implements OnModuleInit {
 
     if (record?.createdAt) {
       if (this.redis) {
-        this.redis.setex(cacheKey, 3600, record.createdAt.toISOString()).catch(() => {});
+        this.redis
+          .setex(cacheKey, 3600, record.createdAt.toISOString())
+          .catch(() => {});
       }
       return record.createdAt;
     }
@@ -338,7 +360,9 @@ export class ActivitiesService implements OnModuleInit {
         const userCached = await this.redis.get(userCacheKey);
         tCache = performance.now() - redisStart;
         if (userCached) {
-          this.logger.log(`[STAGE_TIMINGS] GET /api/activities (USER_HIT) - Total: ${(performance.now() - startTime).toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms`);
+          this.logger.log(
+            `[STAGE_TIMINGS] GET /api/activities (USER_HIT) - Total: ${(performance.now() - startTime).toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms`,
+          );
           return JSON.parse(userCached);
         }
       } catch {
@@ -348,13 +372,16 @@ export class ActivitiesService implements OnModuleInit {
 
     // ── PreFetch: viewer + blocks + cursor + invitation count in parallel ─────
     const preFetchStart = performance.now();
-    const [viewer, excludedUserIds, cursorDate, liveInvitationCount] = await Promise.all([
-      // Trusted viewer identity/college — resolved server-side, never from the client.
-      this.getViewer(userId),
-      userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([]),
-      this.resolveCursorDate(cursor),
-      userId ? this.countLiveInvitations(userId) : Promise.resolve(0),
-    ]);
+    const [viewer, excludedUserIds, cursorDate, liveInvitationCount] =
+      await Promise.all([
+        // Trusted viewer identity/college — resolved server-side, never from the client.
+        this.getViewer(userId),
+        userId
+          ? this.blocksService.getExcludedUserIds(userId)
+          : Promise.resolve([]),
+        this.resolveCursorDate(cursor),
+        userId ? this.countLiveInvitations(userId) : Promise.resolve(0),
+      ]);
     const tPreFetch = performance.now() - preFetchStart;
 
     // The college scope needs the caller's own college; a user with no college
@@ -372,12 +399,14 @@ export class ActivitiesService implements OnModuleInit {
 
     // A shared page is only sound for viewers with the same audience tag, no
     // blocks and no invitation-derived extra visibility.
-    const allowBaseCache = excludedUserIds.length === 0 && liveInvitationCount === 0;
+    const allowBaseCache =
+      excludedUserIds.length === 0 && liveInvitationCount === 0;
     const baseCacheKeyFor = (d?: Date) =>
       `activities:feed:base:${scopeTag}:${audienceTag}:${limit}:${d ? d.toISOString() : 'none'}`;
 
     // ── Tier 2: audience-scoped shared feed cache ────────────────────────────
-    let baseFeed: { activities: any[]; nextCursor: string | undefined } | null = null;
+    let baseFeed: { activities: any[]; nextCursor: string | undefined } | null =
+      null;
     if (allowBaseCache && this.redis) {
       try {
         const cachedBase = await this.redis.get(baseCacheKeyFor(cursorDate));
@@ -395,7 +424,9 @@ export class ActivitiesService implements OnModuleInit {
       nextCursor = baseFeed.nextCursor;
     } else {
       // Auto-expire is a background concern — fire it async, never block the request
-      setImmediate(() => { this.autoExpireActivities().catch(() => {}); });
+      setImmediate(() => {
+        this.autoExpireActivities().catch(() => {});
+      });
 
       const now = new Date();
       const scopeFilter: any = {
@@ -408,10 +439,15 @@ export class ActivitiesService implements OnModuleInit {
         // DATABASE query so the rule cannot be bypassed by a client that asks
         // for the scope directly.
         ...(isCollegeScope
-          ? { collegeId: scopeCollegeId, visibility: ActivityVisibility.COLLEGE_ONLY }
+          ? {
+              collegeId: scopeCollegeId,
+              visibility: ActivityVisibility.COLLEGE_ONLY,
+            }
           : {}),
         ...(scope === 'one_on_one' ? { maxMembers: 2 } : {}),
-        ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
+        ...(excludedUserIds.length > 0
+          ? { creatorId: { notIn: excludedUserIds } }
+          : {}),
         ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
       };
 
@@ -468,7 +504,12 @@ export class ActivitiesService implements OnModuleInit {
               userId: true,
               status: true,
               user: {
-                select: { id: true, username: true, displayName: true, avatar: true },
+                select: {
+                  id: true,
+                  username: true,
+                  displayName: true,
+                  avatar: true,
+                },
               },
             },
           },
@@ -485,7 +526,13 @@ export class ActivitiesService implements OnModuleInit {
       // Cache base feed in background
       if (allowBaseCache && this.redis) {
         const resolvedBaseKey = baseCacheKeyFor(cursorDate);
-        this.redis.setex(resolvedBaseKey, 60, JSON.stringify({ activities, nextCursor })).catch(() => {});
+        this.redis
+          .setex(
+            resolvedBaseKey,
+            60,
+            JSON.stringify({ activities, nextCursor }),
+          )
+          .catch(() => {});
         this.registerFeedCacheKey(resolvedBaseKey);
       }
     }
@@ -494,45 +541,58 @@ export class ActivitiesService implements OnModuleInit {
     if (activities.length === 0) {
       const emptyRes = { activities: [], nextCursor: undefined };
       if (this.redis) {
-        this.redis.setex(userCacheKey, 60, JSON.stringify(emptyRes)).catch(() => {});
+        this.redis
+          .setex(userCacheKey, 60, JSON.stringify(emptyRes))
+          .catch(() => {});
         this.registerFeedCacheKey(userCacheKey);
       }
       const totalMs = performance.now() - startTime;
-      this.logger.log(`[STAGE_TIMINGS] GET /api/activities (EMPTY) - Total: ${totalMs.toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms | PreFetch: ${tPreFetch.toFixed(2)}ms | MainDB: ${tMainDb.toFixed(2)}ms`);
+      this.logger.log(
+        `[STAGE_TIMINGS] GET /api/activities (EMPTY) - Total: ${totalMs.toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms | PreFetch: ${tPreFetch.toFixed(2)}ms | MainDB: ${tMainDb.toFixed(2)}ms`,
+      );
       return emptyRes;
     }
 
     // ── Scoped membership query — PARALLEL with nothing (already separated) ───
     const memberStart = performance.now();
-    const activityIds = activities.map(a => a.id);
-    const joinedMemberships = userId && activityIds.length > 0
-      ? await this.prisma.crewActivityMember.findMany({
-          where: { userId, activityId: { in: activityIds } },
-          select: { activityId: true, status: true },
-        })
-      : [];
+    const activityIds = activities.map((a) => a.id);
+    const joinedMemberships =
+      userId && activityIds.length > 0
+        ? await this.prisma.crewActivityMember.findMany({
+            where: { userId, activityId: { in: activityIds } },
+            select: { activityId: true, status: true },
+          })
+        : [];
     const tMemberDb = performance.now() - memberStart;
 
     const logicStart = performance.now();
-    const membershipMap = new Map(joinedMemberships.map(m => [m.activityId, m.status]));
+    const membershipMap = new Map(
+      joinedMemberships.map((m) => [m.activityId, m.status]),
+    );
 
     const response = {
-      activities: activities.map(a => {
+      activities: activities.map((a) => {
         const myStatus = membershipMap.get(a.id);
-        return { ...a, isJoined: myStatus === 'MEMBER', myStatus: myStatus || null };
+        return {
+          ...a,
+          isJoined: myStatus === 'MEMBER',
+          myStatus: myStatus || null,
+        };
       }),
       nextCursor,
     };
 
     // Cache user-specific response (includes isJoined flags)
     if (this.redis) {
-      this.redis.setex(userCacheKey, 60, JSON.stringify(response)).catch(() => {});
+      this.redis
+        .setex(userCacheKey, 60, JSON.stringify(response))
+        .catch(() => {});
       this.registerFeedCacheKey(userCacheKey);
     }
     const tLogic = performance.now() - logicStart;
     const totalMs = performance.now() - startTime;
     this.logger.log(
-      `[STAGE_TIMINGS] GET /api/activities - Total: ${totalMs.toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms | PreFetch: ${tPreFetch.toFixed(2)}ms | BaseCache: ${baseFeed ? 'HIT' : 'MISS'} | MainDB: ${tMainDb.toFixed(2)}ms | MemberDB: ${tMemberDb.toFixed(2)}ms | Logic: ${tLogic.toFixed(2)}ms`
+      `[STAGE_TIMINGS] GET /api/activities - Total: ${totalMs.toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms | PreFetch: ${tPreFetch.toFixed(2)}ms | BaseCache: ${baseFeed ? 'HIT' : 'MISS'} | MainDB: ${tMainDb.toFixed(2)}ms | MemberDB: ${tMemberDb.toFixed(2)}ms | Logic: ${tLogic.toFixed(2)}ms`,
     );
     return response;
   }
@@ -571,7 +631,9 @@ export class ActivitiesService implements OnModuleInit {
       select: {
         userId: true,
         status: true,
-        user: { select: { id: true, username: true, displayName: true, avatar: true } },
+        user: {
+          select: { id: true, username: true, displayName: true, avatar: true },
+        },
       },
     },
   } as const;
@@ -631,33 +693,45 @@ export class ActivitiesService implements OnModuleInit {
     }
 
     const now = new Date();
-    const [viewer, excludedUserIds, followingRows, followerRows, recentConvs, historyRows] =
-      await Promise.all([
-        this.getViewer(userId),
-        this.blocksService.getExcludedUserIds(userId),
-        this.prisma.follow.findMany({ where: { followerId: userId }, select: { followingId: true } }),
-        this.prisma.follow.findMany({ where: { followingId: userId }, select: { followerId: true } }),
-        this.prisma.conversationParticipant.findMany({
-          where: { userId, deletedAt: null },
-          select: { conversationId: true },
-          orderBy: { conversation: { updatedAt: 'desc' } },
-          take: ActivitiesService.FOR_YOU_RECENT_CONVERSATIONS,
-        }),
-        this.prisma.crewActivityMember.findMany({
-          where: { userId, status: 'MEMBER' },
-          select: { activityId: true },
-          orderBy: { joinedAt: 'desc' },
-          take: ActivitiesService.FOR_YOU_HISTORY_LIMIT,
-        }),
-      ]);
+    const [
+      viewer,
+      excludedUserIds,
+      followingRows,
+      followerRows,
+      recentConvs,
+      historyRows,
+    ] = await Promise.all([
+      this.getViewer(userId),
+      this.blocksService.getExcludedUserIds(userId),
+      this.prisma.follow.findMany({
+        where: { followerId: userId },
+        select: { followingId: true },
+      }),
+      this.prisma.follow.findMany({
+        where: { followingId: userId },
+        select: { followerId: true },
+      }),
+      this.prisma.conversationParticipant.findMany({
+        where: { userId, deletedAt: null },
+        select: { conversationId: true },
+        orderBy: { conversation: { updatedAt: 'desc' } },
+        take: ActivitiesService.FOR_YOU_RECENT_CONVERSATIONS,
+      }),
+      this.prisma.crewActivityMember.findMany({
+        where: { userId, status: 'MEMBER' },
+        select: { activityId: true },
+        orderBy: { joinedAt: 'desc' },
+        take: ActivitiesService.FOR_YOU_HISTORY_LIMIT,
+      }),
+    ]);
 
     const interests = viewer
-      ? (
+      ? ((
           await this.prisma.user.findUnique({
             where: { id: userId },
             select: { interests: true },
           })
-        )?.interests ?? []
+        )?.interests ?? [])
       : [];
 
     const candidates = await this.prisma.crewActivity.findMany({
@@ -667,7 +741,9 @@ export class ActivitiesService implements OnModuleInit {
             deletedAt: null,
             status: 'OPEN',
             startDate: { gt: now },
-            ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
+            ...(excludedUserIds.length > 0
+              ? { creatorId: { notIn: excludedUserIds } }
+              : {}),
           },
           this.activityAuthorizationService.discoveryWhere(viewer),
         ],
@@ -689,18 +765,20 @@ export class ActivitiesService implements OnModuleInit {
 
     if (candidates.length === 0) {
       if (this.redis) {
-        this.redis.setex(cacheKey, ActivitiesService.FOR_YOU_RANK_TTL, '[]').catch(() => {});
+        this.redis
+          .setex(cacheKey, ActivitiesService.FOR_YOU_RANK_TTL, '[]')
+          .catch(() => {});
         this.registerFeedCacheKey(cacheKey);
       }
       return [];
     }
 
-    const candidateIds = candidates.map(c => c.id);
-    const followingIds = followingRows.map(f => f.followingId);
+    const candidateIds = candidates.map((c) => c.id);
+    const followingIds = followingRows.map((f) => f.followingId);
     const followingSet = new Set(followingIds);
-    const followerSet = new Set(followerRows.map(f => f.followerId));
-    const convIds = recentConvs.map(c => c.conversationId);
-    const historyIds = historyRows.map(h => h.activityId);
+    const followerSet = new Set(followerRows.map((f) => f.followerId));
+    const convIds = recentConvs.map((c) => c.conversationId);
+    const historyIds = historyRows.map((h) => h.activityId);
 
     // Remaining signals, all batched over the bounded candidate set.
     const [chatPartners, friendsAttending, pastHosts] = await Promise.all([
@@ -728,21 +806,24 @@ export class ActivitiesService implements OnModuleInit {
         : Promise.resolve([] as { creatorId: string }[]),
     ]);
 
-    const chatPartnerSet = new Set(chatPartners.map(p => p.userId));
-    const pastHostSet = new Set(pastHosts.map(h => h.creatorId));
+    const chatPartnerSet = new Set(chatPartners.map((p) => p.userId));
+    const pastHostSet = new Set(pastHosts.map((h) => h.creatorId));
     const friendCountByActivity = new Map<string, number>();
     for (const row of friendsAttending) {
-      friendCountByActivity.set(row.activityId, (friendCountByActivity.get(row.activityId) || 0) + 1);
+      friendCountByActivity.set(
+        row.activityId,
+        (friendCountByActivity.get(row.activityId) || 0) + 1,
+      );
     }
 
     const normalizedInterests = interests
-      .map(i => (i || '').trim().toLowerCase())
-      .filter(i => i.length >= 3);
+      .map((i) => (i || '').trim().toLowerCase())
+      .filter((i) => i.length >= 3);
 
     const W = ActivitiesService.FOR_YOU_WEIGHTS;
     const soonWindowMs = W.startsSoonWindowDays * 24 * 60 * 60 * 1000;
 
-    const scored = candidates.map(a => {
+    const scored = candidates.map((a) => {
       let score = 0;
 
       // Who is hosting matters most.
@@ -755,15 +836,23 @@ export class ActivitiesService implements OnModuleInit {
       if (pastHostSet.has(a.creatorId)) score += W.hostJoinedBefore;
 
       // Then who else is already going.
-      const friends = Math.min(friendCountByActivity.get(a.id) || 0, W.friendAttendingCap);
+      const friends = Math.min(
+        friendCountByActivity.get(a.id) || 0,
+        W.friendAttendingCap,
+      );
       score += friends * W.friendAttending;
 
-      if (viewer?.collegeId && a.collegeId && viewer.collegeId === a.collegeId) {
+      if (
+        viewer?.collegeId &&
+        a.collegeId &&
+        viewer.collegeId === a.collegeId
+      ) {
         score += W.sameCollege;
       }
 
       if (normalizedInterests.length > 0) {
-        const haystack = `${a.title || ''} ${a.description || ''} ${a.location || ''}`.toLowerCase();
+        const haystack =
+          `${a.title || ''} ${a.description || ''} ${a.location || ''}`.toLowerCase();
         let matches = 0;
         for (const interest of normalizedInterests) {
           if (haystack.includes(interest)) matches += 1;
@@ -774,14 +863,25 @@ export class ActivitiesService implements OnModuleInit {
 
       // A small freshness term so an empty signal profile still yields a sane,
       // soonest-first ordering rather than an arbitrary one.
-      const msUntilStart = a.startDate ? new Date(a.startDate).getTime() - now.getTime() : soonWindowMs;
-      const proximity = Math.max(0, 1 - Math.max(msUntilStart, 0) / soonWindowMs);
+      const msUntilStart = a.startDate
+        ? new Date(a.startDate).getTime() - now.getTime()
+        : soonWindowMs;
+      const proximity = Math.max(
+        0,
+        1 - Math.max(msUntilStart, 0) / soonWindowMs,
+      );
       score += Math.round(proximity * W.startsSoonMax);
 
       const memberCount = a._count?.members ?? 0;
       if (!a.maxMembers || memberCount < a.maxMembers) score += W.hasRoom;
 
-      return { id: a.id, score, startAt: a.startDate ? new Date(a.startDate).getTime() : Number.MAX_SAFE_INTEGER };
+      return {
+        id: a.id,
+        score,
+        startAt: a.startDate
+          ? new Date(a.startDate).getTime()
+          : Number.MAX_SAFE_INTEGER,
+      };
     });
 
     scored.sort((x, y) => {
@@ -790,10 +890,14 @@ export class ActivitiesService implements OnModuleInit {
       return x.id.localeCompare(y.id);
     });
 
-    const rankedIds = scored.map(s => s.id);
+    const rankedIds = scored.map((s) => s.id);
     if (this.redis) {
       this.redis
-        .setex(cacheKey, ActivitiesService.FOR_YOU_RANK_TTL, JSON.stringify(rankedIds))
+        .setex(
+          cacheKey,
+          ActivitiesService.FOR_YOU_RANK_TTL,
+          JSON.stringify(rankedIds),
+        )
         .catch(() => {});
       this.registerFeedCacheKey(cacheKey);
     }
@@ -830,7 +934,9 @@ export class ActivitiesService implements OnModuleInit {
             deletedAt: null,
             status: 'OPEN',
             startDate: { gt: new Date() },
-            ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
+            ...(excludedUserIds.length > 0
+              ? { creatorId: { notIn: excludedUserIds } }
+              : {}),
           },
           this.activityAuthorizationService.discoveryWhere(viewer),
         ],
@@ -839,18 +945,24 @@ export class ActivitiesService implements OnModuleInit {
     });
 
     const memberships = await this.prisma.crewActivityMember.findMany({
-      where: { userId, activityId: { in: rows.map(r => r.id) } },
+      where: { userId, activityId: { in: rows.map((r) => r.id) } },
       select: { activityId: true, status: true },
     });
-    const membershipMap = new Map(memberships.map(m => [m.activityId, m.status]));
+    const membershipMap = new Map(
+      memberships.map((m) => [m.activityId, m.status]),
+    );
 
-    const byId = new Map(rows.map(r => [r.id, r]));
+    const byId = new Map(rows.map((r) => [r.id, r]));
     return ids
-      .map(id => byId.get(id))
+      .map((id) => byId.get(id))
       .filter(Boolean)
       .map((a: any) => {
         const myStatus = membershipMap.get(a.id);
-        return { ...a, isJoined: myStatus === 'MEMBER', myStatus: myStatus || null };
+        return {
+          ...a,
+          isJoined: myStatus === 'MEMBER',
+          myStatus: myStatus || null,
+        };
       });
   }
 
@@ -862,8 +974,11 @@ export class ActivitiesService implements OnModuleInit {
    * in it.
    */
   async getForYouFeed(userId: string, limit = 20, cursor?: string) {
-    const parsedOffset = cursor?.startsWith('off:') ? parseInt(cursor.slice(4), 10) : 0;
-    const offset = Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
+    const parsedOffset = cursor?.startsWith('off:')
+      ? parseInt(cursor.slice(4), 10)
+      : 0;
+    const offset =
+      Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
 
     const [rankedIds, viewer] = await Promise.all([
       this.getForYouRankedIds(userId),
@@ -871,12 +986,17 @@ export class ActivitiesService implements OnModuleInit {
     ]);
 
     const pageIds = rankedIds.slice(offset, offset + limit);
-    const activities = await this.hydrateRankedActivities(pageIds, userId, viewer);
+    const activities = await this.hydrateRankedActivities(
+      pageIds,
+      userId,
+      viewer,
+    );
     const nextOffset = offset + limit;
 
     return {
       activities,
-      nextCursor: nextOffset < rankedIds.length ? `off:${nextOffset}` : undefined,
+      nextCursor:
+        nextOffset < rankedIds.length ? `off:${nextOffset}` : undefined,
     };
   }
 
@@ -906,21 +1026,31 @@ export class ActivitiesService implements OnModuleInit {
     const [user, excludedUserIds, rankedIds] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, collegeId: true, college: { select: { name: true } } },
+        select: {
+          id: true,
+          collegeId: true,
+          college: { select: { name: true } },
+        },
       }),
       this.blocksService.getExcludedUserIds(userId),
       this.getForYouRankedIds(userId),
     ]);
 
-    const viewer: UserAuthContext | null = user ? { id: user.id, collegeId: user.collegeId } : null;
+    const viewer: UserAuthContext | null = user
+      ? { id: user.id, collegeId: user.collegeId }
+      : null;
     const now = new Date();
-    const creatorFilter = excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {};
+    const creatorFilter =
+      excludedUserIds.length > 0
+        ? { creatorId: { notIn: excludedUserIds } }
+        : {};
     const collegeId = user?.collegeId ?? null;
 
     // Every section is intersected with the same discovery policy, so PUBLIC
     // ("Anyone") activities are eligible everywhere while COLLEGE_ONLY ones only
     // reach same-college or invited viewers and PRIVATE ones reach no one.
-    const policyWhere = this.activityAuthorizationService.discoveryWhere(viewer);
+    const policyWhere =
+      this.activityAuthorizationService.discoveryWhere(viewer);
     const baseFilter = {
       deletedAt: null,
       status: 'OPEN' as const,
@@ -930,7 +1060,11 @@ export class ActivitiesService implements OnModuleInit {
 
     // Over-fetch by one so each section can report `hasMore` without a count.
     const [forYouRows, collegeRows, oneOnOneRows] = await Promise.all([
-      this.hydrateRankedActivities(rankedIds.slice(0, PREVIEW + 1), userId, viewer),
+      this.hydrateRankedActivities(
+        rankedIds.slice(0, PREVIEW + 1),
+        userId,
+        viewer,
+      ),
       collegeId
         ? this.prisma.crewActivity.findMany({
             // COLLEGE_ONLY only — same rule as the `college` feed scope behind
@@ -938,7 +1072,11 @@ export class ActivitiesService implements OnModuleInit {
             // A PUBLIC activity from the same college belongs to For You / All.
             where: {
               AND: [
-                { ...baseFilter, collegeId, visibility: ActivityVisibility.COLLEGE_ONLY },
+                {
+                  ...baseFilter,
+                  collegeId,
+                  visibility: ActivityVisibility.COLLEGE_ONLY,
+                },
                 policyWhere,
               ],
             },
@@ -958,28 +1096,35 @@ export class ActivitiesService implements OnModuleInit {
     ]);
 
     // One membership query over the collected ids to attach join state.
-    const ids = [...collegeRows, ...oneOnOneRows].map(a => a.id);
-    const memberships = ids.length > 0
-      ? await this.prisma.crewActivityMember.findMany({
-          where: { userId, activityId: { in: ids } },
-          select: { activityId: true, status: true },
-        })
-      : [];
-    const membershipMap = new Map(memberships.map(m => [m.activityId, m.status]));
+    const ids = [...collegeRows, ...oneOnOneRows].map((a) => a.id);
+    const memberships =
+      ids.length > 0
+        ? await this.prisma.crewActivityMember.findMany({
+            where: { userId, activityId: { in: ids } },
+            select: { activityId: true, status: true },
+          })
+        : [];
+    const membershipMap = new Map(
+      memberships.map((m) => [m.activityId, m.status]),
+    );
     const decorate = (a: any) => {
       const myStatus = membershipMap.get(a.id);
-      return { ...a, isJoined: myStatus === 'MEMBER', myStatus: myStatus || null };
+      return {
+        ...a,
+        isJoined: myStatus === 'MEMBER',
+        myStatus: myStatus || null,
+      };
     };
 
     // Sections are filled in render order and each one skips what is already on
     // screen above it.
     const shown = new Set<string>();
     const section = (rows: any[], alreadyDecorated = false) => {
-      const fresh = rows.filter(a => !shown.has(a.id));
+      const fresh = rows.filter((a) => !shown.has(a.id));
       const items = fresh.slice(0, PREVIEW);
-      items.forEach(a => shown.add(a.id));
+      items.forEach((a) => shown.add(a.id));
       return {
-        items: items.map(a => (alreadyDecorated ? a : decorate(a))),
+        items: items.map((a) => (alreadyDecorated ? a : decorate(a))),
         hasMore: rows.length > PREVIEW,
       };
     };
@@ -990,7 +1135,10 @@ export class ActivitiesService implements OnModuleInit {
       // `hasMore` comes from the ranking itself, not the hydrated slice: a row
       // can drop out during hydration (started, cancelled, restricted) while the
       // ranked list still holds plenty more.
-      forYou: { ...section(forYouRows, true), hasMore: rankedIds.length > PREVIEW },
+      forYou: {
+        ...section(forYouRows, true),
+        hasMore: rankedIds.length > PREVIEW,
+      },
       college: section(collegeRows),
       oneOnOne: section(oneOnOneRows),
     };
@@ -1026,19 +1174,64 @@ export class ActivitiesService implements OnModuleInit {
           members: {
             take: ActivitiesService.DETAIL_MEMBER_PAGE,
             orderBy: { joinedAt: 'asc' },
-            include: { user: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } } }
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  displayName: true,
+                  avatar: true,
+                  isCampusRep: true,
+                  collegeId: true,
+                  college: { select: { id: true, name: true } },
+                },
+              },
+            },
           },
           _count: { select: { members: true } },
           // Only the caller's own invitation row is loaded: the full invitee list
           // is host-only information (see getInvitationStatuses).
           invitations: userId
-            ? { where: { inviteeId: userId }, select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true } }
-            : { where: { inviteeId: '' }, select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true } },
-          creator: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
+            ? {
+                where: { inviteeId: userId },
+                select: {
+                  inviteeId: true,
+                  status: true,
+                  revokedAt: true,
+                  expiresAt: true,
+                },
+              }
+            : {
+                where: { inviteeId: '' },
+                select: {
+                  inviteeId: true,
+                  status: true,
+                  revokedAt: true,
+                  expiresAt: true,
+                },
+              },
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatar: true,
+              isCampusRep: true,
+              collegeId: true,
+              college: { select: { id: true, name: true } },
+            },
+          },
         },
       }),
-      userId ? this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }) : Promise.resolve(null),
-      userId ? this.blocksService.getExcludedUserIds(userId) : Promise.resolve([]),
+      userId
+        ? this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, collegeId: true },
+          })
+        : Promise.resolve(null),
+      userId
+        ? this.blocksService.getExcludedUserIds(userId)
+        : Promise.resolve([]),
       // The caller's own membership, resolved by primary key in the same
       // parallel round-trip. It must NOT be read off the `members` slice above:
       // that slice is capped, so a member beyond the cap would otherwise fail
@@ -1056,7 +1249,9 @@ export class ActivitiesService implements OnModuleInit {
     // and only the host's identity is withheld; a non-attendee still gets the
     // neutral 404 that every other blocked surface returns.
     const hostBlocked =
-      !!activity && excludedUserIds.length > 0 && excludedUserIds.includes(activity.creatorId);
+      !!activity &&
+      excludedUserIds.length > 0 &&
+      excludedUserIds.includes(activity.creatorId);
 
     if (!activity || activity.deletedAt || (hostBlocked && !myMembership)) {
       throw new NotFoundException('Activity not found');
@@ -1077,7 +1272,11 @@ export class ActivitiesService implements OnModuleInit {
           ...authTarget,
           _count: { members: (activity as any)._count?.members ?? 0 },
         })
-      : { allowed: false, reason: 'Login required', code: 'AUTH_REQUIRED' as const };
+      : {
+          allowed: false,
+          reason: 'Login required',
+          code: 'AUTH_REQUIRED' as const,
+        };
     // The embedded first page of attendees is filtered per-viewer, exactly like
     // getAttendees. The host is exempt: they must see every participant even
     // when two of their guests have blocked each other.
@@ -1088,7 +1287,11 @@ export class ActivitiesService implements OnModuleInit {
     // underlying query, not of how many rows survive this viewer's block list.
     const loadedMemberPageSize = (activity as any).members?.length ?? 0;
 
-    if (userId && activity.creatorId !== userId && (activity as any).members?.length) {
+    if (
+      userId &&
+      activity.creatorId !== userId &&
+      (activity as any).members?.length
+    ) {
       const visibleIds = new Set(
         await this.blocksService.filterBlockedUsers(
           userId,
@@ -1110,13 +1313,19 @@ export class ActivitiesService implements OnModuleInit {
       // Host identity is suppressed rather than the whole event: the profile
       // stays unreachable (no name, no avatar, nothing to tap through to)
       // while date, time, location and description survive.
-      ...(hostBlocked ? { creator: null, creatorId: null, hostUnavailable: true } : {}),
+      ...(hostBlocked
+        ? { creator: null, creatorId: null, hostUnavailable: true }
+        : {}),
       // Authoritative attendee total — `members` is only the first page.
       memberCount: _count?.members ?? loadedMemberPageSize,
-      hasMoreMembers: loadedMemberPageSize >= ActivitiesService.DETAIL_MEMBER_PAGE,
+      hasMoreMembers:
+        loadedMemberPageSize >= ActivitiesService.DETAIL_MEMBER_PAGE,
       isJoined: myMembership?.status === 'MEMBER',
       myStatus: myMembership?.status || null,
-      isInvited: this.activityAuthorizationService.hasValidInvitation(user, activity as any),
+      isInvited: this.activityAuthorizationService.hasValidInvitation(
+        user,
+        activity,
+      ),
       canJoin: joinDecision.allowed,
       joinRestrictionReason: joinDecision.reason || null,
       joinRestrictionCode: joinDecision.code || 'ALLOWED',
@@ -1131,9 +1340,16 @@ export class ActivitiesService implements OnModuleInit {
    * open as one with three. Access is resolved through the same policy as the
    * detail endpoint — an attendee list is restricted data.
    */
-  async getAttendees(activityId: string, userId: string, limit = 30, cursor?: string) {
+  async getAttendees(
+    activityId: string,
+    userId: string,
+    limit = 30,
+    cursor?: string,
+  ) {
     const take = Math.min(Math.max(limit, 1), 60);
-    const cleanId = activityId ? activityId.replace(/^(act_)+/, '') : activityId;
+    const cleanId = activityId
+      ? activityId.replace(/^(act_)+/, '')
+      : activityId;
 
     const [activity, user, myMembership] = await Promise.all([
       this.prisma.crewActivity.findUnique({
@@ -1147,7 +1363,12 @@ export class ActivitiesService implements OnModuleInit {
           deletedAt: true,
           invitations: {
             where: { inviteeId: userId },
-            select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
+            select: {
+              inviteeId: true,
+              status: true,
+              revokedAt: true,
+              expiresAt: true,
+            },
           },
         },
       }),
@@ -1158,7 +1379,8 @@ export class ActivitiesService implements OnModuleInit {
       }),
     ]);
 
-    if (!activity || activity.deletedAt) throw new NotFoundException('Activity not found');
+    if (!activity || activity.deletedAt)
+      throw new NotFoundException('Activity not found');
     this.activityAuthorizationService.assertCanView(user, {
       ...(activity as any),
       members: myMembership ? [myMembership] : [],
@@ -1219,13 +1441,20 @@ export class ActivitiesService implements OnModuleInit {
 
     return {
       attendees: page,
-      nextCursor: hasMore && last ? `${last.joinedAt.toISOString()}|${last.userId}` : null,
+      nextCursor:
+        hasMore && last
+          ? `${last.joinedAt.toISOString()}|${last.userId}`
+          : null,
       hasMore,
     };
   }
 
   async createActivity(data: any, creatorId: string) {
-    if (!data.title || typeof data.title !== 'string' || data.title.trim().length === 0) {
+    if (
+      !data.title ||
+      typeof data.title !== 'string' ||
+      data.title.trim().length === 0
+    ) {
       throw new BadRequestException('Title is required');
     }
     if (data.title.trim().length > 30) {
@@ -1257,12 +1486,18 @@ export class ActivitiesService implements OnModuleInit {
       }
       const maxDurationMs = 30 * 24 * 60 * 60 * 1000; // 30 days
       if (end.getTime() - start.getTime() > maxDurationMs) {
-        throw new BadRequestException('Activity duration cannot exceed 30 days');
+        throw new BadRequestException(
+          'Activity duration cannot exceed 30 days',
+        );
       }
     }
 
     let visibility: 'PUBLIC' | 'COLLEGE_ONLY' | 'PRIVATE' = 'PUBLIC';
-    if (data.visibility === 'COLLEGE_ONLY' || data.visibility === 'PRIVATE' || data.visibility === 'PUBLIC') {
+    if (
+      data.visibility === 'COLLEGE_ONLY' ||
+      data.visibility === 'PRIVATE' ||
+      data.visibility === 'PUBLIC'
+    ) {
       visibility = data.visibility;
     } else if (data.whoCanJoin === 'College' || data.shareToCampus) {
       visibility = 'COLLEGE_ONLY';
@@ -1272,7 +1507,10 @@ export class ActivitiesService implements OnModuleInit {
       visibility = 'PRIVATE';
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: creatorId }, select: { collegeId: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: creatorId },
+      select: { collegeId: true },
+    });
 
     // A COLLEGE_ONLY activity whose host has no college can never satisfy its own
     // restriction — it would be silently unreachable for everyone but the host.
@@ -1336,15 +1574,24 @@ export class ActivitiesService implements OnModuleInit {
             userId: true,
             status: true,
             user: {
-              select: { id: true, username: true, displayName: true, avatar: true }
-            }
-          }
-        }
-      }
+              select: {
+                id: true,
+                username: true,
+                displayName: true,
+                avatar: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     setImmediate(async () => {
-      this.domainEventService.emit('activity.created', { id: createdActivity.id, creatorId, collegeId: user?.collegeId || null });
+      this.domainEventService.emit('activity.created', {
+        id: createdActivity.id,
+        creatorId,
+        collegeId: user?.collegeId || null,
+      });
       this.clearActivityFeedCaches();
     });
 
@@ -1369,23 +1616,37 @@ export class ActivitiesService implements OnModuleInit {
   ) {
     const allowed = ['PUBLIC', 'COLLEGE_ONLY', 'PRIVATE'] as const;
     if (!allowed.includes(visibility as any)) {
-      throw new BadRequestException('visibility must be one of PUBLIC, COLLEGE_ONLY, PRIVATE');
+      throw new BadRequestException(
+        'visibility must be one of PUBLIC, COLLEGE_ONLY, PRIVATE',
+      );
     }
     const next = visibility as 'PUBLIC' | 'COLLEGE_ONLY' | 'PRIVATE';
 
     const [activity, host] = await Promise.all([
       this.prisma.crewActivity.findUnique({
         where: { id: activityId },
-        select: { id: true, creatorId: true, deletedAt: true, visibility: true, collegeId: true },
+        select: {
+          id: true,
+          creatorId: true,
+          deletedAt: true,
+          visibility: true,
+          collegeId: true,
+        },
       }),
-      this.prisma.user.findUnique({ where: { id: hostId }, select: { id: true, collegeId: true } }),
+      this.prisma.user.findUnique({
+        where: { id: hostId },
+        select: { id: true, collegeId: true },
+      }),
     ]);
 
     if (!activity || activity.deletedAt) {
       throw new NotFoundException('Activity not found');
     }
     // 404 rather than 403: a non-host must not learn the id exists.
-    this.activityAuthorizationService.assertCanManage({ id: hostId }, activity as any);
+    this.activityAuthorizationService.assertCanManage(
+      { id: hostId },
+      activity as any,
+    );
 
     if (next === 'COLLEGE_ONLY' && !activity.collegeId && !host?.collegeId) {
       throw new BadRequestException(
@@ -1404,7 +1665,12 @@ export class ActivitiesService implements OnModuleInit {
           ? { collegeId: host?.collegeId ?? null }
           : {}),
       },
-      select: { id: true, visibility: true, shareToCampus: true, collegeId: true },
+      select: {
+        id: true,
+        visibility: true,
+        shareToCampus: true,
+        collegeId: true,
+      },
     });
 
     // Purge every cached surface BEFORE returning so the client's post-mutation
@@ -1440,7 +1706,12 @@ export class ActivitiesService implements OnModuleInit {
           visibility: true,
           invitations: {
             where: { inviteeId: userId },
-            select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
+            select: {
+              inviteeId: true,
+              status: true,
+              revokedAt: true,
+              expiresAt: true,
+            },
           },
           _count: { select: { members: true } },
         },
@@ -1473,22 +1744,29 @@ export class ActivitiesService implements OnModuleInit {
 
     const startRaw = activityRow.startDate;
     if (startRaw && new Date(startRaw) <= new Date()) {
-      throw new BadRequestException('Activity has already started and cannot be joined');
+      throw new BadRequestException(
+        'Activity has already started and cannot be joined',
+      );
     }
 
     // Build a synthetic activity shape for the auth check (only the fields it reads)
-    const authDecision = this.activityAuthorizationService.canJoin(
-      user,
-      { ...activityRow, members: [] } as any,
-    );
+    const authDecision = this.activityAuthorizationService.canJoin(user, {
+      ...activityRow,
+      members: [],
+    });
     if (!authDecision.allowed) {
       // Same disclosure rule as assertCanView: a private activity a caller may
       // not see must answer "not found" here too, or the join endpoint becomes
       // an oracle for the existence of activities the detail endpoint hides.
-      if (authDecision.code === 'PRIVATE' || authDecision.code === 'NOT_FOUND') {
+      if (
+        authDecision.code === 'PRIVATE' ||
+        authDecision.code === 'NOT_FOUND'
+      ) {
         throw new NotFoundException('Activity not found');
       }
-      throw new ForbiddenException(authDecision.reason || 'You are not authorized to join this activity');
+      throw new ForbiddenException(
+        authDecision.reason || 'You are not authorized to join this activity',
+      );
     }
 
     // ── Atomic idempotent upsert — safe under concurrent requests ──────────────
@@ -1500,7 +1778,9 @@ export class ActivitiesService implements OnModuleInit {
     // host notification below exactly-once at the database level: two concurrent
     // joins that both pass the membership pre-check still yield only one `true`,
     // so only one notification is created.
-    const upsertResult = await this.prisma.$queryRaw<Array<{ inserted: boolean }>>`
+    const upsertResult = await this.prisma.$queryRaw<
+      Array<{ inserted: boolean }>
+    >`
       INSERT INTO "CrewActivityMember" ("userId", "activityId", "status", "joinedAt")
       VALUES (${userId}, ${activityId}, 'MEMBER', NOW())
       ON CONFLICT ("userId", "activityId") DO UPDATE SET "status" = 'MEMBER'
@@ -1508,24 +1788,35 @@ export class ActivitiesService implements OnModuleInit {
     `;
     const isNewMember = upsertResult?.[0]?.inserted === true;
 
-    // Await cache clearing BEFORE responding to prevent the frontend's 
+    // Await cache clearing BEFORE responding to prevent the frontend's
     // post-mutation refetch from racing and hitting stale Redis data.
     await this.clearActivityFeedCaches();
 
     // Fire socket event side-effects in background
     setImmediate(() => {
-      this.domainEventService.emit('activity.memberJoined', { activityId, userId });
+      this.domainEventService.emit('activity.memberJoined', {
+        activityId,
+        userId,
+      });
     });
 
     // ── Host notification ─────────────────────────────────────────────────────
     // Only on a real membership transition (isNewMember), and never to yourself.
     // Dispatched off the response path so a slow notification write can't delay
     // the join returning.
-    if (isNewMember && activityRow.creatorId && activityRow.creatorId !== userId) {
+    if (
+      isNewMember &&
+      activityRow.creatorId &&
+      activityRow.creatorId !== userId
+    ) {
       setImmediate(() => {
-        this.notifyHostOfJoin(activityId, userId, activityRow.creatorId).catch((err) => {
-          this.logger.warn(`Failed to notify host of activity join: ${err?.message}`);
-        });
+        this.notifyHostOfJoin(activityId, userId, activityRow.creatorId).catch(
+          (err) => {
+            this.logger.warn(
+              `Failed to notify host of activity join: ${err?.message}`,
+            );
+          },
+        );
       });
     }
 
@@ -1536,7 +1827,11 @@ export class ActivitiesService implements OnModuleInit {
    * "<User> joined your activity" — uses the shared NotificationFactory payload
    * so it renders and routes exactly like every other activity notification.
    */
-  private async notifyHostOfJoin(activityId: string, userId: string, creatorId: string) {
+  private async notifyHostOfJoin(
+    activityId: string,
+    userId: string,
+    creatorId: string,
+  ) {
     const [actor, activity] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -1572,13 +1867,16 @@ export class ActivitiesService implements OnModuleInit {
       where: { userId, activityId },
     });
 
-    // Await cache clearing BEFORE responding to prevent the frontend's 
+    // Await cache clearing BEFORE responding to prevent the frontend's
     // post-mutation refetch from racing and hitting stale Redis data.
     await this.clearActivityFeedCaches();
 
     // Fire socket event side-effects in background
     setImmediate(() => {
-      this.domainEventService.emit('activity.memberLeft', { activityId, userId });
+      this.domainEventService.emit('activity.memberLeft', {
+        activityId,
+        userId,
+      });
     });
 
     return { success: true };
@@ -1599,7 +1897,7 @@ export class ActivitiesService implements OnModuleInit {
 
     await this.prisma.crewActivityMember.updateMany({
       where: { activityId, userId, status: 'PENDING' },
-      data: { status: 'DECLINED' }
+      data: { status: 'DECLINED' },
     });
     this.domainEventService.emit('activity.updated', { id: activityId });
     return { success: true };
@@ -1632,9 +1930,10 @@ export class ActivitiesService implements OnModuleInit {
   ) {
     const activity = await this.prisma.crewActivity.findUnique({
       where: { id: activityId, creatorId: currentUserId },
-      select: { id: true }
+      select: { id: true },
     });
-    if (!activity) throw new NotFoundException('Activity not found or you are not creator');
+    if (!activity)
+      throw new NotFoundException('Activity not found or you are not creator');
 
     // Captured BEFORE the update — once the rows move off PENDING there is no
     // way to tell who had an outstanding invite.
@@ -1643,27 +1942,31 @@ export class ActivitiesService implements OnModuleInit {
       select: { inviteeId: true },
     });
 
-    const invitationStatus = terminalStatus === 'CANCELLED' ? 'CANCELLED' : 'EXPIRED';
+    const invitationStatus =
+      terminalStatus === 'CANCELLED' ? 'CANCELLED' : 'EXPIRED';
 
     await Promise.all([
       this.prisma.crewActivity.update({
         where: { id: activityId },
-        data: { status: terminalStatus }
+        data: { status: terminalStatus },
       }),
       this.prisma.activityInvitation.updateMany({
         where: { activityId, status: 'PENDING' },
         data: { status: invitationStatus },
-      })
+      }),
     ]);
 
     await this.settleInviteNotifications(
       activityId,
       invitationStatus,
-      pendingInvitees.map(i => i.inviteeId),
+      pendingInvitees.map((i) => i.inviteeId),
     );
 
     setImmediate(() => {
-      this.domainEventService.emit('activity.updated', { id: activityId, status: terminalStatus });
+      this.domainEventService.emit('activity.updated', {
+        id: activityId,
+        status: terminalStatus,
+      });
       this.clearActivityFeedCaches();
     });
 
@@ -1686,13 +1989,20 @@ export class ActivitiesService implements OnModuleInit {
     recipientIds: string[],
   ) {
     if (recipientIds.length === 0) return;
-    await this.notificationsService.updateNotificationLifecycleStatus({
-      type: 'ACTIVITY_INVITE' as any,
-      entityId: activityId,
-      recipientIds,
-      status,
-      onlyIfStatusIn: ['PENDING'],
-    }).catch(err => this.logger.warn(`Failed to settle invite notifications for ${activityId}`, err));
+    await this.notificationsService
+      .updateNotificationLifecycleStatus({
+        type: 'ACTIVITY_INVITE' as any,
+        entityId: activityId,
+        recipientIds,
+        status,
+        onlyIfStatusIn: ['PENDING'],
+      })
+      .catch((err) =>
+        this.logger.warn(
+          `Failed to settle invite notifications for ${activityId}`,
+          err,
+        ),
+      );
   }
 
   async bookmarkActivity(activityId: string, userId: string) {
@@ -1700,10 +2010,18 @@ export class ActivitiesService implements OnModuleInit {
       this.prisma.crewActivity.findUnique({
         where: { id: activityId, deletedAt: null },
         include: {
-          members: { where: { userId }, select: { userId: true, status: true } },
+          members: {
+            where: { userId },
+            select: { userId: true, status: true },
+          },
           invitations: {
             where: { inviteeId: userId },
-            select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
+            select: {
+              inviteeId: true,
+              status: true,
+              revokedAt: true,
+              expiresAt: true,
+            },
           },
         },
       }),
@@ -1712,12 +2030,12 @@ export class ActivitiesService implements OnModuleInit {
     if (!activity) throw new NotFoundException('Activity not found');
     // Saving is a read-granting action: bookmarks are re-served later by
     // getSavedActivities, so it must not become a back door.
-    this.activityAuthorizationService.assertCanView(user, activity as any);
+    this.activityAuthorizationService.assertCanView(user, activity);
 
     await this.prisma.activityBookmark.upsert({
       where: { userId_activityId: { userId, activityId } },
       create: { userId, activityId },
-      update: {}
+      update: {},
     });
 
     return { success: true, isBookmarked: true, activityId };
@@ -1725,11 +2043,11 @@ export class ActivitiesService implements OnModuleInit {
 
   async unbookmarkActivity(activityId: string, userId: string) {
     const existing = await this.prisma.activityBookmark.findUnique({
-      where: { userId_activityId: { userId, activityId } }
+      where: { userId_activityId: { userId, activityId } },
     });
     if (existing) {
       await this.prisma.activityBookmark.delete({
-        where: { userId_activityId: { userId, activityId } }
+        where: { userId_activityId: { userId, activityId } },
       });
     }
     return { success: true, isBookmarked: false, activityId };
@@ -1739,9 +2057,9 @@ export class ActivitiesService implements OnModuleInit {
     const bookmarks = await this.prisma.activityBookmark.findMany({
       where: { userId },
       select: { activityId: true },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
-    return bookmarks.map(b => b.activityId);
+    return bookmarks.map((b) => b.activityId);
   }
 
   /**
@@ -1764,7 +2082,9 @@ export class ActivitiesService implements OnModuleInit {
     const activities = await this.prisma.crewActivity.findMany({
       where: {
         deletedAt: null,
-        ...(excludedUserIds.length > 0 ? { creatorId: { notIn: excludedUserIds } } : {}),
+        ...(excludedUserIds.length > 0
+          ? { creatorId: { notIn: excludedUserIds } }
+          : {}),
         OR: [
           { creatorId: userId },
           { members: { some: { userId, status: 'MEMBER' } } },
@@ -1782,11 +2102,11 @@ export class ActivitiesService implements OnModuleInit {
                 id: true,
                 username: true,
                 displayName: true,
-                avatar: true
-              }
-            }
-          }
-        }
+                avatar: true,
+              },
+            },
+          },
+        },
       },
       // Ordered by when the activity HAPPENS, not when its row was written.
       // `createdAt` put two activities drafted in the same sitting next to each
@@ -1794,13 +2114,13 @@ export class ActivitiesService implements OnModuleInit {
       // which is what left the Past list in no discernible order. Most recent
       // first is the right end for past events; the client still splits
       // past/ongoing/upcoming and orders each bucket for its own direction.
-      orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }]
+      orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
     });
 
-    return activities.map(a => ({
+    return activities.map((a) => ({
       ...a,
       isJoined: true,
-      myStatus: 'MEMBER'
+      myStatus: 'MEMBER',
     }));
   }
 
@@ -1819,7 +2139,7 @@ export class ActivitiesService implements OnModuleInit {
     if (cursor) {
       const cursorBookmark = await this.prisma.activityBookmark.findFirst({
         where: { userId, activityId: cursor },
-        select: { createdAt: true }
+        select: { createdAt: true },
       });
       if (cursorBookmark) cursorDate = cursorBookmark.createdAt;
     }
@@ -1833,7 +2153,7 @@ export class ActivitiesService implements OnModuleInit {
             { deletedAt: null, creatorId: { notIn: excludedUserIds } },
             this.activityAuthorizationService.accessWhere(viewer),
           ],
-        }
+        },
       },
       take: limit + 1,
       orderBy: { createdAt: 'desc' },
@@ -1849,14 +2169,14 @@ export class ActivitiesService implements OnModuleInit {
                     id: true,
                     username: true,
                     displayName: true,
-                    avatar: true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+                    avatar: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
 
     let nextCursor: string | null = null;
@@ -1865,16 +2185,18 @@ export class ActivitiesService implements OnModuleInit {
       nextCursor = nextItem?.activityId || null;
     }
 
-    const rawActs = bookmarks.map(b => b.activity).filter(Boolean);
+    const rawActs = bookmarks.map((b) => b.activity).filter(Boolean);
 
     const myMemberships = await this.prisma.crewActivityMember.findMany({
-      where: { userId, activityId: { in: rawActs.map(a => a.id) } }
+      where: { userId, activityId: { in: rawActs.map((a) => a.id) } },
     });
-    const membershipMap = new Map(myMemberships.map(m => [m.activityId, m.status]));
+    const membershipMap = new Map(
+      myMemberships.map((m) => [m.activityId, m.status]),
+    );
 
-    const formattedActivities = rawActs.map(act => {
+    const formattedActivities = rawActs.map((act) => {
       const members = act.members || [];
-      const hostMember = members.find(m => m.user?.id === act.creatorId);
+      const hostMember = members.find((m) => m.user?.id === act.creatorId);
       const hostUser = hostMember?.user;
 
       const userStatus = membershipMap.get(act.id);
@@ -1903,21 +2225,25 @@ export class ActivitiesService implements OnModuleInit {
         hostUsername: hostUser?.username,
         slotsNeeded: act.maxMembers || 0,
         slotsFilled: act._count?.members || members.length,
-        participants: members.map(m => m.user?.id).filter(Boolean),
-        _membersData: members.map(m => m.user).filter(Boolean),
+        participants: members.map((m) => m.user?.id).filter(Boolean),
+        _membersData: members.map((m) => m.user).filter(Boolean),
         isJoined,
         isPending,
-        isBookmarked: true
+        isBookmarked: true,
       };
     });
 
     return {
       activities: formattedActivities,
-      nextCursor
+      nextCursor,
     };
   }
 
-  async inviteFriends(activityId: string, inviterId: string, inviteeIds: string[]) {
+  async inviteFriends(
+    activityId: string,
+    inviterId: string,
+    inviteeIds: string[],
+  ) {
     const activity = await this.prisma.crewActivity.findUnique({
       where: { id: activityId },
       select: {
@@ -1941,7 +2267,10 @@ export class ActivitiesService implements OnModuleInit {
       throw new NotFoundException('Activity not found');
     }
 
-    this.activityAuthorizationService.assertCanManage({ id: inviterId }, activity as any);
+    this.activityAuthorizationService.assertCanManage(
+      { id: inviterId },
+      activity as any,
+    );
 
     if (activity.status !== 'OPEN') {
       throw new BadRequestException('Activity is not open for invitations');
@@ -1955,7 +2284,9 @@ export class ActivitiesService implements OnModuleInit {
       throw new BadRequestException('This activity has already started');
     }
 
-    const cleanInviteeIds = Array.from(new Set((inviteeIds || []).filter(id => id && id !== inviterId)));
+    const cleanInviteeIds = Array.from(
+      new Set((inviteeIds || []).filter((id) => id && id !== inviterId)),
+    );
     if (cleanInviteeIds.length === 0) {
       return { results: [] };
     }
@@ -1974,8 +2305,10 @@ export class ActivitiesService implements OnModuleInit {
       }),
     ]);
 
-    const existingMembers = new Set(activity.members.map(m => m.userId));
-    const invitationMap = new Map(existingInvitations.map(inv => [inv.inviteeId, inv]));
+    const existingMembers = new Set(activity.members.map((m) => m.userId));
+    const invitationMap = new Map(
+      existingInvitations.map((inv) => [inv.inviteeId, inv]),
+    );
     const excludedSet = new Set(excludedUserIds);
     const results: any[] = [];
     const inviteesToProcess: string[] = [];
@@ -1983,7 +2316,11 @@ export class ActivitiesService implements OnModuleInit {
 
     for (const inviteeId of cleanInviteeIds) {
       if (existingMembers.has(inviteeId)) {
-        results.push({ inviteeId, status: 'MEMBER', message: 'User is already a participant' });
+        results.push({
+          inviteeId,
+          status: 'MEMBER',
+          message: 'User is already a participant',
+        });
         continue;
       }
 
@@ -2004,14 +2341,21 @@ export class ActivitiesService implements OnModuleInit {
         }
 
         if (existingInv.status === 'PENDING') {
-          results.push({ inviteeId, status: 'PENDING', message: 'Invitation Pending' });
+          results.push({
+            inviteeId,
+            status: 'PENDING',
+            message: 'Invitation Pending',
+          });
           continue;
         }
 
         if (existingInv.status === 'DECLINED' && existingInv.respondedAt) {
-          const timeSinceDecline = Date.now() - new Date(existingInv.respondedAt).getTime();
+          const timeSinceDecline =
+            Date.now() - new Date(existingInv.respondedAt).getTime();
           if (timeSinceDecline < fourHoursMs) {
-            const remainingMins = Math.ceil((fourHoursMs - timeSinceDecline) / 60000);
+            const remainingMins = Math.ceil(
+              (fourHoursMs - timeSinceDecline) / 60000,
+            );
             results.push({
               inviteeId,
               status: 'COOLDOWN',
@@ -2023,7 +2367,11 @@ export class ActivitiesService implements OnModuleInit {
       }
 
       if (excludedSet.has(inviteeId)) {
-        results.push({ inviteeId, status: 'BLOCKED', message: 'Cannot invite user' });
+        results.push({
+          inviteeId,
+          status: 'BLOCKED',
+          message: 'Cannot invite user',
+        });
         continue;
       }
 
@@ -2032,7 +2380,7 @@ export class ActivitiesService implements OnModuleInit {
 
     if (inviteesToProcess.length > 0) {
       await this.prisma.activityInvitation.createMany({
-        data: inviteesToProcess.map(inviteeId => ({
+        data: inviteesToProcess.map((inviteeId) => ({
           activityId,
           inviterId,
           inviteeId,
@@ -2047,13 +2395,20 @@ export class ActivitiesService implements OnModuleInit {
       });
 
       for (const inv of createdInvitations) {
-        results.push({ inviteeId: inv.inviteeId, status: 'INVITED', invitationId: inv.id });
+        results.push({
+          inviteeId: inv.inviteeId,
+          status: 'INVITED',
+          invitationId: inv.id,
+        });
       }
 
       const notificationPayload = {
         activityId: activity.id,
         inviterId,
-        invitations: createdInvitations.map(i => ({ inviteeId: i.inviteeId, invitationId: i.id })),
+        invitations: createdInvitations.map((i) => ({
+          inviteeId: i.inviteeId,
+          invitationId: i.id,
+        })),
         activityTitle: activity.title,
         activityLocation: activity.location,
         activityCoverImage: activity.coverImage,
@@ -2082,7 +2437,9 @@ export class ActivitiesService implements OnModuleInit {
       const dispatchInline = () =>
         this.notificationsService
           .createActivityInviteNotifications(notificationPayload)
-          .catch(err => this.logger.error('Failed to create invite notifications', err));
+          .catch((err) =>
+            this.logger.error('Failed to create invite notifications', err),
+          );
 
       if (this.notifQueue) {
         // `await` inside try/catch rather than `.catch()` on the return value:
@@ -2091,13 +2448,20 @@ export class ActivitiesService implements OnModuleInit {
         // would surface as an unhandled crash instead of a failed enqueue.
         setImmediate(async () => {
           try {
-            await this.notifQueue?.add('activity-invitations', notificationPayload, {
-              removeOnComplete: true,
-              attempts: 3,
-              backoff: { type: 'exponential', delay: 1000 },
-            });
+            await this.notifQueue?.add(
+              'activity-invitations',
+              notificationPayload,
+              {
+                removeOnComplete: true,
+                attempts: 3,
+                backoff: { type: 'exponential', delay: 1000 },
+              },
+            );
           } catch (err) {
-            this.logger.warn('Failed to enqueue activity invitations job to BullMQ', err);
+            this.logger.warn(
+              'Failed to enqueue activity invitations job to BullMQ',
+              err,
+            );
             await dispatchInline();
           }
         });
@@ -2156,7 +2520,7 @@ export class ActivitiesService implements OnModuleInit {
       orderBy: { createdAt: 'desc' },
     });
 
-    return invitations.map(inv => ({
+    return invitations.map((inv) => ({
       id: inv.id,
       activityId: inv.activityId,
       title: inv.activity.title,
@@ -2174,7 +2538,9 @@ export class ActivitiesService implements OnModuleInit {
       hostUsername: inv.inviter.username,
       hostAvatar: inv.inviter.avatar,
       participantsCount: inv.activity._count.members,
-      sampleParticipants: inv.activity.members.map(m => m.user).filter(Boolean),
+      sampleParticipants: inv.activity.members
+        .map((m) => m.user)
+        .filter(Boolean),
     }));
   }
 
@@ -2218,7 +2584,9 @@ export class ActivitiesService implements OnModuleInit {
     // call did and let the caller navigate.
     if (invitation.status === 'ACCEPTED') {
       const existingMember = await this.prisma.crewActivityMember.findUnique({
-        where: { userId_activityId: { userId, activityId: invitation.activityId } },
+        where: {
+          userId_activityId: { userId, activityId: invitation.activityId },
+        },
         select: { status: true },
       });
       if (existingMember?.status === 'MEMBER') {
@@ -2226,8 +2594,16 @@ export class ActivitiesService implements OnModuleInit {
         // and every double-click, so if the FIRST accept failed to advance the
         // notification the row would otherwise be stuck offering Accept and
         // Decline forever — no later attempt would ever reach the update below.
-        await this.settleInviteNotifications(invitation.activityId, 'ACCEPTED', [userId]);
-        return { success: true, activityId: invitation.activityId, alreadyJoined: true };
+        await this.settleInviteNotifications(
+          invitation.activityId,
+          'ACCEPTED',
+          [userId],
+        );
+        return {
+          success: true,
+          activityId: invitation.activityId,
+          alreadyJoined: true,
+        };
       }
       // ACCEPTED without a membership row means the previous attempt died
       // between the two writes. Fall through and complete the join.
@@ -2261,13 +2637,19 @@ export class ActivitiesService implements OnModuleInit {
     // recipient should still be able to see that they were invited and that
     // they accepted. Only a PENDING row is advanced, so a duplicate accept
     // cannot rewrite an already-settled record.
-    await this.settleInviteNotifications(invitation.activityId, 'ACCEPTED', [userId]);
+    await this.settleInviteNotifications(invitation.activityId, 'ACCEPTED', [
+      userId,
+    ]);
 
-    this.domainEventService.emit('invitation:updated', {
-      invitationId,
-      status: 'ACCEPTED',
-      activityId: invitation.activityId,
-    }, [invitation.inviterId, userId]);
+    this.domainEventService.emit(
+      'invitation:updated',
+      {
+        invitationId,
+        status: 'ACCEPTED',
+        activityId: invitation.activityId,
+      },
+      [invitation.inviterId, userId],
+    );
 
     return { success: true, activityId: invitation.activityId };
   }
@@ -2277,7 +2659,11 @@ export class ActivitiesService implements OnModuleInit {
       where: { id: invitationId },
     });
 
-    if (!invitation || invitation.inviteeId !== userId || invitation.status !== 'PENDING') {
+    if (
+      !invitation ||
+      invitation.inviteeId !== userId ||
+      invitation.status !== 'PENDING'
+    ) {
       throw new NotFoundException('Invitation not found or no longer pending');
     }
 
@@ -2296,13 +2682,19 @@ export class ActivitiesService implements OnModuleInit {
       throw new NotFoundException('Invitation not found or no longer pending');
     }
 
-    await this.settleInviteNotifications(invitation.activityId, 'DECLINED', [userId]);
+    await this.settleInviteNotifications(invitation.activityId, 'DECLINED', [
+      userId,
+    ]);
 
-    this.domainEventService.emit('invitation:updated', {
-      invitationId,
-      status: 'DECLINED',
-      activityId: invitation.activityId,
-    }, [invitation.inviterId, userId]);
+    this.domainEventService.emit(
+      'invitation:updated',
+      {
+        invitationId,
+        status: 'DECLINED',
+        activityId: invitation.activityId,
+      },
+      [invitation.inviterId, userId],
+    );
 
     return { success: true };
   }
@@ -2337,31 +2729,51 @@ export class ActivitiesService implements OnModuleInit {
     if (!activity || activity.deletedAt) {
       throw new NotFoundException('Activity not found');
     }
-    if (!activity.startDate || new Date(activity.startDate) > new Date()) return;
+    if (!activity.startDate || new Date(activity.startDate) > new Date())
+      return;
 
     await this.prisma.activityInvitation.updateMany({
       where: { id: invitation.id, status: 'PENDING' },
       data: { status: 'EXPIRED' },
     });
-    await this.settleInviteNotifications(invitation.activityId, 'EXPIRED', [userId]);
+    await this.settleInviteNotifications(invitation.activityId, 'EXPIRED', [
+      userId,
+    ]);
     await this.domainEventService.emit(
       'invitation:updated',
-      { invitationId: invitation.id, activityId: invitation.activityId, status: 'EXPIRED' },
+      {
+        invitationId: invitation.id,
+        activityId: invitation.activityId,
+        status: 'EXPIRED',
+      },
       [userId],
     );
 
     throw new BadRequestException('This activity has already started');
   }
 
-  async revokeInvitation(activityId: string, hostId: string, inviteeId: string) {
+  async revokeInvitation(
+    activityId: string,
+    hostId: string,
+    inviteeId: string,
+  ) {
     const activity = await this.prisma.crewActivity.findUnique({
       where: { id: activityId },
-      select: { id: true, creatorId: true, deletedAt: true, visibility: true, collegeId: true },
+      select: {
+        id: true,
+        creatorId: true,
+        deletedAt: true,
+        visibility: true,
+        collegeId: true,
+      },
     });
     if (!activity || activity.deletedAt) {
       throw new NotFoundException('Activity not found');
     }
-    this.activityAuthorizationService.assertCanManage({ id: hostId }, activity as any);
+    this.activityAuthorizationService.assertCanManage(
+      { id: hostId },
+      activity as any,
+    );
 
     const result = await this.prisma.activityInvitation.updateMany({
       where: { activityId, inviteeId, revokedAt: null },
@@ -2369,9 +2781,11 @@ export class ActivitiesService implements OnModuleInit {
     });
 
     if (result.count > 0) {
-      await this.settleInviteNotifications(activityId, 'CANCELLED', [inviteeId]);
+      await this.settleInviteNotifications(activityId, 'CANCELLED', [
+        inviteeId,
+      ]);
       await this.clearActivityFeedCaches();
-        await this.domainEventService.emit('activity.visibilityChanged', {
+      await this.domainEventService.emit('activity.visibilityChanged', {
         activityId,
         id: activityId,
         reason: 'INVITATION_REVOKED',
@@ -2395,7 +2809,9 @@ export class ActivitiesService implements OnModuleInit {
         status: true,
         collegeId: true,
         members: { select: { userId: true } },
-        invitations: { select: { inviteeId: true, status: true, respondedAt: true } },
+        invitations: {
+          select: { inviteeId: true, status: true, respondedAt: true },
+        },
       },
     });
 
@@ -2403,12 +2819,16 @@ export class ActivitiesService implements OnModuleInit {
       throw new NotFoundException('Activity not found');
     }
 
-    this.activityAuthorizationService.assertCanManage({ id: hostId }, activity as any);
+    this.activityAuthorizationService.assertCanManage(
+      { id: hostId },
+      activity as any,
+    );
 
-    const memberSet = new Set(activity.members.map(m => m.userId));
+    const memberSet = new Set(activity.members.map((m) => m.userId));
     const fourHoursMs = 4 * 60 * 60 * 1000;
 
-    const statuses: Record<string, { status: string; remainingMins?: number }> = {};
+    const statuses: Record<string, { status: string; remainingMins?: number }> =
+      {};
 
     for (const m of activity.members) {
       statuses[m.userId] = { status: 'MEMBER' };
@@ -2428,9 +2848,12 @@ export class ActivitiesService implements OnModuleInit {
       } else if (inv.status === 'PENDING') {
         statuses[inv.inviteeId] = { status: 'PENDING' };
       } else if (inv.status === 'DECLINED' && inv.respondedAt) {
-        const timeSinceDecline = Date.now() - new Date(inv.respondedAt).getTime();
+        const timeSinceDecline =
+          Date.now() - new Date(inv.respondedAt).getTime();
         if (timeSinceDecline < fourHoursMs) {
-          const remainingMins = Math.ceil((fourHoursMs - timeSinceDecline) / 60000);
+          const remainingMins = Math.ceil(
+            (fourHoursMs - timeSinceDecline) / 60000,
+          );
           statuses[inv.inviteeId] = { status: 'COOLDOWN', remainingMins };
         } else {
           statuses[inv.inviteeId] = { status: 'EXPIRED_DECLINE' };

@@ -1,4 +1,9 @@
-import { Injectable, Inject, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Inject,
+  Logger,
+  BadRequestException,
+} from '@nestjs/common';
 import type { StorageProvider } from './providers/storage-provider.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
@@ -18,25 +23,35 @@ export class StorageService {
     private configService: ConfigService,
   ) {
     this.providerName = config.storage.provider;
-    this.bucketName = this.providerName === 'r2' 
-      ? config.storage.r2.bucketName
-      : config.auth.supabase.bucketName;
+    this.bucketName =
+      this.providerName === 'r2'
+        ? config.storage.r2.bucketName
+        : config.auth.supabase.bucketName;
   }
 
   isSafeStorageKey(key: string): boolean {
-    return typeof key === 'string' && /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+$/.test(key);
+    return (
+      typeof key === 'string' && /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+$/.test(key)
+    );
   }
 
   async userOwnsMediaKey(key: string, userId: string): Promise<boolean> {
     if (!this.isSafeStorageKey(key)) return false;
-    const media = await this.prisma.media.findUnique({ where: { objectKey: key }, select: { ownerId: true } });
+    const media = await this.prisma.media.findUnique({
+      where: { objectKey: key },
+      select: { ownerId: true },
+    });
     return media?.ownerId === userId;
   }
 
   /**
    * Upload file securely (pass-through) and register Media.
    */
-  async uploadFile(userId: string, file: Express.Multer.File, folder = 'general') {
+  async uploadFile(
+    userId: string,
+    file: Express.Multer.File,
+    folder = 'general',
+  ) {
     const safeFolder = this.normalizeFolder(folder);
     const ext = this.extensionForMime(file.mimetype);
     const randomHex = require('crypto').randomBytes(16).toString('hex');
@@ -55,8 +70,8 @@ export class StorageService {
         type: file.mimetype.startsWith('video')
           ? 'VIDEO'
           : file.mimetype.startsWith('audio')
-          ? 'AUDIO'
-          : 'IMAGE', // Legacy fallback
+            ? 'AUDIO'
+            : 'IMAGE', // Legacy fallback
         mimeType: file.mimetype,
         fileSize: file.size,
       },
@@ -83,9 +98,14 @@ export class StorageService {
     duration?: number,
   ) {
     const safeFolder = this.normalizeFolder(folder);
-    if (typeof contentType !== 'string' || !this.isAllowedMimeType(contentType)) throw new BadRequestException('Unsupported content type');
+    if (typeof contentType !== 'string' || !this.isAllowedMimeType(contentType))
+      throw new BadRequestException('Unsupported content type');
     const requestedFileSize = Number(fileSize || 0);
-    if (!Number.isFinite(requestedFileSize) || requestedFileSize < 0 || requestedFileSize > 50 * 1024 * 1024) {
+    if (
+      !Number.isFinite(requestedFileSize) ||
+      requestedFileSize < 0 ||
+      requestedFileSize > 50 * 1024 * 1024
+    ) {
       throw new BadRequestException('Invalid file size');
     }
 
@@ -106,7 +126,11 @@ export class StorageService {
       explicitKey = variantKey;
     }
 
-    const { uploadUrl, publicUrl: providerUrl, key } = await this.storageProvider.createSignedUploadUrl(
+    const {
+      uploadUrl,
+      publicUrl: providerUrl,
+      key,
+    } = await this.storageProvider.createSignedUploadUrl(
       filename,
       contentType,
       safeFolder,
@@ -123,8 +147,8 @@ export class StorageService {
       type: contentType.startsWith('video')
         ? 'VIDEO'
         : contentType.startsWith('audio')
-        ? 'AUDIO'
-        : 'IMAGE', // Legacy fallback
+          ? 'AUDIO'
+          : 'IMAGE', // Legacy fallback
       mimeType: contentType,
       fileSize: requestedFileSize,
       width: width ? Math.round(Number(width)) : undefined,
@@ -135,7 +159,11 @@ export class StorageService {
     // Register media in database (pending state). Variant (thumbnail) keys can be
     // re-requested on a retry, so upsert to stay idempotent on the unique objectKey.
     const media = explicitKey
-      ? await this.prisma.media.upsert({ where: { objectKey: key }, create: mediaData, update: mediaData })
+      ? await this.prisma.media.upsert({
+          where: { objectKey: key },
+          create: mediaData,
+          update: mediaData,
+        })
       : await this.prisma.media.create({ data: mediaData });
 
     // Provide a generic, provider-agnostic URL to the frontend
@@ -160,13 +188,13 @@ export class StorageService {
   async getResolvedPublicUrl(key: string): Promise<string | null> {
     const media = await this.prisma.media.findUnique({
       where: { objectKey: key },
-      select: { provider: true, bucket: true, objectKey: true }
+      select: { provider: true, bucket: true, objectKey: true },
     });
 
     if (media?.provider === 'supabase') {
       return this.getSupabasePublicUrl(media.bucket, media.objectKey);
     }
-    
+
     // Default to active provider if no media record found or provider is r2
     return this.getPublicUrl(key);
   }
@@ -179,9 +207,15 @@ export class StorageService {
     return `${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${bucket}/${key}`;
   }
 
-  private signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
+  private signedUrlCache = new Map<
+    string,
+    { url: string; expiresAt: number }
+  >();
 
-  async getSignedUrls(keys: string[], expiresIn = 3600): Promise<{ [key: string]: string }> {
+  async getSignedUrls(
+    keys: string[],
+    expiresIn = 3600,
+  ): Promise<{ [key: string]: string }> {
     if (!keys || keys.length === 0) return {};
     const now = Date.now();
     const result: { [key: string]: string } = {};
@@ -197,7 +231,10 @@ export class StorageService {
     }
 
     if (uncachedKeys.length > 0) {
-      const freshUrls = await this.storageProvider.createSignedUrls(uncachedKeys, expiresIn);
+      const freshUrls = await this.storageProvider.createSignedUrls(
+        uncachedKeys,
+        expiresIn,
+      );
       const cacheExpiresAt = now + Math.max(expiresIn - 60, 300) * 1000;
       for (const [key, url] of Object.entries(freshUrls)) {
         result[key] = url;
@@ -208,12 +245,22 @@ export class StorageService {
     return result;
   }
 
-  async getSignedUrlsForUser(keys: string[], expiresIn: number, userId: string) {
+  async getSignedUrlsForUser(
+    keys: string[],
+    expiresIn: number,
+    userId: string,
+  ) {
     if (!keys || keys.length === 0) return {};
 
     const media = await this.prisma.media.findMany({
       where: { objectKey: { in: keys } },
-      select: { objectKey: true, ownerId: true, visibility: true, provider: true, bucket: true },
+      select: {
+        objectKey: true,
+        ownerId: true,
+        visibility: true,
+        provider: true,
+        bucket: true,
+      },
     });
 
     const mediaMap = new Map(media.map((m) => [m.objectKey, m]));
@@ -252,7 +299,9 @@ export class StorageService {
 
   async confirmUpload(key: string, userId: string) {
     if (!this.isSafeStorageKey(key)) return null;
-    const media = await this.prisma.media.findUnique({ where: { objectKey: key } });
+    const media = await this.prisma.media.findUnique({
+      where: { objectKey: key },
+    });
     if (media && media.ownerId !== userId) return null;
     if (!media) {
       // If no media record exists, it might have been an unmonitored upload, let's create it
@@ -274,26 +323,38 @@ export class StorageService {
     // Best-effort existence verification for diagnostics only. R2 is eventually
     // consistent, so a transient miss right after PUT is normal — we log it but
     // never delete the row here (that would regress the working image path).
-    this.storageProvider.exists(key).then(present => {
-      if (!present) {
-        this.logger.warn(`confirmUpload: object not yet visible in storage (key=${key}, owner=${userId})`);
-      } else {
-        this.logger.log(`confirmUpload: verified object present (key=${key})`);
-      }
-    }).catch(() => {});
+    this.storageProvider
+      .exists(key)
+      .then((present) => {
+        if (!present) {
+          this.logger.warn(
+            `confirmUpload: object not yet visible in storage (key=${key}, owner=${userId})`,
+          );
+        } else {
+          this.logger.log(
+            `confirmUpload: verified object present (key=${key})`,
+          );
+        }
+      })
+      .catch(() => {});
 
     // Non-blocking background metadata synchronization
-    this.storageProvider.getMetadata(key).then(metadata => {
-      if (metadata && (metadata.contentLength || metadata.contentType)) {
-        this.prisma.media.update({
-          where: { id: media.id },
-          data: {
-            fileSize: metadata.contentLength || media.fileSize,
-            mimeType: metadata.contentType || media.mimeType,
-          }
-        }).catch(() => {});
-      }
-    }).catch(() => {});
+    this.storageProvider
+      .getMetadata(key)
+      .then((metadata) => {
+        if (metadata && (metadata.contentLength || metadata.contentType)) {
+          this.prisma.media
+            .update({
+              where: { id: media.id },
+              data: {
+                fileSize: metadata.contentLength || media.fileSize,
+                mimeType: metadata.contentType || media.mimeType,
+              },
+            })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
 
     return media;
   }
@@ -313,9 +374,19 @@ export class StorageService {
     // covers stay distinguishable in storage, exactly as avatars and
     // profile-covers already are for users.
     const allowedFolders = [
-      'avatars', 'profile-covers',
-      'communities', 'community-icons', 'community-covers',
-      'posts', 'chat', 'groups', 'voice', 'temp', 'general', 'events', 'activities',
+      'avatars',
+      'profile-covers',
+      'communities',
+      'community-icons',
+      'community-covers',
+      'posts',
+      'chat',
+      'groups',
+      'voice',
+      'temp',
+      'general',
+      'events',
+      'activities',
       'defaults',
       // Support-request attachments. Owner-less (the submitter is usually not
       // logged in) and never listed publicly — reachable only through the
@@ -323,7 +394,9 @@ export class StorageService {
       'support',
     ];
     if (!allowedFolders.includes(folder)) {
-      throw new BadRequestException(`Invalid upload folder. Allowed: ${allowedFolders.join(', ')}`);
+      throw new BadRequestException(
+        `Invalid upload folder. Allowed: ${allowedFolders.join(', ')}`,
+      );
     }
     return folder;
   }
@@ -341,13 +414,18 @@ export class StorageService {
    * declared type and both must agree and both must be on the allow-list.
    */
   async uploadSupportAttachment(file: Express.Multer.File) {
-    const allowed = SUPPORT_ATTACHMENT_LIMITS.allowedMimeTypes as readonly string[];
+    const allowed =
+      SUPPORT_ATTACHMENT_LIMITS.allowedMimeTypes as readonly string[];
 
     if (!allowed.includes(file.mimetype)) {
-      throw new BadRequestException('That file type is not supported. Attach a PNG, JPG, WEBP, GIF, PDF or TXT file.');
+      throw new BadRequestException(
+        'That file type is not supported. Attach a PNG, JPG, WEBP, GIF, PDF or TXT file.',
+      );
     }
     if (file.size > SUPPORT_ATTACHMENT_LIMITS.maxBytesPerFile) {
-      throw new BadRequestException('That file is too large. Attachments must be 10 MB or smaller.');
+      throw new BadRequestException(
+        'That file is too large. Attachments must be 10 MB or smaller.',
+      );
     }
 
     const sniffed = sniffMimeType(file.buffer);
@@ -355,7 +433,9 @@ export class StorageService {
     // type alone — it is also the one type on the list that cannot carry an
     // active payload.
     if (file.mimetype !== 'text/plain' && sniffed !== file.mimetype) {
-      throw new BadRequestException("That file's contents do not match its type.");
+      throw new BadRequestException(
+        "That file's contents do not match its type.",
+      );
     }
 
     const ext = this.extensionForMime(file.mimetype);
@@ -387,15 +467,26 @@ export class StorageService {
   }
 
   private isAllowedMimeType(contentType: string): boolean {
-    return /^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|ogg)|audio\/(mpeg|wav|webm|ogg))$/i.test(contentType);
+    return /^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|ogg)|audio\/(mpeg|wav|webm|ogg))$/i.test(
+      contentType,
+    );
   }
 
   private extensionForMime(contentType: string): string {
     const extensions: Record<string, string> = {
-      'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
-      'video/mp4': 'mp4', 'video/webm': 'webm', 'video/ogg': 'ogv',
-      'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/webm': 'webm', 'audio/ogg': 'oga',
-      'application/pdf': 'pdf', 'text/plain': 'txt',
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+      'video/mp4': 'mp4',
+      'video/webm': 'webm',
+      'video/ogg': 'ogv',
+      'audio/mpeg': 'mp3',
+      'audio/wav': 'wav',
+      'audio/webm': 'webm',
+      'audio/ogg': 'oga',
+      'application/pdf': 'pdf',
+      'text/plain': 'txt',
     };
     return extensions[contentType.toLowerCase()] || 'bin';
   }
@@ -414,7 +505,10 @@ export class StorageService {
    * after a post-creation failure so a successful upload never leaves an orphan.
    * Safe/idempotent — returns false without touching anything it doesn't own.
    */
-  async discardOwnedUnattached(key: string, userId: string): Promise<{ discarded: boolean }> {
+  async discardOwnedUnattached(
+    key: string,
+    userId: string,
+  ): Promise<{ discarded: boolean }> {
     if (!this.isSafeStorageKey(key)) return { discarded: false };
     const media = await this.prisma.media.findUnique({
       where: { objectKey: key },
@@ -424,8 +518,12 @@ export class StorageService {
       return { discarded: false };
     }
     await this.storageProvider.delete(key).catch(() => {});
-    await this.prisma.media.deleteMany({ where: { objectKey: key, ownerId: userId, postId: null } });
-    this.logger.log(`discardOwnedUnattached: removed orphan media key=${key} owner=${userId}`);
+    await this.prisma.media.deleteMany({
+      where: { objectKey: key, ownerId: userId, postId: null },
+    });
+    this.logger.log(
+      `discardOwnedUnattached: removed orphan media key=${key} owner=${userId}`,
+    );
     return { discarded: true };
   }
 }

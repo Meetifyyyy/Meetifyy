@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { AdminSettingsService } from './admin-settings.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 
@@ -20,7 +14,8 @@ export class AdminSettingsController {
 
   @Post()
   async upsertSetting(
-    @Body() dto: {
+    @Body()
+    dto: {
       key: string;
       value: string;
       type?: string;

@@ -55,15 +55,20 @@ export class MentionsService {
     rawMentions: MentionDto[] | null | undefined,
     actorId: string,
   ): Promise<SanitizedMention[]> {
-    if (!text || !Array.isArray(rawMentions) || rawMentions.length === 0) return [];
+    if (!text || !Array.isArray(rawMentions) || rawMentions.length === 0)
+      return [];
 
     const seenUserIds = new Set<string>();
     const structurallyValid: MentionDto[] = [];
 
     // Scan at most 4x the cap so a huge garbage payload can't force an
     // unbounded loop before we even get to the per-item cap.
-    for (const m of rawMentions.slice(0, MentionsService.MAX_MENTIONS_PER_ITEM * 4)) {
-      if (!m || typeof m.userId !== 'string' || typeof m.username !== 'string') continue;
+    for (const m of rawMentions.slice(
+      0,
+      MentionsService.MAX_MENTIONS_PER_ITEM * 4,
+    )) {
+      if (!m || typeof m.userId !== 'string' || typeof m.username !== 'string')
+        continue;
       if (typeof m.start !== 'number' || typeof m.end !== 'number') continue;
       if (!Number.isInteger(m.start) || !Number.isInteger(m.end)) continue;
       if (m.start < 0 || m.end <= m.start || m.end > text.length) continue;
@@ -75,7 +80,8 @@ export class MentionsService {
 
       seenUserIds.add(m.userId);
       structurallyValid.push(m);
-      if (structurallyValid.length >= MentionsService.MAX_MENTIONS_PER_ITEM) break;
+      if (structurallyValid.length >= MentionsService.MAX_MENTIONS_PER_ITEM)
+        break;
     }
 
     if (structurallyValid.length === 0) return [];
@@ -88,16 +94,18 @@ export class MentionsService {
     });
     const realUserMap = new Map(realUsers.map((u) => [u.id, u.username]));
 
-    return structurallyValid
-      .filter((m) => realUserMap.has(m.userId))
-      // Store the DB's current username, not the client's stale snapshot —
-      // keeps rendering correct even if the mentioned user renamed since.
-      .map((m) => ({
-        userId: m.userId,
-        username: realUserMap.get(m.userId) as string,
-        start: m.start,
-        end: m.end,
-      }));
+    return (
+      structurallyValid
+        .filter((m) => realUserMap.has(m.userId))
+        // Store the DB's current username, not the client's stale snapshot —
+        // keeps rendering correct even if the mentioned user renamed since.
+        .map((m) => ({
+          userId: m.userId,
+          username: realUserMap.get(m.userId) as string,
+          start: m.start,
+          end: m.end,
+        }))
+    );
   }
 
   /**
@@ -117,7 +125,16 @@ export class MentionsService {
     contextText: string;
     extraMetadata?: Record<string, any>;
   }): Promise<void> {
-    const { mentions, sourceType, sourceId, actor, entityType, entityId, contextText, extraMetadata } = params;
+    const {
+      mentions,
+      sourceType,
+      sourceId,
+      actor,
+      entityType,
+      entityId,
+      contextText,
+      extraMetadata,
+    } = params;
     if (!mentions || mentions.length === 0) return;
 
     try {
@@ -131,7 +148,10 @@ export class MentionsService {
         skipDuplicates: true,
       });
     } catch (err) {
-      this.logger.error(`Failed to persist Mention index rows for ${sourceType}:${sourceId}`, err as Error);
+      this.logger.error(
+        `Failed to persist Mention index rows for ${sourceType}:${sourceId}`,
+        err as Error,
+      );
     }
 
     const results = await Promise.allSettled(

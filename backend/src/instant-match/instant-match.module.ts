@@ -25,7 +25,12 @@ import { BlocksService } from '../users/blocks.service';
   // would drag in notifications, presence and a queue registration this module
   // has no use for). Its cache is deliberately static, so this copy shares one
   // map — and one Redis invalidation channel — with every other copy.
-  providers: [InstantMatchService, InstantMatchProcessor, InstantMatchRateLimiter, BlocksService],
+  providers: [
+    InstantMatchService,
+    InstantMatchProcessor,
+    InstantMatchRateLimiter,
+    BlocksService,
+  ],
   exports: [InstantMatchService, InstantMatchRateLimiter],
 })
 export class InstantMatchModule implements OnModuleInit, OnModuleDestroy {
@@ -53,7 +58,9 @@ export class InstantMatchModule implements OnModuleInit, OnModuleDestroy {
           removeOnFail: 50,
         },
       );
-      this.logger.log(`Instant Match expiry sweep scheduled every ${EXPIRY_SWEEP_MS}ms`);
+      this.logger.log(
+        `Instant Match expiry sweep scheduled every ${EXPIRY_SWEEP_MS}ms`,
+      );
     } catch (err) {
       // Without a sweep, an unanswered match never expires: both users stay
       // locked out of re-queueing and neither is put back in the queue. A
@@ -63,8 +70,8 @@ export class InstantMatchModule implements OnModuleInit, OnModuleDestroy {
       // double-notifying. Far better than no expiry at all.
       this.logger.error(
         'Could not schedule the Instant Match expiry sweep on the queue — ' +
-        'falling back to an in-process timer',
-        err as any,
+          'falling back to an in-process timer',
+        err,
       );
       this.fallbackTimer = setInterval(() => {
         void this.instantMatchService.expireStale().catch((sweepErr) => {

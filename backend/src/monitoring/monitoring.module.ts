@@ -28,7 +28,12 @@ import { RequestMonitoringMiddleware } from './request-monitoring.middleware';
     SocketMetricsCollector,
     SystemMetricsCollector,
   ],
-  exports: [MonitoringWriterService, MonitoringRetentionService, SocketMetricsCollector, SystemMetricsCollector],
+  exports: [
+    MonitoringWriterService,
+    MonitoringRetentionService,
+    SocketMetricsCollector,
+    SystemMetricsCollector,
+  ],
 })
 export class MonitoringModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

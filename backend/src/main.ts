@@ -13,9 +13,7 @@ import { nodeProfilingIntegration } from '@sentry/profiling-node';
 Sentry.init({
   dsn: config.app.observability.sentryDsn,
   environment: config.env,
-  integrations: [
-    nodeProfilingIntegration(),
-  ],
+  integrations: [nodeProfilingIntegration()],
   // Sampling defaults to 10% of traces and 5% of profiles in production — 1.0
   // there adds measurable per-request overhead and inflates Sentry costs
   // dramatically. Both are tunable per environment.
@@ -44,7 +42,11 @@ async function bootstrap() {
   // Every allowed origin comes from configuration — FRONTEND_URL, ADMIN_URL and
   // CORS_ORIGINS. Adding a preview domain is an environment change, never a
   // code change.
-  const { origins: configuredCorsOrigins, originPatterns, allowLocalNetwork } = config.app.cors;
+  const {
+    origins: configuredCorsOrigins,
+    originPatterns,
+    allowLocalNetwork,
+  } = config.app.cors;
 
   // Security headers. CSP and HSTS default to production-only: CSP off in dev so
   // LAN access from other devices works without pre-listing every local IP, and
@@ -53,39 +55,54 @@ async function bootstrap() {
   // CSP sources are additive: 'self' plus whatever the environment declares.
   // A new CDN or media host is a CSP_*_SRC change, not a deploy of new source.
   const { security } = config.app;
-  app.use(helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-    crossOriginOpenerPolicy: { policy: 'unsafe-none' },
-    contentSecurityPolicy: security.cspEnabled ? {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", ...security.cspScriptSrc],
-        workerSrc: ["'self'", 'blob:', ...security.cspScriptSrc],
-        styleSrc: ["'self'", "'unsafe-inline'", ...security.cspStyleSrc],
-        fontSrc: ["'self'", ...security.cspFontSrc],
-        imgSrc: ["'self'", 'data:', 'blob:', ...security.cspImgSrc],
-        connectSrc: ["'self'", ...security.cspConnectSrc, ...configuredCorsOrigins],
-      },
-    } : false,
-    hsts: security.hstsEnabled ? {
-      maxAge: 31536000,
-      includeSubDomains: true,
-      preload: true,
-    } : false,
-  }));
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      crossOriginOpenerPolicy: { policy: 'unsafe-none' },
+      contentSecurityPolicy: security.cspEnabled
+        ? {
+            directives: {
+              defaultSrc: ["'self'"],
+              scriptSrc: ["'self'", ...security.cspScriptSrc],
+              workerSrc: ["'self'", 'blob:', ...security.cspScriptSrc],
+              styleSrc: ["'self'", "'unsafe-inline'", ...security.cspStyleSrc],
+              fontSrc: ["'self'", ...security.cspFontSrc],
+              imgSrc: ["'self'", 'data:', 'blob:', ...security.cspImgSrc],
+              connectSrc: [
+                "'self'",
+                ...security.cspConnectSrc,
+                ...configuredCorsOrigins,
+              ],
+            },
+          }
+        : false,
+      hsts: security.hstsEnabled
+        ? {
+            maxAge: 31536000,
+            includeSubDomains: true,
+            preload: true,
+          }
+        : false,
+    }),
+  );
 
   app.use(cookieParser());
 
   // Enable CORS
   app.enableCors({
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean | string) => void) => {
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean | string) => void,
+    ) => {
       if (!origin) return callback(null, true);
       // Localhost / LAN origins are trusted only where the environment says so.
       // `allowLocalNetwork` is forced off in production, so a prod API can never
       // treat a developer's machine as a same-trust origin.
       const isLocalNetworkOrigin =
         allowLocalNetwork &&
-        /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|100\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/i.test(origin);
+        /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|100\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/i.test(
+          origin,
+        );
 
       // Wildcard entries (from CORS_ORIGIN_PATTERNS or a starred CORS_ORIGINS
       // entry) let a deployment allow its own preview domains without listing
@@ -93,7 +110,8 @@ async function bootstrap() {
       const matchesPattern = (allowed: string) => {
         if (allowed === '*') return true;
         if (!allowed.includes('*')) return false;
-        const regexPattern = '^' + allowed.replace(/\./g, '\\.').replace(/\*/g, '[^.]*') + '$';
+        const regexPattern =
+          '^' + allowed.replace(/\./g, '\\.').replace(/\*/g, '[^.]*') + '$';
         return new RegExp(regexPattern, 'i').test(origin);
       };
 

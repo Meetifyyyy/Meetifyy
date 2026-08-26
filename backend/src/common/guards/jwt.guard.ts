@@ -59,7 +59,15 @@ export class JwtGuard implements CanActivate {
   // Fixed asymmetric allowlist — the ONLY algorithms accepted on the local JWKS
   // path. Symmetric (HS*) and `none` are deliberately excluded here.
   private static readonly ASYMMETRIC_ALGS: jwt.Algorithm[] = [
-    'ES256', 'ES384', 'ES512', 'RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
+    'ES256',
+    'ES384',
+    'ES512',
+    'RS256',
+    'RS384',
+    'RS512',
+    'PS256',
+    'PS384',
+    'PS512',
   ];
 
   /** The `iss` every Supabase token from THIS project carries. */
@@ -77,7 +85,12 @@ export class JwtGuard implements CanActivate {
 
   private static async refreshJwks(force = false): Promise<void> {
     const now = Date.now();
-    if (!force && now - this.jwksLastFetch < this.JWKS_MIN_REFRESH_MS && this.jwksKeys.size > 0) return;
+    if (
+      !force &&
+      now - this.jwksLastFetch < this.JWKS_MIN_REFRESH_MS &&
+      this.jwksKeys.size > 0
+    )
+      return;
     if (this.jwksInFlight) return this.jwksInFlight;
     const url = this.jwksUrl();
     if (!url) return;
@@ -93,14 +106,17 @@ export class JwtGuard implements CanActivate {
           if (!jwk?.kid) continue;
           try {
             next.set(jwk.kid, createPublicKey({ key: jwk, format: 'jwk' }));
-          } catch { /* skip unusable key */ }
+          } catch {
+            /* skip unusable key */
+          }
         }
         if (next.size > 0) {
           this.jwksKeys = next;
           this.jwksLastFetch = Date.now();
         }
-      } catch { /* network hiccup — keep existing cache, remote fallback covers gaps */ }
-      finally {
+      } catch {
+        /* network hiccup — keep existing cache, remote fallback covers gaps */
+      } finally {
         this.jwksInFlight = null;
       }
     })();
@@ -142,18 +158,28 @@ export class JwtGuard implements CanActivate {
       JwtGuard.warmed = true;
       const url = JwtGuard.jwksUrl();
       if (!url) {
-        this.logger.warn('[JwtGuard] SUPABASE_URL not set — JWKS local verification disabled, using remote auth fallback.');
+        this.logger.warn(
+          '[JwtGuard] SUPABASE_URL not set — JWKS local verification disabled, using remote auth fallback.',
+        );
       } else {
         JwtGuard.refreshJwks(true)
           .then(() => {
             const n = JwtGuard.jwksKeys.size;
             if (n > 0) {
-              this.logger.log(`[JwtGuard] Loaded ${n} JWKS signing key(s) — local (0-network) token verification ACTIVE.`);
+              this.logger.log(
+                `[JwtGuard] Loaded ${n} JWKS signing key(s) — local (0-network) token verification ACTIVE.`,
+              );
             } else {
-              this.logger.warn(`[JwtGuard] JWKS fetch returned no keys from ${url} — falling back to remote auth.`);
+              this.logger.warn(
+                `[JwtGuard] JWKS fetch returned no keys from ${url} — falling back to remote auth.`,
+              );
             }
           })
-          .catch((e) => this.logger.warn(`[JwtGuard] JWKS warm failed (${(e as Error).message}) — remote auth fallback in use.`));
+          .catch((e) =>
+            this.logger.warn(
+              `[JwtGuard] JWKS warm failed (${(e as Error).message}) — remote auth fallback in use.`,
+            ),
+          );
       }
     }
   }
@@ -172,7 +198,9 @@ export class JwtGuard implements CanActivate {
     }
 
     if (!this.supabaseService.isConfigured) {
-      throw new UnauthorizedException('Supabase Auth is not configured on this server');
+      throw new UnauthorizedException(
+        'Supabase Auth is not configured on this server',
+      );
     }
 
     const now = Date.now();
@@ -188,7 +216,9 @@ export class JwtGuard implements CanActivate {
 
     const userPayload = await this.validateToken(token);
     if (!userPayload) {
-      throw new UnauthorizedException('Invalid or expired authentication token');
+      throw new UnauthorizedException(
+        'Invalid or expired authentication token',
+      );
     }
 
     // Cache until the token's own expiry, capped by the guard TTL so revoked
@@ -217,7 +247,8 @@ export class JwtGuard implements CanActivate {
       return {
         id: userId,
         email: payload.email || `${userId}@meetifyy.user`,
-        user_metadata: payload.user_metadata || payload.raw_user_meta_data || {},
+        user_metadata:
+          payload.user_metadata || payload.raw_user_meta_data || {},
         // Not present in Supabase access tokens — auth.service resolves it via
         // the admin API on the new-account path when needed.
         email_confirmed_at: payload.email_confirmed_at,
@@ -235,7 +266,11 @@ export class JwtGuard implements CanActivate {
     // That closes the algorithm-confusion / `alg:none` / RS→HS downgrade class
     // (an attacker knows the public key, so accepting HS256 here would let them
     // forge tokens by HMAC-ing with it). We also pin the issuer to THIS project.
-    if (header?.kid && alg && JwtGuard.ASYMMETRIC_ALGS.includes(alg as jwt.Algorithm)) {
+    if (
+      header?.kid &&
+      alg &&
+      JwtGuard.ASYMMETRIC_ALGS.includes(alg as jwt.Algorithm)
+    ) {
       try {
         const key = await JwtGuard.getSigningKey(header.kid);
         if (key) {
@@ -248,7 +283,9 @@ export class JwtGuard implements CanActivate {
         }
       } catch (e) {
         if (e instanceof jwt.TokenExpiredError) return null;
-        this.logger.warn(`Local JWKS verify failed (${(e as Error).message}); falling back to remote`);
+        this.logger.warn(
+          `Local JWKS verify failed (${(e as Error).message}); falling back to remote`,
+        );
       }
     }
 
@@ -256,7 +293,9 @@ export class JwtGuard implements CanActivate {
     const secret = config.auth.supabase.jwtSecret;
     if (secret && alg === 'HS256') {
       try {
-        const payload: any = jwt.verify(token, secret, { algorithms: ['HS256'] });
+        const payload: any = jwt.verify(token, secret, {
+          algorithms: ['HS256'],
+        });
         return normalize(payload);
       } catch (e) {
         if (e instanceof jwt.TokenExpiredError) return null;
@@ -268,7 +307,8 @@ export class JwtGuard implements CanActivate {
 
     // Fallback: authoritative remote validation against Supabase Auth.
     try {
-      const { data, error } = await this.supabaseService.client.auth.getUser(token);
+      const { data, error } =
+        await this.supabaseService.client.auth.getUser(token);
       if (error || !data?.user) {
         return null;
       }
@@ -303,7 +343,9 @@ export class JwtGuard implements CanActivate {
     try {
       const parts = token.split('.');
       if (parts.length !== 3) return undefined;
-      const decoded = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
+      const decoded = JSON.parse(
+        Buffer.from(parts[1], 'base64url').toString('utf-8'),
+      );
       return typeof decoded?.exp === 'number' ? decoded.exp : undefined;
     } catch {
       return undefined;

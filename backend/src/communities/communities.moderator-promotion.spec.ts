@@ -38,7 +38,9 @@ describe('Moderator permission registry', () => {
   it('states the limit on every capability that has one', () => {
     // "Remove members" without "not the owner, not other moderators" reads as
     // a bigger power than it is, and the limits are really enforced.
-    const byId = Object.fromEntries(moderatorPermissions().map((p) => [p.id, p]));
+    const byId = Object.fromEntries(
+      moderatorPermissions().map((p) => [p.id, p]),
+    );
     expect(byId.REMOVE_MEMBERS.limit).toMatch(/not other moderators/i);
     expect(byId.DELETE_MEMBER_CONTENT.limit).toMatch(/moderators/i);
   });
@@ -66,15 +68,31 @@ describe('CommunitiesService — moderator promotion notice', () => {
     updates = [];
     prisma = {
       community: {
-        findUnique: jest.fn(async () => ({ id: COMMUNITY, ownerId: OWNER, name: 'Chess Club', avatarKey: null })),
+        findUnique: jest.fn(async () => ({
+          id: COMMUNITY,
+          ownerId: OWNER,
+          name: 'Chess Club',
+          avatarKey: null,
+        })),
       },
       communityMember: {
         findUnique: jest.fn(async ({ where }: any) =>
-          where.userId_communityId.userId === OWNER ? { role: 'OWNER' } : member,
+          where.userId_communityId.userId === OWNER
+            ? { role: 'OWNER' }
+            : member,
         ),
-        update: jest.fn(async ({ data }: any) => { updates.push(data); return { ...member, ...data }; }),
+        update: jest.fn(async ({ data }: any) => {
+          updates.push(data);
+          return { ...member, ...data };
+        }),
       },
-      user: { findUnique: jest.fn(async () => ({ id: OWNER, username: 'own', displayName: 'Owner' })) },
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: OWNER,
+          username: 'own',
+          displayName: 'Owner',
+        })),
+      },
     };
     service = new CommunitiesService(
       prisma,
@@ -83,8 +101,12 @@ describe('CommunitiesService — moderator promotion notice', () => {
       {} as any,
       {} as any,
       {} as any,
-      { createNotification: jest.fn(async (dto: any) => { created.push(dto); }) } as any,
-      new NotificationFactory() as any,
+      {
+        createNotification: jest.fn(async (dto: any) => {
+          created.push(dto);
+        }),
+      } as any,
+      new NotificationFactory(),
     );
     (service as any).invalidateCommunityCache = jest.fn(async () => {});
   };
@@ -103,7 +125,10 @@ describe('CommunitiesService — moderator promotion notice', () => {
         recipientId: MEMBER,
         title: "You're now a moderator",
       });
-      expect(created[0].metadata).toMatchObject({ kind: 'moderator_promotion', communityId: COMMUNITY });
+      expect(created[0].metadata).toMatchObject({
+        kind: 'moderator_promotion',
+        communityId: COMMUNITY,
+      });
     });
 
     it('pushes a targeted realtime event so an open community reacts at once', async () => {
@@ -123,7 +148,11 @@ describe('CommunitiesService — moderator promotion notice', () => {
       // theirs alone. The room still gets community.roleUpdated for the
       // member-list refresh everyone needs.
       expect(promoted[2]).toEqual([MEMBER]);
-      expect(emit.mock.calls.some(([type]: any[]) => type === 'community.roleUpdated')).toBe(true);
+      expect(
+        emit.mock.calls.some(
+          ([type]: any[]) => type === 'community.roleUpdated',
+        ),
+      ).toBe(true);
     });
 
     it('pushes no promotion event on demotion or a no-op re-promotion', async () => {
@@ -133,7 +162,9 @@ describe('CommunitiesService — moderator promotion notice', () => {
 
       const emit = (service as any).domainEventService.emit;
       expect(
-        emit.mock.calls.filter(([type]: any[]) => type === 'community:moderator_promoted'),
+        emit.mock.calls.filter(
+          ([type]: any[]) => type === 'community:moderator_promoted',
+        ),
       ).toHaveLength(0);
     });
 
@@ -158,9 +189,11 @@ describe('CommunitiesService — moderator promotion notice', () => {
       // The role change has committed; a notification failure must not read to
       // the owner as a promotion that did not take.
       setup({ role: 'MEMBER', userId: MEMBER });
-      (service as any).notificationsService.createNotification = jest.fn(async () => {
-        throw new Error('queue down');
-      });
+      (service as any).notificationsService.createNotification = jest.fn(
+        async () => {
+          throw new Error('queue down');
+        },
+      );
       await expect(
         service.updateMemberRole(COMMUNITY, MEMBER, 'MODERATOR', OWNER),
       ).resolves.toBeDefined();
@@ -176,7 +209,9 @@ describe('CommunitiesService — moderator promotion notice', () => {
 
     it('is pending for a fresh promotion, with the live permission list', async () => {
       const notice = await noticeFor({
-        role: 'MODERATOR', moderatorPromotedAt: new Date('2026-01-02'), moderatorNoticeAckedAt: null,
+        role: 'MODERATOR',
+        moderatorPromotedAt: new Date('2026-01-02'),
+        moderatorNoticeAckedAt: null,
       });
       expect(notice).not.toBeNull();
       expect(notice?.permissions).toEqual(moderatorPermissions());
@@ -204,15 +239,21 @@ describe('CommunitiesService — moderator promotion notice', () => {
 
     it('is never shown to a plain member', async () => {
       const notice = await noticeFor({
-        role: 'MEMBER', moderatorPromotedAt: new Date('2026-01-02'), moderatorNoticeAckedAt: null,
+        role: 'MEMBER',
+        moderatorPromotedAt: new Date('2026-01-02'),
+        moderatorNoticeAckedAt: null,
       });
       expect(notice).toBeNull();
     });
 
     it('is null for a non-member and for an anonymous viewer', async () => {
       setup(null);
-      await expect(service.getModeratorNotice(COMMUNITY, MEMBER)).resolves.toBeNull();
-      await expect(service.getModeratorNotice(COMMUNITY, '')).resolves.toBeNull();
+      await expect(
+        service.getModeratorNotice(COMMUNITY, MEMBER),
+      ).resolves.toBeNull();
+      await expect(
+        service.getModeratorNotice(COMMUNITY, ''),
+      ).resolves.toBeNull();
     });
 
     it('is acknowledged idempotently', async () => {
@@ -220,7 +261,9 @@ describe('CommunitiesService — moderator promotion notice', () => {
       await service.acknowledgeModeratorNotice(COMMUNITY, MEMBER);
       await service.acknowledgeModeratorNotice(COMMUNITY, MEMBER);
       expect(updates).toHaveLength(2);
-      updates.forEach((u) => expect(u.moderatorNoticeAckedAt).toBeInstanceOf(Date));
+      updates.forEach((u) =>
+        expect(u.moderatorNoticeAckedAt).toBeInstanceOf(Date),
+      );
     });
   });
 });

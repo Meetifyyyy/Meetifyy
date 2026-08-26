@@ -46,7 +46,11 @@ export class RequestMonitoringMiddleware implements NestMiddleware {
     next();
   }
 
-  private record(request: Request, response: Response, startedAt: bigint): void {
+  private record(
+    request: Request,
+    response: Response,
+    startedAt: bigint,
+  ): void {
     const route = this.resolveRoute(request);
     if (this.isIgnored(route)) return;
 
@@ -81,10 +85,15 @@ export class RequestMonitoringMiddleware implements NestMiddleware {
         // HttpExceptionFilter already stashes the refusal reason here, so the
         // real message is available without the filter needing to know that
         // monitoring exists.
-        message: redactText((request as any)[LOG_CAUSE] || `HTTP ${statusCode}`, 2000),
+        message: redactText(
+          (request as any)[LOG_CAUSE] || `HTTP ${statusCode}`,
+          2000,
+        ),
         // Stack traces are opt-in: a stack can quote a source line containing
         // a value. Only ever read back by an admin.
-        stack: config.monitoring.logStackTraces ? redactText((request as any).__logStack, 8000) || null : null,
+        stack: config.monitoring.logStackTraces
+          ? redactText((request as any).__logStack, 8000) || null
+          : null,
       });
     }
   }
@@ -106,7 +115,9 @@ export class RequestMonitoringMiddleware implements NestMiddleware {
   }
 
   private isIgnored(route: string): boolean {
-    return config.monitoring.ignoredRoutePrefixes.some((prefix) => route.startsWith(prefix));
+    return config.monitoring.ignoredRoutePrefixes.some((prefix) =>
+      route.startsWith(prefix),
+    );
   }
 
   private passesSample(): boolean {

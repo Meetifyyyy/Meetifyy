@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { config } from '../../config';
@@ -39,7 +44,10 @@ export class SystemMetricsCollector implements OnModuleInit, OnModuleDestroy {
 
     this.startLagProbe();
 
-    this.timer = setInterval(() => this.collect(), config.monitoring.metricsIntervalMs);
+    this.timer = setInterval(
+      () => this.collect(),
+      config.monitoring.metricsIntervalMs,
+    );
     this.timer.unref?.();
 
     this.logger.log(
@@ -60,13 +68,17 @@ export class SystemMetricsCollector implements OnModuleInit, OnModuleDestroy {
    */
   private startLagProbe(): void {
     const probeIntervalMs = 500;
-    let expected = process.hrtime.bigint() + BigInt(probeIntervalMs * 1_000_000);
+    let expected =
+      process.hrtime.bigint() + BigInt(probeIntervalMs * 1_000_000);
 
     this.lagTimer = setInterval(() => {
       const now = process.hrtime.bigint();
       const lag = Number(now - expected) / 1_000_000;
       // Smoothed so one unlucky tick does not dominate the snapshot.
-      this.currentLagMs = Math.max(0, this.currentLagMs * 0.5 + Math.max(0, lag) * 0.5);
+      this.currentLagMs = Math.max(
+        0,
+        this.currentLagMs * 0.5 + Math.max(0, lag) * 0.5,
+      );
       expected = now + BigInt(probeIntervalMs * 1_000_000);
     }, probeIntervalMs);
 
@@ -90,7 +102,9 @@ export class SystemMetricsCollector implements OnModuleInit, OnModuleDestroy {
       });
     } catch (error) {
       // A failed snapshot must never interrupt the interval or the app.
-      this.logger.warn(`monitoring.metrics_collection_failed ${JSON.stringify({ error: (error as Error).message })}`);
+      this.logger.warn(
+        `monitoring.metrics_collection_failed ${JSON.stringify({ error: (error as Error).message })}`,
+      );
     }
   }
 

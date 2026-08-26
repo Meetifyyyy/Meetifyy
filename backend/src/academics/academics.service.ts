@@ -44,14 +44,18 @@ export class AcademicsService {
     branch?: unknown;
     currentYear?: unknown;
   }): AcademicSelection {
-    const courseId = typeof input.course === 'string' ? input.course.trim() : '';
-    const branchId = typeof input.branch === 'string' ? input.branch.trim() : '';
+    const courseId =
+      typeof input.course === 'string' ? input.course.trim() : '';
+    const branchId =
+      typeof input.branch === 'string' ? input.branch.trim() : '';
 
-    if (!courseId) throw new BadRequestException(ACADEMIC_ERRORS.COURSE_REQUIRED);
+    if (!courseId)
+      throw new BadRequestException(ACADEMIC_ERRORS.COURSE_REQUIRED);
     const course = findCourse(courseId);
     if (!course) throw new BadRequestException(ACADEMIC_ERRORS.COURSE_UNKNOWN);
 
-    if (!branchId) throw new BadRequestException(ACADEMIC_ERRORS.BRANCH_REQUIRED);
+    if (!branchId)
+      throw new BadRequestException(ACADEMIC_ERRORS.BRANCH_REQUIRED);
     if (!findBranch(courseId, branchId)) {
       throw new BadRequestException(ACADEMIC_ERRORS.BRANCH_NOT_IN_COURSE);
     }
@@ -66,7 +70,8 @@ export class AcademicsService {
           ? parseInt(rawYear.trim(), 10)
           : NaN;
 
-    if (!Number.isInteger(year)) throw new BadRequestException(ACADEMIC_ERRORS.YEAR_REQUIRED);
+    if (!Number.isInteger(year))
+      throw new BadRequestException(ACADEMIC_ERRORS.YEAR_REQUIRED);
     if (year < 1 || year > course.durationYears) {
       throw new BadRequestException(ACADEMIC_ERRORS.YEAR_NOT_IN_COURSE);
     }
@@ -89,7 +94,11 @@ export class AcademicsService {
     // null` before the user reaches that step — and treating those as an attempt
     // to set academic data would reject an otherwise valid profile update.
     const absent = (v: unknown) => v === undefined || v === null || v === '';
-    if (absent(input.course) && absent(input.branch) && absent(input.currentYear)) {
+    if (
+      absent(input.course) &&
+      absent(input.branch) &&
+      absent(input.currentYear)
+    ) {
       return null;
     }
     // Anything partially filled still goes through full validation, so a request
@@ -98,7 +107,11 @@ export class AcademicsService {
   }
 
   /** True when a stored triple is still valid — used when loading legacy rows. */
-  isComplete(course?: string | null, branch?: string | null, currentYear?: number | null): boolean {
+  isComplete(
+    course?: string | null,
+    branch?: string | null,
+    currentYear?: number | null,
+  ): boolean {
     if (!course || !branch || typeof currentYear !== 'number') return false;
     const c = findCourse(course);
     if (!c) return false;
@@ -106,7 +119,11 @@ export class AcademicsService {
     return currentYear >= 1 && currentYear <= c.durationYears;
   }
 
-  format(course?: string | null, branch?: string | null, currentYear?: number | null): string | null {
+  format(
+    course?: string | null,
+    branch?: string | null,
+    currentYear?: number | null,
+  ): string | null {
     return formatAcademicSummary(course, branch, currentYear);
   }
 }

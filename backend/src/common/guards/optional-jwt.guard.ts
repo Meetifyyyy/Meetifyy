@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 
 import { JwtGuard } from './jwt.guard';
 
@@ -26,7 +31,9 @@ export class OptionalJwtGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    const hasCredential = Boolean(request.headers?.authorization || request.cookies?.access_token);
+    const hasCredential = Boolean(
+      request.headers?.authorization || request.cookies?.access_token,
+    );
 
     // No credential offered: skip verification entirely rather than paying for
     // a failed lookup on every anonymous submission.
@@ -39,7 +46,9 @@ export class OptionalJwtGuard implements CanActivate {
       // the ordinary state of a user who cannot log in and is filing a support
       // request about exactly that. Left anonymous, deliberately not logged at
       // error level.
-      this.logger.debug('support.optional_auth_declined token present but not valid; continuing anonymously');
+      this.logger.debug(
+        'support.optional_auth_declined token present but not valid; continuing anonymously',
+      );
       delete request.user;
     }
 

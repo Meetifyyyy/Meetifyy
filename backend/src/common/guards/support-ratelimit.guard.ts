@@ -1,4 +1,11 @@
-import { CanActivate, ExecutionContext, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { RateLimiterRedis } from 'rate-limiter-flexible';
 import { RedisService } from '../../redis/redis.service';
 import { config } from '../../config';
@@ -56,7 +63,10 @@ export class SupportRateLimitGuard implements CanActivate {
       request.socket?.remoteAddress ||
       'anonymous';
 
-    const email = typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : null;
+    const email =
+      typeof request.body?.email === 'string'
+        ? request.body.email.trim().toLowerCase()
+        : null;
 
     // Consumed together so a request that trips the second budget has still
     // spent a point against the first - otherwise the cheaper key could be
@@ -69,14 +79,19 @@ export class SupportRateLimitGuard implements CanActivate {
     for (const outcome of outcomes) {
       if (outcome.status === 'fulfilled') continue;
       if (outcome.reason instanceof Error) {
-        this.logger.warn(`support.ratelimit_unavailable ${JSON.stringify({ error: outcome.reason.message })}`);
+        this.logger.warn(
+          `support.ratelimit_unavailable ${JSON.stringify({ error: outcome.reason.message })}`,
+        );
         continue; // Redis problem - fail open.
       }
-      const retryAfterSeconds = Math.ceil((outcome.reason?.msBeforeNext ?? 60_000) / 1000);
+      const retryAfterSeconds = Math.ceil(
+        (outcome.reason?.msBeforeNext ?? 60_000) / 1000,
+      );
       throw new HttpException(
         {
           statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          message: "You've sent several support requests recently. Please wait a little while before sending another.",
+          message:
+            "You've sent several support requests recently. Please wait a little while before sending another.",
           retryAfterSeconds,
         },
         HttpStatus.TOO_MANY_REQUESTS,

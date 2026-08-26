@@ -23,14 +23,22 @@ describe('DmService — lookupExistingDM', () => {
   let service: DmService;
   let prisma: any;
 
-  const conversationWhereFor = () => prisma.conversation.findFirst.mock.calls[0][0].where;
+  const conversationWhereFor = () =>
+    prisma.conversation.findFirst.mock.calls[0][0].where;
   /** The participant filter the query applies to a given user id. */
   const filterFor = (userId: string) =>
-    conversationWhereFor().AND.map((c: any) => c.participants.some).find((s: any) => s.userId === userId);
+    conversationWhereFor()
+      .AND.map((c: any) => c.participants.some)
+      .find((s: any) => s.userId === userId);
 
   beforeEach(async () => {
     prisma = {
-      conversation: { findFirst: jest.fn(async () => ({ id: 'conv-internal', publicId: 'conv-public' })) },
+      conversation: {
+        findFirst: jest.fn(async () => ({
+          id: 'conv-internal',
+          publicId: 'conv-public',
+        })),
+      },
       conversationParticipant: { findMany: jest.fn(async () => []) },
     };
 
@@ -41,18 +49,25 @@ describe('DmService — lookupExistingDM', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: PresenceService, useValue: { getPresence: jest.fn() } },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
-        { provide: MentionsService, useValue: { sanitize: jest.fn(async () => []) } },
+        {
+          provide: MentionsService,
+          useValue: { sanitize: jest.fn(async () => []) },
+        },
       ],
     }).compile();
 
     service = module.get(DmService);
   });
 
-  it('requires the caller\'s own participant row to be live', async () => {
+  it("requires the caller's own participant row to be live", async () => {
     await service.lookupExistingDM(ME, THEM);
     // Both columns matter: deleting sets deletedAt, leaving sets leftAt, and
     // neither leaves a conversation the caller can open.
-    expect(filterFor(ME)).toEqual({ userId: ME, deletedAt: null, leftAt: null });
+    expect(filterFor(ME)).toEqual({
+      userId: ME,
+      deletedAt: null,
+      leftAt: null,
+    });
   });
 
   it('does not care whether the other person deleted their copy', async () => {
@@ -67,14 +82,21 @@ describe('DmService — lookupExistingDM', () => {
   });
 
   it('returns the public id under both keys, so either read works', async () => {
-    await expect(service.lookupExistingDM(ME, THEM))
-      .resolves.toEqual({ id: 'conv-public', publicId: 'conv-public' });
+    await expect(service.lookupExistingDM(ME, THEM)).resolves.toEqual({
+      id: 'conv-public',
+      publicId: 'conv-public',
+    });
   });
 
   it('falls back to the internal id when there is no public one', async () => {
-    prisma.conversation.findFirst.mockResolvedValueOnce({ id: 'conv-internal', publicId: null });
-    await expect(service.lookupExistingDM(ME, THEM))
-      .resolves.toEqual({ id: 'conv-internal', publicId: 'conv-internal' });
+    prisma.conversation.findFirst.mockResolvedValueOnce({
+      id: 'conv-internal',
+      publicId: null,
+    });
+    await expect(service.lookupExistingDM(ME, THEM)).resolves.toEqual({
+      id: 'conv-internal',
+      publicId: 'conv-internal',
+    });
   });
 
   it('returns null when nothing openable matches, so the caller drafts instead', async () => {

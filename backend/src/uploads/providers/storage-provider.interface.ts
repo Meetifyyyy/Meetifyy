@@ -1,7 +1,7 @@
 export interface StorageProvider {
   /**
    * Generate a presigned URL for direct client uploads.
-   * 
+   *
    * @param filename  Original filename (used to derive extension)
    * @param contentType  MIME type of the file
    * @param folder  Folder prefix, e.g. "avatars", "general"
@@ -23,7 +23,10 @@ export interface StorageProvider {
   /**
    * Generate presigned URLs in bulk for downloading private files.
    */
-  createSignedUrls(keys: string[], expiresIn?: number): Promise<{ [key: string]: string }>;
+  createSignedUrls(
+    keys: string[],
+    expiresIn?: number,
+  ): Promise<{ [key: string]: string }>;
 
   /**
    * Get the public URL for a file.

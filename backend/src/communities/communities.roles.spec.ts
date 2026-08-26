@@ -19,14 +19,30 @@ describe('CommunitiesService — member roles', () => {
   let prisma: any;
   let updates: any[];
 
-  const setup = ({ requester = { role: 'OWNER' }, target = { role: 'MEMBER' }, ownerId = OWNER } = {} as any) => {
+  const setup = (
+    {
+      requester = { role: 'OWNER' },
+      target = { role: 'MEMBER' },
+      ownerId = OWNER,
+      // `as any` widens the destructured parameter so cases below can pass
+      // `null` for requester/target. Without it TS infers `{ role: string }`
+      // from the defaults and those cases stop compiling. The rule only sees
+      // the assertion's own expression, so it reads as redundant here — it is
+      // not, and auto-fixing it away breaks this suite.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+    } = {} as any,
+  ) => {
     updates = [];
     prisma = {
       community: { findUnique: jest.fn(async () => ({ ownerId })) },
       communityMember: {
         findUnique: jest.fn(async ({ where }: any) =>
-          (where.userId_communityId.userId === OWNER ? requester : target)),
-        update: jest.fn(async (args: any) => { updates.push(args); return { ...target, ...args.data }; }),
+          where.userId_communityId.userId === OWNER ? requester : target,
+        ),
+        update: jest.fn(async (args: any) => {
+          updates.push(args);
+          return { ...target, ...args.data };
+        }),
       },
     };
     service = new CommunitiesService(
@@ -35,7 +51,13 @@ describe('CommunitiesService — member roles', () => {
       { getClient: () => null } as any,
       {} as any,
       { refFor: () => null } as any,
-      { getExcludedUserIds: async () => [], isBlocked: async () => false, filterBlockedUsers: async (_u: any, ids: any) => ids, injectBlockFilter: async (_u: any, w: any) => w, invalidateBlockCache: async () => {} } as any,
+      {
+        getExcludedUserIds: async () => [],
+        isBlocked: async () => false,
+        filterBlockedUsers: async (_u: any, ids: any) => ids,
+        injectBlockFilter: async (_u: any, w: any) => w,
+        invalidateBlockCache: async () => {},
+      } as any,
       // Promotion notifications are covered in communities.moderator-promotion.spec.ts.
       { createNotification: async () => ({}) } as any,
       { createModeratorPromotion: () => null } as any,
@@ -83,12 +105,16 @@ describe('CommunitiesService — member roles', () => {
       // Managing roles is owner-only; a moderator promoting peers would let
       // the moderator group grow without the owner's involvement.
       setup({ requester: { role: 'MODERATOR' }, ownerId: 'someone-else' });
-      await expect(setRole('MODERATOR', OWNER)).rejects.toThrow(/only the community owner/i);
+      await expect(setRole('MODERATOR', OWNER)).rejects.toThrow(
+        /only the community owner/i,
+      );
     });
 
     it('refuses a plain member', async () => {
       setup({ requester: { role: 'MEMBER' }, ownerId: 'someone-else' });
-      await expect(setRole('MODERATOR', OWNER)).rejects.toThrow(ForbiddenException);
+      await expect(setRole('MODERATOR', OWNER)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('allows the owner by ownerId even without a member row', async () => {
@@ -100,8 +126,9 @@ describe('CommunitiesService — member roles', () => {
   describe('the owner as a target', () => {
     it('cannot be re-roled', async () => {
       setup();
-      await expect(service.updateMemberRole(COMMUNITY, OWNER, 'MEMBER', OWNER))
-        .rejects.toThrow(/cannot modify the role of the community owner/i);
+      await expect(
+        service.updateMemberRole(COMMUNITY, OWNER, 'MEMBER', OWNER),
+      ).rejects.toThrow(/cannot modify the role of the community owner/i);
     });
   });
 

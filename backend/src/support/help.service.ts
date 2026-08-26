@@ -61,7 +61,11 @@ export class HelpService {
         .flatMap((category) =>
           category.articles
             .filter((article) => article.isFeatured)
-            .map((article) => ({ ...article, categorySlug: category.slug, categoryTitle: category.title })),
+            .map((article) => ({
+              ...article,
+              categorySlug: category.slug,
+              categoryTitle: category.title,
+            })),
         )
         .slice(0, 12),
     };
@@ -84,11 +88,15 @@ export class HelpService {
       },
     });
 
-    if (!article) throw new NotFoundException('That help article could not be found.');
+    if (!article)
+      throw new NotFoundException('That help article could not be found.');
 
     // Fire-and-forget: a view counter must never delay or fail the read.
     this.prisma.helpArticle
-      .update({ where: { id: article.id }, data: { viewCount: { increment: 1 } } })
+      .update({
+        where: { id: article.id },
+        data: { viewCount: { increment: 1 } },
+      })
       .catch(() => {});
 
     return article;
@@ -110,7 +118,10 @@ export class HelpService {
       return { query, results: [], total: 0 };
     }
 
-    const contains = { contains: query, mode: Prisma.QueryMode.insensitive } as const;
+    const contains = {
+      contains: query,
+      mode: Prisma.QueryMode.insensitive,
+    } as const;
 
     const articles = await this.prisma.helpArticle.findMany({
       where: {
@@ -120,12 +131,23 @@ export class HelpService {
           { question: contains },
           { summary: contains },
           { body: contains },
-          { keywords: { hasSome: query.split(/\s+/).filter(Boolean).map((w) => w.toLowerCase()) } },
+          {
+            keywords: {
+              hasSome: query
+                .split(/\s+/)
+                .filter(Boolean)
+                .map((w) => w.toLowerCase()),
+            },
+          },
         ],
       },
       // Featured articles first: they are the ones an admin has marked as the
       // answer people usually want.
-      orderBy: [{ isFeatured: 'desc' }, { viewCount: 'desc' }, { sortOrder: 'asc' }],
+      orderBy: [
+        { isFeatured: 'desc' },
+        { viewCount: 'desc' },
+        { sortOrder: 'asc' },
+      ],
       take: SEARCH_LIMIT,
       select: {
         id: true,

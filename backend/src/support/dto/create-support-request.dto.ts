@@ -12,7 +12,8 @@ import {
 import { SupportCategory } from '@prisma/client';
 import { PUBLIC_SUPPORT_CATEGORIES } from '../support.constants';
 
-const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+const trim = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim() : value;
 
 /**
  * Diagnostic hints the client volunteers. Everything here is attacker-controlled
@@ -63,7 +64,9 @@ export class CreateSupportRequestDto {
   // members exist only so old rows still parse, and `OTHER` already covers
   // anything the current list does not.
   @IsEnum(SupportCategory)
-  @IsIn(PUBLIC_SUPPORT_CATEGORIES as SupportCategory[], { message: 'Choose one of the listed categories' })
+  @IsIn(PUBLIC_SUPPORT_CATEGORIES as SupportCategory[], {
+    message: 'Choose one of the listed categories',
+  })
   category: SupportCategory;
 
   @Transform(trim)
@@ -74,7 +77,9 @@ export class CreateSupportRequestDto {
 
   @Transform(trim)
   @IsString()
-  @MinLength(20, { message: 'Please describe the issue in at least 20 characters' })
+  @MinLength(20, {
+    message: 'Please describe the issue in at least 20 characters',
+  })
   @MaxLength(10000)
   description: string;
 

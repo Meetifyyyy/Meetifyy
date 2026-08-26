@@ -23,7 +23,12 @@ import * as dotenv from 'dotenv';
 
 export type AppEnvironment = 'development' | 'test' | 'staging' | 'production';
 
-const KNOWN_ENVIRONMENTS: AppEnvironment[] = ['development', 'test', 'staging', 'production'];
+const KNOWN_ENVIRONMENTS: AppEnvironment[] = [
+  'development',
+  'test',
+  'staging',
+  'production',
+];
 
 const ENV_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -66,7 +71,9 @@ function resolveAppEnv(): AppEnvironment {
   )
     .trim()
     .toLowerCase();
-  return (KNOWN_ENVIRONMENTS as string[]).includes(raw) ? (raw as AppEnvironment) : 'development';
+  return (KNOWN_ENVIRONMENTS as string[]).includes(raw)
+    ? (raw as AppEnvironment)
+    : 'development';
 }
 
 export const APP_ENV: AppEnvironment = resolveAppEnv();
@@ -156,7 +163,11 @@ export function url(name: string, req?: Requirement): string {
     fail(`Invalid ${name}: "${value}" must use http:// or https://`);
     return '';
   }
-  if (IS_PRODUCTION && parsed.protocol === 'http:' && !isLocalHostname(parsed.hostname)) {
+  if (
+    IS_PRODUCTION &&
+    parsed.protocol === 'http:' &&
+    !isLocalHostname(parsed.hostname)
+  ) {
     fail(`Invalid ${name}: "${value}" must use https:// in production`);
     return '';
   }
@@ -164,11 +175,16 @@ export function url(name: string, req?: Requirement): string {
 }
 
 function isLocalHostname(hostname: string): boolean {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  return (
+    hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+  );
 }
 
 /** An integer, optionally range-checked. */
-export function int(name: string, req?: Requirement & { min?: number; max?: number }): number {
+export function int(
+  name: string,
+  req?: Requirement & { min?: number; max?: number },
+): number {
   const value = str(name, req);
   if (!value) return NaN;
   const parsed = Number.parseInt(value, 10);
@@ -186,7 +202,10 @@ export function int(name: string, req?: Requirement & { min?: number; max?: numb
 }
 
 /** A float, typically a 0..1 sample rate. */
-export function num(name: string, req?: Requirement & { min?: number; max?: number }): number {
+export function num(
+  name: string,
+  req?: Requirement & { min?: number; max?: number },
+): number {
   const value = str(name, req);
   if (!value) return NaN;
   const parsed = Number.parseFloat(value);
@@ -194,8 +213,10 @@ export function num(name: string, req?: Requirement & { min?: number; max?: numb
     fail(`Invalid ${name}: "${value}" is not a number`);
     return NaN;
   }
-  if (req?.min !== undefined && parsed < req.min) fail(`Invalid ${name}: ${parsed} is below ${req.min}`);
-  if (req?.max !== undefined && parsed > req.max) fail(`Invalid ${name}: ${parsed} is above ${req.max}`);
+  if (req?.min !== undefined && parsed < req.min)
+    fail(`Invalid ${name}: ${parsed} is below ${req.min}`);
+  if (req?.max !== undefined && parsed > req.max)
+    fail(`Invalid ${name}: ${parsed} is above ${req.max}`);
   return parsed;
 }
 
@@ -210,7 +231,11 @@ export function bool(name: string, req?: Requirement): boolean {
 }
 
 /** One of a fixed set of values. */
-export function oneOf<T extends string>(name: string, allowed: readonly T[], req?: Requirement): T {
+export function oneOf<T extends string>(
+  name: string,
+  allowed: readonly T[],
+  req?: Requirement,
+): T {
   const value = str(name, req) as T;
   if (!value) return '' as T;
   if (!allowed.includes(value)) {
@@ -238,7 +263,9 @@ export function csv(name: string, req?: Requirement): string[] {
 export function email(name: string, req?: Requirement): string {
   const value = str(name, req);
   if (!value) return '';
-  const address = value.includes('<') ? value.slice(value.indexOf('<') + 1, value.indexOf('>')) : value;
+  const address = value.includes('<')
+    ? value.slice(value.indexOf('<') + 1, value.indexOf('>'))
+    : value;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address.trim())) {
     fail(`Invalid ${name}: "${value}" is not a valid email address`);
     return '';

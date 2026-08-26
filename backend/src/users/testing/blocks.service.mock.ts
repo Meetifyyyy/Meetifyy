@@ -25,27 +25,41 @@ export function createBlocksServiceMock(
   return {
     getExcludedUserIds: jest.fn(async (userId: string) => excludedFor(userId)),
     getBlockedByUserIds: jest.fn(async (userId: string) => outgoingFor(userId)),
-    isBlocked: jest.fn(async (a: string, b: string) => a !== b && excludedFor(a).includes(b)),
-    hasBlocked: jest.fn(async (a: string, b: string) => a !== b && outgoingFor(a).includes(b)),
+    isBlocked: jest.fn(
+      async (a: string, b: string) => a !== b && excludedFor(a).includes(b),
+    ),
+    hasBlocked: jest.fn(
+      async (a: string, b: string) => a !== b && outgoingFor(a).includes(b),
+    ),
     getBlockDirection: jest.fn(async (userId: string, otherId: string) => {
       const isBlocked = excludedFor(userId).includes(otherId);
       const blockedByMe = outgoingFor(userId).includes(otherId);
-      return { isBlocked, blockedByMe, blockedByThem: isBlocked && !blockedByMe };
+      return {
+        isBlocked,
+        blockedByMe,
+        blockedByThem: isBlocked && !blockedByMe,
+      };
     }),
     filterBlockedUsers: jest.fn(async (userId: string, ids: string[]) => {
       if (!userId) return ids;
       const set = new Set(excludedFor(userId));
       return ids.filter((id) => !set.has(id));
     }),
-    injectBlockFilter: jest.fn(async (userId: string, where: any, field = 'id') => {
-      if (!userId) return where;
-      const excluded = excludedFor(userId);
-      if (excluded.length === 0) return where;
-      const existing = where.AND;
-      const and = Array.isArray(existing) ? [...existing] : existing ? [existing] : [];
-      and.push({ [field]: { notIn: excluded } });
-      return { ...where, AND: and };
-    }),
+    injectBlockFilter: jest.fn(
+      async (userId: string, where: any, field = 'id') => {
+        if (!userId) return where;
+        const excluded = excludedFor(userId);
+        if (excluded.length === 0) return where;
+        const existing = where.AND;
+        const and = Array.isArray(existing)
+          ? [...existing]
+          : existing
+            ? [existing]
+            : [];
+        and.push({ [field]: { notIn: excluded } });
+        return { ...where, AND: and };
+      },
+    ),
     listBlockedContacts: jest.fn(async () => []),
     removeBlock: jest.fn(async () => ({ count: 1 })),
     invalidateBlockCache: jest.fn(async () => {}),

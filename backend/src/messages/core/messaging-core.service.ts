@@ -1,4 +1,12 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+  Logger,
+} from '@nestjs/common';
 import { MentionSource, NotificationEntityType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BlocksService } from '../../users/blocks.service';
@@ -17,7 +25,10 @@ export class MessagingCoreService {
    * This eliminates 1–3 DB queries from every messaging endpoint call.
    * Modelled on Discord's conversation ID resolution layer.
    */
-  private readonly convIdCache = new Map<string, { id: string; expiresAt: number }>();
+  private readonly convIdCache = new Map<
+    string,
+    { id: string; expiresAt: number }
+  >();
   private static readonly CONV_CACHE_TTL_MS = 30_000;
   // Named distinctly from subclasses' own `logger` field (MessagesService
   // declares `protected readonly logger`) — a private/protected name clash
@@ -33,38 +44,53 @@ export class MessagingCoreService {
     // it, so an unwired instance must fail at boot rather than quietly stop
     // filtering.
     protected blocksService: BlocksService,
-  ) { }
+  ) {}
 
-  async getBatchUnblockedAndUnmutedParticipants(conversationId: string, senderId: string) {
+  async getBatchUnblockedAndUnmutedParticipants(
+    conversationId: string,
+    senderId: string,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     const participants = await this.prisma.conversationParticipant.findMany({
       where: { conversationId: realConvId, deletedAt: null },
-      select: { userId: true, isMuted: true }
+      select: { userId: true, isMuted: true },
     });
 
-    const otherIds = participants.map(p => p.userId).filter(id => id !== senderId);
+    const otherIds = participants
+      .map((p) => p.userId)
+      .filter((id) => id !== senderId);
     if (otherIds.length === 0) {
       return { recipientIds: [], unmutedRecipientIds: [] };
     }
 
     // Blocked pairs are dropped from the fan-out in both directions.
-    const unblockedIds = await this.blocksService.filterBlockedUsers(senderId, otherIds);
-    const muteMap = new Map(participants.map(p => [p.userId, p.isMuted]));
-    const unmutedIds = unblockedIds.filter(id => !muteMap.get(id));
+    const unblockedIds = await this.blocksService.filterBlockedUsers(
+      senderId,
+      otherIds,
+    );
+    const muteMap = new Map(participants.map((p) => [p.userId, p.isMuted]));
+    const unmutedIds = unblockedIds.filter((id) => !muteMap.get(id));
 
     return { recipientIds: unblockedIds, unmutedRecipientIds: unmutedIds };
   }
 
-  async resolveConversationId(identifier: string, currentUserId?: string): Promise<string> {
+  async resolveConversationId(
+    identifier: string,
+    currentUserId?: string,
+  ): Promise<string> {
     if (!identifier) return identifier;
     const cleanId = String(identifier).replace(/^(act_)+/, '');
 
     // Fast path: return cached mapping if still fresh
-    const cached = this.convIdCache.get(identifier) ?? this.convIdCache.get(cleanId);
+    const cached =
+      this.convIdCache.get(identifier) ?? this.convIdCache.get(cleanId);
     if (cached && cached.expiresAt > Date.now()) return cached.id;
 
     const cacheResult = (id: string) => {
-      const entry = { id, expiresAt: Date.now() + MessagingCoreService.CONV_CACHE_TTL_MS };
+      const entry = {
+        id,
+        expiresAt: Date.now() + MessagingCoreService.CONV_CACHE_TTL_MS,
+      };
       this.convIdCache.set(identifier, entry);
       if (cleanId !== identifier) this.convIdCache.set(cleanId, entry);
       // Prevent unbounded growth: prune when over 2 000 entries
@@ -77,19 +103,22 @@ export class MessagingCoreService {
       }
     };
 
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        cleanId,
+      );
 
     try {
       let conv = null;
       if (isUuid) {
         conv = await this.prisma.conversation.findUnique({
           where: { id: cleanId },
-          select: { id: true }
+          select: { id: true },
         });
       } else {
         conv = await this.prisma.conversation.findUnique({
           where: { publicId: cleanId },
-          select: { id: true }
+          select: { id: true },
         });
       }
 
@@ -104,10 +133,10 @@ export class MessagingCoreService {
             type: 'DM',
             AND: [
               { participants: { some: { userId: currentUserId } } },
-              { participants: { some: { userId: identifier } } }
-            ]
+              { participants: { some: { userId: identifier } } },
+            ],
           },
-          select: { id: true }
+          select: { id: true },
         });
         if (dm?.id) {
           cacheResult(dm.id);
@@ -123,9 +152,18 @@ export class MessagingCoreService {
   async sendMessage(
     senderId: string,
     conversationId: string,
-    payload: SendMessageDto
-  ): Promise<MessageResponseDto & { recipientIds: string[]; unmutedRecipientIds: string[]; conversationName: string }> {
-    const realConvId = await this.resolveConversationId(conversationId, senderId);
+    payload: SendMessageDto,
+  ): Promise<
+    MessageResponseDto & {
+      recipientIds: string[];
+      unmutedRecipientIds: string[];
+      conversationName: string;
+    }
+  > {
+    const realConvId = await this.resolveConversationId(
+      conversationId,
+      senderId,
+    );
 
     // 1. Fetch conversation details & active participants in a single query
     const conv = await this.prisma.conversation.findUnique({
@@ -142,45 +180,62 @@ export class MessagingCoreService {
           // dropped every message sent to someone who had ever cleared the
           // thread. `leftAt` is different: that user really is gone.
           where: { leftAt: null },
-          select: { userId: true, isMuted: true }
-        }
-      }
+          select: { userId: true, isMuted: true },
+        },
+      },
     });
 
     if (!conv) {
       throw new ForbiddenException('Conversation not found');
     }
 
-    const myParticipant = conv.participants.find(p => p.userId === senderId);
+    const myParticipant = conv.participants.find((p) => p.userId === senderId);
     if (!myParticipant) {
-      throw new ForbiddenException('You are no longer a member of this conversation');
+      throw new ForbiddenException(
+        'You are no longer a member of this conversation',
+      );
     }
 
-    const otherParticipants = conv.participants.filter(p => p.userId !== senderId);
-    const otherUserIds = otherParticipants.map(p => p.userId);
-    const participantIdSet = new Set(conv.participants.map(p => p.userId));
+    const otherParticipants = conv.participants.filter(
+      (p) => p.userId !== senderId,
+    );
+    const otherUserIds = otherParticipants.map((p) => p.userId);
+    const participantIdSet = new Set(conv.participants.map((p) => p.userId));
 
     // Re-derive the true mention set from the actual message text, then
     // restrict it to real conversation participants — mentioning someone
     // outside the conversation must never leak a notification (with message
     // preview text) to a user who has no access to this thread.
-    const sanitizedMentions = (await this.mentionsService.sanitize(payload.text || '', payload.mentions, senderId))
-      .filter(m => participantIdSet.has(m.userId));
+    const sanitizedMentions = (
+      await this.mentionsService.sanitize(
+        payload.text || '',
+        payload.mentions,
+        senderId,
+      )
+    ).filter((m) => participantIdSet.has(m.userId));
 
     let recipientIds: string[] = [];
     let unmutedRecipientIds: string[] = [];
 
     if (otherUserIds.length > 0) {
-      const excluded = new Set(await this.blocksService.getExcludedUserIds(senderId));
-      const blockedByMe = new Set(await this.blocksService.getBlockedByUserIds(senderId));
-      const blockedUserSet = new Set(otherUserIds.filter(id => excluded.has(id)));
-      const isBlockedByMe = otherUserIds.some(id => blockedByMe.has(id));
+      const excluded = new Set(
+        await this.blocksService.getExcludedUserIds(senderId),
+      );
+      const blockedByMe = new Set(
+        await this.blocksService.getBlockedByUserIds(senderId),
+      );
+      const blockedUserSet = new Set(
+        otherUserIds.filter((id) => excluded.has(id)),
+      );
+      const isBlockedByMe = otherUserIds.some((id) => blockedByMe.has(id));
       const isBlockedByThem = otherUserIds.some(
-        id => blockedUserSet.has(id) && !blockedByMe.has(id),
+        (id) => blockedUserSet.has(id) && !blockedByMe.has(id),
       );
 
       if (isBlockedByMe) {
-        throw new ForbiddenException('You blocked this user. Unblock them to continue messaging.');
+        throw new ForbiddenException(
+          'You blocked this user. Unblock them to continue messaging.',
+        );
       }
 
       // See MessagesService.sendMessage: a 1:1 thread with a block in either
@@ -189,44 +244,67 @@ export class MessagingCoreService {
       // the 403 does not disclose a block.
       const isOneToOne = otherUserIds.length === 1;
       if (isBlockedByThem && isOneToOne) {
-        throw new ForbiddenException('You can no longer send messages to this user.');
+        throw new ForbiddenException(
+          'You can no longer send messages to this user.',
+        );
       }
 
-      recipientIds = otherUserIds.filter(id => !blockedUserSet.has(id));
-      const muteMap = new Map(conv.participants.map(p => [p.userId, p.isMuted]));
-      unmutedRecipientIds = recipientIds.filter(id => !muteMap.get(id));
+      recipientIds = otherUserIds.filter((id) => !blockedUserSet.has(id));
+      const muteMap = new Map(
+        conv.participants.map((p) => [p.userId, p.isMuted]),
+      );
+      unmutedRecipientIds = recipientIds.filter((id) => !muteMap.get(id));
     }
 
-    const type = payload.mediaUrl || payload.mediaType ? ('MEDIA' as const) : ('CHAT' as const);
+    const type =
+      payload.mediaUrl || payload.mediaType
+        ? ('MEDIA' as const)
+        : ('CHAT' as const);
 
     let validatedReplyToId: string | null = null;
     if (payload.replyToId) {
       const replyTarget = await this.prisma.message.findFirst({
         where: {
           id: payload.replyToId,
-          conversationId: realConvId
+          conversationId: realConvId,
         },
-        select: { id: true }
+        select: { id: true },
       });
       validatedReplyToId = replyTarget ? replyTarget.id : null;
     }
 
     let initialInviteData = payload.inviteData || null;
-    if (initialInviteData && (initialInviteData.type === 'group_invite' || initialInviteData.groupId || initialInviteData.conversationId)) {
-      const expiresAt = initialInviteData.expiresAt || new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    if (
+      initialInviteData &&
+      (initialInviteData.type === 'group_invite' ||
+        initialInviteData.groupId ||
+        initialInviteData.conversationId)
+    ) {
+      const expiresAt =
+        initialInviteData.expiresAt ||
+        new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
       const isExpired = new Date(expiresAt).getTime() <= Date.now();
       initialInviteData = {
         ...initialInviteData,
         expiresAt,
-        isExpired
+        isExpired,
       };
     }
 
     const now = new Date();
-    const lastMsgText = payload.text ||
+    const lastMsgText =
+      payload.text ||
       (initialInviteData?.type === 'postShare' ? 'Shared a post' : null) ||
-      (initialInviteData?.groupName ? `Group invite: ${initialInviteData.groupName}` : null) ||
-      (payload.mediaUrl ? (payload.mediaType === 'image' ? 'Photo' : payload.mediaType === 'video' ? 'Video' : 'Audio') : 'Message');
+      (initialInviteData?.groupName
+        ? `Group invite: ${initialInviteData.groupName}`
+        : null) ||
+      (payload.mediaUrl
+        ? payload.mediaType === 'image'
+          ? 'Photo'
+          : payload.mediaType === 'video'
+            ? 'Video'
+            : 'Audio'
+        : 'Message');
 
     // 2. Atomic $transaction for message creation and conversation metadata updates
     const [message] = await this.prisma.$transaction([
@@ -254,10 +332,15 @@ export class MessagingCoreService {
         },
         include: {
           sender: {
-            select: { id: true, username: true, displayName: true, avatar: true }
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatar: true,
+            },
           },
-          replyTo: { select: REPLY_TO_SELECT }
-        }
+          replyTo: { select: REPLY_TO_SELECT },
+        },
       }),
       this.prisma.conversation.update({
         where: { id: realConvId },
@@ -267,30 +350,49 @@ export class MessagingCoreService {
           lastMessageType: type,
           lastMessageAt: now,
           lastMessageSenderId: senderId,
-        }
+        },
       }),
-      ...(otherUserIds.length > 0 ? [
-        this.prisma.conversationParticipant.updateMany({
-          where: { conversationId: realConvId, userId: { not: senderId }, leftAt: null },
-          data: { unreadCount: { increment: 1 } }
-        })
-      ] : []),
+      ...(otherUserIds.length > 0
+        ? [
+            this.prisma.conversationParticipant.updateMany({
+              where: {
+                conversationId: realConvId,
+                userId: { not: senderId },
+                leftAt: null,
+              },
+              data: { unreadCount: { increment: 1 } },
+            }),
+          ]
+        : []),
       // New activity revives the conversation for anyone who had deleted it —
       // sender included, since sending into a thread you deleted is an
       // unambiguous request to have it back. `clearedAt` is deliberately left
       // alone: the thread returns, its old messages do not.
       this.prisma.conversationParticipant.updateMany({
-        where: { conversationId: realConvId, leftAt: null, deletedAt: { not: null } },
-        data: { deletedAt: null }
-      })
+        where: {
+          conversationId: realConvId,
+          leftAt: null,
+          deletedAt: { not: null },
+        },
+        data: { deletedAt: null },
+      }),
     ]);
 
     const isUnsent = message.state === 'UNSENT';
     const msgPayload = (message.payload as any) || {};
-    let outputInviteData = isUnsent ? null : (msgPayload.inviteData || null);
-    if (outputInviteData && (outputInviteData.type === 'group_invite' || outputInviteData.groupId || outputInviteData.conversationId)) {
-      const createdAtMs = message.createdAt ? new Date(message.createdAt).getTime() : Date.now();
-      const expiresAt = outputInviteData.expiresAt || new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
+    let outputInviteData = isUnsent ? null : msgPayload.inviteData || null;
+    if (
+      outputInviteData &&
+      (outputInviteData.type === 'group_invite' ||
+        outputInviteData.groupId ||
+        outputInviteData.conversationId)
+    ) {
+      const createdAtMs = message.createdAt
+        ? new Date(message.createdAt).getTime()
+        : Date.now();
+      const expiresAt =
+        outputInviteData.expiresAt ||
+        new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
       const isExpired = new Date(expiresAt).getTime() <= Date.now();
       outputInviteData = { ...outputInviteData, expiresAt, isExpired };
     }
@@ -305,16 +407,23 @@ export class MessagingCoreService {
     // Fire-and-forget: must never add latency to message delivery, and a
     // notification failure must never roll back the already-committed message.
     if (sanitizedMentions.length > 0 && message.sender && !isUnsent) {
-      this.mentionsService.persistAndNotify({
-        mentions: sanitizedMentions,
-        sourceType: MentionSource.MESSAGE,
-        sourceId: message.id,
-        actor: message.sender,
-        entityType: NotificationEntityType.MESSAGE,
-        entityId: pubId,
-        contextText: payload.text || '',
-        extraMetadata: { conversationId: pubId, internalConversationId: realConvId },
-      }).catch(err => this.coreLogger.warn('Failed to process message mentions', err));
+      this.mentionsService
+        .persistAndNotify({
+          mentions: sanitizedMentions,
+          sourceType: MentionSource.MESSAGE,
+          sourceId: message.id,
+          actor: message.sender,
+          entityType: NotificationEntityType.MESSAGE,
+          entityId: pubId,
+          contextText: payload.text || '',
+          extraMetadata: {
+            conversationId: pubId,
+            internalConversationId: realConvId,
+          },
+        })
+        .catch((err) =>
+          this.coreLogger.warn('Failed to process message mentions', err),
+        );
     }
 
     return {
@@ -323,19 +432,23 @@ export class MessagingCoreService {
       publicId: pubId,
       internalId: realConvId,
       senderId: message.senderId,
-      senderName: message.sender?.displayName || message.sender?.username || 'User',
+      senderName:
+        message.sender?.displayName || message.sender?.username || 'User',
       senderAvatar: message.sender?.avatar || '',
       createdAt: message.createdAt,
       timestamp: message.createdAt,
-      time: new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: new Date(message.createdAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
       type: message.type ? message.type.toLowerCase() : 'chat',
       state: message.state || 'SENT',
       isUnsent,
       payload: isUnsent ? { text: 'This message was unsent' } : msgPayload,
-      text: isUnsent ? 'This message was unsent' : (msgPayload.text || ''),
-      mediaUrl: isUnsent ? null : (msgPayload.mediaUrl || null),
-      mediaType: isUnsent ? null : (msgPayload.mediaType || null),
-      mentions: isUnsent ? [] : (msgPayload.mentions || []),
+      text: isUnsent ? 'This message was unsent' : msgPayload.text || '',
+      mediaUrl: isUnsent ? null : msgPayload.mediaUrl || null,
+      mediaType: isUnsent ? null : msgPayload.mediaType || null,
+      mentions: isUnsent ? [] : msgPayload.mentions || [],
       inviteData: outputInviteData,
       replyTo: isUnsent ? null : replyToObj,
       status: 'sent',
@@ -349,31 +462,45 @@ export class MessagingCoreService {
     conversationId: string,
     currentUserId?: string,
     beforeCursor?: string,
-    limit: number = 50
+    limit: number = 50,
   ) {
-    const realConvId = await this.resolveConversationId(conversationId, currentUserId);
+    const realConvId = await this.resolveConversationId(
+      conversationId,
+      currentUserId,
+    );
     let clearedAt: Date | null = null;
     const whereCondition: any = {
       conversationId: realConvId,
-      deletedAt: null
+      deletedAt: null,
     };
 
     const [deletedForUser, participant, participants] = await Promise.all([
-      currentUserId ? this.prisma.deletedMessage.findMany({
-        where: { userId: currentUserId, message: { conversationId: realConvId } },
-        select: { messageId: true }
-      }) : Promise.resolve([]),
-      currentUserId ? this.prisma.conversationParticipant.findFirst({
-        where: { userId: currentUserId, conversationId: realConvId }
-      }) : Promise.resolve(null),
+      currentUserId
+        ? this.prisma.deletedMessage.findMany({
+            where: {
+              userId: currentUserId,
+              message: { conversationId: realConvId },
+            },
+            select: { messageId: true },
+          })
+        : Promise.resolve([]),
+      currentUserId
+        ? this.prisma.conversationParticipant.findFirst({
+            where: { userId: currentUserId, conversationId: realConvId },
+          })
+        : Promise.resolve(null),
       this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, deletedAt: null },
-        select: { userId: true, lastReadAt: true, user: { select: { settings: { select: { readReceipts: true } } } } }
-      })
+        select: {
+          userId: true,
+          lastReadAt: true,
+          user: { select: { settings: { select: { readReceipts: true } } } },
+        },
+      }),
     ]);
 
     if (deletedForUser && deletedForUser.length > 0) {
-      whereCondition.id = { notIn: deletedForUser.map(d => d.messageId) };
+      whereCondition.id = { notIn: deletedForUser.map((d) => d.messageId) };
     }
 
     if (participant) {
@@ -397,11 +524,13 @@ export class MessagingCoreService {
     // directions) and surfaced in the composer, not by hiding rows here.
 
     if (clearedAt) {
-      whereCondition.createdAt = { ...(whereCondition.createdAt || {}), gt: clearedAt };
+      whereCondition.createdAt = {
+        ...(whereCondition.createdAt || {}),
+        gt: clearedAt,
+      };
     }
 
     const orConditions: any[] = [];
-
 
     if (beforeCursor) {
       let cursorDate: Date | null = null;
@@ -420,7 +549,7 @@ export class MessagingCoreService {
       if (!cursorDate) {
         const cursorMessage = await this.prisma.message.findUnique({
           where: { id: beforeCursor },
-          select: { id: true, createdAt: true }
+          select: { id: true, createdAt: true },
         });
         if (cursorMessage) {
           cursorDate = cursorMessage.createdAt;
@@ -433,13 +562,15 @@ export class MessagingCoreService {
           orConditions.push({
             OR: [
               { createdAt: { lt: cursorDate } },
-              { createdAt: cursorDate, id: { lt: cursorId } }
-            ]
+              { createdAt: cursorDate, id: { lt: cursorId } },
+            ],
           });
         } else {
           whereCondition.createdAt = {
-            ...(typeof whereCondition.createdAt === 'object' ? whereCondition.createdAt : {}),
-            lt: cursorDate
+            ...(typeof whereCondition.createdAt === 'object'
+              ? whereCondition.createdAt
+              : {}),
+            lt: cursorDate,
           };
         }
       }
@@ -453,12 +584,12 @@ export class MessagingCoreService {
       where: whereCondition,
       include: {
         sender: {
-          select: { id: true, username: true, displayName: true, avatar: true }
+          select: { id: true, username: true, displayName: true, avatar: true },
         },
-        replyTo: { select: REPLY_TO_SELECT }
+        replyTo: { select: REPLY_TO_SELECT },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: limit + 1
+      take: limit + 1,
     });
 
     const hasMore = messages.length > limit;
@@ -466,38 +597,58 @@ export class MessagingCoreService {
       messages.pop();
     }
     messages.reverse();
-    const realDbMessages = messages.filter(m => !m.id.startsWith('sys_'));
+    const realDbMessages = messages.filter((m) => !m.id.startsWith('sys_'));
     const oldestRealMessage = realDbMessages[0];
     // Use timestamp|id cursor so the server can seek with a pure index scan
     // (no findUnique DB lookup per page). Matches MessagesService format.
-    const nextCursor = hasMore && oldestRealMessage
-      ? (oldestRealMessage.createdAt
-        ? `${new Date(oldestRealMessage.createdAt).toISOString()}|${oldestRealMessage.id}`
-        : oldestRealMessage.id)
-      : null;
-    const otherParticipants = participants.filter(p => currentUserId && p.userId !== currentUserId);
+    const nextCursor =
+      hasMore && oldestRealMessage
+        ? oldestRealMessage.createdAt
+          ? `${new Date(oldestRealMessage.createdAt).toISOString()}|${oldestRealMessage.id}`
+          : oldestRealMessage.id
+        : null;
+    const otherParticipants = participants.filter(
+      (p) => currentUserId && p.userId !== currentUserId,
+    );
     const otherReadTimestamps = otherParticipants
-      .filter(p => p.user?.settings?.readReceipts !== false && p.lastReadAt != null)
-      .map(p => new Date(p.lastReadAt!).getTime());
+      .filter(
+        (p) => p.user?.settings?.readReceipts !== false && p.lastReadAt != null,
+      )
+      .map((p) => new Date(p.lastReadAt!).getTime());
 
-    const isAllRead = otherReadTimestamps.length > 0 && otherReadTimestamps.length === otherParticipants.length;
+    const isAllRead =
+      otherReadTimestamps.length > 0 &&
+      otherReadTimestamps.length === otherParticipants.length;
     const minOtherLastReadAt = isAllRead ? Math.min(...otherReadTimestamps) : 0;
 
-    const messagesMapped = messages.map(m => {
-      const payload = (m.payload as any) || {};
+    const messagesMapped = messages.map((m) => {
+      const payload = m.payload || {};
 
       let replyToObj: any = null;
       if (m.replyTo) {
         replyToObj = buildReplyToSnapshot(m.replyTo, currentUserId);
       }
 
-      const isRead = currentUserId && m.senderId === currentUserId && isAllRead && (minOtherLastReadAt + 5000 >= new Date(m.createdAt).getTime());
+      const isRead =
+        currentUserId &&
+        m.senderId === currentUserId &&
+        isAllRead &&
+        minOtherLastReadAt + 5000 >= new Date(m.createdAt).getTime();
       const isUnsent = m.state === 'UNSENT';
 
-      let inviteData = isUnsent ? null : (payload.inviteData || null);
-      if (inviteData && (inviteData.type === 'group_invite' || inviteData.groupId || inviteData.conversationId)) {
-        const createdAtMs = m.createdAt ? new Date(m.createdAt).getTime() : Date.now();
-        const expiresAt = inviteData.expiresAt || new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
+      let inviteData = isUnsent ? null : payload.inviteData || null;
+      if (
+        inviteData &&
+        (inviteData.type === 'group_invite' ||
+          inviteData.groupId ||
+          inviteData.conversationId)
+      ) {
+        const createdAtMs = m.createdAt
+          ? new Date(m.createdAt).getTime()
+          : Date.now();
+        const expiresAt =
+          inviteData.expiresAt ||
+          new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
         const isExpired = new Date(expiresAt).getTime() <= Date.now();
         inviteData = { ...inviteData, expiresAt, isExpired };
       }
@@ -511,28 +662,34 @@ export class MessagingCoreService {
         from: currentUserId && m.senderId === currentUserId ? 'me' : 'them',
         createdAt: m.createdAt,
         timestamp: m.createdAt,
-        time: m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+        time: m.createdAt
+          ? new Date(m.createdAt).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : '',
         type: m.type ? m.type.toLowerCase() : 'chat',
         payload: isUnsent ? { text: 'This message was unsent' } : payload,
-        text: isUnsent ? 'This message was unsent' : (payload.text || ''),
-        mediaUrl: isUnsent ? null : (payload.mediaUrl || null),
-        mediaType: isUnsent ? null : (payload.mediaType || null),
-        mentions: isUnsent ? [] : (payload.mentions || []),
+        text: isUnsent ? 'This message was unsent' : payload.text || '',
+        mediaUrl: isUnsent ? null : payload.mediaUrl || null,
+        mediaType: isUnsent ? null : payload.mediaType || null,
+        mentions: isUnsent ? [] : payload.mentions || [],
         inviteData,
         replyTo: isUnsent ? null : replyToObj,
         status: isRead ? 'read' : 'sent',
         state: m.state || 'SENT',
-        isUnsent
+        isUnsent,
       };
     });
 
     return {
       messages: messagesMapped,
-      participants: participants.map(p => ({
+      participants: participants.map((p) => ({
         userId: p.userId,
-        lastReadAt: p.user?.settings?.readReceipts !== false ? p.lastReadAt : null
+        lastReadAt:
+          p.user?.settings?.readReceipts !== false ? p.lastReadAt : null,
       })),
-      nextCursor
+      nextCursor,
     };
   }
 
@@ -543,57 +700,93 @@ export class MessagingCoreService {
    * services (DM / group / unified) so every read endpoint is equally fast and
    * correctly notifies the other side.
    */
-  async markAsRead(conversationId: string, userId: string): Promise<{ success: boolean }> {
+  async markAsRead(
+    conversationId: string,
+    userId: string,
+  ): Promise<{ success: boolean }> {
     setImmediate(() => void this._persistMarkAsRead(conversationId, userId));
     return { success: true };
   }
 
-  protected async _persistMarkAsRead(conversationId: string, userId: string): Promise<void> {
+  protected async _persistMarkAsRead(
+    conversationId: string,
+    userId: string,
+  ): Promise<void> {
     try {
-      const realConvId = await this.resolveConversationId(conversationId, userId);
+      const realConvId = await this.resolveConversationId(
+        conversationId,
+        userId,
+      );
 
       const conv = await this.prisma.conversation.findUnique({
         where: { id: realConvId },
-        select: { id: true }
+        select: { id: true },
       });
       if (!conv) return;
 
       const now = new Date();
-      await this.prisma.conversationParticipant.upsert({
-        where: { userId_conversationId: { userId, conversationId: realConvId } },
-        update: { lastReadAt: now, unreadCount: 0 },
-        create: { userId, conversationId: realConvId, lastReadAt: now, unreadCount: 0 }
-      }).catch(() => {});
+      await this.prisma.conversationParticipant
+        .upsert({
+          where: {
+            userId_conversationId: { userId, conversationId: realConvId },
+          },
+          update: { lastReadAt: now, unreadCount: 0 },
+          create: {
+            userId,
+            conversationId: realConvId,
+            lastReadAt: now,
+            unreadCount: 0,
+          },
+        })
+        .catch(() => {});
 
       const participants = await this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, deletedAt: null },
-        select: { userId: true, lastReadAt: true, user: { select: { settings: { select: { readReceipts: true } } } } }
+        select: {
+          userId: true,
+          lastReadAt: true,
+          user: { select: { settings: { select: { readReceipts: true } } } },
+        },
       });
 
-      const readerParticipant = participants.find(p => p.userId === userId);
+      const readerParticipant = participants.find((p) => p.userId === userId);
       if (readerParticipant?.user?.settings?.readReceipts === false) return;
 
       for (const p of participants) {
         if (p.userId === userId) continue;
-        const others = participants.filter(item => item.userId !== p.userId);
+        const others = participants.filter((item) => item.userId !== p.userId);
         const otherReadTimestamps = others
-          .filter(item => item.user?.settings?.readReceipts !== false && item.lastReadAt != null)
-          .map(item => new Date(item.lastReadAt!).getTime());
+          .filter(
+            (item) =>
+              item.user?.settings?.readReceipts !== false &&
+              item.lastReadAt != null,
+          )
+          .map((item) => new Date(item.lastReadAt!).getTime());
 
-        const isAllRead = otherReadTimestamps.length > 0 && otherReadTimestamps.length === others.length;
+        const isAllRead =
+          otherReadTimestamps.length > 0 &&
+          otherReadTimestamps.length === others.length;
         const minOtherReadAt = isAllRead ? Math.min(...otherReadTimestamps) : 0;
 
-        this.domainEventService.emit('conversation:seen', {
-          conversationId,
-          realConvId,
-          readerId: userId,
-          lastReadAt: now.toISOString(),
-          isAllRead,
-          minOtherReadAt: minOtherReadAt ? new Date(minOtherReadAt).toISOString() : null
-        }, [p.userId]);
+        this.domainEventService.emit(
+          'conversation:seen',
+          {
+            conversationId,
+            realConvId,
+            readerId: userId,
+            lastReadAt: now.toISOString(),
+            isAllRead,
+            minOtherReadAt: minOtherReadAt
+              ? new Date(minOtherReadAt).toISOString()
+              : null,
+          },
+          [p.userId],
+        );
       }
     } catch (err) {
-      this.coreLogger.warn(`markAsRead background write failed: ${(err as Error)?.message}`);
+      this.coreLogger.warn(
+        `markAsRead background write failed: ${(err as Error)?.message}`,
+      );
     }
   }
 
@@ -603,15 +796,15 @@ export class MessagingCoreService {
         messageId_userId_emoji: {
           messageId,
           userId,
-          emoji: reaction
-        }
+          emoji: reaction,
+        },
       },
       update: {},
       create: {
         messageId,
         userId,
-        emoji: reaction
-      }
+        emoji: reaction,
+      },
     });
     return { success: true };
   }
@@ -632,11 +825,11 @@ export class MessagingCoreService {
             lastMessageId: true,
             participants: {
               where: { leftAt: null, deletedAt: null },
-              select: { userId: true }
-            }
-          }
-        }
-      }
+              select: { userId: true },
+            },
+          },
+        },
+      },
     });
 
     if (!message) {
@@ -647,9 +840,12 @@ export class MessagingCoreService {
       throw new ForbiddenException('You can only unsend your own messages');
     }
 
-    const diffMins = (Date.now() - new Date(message.createdAt).getTime()) / (1000 * 60);
+    const diffMins =
+      (Date.now() - new Date(message.createdAt).getTime()) / (1000 * 60);
     if (diffMins > 10) {
-      throw new BadRequestException('Messages can only be unsent within 10 minutes of sending');
+      throw new BadRequestException(
+        'Messages can only be unsent within 10 minutes of sending',
+      );
     }
 
     await this.prisma.message.update({
@@ -662,19 +858,22 @@ export class MessagingCoreService {
           mediaUrl: null,
           mediaType: null,
           inviteData: null,
-          isForwarded: false
-        }
-      }
+          isForwarded: false,
+        },
+      },
     });
 
     if (message.conversation?.lastMessageId === messageId) {
-      await this.prisma.conversation.update({
-        where: { id: message.conversationId },
-        data: { lastMessageText: 'This message was unsent' }
-      }).catch(() => { });
+      await this.prisma.conversation
+        .update({
+          where: { id: message.conversationId },
+          data: { lastMessageText: 'This message was unsent' },
+        })
+        .catch(() => {});
     }
 
-    const participantIds = message.conversation?.participants?.map(p => p.userId) || [];
+    const participantIds =
+      message.conversation?.participants?.map((p) => p.userId) || [];
     const publicId = message.conversation?.publicId || message.conversationId;
 
     return {
@@ -684,14 +883,14 @@ export class MessagingCoreService {
       conversationId: message.conversationId,
       publicId,
       participantIds,
-      state: 'UNSENT'
+      state: 'UNSENT',
     };
   }
 
   async deleteMessageForMe(messageId: string, userId: string) {
     const message = await this.prisma.message.findUnique({
       where: { id: messageId },
-      select: { id: true, conversationId: true }
+      select: { id: true, conversationId: true },
     });
 
     if (!message) {
@@ -701,16 +900,24 @@ export class MessagingCoreService {
     await this.prisma.deletedMessage.upsert({
       where: { userId_messageId: { userId, messageId } },
       create: { userId, messageId },
-      update: {}
+      update: {},
     });
 
-    return { success: true, messageId: message.id, conversationId: message.conversationId };
+    return {
+      success: true,
+      messageId: message.id,
+      conversationId: message.conversationId,
+    };
   }
 
-  async forwardMessage(messageId: string, targetConversationIds: string[], userId: string) {
+  async forwardMessage(
+    messageId: string,
+    targetConversationIds: string[],
+    userId: string,
+  ) {
     const originalMsg = await this.prisma.message.findUnique({
       where: { id: messageId },
-      select: { id: true, payload: true, type: true }
+      select: { id: true, payload: true, type: true },
     });
 
     if (!originalMsg) {
@@ -729,9 +936,10 @@ export class MessagingCoreService {
 
       const promises = chunk.map(async (targetId) => {
         const realConvId = await this.resolveConversationId(targetId);
-        const isParticipant = await this.prisma.conversationParticipant.findFirst({
-          where: { userId, conversationId: realConvId, deletedAt: null }
-        });
+        const isParticipant =
+          await this.prisma.conversationParticipant.findFirst({
+            where: { userId, conversationId: realConvId, deletedAt: null },
+          });
         if (!isParticipant) return null;
 
         return this.sendMessage(userId, realConvId, {
@@ -741,12 +949,12 @@ export class MessagingCoreService {
           replyToId: undefined,
           mentions: [],
           isForwarded: true,
-          forwardedFromMessageId: messageId
+          forwardedFromMessageId: messageId,
         });
       });
 
       const results = await Promise.all(promises);
-      results.forEach(msg => {
+      results.forEach((msg) => {
         if (msg) forwarded.push(msg);
       });
     }
@@ -784,11 +992,15 @@ export class MessagingCoreService {
    * joins, no cascades, no aggregate recomputation — so the round trip stays
    * short even before optimistic UI hides it.
    */
-  async muteConversation(conversationId: string, userId: string, muted: boolean) {
+  async muteConversation(
+    conversationId: string,
+    userId: string,
+    muted: boolean,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     await this.prisma.conversationParticipant.updateMany({
       where: { userId, conversationId: realConvId },
-      data: { isMuted: muted }
+      data: { isMuted: muted },
     });
     this.invalidateUserConversationsCache([userId]).catch(() => {});
     return { success: true, muted };
@@ -801,11 +1013,15 @@ export class MessagingCoreService {
    * reads as the pin not having worked. Unpinning clears it so a stale
    * timestamp can never outlive the flag.
    */
-  async pinConversation(conversationId: string, userId: string, pinned: boolean) {
+  async pinConversation(
+    conversationId: string,
+    userId: string,
+    pinned: boolean,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     await this.prisma.conversationParticipant.updateMany({
       where: { userId, conversationId: realConvId },
-      data: { isPinned: pinned, pinnedAt: pinned ? new Date() : null }
+      data: { isPinned: pinned, pinnedAt: pinned ? new Date() : null },
     });
     this.invalidateUserConversationsCache([userId]).catch(() => {});
     return { success: true, pinned };
@@ -823,7 +1039,7 @@ export class MessagingCoreService {
     const clearedAt = new Date();
     await this.prisma.conversationParticipant.updateMany({
       where: { userId, conversationId: realConvId },
-      data: { clearedAt }
+      data: { clearedAt },
     });
     this.invalidateUserConversationsCache([userId]).catch(() => {});
     return { success: true, clearedAt };
@@ -848,7 +1064,7 @@ export class MessagingCoreService {
     const now = new Date();
     await this.prisma.conversationParticipant.updateMany({
       where: { userId, conversationId: realConvId },
-      data: { deletedAt: now, clearedAt: now }
+      data: { deletedAt: now, clearedAt: now },
     });
     this.invalidateUserConversationsCache([userId]).catch(() => {});
     return { success: true, deletedAt: now, clearedAt: now };
@@ -860,15 +1076,26 @@ export class MessagingCoreService {
   // target is an active member, so a bad targetUserId yields a clean 404 rather
   // than a raw Prisma "record not found" 500.
 
-  async changeGroupOwner(conversationId: string, userId: string, targetUserId: string) {
+  async changeGroupOwner(
+    conversationId: string,
+    userId: string,
+    targetUserId: string,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     const [participant, target] = await Promise.all([
       this.prisma.conversationParticipant.findUnique({
-        where: { userId_conversationId: { userId, conversationId: realConvId } }
+        where: {
+          userId_conversationId: { userId, conversationId: realConvId },
+        },
       }),
       this.prisma.conversationParticipant.findUnique({
-        where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } }
-      })
+        where: {
+          userId_conversationId: {
+            userId: targetUserId,
+            conversationId: realConvId,
+          },
+        },
+      }),
     ]);
     if (!participant || participant.role !== 'OWNER') {
       throw new ForbiddenException('Only the owner can transfer ownership');
@@ -878,30 +1105,48 @@ export class MessagingCoreService {
     }
     await this.prisma.$transaction([
       this.prisma.conversationParticipant.update({
-        where: { userId_conversationId: { userId, conversationId: realConvId } },
-        data: { role: 'ADMIN' }
+        where: {
+          userId_conversationId: { userId, conversationId: realConvId },
+        },
+        data: { role: 'ADMIN' },
       }),
       this.prisma.conversationParticipant.update({
-        where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
-        data: { role: 'OWNER' }
+        where: {
+          userId_conversationId: {
+            userId: targetUserId,
+            conversationId: realConvId,
+          },
+        },
+        data: { role: 'OWNER' },
       }),
       this.prisma.conversation.update({
         where: { id: realConvId },
-        data: { ownerId: targetUserId }
-      })
+        data: { ownerId: targetUserId },
+      }),
     ]);
     return { success: true };
   }
 
-  async promoteToAdmin(conversationId: string, userId: string, targetUserId: string) {
+  async promoteToAdmin(
+    conversationId: string,
+    userId: string,
+    targetUserId: string,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     const [participant, target] = await Promise.all([
       this.prisma.conversationParticipant.findUnique({
-        where: { userId_conversationId: { userId, conversationId: realConvId } }
+        where: {
+          userId_conversationId: { userId, conversationId: realConvId },
+        },
       }),
       this.prisma.conversationParticipant.findUnique({
-        where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } }
-      })
+        where: {
+          userId_conversationId: {
+            userId: targetUserId,
+            conversationId: realConvId,
+          },
+        },
+      }),
     ]);
     if (!participant || participant.role !== 'OWNER') {
       throw new ForbiddenException('Only the owner can promote admins');
@@ -910,21 +1155,37 @@ export class MessagingCoreService {
       throw new NotFoundException('Target user is not a member of this group');
     }
     await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
-      data: { role: 'ADMIN' }
+      where: {
+        userId_conversationId: {
+          userId: targetUserId,
+          conversationId: realConvId,
+        },
+      },
+      data: { role: 'ADMIN' },
     });
     return { success: true };
   }
 
-  async demoteFromAdmin(conversationId: string, userId: string, targetUserId: string) {
+  async demoteFromAdmin(
+    conversationId: string,
+    userId: string,
+    targetUserId: string,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     const [participant, target] = await Promise.all([
       this.prisma.conversationParticipant.findUnique({
-        where: { userId_conversationId: { userId, conversationId: realConvId } }
+        where: {
+          userId_conversationId: { userId, conversationId: realConvId },
+        },
       }),
       this.prisma.conversationParticipant.findUnique({
-        where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } }
-      })
+        where: {
+          userId_conversationId: {
+            userId: targetUserId,
+            conversationId: realConvId,
+          },
+        },
+      }),
     ]);
     if (!participant || participant.role !== 'OWNER') {
       throw new ForbiddenException('Only the owner can demote admins');
@@ -933,8 +1194,13 @@ export class MessagingCoreService {
       throw new NotFoundException('Target user is not a member of this group');
     }
     await this.prisma.conversationParticipant.update({
-      where: { userId_conversationId: { userId: targetUserId, conversationId: realConvId } },
-      data: { role: 'MEMBER' }
+      where: {
+        userId_conversationId: {
+          userId: targetUserId,
+          conversationId: realConvId,
+        },
+      },
+      data: { role: 'MEMBER' },
     });
     return { success: true };
   }
@@ -942,32 +1208,36 @@ export class MessagingCoreService {
   async endGroup(conversationId: string, userId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
     const participant = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: realConvId } }
+      where: { userId_conversationId: { userId, conversationId: realConvId } },
     });
     if (!participant || participant.role !== 'OWNER') {
       throw new ForbiddenException('Only the owner can end the group');
     }
     await this.prisma.conversation.update({
       where: { id: realConvId },
-      data: { status: 'Closed' }
+      data: { status: 'Closed' },
     });
     return { success: true };
   }
 
-  async createSystemMessage(conversationId: string, senderId: string, text: string) {
+  async createSystemMessage(
+    conversationId: string,
+    senderId: string,
+    text: string,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     const message: any = await this.prisma.message.create({
       data: {
         conversationId: realConvId,
         senderId,
         type: 'SYSTEM',
-        payload: { text }
+        payload: { text },
       },
       include: {
         sender: {
-          select: { id: true, username: true, displayName: true, avatar: true }
-        }
-      }
+          select: { id: true, username: true, displayName: true, avatar: true },
+        },
+      },
     });
 
     // The denormalised last-message columns move with it. Bumping only
@@ -982,41 +1252,58 @@ export class MessagingCoreService {
         lastMessageType: 'SYSTEM',
         lastMessageAt: message.createdAt,
         lastMessageSenderId: senderId,
-      }
+      },
     });
 
     return {
       id: message.id,
       conversationId: message.conversationId,
       senderId: message.senderId,
-      senderName: message.sender?.displayName || message.sender?.username || 'System',
+      senderName:
+        message.sender?.displayName || message.sender?.username || 'System',
       senderAvatar: message.sender?.avatar || '',
       createdAt: message.createdAt,
       timestamp: message.createdAt,
-      time: new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: new Date(message.createdAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
       type: 'system',
       payload: { text },
       text,
-      status: 'sent'
+      status: 'sent',
     };
   }
 
-  async getConversationParticipantIds(conversationId: string): Promise<string[]> {
+  async getConversationParticipantIds(
+    conversationId: string,
+  ): Promise<string[]> {
     const realConvId = await this.resolveConversationId(conversationId);
     const participants = await this.prisma.conversationParticipant.findMany({
-      where: { conversationId: realConvId, leftAt: null, deletedAt: null } as any,
+      where: {
+        conversationId: realConvId,
+        leftAt: null,
+        deletedAt: null,
+      } as any,
       select: { userId: true },
     });
-    return participants.map(p => p.userId);
+    return participants.map((p) => p.userId);
   }
 
-  async getGroupUpdatesParticipantIds(conversationId: string): Promise<string[]> {
+  async getGroupUpdatesParticipantIds(
+    conversationId: string,
+  ): Promise<string[]> {
     const realConvId = await this.resolveConversationId(conversationId);
     const participants = await this.prisma.conversationParticipant.findMany({
-      where: { conversationId: realConvId, leftAt: null, deletedAt: null, groupUpdatesActive: true } as any,
+      where: {
+        conversationId: realConvId,
+        leftAt: null,
+        deletedAt: null,
+        groupUpdatesActive: true,
+      } as any,
       select: { userId: true },
     });
-    return participants.map(p => p.userId);
+    return participants.map((p) => p.userId);
   }
 
   async getConversationById(conversationId: string) {
@@ -1025,25 +1312,28 @@ export class MessagingCoreService {
       where: { id: realId },
       include: {
         avatarMedia: true,
-      }
+      },
     });
   }
 
   async getUserHandle(userId: string): Promise<string> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { username: true, displayName: true }
+      select: { username: true, displayName: true },
     });
     if (!user) return 'Someone';
     const rawName = user.username || user.displayName || 'Someone';
     return rawName.startsWith('@') ? rawName : `@${rawName}`;
   }
 
-  async isUserConversationMuted(conversationId: string, userId: string): Promise<boolean> {
+  async isUserConversationMuted(
+    conversationId: string,
+    userId: string,
+  ): Promise<boolean> {
     const realConvId = await this.resolveConversationId(conversationId);
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: { userId_conversationId: { userId, conversationId: realConvId } },
-      select: { isMuted: true }
+      select: { isMuted: true },
     });
     return participant?.isMuted || false;
   }
@@ -1056,8 +1346,14 @@ export class MessagingCoreService {
 
   /** Canonical join policy. Older rows carry legacy spellings for APPROVAL. */
   private normalizeWhoCanJoin(raw: any): 'ANYONE' | 'APPROVAL' {
-    const v = String(raw || 'ANYONE').toUpperCase().replace(/[\s-]+/g, '_');
-    if (v === 'APPROVAL' || v === 'APPROVAL_REQUIRED' || v === 'REQUEST_REQUIRED') {
+    const v = String(raw || 'ANYONE')
+      .toUpperCase()
+      .replace(/[\s-]+/g, '_');
+    if (
+      v === 'APPROVAL' ||
+      v === 'APPROVAL_REQUIRED' ||
+      v === 'REQUEST_REQUIRED'
+    ) {
       return 'APPROVAL';
     }
     return 'ANYONE';
@@ -1065,7 +1361,9 @@ export class MessagingCoreService {
 
   private isConversationClosed(status: any): boolean {
     const s = String(status || '').toUpperCase();
-    return s === 'CLOSED' || s === 'ENDED' || s === 'CANCELLED' || s === 'EXPIRED';
+    return (
+      s === 'CLOSED' || s === 'ENDED' || s === 'CANCELLED' || s === 'EXPIRED'
+    );
   }
 
   /**
@@ -1073,14 +1371,19 @@ export class MessagingCoreService {
    * with the group's owner is disqualifying — joining would put two people who
    * blocked each other into the same room.
    */
-  private async isBlockedFromGroup(ownerId: string | null | undefined, userId: string) {
+  private async isBlockedFromGroup(
+    ownerId: string | null | undefined,
+    userId: string,
+  ) {
     if (!ownerId || ownerId === userId) return false;
     try {
       return await this.blocksService.isBlocked(ownerId, userId);
     } catch {
       // A blocks-service outage must not silently open the gate, but it also
       // must not wedge every join. Treat it as "not blocked" and log.
-      this.coreLogger.warn(`Block check failed for group join (owner=${ownerId}, user=${userId})`);
+      this.coreLogger.warn(
+        `Block check failed for group join (owner=${ownerId}, user=${userId})`,
+      );
       return false;
     }
   }
@@ -1135,7 +1438,9 @@ export class MessagingCoreService {
       }),
     ]);
 
-    const isMember = Boolean(participant && !participant.leftAt && !participant.deletedAt);
+    const isMember = Boolean(
+      participant && !participant.leftAt && !participant.deletedAt,
+    );
     const whoCanJoin = this.normalizeWhoCanJoin(conv.whoCanJoin);
     const isClosed = this.isConversationClosed(conv.status);
     const requestActive = Boolean(
@@ -1143,7 +1448,9 @@ export class MessagingCoreService {
       String(joinRequest.status).toUpperCase() === 'PENDING' &&
       (!joinRequest.expiresAt || joinRequest.expiresAt > new Date()),
     );
-    const isBlocked = isMember ? false : await this.isBlockedFromGroup(conv.ownerId, userId);
+    const isBlocked = isMember
+      ? false
+      : await this.isBlockedFromGroup(conv.ownerId, userId);
 
     // A single reason code the client switches on, instead of re-deriving the
     // same precedence from six separate fields.
@@ -1210,16 +1517,27 @@ export class MessagingCoreService {
     if (!conversation) throw new NotFoundException('GROUP_NOT_FOUND');
 
     const pubId = conversation.publicId || conversation.id;
-    const identity = { conversationId: pubId, publicId: pubId, internalId: conversation.id };
+    const identity = {
+      conversationId: pubId,
+      publicId: pubId,
+      internalId: conversation.id,
+    };
 
     // Already a member → succeed without touching the row. This is what makes
     // a re-tapped invite show "Already joined" instead of an error.
     const existing = await this.prisma.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: conversation.id } },
+      where: {
+        userId_conversationId: { userId, conversationId: conversation.id },
+      },
       select: { role: true, leftAt: true, deletedAt: true },
     });
     if (existing && !existing.leftAt && !existing.deletedAt) {
-      return { status: 'JOINED' as const, alreadyMember: true, role: existing.role, ...identity };
+      return {
+        status: 'JOINED' as const,
+        alreadyMember: true,
+        role: existing.role,
+        ...identity,
+      };
     }
 
     if (this.isConversationClosed(conversation.status)) {
@@ -1235,11 +1553,18 @@ export class MessagingCoreService {
     if (whoCanJoin === 'ANYONE') {
       try {
         await this.prisma.conversationParticipant.upsert({
-          where: { userId_conversationId: { userId, conversationId: conversation.id } },
+          where: {
+            userId_conversationId: { userId, conversationId: conversation.id },
+          },
           create: { userId, conversationId: conversation.id, role: 'MEMBER' },
           // Re-joining after leaving reuses the row and clears the tombstone
           // fields rather than inserting a duplicate.
-          update: { leftAt: null, deletedAt: null, joinedAt: new Date(), role: 'MEMBER' } as any,
+          update: {
+            leftAt: null,
+            deletedAt: null,
+            joinedAt: new Date(),
+            role: 'MEMBER',
+          } as any,
         });
       } catch (err: any) {
         // Two concurrent joins can both miss the findUnique above and race into
@@ -1250,20 +1575,41 @@ export class MessagingCoreService {
 
       // A stale request row would otherwise keep showing "Requested" to admins.
       await this.prisma.conversationJoinRequest
-        .delete({ where: { conversationId_userId: { conversationId: conversation.id, userId } } })
+        .delete({
+          where: {
+            conversationId_userId: { conversationId: conversation.id, userId },
+          },
+        })
         .catch(() => {});
 
-      return { status: 'JOINED' as const, alreadyMember: false, role: 'MEMBER', ...identity };
+      return {
+        status: 'JOINED' as const,
+        alreadyMember: false,
+        role: 'MEMBER',
+        ...identity,
+      };
     }
 
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
     await this.prisma.conversationJoinRequest.upsert({
-      where: { conversationId_userId: { conversationId: conversation.id, userId } },
-      create: { conversationId: conversation.id, userId, status: 'PENDING', expiresAt },
+      where: {
+        conversationId_userId: { conversationId: conversation.id, userId },
+      },
+      create: {
+        conversationId: conversation.id,
+        userId,
+        status: 'PENDING',
+        expiresAt,
+      },
       update: { status: 'PENDING', expiresAt },
     });
 
-    return { status: 'PENDING' as const, alreadyMember: false, expiresAt, ...identity };
+    return {
+      status: 'PENDING' as const,
+      alreadyMember: false,
+      expiresAt,
+      ...identity,
+    };
   }
 
   /** Back-compat alias — both controllers and existing callers use this name. */

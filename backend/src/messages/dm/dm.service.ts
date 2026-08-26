@@ -1,4 +1,10 @@
-import { Injectable, ForbiddenException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { MessagingCoreService } from '../core/messaging-core.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BlocksService } from '../../users/blocks.service';
@@ -18,10 +24,20 @@ export class DmService extends MessagingCoreService {
     mentionsService: MentionsService,
     blocksService: BlocksService,
   ) {
-    super(prisma, presenceService, domainEventService, mentionsService, blocksService);
+    super(
+      prisma,
+      presenceService,
+      domainEventService,
+      mentionsService,
+      blocksService,
+    );
   }
 
-  async getUserDMConversations(userId: string, limit: number = 20, offset: number = 0) {
+  async getUserDMConversations(
+    userId: string,
+    limit: number = 20,
+    offset: number = 0,
+  ) {
     // NOTE: expired instant-match cleanup is handled by the 15-min cron in
     // MessagesService.onModuleInit — a read endpoint must not issue a write
     // (and its row lock) on every list load.
@@ -29,7 +45,7 @@ export class DmService extends MessagingCoreService {
       where: {
         userId,
         deletedAt: null,
-        conversation: { type: 'DM' }
+        conversation: { type: 'DM' },
       },
       // Without an explicit order, `take`/`skip` paginate an unordered set:
       // rows can repeat or vanish between pages, and a brand-new instant-match
@@ -84,48 +100,54 @@ export class DmService extends MessagingCoreService {
                       select: {
                         showOnlineStatus: true,
                         whoCanSeeOnline: true,
-                        readReceipts: true
-                      }
-                    }
-                  }
-                }
-              }
+                        readReceipts: true,
+                      },
+                    },
+                  },
+                },
+              },
             },
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
-    const convIds = participants.map(p => p.conversation.id);
+    const convIds = participants.map((p) => p.conversation.id);
 
     // Batched single query for all last messages instead of N+1 Promise.all findFirst
-    const recentMessages = convIds.length > 0 ? await this.prisma.message.findMany({
-      where: {
-        conversationId: { in: convIds },
-        deletedAt: null
-      },
-      orderBy: { createdAt: 'desc' },
-      distinct: ['conversationId'],
-      select: {
-        id: true,
-        conversationId: true,
-        createdAt: true,
-        senderId: true,
-        type: true,
-        payload: true,
-        sender: { select: { id: true, displayName: true, username: true } }
-      }
-    }) : [];
+    const recentMessages =
+      convIds.length > 0
+        ? await this.prisma.message.findMany({
+            where: {
+              conversationId: { in: convIds },
+              deletedAt: null,
+            },
+            orderBy: { createdAt: 'desc' },
+            distinct: ['conversationId'],
+            select: {
+              id: true,
+              conversationId: true,
+              createdAt: true,
+              senderId: true,
+              type: true,
+              payload: true,
+              sender: {
+                select: { id: true, displayName: true, username: true },
+              },
+            },
+          })
+        : [];
 
     const lastMsgMap = new Map<string, any>();
-    recentMessages.forEach(msg => {
+    recentMessages.forEach((msg) => {
       const payload = (msg.payload as any) || {};
       let text = payload.text || '';
       if (!text) {
         const mType = (payload.mediaType || msg.type || '').toLowerCase();
         if (mType.includes('image') || mType.includes('photo')) text = 'Photo';
         else if (mType.includes('video')) text = 'Video';
-        else if (mType.includes('audio') || mType.includes('voice')) text = 'Audio';
+        else if (mType.includes('audio') || mType.includes('voice'))
+          text = 'Audio';
         else if (payload.mediaUrl) text = 'Attachment';
       }
       lastMsgMap.set(msg.conversationId, {
@@ -135,7 +157,7 @@ export class DmService extends MessagingCoreService {
         type: msg.type ? msg.type.toLowerCase() : 'chat',
         text,
         mediaUrl: payload.mediaUrl || null,
-        mediaType: payload.mediaType || null
+        mediaType: payload.mediaType || null,
       });
     });
 
@@ -143,25 +165,32 @@ export class DmService extends MessagingCoreService {
     // exactly like the /api/messages path — instead of one COUNT query per
     // conversation (the previous N+1).
     const unreadMap = new Map<string, number>();
-    participants.forEach(part => {
+    participants.forEach((part) => {
       unreadMap.set(part.conversation.id, (part as any).unreadCount || 0);
     });
 
     const otherUsersMap = new Map<string, any>();
-    participants.forEach(p => {
-      const otherP = p.conversation.participants.find(pt => pt.userId !== userId);
+    participants.forEach((p) => {
+      const otherP = p.conversation.participants.find(
+        (pt) => pt.userId !== userId,
+      );
       if (otherP?.user) {
         otherUsersMap.set(otherP.user.id, otherP.user);
       }
     });
 
     const userIdsToFetchPresence = Array.from(otherUsersMap.keys());
-    const presenceMap = new Map<string, { isOnline: boolean; lastActive: string | null }>();
+    const presenceMap = new Map<
+      string,
+      { isOnline: boolean; lastActive: string | null }
+    >();
     if (userIdsToFetchPresence.length > 0) {
-      const batchPresence = await this.presenceService.getPresenceMany(userIdsToFetchPresence);
+      const batchPresence = await this.presenceService.getPresenceMany(
+        userIdsToFetchPresence,
+      );
       // One viewer-settings read + at most two batched follow queries, replacing
       // the previous per-user checkPresenceVisibility N+1.
-      const visTargets = userIdsToFetchPresence.map(uId => {
+      const visTargets = userIdsToFetchPresence.map((uId) => {
         const u = otherUsersMap.get(uId);
         return {
           userId: uId,
@@ -169,12 +198,17 @@ export class DmService extends MessagingCoreService {
           isEnabled: u?.settings?.showOnlineStatus !== false,
         };
       });
-      const visibleSet = await resolvePresenceVisibilityForViewer(userId, visTargets, this.prisma, this.blocksService);
-      userIdsToFetchPresence.forEach(uId => {
+      const visibleSet = await resolvePresenceVisibilityForViewer(
+        userId,
+        visTargets,
+        this.prisma,
+        this.blocksService,
+      );
+      userIdsToFetchPresence.forEach((uId) => {
         const presence = batchPresence.get(uId);
         presenceMap.set(uId, {
-          isOnline: visibleSet.has(uId) ? (presence?.status === 'online') : false,
-          lastActive: presence?.lastSeen || null
+          isOnline: visibleSet.has(uId) ? presence?.status === 'online' : false,
+          lastActive: presence?.lastSeen || null,
         });
       });
     }
@@ -185,106 +219,128 @@ export class DmService extends MessagingCoreService {
       this.blocksService.getBlockedByUserIds(userId),
     ]);
     const blockedByMeSet = new Set(blockedByMeIds);
-    const blockedByThemSet = new Set(mutualBlockIds.filter(id => !blockedByMeSet.has(id)));
+    const blockedByThemSet = new Set(
+      mutualBlockIds.filter((id) => !blockedByMeSet.has(id)),
+    );
 
-    const results = await Promise.all(participants.map(async (p) => {
-      const conv = p.conversation;
-      const allParticipants = conv.participants || [];
-      const otherParticipantObj = allParticipants.find(part => part.userId !== userId);
-      const otherUser = otherParticipantObj?.user;
+    const results = await Promise.all(
+      participants.map(async (p) => {
+        const conv = p.conversation;
+        const allParticipants = conv.participants || [];
+        const otherParticipantObj = allParticipants.find(
+          (part) => part.userId !== userId,
+        );
+        const otherUser = otherParticipantObj?.user;
 
-      const lastMsgInfo = lastMsgMap.get(conv.id);
+        const lastMsgInfo = lastMsgMap.get(conv.id);
 
-      // DM Visibility Lifecycle (PENDING vs ACTIVE):
-      // A conversation with 0 messages MUST NOT appear in the conversation list
-      // for ANY user until the first message is sent.
-      //
-      // The old `|| conv.isInstantMatch` exemption is gone: Instant Match
-      // chats now live on their own conversation type and are excluded by the
-      // `type: 'DM'` filter on the query above, so an exemption here could
-      // only ever re-admit one.
-      if (!lastMsgInfo) {
-        return null;
-      }
-
-      // The last message is read from the shared Message table, but Clear and
-      // Delete are per-user watermarks. Without this guard a user who cleared
-      // the chat still saw the other person's last message quoted in their
-      // list row — content they can no longer open anywhere. The row itself
-      // stays (that is what separates Clear from Delete); only the preview goes.
-      const cutoff = (p as any).clearedAt as Date | null;
-      const previewCleared = Boolean(
-        cutoff && lastMsgInfo?.createdAt && new Date(lastMsgInfo.createdAt) <= new Date(cutoff)
-      );
-
-      const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
-      const unreadCount = unreadMap.get(conv.id) || 0;
-
-      let canSeeOnline = false;
-      let blockStatus = { isBlocked: false, isBlockedByMe: false, isBlockedByThem: false };
-
-      if (otherUser) {
-        canSeeOnline = Boolean(userPresence?.isOnline && otherUser.settings?.showOnlineStatus !== false);
-        const isBlockedByMe = blockedByMeSet.has(otherUser.id);
-        const isBlockedByThem = blockedByThemSet.has(otherUser.id);
-        blockStatus = {
-          isBlocked: isBlockedByMe || isBlockedByThem,
-          isBlockedByMe,
-          isBlockedByThem,
-        };
-        if (isBlockedByThem) {
-          canSeeOnline = false;
+        // DM Visibility Lifecycle (PENDING vs ACTIVE):
+        // A conversation with 0 messages MUST NOT appear in the conversation list
+        // for ANY user until the first message is sent.
+        //
+        // The old `|| conv.isInstantMatch` exemption is gone: Instant Match
+        // chats now live on their own conversation type and are excluded by the
+        // `type: 'DM'` filter on the query above, so an exemption here could
+        // only ever re-admit one.
+        if (!lastMsgInfo) {
+          return null;
         }
-      }
 
-      const pubId = (conv as any).publicId || conv.id;
-      return {
-        id: pubId,
-        publicId: pubId,
-        internalId: conv.id,
-        type: 'DM' as const,
-        isMember: (p as any).leftAt == null,
-        ownerId: conv.ownerId || null,
-        name: conv.name || otherUser?.displayName || 'Chat',
-        avatar: conv.avatarKey || otherUser?.avatar || null,
-        description: conv.description || null,
-        status: conv.status || 'ACTIVE',
-        isInstantMatch: conv.isInstantMatch || false,
-        expiresAt: conv.expiresAt || null,
-        createdAt: conv.createdAt,
-        updatedAt: conv.updatedAt,
-        pinned: p.isPinned || false,
-        pinnedAt: p.pinnedAt || null,
-        muted: p.isMuted || false,
-        // `blocked` is the mutual answer: the thread is closed for writes if
-        // EITHER side blocked. The two directional flags below tell the client
-        // which of the two neutral messages to render — they must never be
-        // collapsed into one, and `isBlockedByThem` must never be hardcoded:
-        // doing so left the blocked user with a working-looking input.
-        blocked: blockStatus.isBlockedByMe || blockStatus.isBlockedByThem,
-        isBlockedByMe: blockStatus.isBlockedByMe,
-        isBlockedByThem: blockStatus.isBlockedByThem,
-        unreadCount,
-        unread: unreadCount,
-        lastMessage: (lastMsgInfo && !previewCleared) ? {
-          createdAt: lastMsgInfo.createdAt,
-          senderId: lastMsgInfo.senderId,
-          senderName: lastMsgInfo.senderName,
-          text: lastMsgInfo.text,
-          type: lastMsgInfo.type,
-          mediaUrl: lastMsgInfo.mediaUrl,
-          mediaType: lastMsgInfo.mediaType
-        } : null,
-        targetUser: otherUser ? {
-          id: otherUser.id,
-          username: otherUser.username,
-          displayName: otherUser.displayName,
-          avatar: otherUser.avatar,
-          isOnline: canSeeOnline ? (userPresence?.isOnline || false) : false,
-          lastActive: userPresence?.lastActive || null
-        } : null
-      };
-    }));
+        // The last message is read from the shared Message table, but Clear and
+        // Delete are per-user watermarks. Without this guard a user who cleared
+        // the chat still saw the other person's last message quoted in their
+        // list row — content they can no longer open anywhere. The row itself
+        // stays (that is what separates Clear from Delete); only the preview goes.
+        const cutoff = (p as any).clearedAt as Date | null;
+        const previewCleared = Boolean(
+          cutoff &&
+          lastMsgInfo?.createdAt &&
+          new Date(lastMsgInfo.createdAt) <= new Date(cutoff),
+        );
+
+        const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
+        const unreadCount = unreadMap.get(conv.id) || 0;
+
+        let canSeeOnline = false;
+        let blockStatus = {
+          isBlocked: false,
+          isBlockedByMe: false,
+          isBlockedByThem: false,
+        };
+
+        if (otherUser) {
+          canSeeOnline = Boolean(
+            userPresence?.isOnline &&
+            otherUser.settings?.showOnlineStatus !== false,
+          );
+          const isBlockedByMe = blockedByMeSet.has(otherUser.id);
+          const isBlockedByThem = blockedByThemSet.has(otherUser.id);
+          blockStatus = {
+            isBlocked: isBlockedByMe || isBlockedByThem,
+            isBlockedByMe,
+            isBlockedByThem,
+          };
+          if (isBlockedByThem) {
+            canSeeOnline = false;
+          }
+        }
+
+        const pubId = (conv as any).publicId || conv.id;
+        return {
+          id: pubId,
+          publicId: pubId,
+          internalId: conv.id,
+          type: 'DM' as const,
+          isMember: (p as any).leftAt == null,
+          ownerId: conv.ownerId || null,
+          name: conv.name || otherUser?.displayName || 'Chat',
+          avatar: conv.avatarKey || otherUser?.avatar || null,
+          description: conv.description || null,
+          status: conv.status || 'ACTIVE',
+          isInstantMatch: conv.isInstantMatch || false,
+          expiresAt: conv.expiresAt || null,
+          createdAt: conv.createdAt,
+          updatedAt: conv.updatedAt,
+          pinned: p.isPinned || false,
+          pinnedAt: p.pinnedAt || null,
+          muted: p.isMuted || false,
+          // `blocked` is the mutual answer: the thread is closed for writes if
+          // EITHER side blocked. The two directional flags below tell the client
+          // which of the two neutral messages to render — they must never be
+          // collapsed into one, and `isBlockedByThem` must never be hardcoded:
+          // doing so left the blocked user with a working-looking input.
+          blocked: blockStatus.isBlockedByMe || blockStatus.isBlockedByThem,
+          isBlockedByMe: blockStatus.isBlockedByMe,
+          isBlockedByThem: blockStatus.isBlockedByThem,
+          unreadCount,
+          unread: unreadCount,
+          lastMessage:
+            lastMsgInfo && !previewCleared
+              ? {
+                  createdAt: lastMsgInfo.createdAt,
+                  senderId: lastMsgInfo.senderId,
+                  senderName: lastMsgInfo.senderName,
+                  text: lastMsgInfo.text,
+                  type: lastMsgInfo.type,
+                  mediaUrl: lastMsgInfo.mediaUrl,
+                  mediaType: lastMsgInfo.mediaType,
+                }
+              : null,
+          targetUser: otherUser
+            ? {
+                id: otherUser.id,
+                username: otherUser.username,
+                displayName: otherUser.displayName,
+                avatar: otherUser.avatar,
+                isOnline: canSeeOnline
+                  ? userPresence?.isOnline || false
+                  : false,
+                lastActive: userPresence?.lastActive || null,
+              }
+            : null,
+        };
+      }),
+    );
 
     return results.filter(Boolean);
   }
@@ -317,11 +373,15 @@ export class DmService extends MessagingCoreService {
       where: {
         type: 'DM',
         AND: [
-          { participants: { some: { userId: currentUserId, deletedAt: null, leftAt: null } } },
-          { participants: { some: { userId: targetUserId } } }
-        ]
+          {
+            participants: {
+              some: { userId: currentUserId, deletedAt: null, leftAt: null },
+            },
+          },
+          { participants: { some: { userId: targetUserId } } },
+        ],
       },
-      select: { id: true, publicId: true }
+      select: { id: true, publicId: true },
     });
     if (!existing) return null;
     const pubId = existing.publicId || existing.id;
@@ -334,7 +394,9 @@ export class DmService extends MessagingCoreService {
     }
 
     if (await this.blocksService.isBlocked(currentUserId, targetUserId)) {
-      throw new ForbiddenException('Cannot start a conversation with a blocked user');
+      throw new ForbiddenException(
+        'Cannot start a conversation with a blocked user',
+      );
     }
 
     return await this.prisma.$transaction(async (tx) => {
@@ -343,16 +405,18 @@ export class DmService extends MessagingCoreService {
           type: 'DM',
           AND: [
             { participants: { some: { userId: currentUserId } } },
-            { participants: { some: { userId: targetUserId } } }
-          ]
-        }
+            { participants: { some: { userId: targetUserId } } },
+          ],
+        },
       });
 
       if (existing) {
-        await tx.conversationParticipant.updateMany({
-          where: { conversationId: existing.id, userId: currentUserId },
-          data: { deletedAt: null }
-        }).catch(() => {});
+        await tx.conversationParticipant
+          .updateMany({
+            where: { conversationId: existing.id, userId: currentUserId },
+            data: { deletedAt: null },
+          })
+          .catch(() => {});
 
         const pubId = (existing as any).publicId || existing.id;
         return { id: pubId, publicId: pubId };
@@ -367,17 +431,21 @@ export class DmService extends MessagingCoreService {
           participants: {
             create: [
               { userId: currentUserId, role: 'OWNER' },
-              { userId: targetUserId, role: 'MEMBER' }
-            ]
-          }
-        }
+              { userId: targetUserId, role: 'MEMBER' },
+            ],
+          },
+        },
       });
 
       return { id: newPubId, publicId: newPubId };
     });
   }
 
-  async createInstantMatchDM(userAId: string, userBId: string, activity: string) {
+  async createInstantMatchDM(
+    userAId: string,
+    userBId: string,
+    activity: string,
+  ) {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     // Mirrors MessagesService.createInstantMatchConversation: an expired

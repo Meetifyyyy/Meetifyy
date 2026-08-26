@@ -43,8 +43,20 @@ describe('NotificationsService — what reaches the notifications page', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: ConfigService, useValue: { get: jest.fn() } },
-        { provide: RedisService, useValue: { getClient: jest.fn().mockReturnValue(null) } },
-        { provide: BlocksService, useValue: { getExcludedUserIds: jest.fn().mockResolvedValue([]), isBlocked: jest.fn().mockResolvedValue(false), filterBlockedUsers: jest.fn(async (_u, ids) => ids), injectBlockFilter: jest.fn(async (_u, w) => w), invalidateBlockCache: jest.fn() } },
+        {
+          provide: RedisService,
+          useValue: { getClient: jest.fn().mockReturnValue(null) },
+        },
+        {
+          provide: BlocksService,
+          useValue: {
+            getExcludedUserIds: jest.fn().mockResolvedValue([]),
+            isBlocked: jest.fn().mockResolvedValue(false),
+            filterBlockedUsers: jest.fn(async (_u, ids) => ids),
+            injectBlockFilter: jest.fn(async (_u, w) => w),
+            invalidateBlockCache: jest.fn(),
+          },
+        },
       ],
     }).compile();
     service = module.get(NotificationsService);
@@ -65,15 +77,21 @@ describe('NotificationsService — what reaches the notifications page', () => {
   it('still keeps chat messages out of both — they have their own badge', async () => {
     await service.getNotifications('user-1');
     await service.getUnreadCount('user-1');
-    expect(prisma.notification.findMany.mock.calls[0][0].where.type.notIn).toContain(NotificationType.MESSAGE);
-    expect(prisma.notification.count.mock.calls[0][0].where.type.notIn).toContain(NotificationType.MESSAGE);
+    expect(
+      prisma.notification.findMany.mock.calls[0][0].where.type.notIn,
+    ).toContain(NotificationType.MESSAGE);
+    expect(
+      prisma.notification.count.mock.calls[0][0].where.type.notIn,
+    ).toContain(NotificationType.MESSAGE);
   });
 
   it('applies exactly the same type filter to the list and to the count', async () => {
     await service.getNotifications('user-1');
     await service.getUnreadCount('user-1');
-    const listFilter = prisma.notification.findMany.mock.calls[0][0].where.type.notIn;
-    const countFilter = prisma.notification.count.mock.calls[0][0].where.type.notIn;
+    const listFilter =
+      prisma.notification.findMany.mock.calls[0][0].where.type.notIn;
+    const countFilter =
+      prisma.notification.count.mock.calls[0][0].where.type.notIn;
     expect([...countFilter].sort()).toEqual([...listFilter].sort());
   });
 });

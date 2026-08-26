@@ -12,4 +12,5 @@ export const CACHE_CONTROL_KEY = 'cache-control';
  *
  * If this decorator is NOT applied, the NoCacheInterceptor falls back to 'no-store'.
  */
-export const CacheControl = (value: string) => SetMetadata(CACHE_CONTROL_KEY, value);
+export const CacheControl = (value: string) =>
+  SetMetadata(CACHE_CONTROL_KEY, value);

@@ -68,10 +68,17 @@ import { MonitoringModule } from './monitoring/monitoring.module';
         },
         customSuccessMessage: (req, res, time) => {
           if (time > 1000) {
-            req.log.warn(httpLine({
-              method: req.method, url: req.url, status: res.statusCode, ms: time,
-              userId: fromRequest(req, (r) => r?.user?.id), reqId: req.id as string, cause: 'slow request',
-            }));
+            req.log.warn(
+              httpLine({
+                method: req.method,
+                url: req.url,
+                status: res.statusCode,
+                ms: time,
+                userId: fromRequest(req, (r) => r?.user?.id),
+                reqId: req.id as string,
+                cause: 'slow request',
+              }),
+            );
           }
           return httpLine({
             method: req.method,
@@ -90,10 +97,15 @@ import { MonitoringModule } from './monitoring/monitoring.module';
             cause: fromRequest(req, (r) => r?.[LOG_CAUSE]),
           });
         },
-        customErrorMessage: (req, res, err) => httpLine({
-          method: req.method, url: req.url, status: res.statusCode,
-          userId: fromRequest(req, (r) => r?.user?.id), reqId: req.id as string, cause: err.message,
-        }),
+        customErrorMessage: (req, res, err) =>
+          httpLine({
+            method: req.method,
+            url: req.url,
+            status: res.statusCode,
+            userId: fromRequest(req, (r) => r?.user?.id),
+            reqId: req.id as string,
+            cause: err.message,
+          }),
         customLogLevel: (req, res, err) => {
           // 5xx is owned by HttpExceptionFilter, which has the stack; this
           // line would be its third copy, so it is kept at debug for when the
@@ -110,7 +122,7 @@ import { MonitoringModule } from './monitoring/monitoring.module';
             id: req.id,
             method: req.method,
             url: req.url,
-            userId: (req as any).raw?.user?.id,
+            userId: req.raw?.user?.id,
           }),
           res: (res) => ({ statusCode: res.statusCode }),
         },
@@ -173,7 +185,10 @@ import { MonitoringModule } from './monitoring/monitoring.module';
             port: parseInt(url.port, 10) || 6379,
             username: url.username || undefined,
             password: url.password || undefined,
-            tls: url.protocol === 'rediss:' ? { rejectUnauthorized: false } : undefined,
+            tls:
+              url.protocol === 'rediss:'
+                ? { rejectUnauthorized: false }
+                : undefined,
             maxRetriesPerRequest: null,
             enableReadyCheck: false,
             skipVersionCheck: true,
@@ -198,7 +213,10 @@ import { MonitoringModule } from './monitoring/monitoring.module';
           // Namespaces every queue by environment. Without it, a local worker
           // pointed at the deployed Redis silently steals production jobs.
           prefix: config.redis.queuePrefix,
-          createClient: (type: 'client' | 'subscriber' | 'bclient', opts?: any) => {
+          createClient: (
+            type: 'client' | 'subscriber' | 'bclient',
+            opts?: any,
+          ) => {
             const clientOpts = {
               ...connection,
               ...(opts || {}),
@@ -207,7 +225,10 @@ import { MonitoringModule } from './monitoring/monitoring.module';
                 return Math.min(times * 1000, 5000);
               },
               reconnectOnError(err: Error) {
-                if (err.message && err.message.includes('max number of clients reached')) {
+                if (
+                  err.message &&
+                  err.message.includes('max number of clients reached')
+                ) {
                   return false;
                 }
                 return true;
@@ -216,17 +237,17 @@ import { MonitoringModule } from './monitoring/monitoring.module';
 
             if (type === 'client') {
               if (!sharedProducerClient) {
-                sharedProducerClient = new Redis(clientOpts as any);
+                sharedProducerClient = new Redis(clientOpts);
               }
               return sharedProducerClient;
             }
             if (type === 'subscriber') {
               if (!sharedSubscriberClient) {
-                sharedSubscriberClient = new Redis(clientOpts as any);
+                sharedSubscriberClient = new Redis(clientOpts);
               }
               return sharedSubscriberClient;
             }
-            return new Redis(clientOpts as any);
+            return new Redis(clientOpts);
           },
           defaultJobOptions: {
             removeOnComplete: true,

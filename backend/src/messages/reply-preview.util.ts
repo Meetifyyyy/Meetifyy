@@ -97,8 +97,12 @@ function describeShare(payload: any): {
         shareType: type,
         shareId: typeof entity.id === 'string' && entity.id ? entity.id : null,
         shareTitle: typeof title === 'string' ? title : null,
-        shareAvatar: typeof avatar === 'string' && avatar.trim() ? avatar : null,
-        shareColor: typeof entity.color === 'string' && entity.color.trim() ? entity.color : null,
+        shareAvatar:
+          typeof avatar === 'string' && avatar.trim() ? avatar : null,
+        shareColor:
+          typeof entity.color === 'string' && entity.color.trim()
+            ? entity.color
+            : null,
       };
     }
   }
@@ -106,18 +110,33 @@ function describeShare(payload: any): {
   // Group invites carry no nested entity, only a type discriminator.
   const inviteType = typeof invite.type === 'string' ? invite.type : null;
   if (inviteType) {
-    const inviteAvatar = invite.groupAvatar || invite.avatarKey || invite.avatar || null;
-    const inviteId = invite.groupId || invite.conversationId || invite.communityId || null;
+    const inviteAvatar =
+      invite.groupAvatar || invite.avatarKey || invite.avatar || null;
+    const inviteId =
+      invite.groupId || invite.conversationId || invite.communityId || null;
     return {
       shareType: inviteType === 'group_invite' ? 'group_invite' : inviteType,
       shareId: typeof inviteId === 'string' && inviteId ? inviteId : null,
-      shareTitle: typeof invite.groupName === 'string' ? invite.groupName : null,
-      shareAvatar: typeof inviteAvatar === 'string' && inviteAvatar.trim() ? inviteAvatar : null,
-      shareColor: typeof invite.color === 'string' && invite.color.trim() ? invite.color : null,
+      shareTitle:
+        typeof invite.groupName === 'string' ? invite.groupName : null,
+      shareAvatar:
+        typeof inviteAvatar === 'string' && inviteAvatar.trim()
+          ? inviteAvatar
+          : null,
+      shareColor:
+        typeof invite.color === 'string' && invite.color.trim()
+          ? invite.color
+          : null,
     };
   }
 
-  return { shareType: null, shareId: null, shareTitle: null, shareAvatar: null, shareColor: null };
+  return {
+    shareType: null,
+    shareId: null,
+    shareTitle: null,
+    shareAvatar: null,
+    shareColor: null,
+  };
 }
 
 /**
@@ -133,7 +152,13 @@ export function buildReplyToSnapshot(
   const payload = replyTo.payload || {};
   const isUnsent = replyTo.state === 'UNSENT';
   const { shareType, shareId, shareTitle, shareAvatar, shareColor } = isUnsent
-    ? { shareType: null, shareId: null, shareTitle: null, shareAvatar: null, shareColor: null }
+    ? {
+        shareType: null,
+        shareId: null,
+        shareTitle: null,
+        shareAvatar: null,
+        shareColor: null,
+      }
     : describeShare(payload);
 
   return {
@@ -141,10 +166,10 @@ export function buildReplyToSnapshot(
     senderName: replyTo.sender?.displayName || replyTo.sender?.username || '',
     from: viewerId && replyTo.senderId === viewerId ? 'me' : 'them',
     // An unsent original must not leak its former contents through the quote.
-    text: isUnsent ? '' : (typeof payload.text === 'string' ? payload.text : ''),
-    mediaType: isUnsent ? null : (payload.mediaType || null),
-    mediaUrl: isUnsent ? null : (payload.mediaUrl || null),
-    thumbnailUrl: isUnsent ? null : (payload.thumbnailUrl || null),
+    text: isUnsent ? '' : typeof payload.text === 'string' ? payload.text : '',
+    mediaType: isUnsent ? null : payload.mediaType || null,
+    mediaUrl: isUnsent ? null : payload.mediaUrl || null,
+    thumbnailUrl: isUnsent ? null : payload.thumbnailUrl || null,
     shareType,
     shareId,
     shareTitle,

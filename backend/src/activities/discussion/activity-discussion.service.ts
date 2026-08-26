@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { ActivityAuthorizationService } from '../activity-authorization.service';
@@ -28,7 +32,9 @@ export class ActivityDiscussionService {
     text: true,
     createdAt: true,
     userId: true,
-    user: { select: { id: true, username: true, displayName: true, avatar: true } },
+    user: {
+      select: { id: true, username: true, displayName: true, avatar: true },
+    },
   } as const;
 
   private format(m: any, activityId: string) {
@@ -68,17 +74,25 @@ export class ActivityDiscussionService {
           invitations: userId
             ? {
                 where: { inviteeId: userId },
-                select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
+                select: {
+                  inviteeId: true,
+                  status: true,
+                  revokedAt: true,
+                  expiresAt: true,
+                },
               }
             : false,
         },
       }),
       userId
-        ? this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } })
+        ? this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, collegeId: true },
+          })
         : Promise.resolve(null),
     ]);
     if (!activity) throw new NotFoundException('Activity not found');
-    this.activityAuthorizationService.assertCanView(user, activity as any);
+    this.activityAuthorizationService.assertCanView(user, activity);
   }
 
   /**
@@ -86,7 +100,12 @@ export class ActivityDiscussionService {
    * client can render/prepend directly. `nextCursor` is the id of the oldest
    * message returned; pass it back as `before` to load older messages.
    */
-  async getMessages(activityId: string, userId: string, before?: string, limit: number = DEFAULT_PAGE_SIZE) {
+  async getMessages(
+    activityId: string,
+    userId: string,
+    before?: string,
+    limit: number = DEFAULT_PAGE_SIZE,
+  ) {
     await this.assertCanAccessDiscussion(activityId, userId);
     const take = Math.min(Math.max(limit, 1), MAX_PAGE_SIZE);
 
@@ -128,7 +147,9 @@ export class ActivityDiscussionService {
     const trimmed = (text || '').trim();
     if (!trimmed) throw new BadRequestException('Message cannot be empty');
     if (trimmed.length > MAX_MESSAGE_LENGTH) {
-      throw new BadRequestException(`Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`);
+      throw new BadRequestException(
+        `Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`,
+      );
     }
 
     await this.assertCanAccessDiscussion(activityId, userId);
@@ -142,7 +163,10 @@ export class ActivityDiscussionService {
 
     // Fan out to everyone currently viewing the activity (they joined the
     // `activity_<id>` socket room). Room-only broadcast — no participant set.
-    this.domainEventService.emit('activity_discussion.created', { activityId, message });
+    this.domainEventService.emit('activity_discussion.created', {
+      activityId,
+      message,
+    });
 
     return message;
   }

@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -53,7 +58,10 @@ export class BlocksService implements OnModuleInit {
   private static readonly cache = new Map<string, CachedBlocks>();
 
   /** @see CachedOutgoingBlocks */
-  private static readonly outgoingCache = new Map<string, CachedOutgoingBlocks>();
+  private static readonly outgoingCache = new Map<
+    string,
+    CachedOutgoingBlocks
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -102,10 +110,7 @@ export class BlocksService implements OnModuleInit {
 
     const blocks = await this.prisma.block.findMany({
       where: {
-        OR: [
-          { blockerId: userId },
-          { blockedId: userId },
-        ],
+        OR: [{ blockerId: userId }, { blockedId: userId }],
       },
       select: {
         blockerId: true,
@@ -155,7 +160,10 @@ export class BlocksService implements OnModuleInit {
    * follower lists, mention candidates); for anything still expressible as a
    * query, prefer `injectBlockFilter` so the exclusion happens in Postgres.
    */
-  async filterBlockedUsers(currentUserId: string | null | undefined, userIds: string[]): Promise<string[]> {
+  async filterBlockedUsers(
+    currentUserId: string | null | undefined,
+    userIds: string[],
+  ): Promise<string[]> {
     if (!currentUserId || userIds.length === 0) return userIds;
     const excluded = await this.getExcludedUserIds(currentUserId);
     if (excluded.length === 0) return userIds;
@@ -185,7 +193,11 @@ export class BlocksService implements OnModuleInit {
     if (excluded.length === 0) return where;
 
     const existingAnd = where.AND;
-    const and = Array.isArray(existingAnd) ? [...existingAnd] : existingAnd ? [existingAnd] : [];
+    const and = Array.isArray(existingAnd)
+      ? [...existingAnd]
+      : existingAnd
+        ? [existingAnd]
+        : [];
     and.push({ [field]: { notIn: excluded } });
     return { ...where, AND: and };
   }
@@ -219,7 +231,10 @@ export class BlocksService implements OnModuleInit {
         if (oldest) BlocksService.outgoingCache.delete(oldest);
       }
     }
-    BlocksService.outgoingCache.set(userId, { ids, expiresAt: now + BLOCK_CACHE_TTL_MS });
+    BlocksService.outgoingCache.set(userId, {
+      ids,
+      expiresAt: now + BLOCK_CACHE_TTL_MS,
+    });
     return ids;
   }
 
@@ -240,7 +255,11 @@ export class BlocksService implements OnModuleInit {
   async getBlockDirection(
     userId: string,
     otherUserId: string,
-  ): Promise<{ isBlocked: boolean; blockedByMe: boolean; blockedByThem: boolean }> {
+  ): Promise<{
+    isBlocked: boolean;
+    blockedByMe: boolean;
+    blockedByThem: boolean;
+  }> {
     if (!userId || !otherUserId || userId === otherUserId) {
       return { isBlocked: false, blockedByMe: false, blockedByThem: false };
     }
@@ -294,7 +313,9 @@ export class BlocksService implements OnModuleInit {
    * also has other caches to clear in the same breath.
    */
   async removeBlock(blockerId: string, blockedId: string) {
-    const { count } = await this.prisma.block.deleteMany({ where: { blockerId, blockedId } });
+    const { count } = await this.prisma.block.deleteMany({
+      where: { blockerId, blockedId },
+    });
 
     // deleteMany happily reports success for a pair that was never blocked,
     // which let DELETE /api/blocks/:id return 200 for any id at all — an
@@ -317,7 +338,10 @@ export class BlocksService implements OnModuleInit {
         if (oldest) BlocksService.cache.delete(oldest);
       }
     }
-    BlocksService.cache.set(userId, { ids, expiresAt: Date.now() + BLOCK_CACHE_TTL_MS });
+    BlocksService.cache.set(userId, {
+      ids,
+      expiresAt: Date.now() + BLOCK_CACHE_TTL_MS,
+    });
   }
 
   /**
@@ -336,7 +360,10 @@ export class BlocksService implements OnModuleInit {
 
     if (!this.redis) return;
     try {
-      await this.redis.publish(BLOCK_INVALIDATE_CHANNEL, JSON.stringify([userIdA, userIdB]));
+      await this.redis.publish(
+        BLOCK_INVALIDATE_CHANNEL,
+        JSON.stringify([userIdA, userIdB]),
+      );
     } catch {
       // Non-fatal — the TTL bounds staleness on other instances.
     }

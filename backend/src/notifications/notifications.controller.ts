@@ -1,4 +1,13 @@
-import { Controller, Get, Patch, Delete, Param, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Delete,
+  Param,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { NotificationType } from '@prisma/client';
@@ -7,7 +16,9 @@ import { NotificationType } from '@prisma/client';
  * Notification kinds a client may filter the feed down to. MESSAGE is
  * deliberately absent — it is surfaced by the chat badge, not this list.
  */
-const ALLOWED_NOTIFICATION_FILTERS: NotificationType[] = [NotificationType.ACTIVITY_INVITE];
+const ALLOWED_NOTIFICATION_FILTERS: NotificationType[] = [
+  NotificationType.ACTIVITY_INVITE,
+];
 
 @Controller('api/notifications')
 @UseGuards(JwtGuard)
@@ -27,7 +38,12 @@ export class NotificationsController {
     const parsedType = ALLOWED_NOTIFICATION_FILTERS.includes(type as any)
       ? (type as NotificationType)
       : undefined;
-    return this.notificationsService.getNotifications(req.user.id, limitNum, cursor, parsedType);
+    return this.notificationsService.getNotifications(
+      req.user.id,
+      limitNum,
+      cursor,
+      parsedType,
+    );
   }
 
   @Get('unread-count')

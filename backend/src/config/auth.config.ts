@@ -1,4 +1,12 @@
-import { ALL_ENVIRONMENTS, IS_PRODUCTION, bool, invariant, oneOf, str, url } from './env';
+import {
+  ALL_ENVIRONMENTS,
+  IS_PRODUCTION,
+  bool,
+  invariant,
+  oneOf,
+  str,
+  url,
+} from './env';
 import { appConfigValues } from './app.config';
 
 /**
@@ -15,14 +23,22 @@ const path = (name: string, fallback: string): string => {
   return value.startsWith('/') ? value : `/${value}`;
 };
 
-const sameSite = oneOf('COOKIE_SAME_SITE', ['strict', 'lax', 'none'] as const, { default: 'strict' });
+const sameSite = oneOf('COOKIE_SAME_SITE', ['strict', 'lax', 'none'] as const, {
+  default: 'strict',
+});
 const secure = bool('COOKIE_SECURE', { default: String(IS_PRODUCTION) });
 
 // SameSite=None is ignored by browsers unless the cookie is also Secure; a
 // cross-site admin deployment configured this way would silently lose its
 // session on every request.
-invariant(sameSite !== 'none' || secure, 'Invalid COOKIE_SAME_SITE: "none" requires COOKIE_SECURE=true');
-invariant(!IS_PRODUCTION || secure, 'Invalid COOKIE_SECURE: must be true in production');
+invariant(
+  sameSite !== 'none' || secure,
+  'Invalid COOKIE_SAME_SITE: "none" requires COOKIE_SECURE=true',
+);
+invariant(
+  !IS_PRODUCTION || secure,
+  'Invalid COOKIE_SECURE: must be true in production',
+);
 
 const authPaths = {
   callback: path('AUTH_CALLBACK_PATH', '/auth/callback'),
@@ -37,7 +53,9 @@ export const authConfigValues = {
   supabase: {
     url: url('SUPABASE_URL', { requiredIn: ALL_ENVIRONMENTS }),
     anonKey: str('SUPABASE_ANON_KEY', { requiredIn: ALL_ENVIRONMENTS }),
-    serviceRoleKey: str('SUPABASE_SERVICE_ROLE_KEY', { requiredIn: ['staging', 'production'] }),
+    serviceRoleKey: str('SUPABASE_SERVICE_ROLE_KEY', {
+      requiredIn: ['staging', 'production'],
+    }),
     /**
      * Optional. When set, user JWT signatures are verified locally (HS256) with
      * zero network calls instead of one Supabase Auth request per token.
@@ -47,9 +65,15 @@ export const authConfigValues = {
   },
 
   admin: {
-    accessSecret: str('ADMIN_JWT_ACCESS_SECRET', { requiredIn: ['staging', 'production'] }),
-    refreshSecret: str('ADMIN_JWT_REFRESH_SECRET', { requiredIn: ['staging', 'production'] }),
-    pendingSecret: str('ADMIN_JWT_PENDING_SECRET', { requiredIn: ['staging', 'production'] }),
+    accessSecret: str('ADMIN_JWT_ACCESS_SECRET', {
+      requiredIn: ['staging', 'production'],
+    }),
+    refreshSecret: str('ADMIN_JWT_REFRESH_SECRET', {
+      requiredIn: ['staging', 'production'],
+    }),
+    pendingSecret: str('ADMIN_JWT_PENDING_SECRET', {
+      requiredIn: ['staging', 'production'],
+    }),
     superAdminEmail: str('SUPER_ADMIN_EMAIL'),
     superAdminPassword: str('SUPER_ADMIN_PASSWORD'),
     superAdminApiKey: str('SUPER_ADMIN_API_KEY'),

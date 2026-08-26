@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   EmailDeliveryStatus,
   Prisma,
@@ -8,7 +13,10 @@ import {
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../../email/email.service';
-import { htmlToPlainText, sanitizeReplyHtml } from '../../common/utils/sanitize-html.util';
+import {
+  htmlToPlainText,
+  sanitizeReplyHtml,
+} from '../../common/utils/sanitize-html.util';
 import { TICKET_NUMBER_PATTERN } from '../../support/utils/ticket-number.util';
 import {
   AddInternalNoteDto,
@@ -21,7 +29,13 @@ import {
 
 /** Author/admin fields shared by the list and detail queries. */
 const ADMIN_SELECT = { id: true, name: true, email: true } as const;
-const USER_SELECT = { id: true, username: true, displayName: true, avatar: true, email: true } as const;
+const USER_SELECT = {
+  id: true,
+  username: true,
+  displayName: true,
+  avatar: true,
+  email: true,
+} as const;
 
 /**
  * Timestamps that must move with a status change.
@@ -34,7 +48,10 @@ const USER_SELECT = { id: true, username: true, displayName: true, avatar: true,
 // checked variant is mutually exclusive with the unchecked one, so spreading it
 // alongside a scalar foreign key like `assignedAdminId` makes Prisma reject the
 // whole object.
-function timestampsForStatus(status: SupportStatus): { resolvedAt?: Date | null; closedAt?: Date | null } {
+function timestampsForStatus(status: SupportStatus): {
+  resolvedAt?: Date | null;
+  closedAt?: Date | null;
+} {
   switch (status) {
     case SupportStatus.RESOLVED:
       return { resolvedAt: new Date(), closedAt: null };
@@ -72,7 +89,8 @@ export class AdminSupportService {
     // "unassigned" is a real filter - it is the queue an admin picks work from
     // - and is not expressible as simply omitting the parameter.
     if (query.assignedAdminId === 'unassigned') where.assignedAdminId = null;
-    else if (query.assignedAdminId) where.assignedAdminId = query.assignedAdminId;
+    else if (query.assignedAdminId)
+      where.assignedAdminId = query.assignedAdminId;
 
     const search = query.search?.trim();
     if (search) {
@@ -128,7 +146,9 @@ export class AdminSupportService {
     };
   }
 
-  private orderBy(sort: ListSupportTicketsDto['sort']): Prisma.SupportTicketOrderByWithRelationInput[] {
+  private orderBy(
+    sort: ListSupportTicketsDto['sort'],
+  ): Prisma.SupportTicketOrderByWithRelationInput[] {
     switch (sort) {
       case 'oldest':
         return [{ createdAt: 'asc' }];
@@ -146,20 +166,35 @@ export class AdminSupportService {
   /** Counts for the queue's filter chips, in one round trip. */
   async getQueueStats() {
     const [byStatus, byPriority, unassigned, failedEmails] = await Promise.all([
-      this.prisma.supportTicket.groupBy({ by: ['status'], _count: { _all: true } }),
-      this.prisma.supportTicket.groupBy({ by: ['priority'], _count: { _all: true } }),
+      this.prisma.supportTicket.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
+      this.prisma.supportTicket.groupBy({
+        by: ['priority'],
+        _count: { _all: true },
+      }),
       this.prisma.supportTicket.count({
-        where: { assignedAdminId: null, status: { notIn: [SupportStatus.RESOLVED, SupportStatus.CLOSED] } },
+        where: {
+          assignedAdminId: null,
+          status: { notIn: [SupportStatus.RESOLVED, SupportStatus.CLOSED] },
+        },
       }),
       // Surfaced as a chip because a failed confirmation is invisible
       // otherwise: the user believes support has their request and support has
       // no reason to look at it.
-      this.prisma.supportTicket.count({ where: { emailStatus: EmailDeliveryStatus.FAILED } }),
+      this.prisma.supportTicket.count({
+        where: { emailStatus: EmailDeliveryStatus.FAILED },
+      }),
     ]);
 
     return {
-      byStatus: Object.fromEntries(byStatus.map((row) => [row.status, row._count._all])),
-      byPriority: Object.fromEntries(byPriority.map((row) => [row.priority, row._count._all])),
+      byStatus: Object.fromEntries(
+        byStatus.map((row) => [row.status, row._count._all]),
+      ),
+      byPriority: Object.fromEntries(
+        byPriority.map((row) => [row.priority, row._count._all]),
+      ),
       unassigned,
       failedEmails,
     };
@@ -181,10 +216,17 @@ export class AdminSupportService {
     // relation on every message - SupportMessage stores an admin id, not a
     // relation, so that the thread survives an admin account being removed.
     const adminIds = Array.from(
-      new Set(ticket.messages.map((message) => message.authorAdminId).filter((v): v is string => Boolean(v))),
+      new Set(
+        ticket.messages
+          .map((message) => message.authorAdminId)
+          .filter((v): v is string => Boolean(v)),
+      ),
     );
     const admins = adminIds.length
-      ? await this.prisma.superAdmin.findMany({ where: { id: { in: adminIds } }, select: ADMIN_SELECT })
+      ? await this.prisma.superAdmin.findMany({
+          where: { id: { in: adminIds } },
+          select: ADMIN_SELECT,
+        })
       : [];
     const adminsById = new Map(admins.map((admin) => [admin.id, admin]));
 
@@ -192,7 +234,9 @@ export class AdminSupportService {
       ...ticket,
       messages: ticket.messages.map((message) => ({
         ...message,
-        author: message.authorAdminId ? (adminsById.get(message.authorAdminId) ?? null) : null,
+        author: message.authorAdminId
+          ? (adminsById.get(message.authorAdminId) ?? null)
+          : null,
       })),
     };
   }
@@ -213,7 +257,14 @@ export class AdminSupportService {
     return this.prisma.supportTicket.update({
       where: { id },
       data: { status: dto.status, ...timestampsForStatus(dto.status) },
-      select: { id: true, ticketNumber: true, status: true, resolvedAt: true, closedAt: true, updatedAt: true },
+      select: {
+        id: true,
+        ticketNumber: true,
+        status: true,
+        resolvedAt: true,
+        closedAt: true,
+        updatedAt: true,
+      },
     });
   }
 
@@ -234,8 +285,10 @@ export class AdminSupportService {
         where: { id: dto.adminId },
         select: { id: true, isActive: true },
       });
-      if (!assignee) throw new NotFoundException('That administrator could not be found');
-      if (!assignee.isActive) throw new BadRequestException('That administrator account is disabled');
+      if (!assignee)
+        throw new NotFoundException('That administrator could not be found');
+      if (!assignee.isActive)
+        throw new BadRequestException('That administrator account is disabled');
     }
 
     return this.prisma.supportTicket.update({
@@ -247,7 +300,10 @@ export class AdminSupportService {
         // else's unhandled list. Any later status is the admin's own decision
         // and is left alone.
         ...(dto.adminId && ticket.status === SupportStatus.OPEN
-          ? { status: SupportStatus.IN_PROGRESS, ...timestampsForStatus(SupportStatus.IN_PROGRESS) }
+          ? {
+              status: SupportStatus.IN_PROGRESS,
+              ...timestampsForStatus(SupportStatus.IN_PROGRESS),
+            }
           : {}),
       },
       select: {
@@ -300,13 +356,19 @@ export class AdminSupportService {
     // Sanitizing can legitimately empty a body that was nothing but markup.
     // Sending that would deliver a blank email over the user's signature.
     if (htmlToPlainText(body).length === 0) {
-      throw new BadRequestException('The reply is empty once formatting is removed. Write some text before sending.');
+      throw new BadRequestException(
+        'The reply is empty once formatting is removed. Write some text before sending.',
+      );
     }
 
     // The status is applied first so the email - which renders from the
     // ticket's current state - reports the status the admin chose to send,
     // not the one it had a moment ago.
-    const status = dto.status ?? (ticket.status === SupportStatus.OPEN ? SupportStatus.IN_PROGRESS : ticket.status);
+    const status =
+      dto.status ??
+      (ticket.status === SupportStatus.OPEN
+        ? SupportStatus.IN_PROGRESS
+        : ticket.status);
 
     const { message } = await this.prisma.$transaction(async (tx) => {
       await tx.supportTicket.update({
@@ -371,10 +433,16 @@ export class AdminSupportService {
       select: { id: true, isInternal: true, emailStatus: true },
     });
 
-    if (!message) throw new NotFoundException('That reply could not be found on this ticket');
-    if (message.isInternal) throw new BadRequestException('Internal notes are not sent to the user');
+    if (!message)
+      throw new NotFoundException(
+        'That reply could not be found on this ticket',
+      );
+    if (message.isInternal)
+      throw new BadRequestException('Internal notes are not sent to the user');
     if (message.emailStatus !== EmailDeliveryStatus.FAILED) {
-      throw new BadRequestException('Only a reply whose delivery failed can be resent');
+      throw new BadRequestException(
+        'Only a reply whose delivery failed can be resent',
+      );
     }
 
     await this.prisma.supportMessage.update({
@@ -390,7 +458,9 @@ export class AdminSupportService {
   async retryConfirmationEmail(ticketId: string) {
     const ticket = await this.requireTicket(ticketId);
     if (ticket.emailStatus !== EmailDeliveryStatus.FAILED) {
-      throw new BadRequestException('Only a confirmation whose delivery failed can be resent');
+      throw new BadRequestException(
+        'Only a confirmation whose delivery failed can be resent',
+      );
     }
 
     await this.prisma.supportTicket.update({
@@ -402,12 +472,19 @@ export class AdminSupportService {
       await this.email.sendSupportRequestReceivedEmail(ticketId);
       return { emailQueued: true };
     } catch (error) {
-      await this.markConfirmationUnqueueable(ticketId, error as Error, ticket.ticketNumber);
+      await this.markConfirmationUnqueueable(
+        ticketId,
+        error as Error,
+        ticket.ticketNumber,
+      );
       return { emailQueued: false };
     }
   }
 
-  private async queueReplyEmail(messageId: string, ticketNumber: string): Promise<boolean> {
+  private async queueReplyEmail(
+    messageId: string,
+    ticketNumber: string,
+  ): Promise<boolean> {
     try {
       await this.email.sendSupportReplyEmail(messageId);
       return true;
@@ -426,7 +503,8 @@ export class AdminSupportService {
           where: { id: messageId },
           data: {
             emailStatus: EmailDeliveryStatus.FAILED,
-            emailError: 'The email could not be queued for delivery. Try resending.',
+            emailError:
+              'The email could not be queued for delivery. Try resending.',
           },
         })
         .catch(() => {});
@@ -434,7 +512,11 @@ export class AdminSupportService {
     }
   }
 
-  private async markConfirmationUnqueueable(ticketId: string, error: Error, ticketNumber: string) {
+  private async markConfirmationUnqueueable(
+    ticketId: string,
+    error: Error,
+    ticketNumber: string,
+  ) {
     this.logger.error(
       `admin_support.confirmation_enqueue_failed ${JSON.stringify({ ticketNumber, error: error.message })}`,
     );
@@ -443,7 +525,8 @@ export class AdminSupportService {
         where: { id: ticketId },
         data: {
           emailStatus: EmailDeliveryStatus.FAILED,
-          emailError: 'The email could not be queued for delivery. Try resending.',
+          emailError:
+            'The email could not be queued for delivery. Try resending.',
         },
       })
       .catch(() => {});

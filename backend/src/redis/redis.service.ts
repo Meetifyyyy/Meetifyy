@@ -37,7 +37,10 @@ export class RedisService implements OnModuleDestroy {
             return Math.min(times * 1000, 5000);
           },
           reconnectOnError(err: Error) {
-            if (err.message && err.message.includes('max number of clients reached')) {
+            if (
+              err.message &&
+              err.message.includes('max number of clients reached')
+            ) {
               return false;
             }
             return true;
@@ -47,8 +50,12 @@ export class RedisService implements OnModuleDestroy {
         this.client = new Redis(redisUrl, options);
         this.subClient = new Redis(redisUrl, options);
 
-        this.client.on('connect', () => this.logger.log('Shared Redis connection established'));
-        this.subClient.on('connect', () => this.logger.log('Redis Subscriber connection established'));
+        this.client.on('connect', () =>
+          this.logger.log('Shared Redis connection established'),
+        );
+        this.subClient.on('connect', () =>
+          this.logger.log('Redis Subscriber connection established'),
+        );
 
         const handleRedisError = (label: string) => {
           let hasWarnedMaxClients = false;
@@ -57,7 +64,9 @@ export class RedisService implements OnModuleDestroy {
             if (msg.includes('max number of clients reached')) {
               if (!hasWarnedMaxClients) {
                 hasWarnedMaxClients = true;
-                this.logger.warn(`${label}: Cloud connection limit reached. Using in-memory fallback.`);
+                this.logger.warn(
+                  `${label}: Cloud connection limit reached. Using in-memory fallback.`,
+                );
               }
               return;
             }
@@ -71,13 +80,21 @@ export class RedisService implements OnModuleDestroy {
         this.logger.error('Failed to parse REDIS_URL', e);
       }
     } else {
-      this.logger.warn('REDIS_URL not configured. RedisService will not be available.');
+      this.logger.warn(
+        'REDIS_URL not configured. RedisService will not be available.',
+      );
     }
   }
 
-  getClient(): Redis | null { return this.client; }
-  getPubClient(): Redis | null { return this.client; }
-  getSubClient(): Redis | null { return this.subClient; }
+  getClient(): Redis | null {
+    return this.client;
+  }
+  getPubClient(): Redis | null {
+    return this.client;
+  }
+  getSubClient(): Redis | null {
+    return this.subClient;
+  }
 
   /**
    * Dual-layer distributed mutex:
@@ -91,16 +108,27 @@ export class RedisService implements OnModuleDestroy {
    *   When Redis is available, adds cross-instance serialization so requests from
    *   multiple backend replicas are also serialized.
    */
-  async withLock<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
-    return this.withInProcessLock(key, () => this.withRedisLock(key, ttlMs, fn));
+  async withLock<T>(
+    key: string,
+    ttlMs: number,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    return this.withInProcessLock(key, () =>
+      this.withRedisLock(key, ttlMs, fn),
+    );
   }
 
   private withInProcessLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const tail = this.inProcessLocks.get(key) ?? Promise.resolve();
     let release!: () => void;
-    const slot = new Promise<void>((resolve) => { release = resolve; });
+    const slot = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     // Chain this request behind the current tail
-    this.inProcessLocks.set(key, tail.then(() => slot));
+    this.inProcessLocks.set(
+      key,
+      tail.then(() => slot),
+    );
 
     return tail.then(async () => {
       try {
@@ -115,7 +143,11 @@ export class RedisService implements OnModuleDestroy {
     });
   }
 
-  private async withRedisLock<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+  private async withRedisLock<T>(
+    key: string,
+    ttlMs: number,
+    fn: () => Promise<T>,
+  ): Promise<T> {
     if (!this.client) return fn();
 
     const lockKey = `lock:${key}`;
@@ -133,14 +165,16 @@ export class RedisService implements OnModuleDestroy {
         acquired = true;
         break;
       }
-      await new Promise(r => setTimeout(r, step));
+      await new Promise((r) => setTimeout(r, step));
       waited += step;
     }
 
     if (!acquired) {
       // Fall through to running the function without distributed exclusion
       // (in-process lock still serializes within this instance).
-      this.logger.warn(`Redis lock contended for key=${key}, proceeding without distributed lock`);
+      this.logger.warn(
+        `Redis lock contended for key=${key}, proceeding without distributed lock`,
+      );
       return fn();
     }
 

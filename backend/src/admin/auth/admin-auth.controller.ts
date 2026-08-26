@@ -36,7 +36,11 @@ export class AdminAuthController {
     return { domain, secure, sameSite, path } as const;
   }
 
-  private setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
+  private setAuthCookies(
+    res: Response,
+    accessToken: string,
+    refreshToken: string,
+  ) {
     const csrfToken = crypto.randomBytes(32).toString('hex');
     const { accessMaxAgeMs, refreshMaxAgeMs } = config.auth.cookie;
 
@@ -68,7 +72,8 @@ export class AdminAuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: AdminLoginDto, @Req() req: any) {
-    const ip = (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
+    const ip =
+      (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
     return this.authService.login(dto, ip, userAgent);
   }
@@ -80,7 +85,8 @@ export class AdminAuthController {
     @Req() req: any,
     @Res({ passthrough: true }) res: any,
   ) {
-    const ip = (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
+    const ip =
+      (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
     const result = await this.authService.verifyOtp(dto, ip, userAgent);
 
@@ -99,7 +105,8 @@ export class AdminAuthController {
     @Req() req: any,
     @Res({ passthrough: true }) res: any,
   ) {
-    const ip = (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
+    const ip =
+      (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
     const result = await this.authService.verifyTotp(dto, ip, userAgent);
 
@@ -109,21 +116,23 @@ export class AdminAuthController {
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(
-    @Req() req: any,
-    @Res({ passthrough: true }) res: any,
-  ) {
+  async refresh(@Req() req: any, @Res({ passthrough: true }) res: any) {
     const refreshToken = req.cookies?.admin_refresh || req.body?.refreshToken;
     if (!refreshToken) {
       this.clearAuthCookies(res);
       throw new UnauthorizedException('Refresh token missing');
     }
 
-    const ip = (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
+    const ip =
+      (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
 
     try {
-      const result = await this.authService.refreshTokens(refreshToken, ip, userAgent);
+      const result = await this.authService.refreshTokens(
+        refreshToken,
+        ip,
+        userAgent,
+      );
       this.setAuthCookies(res, result.accessToken, result.refreshToken);
       return { success: true };
     } catch (err) {

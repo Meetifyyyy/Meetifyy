@@ -17,7 +17,9 @@ const directUrl = str('DIRECT_URL') || databaseUrl;
 // is the single most expensive configuration mistake available, so it is checked
 // rather than assumed.
 invariant(
-  !databaseUrl || databaseUrl.startsWith('postgres://') || databaseUrl.startsWith('postgresql://'),
+  !databaseUrl ||
+    databaseUrl.startsWith('postgres://') ||
+    databaseUrl.startsWith('postgresql://'),
   'Invalid DATABASE_URL: must be a postgres:// or postgresql:// connection string',
 );
 
@@ -27,13 +29,18 @@ export const databaseConfigValues = {
   /** Slow-query threshold (ms) above which a query is logged as a warning. */
   slowQueryMs: int('DB_SLOW_QUERY_MS', { default: '500', min: 1 }),
   /** Retries for transient connection drops before an error surfaces. */
-  connectionRetries: int('DB_CONNECTION_RETRIES', { default: '3', min: 0, max: 10 }),
+  connectionRetries: int('DB_CONNECTION_RETRIES', {
+    default: '3',
+    min: 0,
+    max: 10,
+  }),
   /**
    * Destructive seeding wipes every table. It is refused in production unless
    * this is explicitly turned on, so `prisma db seed` can never be the command
    * that empties the live database.
    */
-  allowDestructiveSeed: !IS_PRODUCTION || str('ALLOW_DESTRUCTIVE_SEED').toLowerCase() === 'true',
+  allowDestructiveSeed:
+    !IS_PRODUCTION || str('ALLOW_DESTRUCTIVE_SEED').toLowerCase() === 'true',
 };
 
 export type DatabaseConfig = typeof databaseConfigValues;

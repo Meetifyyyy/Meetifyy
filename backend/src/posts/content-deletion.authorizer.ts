@@ -87,13 +87,21 @@ export class ContentDeletionAuthorizer {
     // A community that is gone moderates nothing; the author keeps rule 1.
     if (!community || community.deletedAt) return null;
 
-    const actorRole = await this.resolveRole(actorId, communityId, community.ownerId);
+    const actorRole = await this.resolveRole(
+      actorId,
+      communityId,
+      community.ownerId,
+    );
     if (actorRole === 'OWNER') return 'owner';
     // The capability table decides, not the role name — so what a new
     // moderator is promised at promotion time is what they actually get.
     if (!roleCan(actorRole, 'DELETE_MEMBER_CONTENT')) return null;
 
-    const authorRole = await this.resolveRole(authorId, communityId, community.ownerId);
+    const authorRole = await this.resolveRole(
+      authorId,
+      communityId,
+      community.ownerId,
+    );
     return authorRole === 'MEMBER' ? 'moderator' : null;
   }
 
@@ -121,7 +129,11 @@ export class ContentDeletionAuthorizer {
     const own = items.map((i) => i.authorId === actorId);
 
     const communityIds = [
-      ...new Set(items.map((i) => i.communityId).filter((id): id is string => Boolean(id))),
+      ...new Set(
+        items
+          .map((i) => i.communityId)
+          .filter((id): id is string => Boolean(id)),
+      ),
     ];
     if (communityIds.length === 0) return own;
 
@@ -137,7 +149,7 @@ export class ContentDeletionAuthorizer {
     ]);
 
     const ownerOf = new Map(communities.map((c) => [c.id, c.ownerId]));
-    const myRole = new Map(myMemberships.map((m) => [m.communityId, m.role as CommunityRoleName]));
+    const myRole = new Map(myMemberships.map((m) => [m.communityId, m.role]));
 
     const roleIn = (communityId: string): CommunityRoleName | null => {
       if (!ownerOf.has(communityId)) return null; // deleted or unknown community
@@ -147,13 +159,17 @@ export class ContentDeletionAuthorizer {
 
     // Only communities where the viewer is a moderator need author roles —
     // an owner may delete regardless, and a member may not delete regardless.
-    const moderatedIds = communityIds.filter((id) => roleIn(id) === 'MODERATOR');
+    const moderatedIds = communityIds.filter(
+      (id) => roleIn(id) === 'MODERATOR',
+    );
     const authorRoles = new Map<string, CommunityRoleName>();
     if (moderatedIds.length > 0) {
       const authorIds = [
         ...new Set(
           items
-            .filter((i) => i.communityId && moderatedIds.includes(i.communityId))
+            .filter(
+              (i) => i.communityId && moderatedIds.includes(i.communityId),
+            )
             .map((i) => i.authorId),
         ),
       ];
@@ -161,7 +177,9 @@ export class ContentDeletionAuthorizer {
         where: { communityId: { in: moderatedIds }, userId: { in: authorIds } },
         select: { communityId: true, userId: true, role: true },
       });
-      rows.forEach((r) => authorRoles.set(`${r.communityId}:${r.userId}`, r.role as CommunityRoleName));
+      rows.forEach((r) =>
+        authorRoles.set(`${r.communityId}:${r.userId}`, r.role),
+      );
     }
 
     return items.map((item, idx) => {

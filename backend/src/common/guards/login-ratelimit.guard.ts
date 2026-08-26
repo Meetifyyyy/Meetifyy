@@ -1,4 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { RateLimiterRedis } from 'rate-limiter-flexible';
 import { RedisService } from '../../redis/redis.service';
 import { config } from '../../config';

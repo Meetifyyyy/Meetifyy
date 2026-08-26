@@ -74,8 +74,10 @@ const TOTAL_WEIGHT = Object.values(MATCH_WEIGHTS).reduce((s, w) => s + w, 0);
 // ─── Individual factors ───────────────────────────────────────────────────────
 
 function haversineDistanceKm(
-  lat1: number, lon1: number,
-  lat2: number, lon2: number,
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
 ): number {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -111,7 +113,10 @@ function scoreCampus(a: QueueEntryContext, b: QueueEntryContext): number {
  */
 const TIME_ORDER: Record<string, number> = { now: 0, '30min': 1, today: 2 };
 
-function scoreTimePreference(a: QueueEntryContext, b: QueueEntryContext): number {
+function scoreTimePreference(
+  a: QueueEntryContext,
+  b: QueueEntryContext,
+): number {
   const x = norm(a.timePreference);
   const y = norm(b.timePreference);
   if (!x || !y) return NEUTRAL;
@@ -140,7 +145,12 @@ function scoreProximity(a: QueueEntryContext, b: QueueEntryContext): number {
   if (a.latitude == null || a.longitude == null) return NEUTRAL;
   if (b.latitude == null || b.longitude == null) return NEUTRAL;
 
-  const km = haversineDistanceKm(a.latitude, a.longitude, b.latitude, b.longitude);
+  const km = haversineDistanceKm(
+    a.latitude,
+    a.longitude,
+    b.latitude,
+    b.longitude,
+  );
   if (!Number.isFinite(km)) return NEUTRAL;
   if (km <= 0.1) return 1;
   // Half-life of roughly 1 km, floored so distance can never zero out an
@@ -158,8 +168,16 @@ function tokenize(value: string | null | undefined): Set<string> {
 /** Jaccard over lowercased tags — rewards genuine overlap rather than the
  *  old all-or-nothing "shares at least one". */
 function scoreInterests(a: QueueEntryContext, b: QueueEntryContext): number {
-  const mine = new Set((a.interests ?? []).map((i) => String(i).trim().toLowerCase()).filter(Boolean));
-  const theirs = new Set((b.interests ?? []).map((i) => String(i).trim().toLowerCase()).filter(Boolean));
+  const mine = new Set(
+    (a.interests ?? [])
+      .map((i) => String(i).trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const theirs = new Set(
+    (b.interests ?? [])
+      .map((i) => String(i).trim().toLowerCase())
+      .filter(Boolean),
+  );
   if (mine.size === 0 || theirs.size === 0) return NEUTRAL;
 
   let shared = 0;
@@ -257,7 +275,10 @@ export function computeCompatibility(
 }
 
 /** Convenience wrapper for callers that only need the number. */
-export function computeMatchScore(a: QueueEntryContext, b: QueueEntryContext): number {
+export function computeMatchScore(
+  a: QueueEntryContext,
+  b: QueueEntryContext,
+): number {
   return computeCompatibility(a, b).score;
 }
 

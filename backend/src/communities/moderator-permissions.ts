@@ -24,9 +24,7 @@
 export type CommunityRoleName = 'OWNER' | 'MODERATOR' | 'MEMBER';
 
 export type ModeratorCapability =
-  | 'DELETE_MEMBER_CONTENT'
-  | 'REVIEW_JOIN_REQUESTS'
-  | 'REMOVE_MEMBERS';
+  'DELETE_MEMBER_CONTENT' | 'REVIEW_JOIN_REQUESTS' | 'REMOVE_MEMBERS';
 
 interface CapabilityDefinition {
   id: ModeratorCapability;
@@ -44,12 +42,15 @@ interface CapabilityDefinition {
   limit?: string;
 }
 
-export const COMMUNITY_CAPABILITIES: Record<ModeratorCapability, CapabilityDefinition> = {
+export const COMMUNITY_CAPABILITIES: Record<
+  ModeratorCapability,
+  CapabilityDefinition
+> = {
   DELETE_MEMBER_CONTENT: {
     id: 'DELETE_MEMBER_CONTENT',
     roles: ['OWNER', 'MODERATOR'],
     label: 'Remove posts and comments',
-    description: "Delete posts and comments left by members of this community.",
+    description: 'Delete posts and comments left by members of this community.',
     limit: "Not the owner's, and not other moderators'.",
   },
   REVIEW_JOIN_REQUESTS: {
@@ -83,7 +84,12 @@ export function roleCan(
 export function permissionsForRole(role: CommunityRoleName) {
   return Object.values(COMMUNITY_CAPABILITIES)
     .filter((c) => c.roles.includes(role))
-    .map(({ id, label, description, limit }) => ({ id, label, description, limit: limit ?? null }));
+    .map(({ id, label, description, limit }) => ({
+      id,
+      label,
+      description,
+      limit: limit ?? null,
+    }));
 }
 
 /** Everything a moderator gets. The list both promotion modals show. */

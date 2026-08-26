@@ -18,7 +18,10 @@ export class AdminCollegesService {
     await this.domainValidatorService.invalidateCache().catch(() => {});
   }
 
-  private async deleteSoftDeletedDomains(domains: string[], excludeCollegeId?: string) {
+  private async deleteSoftDeletedDomains(
+    domains: string[],
+    excludeCollegeId?: string,
+  ) {
     if (!domains || domains.length === 0) return;
     const softDeletedColleges = await this.prisma.college.findMany({
       where: {
@@ -62,7 +65,9 @@ export class AdminCollegesService {
     if (query.search) {
       let normalizedSearch = query.search;
       try {
-        normalizedSearch = this.domainValidatorService.normalizeDomain(query.search);
+        normalizedSearch = this.domainValidatorService.normalizeDomain(
+          query.search,
+        );
       } catch {
         normalizedSearch = query.search;
       }
@@ -70,7 +75,13 @@ export class AdminCollegesService {
         { name: { contains: query.search, mode: 'insensitive' } },
         { shortName: { contains: query.search, mode: 'insensitive' } },
         { city: { contains: query.search, mode: 'insensitive' } },
-        { domains: { some: { domain: { contains: normalizedSearch, mode: 'insensitive' } } } },
+        {
+          domains: {
+            some: {
+              domain: { contains: normalizedSearch, mode: 'insensitive' },
+            },
+          },
+        },
       ];
     }
 
@@ -141,7 +152,9 @@ export class AdminCollegesService {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
 
-    const existingSlug = await this.prisma.college.findFirst({ where: { slug } });
+    const existingSlug = await this.prisma.college.findFirst({
+      where: { slug },
+    });
     if (existingSlug) {
       throw new ConflictException(`College slug '${slug}' is already taken`);
     }
@@ -161,7 +174,9 @@ export class AdminCollegesService {
     );
 
     if (cleanedDomains.length === 0) {
-      throw new BadRequestException('At least one valid college domain is required');
+      throw new BadRequestException(
+        'At least one valid college domain is required',
+      );
     }
 
     const existingDomain = await this.prisma.collegeDomain.findFirst({
@@ -172,7 +187,9 @@ export class AdminCollegesService {
     });
 
     if (existingDomain) {
-      throw new ConflictException(`Domain '${existingDomain.domain}' is already assigned to another active college`);
+      throw new ConflictException(
+        `Domain '${existingDomain.domain}' is already assigned to another active college`,
+      );
     }
 
     await this.deleteSoftDeletedDomains(cleanedDomains);
@@ -207,20 +224,23 @@ export class AdminCollegesService {
     return created;
   }
 
-  async updateCollege(id: string, dto: {
-    name?: string;
-    shortName?: string;
-    slug?: string;
-    domains?: string[];
-    city?: string;
-    state?: string;
-    country?: string;
-    logoKey?: string;
-    bannerKey?: string;
-    isPrivate?: boolean;
-    isActive?: boolean;
-    status?: any;
-  }) {
+  async updateCollege(
+    id: string,
+    dto: {
+      name?: string;
+      shortName?: string;
+      slug?: string;
+      domains?: string[];
+      city?: string;
+      state?: string;
+      country?: string;
+      logoKey?: string;
+      bannerKey?: string;
+      isPrivate?: boolean;
+      isActive?: boolean;
+      status?: any;
+    },
+  ) {
     const existing = await this.prisma.college.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) {
       throw new NotFoundException(`College ${id} not found`);
@@ -229,7 +249,8 @@ export class AdminCollegesService {
     const { domains, ...otherDto } = dto;
     const data: any = { ...otherDto };
     if (dto.name) data.name = dto.name.trim();
-    if (dto.shortName !== undefined) data.shortName = dto.shortName?.trim() || null;
+    if (dto.shortName !== undefined)
+      data.shortName = dto.shortName?.trim() || null;
 
     if (domains && Array.isArray(domains)) {
       const cleanedDomains = Array.from(
@@ -247,7 +268,9 @@ export class AdminCollegesService {
       );
 
       if (cleanedDomains.length === 0) {
-        throw new BadRequestException('At least one valid college domain is required');
+        throw new BadRequestException(
+          'At least one valid college domain is required',
+        );
       }
 
       const conflictDomain = await this.prisma.collegeDomain.findFirst({
@@ -259,7 +282,9 @@ export class AdminCollegesService {
       });
 
       if (conflictDomain) {
-        throw new ConflictException(`Domain '${conflictDomain.domain}' is already assigned to another active college`);
+        throw new ConflictException(
+          `Domain '${conflictDomain.domain}' is already assigned to another active college`,
+        );
       }
 
       await this.deleteSoftDeletedDomains(cleanedDomains, id);
@@ -331,7 +356,11 @@ export class AdminCollegesService {
     return restored;
   }
 
-  async addDomain(collegeId: string, domainStr: string, isPrimary: boolean = false) {
+  async addDomain(
+    collegeId: string,
+    domainStr: string,
+    isPrimary: boolean = false,
+  ) {
     const domain = this.domainValidatorService.normalizeDomain(domainStr);
     const existing = await this.prisma.collegeDomain.findFirst({
       where: {
@@ -341,7 +370,9 @@ export class AdminCollegesService {
     });
 
     if (existing && existing.collegeId !== collegeId) {
-      throw new ConflictException(`Domain '${domain}' is already assigned to another active college`);
+      throw new ConflictException(
+        `Domain '${domain}' is already assigned to another active college`,
+      );
     }
 
     await this.deleteSoftDeletedDomains([domain], collegeId);
@@ -367,7 +398,11 @@ export class AdminCollegesService {
     return createdDomain;
   }
 
-  async toggleDomainStatus(collegeId: string, domainId: string, status: 'ACTIVE' | 'DISABLED') {
+  async toggleDomainStatus(
+    collegeId: string,
+    domainId: string,
+    status: 'ACTIVE' | 'DISABLED',
+  ) {
     const domain = await this.prisma.collegeDomain.findFirst({
       where: { id: domainId, collegeId },
     });
@@ -394,9 +429,13 @@ export class AdminCollegesService {
       throw new NotFoundException('Domain record not found');
     }
 
-    const totalDomains = await this.prisma.collegeDomain.count({ where: { collegeId } });
+    const totalDomains = await this.prisma.collegeDomain.count({
+      where: { collegeId },
+    });
     if (totalDomains <= 1) {
-      throw new BadRequestException('Cannot delete the last domain of a college');
+      throw new BadRequestException(
+        'Cannot delete the last domain of a college',
+      );
     }
 
     await this.prisma.collegeDomain.delete({ where: { id: domainId } });
@@ -419,7 +458,11 @@ export class AdminCollegesService {
     return { success: true };
   }
 
-  async listCollegeRequests(query: { status?: string; page?: number; limit?: number }) {
+  async listCollegeRequests(query: {
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;

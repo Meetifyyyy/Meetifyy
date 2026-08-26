@@ -1,8 +1,24 @@
-import { Controller, Get, Param, Post, Body, UseGuards, Patch, Delete, Query, ParseUUIDPipe, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Body,
+  UseGuards,
+  Patch,
+  Delete,
+  Query,
+  ParseUUIDPipe,
+  Logger,
+} from '@nestjs/common';
 import { CommunitiesService } from './communities.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { CreateCommunityDto, UpdateCommunityDto, UpdateMemberRoleDto } from './dto/community.dto';
+import {
+  CreateCommunityDto,
+  UpdateCommunityDto,
+  UpdateMemberRoleDto,
+} from './dto/community.dto';
 import { moderatorPermissions } from './moderator-permissions';
 
 @Controller('api/communities')
@@ -21,8 +37,14 @@ export class CommunitiesController {
     const t0 = performance.now();
     const limitNum = limit ? parseInt(limit, 10) : 30;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
-    const result = await this.communitiesService.getAllCommunities(user?.id, limitNum, offsetNum);
-    this.logger.debug(`GET /communities [limit=${limitNum} offset=${offsetNum}] ${Math.round(performance.now() - t0)}ms`);
+    const result = await this.communitiesService.getAllCommunities(
+      user?.id,
+      limitNum,
+      offsetNum,
+    );
+    this.logger.debug(
+      `GET /communities [limit=${limitNum} offset=${offsetNum}] ${Math.round(performance.now() - t0)}ms`,
+    );
     return result;
   }
 
@@ -36,8 +58,15 @@ export class CommunitiesController {
     const t0 = performance.now();
     const limitNum = limit ? parseInt(limit, 10) : 30;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
-    const result = await this.communitiesService.getCampusCommunities(user?.id, limitNum, offsetNum, search);
-    this.logger.debug(`GET /communities/campus [userId=${user?.id}] ${Math.round(performance.now() - t0)}ms`);
+    const result = await this.communitiesService.getCampusCommunities(
+      user?.id,
+      limitNum,
+      offsetNum,
+      search,
+    );
+    this.logger.debug(
+      `GET /communities/campus [userId=${user?.id}] ${Math.round(performance.now() - t0)}ms`,
+    );
     return result;
   }
 
@@ -56,25 +85,39 @@ export class CommunitiesController {
   }
 
   @Get(':id')
-  async getCommunityById(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: any) {
+  async getCommunityById(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: any,
+  ) {
     const t0 = performance.now();
     const result = await this.communitiesService.getCommunityById(id, user?.id);
-    this.logger.debug(`GET /communities/${id} ${Math.round(performance.now() - t0)}ms`);
+    this.logger.debug(
+      `GET /communities/${id} ${Math.round(performance.now() - t0)}ms`,
+    );
     return result;
   }
 
   @Post(':id/join')
-  async joinCommunity(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: any) {
+  async joinCommunity(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: any,
+  ) {
     return this.communitiesService.joinCommunity(id, user.id);
   }
 
   @Post(':id/leave')
-  async leaveCommunity(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: any) {
+  async leaveCommunity(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: any,
+  ) {
     return this.communitiesService.leaveCommunity(id, user.id);
   }
 
   @Get(':id/requests')
-  async getPendingRequests(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: any) {
+  async getPendingRequests(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: any,
+  ) {
     return this.communitiesService.getPendingRequests(id, user.id);
   }
 
@@ -97,7 +140,10 @@ export class CommunitiesController {
   }
 
   @Post()
-  async createCommunity(@Body() data: CreateCommunityDto, @CurrentUser() user: any) {
+  async createCommunity(
+    @Body() data: CreateCommunityDto,
+    @CurrentUser() user: any,
+  ) {
     return this.communitiesService.createCommunity(data, user.id);
   }
 
@@ -116,7 +162,9 @@ export class CommunitiesController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: any,
   ) {
-    return { notice: await this.communitiesService.getModeratorNotice(id, user.id) };
+    return {
+      notice: await this.communitiesService.getModeratorNotice(id, user.id),
+    };
   }
 
   @Post(':id/moderator-notice/ack')
@@ -134,7 +182,12 @@ export class CommunitiesController {
     @Body() data: UpdateMemberRoleDto,
     @CurrentUser() user: any,
   ) {
-    return this.communitiesService.updateMemberRole(id, memberId, data.role, user.id);
+    return this.communitiesService.updateMemberRole(
+      id,
+      memberId,
+      data.role,
+      user.id,
+    );
   }
 
   @Delete(':id/members/:userId')
@@ -147,7 +200,10 @@ export class CommunitiesController {
   }
 
   @Delete(':id')
-  async deleteCommunity(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: any) {
+  async deleteCommunity(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: any,
+  ) {
     return this.communitiesService.deleteCommunity(id, user.id);
   }
 }

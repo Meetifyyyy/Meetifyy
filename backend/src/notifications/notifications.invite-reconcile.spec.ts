@@ -29,14 +29,23 @@ describe('invite notification reconciliation on read', () => {
     type: 'ACTIVITY_INVITE',
     entityId: 'act-1',
     createdAt: new Date(),
-    metadata: { activityId: 'act-1', invitationId: 'inv-1', ...(lifecycleStatus ? { lifecycleStatus } : {}) },
+    metadata: {
+      activityId: 'act-1',
+      invitationId: 'inv-1',
+      ...(lifecycleStatus ? { lifecycleStatus } : {}),
+    },
   });
 
   const invitationRow = (status: string, activity: any = {}) => ({
     activityId: 'act-1',
     status,
     revokedAt: null,
-    activity: { status: 'OPEN', startDate: future, deletedAt: null, ...activity },
+    activity: {
+      status: 'OPEN',
+      startDate: future,
+      deletedAt: null,
+      ...activity,
+    },
   });
 
   beforeEach(async () => {
@@ -61,7 +70,10 @@ describe('invite notification reconciliation on read', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: ConfigService, useValue: { get: jest.fn() } },
-        { provide: RedisService, useValue: { getClient: jest.fn().mockReturnValue(null) } },
+        {
+          provide: RedisService,
+          useValue: { getClient: jest.fn().mockReturnValue(null) },
+        },
         {
           provide: BlocksService,
           useValue: {
@@ -80,7 +92,7 @@ describe('invite notification reconciliation on read', () => {
 
   const statusOf = async () => {
     const res = await service.getNotifications('user-1', 20);
-    return (res.data[0] as any).metadata.lifecycleStatus;
+    return res.data[0].metadata.lifecycleStatus;
   };
 
   it('reports Accepted when the notification copy is stale at Pending', async () => {
@@ -96,12 +108,14 @@ describe('invite notification reconciliation on read', () => {
   it('repairs the stored copy so the drift does not recur', async () => {
     invitationRows = [invitationRow('ACCEPTED')];
     await service.getNotifications('user-1', 20);
-    await new Promise(r => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
 
     expect(mockPrisma.notification.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'notif-1' },
-        data: { metadata: expect.objectContaining({ lifecycleStatus: 'ACCEPTED' }) },
+        data: {
+          metadata: expect.objectContaining({ lifecycleStatus: 'ACCEPTED' }),
+        },
       }),
     );
   });
@@ -109,7 +123,7 @@ describe('invite notification reconciliation on read', () => {
   it('leaves a genuinely pending invite pending, and writes nothing', async () => {
     invitationRows = [invitationRow('PENDING')];
     expect(await statusOf()).toBe('PENDING');
-    await new Promise(r => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
     expect(mockPrisma.notification.update).not.toHaveBeenCalled();
   });
 
@@ -129,7 +143,9 @@ describe('invite notification reconciliation on read', () => {
   });
 
   it('fills in a legacy row that never had a lifecycle status', async () => {
-    mockPrisma.notification.findMany = jest.fn(async () => [notifRow(undefined)]);
+    mockPrisma.notification.findMany = jest.fn(async () => [
+      notifRow(undefined),
+    ]);
     invitationRows = [invitationRow('ACCEPTED')];
     expect(await statusOf()).toBe('ACCEPTED');
   });
@@ -137,7 +153,7 @@ describe('invite notification reconciliation on read', () => {
   it('leaves the stored copy alone when there is no invitation row to judge by', async () => {
     invitationRows = [];
     expect(await statusOf()).toBe('PENDING');
-    await new Promise(r => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
     expect(mockPrisma.notification.update).not.toHaveBeenCalled();
   });
 

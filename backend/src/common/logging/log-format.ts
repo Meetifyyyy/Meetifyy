@@ -29,7 +29,10 @@ export const LOG_CAUSE = '__logCause';
  * the latter silently yielded `undefined` — which is why the user id was
  * missing from every success line even after it was "added".
  */
-export function fromRequest<T = any>(req: any, path: (r: any) => T): T | undefined {
+export function fromRequest<T = any>(
+  req: any,
+  path: (r: any) => T,
+): T | undefined {
   if (!req) return undefined;
   return path(req) ?? path(req.raw) ?? undefined;
 }
@@ -44,11 +47,15 @@ export function fromRequest<T = any>(req: any, path: (r: any) => T): T | undefin
 const W = { context: 8, method: 6, path: 44, status: 4, ms: 7 };
 
 function pad(value: string, width: number): string {
-  return value.length >= width ? value : value + ' '.repeat(width - value.length);
+  return value.length >= width
+    ? value
+    : value + ' '.repeat(width - value.length);
 }
 
 function padStart(value: string, width: number): string {
-  return value.length >= width ? value : ' '.repeat(width - value.length) + value;
+  return value.length >= width
+    ? value
+    : ' '.repeat(width - value.length) + value;
 }
 
 /**
@@ -75,7 +82,9 @@ export function formatMs(ms?: number): string {
 }
 
 /** Trailing `key=value` facts, blanks omitted. */
-export function facts(pairs: Record<string, string | number | undefined | null>): string {
+export function facts(
+  pairs: Record<string, string | number | undefined | null>,
+): string {
   return Object.entries(pairs)
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
     .map(([k, v]) => `${k}=${v}`)
@@ -114,7 +123,10 @@ export function dbLine(summary: string, ms?: number, extra?: string): string {
   // Spans the method + path + status columns so the latency lands in the same
   // place it does on an HTTP line — that column is the anchor when correlating
   // a request with the queries it fired.
-  const line = [pad(summary, W.method + 1 + W.path + 1 + W.status), padStart(formatMs(ms), W.ms)]
+  const line = [
+    pad(summary, W.method + 1 + W.path + 1 + W.status),
+    padStart(formatMs(ms), W.ms),
+  ]
     .join(' ')
     .trimEnd();
   return extra ? `${line} ${extra}` : line;
@@ -198,14 +210,18 @@ export function clockStamp(now = new Date()): string {
 }
 
 /** The keys pino-pretty must not print itself — they are rebuilt into the message. */
-export const PRETTY_IGNORE = 'pid,hostname,req,res,responseTime,context,level,lvl,time,ts';
+export const PRETTY_IGNORE =
+  'pid,hostname,req,res,responseTime,context,level,lvl,time,ts';
 
 /** `{ts} {lvl} {context}{msg}` — the assembled prefix, then the line. */
 export const PRETTY_MESSAGE_FORMAT = '{ts} {lvl} {context}{msg}';
 
 /** pino `formatters` that build the aligned prefix. Pretty output only. */
 export const prettyFormatters = {
-  level: (label: string, number: number) => ({ level: number, lvl: paintLevel(label) }),
+  level: (label: string, number: number) => ({
+    level: number,
+    lvl: paintLevel(label),
+  }),
   log: (obj: any) => ({
     ...obj,
     ts: clockStamp(),

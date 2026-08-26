@@ -5,14 +5,20 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { config } from '../../config';
 import { MonitoringWriterService } from '../../monitoring/services/monitoring-writer.service';
 import { SocketMetricsCollector } from '../../monitoring/services/socket-metrics.collector';
-import { ListErrorsDto, ListLogsDto, TimeseriesDto, TimeWindow } from './dto/admin-monitoring.dto';
+import {
+  ListErrorsDto,
+  ListLogsDto,
+  TimeseriesDto,
+  TimeWindow,
+} from './dto/admin-monitoring.dto';
 
 /** Minutes covered by each selectable window, and the bucket width to use for it. */
-const WINDOWS: Record<TimeWindow, { minutes: number; bucketMinutes: number }> = {
-  '1h': { minutes: 60, bucketMinutes: 1 },
-  '24h': { minutes: 60 * 24, bucketMinutes: 30 },
-  '7d': { minutes: 60 * 24 * 7, bucketMinutes: 180 },
-};
+const WINDOWS: Record<TimeWindow, { minutes: number; bucketMinutes: number }> =
+  {
+    '1h': { minutes: 60, bucketMinutes: 1 },
+    '24h': { minutes: 60 * 24, bucketMinutes: 30 },
+    '7d': { minutes: 60 * 24 * 7, bucketMinutes: 180 },
+  };
 
 @Injectable()
 export class AdminMonitoringService {
@@ -34,7 +40,9 @@ export class AdminMonitoringService {
 
     const [total, errors, latency, latest] = await Promise.all([
       this.prisma.requestLog.count({ where: { createdAt: { gte: since } } }),
-      this.prisma.requestLog.count({ where: { createdAt: { gte: since }, statusCode: { gte: 400 } } }),
+      this.prisma.requestLog.count({
+        where: { createdAt: { gte: since }, statusCode: { gte: 400 } },
+      }),
       this.prisma.requestLog.aggregate({
         where: { createdAt: { gte: since } },
         _avg: { durationMs: true },
@@ -74,8 +82,12 @@ export class AdminMonitoringService {
     };
   }
 
-  private deriveHealth(errorRatePercent: number, avgLatencyMs: number): 'healthy' | 'degraded' {
-    if (errorRatePercent > config.monitoring.errorRateWarningPercent) return 'degraded';
+  private deriveHealth(
+    errorRatePercent: number,
+    avgLatencyMs: number,
+  ): 'healthy' | 'degraded' {
+    if (errorRatePercent > config.monitoring.errorRateWarningPercent)
+      return 'degraded';
     if (avgLatencyMs > config.monitoring.latencyWarningMs) return 'degraded';
     return 'healthy';
   }
@@ -94,7 +106,9 @@ export class AdminMonitoringService {
     const interval = `${bucketMinutes} minutes`;
 
     if (query.metric === 'latency') {
-      const rows = await this.prisma.$queryRaw<Array<{ bucket: Date; avg_ms: number; p95_ms: number }>>`
+      const rows = await this.prisma.$queryRaw<
+        Array<{ bucket: Date; avg_ms: number; p95_ms: number }>
+      >`
         SELECT date_bin(${interval}::interval, "createdAt", TIMESTAMP '2000-01-01') AS bucket,
                AVG("durationMs")::float AS avg_ms,
                PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY "durationMs")::float AS p95_ms
@@ -107,11 +121,17 @@ export class AdminMonitoringService {
         metric: query.metric,
         window: query.window ?? '24h',
         bucketMinutes,
-        points: rows.map((r) => ({ t: r.bucket, avgMs: round(r.avg_ms), p95Ms: round(r.p95_ms) })),
+        points: rows.map((r) => ({
+          t: r.bucket,
+          avgMs: round(r.avg_ms),
+          p95Ms: round(r.p95_ms),
+        })),
       };
     }
 
-    const rows = await this.prisma.$queryRaw<Array<{ bucket: Date; total: bigint; errors: bigint }>>`
+    const rows = await this.prisma.$queryRaw<
+      Array<{ bucket: Date; total: bigint; errors: bigint }>
+    >`
       SELECT date_bin(${interval}::interval, "createdAt", TIMESTAMP '2000-01-01') AS bucket,
              COUNT(*) AS total,
              COUNT(*) FILTER (WHERE "statusCode" >= 400) AS errors
@@ -152,7 +172,14 @@ export class AdminMonitoringService {
     const since = minutesAgo(WINDOWS[window].minutes);
 
     const rows = await this.prisma.$queryRaw<
-      Array<{ route: string; method: string; requests: bigint; avg_ms: number; p95_ms: number; errors: bigint }>
+      Array<{
+        route: string;
+        method: string;
+        requests: bigint;
+        avg_ms: number;
+        p95_ms: number;
+        errors: bigint;
+      }>
     >`
       SELECT "route", "method",
              COUNT(*) AS requests,
@@ -189,7 +216,8 @@ export class AdminMonitoringService {
     const limit = config.monitoring.pageSize;
 
     const where: Prisma.RequestLogWhereInput = {};
-    if (query.route) where.route = { contains: query.route, mode: 'insensitive' };
+    if (query.route)
+      where.route = { contains: query.route, mode: 'insensitive' };
     if (query.method) where.method = query.method.toUpperCase();
     if (query.requestId) where.requestId = query.requestId;
 
@@ -198,7 +226,8 @@ export class AdminMonitoringService {
     if (query.status) {
       const status = Number(query.status);
       if (status >= 100) where.statusCode = status;
-      else if (status >= 1 && status <= 5) where.statusCode = { gte: status * 100, lt: (status + 1) * 100 };
+      else if (status >= 1 && status <= 5)
+        where.statusCode = { gte: status * 100, lt: (status + 1) * 100 };
     }
 
     if (query.from || query.to) {
@@ -218,7 +247,10 @@ export class AdminMonitoringService {
       }),
     ]);
 
-    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+    return {
+      data,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async listErrors(query: ListErrorsDto) {
@@ -226,7 +258,8 @@ export class AdminMonitoringService {
     const limit = config.monitoring.pageSize;
 
     const where: Prisma.ErrorLogWhereInput = {};
-    if (query.route) where.route = { contains: query.route, mode: 'insensitive' };
+    if (query.route)
+      where.route = { contains: query.route, mode: 'insensitive' };
 
     const [total, data] = await Promise.all([
       this.prisma.errorLog.count({ where }),
@@ -283,6 +316,7 @@ function minutesAgo(minutes: number): Date {
 }
 
 function round(value: number | null | undefined): number {
-  if (value === null || value === undefined || !Number.isFinite(value)) return 0;
+  if (value === null || value === undefined || !Number.isFinite(value))
+    return 0;
   return Math.round(value * 100) / 100;
 }

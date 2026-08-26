@@ -36,7 +36,9 @@ const EVENT_SELECT = {
   createdBy: true,
   createdAt: true,
   updatedAt: true,
-  creator: { select: { id: true, username: true, displayName: true, avatar: true } },
+  creator: {
+    select: { id: true, username: true, displayName: true, avatar: true },
+  },
 } as const;
 
 @Injectable()
@@ -52,7 +54,12 @@ export class CampusEventsService {
   }
 
   // ── Caching (per campus+scope, short TTL, invalidated on any mutation) ────────
-  private listCacheKey(campusId: string, scope: CampusEventScope, limit: number, cursor?: string) {
+  private listCacheKey(
+    campusId: string,
+    scope: CampusEventScope,
+    limit: number,
+    cursor?: string,
+  ) {
     return `campus-events:${campusId}:${scope}:${limit}:${cursor || 'none'}`;
   }
 
@@ -76,10 +83,14 @@ export class CampusEventsService {
     });
     if (!user) throw new ForbiddenException('User not found.');
     if (!user.isCampusRep) {
-      throw new ForbiddenException('Only Campus Representatives can manage campus events.');
+      throw new ForbiddenException(
+        'Only Campus Representatives can manage campus events.',
+      );
     }
     if (!user.collegeId) {
-      throw new ForbiddenException('Campus Representative is not associated with a campus.');
+      throw new ForbiddenException(
+        'Campus Representative is not associated with a campus.',
+      );
     }
     return user;
   }
@@ -91,7 +102,10 @@ export class CampusEventsService {
    * never be pointed at someone else's (or a non-existent) object. Returns the
    * normalized bare key, or null when no poster is provided.
    */
-  private async resolvePosterKey(posterUrl: string | undefined | null, userId: string): Promise<string | null> {
+  private async resolvePosterKey(
+    posterUrl: string | undefined | null,
+    userId: string,
+  ): Promise<string | null> {
     if (posterUrl === undefined || posterUrl === null) return null;
     const key = String(posterUrl).replace('/api/media/', '').trim();
     if (!key) return null; // empty string clears the poster
@@ -103,7 +117,9 @@ export class CampusEventsService {
       select: { ownerId: true },
     });
     if (!media || media.ownerId !== userId) {
-      throw new BadRequestException('Poster image not found or not owned by you.');
+      throw new BadRequestException(
+        'Poster image not found or not owned by you.',
+      );
     }
     return key;
   }
@@ -113,7 +129,12 @@ export class CampusEventsService {
     const now = new Date();
     this.prisma.campusEvent
       .updateMany({
-        where: { campusId, status: 'PUBLISHED', endTime: { lt: now }, deletedAt: null },
+        where: {
+          campusId,
+          status: 'PUBLISHED',
+          endTime: { lt: now },
+          deletedAt: null,
+        },
         data: { status: 'EXPIRED' },
       })
       .catch(() => {});
@@ -185,9 +206,23 @@ export class CampusEventsService {
       const date = new Date(ts);
       if (!isNaN(date.getTime()) && id) {
         if (scope === 'past') {
-          where.AND = [{ OR: [{ endTime: { lt: date } }, { endTime: date, id: { lt: id } }] }];
+          where.AND = [
+            {
+              OR: [
+                { endTime: { lt: date } },
+                { endTime: date, id: { lt: id } },
+              ],
+            },
+          ];
         } else {
-          where.AND = [{ OR: [{ startTime: { gt: date } }, { startTime: date, id: { gt: id } }] }];
+          where.AND = [
+            {
+              OR: [
+                { startTime: { gt: date } },
+                { startTime: date, id: { gt: id } },
+              ],
+            },
+          ];
         }
       }
     }
@@ -240,7 +275,8 @@ export class CampusEventsService {
     const startTime = new Date(dto.startTime);
     const endTime = new Date(dto.endTime);
     const eventDate = new Date(dto.eventDate);
-    if (isNaN(eventDate.getTime())) throw new BadRequestException('Invalid event date.');
+    if (isNaN(eventDate.getTime()))
+      throw new BadRequestException('Invalid event date.');
     assertCoherentEventTimes(startTime, endTime);
 
     const registrationUrl = sanitizeRegistrationUrl(dto.registrationUrl);
@@ -283,7 +319,9 @@ export class CampusEventsService {
     if (!event) throw new NotFoundException('Campus event not found.');
     // Ownership + campus-boundary enforcement.
     if (event.createdBy !== user.id || event.campusId !== user.collegeId) {
-      throw new ForbiddenException('You can only modify your own campus events.');
+      throw new ForbiddenException(
+        'You can only modify your own campus events.',
+      );
     }
     return { user, event };
   }
@@ -294,15 +332,18 @@ export class CampusEventsService {
     const data: any = {};
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.description !== undefined) data.description = dto.description;
-    if (dto.posterUrl !== undefined) data.posterUrl = await this.resolvePosterKey(dto.posterUrl, userId);
+    if (dto.posterUrl !== undefined)
+      data.posterUrl = await this.resolvePosterKey(dto.posterUrl, userId);
     if (dto.hostedBy !== undefined) data.hostedBy = dto.hostedBy;
     if (dto.venue !== undefined) {
-      if (!dto.venue.trim()) throw new BadRequestException('Venue cannot be empty.');
+      if (!dto.venue.trim())
+        throw new BadRequestException('Venue cannot be empty.');
       data.venue = dto.venue.trim();
     }
     if (dto.eventDate !== undefined) {
       const d = new Date(dto.eventDate);
-      if (isNaN(d.getTime())) throw new BadRequestException('Invalid event date.');
+      if (isNaN(d.getTime()))
+        throw new BadRequestException('Invalid event date.');
       data.eventDate = d;
     }
     if (dto.registrationUrl !== undefined) {
@@ -315,8 +356,12 @@ export class CampusEventsService {
         where: { id: eventId },
         select: { startTime: true, endTime: true },
       });
-      const startTime = dto.startTime !== undefined ? new Date(dto.startTime) : existing!.startTime;
-      const endTime = dto.endTime !== undefined ? new Date(dto.endTime) : existing!.endTime;
+      const startTime =
+        dto.startTime !== undefined
+          ? new Date(dto.startTime)
+          : existing!.startTime;
+      const endTime =
+        dto.endTime !== undefined ? new Date(dto.endTime) : existing!.endTime;
       assertCoherentEventTimes(startTime, endTime);
       data.startTime = startTime;
       data.endTime = endTime;

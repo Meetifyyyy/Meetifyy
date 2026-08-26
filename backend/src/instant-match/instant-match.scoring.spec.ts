@@ -9,9 +9,17 @@ import { getAcceptTimerSecs } from './instant-match.constants';
 
 describe('computeCompatibility', () => {
   const blank = {
-    campus: null, activity: 'study', timePreference: null, area: null,
-    optionalDetail: null, latitude: null, longitude: null, interests: [],
-    course: null, branch: null, currentYear: null,
+    campus: null,
+    activity: 'study',
+    timePreference: null,
+    area: null,
+    optionalDetail: null,
+    latitude: null,
+    longitude: null,
+    interests: [],
+    course: null,
+    branch: null,
+    currentYear: null,
   };
 
   it('scores an entirely unknown pair at the neutral midpoint', () => {
@@ -21,26 +29,66 @@ describe('computeCompatibility', () => {
 
   it('is symmetric — the pair scores the same whoever searched first', () => {
     const a = {
-      ...blank, campus: 'Acme', timePreference: 'now', area: 'library',
-      optionalDetail: 'Physics', latitude: 27.6, longitude: 77.6,
-      interests: ['chess', 'music'], course: 'BTech', branch: 'CSE', currentYear: 2,
+      ...blank,
+      campus: 'Acme',
+      timePreference: 'now',
+      area: 'library',
+      optionalDetail: 'Physics',
+      latitude: 27.6,
+      longitude: 77.6,
+      interests: ['chess', 'music'],
+      course: 'BTech',
+      branch: 'CSE',
+      currentYear: 2,
     };
     const b = {
-      ...blank, campus: 'Acme', timePreference: '30min', area: 'library',
-      optionalDetail: 'physics revision', latitude: 27.6001, longitude: 77.6,
-      interests: ['music'], course: 'BTech', branch: 'ECE', currentYear: 3,
+      ...blank,
+      campus: 'Acme',
+      timePreference: '30min',
+      area: 'library',
+      optionalDetail: 'physics revision',
+      latitude: 27.6001,
+      longitude: 77.6,
+      interests: ['music'],
+      course: 'BTech',
+      branch: 'ECE',
+      currentYear: 3,
     };
     expect(computeMatchScore(a, b)).toBe(computeMatchScore(b, a));
   });
 
   it('rates a fully aligned pair far above a fully misaligned one', () => {
     const aligned = computeMatchScore(
-      { ...blank, campus: 'Acme', timePreference: 'now', area: 'library', interests: ['chess'] },
-      { ...blank, campus: 'Acme', timePreference: 'now', area: 'library', interests: ['chess'] },
+      {
+        ...blank,
+        campus: 'Acme',
+        timePreference: 'now',
+        area: 'library',
+        interests: ['chess'],
+      },
+      {
+        ...blank,
+        campus: 'Acme',
+        timePreference: 'now',
+        area: 'library',
+        interests: ['chess'],
+      },
     );
     const misaligned = computeMatchScore(
-      { ...blank, campus: 'Acme', timePreference: 'now', area: 'library', interests: ['chess'] },
-      { ...blank, campus: 'Other', timePreference: 'today', area: 'hostel', interests: ['golf'] },
+      {
+        ...blank,
+        campus: 'Acme',
+        timePreference: 'now',
+        area: 'library',
+        interests: ['chess'],
+      },
+      {
+        ...blank,
+        campus: 'Other',
+        timePreference: 'today',
+        area: 'hostel',
+        interests: ['golf'],
+      },
     );
     // Not 100: the factors neither side supplied (GPS, detail, course) stay
     // at the neutral midpoint rather than being counted as agreement.
@@ -52,18 +100,38 @@ describe('computeCompatibility', () => {
   describe('missing signals are neutral, never penalties', () => {
     it('does not punish a user for withholding GPS', () => {
       const withGps = { ...blank, latitude: 27.6, longitude: 77.6 };
-      expect(computeCompatibility(withGps, blank).breakdown.proximity).toBe(0.5);
+      expect(computeCompatibility(withGps, blank).breakdown.proximity).toBe(
+        0.5,
+      );
     });
 
     it('does not punish a user for skipping the campus area', () => {
-      expect(computeCompatibility({ ...blank, area: 'library' }, blank).breakdown.area).toBe(0.5);
+      expect(
+        computeCompatibility({ ...blank, area: 'library' }, blank).breakdown
+          .area,
+      ).toBe(0.5);
     });
 
     it('scores an unknown-location pair above a known-distant one', () => {
-      const unknown = computeMatchScore({ ...blank, campus: 'Acme' }, { ...blank, campus: 'Acme' });
+      const unknown = computeMatchScore(
+        { ...blank, campus: 'Acme' },
+        { ...blank, campus: 'Acme' },
+      );
       const far = computeMatchScore(
-        { ...blank, campus: 'Acme', latitude: 27.6, longitude: 77.6, area: 'library' },
-        { ...blank, campus: 'Acme', latitude: 28.9, longitude: 77.6, area: 'hostel' },
+        {
+          ...blank,
+          campus: 'Acme',
+          latitude: 27.6,
+          longitude: 77.6,
+          area: 'library',
+        },
+        {
+          ...blank,
+          campus: 'Acme',
+          latitude: 28.9,
+          longitude: 77.6,
+          area: 'hostel',
+        },
       );
       expect(unknown).toBeGreaterThan(far);
     });
@@ -72,12 +140,29 @@ describe('computeCompatibility', () => {
   describe('location never disqualifies on its own', () => {
     it('keeps a distant but otherwise perfect pair well above the floor', () => {
       const shared = {
-        campus: 'Acme', timePreference: 'now', interests: ['chess', 'music', 'film'],
-        optionalDetail: 'Physics', course: 'BTech', branch: 'CSE', currentYear: 2,
+        campus: 'Acme',
+        timePreference: 'now',
+        interests: ['chess', 'music', 'film'],
+        optionalDetail: 'Physics',
+        course: 'BTech',
+        branch: 'CSE',
+        currentYear: 2,
       };
       const score = computeMatchScore(
-        { ...blank, ...shared, area: 'library', latitude: 27.6, longitude: 77.6 },
-        { ...blank, ...shared, area: 'hostel', latitude: 27.7, longitude: 77.7 },
+        {
+          ...blank,
+          ...shared,
+          area: 'library',
+          latitude: 27.6,
+          longitude: 77.6,
+        },
+        {
+          ...blank,
+          ...shared,
+          area: 'hostel',
+          latitude: 27.7,
+          longitude: 77.7,
+        },
       );
       // Comfortably matchable despite disagreeing on both location signals.
       expect(score).toBeGreaterThan(MATCH_THRESHOLD_START);
@@ -87,13 +172,16 @@ describe('computeCompatibility', () => {
   describe('time preference', () => {
     it('treats adjacent windows as compatible rather than disqualifying', () => {
       const exact = computeCompatibility(
-        { ...blank, timePreference: 'now' }, { ...blank, timePreference: 'now' },
+        { ...blank, timePreference: 'now' },
+        { ...blank, timePreference: 'now' },
       ).breakdown.timePreference;
       const adjacent = computeCompatibility(
-        { ...blank, timePreference: 'now' }, { ...blank, timePreference: '30min' },
+        { ...blank, timePreference: 'now' },
+        { ...blank, timePreference: '30min' },
       ).breakdown.timePreference;
       const distant = computeCompatibility(
-        { ...blank, timePreference: 'now' }, { ...blank, timePreference: 'today' },
+        { ...blank, timePreference: 'now' },
+        { ...blank, timePreference: 'today' },
       ).breakdown.timePreference;
 
       expect(exact).toBe(1);
@@ -109,10 +197,10 @@ describe('computeCompatibility', () => {
         computeCompatibility(base, { ...blank, latitude: lat, longitude: 77.6 })
           .breakdown.proximity;
 
-      expect(p(27.60045)).toBe(1);            // ~50 m
-      expect(p(27.602)).toBeGreaterThan(p(27.62));   // ~220 m vs ~2 km
-      expect(p(27.62)).toBeGreaterThan(p(28.6));     // ~2 km vs ~110 km
-      expect(p(28.6)).toBeGreaterThan(0);            // never zero
+      expect(p(27.60045)).toBe(1); // ~50 m
+      expect(p(27.602)).toBeGreaterThan(p(27.62)); // ~220 m vs ~2 km
+      expect(p(27.62)).toBeGreaterThan(p(28.6)); // ~2 km vs ~110 km
+      expect(p(28.6)).toBeGreaterThan(0); // never zero
     });
   });
 
@@ -131,7 +219,8 @@ describe('computeCompatibility', () => {
 
     it('is neutral when either side listed no interests at all', () => {
       expect(
-        computeCompatibility({ ...blank, interests: ['chess'] }, blank).breakdown.interests,
+        computeCompatibility({ ...blank, interests: ['chess'] }, blank)
+          .breakdown.interests,
       ).toBe(0.5);
     });
   });
@@ -174,10 +263,12 @@ describe('computeCompatibility', () => {
 
     it('treats a neighbouring year as closer than a distant one', () => {
       const near = computeCompatibility(
-        { ...blank, currentYear: 2 }, { ...blank, currentYear: 3 },
+        { ...blank, currentYear: 2 },
+        { ...blank, currentYear: 3 },
       ).breakdown.community;
       const far = computeCompatibility(
-        { ...blank, currentYear: 1 }, { ...blank, currentYear: 4 },
+        { ...blank, currentYear: 1 },
+        { ...blank, currentYear: 4 },
       ).breakdown.community;
       expect(near).toBeGreaterThan(far);
     });
@@ -204,8 +295,12 @@ describe('relaxedThreshold', () => {
 
 describe('getAcceptTimerSecs', () => {
   it('gives outdoor activities a longer window than indoor ones', () => {
-    expect(getAcceptTimerSecs('sports', 'now')).toBeGreaterThan(getAcceptTimerSecs('study', 'now'));
-    expect(getAcceptTimerSecs('walk', 'now')).toBeGreaterThan(getAcceptTimerSecs('coffee', 'now'));
+    expect(getAcceptTimerSecs('sports', 'now')).toBeGreaterThan(
+      getAcceptTimerSecs('study', 'now'),
+    );
+    expect(getAcceptTimerSecs('walk', 'now')).toBeGreaterThan(
+      getAcceptTimerSecs('coffee', 'now'),
+    );
   });
 
   it('gives the longest window to "today", regardless of activity', () => {

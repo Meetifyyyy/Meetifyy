@@ -13,7 +13,8 @@ type Row = Record<string, any>;
 
 function matchesCondition(value: any, condition: any): boolean {
   if (condition === null) return value === null;
-  if (condition instanceof Date) return value?.getTime?.() === condition.getTime();
+  if (condition instanceof Date)
+    return value?.getTime?.() === condition.getTime();
   if (typeof condition !== 'object') return value === condition;
 
   for (const [op, operand] of Object.entries(condition)) {
@@ -25,7 +26,8 @@ function matchesCondition(value: any, condition: any): boolean {
         if (!(operand as any[]).includes(value)) return false;
         break;
       case 'notIn':
-        if (operand !== undefined && (operand as any[]).includes(value)) return false;
+        if (operand !== undefined && (operand as any[]).includes(value))
+          return false;
         break;
       case 'gt':
         if (!(value > (operand as any))) return false;
@@ -50,11 +52,13 @@ function matchesWhere(row: Row, where: Row = {}): boolean {
   for (const [key, condition] of Object.entries(where)) {
     if (condition === undefined) continue;
     if (key === 'OR') {
-      if (!(condition as Row[]).some((sub) => matchesWhere(row, sub))) return false;
+      if (!(condition as Row[]).some((sub) => matchesWhere(row, sub)))
+        return false;
       continue;
     }
     if (key === 'AND') {
-      if (!(condition as Row[]).every((sub) => matchesWhere(row, sub))) return false;
+      if (!(condition as Row[]).every((sub) => matchesWhere(row, sub)))
+        return false;
       continue;
     }
     if (!matchesCondition(row[key], condition)) return false;
@@ -167,7 +171,11 @@ export class PrismaFake {
           .filter((e) => matchesWhere(e, where))
           .map((e) => {
             const row: Row = select ? project(e, select) : { ...e };
-            if (include?.user) row.user = project(self.users.get(e.userId)!, include.user.select);
+            if (include?.user)
+              row.user = project(
+                self.users.get(e.userId)!,
+                include.user.select,
+              );
             return row;
           });
       },
@@ -202,7 +210,9 @@ export class PrismaFake {
         return rows[0] ? { ...rows[0] } : null;
       },
       async findMany({ where, select }: any) {
-        return self.sessions.filter((s) => matchesWhere(s, where)).map((s) => project(s, select));
+        return self.sessions
+          .filter((s) => matchesWhere(s, where))
+          .map((s) => project(s, select));
       },
       async create({ data, select }: any) {
         const row = {
@@ -240,7 +250,12 @@ export class PrismaFake {
   conversations: Row[] = [];
 
   seedConversation(id: string, overrides: Row = {}): Row {
-    const row: Row = { id, publicId: `pub-${id}`, expiresAt: null, ...overrides };
+    const row: Row = {
+      id,
+      publicId: `pub-${id}`,
+      expiresAt: null,
+      ...overrides,
+    };
     this.conversations.push(row);
     return row;
   }
@@ -281,7 +296,9 @@ export class PrismaFake {
     const self = this;
     return {
       async findMany({ where, select }: any) {
-        return self.blocks.filter((b) => matchesWhere(b, where)).map((b) => project(b, select));
+        return self.blocks
+          .filter((b) => matchesWhere(b, where))
+          .map((b) => project(b, select));
       },
     };
   }

@@ -1,4 +1,8 @@
-import { SupportCategory, SupportStatus, SupportPriority } from '@prisma/client';
+import {
+  SupportCategory,
+  SupportStatus,
+  SupportPriority,
+} from '@prisma/client';
 
 /**
  * The categories the public form offers, in display order.
@@ -68,7 +72,8 @@ export const SUPPORT_PRIORITY_LABELS: Record<SupportPriority, string> = {
 export const SUPPORT_STATUS_USER_MESSAGE: Record<SupportStatus, string> = {
   OPEN: 'Your request is in our queue and a member of the team will pick it up shortly.',
   IN_PROGRESS: 'We are actively working on your request.',
-  WAITING_FOR_USER: 'We need a little more information from you to proceed with your request.',
+  WAITING_FOR_USER:
+    'We need a little more information from you to proceed with your request.',
   RESOLVED: 'We consider this request resolved.',
   CLOSED: 'This request is now closed.',
 };
@@ -78,7 +83,9 @@ export const SUPPORT_STATUS_USER_MESSAGE: Record<SupportStatus, string> = {
  * cannot get into their account is also time-critical in a way a question
  * about notification settings is not.
  */
-export const DEFAULT_PRIORITY_BY_CATEGORY: Partial<Record<SupportCategory, SupportPriority>> = {
+export const DEFAULT_PRIORITY_BY_CATEGORY: Partial<
+  Record<SupportCategory, SupportPriority>
+> = {
   SAFETY_REPORTING: SupportPriority.URGENT,
   ACCOUNT_LOGIN: SupportPriority.HIGH,
   ABUSE: SupportPriority.URGENT,
@@ -92,5 +99,12 @@ export const SUPPORT_ATTACHMENT_LIMITS = {
    * XML document that can carry script, and it would be served from the same
    * origin family as the app.
    */
-  allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf', 'text/plain'] as const,
+  allowedMimeTypes: [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'application/pdf',
+    'text/plain',
+  ] as const,
 };

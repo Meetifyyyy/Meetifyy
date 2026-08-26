@@ -1,4 +1,10 @@
-import { IsString, IsOptional, MaxLength, IsBoolean, IsIn} from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  MaxLength,
+  IsBoolean,
+  IsIn,
+} from 'class-validator';
 
 export class CreateCommunityDto {
   @IsString()
@@ -84,6 +90,8 @@ export class UpdateMemberRoleDto {
    *
    * Ownership moves only by transferring it, never through this endpoint.
    */
-  @IsIn(['MODERATOR', 'MEMBER'], { message: 'Role must be MODERATOR or MEMBER' })
+  @IsIn(['MODERATOR', 'MEMBER'], {
+    message: 'Role must be MODERATOR or MEMBER',
+  })
   role: 'MODERATOR' | 'MEMBER';
 }

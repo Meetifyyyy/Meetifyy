@@ -10,7 +10,14 @@
  * misconfigured environment fails at boot with one message listing every
  * problem rather than at the first request that happens to need the value.
  */
-import { APP_ENV, IS_DEVELOPMENT, IS_PRODUCTION, IS_STAGING, IS_TEST, assertEnvValid } from './env';
+import {
+  APP_ENV,
+  IS_DEVELOPMENT,
+  IS_PRODUCTION,
+  IS_STAGING,
+  IS_TEST,
+  assertEnvValid,
+} from './env';
 import { appConfigValues } from './app.config';
 import { authConfigValues } from './auth.config';
 import { databaseConfigValues } from './database.config';
@@ -48,5 +55,11 @@ assertEnvValid();
 
 export type Config = typeof config;
 
-export { APP_ENV, IS_DEVELOPMENT, IS_TEST, IS_STAGING, IS_PRODUCTION } from './env';
+export {
+  APP_ENV,
+  IS_DEVELOPMENT,
+  IS_TEST,
+  IS_STAGING,
+  IS_PRODUCTION,
+} from './env';
 export type { AppEnvironment } from './env';

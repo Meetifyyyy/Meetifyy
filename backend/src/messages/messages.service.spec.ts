@@ -20,8 +20,16 @@ describe('MessagesService', () => {
           provide: PrismaService,
           useValue: {
             conversation: { findFirst: jest.fn(), findUnique: jest.fn() },
-            conversationParticipant: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
-            message: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
+            conversationParticipant: {
+              findUnique: jest.fn(),
+              findMany: jest.fn(),
+              findFirst: jest.fn(),
+            },
+            message: {
+              create: jest.fn(),
+              findFirst: jest.fn(),
+              findMany: jest.fn(),
+            },
             deletedMessage: { findMany: jest.fn() },
             block: { findFirst: jest.fn() },
             $transaction: jest.fn(),
@@ -29,7 +37,11 @@ describe('MessagesService', () => {
         },
         {
           provide: PresenceService,
-          useValue: { setOnline: jest.fn(), setOffline: jest.fn(), getPresence: jest.fn() },
+          useValue: {
+            setOnline: jest.fn(),
+            setOffline: jest.fn(),
+            getPresence: jest.fn(),
+          },
         },
         {
           provide: DomainEventService,
@@ -44,7 +56,10 @@ describe('MessagesService', () => {
         },
         {
           provide: RedisService,
-          useValue: { getClient: jest.fn().mockReturnValue(null), getSubClient: jest.fn().mockReturnValue(null) },
+          useValue: {
+            getClient: jest.fn().mockReturnValue(null),
+            getSubClient: jest.fn().mockReturnValue(null),
+          },
         },
         {
           provide: BlocksService,
@@ -67,10 +82,15 @@ describe('MessagesService', () => {
 
   describe('getConversationHistory — block must not hide history', () => {
     beforeEach(() => {
-      jest.spyOn(service as any, 'resolveConversationId').mockResolvedValue('conv-1');
+      jest
+        .spyOn(service as any, 'resolveConversationId')
+        .mockResolvedValue('conv-1');
       prisma.deletedMessage.findMany.mockResolvedValue([]);
       prisma.conversationParticipant.findFirst.mockResolvedValue({
-        userId: 'alice', lastReadAt: null, clearedAt: null, leftAt: null,
+        userId: 'alice',
+        lastReadAt: null,
+        clearedAt: null,
+        leftAt: null,
       });
       prisma.conversationParticipant.findMany.mockResolvedValue([
         { userId: 'alice', lastReadAt: null, clearedAt: null, leftAt: null },

@@ -13,10 +13,16 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import { SupportCategory, SupportPriority, SupportStatus } from '@prisma/client';
+import {
+  SupportCategory,
+  SupportPriority,
+  SupportStatus,
+} from '@prisma/client';
 
-const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
-const toInt = ({ value }: { value: unknown }) => (value === undefined || value === '' ? undefined : Number(value));
+const trim = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim() : value;
+const toInt = ({ value }: { value: unknown }) =>
+  value === undefined || value === '' ? undefined : Number(value);
 
 /**
  * Every admin mutation goes through one of these.
@@ -37,7 +43,8 @@ export class ListSupportTicketsDto {
   /** Matches a request ID, an email address or a subject. */
   @IsOptional() @Transform(trim) @IsString() @MaxLength(200) search?: string;
 
-  @IsOptional() @IsIn(['newest', 'oldest', 'updated', 'priority']) sort?: 'newest' | 'oldest' | 'updated' | 'priority';
+  @IsOptional() @IsIn(['newest', 'oldest', 'updated', 'priority']) sort?:
+    'newest' | 'oldest' | 'updated' | 'priority';
 
   @IsOptional() @Transform(toInt) @IsInt() @Min(1) page?: number;
   @IsOptional() @Transform(toInt) @IsInt() @Min(1) limit?: number;

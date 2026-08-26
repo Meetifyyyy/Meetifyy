@@ -24,7 +24,9 @@ function encodeCursor(cursor: SearchCursor): string {
 function decodeCursor(raw?: string): SearchCursor {
   if (!raw) return {};
   try {
-    return JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as SearchCursor;
+    return JSON.parse(
+      Buffer.from(raw, 'base64url').toString('utf8'),
+    ) as SearchCursor;
   } catch {
     return {};
   }
@@ -54,7 +56,13 @@ export class SearchService {
     return u ? { id: u.id, collegeId: u.collegeId } : null;
   }
 
-  async globalSearch(query?: string, currentUserId?: string, limit = 15, type?: string, cursorParam?: string) {
+  async globalSearch(
+    query?: string,
+    currentUserId?: string,
+    limit = 15,
+    type?: string,
+    cursorParam?: string,
+  ) {
     const searchQuery = (query || '').trim();
     const cleanQuery = searchQuery.toLowerCase();
     const isDiscovery = searchQuery.length === 0;
@@ -98,15 +106,22 @@ export class SearchService {
     }
 
     const [excludedUserIds, viewer] = await Promise.all([
-      currentUserId ? this.blocksService.getExcludedUserIds(currentUserId) : Promise.resolve([]),
+      currentUserId
+        ? this.blocksService.getExcludedUserIds(currentUserId)
+        : Promise.resolve([]),
       this.resolveViewer(currentUserId),
     ]);
-    const searchExcludedUserIds = currentUserId ? [...excludedUserIds, currentUserId] : excludedUserIds;
+    const searchExcludedUserIds = currentUserId
+      ? [...excludedUserIds, currentUserId]
+      : excludedUserIds;
     const startTime = performance.now();
 
     // Users/communities aren't paginated (small, relevance-capped lists) — only re-fetched on the first page.
-    const fetchUsers = !isPaginating && (!type || type === 'all' || type === 'people' || type === 'users');
-    const fetchCommunities = !isPaginating && (!type || type === 'all' || type === 'communities');
+    const fetchUsers =
+      !isPaginating &&
+      (!type || type === 'all' || type === 'people' || type === 'users');
+    const fetchCommunities =
+      !isPaginating && (!type || type === 'all' || type === 'communities');
     const fetchPosts = !type || type === 'all' || type === 'posts';
     const fetchActivities = !type || type === 'all' || type === 'activities';
     const postFetchLimit = (isDiscovery ? 6 : limit) + 1;
@@ -117,16 +132,26 @@ export class SearchService {
         OR: [
           { communityId: null },
           { community: { is: { isPrivate: false } } },
-          ...(currentUserId ? [{ community: { is: { members: { some: { userId: currentUserId } } } } }] : []),
+          ...(currentUserId
+            ? [
+                {
+                  community: {
+                    is: { members: { some: { userId: currentUserId } } },
+                  },
+                },
+              ]
+            : []),
         ],
       },
       ...(postCursorDate && postCursorId
-        ? [{
-            OR: [
-              { createdAt: { lt: postCursorDate } },
-              { createdAt: postCursorDate, id: { lt: postCursorId } },
-            ],
-          } as Prisma.PostWhereInput]
+        ? [
+            {
+              OR: [
+                { createdAt: { lt: postCursorDate } },
+                { createdAt: postCursorDate, id: { lt: postCursorId } },
+              ],
+            } as Prisma.PostWhereInput,
+          ]
         : []),
     ];
 
@@ -135,197 +160,286 @@ export class SearchService {
       // shared policy at the query layer, never fetched-then-filtered.
       this.activityPolicy.discoveryWhere(viewer),
       {
-        OR: [
-          { endDate: null },
-          { endDate: { gte: now } },
-        ],
+        OR: [{ endDate: null }, { endDate: { gte: now } }],
       },
       ...(isDiscovery
         ? []
-        : [{
-            OR: [
-              { title: { contains: searchQuery, mode: 'insensitive' as Prisma.QueryMode } },
-              { description: { contains: searchQuery, mode: 'insensitive' as Prisma.QueryMode } },
-              { location: { contains: searchQuery, mode: 'insensitive' as Prisma.QueryMode } },
-            ],
-          } as Prisma.CrewActivityWhereInput]),
+        : [
+            {
+              OR: [
+                {
+                  title: {
+                    contains: searchQuery,
+                    mode: 'insensitive' as Prisma.QueryMode,
+                  },
+                },
+                {
+                  description: {
+                    contains: searchQuery,
+                    mode: 'insensitive' as Prisma.QueryMode,
+                  },
+                },
+                {
+                  location: {
+                    contains: searchQuery,
+                    mode: 'insensitive' as Prisma.QueryMode,
+                  },
+                },
+              ],
+            } as Prisma.CrewActivityWhereInput,
+          ]),
       ...(activityCursorDate && activityCursorId
-        ? [{
-            OR: [
-              { startDate: { gt: activityCursorDate } },
-              { startDate: activityCursorDate, id: { gt: activityCursorId } },
-            ],
-          } as Prisma.CrewActivityWhereInput]
+        ? [
+            {
+              OR: [
+                { startDate: { gt: activityCursorDate } },
+                { startDate: activityCursorDate, id: { gt: activityCursorId } },
+              ],
+            } as Prisma.CrewActivityWhereInput,
+          ]
         : []),
     ];
 
-    const [users, communities, rawPostsPage, activitiesPage] = await Promise.all([
-      fetchUsers
-        ? this.prisma.user.findMany({
-            where: {
-              ...(isDiscovery
-                ? {}
-                : {
-                    OR: [
-                      { username: { contains: searchQuery, mode: 'insensitive' } },
-                      { displayName: { contains: searchQuery, mode: 'insensitive' } },
-                      { bio: { contains: searchQuery, mode: 'insensitive' } },
-                    ],
-                  }),
-              deletedAt: null,
-              ...(searchExcludedUserIds.length > 0 ? { id: { notIn: searchExcludedUserIds } } : {}),
-            },
-            select: {
-              id: true,
-              username: true,
-              displayName: true,
-              avatar: true,
-              bio: true,
-              isCampusRep: true,
-              collegeId: true,
-              college: { select: { id: true, name: true } },
-              followers: { select: { followerId: true } },
-            },
-            take: isDiscovery ? 6 : limit * 2,
-            orderBy: { createdAt: 'desc' },
-          })
-        : Promise.resolve([]),
+    const [users, communities, rawPostsPage, activitiesPage] =
+      await Promise.all([
+        fetchUsers
+          ? this.prisma.user.findMany({
+              where: {
+                ...(isDiscovery
+                  ? {}
+                  : {
+                      OR: [
+                        {
+                          username: {
+                            contains: searchQuery,
+                            mode: 'insensitive',
+                          },
+                        },
+                        {
+                          displayName: {
+                            contains: searchQuery,
+                            mode: 'insensitive',
+                          },
+                        },
+                        { bio: { contains: searchQuery, mode: 'insensitive' } },
+                      ],
+                    }),
+                deletedAt: null,
+                ...(searchExcludedUserIds.length > 0
+                  ? { id: { notIn: searchExcludedUserIds } }
+                  : {}),
+              },
+              select: {
+                id: true,
+                username: true,
+                displayName: true,
+                avatar: true,
+                bio: true,
+                isCampusRep: true,
+                collegeId: true,
+                college: { select: { id: true, name: true } },
+                followers: { select: { followerId: true } },
+              },
+              take: isDiscovery ? 6 : limit * 2,
+              orderBy: { createdAt: 'desc' },
+            })
+          : Promise.resolve([]),
 
-      fetchCommunities
-        ? this.prisma.community.findMany({
-            where: {
-              ...(isDiscovery
-                ? {}
-                : {
-                    OR: [
-                      { name: { contains: searchQuery, mode: 'insensitive' } },
-                      { slug: { contains: searchQuery, mode: 'insensitive' } },
-                      { description: { contains: searchQuery, mode: 'insensitive' } },
-                    ],
-                  }),
-              deletedAt: null,
-            },
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              avatarKey: true,
-              description: true,
-              memberCount: true,
-              isPrivate: true,
-            },
-            take: isDiscovery ? 6 : limit * 2,
-            orderBy: { memberCount: 'desc' },
-          })
-        : Promise.resolve([]),
+        fetchCommunities
+          ? this.prisma.community.findMany({
+              where: {
+                ...(isDiscovery
+                  ? {}
+                  : {
+                      OR: [
+                        {
+                          name: { contains: searchQuery, mode: 'insensitive' },
+                        },
+                        {
+                          slug: { contains: searchQuery, mode: 'insensitive' },
+                        },
+                        {
+                          description: {
+                            contains: searchQuery,
+                            mode: 'insensitive',
+                          },
+                        },
+                      ],
+                    }),
+                deletedAt: null,
+              },
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                avatarKey: true,
+                description: true,
+                memberCount: true,
+                isPrivate: true,
+              },
+              take: isDiscovery ? 6 : limit * 2,
+              orderBy: { memberCount: 'desc' },
+            })
+          : Promise.resolve([]),
 
-      // Main feed posts: public posts or public community posts
-      fetchPosts
-        ? this.prisma.post.findMany({
-            where: {
-              deletedAt: null,
-              ...(isDiscovery ? {} : { text: { contains: searchQuery, mode: 'insensitive' as Prisma.QueryMode } }),
-              ...(searchExcludedUserIds.length > 0 ? { authorId: { notIn: searchExcludedUserIds } } : {}),
-              AND: postAndConditions,
-            },
-            select: {
-              id: true,
-              text: true,
-              createdAt: true,
-              likeCount: true,
-              commentCount: true,
-              author: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
-              media: {
-                orderBy: [{ order: 'asc' }, { id: 'asc' }],
-                select: {
-                  id: true,
-                  objectKey: true,
-                  width: true,
-                  height: true,
-                  mimeType: true,
-                  type: true,
+        // Main feed posts: public posts or public community posts
+        fetchPosts
+          ? this.prisma.post.findMany({
+              where: {
+                deletedAt: null,
+                ...(isDiscovery
+                  ? {}
+                  : {
+                      text: {
+                        contains: searchQuery,
+                        mode: 'insensitive' as Prisma.QueryMode,
+                      },
+                    }),
+                ...(searchExcludedUserIds.length > 0
+                  ? { authorId: { notIn: searchExcludedUserIds } }
+                  : {}),
+                AND: postAndConditions,
+              },
+              select: {
+                id: true,
+                text: true,
+                createdAt: true,
+                likeCount: true,
+                commentCount: true,
+                author: {
+                  select: {
+                    id: true,
+                    username: true,
+                    displayName: true,
+                    avatar: true,
+                    isCampusRep: true,
+                    collegeId: true,
+                    college: { select: { id: true, name: true } },
+                  },
+                },
+                media: {
+                  orderBy: [{ order: 'asc' }, { id: 'asc' }],
+                  select: {
+                    id: true,
+                    objectKey: true,
+                    width: true,
+                    height: true,
+                    mimeType: true,
+                    type: true,
+                  },
+                },
+                pollOptions: {
+                  orderBy: { id: 'asc' },
+                  include: {
+                    _count: { select: { votes: true } },
+                  },
+                },
+                pollVotes: currentUserId
+                  ? { where: { userId: currentUserId } }
+                  : false,
+              },
+              take: postFetchLimit,
+              orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            })
+          : Promise.resolve([]),
+
+        // Activities: set to visibility PUBLIC (visible to anyone) and haven't ended yet
+        fetchActivities
+          ? this.prisma.crewActivity.findMany({
+              where: {
+                status: 'OPEN',
+                deletedAt: null,
+                ...(searchExcludedUserIds.length > 0
+                  ? { creatorId: { notIn: searchExcludedUserIds } }
+                  : {}),
+                AND: activityAndConditions,
+              },
+              select: {
+                id: true,
+                title: true,
+                description: true,
+                location: true,
+                startDate: true,
+                endDate: true,
+                createdAt: true,
+                maxMembers: true,
+                coverImage: true,
+                coverColor: true,
+                members: {
+                  select: {
+                    userId: true,
+                    user: {
+                      select: {
+                        id: true,
+                        username: true,
+                        displayName: true,
+                        avatar: true,
+                        isCampusRep: true,
+                        collegeId: true,
+                        college: { select: { id: true, name: true } },
+                      },
+                    },
+                  },
+                },
+                creator: {
+                  select: {
+                    id: true,
+                    username: true,
+                    displayName: true,
+                    avatar: true,
+                    isCampusRep: true,
+                    collegeId: true,
+                    college: { select: { id: true, name: true } },
+                  },
                 },
               },
-              pollOptions: {
-                orderBy: { id: 'asc' },
-                include: {
-                  _count: { select: { votes: true } }
-                }
-              },
-              pollVotes: currentUserId ? { where: { userId: currentUserId } } : false,
-            },
-            take: postFetchLimit,
-            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          })
-        : Promise.resolve([]),
-
-      // Activities: set to visibility PUBLIC (visible to anyone) and haven't ended yet
-      fetchActivities
-        ? this.prisma.crewActivity.findMany({
-            where: {
-              status: 'OPEN',
-              deletedAt: null,
-              ...(searchExcludedUserIds.length > 0 ? { creatorId: { notIn: searchExcludedUserIds } } : {}),
-              AND: activityAndConditions,
-            },
-            select: {
-              id: true,
-              title: true,
-              description: true,
-              location: true,
-              startDate: true,
-              endDate: true,
-              createdAt: true,
-              maxMembers: true,
-              coverImage: true,
-              coverColor: true,
-              members: {
-                select: {
-                  userId: true,
-                  user: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
-                },
-              },
-              creator: { select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } } },
-            },
-            take: activityFetchLimit,
-            orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
-          })
-        : Promise.resolve([]),
-    ]);
+              take: activityFetchLimit,
+              orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
+            })
+          : Promise.resolve([]),
+      ]);
 
     let nextPostCursor: string | undefined;
     const rawPosts = [...rawPostsPage];
     if (rawPosts.length > postFetchLimit - 1) {
       const extra = rawPosts.pop();
-      if (extra) nextPostCursor = `${new Date(extra.createdAt).toISOString()}__${extra.id}`;
+      if (extra)
+        nextPostCursor = `${new Date(extra.createdAt).toISOString()}__${extra.id}`;
     }
 
     let nextActivityCursor: string | undefined;
     const activities = [...activitiesPage];
     if (activities.length > activityFetchLimit - 1) {
       const extra = activities.pop();
-      if (extra?.startDate) nextActivityCursor = `${new Date(extra.startDate).toISOString()}__${extra.id}`;
+      if (extra?.startDate)
+        nextActivityCursor = `${new Date(extra.startDate).toISOString()}__${extra.id}`;
     }
 
     // Rank Users
     const rankedUsers = users
-      .map(u => {
+      .map((u) => {
         const uName = u.username.toLowerCase();
         const dName = u.displayName.toLowerCase();
         let score = 0;
         if (!isDiscovery) {
           if (uName === cleanQuery || dName === cleanQuery) score += 100;
-          else if (uName.startsWith(cleanQuery) || dName.startsWith(cleanQuery)) score += 50;
+          else if (uName.startsWith(cleanQuery) || dName.startsWith(cleanQuery))
+            score += 50;
           else score += 10;
         }
-        return { ...u, isFollowing: u.followers?.some(f => f.followerId === currentUserId) || false, score };
+        return {
+          ...u,
+          isFollowing:
+            u.followers?.some((f) => f.followerId === currentUserId) || false,
+          score,
+        };
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, isDiscovery ? 6 : limit);
 
     // Rank Communities
     const rankedCommunities = communities
-      .map(c => {
+      .map((c) => {
         const name = c.name.toLowerCase();
         let score = 0;
         if (!isDiscovery) {
@@ -339,20 +453,26 @@ export class SearchService {
       .slice(0, isDiscovery ? 6 : limit);
 
     // Fetch Likes and Bookmarks for Posts
-    const searchPostIds = rawPosts.map(p => p.id);
+    const searchPostIds = rawPosts.map((p) => p.id);
     const [userLikes, userBookmarks] = await Promise.all([
       currentUserId && searchPostIds.length > 0
-        ? this.prisma.postLike.findMany({ where: { userId: currentUserId, postId: { in: searchPostIds } }, select: { postId: true } })
+        ? this.prisma.postLike.findMany({
+            where: { userId: currentUserId, postId: { in: searchPostIds } },
+            select: { postId: true },
+          })
         : [],
       currentUserId && searchPostIds.length > 0
-        ? this.prisma.postBookmark.findMany({ where: { userId: currentUserId, postId: { in: searchPostIds } }, select: { postId: true } })
+        ? this.prisma.postBookmark.findMany({
+            where: { userId: currentUserId, postId: { in: searchPostIds } },
+            select: { postId: true },
+          })
         : [],
     ]);
 
-    const likedSet = new Set(userLikes.map(l => l.postId));
-    const bookmarkedSet = new Set(userBookmarks.map(b => b.postId));
+    const likedSet = new Set(userLikes.map((l) => l.postId));
+    const bookmarkedSet = new Set(userBookmarks.map((b) => b.postId));
 
-    const posts = rawPosts.map(p => {
+    const posts = rawPosts.map((p) => {
       const isLiked = likedSet.has(p.id);
       const isBookmarked = bookmarkedSet.has(p.id);
 
@@ -364,18 +484,31 @@ export class SearchService {
       const pollOptions = p.pollOptions || [];
       let poll = null;
       if (pollOptions.length > 0) {
-        const sortedOptions = [...pollOptions].sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+        const sortedOptions = [...pollOptions].sort((a: any, b: any) =>
+          (a.id || '').localeCompare(b.id || ''),
+        );
         const options = sortedOptions.map((opt: any) => ({
           id: opt.id,
           text: opt.text,
           votes: Number(opt._count?.votes || opt.voteCount || 0),
         }));
-        const totalVotes = options.reduce((sum: number, o: any) => sum + o.votes, 0);
+        const totalVotes = options.reduce(
+          (sum: number, o: any) => sum + o.votes,
+          0,
+        );
 
-        const userVotedOptionId = (Array.isArray(p.pollVotes) && p.pollVotes.length > 0) ? p.pollVotes[0]?.optionId : null;
-        const userVotedIndex = userVotedOptionId ? options.findIndex((o: any) => o.id === userVotedOptionId) : -1;
+        const userVotedOptionId =
+          Array.isArray(p.pollVotes) && p.pollVotes.length > 0
+            ? p.pollVotes[0]?.optionId
+            : null;
+        const userVotedIndex = userVotedOptionId
+          ? options.findIndex((o: any) => o.id === userVotedOptionId)
+          : -1;
         const myVotes = userVotedIndex >= 0 ? [userVotedIndex] : [];
-        const selectedUsers = currentUserId && myVotes.length > 0 ? { [currentUserId]: myVotes } : {};
+        const selectedUsers =
+          currentUserId && myVotes.length > 0
+            ? { [currentUserId]: myVotes }
+            : {};
 
         poll = {
           question: p.text,
@@ -403,25 +536,42 @@ export class SearchService {
       };
     });
 
-    const formattedActivities = activities.map(a => ({
+    const formattedActivities = activities.map((a) => ({
       ...a,
       slotsFilled: a.members?.length || 1,
     }));
 
-    const totalResults = rankedUsers.length + rankedCommunities.length + posts.length + formattedActivities.length;
+    const totalResults =
+      rankedUsers.length +
+      rankedCommunities.length +
+      posts.length +
+      formattedActivities.length;
     const duration = (performance.now() - startTime).toFixed(0);
-    this.logger.log(`"${searchQuery || 'discovery'}" ${totalResults} results (${duration}ms)`);
+    this.logger.log(
+      `"${searchQuery || 'discovery'}" ${totalResults} results (${duration}ms)`,
+    );
 
-    const nextCursor = (nextPostCursor || nextActivityCursor)
-      ? encodeCursor({ p: nextPostCursor, a: nextActivityCursor })
-      : undefined;
+    const nextCursor =
+      nextPostCursor || nextActivityCursor
+        ? encodeCursor({ p: nextPostCursor, a: nextActivityCursor })
+        : undefined;
 
-    const result = { users: rankedUsers, communities: rankedCommunities, posts, activities: formattedActivities, nextCursor };
+    const result = {
+      users: rankedUsers,
+      communities: rankedCommunities,
+      posts,
+      activities: formattedActivities,
+      nextCursor,
+    };
 
     // 2. Cache write
     if (this.redis) {
       try {
-        await this.redis.setex(cacheKey, SEARCH_CACHE_TTL, JSON.stringify(result));
+        await this.redis.setex(
+          cacheKey,
+          SEARCH_CACHE_TTL,
+          JSON.stringify(result),
+        );
       } catch {
         // Non-fatal
       }
@@ -450,10 +600,14 @@ export class SearchService {
     }
 
     const [excludedUserIds, suggestionViewer] = await Promise.all([
-      currentUserId ? this.blocksService.getExcludedUserIds(currentUserId) : Promise.resolve([]),
+      currentUserId
+        ? this.blocksService.getExcludedUserIds(currentUserId)
+        : Promise.resolve([]),
       this.resolveViewer(currentUserId),
     ]);
-    const suggestionExcludedUserIds = currentUserId ? [...excludedUserIds, currentUserId] : excludedUserIds;
+    const suggestionExcludedUserIds = currentUserId
+      ? [...excludedUserIds, currentUserId]
+      : excludedUserIds;
 
     const [users, communities, activities] = await Promise.all([
       this.prisma.user.findMany({
@@ -463,9 +617,19 @@ export class SearchService {
             { displayName: { contains: searchQuery, mode: 'insensitive' } },
           ],
           deletedAt: null,
-          ...(suggestionExcludedUserIds.length > 0 ? { id: { notIn: suggestionExcludedUserIds } } : {}),
+          ...(suggestionExcludedUserIds.length > 0
+            ? { id: { notIn: suggestionExcludedUserIds } }
+            : {}),
         },
-        select: { id: true, username: true, displayName: true, avatar: true, isCampusRep: true, collegeId: true, college: { select: { id: true, name: true } } },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatar: true,
+          isCampusRep: true,
+          collegeId: true,
+          college: { select: { id: true, name: true } },
+        },
         take: 5,
       }),
       this.prisma.community.findMany({
@@ -485,7 +649,9 @@ export class SearchService {
               title: { contains: searchQuery, mode: 'insensitive' },
               status: 'OPEN',
               deletedAt: null,
-              ...(suggestionExcludedUserIds.length > 0 ? { creatorId: { notIn: suggestionExcludedUserIds } } : {}),
+              ...(suggestionExcludedUserIds.length > 0
+                ? { creatorId: { notIn: suggestionExcludedUserIds } }
+                : {}),
             },
             this.activityPolicy.discoveryWhere(suggestionViewer),
           ],
@@ -499,7 +665,11 @@ export class SearchService {
 
     if (this.redis) {
       try {
-        await this.redis.setex(cacheKey, SUGGESTIONS_CACHE_TTL, JSON.stringify(result));
+        await this.redis.setex(
+          cacheKey,
+          SUGGESTIONS_CACHE_TTL,
+          JSON.stringify(result),
+        );
       } catch {
         // Non-fatal
       }
@@ -517,7 +687,7 @@ export class SearchService {
         take: 15,
         select: { term: true },
       });
-      return recents.map(r => r.term);
+      return recents.map((r) => r.term);
     } catch {
       return [];
     }

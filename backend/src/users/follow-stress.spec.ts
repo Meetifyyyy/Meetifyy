@@ -37,16 +37,18 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
     }),
     $queryRaw: jest.fn().mockImplementation(async () => {
       await new Promise((resolve) => setTimeout(resolve, Math.random() * 5));
-      return [{
-        targetId: 'target-user-id',
-        targetUsername: 'sarthak',
-        targetDisplayName: 'Sarthak',
-        targetAvatar: null,
-        isBlocked: false,
-        inserted: true,
-        followersCount: 42,
-        followingCount: 10,
-      }];
+      return [
+        {
+          targetId: 'target-user-id',
+          targetUsername: 'sarthak',
+          targetDisplayName: 'Sarthak',
+          targetAvatar: null,
+          isBlocked: false,
+          inserted: true,
+          followersCount: 42,
+          followingCount: 10,
+        },
+      ];
     }),
   };
 
@@ -55,7 +57,9 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
   };
 
   const mockRedisService = {
-    withLock: jest.fn(async (key: string, ttlMs: number, fn: () => Promise<any>) => fn()),
+    withLock: jest.fn(
+      async (key: string, ttlMs: number, fn: () => Promise<any>) => fn(),
+    ),
   };
 
   beforeEach(async () => {
@@ -64,17 +68,32 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
       providers: [
         UsersService,
         { provide: PrismaService, useValue: mockPrisma },
-        { provide: NotificationsService, useValue: { createNotification: jest.fn() } },
+        {
+          provide: NotificationsService,
+          useValue: { createNotification: jest.fn() },
+        },
         { provide: NotificationFactory, useValue: { createFollow: jest.fn() } },
         { provide: DomainEventService, useValue: mockDomainEventService },
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: RedisService, useValue: mockRedisService },
-        { provide: BlocksService, useValue: { isBlocked: jest.fn().mockResolvedValue(false) } },
-        { provide: PresenceService, useValue: { getPresence: jest.fn(), getPresenceMany: jest.fn().mockResolvedValue(new Map()) } },
+        {
+          provide: BlocksService,
+          useValue: { isBlocked: jest.fn().mockResolvedValue(false) },
+        },
+        {
+          provide: PresenceService,
+          useValue: {
+            getPresence: jest.fn(),
+            getPresenceMany: jest.fn().mockResolvedValue(new Map()),
+          },
+        },
         // Real instance: it is pure validation logic with no I/O, so exercising
         // the actual catalogue here is more faithful than a stub.
         AcademicsService,
-        { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: getQueueToken(NOTIFICATIONS_QUEUE),
+          useValue: { add: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 

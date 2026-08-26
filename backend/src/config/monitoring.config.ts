@@ -60,28 +60,44 @@ export const monitoringConfigValues = {
   slowRequestMs: int('SLOW_REQUEST_MS', { default: '1000', min: 1 }),
 
   /** How often a system snapshot is taken. */
-  metricsIntervalMs: int('METRICS_INTERVAL_MS', { default: '15000', min: 1000 }),
+  metricsIntervalMs: int('METRICS_INTERVAL_MS', {
+    default: '15000',
+    min: 1000,
+  }),
 
   /**
    * Rows are buffered and flushed together so a request never waits on a
    * monitoring insert. The buffer also drains on this interval, so a quiet
    * period does not leave rows sitting unwritten.
    */
-  flushIntervalMs: int('MONITORING_FLUSH_INTERVAL_MS', { default: '5000', min: 250 }),
-  flushBatchSize: int('MONITORING_FLUSH_BATCH_SIZE', { default: '50', min: 1, max: 1000 }),
+  flushIntervalMs: int('MONITORING_FLUSH_INTERVAL_MS', {
+    default: '5000',
+    min: 250,
+  }),
+  flushBatchSize: int('MONITORING_FLUSH_BATCH_SIZE', {
+    default: '50',
+    min: 1,
+    max: 1000,
+  }),
 
   /**
    * Hard ceiling on buffered rows. If the database is unreachable the buffer
    * is dropped oldest-first rather than growing until the process runs out of
    * memory: monitoring must never be the thing that takes the app down.
    */
-  maxBufferedRows: int('MONITORING_MAX_BUFFERED_ROWS', { default: '5000', min: 100 }),
+  maxBufferedRows: int('MONITORING_MAX_BUFFERED_ROWS', {
+    default: '5000',
+    min: 100,
+  }),
 
   /** Rows older than this are deleted by the retention job. */
   retentionDays: int('LOG_RETENTION_DAYS', { default: '14', min: 1 }),
 
   /** How often the retention job runs. */
-  retentionIntervalMs: int('LOG_RETENTION_INTERVAL_MS', { default: String(6 * 60 * 60 * 1000), min: 60_000 }),
+  retentionIntervalMs: int('LOG_RETENTION_INTERVAL_MS', {
+    default: String(6 * 60 * 60 * 1000),
+    min: 60_000,
+  }),
 
   /**
    * Whether stack traces are stored on error rows. A stack can quote a source
@@ -90,7 +106,12 @@ export const monitoringConfigValues = {
   logStackTraces: bool('LOG_STACK_TRACES', { default: 'false' }),
 
   /** Extra denylist entries, merged with ALWAYS_REDACTED above. */
-  redactFields: Array.from(new Set([...ALWAYS_REDACTED, ...csv('REDACT_FIELDS').map((f) => f.toLowerCase())])),
+  redactFields: Array.from(
+    new Set([
+      ...ALWAYS_REDACTED,
+      ...csv('REDACT_FIELDS').map((f) => f.toLowerCase()),
+    ]),
+  ),
 
   /** Route prefixes never recorded, so monitoring cannot log its own reads. */
   ignoredRoutePrefixes: csv('MONITORING_IGNORED_ROUTES').length
@@ -98,20 +119,36 @@ export const monitoringConfigValues = {
     : ['/admin/monitoring', '/health', '/metrics', '/favicon.ico'],
 
   /** Dashboard poll interval, served to the client so it is configured in one place. */
-  pollingIntervalMs: int('MONITORING_POLLING_INTERVAL_MS', { default: '15000', min: 2000 }),
+  pollingIntervalMs: int('MONITORING_POLLING_INTERVAL_MS', {
+    default: '15000',
+    min: 2000,
+  }),
 
   /** Rows per page in the admin log tables. */
   pageSize: int('MONITORING_PAGE_SIZE', { default: '50', min: 1, max: 200 }),
 
   /** Per-admin request budget for the monitoring API. */
-  apiRateLimitPoints: int('MONITORING_RATE_LIMIT_POINTS', { default: '120', min: 1 }),
-  apiRateLimitWindowSec: int('MONITORING_RATE_LIMIT_WINDOW_SEC', { default: '60', min: 1 }),
+  apiRateLimitPoints: int('MONITORING_RATE_LIMIT_POINTS', {
+    default: '120',
+    min: 1,
+  }),
+  apiRateLimitWindowSec: int('MONITORING_RATE_LIMIT_WINDOW_SEC', {
+    default: '60',
+    min: 1,
+  }),
 
   /** Error-rate percentage above which the dashboard shows a degraded state. */
-  errorRateWarningPercent: num('MONITORING_ERROR_RATE_WARNING', { default: '5', min: 0, max: 100 }),
+  errorRateWarningPercent: num('MONITORING_ERROR_RATE_WARNING', {
+    default: '5',
+    min: 0,
+    max: 100,
+  }),
 
   /** Average latency in ms above which the dashboard shows a degraded state. */
-  latencyWarningMs: int('MONITORING_LATENCY_WARNING_MS', { default: '800', min: 1 }),
+  latencyWarningMs: int('MONITORING_LATENCY_WARNING_MS', {
+    default: '800',
+    min: 1,
+  }),
 
   /** Label shown on the dashboard. Free text; never used for a decision. */
   environmentLabel: str('MONITORING_ENVIRONMENT_LABEL', { default: '' }),

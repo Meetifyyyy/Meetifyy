@@ -12,23 +12,28 @@ import { StorageService } from './uploads.service';
  * two cannot drift apart again silently.
  */
 describe('upload folder allowlist', () => {
-  const service = new StorageService({} as any, {} as any, { get: () => undefined } as any);
+  const service = new StorageService(
+    {} as any,
+    {} as any,
+    { get: () => undefined } as any,
+  );
   // The method is private by design; the allowlist is the unit under test.
-  const normalize = (folder: string) => (service as any).normalizeFolder(folder);
+  const normalize = (folder: string) =>
+    (service as any).normalizeFolder(folder);
 
   describe('folders the client sends', () => {
     // Every literal passed to processAndUploadImage / uploadFileDirect
     // anywhere in the frontend.
     const inUse = [
-      'avatars',          // profile avatar
-      'profile-covers',   // profile cover
-      'community-icons',  // community avatar — the regression
+      'avatars', // profile avatar
+      'profile-covers', // profile cover
+      'community-icons', // community avatar — the regression
       'community-covers', // community cover — the regression
-      'communities',      // create-community dialog
+      'communities', // create-community dialog
       'posts',
       'chat',
       'voice',
-      'defaults',         // platform default assets
+      'defaults', // platform default assets
     ];
 
     it.each(inUse)('accepts %s', (folder) => {
@@ -40,7 +45,9 @@ describe('upload folder allowlist', () => {
     // Folding them into 'communities' would work, but would lose the
     // icon/cover distinction that avatars and profile-covers already keep
     // for users.
-    expect(normalize('community-icons')).not.toBe(normalize('community-covers'));
+    expect(normalize('community-icons')).not.toBe(
+      normalize('community-covers'),
+    );
   });
 
   it('still rejects a folder nothing sends', () => {

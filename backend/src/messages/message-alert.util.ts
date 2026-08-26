@@ -20,7 +20,11 @@ import { DomainEventService } from '../events/domain-event.service';
 export function emitMessageNew(
   domainEventService: DomainEventService,
   message: any,
-  opts: { recipientIds: string[]; unmutedRecipientIds: string[]; senderId?: string },
+  opts: {
+    recipientIds: string[];
+    unmutedRecipientIds: string[];
+    senderId?: string;
+  },
 ): Promise<void>[] {
   const unmuted = new Set(opts.unmutedRecipientIds || []);
   const recipients = opts.recipientIds || [];
@@ -29,15 +33,31 @@ export function emitMessageNew(
 
   const emits: Promise<void>[] = [];
   if (unmutedIds.length > 0) {
-    emits.push(domainEventService.emit('message:new', { ...message, alert: true }, unmutedIds));
+    emits.push(
+      domainEventService.emit(
+        'message:new',
+        { ...message, alert: true },
+        unmutedIds,
+      ),
+    );
   }
   if (mutedIds.length > 0) {
-    emits.push(domainEventService.emit('message:new', { ...message, alert: false }, mutedIds));
+    emits.push(
+      domainEventService.emit(
+        'message:new',
+        { ...message, alert: false },
+        mutedIds,
+      ),
+    );
   }
   // The sender's other devices get the message for multi-device sync, never an
   // alert — they already know, they sent it.
   if (opts.senderId) {
-    emits.push(domainEventService.emit('message:new', { ...message, alert: false }, [opts.senderId]));
+    emits.push(
+      domainEventService.emit('message:new', { ...message, alert: false }, [
+        opts.senderId,
+      ]),
+    );
   }
   return emits;
 }

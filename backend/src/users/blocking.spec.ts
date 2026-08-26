@@ -46,15 +46,27 @@ describe('UsersService — blocking', () => {
       providers: [
         UsersService,
         { provide: PrismaService, useValue: mockPrisma },
-        { provide: NotificationsService, useValue: { createNotification: jest.fn(), invalidatePrefsCache: jest.fn() } },
+        {
+          provide: NotificationsService,
+          useValue: {
+            createNotification: jest.fn(),
+            invalidatePrefsCache: jest.fn(),
+          },
+        },
         { provide: NotificationFactory, useValue: {} },
         { provide: DomainEventService, useValue: { emit: domainEvents } },
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
         blocksMock,
-        { provide: PresenceService, useValue: { getPresenceMany: jest.fn().mockResolvedValue(new Map()) } },
+        {
+          provide: PresenceService,
+          useValue: { getPresenceMany: jest.fn().mockResolvedValue(new Map()) },
+        },
         AcademicsService,
-        { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn() } },
+        {
+          provide: getQueueToken(NOTIFICATIONS_QUEUE),
+          useValue: { add: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -109,7 +121,9 @@ describe('UsersService — blocking', () => {
     /** The events targeted at one user, as [type, data] pairs. */
     const eventsFor = (userId: string) =>
       domainEvents.mock.calls
-        .filter(([, , targets]) => Array.isArray(targets) && targets.includes(userId))
+        .filter(
+          ([, , targets]) => Array.isArray(targets) && targets.includes(userId),
+        )
         .map(([type, data]) => [type, data] as const);
 
     it('tells the blocked user, live, that they can no longer send', async () => {
@@ -135,7 +149,12 @@ describe('UsersService — blocking', () => {
 
       const [[type, data]] = eventsFor('alice');
       expect(type).toBe('user:blocked');
-      expect(data).toMatchObject({ blocked: true, otherUserId: 'bob', isBlockedByMe: true, isBlockedByThem: false });
+      expect(data).toMatchObject({
+        blocked: true,
+        otherUserId: 'bob',
+        isBlockedByMe: true,
+        isBlockedByThem: false,
+      });
     });
 
     it('reverses on unblock so the input re-enables without a reload', async () => {
@@ -149,8 +168,12 @@ describe('UsersService — blocking', () => {
     it('does not fail the block when realtime delivery throws', async () => {
       // The row is already committed by this point. A dropped event costs a
       // stale composer until refresh; it must never cost the block.
-      domainEvents.mockImplementation(() => { throw new Error('redis down'); });
-      await expect(service.blockUser('alice', 'bob')).resolves.toMatchObject({ blocked: true });
+      domainEvents.mockImplementation(() => {
+        throw new Error('redis down');
+      });
+      await expect(service.blockUser('alice', 'bob')).resolves.toMatchObject({
+        blocked: true,
+      });
     });
   });
 
@@ -158,7 +181,10 @@ describe('UsersService — blocking', () => {
     it('removes only the blocker’s own row and restores nothing', async () => {
       await service.unblockUser('alice', 'bob');
 
-      expect(blocksMock.useValue.removeBlock).toHaveBeenCalledWith('alice', 'bob');
+      expect(blocksMock.useValue.removeBlock).toHaveBeenCalledWith(
+        'alice',
+        'bob',
+      );
       // No follow re-creation and no match revival: re-following and
       // re-matching are deliberately manual after an unblock.
       expect(tx.follow.deleteMany).not.toHaveBeenCalled();
@@ -167,25 +193,35 @@ describe('UsersService — blocking', () => {
   });
 
   describe('getBlockedContacts', () => {
-    const setBlockRows = (rows: any[]) => { blockRows = rows; };
+    const setBlockRows = (rows: any[]) => {
+      blockRows = rows;
+    };
 
     const row = (id: string, deletedAt: Date | null = null) => ({
       blockedId: id,
       createdAt: new Date('2025-08-12T00:00:00Z'),
-      blocked: { id, username: `${id}_h`, displayName: id.toUpperCase(), avatar: 'a.png', deletedAt },
+      blocked: {
+        id,
+        username: `${id}_h`,
+        displayName: id.toUpperCase(),
+        avatar: 'a.png',
+        deletedAt,
+      },
     });
 
     it('returns only blocks this user made, never blocks received', async () => {
       setBlockRows([row('bob')]);
       await service.getBlockedContacts('alice');
 
-      expect(blocksMock.useValue.listBlockedContacts).toHaveBeenCalledWith('alice', 20, 0);
+      expect(blocksMock.useValue.listBlockedContacts).toHaveBeenCalledWith(
+        'alice',
+        20,
+        0,
+      );
     });
 
     it('reports another page without a second query', async () => {
-      setBlockRows(
-        Array.from({ length: 21 }, (_, i) => row(`u${i}`)),
-      );
+      setBlockRows(Array.from({ length: 21 }, (_, i) => row(`u${i}`)));
       const result = await service.getBlockedContacts('alice', 20, 0);
 
       expect(result.contacts).toHaveLength(20);
@@ -221,7 +257,9 @@ describe('UsersService — blocking', () => {
       // arrive as values carrying their own `strings`.
       return call
         .slice(1)
-        .map((v: any) => (v && Array.isArray(v.strings) ? v.strings.join(' ') : ''))
+        .map((v: any) =>
+          v && Array.isArray(v.strings) ? v.strings.join(' ') : '',
+        )
         .join(' ');
     };
 

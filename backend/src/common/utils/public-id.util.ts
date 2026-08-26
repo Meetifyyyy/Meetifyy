@@ -3,7 +3,8 @@ import { randomBytes } from 'crypto';
 /**
  * URL-safe 62-character alphabet (A-Z, a-z, 0-9)
  */
-const ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const ALPHABET =
+  '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
 /**
  * Generates a cryptographically secure, random, URL-safe public ID for conversations.

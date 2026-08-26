@@ -25,7 +25,9 @@ export function sanitizeRegistrationUrl(raw?: string | null): string | null {
   try {
     parsed = new URL(trimmed);
   } catch {
-    throw new BadRequestException('Registration URL must be a valid absolute URL.');
+    throw new BadRequestException(
+      'Registration URL must be a valid absolute URL.',
+    );
   }
 
   const protocol = parsed.protocol.toLowerCase();
@@ -35,7 +37,8 @@ export function sanitizeRegistrationUrl(raw?: string | null): string | null {
 
   const isProd = config.isProduction;
   const host = parsed.hostname.toLowerCase();
-  const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost');
+  const isLocalhost =
+    host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost');
 
   if (protocol === 'http:' && !(isLocalhost && !isProd)) {
     throw new BadRequestException('Registration URL must use https.');
@@ -52,7 +55,9 @@ export function assertCoherentEventTimes(startTime: Date, endTime: Date): void {
   const now = new Date();
   // Allow a 5-minute grace period for clock drift and request latency
   if (startTime.getTime() < now.getTime() - 5 * 60 * 1000) {
-    throw new BadRequestException('Event start date/time cannot be in the past.');
+    throw new BadRequestException(
+      'Event start date/time cannot be in the past.',
+    );
   }
   if (endTime.getTime() <= startTime.getTime()) {
     throw new BadRequestException('End time must be after start time.');

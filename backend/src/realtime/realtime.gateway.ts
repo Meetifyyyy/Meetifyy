@@ -34,7 +34,10 @@ import {
   RATE_LIMIT_RESPOND,
 } from '../instant-match/instant-match.constants';
 import { PrismaService } from '../prisma/prisma.service';
-import { checkPresenceVisibility, checkPresenceVisibilityBatch } from '../users/privacy.helper';
+import {
+  checkPresenceVisibility,
+  checkPresenceVisibilityBatch,
+} from '../users/privacy.helper';
 import { RedisService } from '../redis/redis.service';
 import { CommunitiesService } from '../communities/communities.service';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
@@ -46,21 +49,28 @@ import { MentionDto } from '../common/dto/mention.dto';
     credentials: true,
   },
 })
-export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+export class RealtimeGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   private readonly logger = new Logger('SOCKET');
   private readonly chatLogger = new Logger('CHAT');
 
   @WebSocketServer()
   server: Server;
 
-
   // In-memory alias cache: conversationId (any form) → { id, publicId }
   // Avoids a Prisma round-trip on every emitToConversation call (e.g. typing events)
-  private convAliasCache = new Map<string, { id: string; publicId: string | null; cachedAt: number }>();
+  private convAliasCache = new Map<
+    string,
+    { id: string; publicId: string | null; cachedAt: number }
+  >();
   private readonly ALIAS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   // Cache target user presence settings to avoid database queries on getPresence events
-  private userPresenceSettingsCache = new Map<string, { settings: any; cachedAt: number }>();
+  private userPresenceSettingsCache = new Map<
+    string,
+    { settings: any; cachedAt: number }
+  >();
   private readonly PRESENCE_SETTINGS_TTL_MS = 60 * 1000; // 60 seconds
 
   // Sweep interval for proactive in-memory cache eviction
@@ -106,17 +116,21 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     // Proactively evict stale entries from in-memory caches every 10 minutes.
     // Without this, entries only age out on access; long-lived servers with many
     // conversations accumulate unbounded Map entries over time.
-    this.cacheEvictionTimer = setInterval(() => {
-      const now = Date.now();
-      const aliasTTL = this.ALIAS_CACHE_TTL_MS * 2;
-      for (const [key, val] of this.convAliasCache.entries()) {
-        if (now - val.cachedAt > aliasTTL) this.convAliasCache.delete(key);
-      }
-      const presenceTTL = this.PRESENCE_SETTINGS_TTL_MS * 2;
-      for (const [key, val] of this.userPresenceSettingsCache.entries()) {
-        if (now - val.cachedAt > presenceTTL) this.userPresenceSettingsCache.delete(key);
-      }
-    }, 10 * 60 * 1000);
+    this.cacheEvictionTimer = setInterval(
+      () => {
+        const now = Date.now();
+        const aliasTTL = this.ALIAS_CACHE_TTL_MS * 2;
+        for (const [key, val] of this.convAliasCache.entries()) {
+          if (now - val.cachedAt > aliasTTL) this.convAliasCache.delete(key);
+        }
+        const presenceTTL = this.PRESENCE_SETTINGS_TTL_MS * 2;
+        for (const [key, val] of this.userPresenceSettingsCache.entries()) {
+          if (now - val.cachedAt > presenceTTL)
+            this.userPresenceSettingsCache.delete(key);
+        }
+      },
+      10 * 60 * 1000,
+    );
   }
 
   /**
@@ -135,28 +149,40 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
    */
   private async broadcastCommunityPresence(userId: string) {
     try {
-      const communityIds = await this.communitiesService.getCommunityIdsForUser(userId);
+      const communityIds =
+        await this.communitiesService.getCommunityIdsForUser(userId);
       if (communityIds.length === 0) return;
 
       for (const communityId of communityIds) {
         const room = `community_${communityId}`;
         // Nobody is watching this community — recomputing would be wasted work.
         if (!this.server?.sockets.adapter.rooms.get(room)) continue;
-        const online = await this.communitiesService.countOnlineMembers(communityId);
-        this.server.to(room).emit('community:presence', { communityId, online });
+        const online =
+          await this.communitiesService.countOnlineMembers(communityId);
+        this.server
+          .to(room)
+          .emit('community:presence', { communityId, online });
       }
     } catch (err) {
       this.logger.warn(`Failed to broadcast community presence for ${userId}`);
     }
   }
 
-  private async broadcastPresenceUpdate(userId: string, status: string, lastSeen: string) {
+  private async broadcastPresenceUpdate(
+    userId: string,
+    status: string,
+    lastSeen: string,
+  ) {
     const presencePayload = { userId, status, lastActive: lastSeen };
-    
+
     try {
       const targetUser = await this.prisma.user.findUnique({
         where: { id: userId },
-        select: { settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } } }
+        select: {
+          settings: {
+            select: { showOnlineStatus: true, whoCanSeeOnline: true },
+          },
+        },
       });
       const rule = targetUser?.settings?.whoCanSeeOnline || 'everyone';
       const isEnabled = targetUser?.settings?.showOnlineStatus !== false;
@@ -177,21 +203,42 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       // all non-hidden viewers.)
       const sharedConvs = await this.prisma.conversationParticipant.findMany({
         where: {
-          conversation: { participants: { some: { userId: userId, deletedAt: null, leftAt: null } } },
-          deletedAt: null, leftAt: null
+          conversation: {
+            participants: {
+              some: { userId: userId, deletedAt: null, leftAt: null },
+            },
+          },
+          deletedAt: null,
+          leftAt: null,
         },
-        select: { userId: true }
+        select: { userId: true },
       });
-      const uniqueViewerIds = [...new Set(sharedConvs.map(p => p.userId).filter(id => id !== userId))];
+      const uniqueViewerIds = [
+        ...new Set(
+          sharedConvs.map((p) => p.userId).filter((id) => id !== userId),
+        ),
+      ];
 
       if (uniqueViewerIds.length > 0) {
-        const allowedViewerIds = await checkPresenceVisibilityBatch(userId, uniqueViewerIds, rule, isEnabled, this.prisma, this.blocksService);
+        const allowedViewerIds = await checkPresenceVisibilityBatch(
+          userId,
+          uniqueViewerIds,
+          rule,
+          isEnabled,
+          this.prisma,
+          this.blocksService,
+        );
         if (allowedViewerIds.length > 0) {
-          this.server.to(allowedViewerIds).emit('presence:update', presencePayload);
+          this.server
+            .to(allowedViewerIds)
+            .emit('presence:update', presencePayload);
         }
       }
     } catch (err) {
-      this.logger.error(`Failed to broadcast presence update for user=${userId}`, err);
+      this.logger.error(
+        `Failed to broadcast presence update for user=${userId}`,
+        err,
+      );
     }
   }
 
@@ -229,24 +276,37 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       const uId = payload.targetUserId || payload.data?.userId;
       if (uId) {
         this.userPresenceSettingsCache.delete(uId);
-        
+
         // Always force broadcast offline to all group rooms so clients immediately hide the status
-        const offlinePayload = { userId: uId, status: 'offline', lastActive: new Date().toISOString() };
-        this.prisma.conversationParticipant.findMany({
-          where: { userId: uId, deletedAt: null, leftAt: null },
-          select: { conversationId: true }
-        }).then(userConvs => {
-          userConvs.forEach(c => {
-            if (c.conversationId) this.server.to(`conv_${c.conversationId}`).emit('presence:update', offlinePayload);
-          });
-        }).catch(() => {});
+        const offlinePayload = {
+          userId: uId,
+          status: 'offline',
+          lastActive: new Date().toISOString(),
+        };
+        this.prisma.conversationParticipant
+          .findMany({
+            where: { userId: uId, deletedAt: null, leftAt: null },
+            select: { conversationId: true },
+          })
+          .then((userConvs) => {
+            userConvs.forEach((c) => {
+              if (c.conversationId)
+                this.server
+                  .to(`conv_${c.conversationId}`)
+                  .emit('presence:update', offlinePayload);
+            });
+          })
+          .catch(() => {});
 
         // Re-evaluate and broadcast true status based on new rules
-        this.presenceService.getPresence(uId).then(presence => {
-          const status = presence?.status || 'offline';
-          const lastSeen = presence?.lastSeen || new Date().toISOString();
-          this.broadcastPresenceUpdate(uId, status, lastSeen);
-        }).catch(() => {});
+        this.presenceService
+          .getPresence(uId)
+          .then((presence) => {
+            const status = presence?.status || 'offline';
+            const lastSeen = presence?.lastSeen || new Date().toISOString();
+            this.broadcastPresenceUpdate(uId, status, lastSeen);
+          })
+          .catch(() => {});
       }
     }
 
@@ -256,7 +316,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       if (convId && targetUser) {
         const userSockets = this.server.sockets.adapter.rooms.get(targetUser);
         if (userSockets) {
-          userSockets.forEach(socketId => {
+          userSockets.forEach((socketId) => {
             const socket = this.server.sockets.sockets.get(socketId);
             if (socket) socket.join(`conv_${convId}`);
           });
@@ -266,11 +326,14 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
     if (payload.type === 'group:member_removed') {
       const convId = payload.data?.conversationId || payload.conversationId;
-      const targetUser = payload.data?.targetUserId || payload.targetUserId || payload.data?.userId;
+      const targetUser =
+        payload.data?.targetUserId ||
+        payload.targetUserId ||
+        payload.data?.userId;
       if (convId && targetUser) {
         const userSockets = this.server.sockets.adapter.rooms.get(targetUser);
         if (userSockets) {
-          userSockets.forEach(socketId => {
+          userSockets.forEach((socketId) => {
             const socket = this.server.sockets.sockets.get(socketId);
             if (socket) socket.leave(`conv_${convId}`);
           });
@@ -302,7 +365,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
         // ones still authorized when the event lands.
         this.revalidateActivityRoom(changedId)
           .then(() => {
-            this.server.to(`activity_${changedId}`).emit('domainEvent', payload);
+            this.server
+              .to(`activity_${changedId}`)
+              .emit('domainEvent', payload);
           })
           .catch(() => {});
       }
@@ -312,7 +377,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     if (payload.type === 'activity_discussion.created') {
       const activityScopeId = payload.data?.activityId;
       if (activityScopeId) {
-        this.server.to(`activity_${activityScopeId}`).emit('activity_discussion:new', payload.data.message);
+        this.server
+          .to(`activity_${activityScopeId}`)
+          .emit('activity_discussion:new', payload.data.message);
       }
       return;
     }
@@ -326,18 +393,28 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     // checkActivityRoomAccess), so this is a safe fan-out, and it is what makes
     // a detail page that is already open react to the activity starting,
     // ending or being cancelled without the viewer refreshing.
-    if (payload.type === 'activity.updated' || payload.type === 'activity.started') {
+    if (
+      payload.type === 'activity.updated' ||
+      payload.type === 'activity.started'
+    ) {
       const activityScopeId = payload.data?.activityId || payload.data?.id;
       if (activityScopeId) {
-        this.server.to(`activity_${activityScopeId}`).emit('domainEvent', payload);
+        this.server
+          .to(`activity_${activityScopeId}`)
+          .emit('domainEvent', payload);
         return;
       }
     }
 
-    if (payload.type === 'activity.memberJoined' || payload.type === 'activity.memberLeft') {
+    if (
+      payload.type === 'activity.memberJoined' ||
+      payload.type === 'activity.memberLeft'
+    ) {
       const activityScopeId = payload.data?.activityId || payload.activityId;
       if (activityScopeId) {
-        this.server.to(`activity_${activityScopeId}`).emit('domainEvent', payload);
+        this.server
+          .to(`activity_${activityScopeId}`)
+          .emit('domainEvent', payload);
       }
       return;
     }
@@ -374,7 +451,10 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       this.server.to(`community_${commId}`).emit('domainEvent', payload);
     }
 
-    if (Array.isArray(payload.targetUserIds) && payload.targetUserIds.length > 0) {
+    if (
+      Array.isArray(payload.targetUserIds) &&
+      payload.targetUserIds.length > 0
+    ) {
       targets = payload.targetUserIds;
     } else if (payload.targetUserId) {
       targets = [payload.targetUserId];
@@ -382,7 +462,12 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       targets = [payload.data.targetUserId];
     } else if (payload.conversationId || payload.data?.conversationId) {
       const convId = payload.conversationId || payload.data?.conversationId;
-      this.server.to(`conv_${convId}`).emit(isLegacyEvent ? payload.type : 'domainEvent', payload.data || payload);
+      this.server
+        .to(`conv_${convId}`)
+        .emit(
+          isLegacyEvent ? payload.type : 'domainEvent',
+          payload.data || payload,
+        );
       return;
     }
 
@@ -395,10 +480,11 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
         }
       }
     } else if (!commId) {
-      this.logger.warn(`Domain event '${payload.type}' has no valid targetUserIds/room — dropped safely`);
+      this.logger.warn(
+        `Domain event '${payload.type}' has no valid targetUserIds/room — dropped safely`,
+      );
     }
   }
-
 
   async handleConnection(client: Socket) {
     const token = client.handshake.auth?.token;
@@ -408,23 +494,31 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       client.disconnect();
       return;
     }
-    
+
     let userId: string = '';
     let userName: string = 'Unknown';
 
     if (!this.supabaseService.isConfigured) {
-      this.logger.warn(`Client connection rejected: Supabase Auth not configured`);
+      this.logger.warn(
+        `Client connection rejected: Supabase Auth not configured`,
+      );
       client.disconnect();
       return;
     }
     try {
       const parts = token.split('.');
       if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
+        const payload = JSON.parse(
+          Buffer.from(parts[1], 'base64url').toString('utf-8'),
+        );
         const nowSec = Math.floor(Date.now() / 1000);
         if (payload && payload.sub && payload.exp && payload.exp > nowSec) {
           userId = payload.sub;
-          userName = payload.user_metadata?.username || payload.user_metadata?.displayName || payload.email || 'Unknown';
+          userName =
+            payload.user_metadata?.username ||
+            payload.user_metadata?.displayName ||
+            payload.email ||
+            'Unknown';
         }
       }
     } catch {
@@ -433,16 +527,26 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
     if (!userId) {
       try {
-        const { data: { user }, error } = await this.supabaseService.client.auth.getUser(token);
+        const {
+          data: { user },
+          error,
+        } = await this.supabaseService.client.auth.getUser(token);
         if (error || !user) {
           this.logger.warn(`Client connection rejected: invalid token`);
           client.disconnect();
           return;
         }
         userId = user.id;
-        userName = user.user_metadata?.username || user.user_metadata?.displayName || user.email || 'Unknown';
+        userName =
+          user.user_metadata?.username ||
+          user.user_metadata?.displayName ||
+          user.email ||
+          'Unknown';
       } catch (err) {
-        this.logger.error('WebSocket connection authentication check failed', err);
+        this.logger.error(
+          'WebSocket connection authentication check failed',
+          err,
+        );
         client.disconnect();
         return;
       }
@@ -460,23 +564,23 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
         where: { userId, deletedAt: null, leftAt: null },
         select: {
           conversationId: true,
-          conversation: { select: { publicId: true } }
-        }
+          conversation: { select: { publicId: true } },
+        },
       });
       const cachedConvIds: string[] = [];
-      activeConvs.forEach(p => {
+      activeConvs.forEach((p) => {
         if (p.conversationId) {
           client.join(`conv_${p.conversationId}`);
           cachedConvIds.push(p.conversationId);
         }
-        if (p.conversation?.publicId) client.join(`conv_${p.conversation.publicId}`);
+        if (p.conversation?.publicId)
+          client.join(`conv_${p.conversation.publicId}`);
       });
       (client as any).userConvIds = cachedConvIds;
     } catch (err) {
       this.logger.error('Failed to pre-join conversation rooms', err);
       (client as any).userConvIds = [];
     }
-
 
     await this.presenceService.setOnline(userId, client.id);
 
@@ -485,25 +589,29 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   async handleDisconnect(client: Socket) {
     const userId = (client as any).userId;
-    
+
     if (userId) {
       // Use the conv IDs cached at connection time — avoids a DB query on every
       // disconnect (tab close, network drop, mobile background, etc.).
       const userConvIds: string[] = (client as any).userConvIds || [];
 
-      userConvIds.forEach(cId => {
-        this.server.to(`conv_${cId}`).emit('typing:stop', { conversationId: cId, userId });
+      userConvIds.forEach((cId) => {
+        this.server
+          .to(`conv_${cId}`)
+          .emit('typing:stop', { conversationId: cId, userId });
       });
 
       await this.presenceService.setOffline(userId, client.id);
     }
-    this.logger.log(`Disconnected user=${userId || 'unknown'} socket=${client.id}`);
+    this.logger.log(
+      `Disconnected user=${userId || 'unknown'} socket=${client.id}`,
+    );
   }
 
   @SubscribeMessage('presence:get')
   async handleGetPresence(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { userId: string }
+    @MessageBody() data: { userId: string },
   ) {
     if (!data?.userId) return null;
     const viewerId = (client as any).userId;
@@ -512,7 +620,10 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     let targetUser: any;
     const now = Date.now();
     const cachedSettings = this.userPresenceSettingsCache.get(targetUserId);
-    if (cachedSettings && (now - cachedSettings.cachedAt < this.PRESENCE_SETTINGS_TTL_MS)) {
+    if (
+      cachedSettings &&
+      now - cachedSettings.cachedAt < this.PRESENCE_SETTINGS_TTL_MS
+    ) {
       targetUser = cachedSettings.settings;
     } else {
       targetUser = await this.prisma.user.findUnique({
@@ -522,13 +633,16 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
           settings: {
             select: {
               showOnlineStatus: true,
-              whoCanSeeOnline: true
-            }
-          }
-        }
+              whoCanSeeOnline: true,
+            },
+          },
+        },
       });
       if (targetUser) {
-        this.userPresenceSettingsCache.set(targetUserId, { settings: targetUser, cachedAt: now });
+        this.userPresenceSettingsCache.set(targetUserId, {
+          settings: targetUser,
+          cachedAt: now,
+        });
       }
     }
 
@@ -537,7 +651,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       return {
         userId: targetUserId,
         status: presence?.status || 'offline',
-        lastActive: presence?.lastSeen || null
+        lastActive: presence?.lastSeen || null,
       };
     }
     const canSeeOnline = await checkPresenceVisibility(
@@ -546,14 +660,14 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       targetUser.settings?.whoCanSeeOnline || 'everyone',
       targetUser.settings?.showOnlineStatus !== false,
       this.prisma,
-      this.blocksService
+      this.blocksService,
     );
 
     return {
       userId: targetUserId,
-      status: canSeeOnline ? (presence?.status || 'offline') : 'offline',
+      status: canSeeOnline ? presence?.status || 'offline' : 'offline',
       lastActive: presence?.lastSeen || null,
-      lastSeen: presence?.lastSeen || null
+      lastSeen: presence?.lastSeen || null,
     };
   }
 
@@ -568,14 +682,38 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('message:send')
   async handleSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { tempId?: string; clientId?: string; conversationId: string; text?: string; mediaUrl?: string; mediaType?: string; thumbnailUrl?: string; width?: number; height?: number; duration?: number; mentions?: MentionDto[]; replyToId?: string; inviteData?: any }
+    @MessageBody()
+    data: {
+      tempId?: string;
+      clientId?: string;
+      conversationId: string;
+      text?: string;
+      mediaUrl?: string;
+      mediaType?: string;
+      thumbnailUrl?: string;
+      width?: number;
+      height?: number;
+      duration?: number;
+      mentions?: MentionDto[];
+      replyToId?: string;
+      inviteData?: any;
+    },
   ) {
     const senderId = (client as any).userId;
     if (!senderId) return { status: 'error', error: 'Unauthenticated' };
     try {
-      const message = await this.messagesService.sendMessage(senderId, data.conversationId, data);
+      const message = await this.messagesService.sendMessage(
+        senderId,
+        data.conversationId,
+        data,
+      );
       const clientKey = data.clientId || data.tempId;
-      const payload = { ...message, tempId: clientKey, clientId: clientKey, status: 'sent' };
+      const payload = {
+        ...message,
+        tempId: clientKey,
+        clientId: clientKey,
+        status: 'sent',
+      };
 
       // Block enforcement: sendMessage already computed recipientIds, which
       // EXCLUDES any participant who has blocked the sender (or whom the sender
@@ -591,36 +729,57 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       // alert costs nothing — and means a device with a cold or stale
       // conversation cache still honours the mute. The message itself is
       // delivered either way: mute silences the alert, not the sync.
-      const unmuted = new Set<string>((message as any).unmutedRecipientIds || []);
+      const unmuted = new Set<string>(
+        (message as any).unmutedRecipientIds || [],
+      );
       for (const rId of recipientIds) {
         if (rId === senderId) continue;
-        this.server.to(rId).emit('message:new', { ...payload, alert: unmuted.has(rId) });
+        this.server
+          .to(rId)
+          .emit('message:new', { ...payload, alert: unmuted.has(rId) });
       }
       // Multi-device sync: emit to sender's OTHER connected sockets/tabs.
       // Never alerted — the sender already knows.
       client.to(senderId).emit('message:new', { ...payload, alert: false });
 
       // Return server ACK directly to sending client callback
-      return { status: 'ok', tempId: clientKey, clientId: clientKey, message: payload };
+      return {
+        status: 'ok',
+        tempId: clientKey,
+        clientId: clientKey,
+        message: payload,
+      };
     } catch (err: any) {
       const clientKey = data.clientId || data.tempId;
-      return { status: 'error', tempId: clientKey, clientId: clientKey, error: err.message || 'Failed to send message' };
+      return {
+        status: 'error',
+        tempId: clientKey,
+        clientId: clientKey,
+        error: err.message || 'Failed to send message',
+      };
     }
   }
 
   @SubscribeMessage('message:catchup')
   async handleMessageCatchup(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { since: string }
+    @MessageBody() data: { since: string },
   ) {
     const userId = (client as any).userId;
-    if (!userId || !data?.since) return { status: 'error', error: 'Invalid parameters' };
+    if (!userId || !data?.since)
+      return { status: 'error', error: 'Invalid parameters' };
 
     try {
-      const messages = await this.messagesService.getCatchupMessages(userId, data.since);
+      const messages = await this.messagesService.getCatchupMessages(
+        userId,
+        data.since,
+      );
       return { status: 'ok', messages };
     } catch (err: any) {
-      return { status: 'error', error: err.message || 'Failed to fetch catchup messages' };
+      return {
+        status: 'error',
+        error: err.message || 'Failed to fetch catchup messages',
+      };
     }
   }
 
@@ -643,7 +802,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('post:join')
   handlePostJoin(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { postId?: string }
+    @MessageBody() data: { postId?: string },
   ) {
     const userId = (client as any).userId;
     if (!userId || !data?.postId) return;
@@ -653,7 +812,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('post:leave')
   handlePostLeave(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { postId?: string }
+    @MessageBody() data: { postId?: string },
   ) {
     if (!data?.postId) return;
     client.leave(`post_${data.postId}`);
@@ -665,7 +824,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('activity:join')
   async handleActivityJoin(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { activityId?: string }
+    @MessageBody() data: { activityId?: string },
   ) {
     const userId = (client as any).userId;
     if (!userId || !data?.activityId) return;
@@ -673,7 +832,10 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     // Room membership is an authorization decision, not a client preference:
     // the room carries discussion messages, attendee changes and activity
     // metadata, so a viewer who may not open the activity may not subscribe.
-    const decision = await this.checkActivityRoomAccess(userId, data.activityId);
+    const decision = await this.checkActivityRoomAccess(
+      userId,
+      data.activityId,
+    );
     if (!decision.allowed) {
       client.emit('activity:access_denied', {
         activityId: data.activityId,
@@ -702,24 +864,43 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
             visibility: true,
             status: true,
             deletedAt: true,
-            members: { where: { userId }, select: { userId: true, status: true } },
+            members: {
+              where: { userId },
+              select: { userId: true, status: true },
+            },
             invitations: {
               where: { inviteeId: userId },
-              select: { inviteeId: true, status: true, revokedAt: true, expiresAt: true },
+              select: {
+                inviteeId: true,
+                status: true,
+                revokedAt: true,
+                expiresAt: true,
+              },
             },
           },
         }),
-        this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, collegeId: true } }),
+        this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true, collegeId: true },
+        }),
       ]);
 
       if (!activity || activity.deletedAt) {
-        return { allowed: false, code: 'NOT_FOUND', reason: 'Activity not found' };
+        return {
+          allowed: false,
+          code: 'NOT_FOUND',
+          reason: 'Activity not found',
+        };
       }
-      return this.activityPolicy.canView(user, activity as any);
+      return this.activityPolicy.canView(user, activity);
     } catch (err) {
-      this.logger.warn(`activity room access check failed: ${(err as any)?.message}`);
+      this.logger.warn(`activity room access check failed: ${err?.message}`);
       // Fail closed.
-      return { allowed: false, code: 'NOT_FOUND', reason: 'Activity not found' };
+      return {
+        allowed: false,
+        code: 'NOT_FOUND',
+        reason: 'Activity not found',
+      };
     }
   }
 
@@ -730,7 +911,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
    * COLLEGE_ONLY or PRIVATE.
    */
   private async revalidateActivityRoom(activityId: string) {
-    const room = this.server?.sockets?.adapter?.rooms?.get(`activity_${activityId}`);
+    const room = this.server?.sockets?.adapter?.rooms?.get(
+      `activity_${activityId}`,
+    );
     if (!room || room.size === 0) return;
 
     for (const socketId of Array.from(room)) {
@@ -756,7 +939,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('activity:leave')
   handleActivityLeave(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { activityId?: string }
+    @MessageBody() data: { activityId?: string },
   ) {
     if (!data?.activityId) return;
     client.leave(`activity_${data.activityId}`);
@@ -765,7 +948,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('typing:start')
   async handleTypingStart(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string }
+    @MessageBody() data: { conversationId: string },
   ) {
     const userId = (client as any).userId;
     const userName = (client as any).userName || 'Someone';
@@ -780,7 +963,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('typing:stop')
   async handleTypingStop(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string }
+    @MessageBody() data: { conversationId: string },
   ) {
     const userId = (client as any).userId;
     if (!userId || !data?.conversationId) return;
@@ -793,7 +976,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('message:received')
   async handleMessageReceived(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string; messageId: string }
+    @MessageBody() data: { conversationId: string; messageId: string },
   ) {
     // message:received is an alias for message:delivered — same handler logic
     return this.handleMessageDeliveredInternal(client, data);
@@ -802,14 +985,14 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('message:delivered')
   async handleMessageDelivered(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string; messageId: string }
+    @MessageBody() data: { conversationId: string; messageId: string },
   ) {
     return this.handleMessageDeliveredInternal(client, data);
   }
 
   private async handleMessageDeliveredInternal(
     client: Socket,
-    data: { conversationId: string; messageId: string }
+    data: { conversationId: string; messageId: string },
   ) {
     const userId = (client as any).userId;
     if (!userId || !data?.conversationId || !data?.messageId) return;
@@ -825,16 +1008,19 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('presence:get_status')
   async handlePresenceGetStatus(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { userIds: string[] }
+    @MessageBody() data: { userIds: string[] },
   ) {
-    if (!data?.userIds || !Array.isArray(data.userIds)) return { status: 'error' };
+    if (!data?.userIds || !Array.isArray(data.userIds))
+      return { status: 'error' };
     const viewerId = (client as any).userId;
-    const presenceMap = await this.presenceService.getPresenceMany(data.userIds);
+    const presenceMap = await this.presenceService.getPresenceMany(
+      data.userIds,
+    );
 
     const now = Date.now();
-    const uncachedUserIds = data.userIds.filter(id => {
+    const uncachedUserIds = data.userIds.filter((id) => {
       const cached = this.userPresenceSettingsCache.get(id);
-      return !cached || (now - cached.cachedAt >= this.PRESENCE_SETTINGS_TTL_MS);
+      return !cached || now - cached.cachedAt >= this.PRESENCE_SETTINGS_TTL_MS;
     });
 
     if (uncachedUserIds.length > 0) {
@@ -845,16 +1031,21 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
           settings: {
             select: {
               showOnlineStatus: true,
-              whoCanSeeOnline: true
-            }
-          }
-        }
+              whoCanSeeOnline: true,
+            },
+          },
+        },
       });
-      targetUsers.forEach(u => this.userPresenceSettingsCache.set(u.id, { settings: u, cachedAt: now }));
+      targetUsers.forEach((u) =>
+        this.userPresenceSettingsCache.set(u.id, {
+          settings: u,
+          cachedAt: now,
+        }),
+      );
     }
 
     const userMap = new Map<string, any>();
-    data.userIds.forEach(uId => {
+    data.userIds.forEach((uId) => {
       const cached = this.userPresenceSettingsCache.get(uId);
       if (cached) userMap.set(uId, cached.settings);
     });
@@ -870,19 +1061,19 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
           targetUser.settings?.whoCanSeeOnline || 'everyone',
           targetUser.settings?.showOnlineStatus !== false,
           this.prisma,
-          this.blocksService
+          this.blocksService,
         );
         return { uId, canSee };
-      })
+      }),
     );
 
     const result: Record<string, any> = {};
     for (const { uId, canSee } of visibilityResults) {
       const val = presenceMap.get(uId);
       result[uId] = {
-        status: canSee ? (val?.status || 'offline') : 'offline',
+        status: canSee ? val?.status || 'offline' : 'offline',
         lastActive: val?.lastSeen || null,
-        lastSeen: val?.lastSeen || null
+        lastSeen: val?.lastSeen || null,
       };
     }
 
@@ -892,7 +1083,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('messages:seen')
   async handleMessagesSeen(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string; lastMessageId?: string }
+    @MessageBody() data: { conversationId: string; lastMessageId?: string },
   ) {
     return this.handleSeenInternal(client, data);
   }
@@ -900,14 +1091,14 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('conversation:mark_seen')
   async handleMarkSeen(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string; lastMessageId?: string }
+    @MessageBody() data: { conversationId: string; lastMessageId?: string },
   ) {
     return this.handleSeenInternal(client, data);
   }
 
   private async handleSeenInternal(
     client: Socket,
-    data: { conversationId: string; lastMessageId?: string }
+    data: { conversationId: string; lastMessageId?: string },
   ) {
     try {
       const readerId = (client as any).userId;
@@ -925,7 +1116,11 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       };
 
       this.emitToConversation(data.conversationId, 'messages:seen', payload);
-      this.emitToConversation(data.conversationId, 'conversation:seen', payload);
+      this.emitToConversation(
+        data.conversationId,
+        'conversation:seen',
+        payload,
+      );
     } catch (e) {
       // Ignore transient pool timeouts or seen processing failures
     }
@@ -935,7 +1130,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   handlePing(@ConnectedSocket() client: Socket) {
     return { event: 'pong', timestamp: Date.now() };
   }
-
 
   // --- API for other modules to emit events ---
 
@@ -963,7 +1157,11 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
    * Resolves both DB ID and Public ID aliases — uses in-memory cache to avoid a
    * DB query on every typing keystroke or high-frequency event.
    */
-  async emitToConversation(conversationId: string, event: string, payload: any) {
+  async emitToConversation(
+    conversationId: string,
+    event: string,
+    payload: any,
+  ) {
     if (!conversationId) return;
     this.server.to(`conv_${conversationId}`).emit(event, payload);
 
@@ -973,19 +1171,27 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       const cached = this.convAliasCache.get(conversationId);
       let conv: { id: string; publicId: string | null } | null = null;
 
-      if (cached && (now - cached.cachedAt) < this.ALIAS_CACHE_TTL_MS) {
+      if (cached && now - cached.cachedAt < this.ALIAS_CACHE_TTL_MS) {
         conv = { id: cached.id, publicId: cached.publicId };
       } else {
         const dbConv = await this.prisma.conversation.findFirst({
           where: { OR: [{ id: conversationId }, { publicId: conversationId }] },
-          select: { id: true, publicId: true }
+          select: { id: true, publicId: true },
         });
         if (dbConv) {
           conv = dbConv;
           // Cache both directions so either alias hits the cache
-          this.convAliasCache.set(dbConv.id, { id: dbConv.id, publicId: dbConv.publicId, cachedAt: now });
+          this.convAliasCache.set(dbConv.id, {
+            id: dbConv.id,
+            publicId: dbConv.publicId,
+            cachedAt: now,
+          });
           if (dbConv.publicId) {
-            this.convAliasCache.set(dbConv.publicId, { id: dbConv.id, publicId: dbConv.publicId, cachedAt: now });
+            this.convAliasCache.set(dbConv.publicId, {
+              id: dbConv.id,
+              publicId: dbConv.publicId,
+              cachedAt: now,
+            });
           }
         }
       }
@@ -1006,45 +1212,52 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('conversation:join_rooms')
   async handleJoinRooms(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationIds: string[] }
+    @MessageBody() data: { conversationIds: string[] },
   ) {
     const userId = (client as any).userId;
-    if (!userId || !data?.conversationIds || !Array.isArray(data.conversationIds)) return;
+    if (
+      !userId ||
+      !data?.conversationIds ||
+      !Array.isArray(data.conversationIds)
+    )
+      return;
 
     // Skip DB lookup if client is already joined to all requested rooms
-    const unjoinedIds = data.conversationIds.filter(id => id && !client.rooms.has(`conv_${id}`));
+    const unjoinedIds = data.conversationIds.filter(
+      (id) => id && !client.rooms.has(`conv_${id}`),
+    );
     if (unjoinedIds.length === 0) return;
 
     try {
       // Step 1: Indexed lookup on Conversation (id PK and publicId unique index)
       const matchingConvs = await this.prisma.conversation.findMany({
         where: {
-          OR: [
-            { id: { in: unjoinedIds } },
-            { publicId: { in: unjoinedIds } }
-          ]
+          OR: [{ id: { in: unjoinedIds } }, { publicId: { in: unjoinedIds } }],
         },
-        select: { id: true, publicId: true }
+        select: { id: true, publicId: true },
       });
 
       if (matchingConvs.length === 0) return;
 
-      const validInternalIds = new Set(matchingConvs.map(c => c.id));
+      const validInternalIds = new Set(matchingConvs.map((c) => c.id));
 
       // Step 2: Fast indexed lookup on ConversationParticipant by (userId, conversationId)
-      const validParticipants = await this.prisma.conversationParticipant.findMany({
-        where: {
-          userId,
-          conversationId: { in: Array.from(validInternalIds) },
-          deletedAt: null,
-          leftAt: null
-        },
-        select: { conversationId: true }
-      });
+      const validParticipants =
+        await this.prisma.conversationParticipant.findMany({
+          where: {
+            userId,
+            conversationId: { in: Array.from(validInternalIds) },
+            deletedAt: null,
+            leftAt: null,
+          },
+          select: { conversationId: true },
+        });
 
-      const allowedInternalIds = new Set(validParticipants.map(p => p.conversationId));
+      const allowedInternalIds = new Set(
+        validParticipants.map((p) => p.conversationId),
+      );
 
-      matchingConvs.forEach(c => {
+      matchingConvs.forEach((c) => {
         if (allowedInternalIds.has(c.id)) {
           if (c.id) client.join(`conv_${c.id}`);
           if (c.publicId) client.join(`conv_${c.publicId}`);
@@ -1058,7 +1271,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('community:join_room')
   async handleJoinCommunityRoom(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { communityId: string }
+    @MessageBody() data: { communityId: string },
   ) {
     if (!data?.communityId) return;
     client.join(`community_${data.communityId}`);
@@ -1068,8 +1281,13 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     // presence moves far faster than that — so without this the viewer sits
     // on an old number until somebody happens to connect or disconnect.
     try {
-      const online = await this.communitiesService.countOnlineMembers(data.communityId);
-      client.emit('community:presence', { communityId: data.communityId, online });
+      const online = await this.communitiesService.countOnlineMembers(
+        data.communityId,
+      );
+      client.emit('community:presence', {
+        communityId: data.communityId,
+        online,
+      });
     } catch {
       // Non-fatal: the room join itself succeeded.
     }
@@ -1078,13 +1296,12 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('community:leave_room')
   handleLeaveCommunityRoom(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { communityId: string }
+    @MessageBody() data: { communityId: string },
   ) {
     if (data?.communityId) {
       client.leave(`community_${data.communityId}`);
     }
   }
-
 
   // ─── Instant Match Socket Handlers ──────────────────────────────────────────
   //
@@ -1098,10 +1315,18 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     const message = (err as any)?.response?.message ?? (err as any)?.message;
     // Only surface messages we raised deliberately (4xx); anything else is an
     // internal fault and gets a generic message.
-    if (typeof status === 'number' && status >= 400 && status < 500 && typeof message === 'string') {
+    if (
+      typeof status === 'number' &&
+      status >= 400 &&
+      status < 500 &&
+      typeof message === 'string'
+    ) {
       return { status: 'error' as const, error: message, code: status };
     }
-    this.logger.error(`${fallback}: ${(err as Error)?.message}`, (err as Error)?.stack);
+    this.logger.error(
+      `${fallback}: ${(err as Error)?.message}`,
+      (err as Error)?.stack,
+    );
     return { status: 'error' as const, error: fallback, code: 500 };
   }
 
@@ -1111,10 +1336,21 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @MessageBody() data: any,
   ) {
     const userId = (client as any).userId;
-    if (!userId) return { status: 'error', error: 'Unauthenticated', code: 401 };
+    if (!userId)
+      return { status: 'error', error: 'Unauthenticated', code: 401 };
 
-    if (!this.instantMatchLimiter.consume(`join:${userId}`, RATE_LIMIT_JOIN.points, RATE_LIMIT_JOIN.windowMs)) {
-      return { status: 'error', error: 'Slow down a moment before searching again', code: 429 };
+    if (
+      !this.instantMatchLimiter.consume(
+        `join:${userId}`,
+        RATE_LIMIT_JOIN.points,
+        RATE_LIMIT_JOIN.windowMs,
+      )
+    ) {
+      return {
+        status: 'error',
+        error: 'Slow down a moment before searching again',
+        code: 429,
+      };
     }
 
     try {
@@ -1129,7 +1365,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('queue:cancel')
   async handleQueueCancel(@ConnectedSocket() client: Socket) {
     const userId = (client as any).userId;
-    if (!userId) return { status: 'error', error: 'Unauthenticated', code: 401 };
+    if (!userId)
+      return { status: 'error', error: 'Unauthenticated', code: 401 };
     try {
       await this.instantMatchService.cancelQueue(userId);
       return { status: 'ok' };
@@ -1144,10 +1381,21 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @MessageBody() data: any,
   ) {
     const userId = (client as any).userId;
-    if (!userId) return { status: 'error', error: 'Unauthenticated', code: 401 };
+    if (!userId)
+      return { status: 'error', error: 'Unauthenticated', code: 401 };
 
-    if (!this.instantMatchLimiter.consume(`respond:${userId}`, RATE_LIMIT_RESPOND.points, RATE_LIMIT_RESPOND.windowMs)) {
-      return { status: 'error', error: 'Too many responses — try again shortly', code: 429 };
+    if (
+      !this.instantMatchLimiter.consume(
+        `respond:${userId}`,
+        RATE_LIMIT_RESPOND.points,
+        RATE_LIMIT_RESPOND.windowMs,
+      )
+    ) {
+      return {
+        status: 'error',
+        error: 'Too many responses — try again shortly',
+        code: 429,
+      };
     }
 
     try {
@@ -1167,7 +1415,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('queue:sync')
   async handleQueueSync(@ConnectedSocket() client: Socket) {
     const userId = (client as any).userId;
-    if (!userId) return { status: 'error', error: 'Unauthenticated', code: 401 };
+    if (!userId)
+      return { status: 'error', error: 'Unauthenticated', code: 401 };
     try {
       const state = await this.instantMatchService.getStateFor(userId);
       return { status: 'ok', state };
@@ -1187,7 +1436,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
   @SubscribeMessage('instant_match:chat_state')
   async handleInstantMatchChatState(@ConnectedSocket() client: Socket) {
     const userId = (client as any).userId;
-    if (!userId) return { status: 'error', error: 'Unauthenticated', code: 401 };
+    if (!userId)
+      return { status: 'error', error: 'Unauthenticated', code: 401 };
     try {
       const state = await this.instantMatchService.getChatStateFor(userId);
       return { status: 'ok', state };
@@ -1211,15 +1461,30 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @MessageBody() data: any,
   ) {
     const userId = (client as any).userId;
-    if (!userId) return { status: 'error', error: 'Unauthenticated', code: 401 };
+    if (!userId)
+      return { status: 'error', error: 'Unauthenticated', code: 401 };
 
-    if (!this.instantMatchLimiter.consume(`leave:${userId}`, RATE_LIMIT_RESPOND.points, RATE_LIMIT_RESPOND.windowMs)) {
-      return { status: 'error', error: 'Too many requests — try again shortly', code: 429 };
+    if (
+      !this.instantMatchLimiter.consume(
+        `leave:${userId}`,
+        RATE_LIMIT_RESPOND.points,
+        RATE_LIMIT_RESPOND.windowMs,
+      )
+    ) {
+      return {
+        status: 'error',
+        error: 'Too many requests — try again shortly',
+        code: 429,
+      };
     }
 
     try {
-      const matchId = typeof data?.matchId === 'string' ? data.matchId.trim() : undefined;
-      const result = await this.instantMatchService.leaveChatSession(userId, matchId || undefined);
+      const matchId =
+        typeof data?.matchId === 'string' ? data.matchId.trim() : undefined;
+      const result = await this.instantMatchService.leaveChatSession(
+        userId,
+        matchId || undefined,
+      );
       return { status: 'ok', ended: result.ended, state: result.session };
     } catch (err) {
       return this.instantMatchAck(err, 'Could not leave this match');
@@ -1252,7 +1517,10 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     this.server?.to(userId).emit('match:accepted', payload);
   }
 
-  emitMatchDeclined(userId: string, payload: { reason: string; requeued: boolean }) {
+  emitMatchDeclined(
+    userId: string,
+    payload: { reason: string; requeued: boolean },
+  ) {
     this.server?.to(userId).emit('match:declined', payload);
   }
 

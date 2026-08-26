@@ -1,4 +1,10 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { config } from '../../config';
@@ -15,9 +21,15 @@ export class AdminGuard implements CanActivate {
 
     // 1. Check API Key header for external Super Admin microservices/webapps
     const superAdminApiKey = config.auth.admin.superAdminApiKey;
-    const requestApiKey = request.headers['x-super-admin-api-key'] || request.headers['x-admin-secret'];
+    const requestApiKey =
+      request.headers['x-super-admin-api-key'] ||
+      request.headers['x-admin-secret'];
 
-    if (superAdminApiKey && requestApiKey && requestApiKey === superAdminApiKey) {
+    if (
+      superAdminApiKey &&
+      requestApiKey &&
+      requestApiKey === superAdminApiKey
+    ) {
       request.adminAuthType = 'API_KEY';
       return true;
     }
@@ -38,13 +50,21 @@ export class AdminGuard implements CanActivate {
       throw new UnauthorizedException('User not found');
     }
 
-    if (dbUser.accountStatus === 'BANNED' || dbUser.accountStatus === 'SUSPENDED') {
+    if (
+      dbUser.accountStatus === 'BANNED' ||
+      dbUser.accountStatus === 'SUSPENDED'
+    ) {
       throw new ForbiddenException('Account suspended');
     }
 
-    const isAuthorizedRole = dbUser.role === 'ADMIN' || dbUser.role === 'SUPER_ADMIN' || dbUser.role === 'MODERATOR';
+    const isAuthorizedRole =
+      dbUser.role === 'ADMIN' ||
+      dbUser.role === 'SUPER_ADMIN' ||
+      dbUser.role === 'MODERATOR';
     if (!isAuthorizedRole) {
-      throw new ForbiddenException('Super Admin or Moderator privilege required');
+      throw new ForbiddenException(
+        'Super Admin or Moderator privilege required',
+      );
     }
 
     request.dbUser = dbUser;

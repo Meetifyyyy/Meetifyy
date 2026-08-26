@@ -9,7 +9,11 @@
 /** Leading byte signatures for the types the support form accepts. */
 const SIGNATURES: Array<{ mime: string; offset: number; bytes: number[] }> = [
   { mime: 'image/jpeg', offset: 0, bytes: [0xff, 0xd8, 0xff] },
-  { mime: 'image/png', offset: 0, bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+  {
+    mime: 'image/png',
+    offset: 0,
+    bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  },
   { mime: 'image/gif', offset: 0, bytes: [0x47, 0x49, 0x46, 0x38] },
   { mime: 'application/pdf', offset: 0, bytes: [0x25, 0x50, 0x44, 0x46, 0x2d] },
 ];
@@ -27,7 +31,10 @@ export function sniffMimeType(buffer: Buffer): string | null {
 
   // WEBP is a RIFF container: "RIFF" .... "WEBP". Checking only "RIFF" would
   // also match WAV and AVI, so both halves are required.
-  if (buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+  if (
+    buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    buffer.subarray(8, 12).toString('ascii') === 'WEBP'
+  ) {
     return 'image/webp';
   }
 

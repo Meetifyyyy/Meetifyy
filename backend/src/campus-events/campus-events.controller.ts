@@ -35,7 +35,9 @@ export class CampusEventsController {
   ) {
     const s = (scope || 'upcoming') as CampusEventScope;
     if (!CAMPUS_EVENT_SCOPES.includes(s)) {
-      throw new BadRequestException('scope must be one of: upcoming, ongoing, past');
+      throw new BadRequestException(
+        'scope must be one of: upcoming, ongoing, past',
+      );
     }
     const parsedLimit = limit ? parseInt(limit, 10) : 20;
     return this.service.listByScope(user?.id, s, {

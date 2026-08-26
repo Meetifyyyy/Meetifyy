@@ -1,4 +1,14 @@
-import { Controller, Get, Param, Post, Patch, Delete, Query, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Patch,
+  Delete,
+  Query,
+  Body,
+  UseGuards,
+} from '@nestjs/common';
 import { ActivitiesService } from './activities.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -17,12 +27,20 @@ export class ActivitiesController {
     @CurrentUser() user: any,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
-    @Query('scope') scope?: string
+    @Query('scope') scope?: string,
   ) {
     const rawLimit = parseInt(limit || '', 10);
     const parsedLimit = !isNaN(rawLimit) && rawLimit > 0 ? rawLimit : 20;
-    const allowedScopes = ['public', 'college', 'campus', 'one_on_one', 'for_you'] as const;
-    const parsedScope = (allowedScopes as readonly string[]).includes(scope || '')
+    const allowedScopes = [
+      'public',
+      'college',
+      'campus',
+      'one_on_one',
+      'for_you',
+    ] as const;
+    const parsedScope = (allowedScopes as readonly string[]).includes(
+      scope || '',
+    )
       ? (scope as 'public' | 'college' | 'campus' | 'one_on_one' | 'for_you')
       : 'public';
 
@@ -31,7 +49,12 @@ export class ActivitiesController {
     if (parsedScope === 'for_you') {
       return this.activitiesService.getForYouFeed(user.id, parsedLimit, cursor);
     }
-    return this.activitiesService.getAllActivities(user?.id, parsedLimit, cursor, parsedScope);
+    return this.activitiesService.getAllActivities(
+      user?.id,
+      parsedLimit,
+      cursor,
+      parsedScope,
+    );
   }
 
   @Get('discover')
@@ -50,10 +73,14 @@ export class ActivitiesController {
   async getSavedActivities(
     @CurrentUser() user: any,
     @Query('limit') limit?: string,
-    @Query('cursor') cursor?: string
+    @Query('cursor') cursor?: string,
   ) {
     const parsedLimit = limit ? parseInt(limit, 10) : 20;
-    return this.activitiesService.getSavedActivities(user.id, parsedLimit, cursor);
+    return this.activitiesService.getSavedActivities(
+      user.id,
+      parsedLimit,
+      cursor,
+    );
   }
 
   @Get('bookmarks/ids')
@@ -69,7 +96,7 @@ export class ActivitiesController {
   @Post('invitations/:invitationId/accept')
   async acceptInvitation(
     @Param('invitationId') invitationId: string,
-    @CurrentUser() user: any
+    @CurrentUser() user: any,
   ) {
     return this.activitiesService.acceptInvitation(invitationId, user.id);
   }
@@ -77,7 +104,7 @@ export class ActivitiesController {
   @Post('invitations/:invitationId/decline')
   async declineInvitation(
     @Param('invitationId') invitationId: string,
-    @CurrentUser() user: any
+    @CurrentUser() user: any,
   ) {
     return this.activitiesService.declineInvitation(invitationId, user.id);
   }
@@ -120,7 +147,10 @@ export class ActivitiesController {
   }
 
   @Post()
-  async createActivity(@Body() data: CreateActivityDto, @CurrentUser() user: any) {
+  async createActivity(
+    @Body() data: CreateActivityDto,
+    @CurrentUser() user: any,
+  ) {
     return this.activitiesService.createActivity(data, user.id);
   }
 
@@ -134,7 +164,11 @@ export class ActivitiesController {
     @Body('visibility') visibility: string,
     @CurrentUser() user: any,
   ) {
-    return this.activitiesService.updateActivityVisibility(id, user.id, visibility);
+    return this.activitiesService.updateActivityVisibility(
+      id,
+      user.id,
+      visibility,
+    );
   }
 
   @Post(':id/join')
@@ -148,7 +182,10 @@ export class ActivitiesController {
   }
 
   @Post(':id/decline')
-  async declineCrewInvitation(@Param('id') id: string, @CurrentUser() user: any) {
+  async declineCrewInvitation(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+  ) {
     return this.activitiesService.declineCrewInvitation(id, user.id);
   }
 
@@ -166,7 +203,7 @@ export class ActivitiesController {
   async inviteFriends(
     @Param('id') id: string,
     @Body('userIds') userIds: string[],
-    @CurrentUser() user: any
+    @CurrentUser() user: any,
   ) {
     return this.activitiesService.inviteFriends(id, user.id, userIds);
   }
@@ -184,7 +221,7 @@ export class ActivitiesController {
   @Get(':id/invitations/status')
   async getInvitationStatuses(
     @Param('id') id: string,
-    @CurrentUser() user: any
+    @CurrentUser() user: any,
   ) {
     return this.activitiesService.getInvitationStatuses(id, user.id);
   }

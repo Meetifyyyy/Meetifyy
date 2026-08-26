@@ -1,4 +1,15 @@
-import { IsString, IsOptional, IsArray, IsBoolean, IsObject, IsNumber, Min, Max, ValidateNested, ArrayMaxSize } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsBoolean,
+  IsObject,
+  IsNumber,
+  Min,
+  Max,
+  ValidateNested,
+  ArrayMaxSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { MentionDto } from '../../../common/dto/mention.dto';
 

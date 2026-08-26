@@ -1,4 +1,13 @@
-import { IsString, IsOptional, IsBoolean, MaxLength, IsDateString, IsNumber, Matches, IsIn } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  MaxLength,
+  IsDateString,
+  IsNumber,
+  Matches,
+  IsIn,
+} from 'class-validator';
 
 export class CreateActivityDto {
   @IsString()
@@ -37,7 +46,9 @@ export class CreateActivityDto {
    */
   @IsString()
   @IsOptional()
-  @Matches(/^#[0-9a-fA-F]{6}$/, { message: 'coverColor must be a #RRGGBB hex colour' })
+  @Matches(/^#[0-9a-fA-F]{6}$/, {
+    message: 'coverColor must be a #RRGGBB hex colour',
+  })
   coverColor?: string;
 
   @IsDateString()

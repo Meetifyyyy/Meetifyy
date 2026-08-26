@@ -1,4 +1,10 @@
-import { IsEnum, IsString, IsOptional, MaxLength, IsObject } from 'class-validator';
+import {
+  IsEnum,
+  IsString,
+  IsOptional,
+  MaxLength,
+  IsObject,
+} from 'class-validator';
 import { ReportTargetType, ReportReason } from '@prisma/client';
 
 export class SubmitReportDto {

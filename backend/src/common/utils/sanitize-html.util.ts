@@ -13,10 +13,38 @@ import sanitizeHtml from 'sanitize-html';
  */
 
 /** Formatting an admin can apply in a reply, and nothing that can execute. */
-const REPLY_TAGS = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'ul', 'ol', 'li', 'a', 'blockquote', 'code', 'pre', 'span'];
+const REPLY_TAGS = [
+  'p',
+  'br',
+  'strong',
+  'b',
+  'em',
+  'i',
+  'u',
+  'ul',
+  'ol',
+  'li',
+  'a',
+  'blockquote',
+  'code',
+  'pre',
+  'span',
+];
 
 /** Articles additionally get headings and tables. */
-const ARTICLE_TAGS = [...REPLY_TAGS, 'h2', 'h3', 'h4', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td'];
+const ARTICLE_TAGS = [
+  ...REPLY_TAGS,
+  'h2',
+  'h3',
+  'h4',
+  'hr',
+  'table',
+  'thead',
+  'tbody',
+  'tr',
+  'th',
+  'td',
+];
 
 const BASE_OPTIONS: sanitizeHtml.IOptions = {
   allowedAttributes: {
@@ -35,16 +63,26 @@ const BASE_OPTIONS: sanitizeHtml.IOptions = {
   disallowedTagsMode: 'discard',
   transformTags: {
     // Every surviving link is untrusted and opens off-site.
-    a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer nofollow', target: '_blank' }, true),
+    a: sanitizeHtml.simpleTransform(
+      'a',
+      { rel: 'noopener noreferrer nofollow', target: '_blank' },
+      true,
+    ),
   },
 };
 
 export function sanitizeReplyHtml(dirty: string): string {
-  return sanitizeHtml(dirty ?? '', { ...BASE_OPTIONS, allowedTags: REPLY_TAGS });
+  return sanitizeHtml(dirty ?? '', {
+    ...BASE_OPTIONS,
+    allowedTags: REPLY_TAGS,
+  });
 }
 
 export function sanitizeArticleHtml(dirty: string): string {
-  return sanitizeHtml(dirty ?? '', { ...BASE_OPTIONS, allowedTags: ARTICLE_TAGS });
+  return sanitizeHtml(dirty ?? '', {
+    ...BASE_OPTIONS,
+    allowedTags: ARTICLE_TAGS,
+  });
 }
 
 /**
@@ -57,7 +95,10 @@ export function htmlToPlainText(html: string): string {
     allowedAttributes: {},
     nonTextTags: ['script', 'style', 'textarea', 'option', 'noscript'],
     // Without this, `<p>a</p><p>b</p>` collapses to "ab".
-    textFilter: (t, tagName) => (['p', 'br', 'li', 'h2', 'h3', 'h4', 'tr'].includes(tagName) ? `${t}\n` : t),
+    textFilter: (t, tagName) =>
+      ['p', 'br', 'li', 'h2', 'h3', 'h4', 'tr'].includes(tagName)
+        ? `${t}\n`
+        : t,
   });
   return text
     .replace(/&amp;/g, '&')

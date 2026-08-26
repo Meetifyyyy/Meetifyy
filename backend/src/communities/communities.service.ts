@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
@@ -6,7 +12,11 @@ import { PresenceService } from '../presence/presence.service';
 import { BlocksService } from '../users/blocks.service';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
 import Redis from 'ioredis';
-import { roleCan, moderatorPermissions, type CommunityRoleName } from './moderator-permissions';
+import {
+  roleCan,
+  moderatorPermissions,
+  type CommunityRoleName,
+} from './moderator-permissions';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 
@@ -15,7 +25,10 @@ export class CommunitiesService implements OnModuleInit {
   private readonly logger = new Logger('CommunitiesService');
   private redis: Redis | null = null;
   // In-process fallback used only when Redis is unavailable
-  private readonly localFallback = new Map<string, { data: any[]; timestamp: number }>();
+  private readonly localFallback = new Map<
+    string,
+    { data: any[]; timestamp: number }
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -32,21 +45,42 @@ export class CommunitiesService implements OnModuleInit {
 
   async onModuleInit() {
     try {
-      await this.prisma.$executeRawUnsafe(`ALTER TYPE "CommunityRole" ADD VALUE IF NOT EXISTS 'OWNER'`).catch(() => {});
-      await this.prisma.$executeRawUnsafe(`ALTER TYPE "CommunityRole" ADD VALUE IF NOT EXISTS 'MODERATOR'`).catch(() => {});
+      await this.prisma
+        .$executeRawUnsafe(
+          `ALTER TYPE "CommunityRole" ADD VALUE IF NOT EXISTS 'OWNER'`,
+        )
+        .catch(() => {});
+      await this.prisma
+        .$executeRawUnsafe(
+          `ALTER TYPE "CommunityRole" ADD VALUE IF NOT EXISTS 'MODERATOR'`,
+        )
+        .catch(() => {});
       const communities = await this.prisma.community.findMany({
         where: { ownerId: { not: null }, deletedAt: null },
-        select: { id: true, ownerId: true }
+        select: { id: true, ownerId: true },
       });
       for (const comm of communities) {
         if (!comm.ownerId) continue;
-        await this.prisma.communityMember.upsert({
-          where: { userId_communityId: { userId: comm.ownerId, communityId: comm.id } },
-          create: { userId: comm.ownerId, communityId: comm.id, role: 'OWNER' },
-          update: { role: 'OWNER' }
-        }).catch(() => {});
+        await this.prisma.communityMember
+          .upsert({
+            where: {
+              userId_communityId: {
+                userId: comm.ownerId,
+                communityId: comm.id,
+              },
+            },
+            create: {
+              userId: comm.ownerId,
+              communityId: comm.id,
+              role: 'OWNER',
+            },
+            update: { role: 'OWNER' },
+          })
+          .catch(() => {});
       }
-      this.logger.log(`Repaired owner roles for ${communities.length} communities.`);
+      this.logger.log(
+        `Repaired owner roles for ${communities.length} communities.`,
+      );
       await this.invalidateCommunityCache();
     } catch (e: any) {
       if (e?.message?.includes('Cannot use a pool after calling end')) return;
@@ -71,7 +105,9 @@ export class CommunitiesService implements OnModuleInit {
       try {
         const raw = await this.redis.get(`communities:${key}`);
         if (raw) return JSON.parse(raw);
-      } catch { /* fallthrough to local */ }
+      } catch {
+        /* fallthrough to local */
+      }
     }
     const local = this.localFallback.get(key);
     if (local) {
@@ -81,14 +117,20 @@ export class CommunitiesService implements OnModuleInit {
     return null;
   }
 
-  private async setCachedList(key: string, data: any[], ttlSeconds = 60): Promise<void> {
+  private async setCachedList(
+    key: string,
+    data: any[],
+    ttlSeconds = 60,
+  ): Promise<void> {
     const redisKey = `communities:${key}`;
     if (this.redis) {
       try {
         await this.redis.set(redisKey, JSON.stringify(data), 'EX', ttlSeconds);
         this.registerListCacheKey(redisKey);
         return;
-      } catch { /* fallthrough to local */ }
+      } catch {
+        /* fallthrough to local */
+      }
     }
     this.localFallback.set(key, { data, timestamp: Date.now() });
   }
@@ -104,17 +146,26 @@ export class CommunitiesService implements OnModuleInit {
     }
   }
 
-  private async setCachedCommunity(id: string, data: any, ttlSeconds = 60): Promise<void> {
+  private async setCachedCommunity(
+    id: string,
+    data: any,
+    ttlSeconds = 60,
+  ): Promise<void> {
     if (!this.redis) return;
     try {
       const redisKey = `community:${id}`;
       await this.redis.set(redisKey, JSON.stringify(data), 'EX', ttlSeconds);
       this.registerListCacheKey(redisKey);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   /** Backing store for the in-process collegeId cache (see below). */
-  private static readonly collegeIdCache = new Map<string, { collegeId: string; expiresAt: number }>();
+  private static readonly collegeIdCache = new Map<
+    string,
+    { collegeId: string; expiresAt: number }
+  >();
   private static readonly COLLEGE_ID_TTL_MS = 10 * 60 * 1000;
   private static readonly COLLEGE_ID_CACHE_MAX = 10_000;
 
@@ -136,7 +187,10 @@ export class CommunitiesService implements OnModuleInit {
     return null;
   }
 
-  private async setCachedCollegeId(userId: string, collegeId: string): Promise<void> {
+  private async setCachedCollegeId(
+    userId: string,
+    collegeId: string,
+  ): Promise<void> {
     const cache = CommunitiesService.collegeIdCache;
     if (cache.size >= CommunitiesService.COLLEGE_ID_CACHE_MAX) {
       const now = Date.now();
@@ -146,7 +200,10 @@ export class CommunitiesService implements OnModuleInit {
         if (oldest) cache.delete(oldest);
       }
     }
-    cache.set(userId, { collegeId, expiresAt: Date.now() + CommunitiesService.COLLEGE_ID_TTL_MS });
+    cache.set(userId, {
+      collegeId,
+      expiresAt: Date.now() + CommunitiesService.COLLEGE_ID_TTL_MS,
+    });
   }
 
   /**
@@ -158,11 +215,16 @@ export class CommunitiesService implements OnModuleInit {
    * @param communityId  Specific community detail key to invalidate.
    * @param collegeId    Unused — campus list keys are all registered in the tag-Set.
    */
-  private async invalidateCommunityCache(communityId?: string, collegeId?: string): Promise<void> {
+  private async invalidateCommunityCache(
+    communityId?: string,
+    collegeId?: string,
+  ): Promise<void> {
     if (this.redis) {
       try {
         // Fetch all registered list/detail keys from the tag Set
-        const taggedKeys = await this.redis.smembers(CommunitiesService.LIST_TAG);
+        const taggedKeys = await this.redis.smembers(
+          CommunitiesService.LIST_TAG,
+        );
         const toDelete = [...taggedKeys];
 
         // Also delete the specific detail key if provided (may not be in tag-Set yet)
@@ -176,7 +238,9 @@ export class CommunitiesService implements OnModuleInit {
         }
         // Clean the tag-Set itself so it is re-seeded cleanly
         await this.redis.del(CommunitiesService.LIST_TAG);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     // Targeted local fallback deletion instead of clear-all
     if (communityId) {
@@ -205,7 +269,7 @@ export class CommunitiesService implements OnModuleInit {
     }
 
     if (!userId || communities.length === 0) {
-      return communities.map(c => ({
+      return communities.map((c) => ({
         ...c,
         isJoined: false,
         userRole: null,
@@ -213,24 +277,31 @@ export class CommunitiesService implements OnModuleInit {
     }
 
     const userMemberships = await this.prisma.communityMember.findMany({
-      where: { userId, communityId: { in: communities.map(c => c.id) } },
+      where: { userId, communityId: { in: communities.map((c) => c.id) } },
       select: { communityId: true, role: true },
     });
 
-    const membershipMap = new Map(userMemberships.map(m => [m.communityId, m.role]));
+    const membershipMap = new Map(
+      userMemberships.map((m) => [m.communityId, m.role]),
+    );
 
-    return communities.map(c => {
+    return communities.map((c) => {
       const isOwner = Boolean(c.ownerId && c.ownerId === userId);
       const isMember = membershipMap.has(c.id);
       return {
         ...c,
         isJoined: isMember || isOwner,
-        userRole: isOwner ? 'OWNER' : (membershipMap.get(c.id) || null),
+        userRole: isOwner ? 'OWNER' : membershipMap.get(c.id) || null,
       };
     });
   }
 
-  async getCampusCommunities(userId: string, limit = 30, offset = 0, search?: string) {
+  async getCampusCommunities(
+    userId: string,
+    limit = 30,
+    offset = 0,
+    search?: string,
+  ) {
     if (!userId) return [];
 
     // Try Redis first — avoids a DB round-trip for the collegeId lookup
@@ -250,7 +321,12 @@ export class CommunitiesService implements OnModuleInit {
       ? {
           OR: [
             { name: { contains: searchTerm, mode: 'insensitive' as const } },
-            { description: { contains: searchTerm, mode: 'insensitive' as const } },
+            {
+              description: {
+                contains: searchTerm,
+                mode: 'insensitive' as const,
+              },
+            },
           ],
         }
       : {};
@@ -260,7 +336,12 @@ export class CommunitiesService implements OnModuleInit {
     let communities = searchTerm ? null : await this.getCachedList(cacheKey);
     if (!communities) {
       communities = await this.prisma.community.findMany({
-        where: { deletedAt: null, isCampusCommunity: true, collegeId, ...searchWhere },
+        where: {
+          deletedAt: null,
+          isCampusCommunity: true,
+          collegeId,
+          ...searchWhere,
+        },
         orderBy: { memberCount: 'desc' },
         take: limit,
         skip: offset,
@@ -271,19 +352,21 @@ export class CommunitiesService implements OnModuleInit {
     if (communities.length === 0) return [];
 
     const userMemberships = await this.prisma.communityMember.findMany({
-      where: { userId, communityId: { in: communities.map(c => c.id) } },
+      where: { userId, communityId: { in: communities.map((c) => c.id) } },
       select: { communityId: true, role: true },
     });
 
-    const membershipMap = new Map(userMemberships.map(m => [m.communityId, m.role]));
+    const membershipMap = new Map(
+      userMemberships.map((m) => [m.communityId, m.role]),
+    );
 
-    return communities.map(c => {
+    return communities.map((c) => {
       const isOwner = Boolean(c.ownerId && c.ownerId === userId);
       const isMember = membershipMap.has(c.id);
       return {
         ...c,
         isJoined: isMember || isOwner,
-        userRole: isOwner ? 'OWNER' : (membershipMap.get(c.id) || null),
+        userRole: isOwner ? 'OWNER' : membershipMap.get(c.id) || null,
       };
     });
   }
@@ -298,7 +381,12 @@ export class CommunitiesService implements OnModuleInit {
         where: { id },
         include: {
           owner: {
-            select: { id: true, username: true, displayName: true, avatar: true },
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatar: true,
+            },
           },
           college: {
             select: { id: true, name: true, shortName: true },
@@ -364,12 +452,17 @@ export class CommunitiesService implements OnModuleInit {
           community.members.map((m: any) => m.userId).filter(Boolean),
         ),
       );
-      community.members = community.members.filter((m: any) => visibleIds.has(m.userId));
+      community.members = community.members.filter((m: any) =>
+        visibleIds.has(m.userId),
+      );
     }
 
     if (community.members) {
-      const memberUserIds = community.members.map((m: any) => m.userId).filter(Boolean);
-      const presenceMap = await this.presenceService.getPresenceMany(memberUserIds);
+      const memberUserIds = community.members
+        .map((m: any) => m.userId)
+        .filter(Boolean);
+      const presenceMap =
+        await this.presenceService.getPresenceMany(memberUserIds);
 
       community.members.forEach((m: any) => {
         if (community.ownerId && m.userId === community.ownerId) {
@@ -387,12 +480,14 @@ export class CommunitiesService implements OnModuleInit {
       });
     }
 
-    const isOwner = Boolean(userId && community.ownerId && community.ownerId === userId);
+    const isOwner = Boolean(
+      userId && community.ownerId && community.ownerId === userId,
+    );
     const currentMember = userId
       ? community.members.find((m: any) => m.userId === userId)
       : null;
     const isJoined = !!currentMember || isOwner;
-    const userRole = isOwner ? 'OWNER' : (currentMember?.role || null);
+    const userRole = isOwner ? 'OWNER' : currentMember?.role || null;
 
     // Eligibility check for Campus communities
     let isEligibleToJoin = true;
@@ -414,7 +509,10 @@ export class CommunitiesService implements OnModuleInit {
         }
       }
 
-      if (!requestingUserCollegeId || requestingUserCollegeId !== community.collegeId) {
+      if (
+        !requestingUserCollegeId ||
+        requestingUserCollegeId !== community.collegeId
+      ) {
         isEligibleToJoin = false;
         const collegeName = community.college?.name || 'this college';
         eligibilityMessage = `You're not eligible to join this community. This community is limited to verified students of ${collegeName}.`;
@@ -459,7 +557,10 @@ export class CommunitiesService implements OnModuleInit {
    * One indexed id-only read plus a single Redis MGET, so this stays cheap
    * even on a community with thousands of members.
    */
-  async countOnlineMembers(communityId: string, ownerId?: string | null): Promise<number> {
+  async countOnlineMembers(
+    communityId: string,
+    ownerId?: string | null,
+  ): Promise<number> {
     try {
       const members = await this.prisma.communityMember.findMany({
         where: { communityId },
@@ -499,10 +600,12 @@ export class CommunitiesService implements OnModuleInit {
           select: { id: true },
         }),
       ]);
-      return [...new Set([
-        ...memberships.map((m) => m.communityId),
-        ...owned.map((c) => c.id),
-      ])];
+      return [
+        ...new Set([
+          ...memberships.map((m) => m.communityId),
+          ...owned.map((c) => c.id),
+        ]),
+      ];
     } catch {
       return [];
     }
@@ -513,19 +616,23 @@ export class CommunitiesService implements OnModuleInit {
       where: { id: communityId },
       include: { college: { select: { name: true } } },
     });
-    if (!community || community.deletedAt) throw new NotFoundException('Community not found');
+    if (!community || community.deletedAt)
+      throw new NotFoundException('Community not found');
 
     // 1. Campus Eligibility Check
     if (community.isCampusCommunity && community.collegeId) {
       let userCollegeId = await this.getCachedCollegeId(userId);
       if (!userCollegeId) {
-        const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { collegeId: true } });
+        const u = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { collegeId: true },
+        });
         userCollegeId = u?.collegeId || null;
       }
       if (!userCollegeId || userCollegeId !== community.collegeId) {
         const collegeName = community.college?.name || 'this college';
         throw new ForbiddenException(
-          `You're not eligible to join this community. This community is limited to verified students of ${collegeName}.`
+          `You're not eligible to join this community. This community is limited to verified students of ${collegeName}.`,
         );
       }
     }
@@ -535,7 +642,8 @@ export class CommunitiesService implements OnModuleInit {
       const existingMember = await this.prisma.communityMember.findUnique({
         where: { userId_communityId: { userId, communityId } },
       });
-      if (existingMember) return { success: true, status: 'MEMBER', isJoined: true };
+      if (existingMember)
+        return { success: true, status: 'MEMBER', isJoined: true };
 
       await this.prisma.communityJoinRequest.upsert({
         where: { communityId_userId: { communityId, userId } },
@@ -544,7 +652,11 @@ export class CommunitiesService implements OnModuleInit {
       });
 
       if (community.ownerId) {
-        this.domainEventService.emit('community.joinRequested', { communityId, userId, ownerId: community.ownerId });
+        this.domainEventService.emit('community.joinRequested', {
+          communityId,
+          userId,
+          ownerId: community.ownerId,
+        });
       }
 
       return {
@@ -579,8 +691,15 @@ export class CommunitiesService implements OnModuleInit {
       });
 
       if (joined) {
-        this.domainEventService.emit('community.memberJoined', { communityId, userId, memberCount: newCount });
-        await this.invalidateCommunityCache(communityId, community.collegeId ?? undefined);
+        this.domainEventService.emit('community.memberJoined', {
+          communityId,
+          userId,
+          memberCount: newCount,
+        });
+        await this.invalidateCommunityCache(
+          communityId,
+          community.collegeId ?? undefined,
+        );
       }
 
       return { success: true, status: 'MEMBER', isJoined: true };
@@ -598,9 +717,11 @@ export class CommunitiesService implements OnModuleInit {
 
     const isOwnerOrMod =
       community?.ownerId === requestingUserId ||
-      roleCan(member?.role as CommunityRoleName, 'REVIEW_JOIN_REQUESTS');
+      roleCan(member?.role, 'REVIEW_JOIN_REQUESTS');
     if (!isOwnerOrMod) {
-      throw new ForbiddenException('Only community owners or moderators can view join requests');
+      throw new ForbiddenException(
+        'Only community owners or moderators can view join requests',
+      );
     }
 
     return this.prisma.communityJoinRequest.findMany({
@@ -619,7 +740,11 @@ export class CommunitiesService implements OnModuleInit {
     });
   }
 
-  async acceptJoinRequest(communityId: string, requestId: string, requestingUserId: string) {
+  async acceptJoinRequest(
+    communityId: string,
+    requestId: string,
+    requestingUserId: string,
+  ) {
     const member = await this.prisma.communityMember.findUnique({
       where: { userId_communityId: { userId: requestingUserId, communityId } },
     });
@@ -630,12 +755,16 @@ export class CommunitiesService implements OnModuleInit {
 
     const isOwnerOrMod =
       community?.ownerId === requestingUserId ||
-      roleCan(member?.role as CommunityRoleName, 'REVIEW_JOIN_REQUESTS');
+      roleCan(member?.role, 'REVIEW_JOIN_REQUESTS');
     if (!isOwnerOrMod) {
-      throw new ForbiddenException('Only community owners or moderators can manage join requests');
+      throw new ForbiddenException(
+        'Only community owners or moderators can manage join requests',
+      );
     }
 
-    const joinReq = await this.prisma.communityJoinRequest.findUnique({ where: { id: requestId } });
+    const joinReq = await this.prisma.communityJoinRequest.findUnique({
+      where: { id: requestId },
+    });
     if (!joinReq || joinReq.communityId !== communityId) {
       throw new NotFoundException('Join request not found');
     }
@@ -659,7 +788,10 @@ export class CommunitiesService implements OnModuleInit {
       newMemberCount = updated.memberCount;
     });
 
-    await this.invalidateCommunityCache(communityId, community?.collegeId ?? undefined);
+    await this.invalidateCommunityCache(
+      communityId,
+      community?.collegeId ?? undefined,
+    );
     this.domainEventService.emit('community.requestAccepted', {
       communityId,
       userId: joinReq.userId,
@@ -668,7 +800,11 @@ export class CommunitiesService implements OnModuleInit {
     return { success: true };
   }
 
-  async declineJoinRequest(communityId: string, requestId: string, requestingUserId: string) {
+  async declineJoinRequest(
+    communityId: string,
+    requestId: string,
+    requestingUserId: string,
+  ) {
     const member = await this.prisma.communityMember.findUnique({
       where: { userId_communityId: { userId: requestingUserId, communityId } },
     });
@@ -679,12 +815,16 @@ export class CommunitiesService implements OnModuleInit {
 
     const isOwnerOrMod =
       community?.ownerId === requestingUserId ||
-      roleCan(member?.role as CommunityRoleName, 'REVIEW_JOIN_REQUESTS');
+      roleCan(member?.role, 'REVIEW_JOIN_REQUESTS');
     if (!isOwnerOrMod) {
-      throw new ForbiddenException('Only community owners or moderators can manage join requests');
+      throw new ForbiddenException(
+        'Only community owners or moderators can manage join requests',
+      );
     }
 
-    const joinReq = await this.prisma.communityJoinRequest.findUnique({ where: { id: requestId } });
+    const joinReq = await this.prisma.communityJoinRequest.findUnique({
+      where: { id: requestId },
+    });
     if (!joinReq || joinReq.communityId !== communityId) {
       throw new NotFoundException('Join request not found');
     }
@@ -694,16 +834,24 @@ export class CommunitiesService implements OnModuleInit {
       data: { status: 'DECLINED' },
     });
 
-    this.domainEventService.emit('community.requestDeclined', { communityId, userId: joinReq.userId });
+    this.domainEventService.emit('community.requestDeclined', {
+      communityId,
+      userId: joinReq.userId,
+    });
     return { success: true };
   }
 
   async leaveCommunity(communityId: string, userId: string) {
-    const community = await this.prisma.community.findUnique({ where: { id: communityId } });
-    if (!community || community.deletedAt) throw new NotFoundException('Community not found');
+    const community = await this.prisma.community.findUnique({
+      where: { id: communityId },
+    });
+    if (!community || community.deletedAt)
+      throw new NotFoundException('Community not found');
 
     if (community.ownerId === userId) {
-      throw new ForbiddenException('Community owner cannot leave without transferring ownership');
+      throw new ForbiddenException(
+        'Community owner cannot leave without transferring ownership',
+      );
     }
 
     const lockKey = `toggle:join:${userId}:${communityId}`;
@@ -712,25 +860,32 @@ export class CommunitiesService implements OnModuleInit {
       let newCount = community.memberCount;
       const left = await this.prisma.$transaction(async (tx) => {
         const existing = await tx.communityMember.findUnique({
-          where: { userId_communityId: { userId, communityId } }
+          where: { userId_communityId: { userId, communityId } },
         });
         if (!existing) return false;
 
         await tx.communityMember.delete({
-          where: { userId_communityId: { userId, communityId } }
+          where: { userId_communityId: { userId, communityId } },
         });
         const updated = await tx.community.update({
           where: { id: communityId },
           data: { memberCount: { decrement: 1 } },
-          select: { memberCount: true }
+          select: { memberCount: true },
         });
         newCount = Math.max(0, updated.memberCount);
         return true;
       });
 
       if (left) {
-        this.domainEventService.emit('community.memberLeft', { communityId, userId, memberCount: newCount });
-        await this.invalidateCommunityCache(communityId, community.collegeId ?? undefined);
+        this.domainEventService.emit('community.memberLeft', {
+          communityId,
+          userId,
+          memberCount: newCount,
+        });
+        await this.invalidateCommunityCache(
+          communityId,
+          community.collegeId ?? undefined,
+        );
       }
 
       return { success: true };
@@ -762,9 +917,14 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   async createCommunity(data: any, creatorId: string) {
-    const rawSlug = (data.name || 'community').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const rawSlug = (data.name || 'community')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
     const slug = rawSlug || `community-${Date.now()}`;
-    const existing = await this.prisma.community.findUnique({ where: { slug } });
+    const existing = await this.prisma.community.findUnique({
+      where: { slug },
+    });
     const finalSlug = existing ? `${slug}-${Date.now()}` : slug;
 
     // Every new community starts with the platform defaults, stored on the
@@ -788,18 +948,27 @@ export class CommunitiesService implements OnModuleInit {
       slug: finalSlug,
       memberCount: 1,
       owner: { connect: { id: creatorId } },
-      isPrivate: data.isPrivate !== undefined ? Boolean(data.isPrivate) : (data.privacy === 'private'),
+      isPrivate:
+        data.isPrivate !== undefined
+          ? Boolean(data.isPrivate)
+          : data.privacy === 'private',
       // The colour picked at creation. It was never written, so every community
       // fell back to the theme primary wherever it was drawn without a picture,
       // and the palette choice made in the create dialog was silently discarded.
-      color: typeof data.color === 'string' && data.color.trim() ? data.color.trim().slice(0, 200) : null,
+      color:
+        typeof data.color === 'string' && data.color.trim()
+          ? data.color.trim().slice(0, 200)
+          : null,
       members: {
-        create: [{ userId: creatorId, role: 'OWNER' }]
-      }
+        create: [{ userId: creatorId, role: 'OWNER' }],
+      },
     };
 
     if (data.isCampusCommunity || data.privacy === 'campus') {
-      const user = await this.prisma.user.findUnique({ where: { id: creatorId }, select: { collegeId: true } });
+      const user = await this.prisma.user.findUnique({
+        where: { id: creatorId },
+        select: { collegeId: true },
+      });
       if (user?.collegeId) {
         createData.isCampusCommunity = true;
         createData.college = { connect: { id: user.collegeId } };
@@ -808,17 +977,39 @@ export class CommunitiesService implements OnModuleInit {
 
     if (avatarVal && typeof avatarVal === 'string') {
       if (avatarVal.startsWith('/api/media/')) {
-        createData.avatarMedia = { connect: { objectKey: avatarVal.replace('/api/media/', '') } };
+        createData.avatarMedia = {
+          connect: { objectKey: avatarVal.replace('/api/media/', '') },
+        };
       } else if (avatarVal.startsWith('http')) {
-        createData.avatarMedia = { create: { provider: 'external', bucket: 'external', objectKey: avatarVal, mimeType: 'image/jpeg', fileSize: 0, ownerId: creatorId } };
+        createData.avatarMedia = {
+          create: {
+            provider: 'external',
+            bucket: 'external',
+            objectKey: avatarVal,
+            mimeType: 'image/jpeg',
+            fileSize: 0,
+            ownerId: creatorId,
+          },
+        };
       }
     }
 
     if (coverVal && typeof coverVal === 'string') {
       if (coverVal.startsWith('/api/media/')) {
-        createData.coverMedia = { connect: { objectKey: coverVal.replace('/api/media/', '') } };
+        createData.coverMedia = {
+          connect: { objectKey: coverVal.replace('/api/media/', '') },
+        };
       } else if (coverVal.startsWith('http')) {
-        createData.coverMedia = { create: { provider: 'external', bucket: 'external', objectKey: coverVal, mimeType: 'image/jpeg', fileSize: 0, ownerId: creatorId } };
+        createData.coverMedia = {
+          create: {
+            provider: 'external',
+            bucket: 'external',
+            objectKey: coverVal,
+            mimeType: 'image/jpeg',
+            fileSize: 0,
+            ownerId: creatorId,
+          },
+        };
       }
     }
 
@@ -842,15 +1033,23 @@ export class CommunitiesService implements OnModuleInit {
         },
       },
     });
-    this.domainEventService.emit('community.created', { communityId: created.id, creatorId, community: created });
+    this.domainEventService.emit('community.created', {
+      communityId: created.id,
+      creatorId,
+      community: created,
+    });
     await this.invalidateCommunityCache(created.id);
     return created;
   }
 
-  async updateCommunity(communityId: string, data: any, requestingUserId: string) {
+  async updateCommunity(
+    communityId: string,
+    data: any,
+    requestingUserId: string,
+  ) {
     const community = await this.prisma.community.findUnique({
       where: { id: communityId },
-      select: { ownerId: true }
+      select: { ownerId: true },
     });
     if (!community) throw new NotFoundException('Community not found');
 
@@ -858,56 +1057,90 @@ export class CommunitiesService implements OnModuleInit {
       where: { userId_communityId: { userId: requestingUserId, communityId } },
     });
 
-    const isOwner = community.ownerId === requestingUserId || member?.role === 'OWNER';
+    const isOwner =
+      community.ownerId === requestingUserId || member?.role === 'OWNER';
 
     if (!isOwner) {
-      throw new ForbiddenException('Only the community owner can update community info');
+      throw new ForbiddenException(
+        'Only the community owner can update community info',
+      );
     }
 
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
-    const descriptionInput = data.description !== undefined ? data.description : data.desc;
-    if (descriptionInput !== undefined) updateData.description = descriptionInput;
+    const descriptionInput =
+      data.description !== undefined ? data.description : data.desc;
+    if (descriptionInput !== undefined)
+      updateData.description = descriptionInput;
 
     if (data.isPrivate !== undefined) {
       updateData.isPrivate = Boolean(data.isPrivate);
     } else if (data.privacy !== undefined) {
       updateData.isPrivate = data.privacy === 'private';
     }
-    
-    const rawAvatarInput = data.avatarKey !== undefined ? data.avatarKey : data.avatar;
+
+    const rawAvatarInput =
+      data.avatarKey !== undefined ? data.avatarKey : data.avatar;
     // Clearing the avatar (null / '') is legitimate and must still be honoured;
     // only a non-empty value that cannot be a media reference is discarded.
     const avatarInput =
-      rawAvatarInput === null || rawAvatarInput === '' ? null : this.sanitizeMediaRef(rawAvatarInput);
+      rawAvatarInput === null || rawAvatarInput === ''
+        ? null
+        : this.sanitizeMediaRef(rawAvatarInput);
     if (rawAvatarInput !== undefined) {
       updateData.avatarKey = avatarInput;
       if (avatarInput && typeof avatarInput === 'string') {
         if (avatarInput.startsWith('/api/media/')) {
-          updateData.avatarMedia = { connect: { objectKey: avatarInput.replace('/api/media/', '') } };
+          updateData.avatarMedia = {
+            connect: { objectKey: avatarInput.replace('/api/media/', '') },
+          };
         } else if (avatarInput.startsWith('http')) {
-          updateData.avatarMedia = { create: { provider: 'external', bucket: 'external', objectKey: avatarInput, mimeType: 'image/jpeg', fileSize: 0, ownerId: requestingUserId } };
+          updateData.avatarMedia = {
+            create: {
+              provider: 'external',
+              bucket: 'external',
+              objectKey: avatarInput,
+              mimeType: 'image/jpeg',
+              fileSize: 0,
+              ownerId: requestingUserId,
+            },
+          };
         }
       }
     }
 
-    const coverInput = data.coverKey !== undefined ? data.coverKey : data.coverImage;
+    const coverInput =
+      data.coverKey !== undefined ? data.coverKey : data.coverImage;
     if (coverInput !== undefined) {
       updateData.coverKey = coverInput;
       if (coverInput && typeof coverInput === 'string') {
         if (coverInput.startsWith('/api/media/')) {
-          updateData.coverMedia = { connect: { objectKey: coverInput.replace('/api/media/', '') } };
+          updateData.coverMedia = {
+            connect: { objectKey: coverInput.replace('/api/media/', '') },
+          };
         } else if (coverInput.startsWith('http')) {
-          updateData.coverMedia = { create: { provider: 'external', bucket: 'external', objectKey: coverInput, mimeType: 'image/jpeg', fileSize: 0, ownerId: requestingUserId } };
+          updateData.coverMedia = {
+            create: {
+              provider: 'external',
+              bucket: 'external',
+              objectKey: coverInput,
+              mimeType: 'image/jpeg',
+              fileSize: 0,
+              ownerId: requestingUserId,
+            },
+          };
         }
       }
     }
 
     const updated = await this.prisma.community.update({
       where: { id: communityId },
-      data: updateData
+      data: updateData,
     });
-    this.domainEventService.emit('community.updated', { communityId, community: updated });
+    this.domainEventService.emit('community.updated', {
+      communityId,
+      community: updated,
+    });
     await this.invalidateCommunityCache(communityId);
     return updated;
   }
@@ -918,7 +1151,11 @@ export class CommunitiesService implements OnModuleInit {
    * Fire-and-forget: the role change has already committed, and a notification
    * failure must not surface to the owner as a failed promotion they retry.
    */
-  private notifyModeratorPromotion(communityId: string, memberId: string, actorId: string): void {
+  private notifyModeratorPromotion(
+    communityId: string,
+    memberId: string,
+    actorId: string,
+  ): void {
     (async () => {
       const [actor, community] = await Promise.all([
         this.prisma.user.findUnique({
@@ -954,9 +1191,14 @@ export class CommunitiesService implements OnModuleInit {
     if (!userId) return null;
     const member = await this.prisma.communityMember.findUnique({
       where: { userId_communityId: { userId, communityId } },
-      select: { role: true, moderatorPromotedAt: true, moderatorNoticeAckedAt: true },
+      select: {
+        role: true,
+        moderatorPromotedAt: true,
+        moderatorNoticeAckedAt: true,
+      },
     });
-    if (!member || member.role !== 'MODERATOR' || !member.moderatorPromotedAt) return null;
+    if (!member || member.role !== 'MODERATOR' || !member.moderatorPromotedAt)
+      return null;
 
     const acked = member.moderatorNoticeAckedAt;
     const pending = !acked || acked < member.moderatorPromotedAt;
@@ -986,7 +1228,12 @@ export class CommunitiesService implements OnModuleInit {
     return { success: true };
   }
 
-  async updateMemberRole(communityId: string, memberId: string, newRole: 'MODERATOR' | 'MEMBER', requestingUserId: string) {
+  async updateMemberRole(
+    communityId: string,
+    memberId: string,
+    newRole: 'MODERATOR' | 'MEMBER',
+    requestingUserId: string,
+  ) {
     // Re-checked here, not just in the DTO. This endpoint must never be able
     // to grant ownership: an OWNER row satisfies every owner check in this
     // service, so accepting it would hand over the community. The value was
@@ -997,7 +1244,7 @@ export class CommunitiesService implements OnModuleInit {
 
     const community = await this.prisma.community.findUnique({
       where: { id: communityId },
-      select: { ownerId: true }
+      select: { ownerId: true },
     });
     if (!community) throw new NotFoundException('Community not found');
 
@@ -1005,25 +1252,33 @@ export class CommunitiesService implements OnModuleInit {
       where: { userId_communityId: { userId: requestingUserId, communityId } },
     });
 
-    const isOwner = community.ownerId === requestingUserId || requesterMember?.role === 'OWNER';
+    const isOwner =
+      community.ownerId === requestingUserId ||
+      requesterMember?.role === 'OWNER';
     if (!isOwner) {
-      throw new ForbiddenException('Only the community owner can manage member roles');
+      throw new ForbiddenException(
+        'Only the community owner can manage member roles',
+      );
     }
 
     if (memberId === community.ownerId) {
-      throw new ForbiddenException('Cannot modify the role of the community owner');
+      throw new ForbiddenException(
+        'Cannot modify the role of the community owner',
+      );
     }
 
     const targetMember = await this.prisma.communityMember.findUnique({
       where: { userId_communityId: { userId: memberId, communityId } },
     });
-    if (!targetMember) throw new NotFoundException('Member not found in community');
+    if (!targetMember)
+      throw new NotFoundException('Member not found in community');
 
     // A promotion is only a promotion if the role actually changes. Re-issuing
     // MODERATOR on someone who already holds it must not re-arm the welcome
     // modal or fire a second notification — an owner tapping twice, or a
     // retried request, would otherwise pester them for nothing.
-    const isPromotion = newRole === 'MODERATOR' && targetMember.role !== 'MODERATOR';
+    const isPromotion =
+      newRole === 'MODERATOR' && targetMember.role !== 'MODERATOR';
 
     const updated = await this.prisma.communityMember.update({
       where: { userId_communityId: { userId: memberId, communityId } },
@@ -1036,7 +1291,11 @@ export class CommunitiesService implements OnModuleInit {
       },
     });
 
-    this.domainEventService.emit('community.roleUpdated', { communityId, memberId, newRole });
+    this.domainEventService.emit('community.roleUpdated', {
+      communityId,
+      memberId,
+      newRole,
+    });
     await this.invalidateCommunityCache(communityId);
 
     // Told at the point of promotion, so it reaches them whether or not they
@@ -1065,10 +1324,14 @@ export class CommunitiesService implements OnModuleInit {
     return updated;
   }
 
-  async removeMember(communityId: string, memberId: string, requestingUserId: string) {
+  async removeMember(
+    communityId: string,
+    memberId: string,
+    requestingUserId: string,
+  ) {
     const community = await this.prisma.community.findUnique({
       where: { id: communityId },
-      select: { ownerId: true }
+      select: { ownerId: true },
     });
     if (!community) throw new NotFoundException('Community not found');
 
@@ -1076,14 +1339,17 @@ export class CommunitiesService implements OnModuleInit {
       where: { userId_communityId: { userId: requestingUserId, communityId } },
     });
 
-    const isOwner = community.ownerId === requestingUserId || requester?.role === 'OWNER';
+    const isOwner =
+      community.ownerId === requestingUserId || requester?.role === 'OWNER';
     const isMod = requester?.role === 'MODERATOR';
 
     // Asked against the capability table rather than the role name, so the
     // permission the owner was shown at promotion time is the permission
     // enforced here. See moderator-permissions.ts.
-    if (!isOwner && !roleCan(requester?.role as CommunityRoleName, 'REMOVE_MEMBERS')) {
-      throw new ForbiddenException('Only the owner or moderators can remove members');
+    if (!isOwner && !roleCan(requester?.role, 'REMOVE_MEMBERS')) {
+      throw new ForbiddenException(
+        'Only the owner or moderators can remove members',
+      );
     }
 
     const memberToRemove = await this.prisma.communityMember.findUnique({
@@ -1107,12 +1373,16 @@ export class CommunitiesService implements OnModuleInit {
       const updated = await tx.community.update({
         where: { id: communityId },
         data: { memberCount: { decrement: 1 } },
-        select: { memberCount: true }
+        select: { memberCount: true },
       });
       newCount = Math.max(0, updated.memberCount);
     });
 
-    this.domainEventService.emit('community.memberLeft', { communityId, userId: memberId, memberCount: newCount });
+    this.domainEventService.emit('community.memberLeft', {
+      communityId,
+      userId: memberId,
+      memberCount: newCount,
+    });
     await this.invalidateCommunityCache(communityId);
 
     return { success: true };
@@ -1131,10 +1401,13 @@ export class CommunitiesService implements OnModuleInit {
       where: { userId_communityId: { userId: requestingUserId, communityId } },
     });
 
-    const isOwner = community.ownerId === requestingUserId || member?.role === 'OWNER';
+    const isOwner =
+      community.ownerId === requestingUserId || member?.role === 'OWNER';
 
     if (!isOwner) {
-      throw new ForbiddenException('Only the community owner can delete this community');
+      throw new ForbiddenException(
+        'Only the community owner can delete this community',
+      );
     }
 
     const now = new Date();
@@ -1216,19 +1489,28 @@ export class CommunitiesService implements OnModuleInit {
     });
 
     // ✅ 8. Invalidate all relevant Redis & local memory caches
-    await this.invalidateCommunityCache(communityId, community.collegeId ?? undefined);
+    await this.invalidateCommunityCache(
+      communityId,
+      community.collegeId ?? undefined,
+    );
 
     const redis = this.redisService.getClient();
     if (redis) {
       try {
         const postKeys = await redis.keys('posts:*');
         const feedKeys = await redis.keys('feed:*');
-        const allKeys = [...postKeys, ...feedKeys, `community-posts:${communityId}`];
+        const allKeys = [
+          ...postKeys,
+          ...feedKeys,
+          `community-posts:${communityId}`,
+        ];
         if (allKeys.length > 0) {
           await redis.del(...allKeys);
         }
       } catch (err) {
-        this.logger.warn(`Failed clearing Redis post keys for community ${communityId}: ${err?.message}`);
+        this.logger.warn(
+          `Failed clearing Redis post keys for community ${communityId}: ${err?.message}`,
+        );
       }
     }
 

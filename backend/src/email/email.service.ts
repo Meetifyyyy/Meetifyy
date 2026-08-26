@@ -26,13 +26,25 @@ export class EmailService {
     ip?: string,
   ) {
     this.logger.log(`Queuing new login email for ${email}`);
-    await this.emailQueue.add('send-new-login-email', { email, name, device, location, time, browser, os, ip });
+    await this.emailQueue.add('send-new-login-email', {
+      email,
+      name,
+      device,
+      location,
+      time,
+      browser,
+      os,
+      ip,
+    });
   }
-
 
   async sendResetPasswordEmail(email: string, name: string, resetLink: string) {
     this.logger.log(`Queuing reset password email for ${email}`);
-    await this.emailQueue.add('send-reset-password-email', { email, name, resetLink });
+    await this.emailQueue.add('send-reset-password-email', {
+      email,
+      name,
+      resetLink,
+    });
   }
 
   async sendPasswordChangedEmail(
@@ -57,7 +69,11 @@ export class EmailService {
     await this.emailQueue.add('send-verification-otp', { email, name, otp });
   }
 
-  async sendAdminVerificationOtpEmail(email: string, name: string, otp: string) {
+  async sendAdminVerificationOtpEmail(
+    email: string,
+    name: string,
+    otp: string,
+  ) {
     this.logger.log(`Queuing Super Admin verification OTP email for ${email}`);
     await this.emailQueue.add('send-admin-verification-otp', {
       email,
