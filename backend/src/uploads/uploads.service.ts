@@ -3,6 +3,8 @@ import type { StorageProvider } from './providers/storage-provider.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { config } from '../config';
+import { SUPPORT_ATTACHMENT_LIMITS } from '../support/support.constants';
+import { sanitizeFilename, sniffMimeType } from './attachment-inspection.util';
 
 @Injectable()
 export class StorageService {
@@ -315,11 +317,73 @@ export class StorageService {
       'communities', 'community-icons', 'community-covers',
       'posts', 'chat', 'groups', 'voice', 'temp', 'general', 'events', 'activities',
       'defaults',
+      // Support-request attachments. Owner-less (the submitter is usually not
+      // logged in) and never listed publicly — reachable only through the
+      // admin ticket view, which resolves the key itself.
+      'support',
     ];
     if (!allowedFolders.includes(folder)) {
       throw new BadRequestException(`Invalid upload folder. Allowed: ${allowedFolders.join(', ')}`);
     }
     return folder;
+  }
+
+  /**
+   * Stores an attachment for an unauthenticated support request.
+   *
+   * Separate from `uploadFile` because that one requires an owning account and
+   * the support form must work for someone who cannot log in. The resulting
+   * Media row has a null owner, which — per the note on `Media.ownerId` — also
+   * makes the ownership check that guards deletion refuse everyone.
+   *
+   * The declared mimetype is not trusted: it comes from the same untrusted
+   * multipart body as the bytes. The magic number is checked against the
+   * declared type and both must agree and both must be on the allow-list.
+   */
+  async uploadSupportAttachment(file: Express.Multer.File) {
+    const allowed = SUPPORT_ATTACHMENT_LIMITS.allowedMimeTypes as readonly string[];
+
+    if (!allowed.includes(file.mimetype)) {
+      throw new BadRequestException('That file type is not supported. Attach a PNG, JPG, WEBP, GIF, PDF or TXT file.');
+    }
+    if (file.size > SUPPORT_ATTACHMENT_LIMITS.maxBytesPerFile) {
+      throw new BadRequestException('That file is too large. Attachments must be 10 MB or smaller.');
+    }
+
+    const sniffed = sniffMimeType(file.buffer);
+    // text/plain has no signature to sniff, so it is accepted on the declared
+    // type alone — it is also the one type on the list that cannot carry an
+    // active payload.
+    if (file.mimetype !== 'text/plain' && sniffed !== file.mimetype) {
+      throw new BadRequestException("That file's contents do not match its type.");
+    }
+
+    const ext = this.extensionForMime(file.mimetype);
+    const key = `support/${require('crypto').randomBytes(16).toString('hex')}.${ext}`;
+
+    await this.storageProvider.upload(key, file.buffer, file.mimetype);
+
+    const media = await this.prisma.media.create({
+      data: {
+        ownerId: null,
+        objectKey: key,
+        provider: this.providerName,
+        bucket: this.bucketName,
+        storageKey: key,
+        type: file.mimetype.startsWith('image') ? 'IMAGE' : 'FILE',
+        mimeType: file.mimetype,
+        fileSize: file.size,
+        visibility: 'private',
+      },
+    });
+
+    return {
+      key,
+      mediaId: media.id,
+      filename: sanitizeFilename(file.originalname),
+      mimeType: file.mimetype,
+      size: file.size,
+    };
   }
 
   private isAllowedMimeType(contentType: string): boolean {
@@ -331,6 +395,7 @@ export class StorageService {
       'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
       'video/mp4': 'mp4', 'video/webm': 'webm', 'video/ogg': 'ogv',
       'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/webm': 'webm', 'audio/ogg': 'oga',
+      'application/pdf': 'pdf', 'text/plain': 'txt',
     };
     return extensions[contentType.toLowerCase()] || 'bin';
   }

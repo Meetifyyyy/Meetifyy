@@ -11,7 +11,7 @@
   justify-content: space-between;
   flex-wrap: nowrap;
   gap: 1rem;
-  margin-bottom: 1.75rem;
+  margin-bottom: 1rem;
   width: 100%;
 }
 
@@ -31,17 +31,17 @@
 }
 
 .page-title {
-  font-size: 1.35rem;
-  font-weight: 800;
-  line-height: 1.25;
-  letter-spacing: -0.025em;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
   color: var(--color-text-main);
-  margin: 0 0 0.2rem 0;
+  margin: 0 0 0.1rem 0;
 }
 
 .page-subtitle {
-  font-size: 0.83rem;
-  line-height: 1.4;
+  font-size: 0.78rem;
+  line-height: 1.35;
   color: var(--color-text-light);
   margin: 0;
 }
@@ -57,8 +57,8 @@
   .page-header {
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
+    gap: 0.6rem;
+    margin-bottom: 0.9rem;
   }
 
   .page-header > button,
@@ -70,10 +70,10 @@
   }
 
   .page-title {
-    font-size: 1.2rem;
+    font-size: 1.05rem;
   }
 
   .page-subtitle {
-    font-size: 0.8rem;
+    font-size: 0.76rem;
   }
 }

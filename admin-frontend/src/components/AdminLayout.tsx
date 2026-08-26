@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import {
+  Activity,
   LayoutDashboard,
   Building2,
   Users,
@@ -53,6 +54,7 @@ export const AdminLayout: React.FC = () => {
     { label: 'Campus Reps', path: '/campus-reps', icon: Megaphone },
     { label: 'Moderation', path: '/reports', icon: ShieldAlert },
     { label: 'Support', path: '/support', icon: HelpCircle },
+    { label: 'Monitoring', path: '/monitoring', icon: Activity },
     { label: 'Feature Flags', path: '/flags', icon: Flag },
     { label: 'Settings', path: '/settings', icon: Settings },
     { label: 'Audit Logs', path: '/audit', icon: FileText },
@@ -383,7 +385,7 @@ export const AdminLayout: React.FC = () => {
           style={{
             marginLeft: isMobile ? 0 : '68px',
             flex: 1,
-            padding: isMobile ? '1.25rem 1rem' : '2rem 2.5rem',
+            padding: isMobile ? '0.9rem 0.9rem' : '1.25rem 1.75rem',
             minWidth: 0,
             transition: 'margin-left 0.2s ease',
           }}

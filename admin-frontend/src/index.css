@@ -327,3 +327,17 @@ h1, h2, h3, h4, h5, h6 {
     transform: rotate(360deg);
   }
 }
+
+/*
+ * Placeholder for the support reply editor.
+ *
+ * `contentEditable` has no placeholder attribute, so the prompt is rendered
+ * from a data attribute and suppressed as soon as the element has any child —
+ * an empty contentEditable has no child nodes at all, which is what `:empty`
+ * detects here.
+ */
+[contenteditable][data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: var(--color-text-dim);
+  pointer-events: none;
+}

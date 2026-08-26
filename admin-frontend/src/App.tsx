@@ -11,6 +11,7 @@ import { UsersPage } from './pages/UsersPage';
 import { CampusRepsPage } from './pages/CampusRepsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SupportPage } from './pages/SupportPage';
+import { MonitoringPage } from './pages/MonitoringPage';
 import { FlagsPage } from './pages/FlagsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AuditPage } from './pages/AuditPage';
@@ -96,6 +97,7 @@ export default function App() {
               <Route path="/campus-reps" element={<CampusRepsPage />} />
               <Route path="/reports" element={<ReportsPage />} />
               <Route path="/support" element={<SupportPage />} />
+              <Route path="/monitoring" element={<MonitoringPage />} />
               <Route path="/analytics" element={<DashboardPage />} />
               <Route path="/flags" element={<FlagsPage />} />
               <Route path="/settings" element={<SettingsPage />} />

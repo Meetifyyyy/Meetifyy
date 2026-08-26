@@ -75,8 +75,8 @@ export default function LandingFooter() {
                   </button>
                 </li>
                 <li>
-                  <button onClick={() => handleNav('/contact')} className={styles.linkBtn}>
-                    Contact
+                  <button onClick={() => handleNav('/help-and-support')} className={styles.linkBtn}>
+                    Help &amp; Support
                   </button>
                 </li>
               </ul>

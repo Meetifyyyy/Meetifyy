@@ -352,10 +352,10 @@ model Community {
 }
 
 model CommunityMember {
-  userId      String
-  communityId String
-  joinedAt    DateTime      @default(now())
-  role        CommunityRole @default(MEMBER)
+  userId                 String
+  communityId            String
+  joinedAt               DateTime      @default(now())
+  role                   CommunityRole @default(MEMBER)
   /// When this member was last promoted to moderator, and when they last
   /// acknowledged the welcome modal explaining what that means.
   ///
@@ -368,8 +368,8 @@ model CommunityMember {
   /// stay set if that ever got missed.
   moderatorPromotedAt    DateTime?
   moderatorNoticeAckedAt DateTime?
-  community   Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  community              Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user                   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([userId, communityId])
   @@index([userId])
@@ -872,20 +872,21 @@ model MatchSession {
 }
 
 model SuperAdmin {
-  id            String              @id @default(uuid())
-  email         String              @unique
-  passwordHash  String
-  name          String
-  isActive      Boolean             @default(true)
-  totpSecret    String?
-  totpEnabled   Boolean             @default(false)
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  otps          AdminOtp[]
-  recoveryCodes AdminRecoveryCode[]
-  auditLogs     AuditLog[]
-  loginAudits   LoginAudit[]
-  sessions      SuperAdminSession[]
+  id                     String              @id @default(uuid())
+  email                  String              @unique
+  passwordHash           String
+  name                   String
+  isActive               Boolean             @default(true)
+  totpSecret             String?
+  totpEnabled            Boolean             @default(false)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  otps                   AdminOtp[]
+  recoveryCodes          AdminRecoveryCode[]
+  auditLogs              AuditLog[]
+  loginAudits            LoginAudit[]
+  sessions               SuperAdminSession[]
+  assignedSupportTickets SupportTicket[]     @relation("AssignedSupportTickets")
 }
 
 model SuperAdminSession {
@@ -987,34 +988,175 @@ model SecurityEvent {
 }
 
 model SupportTicket {
-  id         String           @id @default(uuid())
-  userId     String
-  category   SupportCategory
-  subject    String
-  status     SupportStatus    @default(OPEN)
-  priority   ReportPriority   @default(MEDIUM)
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
-  resolvedAt DateTime?
-  messages   SupportMessage[]
-  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String              @id @default(uuid())
+  /// Human-readable, collision-resistant public reference (e.g. MFT-8K4P2Q).
+  /// This — never the uuid — is what the user sees and quotes back to support.
+  ticketNumber    String              @unique
+  /// Null for the guest flow: support has to work when the user cannot log in.
+  userId          String?
+  email           String
+  name            String?
+  category        SupportCategory
+  subject         String              @db.VarChar(200)
+  description     String              @db.VarChar(10000)
+  attachments     Json?
+  status          SupportStatus       @default(OPEN)
+  priority        SupportPriority     @default(NORMAL)
+  assignedAdminId String?
+  /// Parsed browser/OS/device hints, submitted by the client and only ever
+  /// used for diagnosis — never trusted for authorization.
+  browserInfo     Json?
+  /// The page the user was on when they opened the request.
+  pageContext     String?
+  /// Hashed, never the raw address: used for abuse tracing only.
+  ipHash          String?
+  /// Delivery outcome of the confirmation email, tracked independently of
+  /// ticket creation so a mail failure never looks like a submission failure.
+  emailStatus     EmailDeliveryStatus @default(PENDING)
+  emailError      String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  resolvedAt      DateTime?
+  closedAt        DateTime?
+  messages        SupportMessage[]
+  user            User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  assignedAdmin   SuperAdmin?         @relation("AssignedSupportTickets", fields: [assignedAdminId], references: [id], onDelete: SetNull)
 
   @@index([userId])
-  @@index([status])
+  @@index([email])
+  @@index([category])
+  @@index([priority])
+  @@index([assignedAdminId])
   @@index([createdAt])
+  // The admin queue's default view is "open tickets, newest first"; the pair
+  // index serves both the filter and the sort from one scan.
+  @@index([status, createdAt])
 }
 
 model SupportMessage {
-  id          String        @id @default(uuid())
-  ticketId    String
-  senderId    String?
-  body        String        @db.VarChar(5000)
-  isInternal  Boolean       @default(false)
-  attachments Json?
-  createdAt   DateTime      @default(now())
-  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  id             String               @id @default(uuid())
+  ticketId       String
+  /// Who wrote this entry. `authorType` is the authority — `senderId` stays
+  /// null for admin and system entries.
+  authorType     SupportAuthorType    @default(USER)
+  senderId       String?
+  authorAdminId  String?
+  body           String               @db.VarChar(10000)
+  /// Internal notes are admin-only and are never included in any outgoing mail.
+  isInternal     Boolean              @default(false)
+  attachments    Json?
+  emailStatus    EmailDeliveryStatus?
+  emailMessageId String?
+  emailError     String?
+  emailSentAt    DateTime?
+  createdAt      DateTime             @default(now())
+  ticket         SupportTicket        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
-  @@index([ticketId])
+  @@index([ticketId, createdAt])
+}
+
+/// Public help-centre taxonomy. Ordering, publication and archival are all
+/// admin-controlled so the public page never has hardcoded content.
+model HelpCategory {
+  id          String            @id @default(uuid())
+  slug        String            @unique
+  title       String            @db.VarChar(120)
+  description String?           @db.VarChar(500)
+  /// Lucide icon name, resolved against an allow-list on the frontend.
+  icon        String?
+  sortOrder   Int               @default(0)
+  status      HelpContentStatus @default(DRAFT)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  publishedAt DateTime?
+  archivedAt  DateTime?
+  articles    HelpArticle[]
+
+  @@index([status, sortOrder])
+}
+
+model HelpArticle {
+  id          String            @id @default(uuid())
+  slug        String            @unique
+  categoryId  String
+  question    String            @db.VarChar(300)
+  summary     String?           @db.VarChar(500)
+  /// Sanitized rich text. Stored sanitized on write so no reader has to trust it.
+  body        String
+  /// Extra search terms that do not appear in the question or body.
+  keywords    String[]          @default([])
+  sortOrder   Int               @default(0)
+  isFeatured  Boolean           @default(false)
+  status      HelpContentStatus @default(DRAFT)
+  viewCount   Int               @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  publishedAt DateTime?
+  archivedAt  DateTime?
+  category    HelpCategory      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId, sortOrder])
+  @@index([status])
+  @@index([status, isFeatured])
+}
+
+/// Application-level request telemetry.
+///
+/// Deliberately narrow: a normalized route, an outcome and a duration. No
+/// headers, no bodies, no query strings - see monitoring/utils/redactor.ts for
+/// what is refused and why. Railway already owns infrastructure logs; these
+/// tables own the per-endpoint picture Railway cannot see.
+model RequestLog {
+  id           String   @id @default(uuid())
+  /// Correlates a request with its error row and with the pino access log.
+  requestId    String?
+  method       String   @db.VarChar(10)
+  /// Route pattern, never a concrete path: `/api/messages/:id`, so requests to
+  /// the same endpoint aggregate instead of fragmenting per id.
+  route        String   @db.VarChar(300)
+  statusCode   Int
+  durationMs   Int
+  responseSize Int?
+  /// Present only when the request was authenticated. The only user-identifying
+  /// value these tables are permitted to hold.
+  userId       String?
+  createdAt    DateTime @default(now())
+
+  // The dashboard reads "recent rows, newest first", optionally narrowed to one
+  // route. Both indexes serve a filter and its sort from a single scan.
+  @@index([createdAt])
+  @@index([route, createdAt])
+  @@index([statusCode, createdAt])
+}
+
+model ErrorLog {
+  id         String   @id @default(uuid())
+  requestId  String?
+  route      String   @db.VarChar(300)
+  statusCode Int?
+  /// Sanitized message. Never the raw error when that could carry a value.
+  message    String   @db.VarChar(2000)
+  /// Stored only when LOG_STACK_TRACES is on, and only ever shown to admins.
+  stack      String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([route, createdAt])
+}
+
+model SystemMetric {
+  id                String   @id @default(uuid())
+  memoryRssMb       Float
+  memoryHeapUsedMb  Float
+  cpuPercent        Float
+  eventLoopLagMs    Float
+  dbPoolActive      Int
+  dbPoolIdle        Int
+  dbPoolWaiting     Int
+  socketConnections Int
+  createdAt         DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model CollegeRequest {
@@ -1327,12 +1469,23 @@ enum InstantMatchChatStatus {
 }
 
 enum SupportCategory {
+  // Help-centre categories, mirrored by the public form.
+  ACCOUNT_LOGIN
+  PROFILE_PRIVACY
+  CHAT_MESSAGING
+  COMMUNITIES
+  POSTS_CONTENT
+  EVENTS_ACTIVITIES
+  NOTIFICATIONS
+  SAFETY_REPORTING
+  TECHNICAL
+  OTHER
+  // Retained so tickets filed before the help centre existed stay readable.
   BUG
   ACCOUNT
   VERIFICATION
   ABUSE
   FEATURE_REQUEST
-  OTHER
 }
 
 enum SupportStatus {
@@ -1341,6 +1494,33 @@ enum SupportStatus {
   WAITING_FOR_USER
   RESOLVED
   CLOSED
+}
+
+/// Backend-enforced triage levels. The frontend may request a value but the
+/// server only ever accepts one of these.
+enum SupportPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum SupportAuthorType {
+  USER
+  ADMIN
+  SYSTEM
+}
+
+enum EmailDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum HelpContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
 }
 
 enum AnnouncementTarget {

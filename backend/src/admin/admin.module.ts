@@ -6,6 +6,8 @@ import { AdminUsersModule } from './users/admin-users.module';
 import { AdminReportsModule } from './reports/admin-reports.module';
 import { AdminDashboardModule } from './dashboard/admin-dashboard.module';
 import { AdminSupportModule } from './support/admin-support.module';
+import { AdminHelpModule } from './help/admin-help.module';
+import { AdminMonitoringModule } from './monitoring/admin-monitoring.module';
 import { AdminFlagsModule } from './flags/admin-flags.module';
 import { AdminSettingsModule } from './settings/admin-settings.module';
 import { AdminAuditModule } from './audit/admin-audit.module';
@@ -21,6 +23,10 @@ import { PrismaModule } from '../prisma/prisma.module';
     AdminReportsModule,
     AdminDashboardModule,
     AdminSupportModule,
+    // Public help-centre content, managed from the same Support section.
+    AdminHelpModule,
+    // Application-level observability, read-only.
+    AdminMonitoringModule,
     AdminFlagsModule,
     AdminSettingsModule,
     AdminAuditModule,

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { config } from '../config';
+import { SUPPORT_EMAIL_JOBS } from './support-email.builder';
 
 @Injectable()
 export class EmailService {
@@ -65,6 +66,27 @@ export class EmailService {
       from: config.email.securityFrom,
     });
   }
+
+  // ── Support desk ─────────────────────────────────────────────────────────
+  //
+  // These three take a row id rather than the rendered content. The worker
+  // loads the ticket itself (see SupportEmailBuilder), which keeps the user's
+  // description and the admin's reply out of Redis and means a retried job
+  // renders the ticket's current status rather than a stale snapshot.
+
+  /** Confirmation to the person who filed the request. */
+  async sendSupportRequestReceivedEmail(ticketId: string) {
+    this.logger.log(`Queuing support confirmation for ticket ${ticketId}`);
+    await this.emailQueue.add(SUPPORT_EMAIL_JOBS.requestReceived, { ticketId });
+  }
+
+  /**
+   * An admin's reply. Takes the SupportMessage id so the exact reply that was
+   * stored is the one that gets sent — there is no second copy of the text to
+   * fall out of step with the thread.
+   */
+  async sendSupportReplyEmail(messageId: string) {
+    this.logger.log(`Queuing support reply email for message ${messageId}`);
+    await this.emailQueue.add(SUPPORT_EMAIL_JOBS.reply, { messageId });
+  }
 }
-
-

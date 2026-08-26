@@ -19,6 +19,8 @@ import { storageConfigValues } from './storage.config';
 import { redisConfigValues } from './redis.config';
 import { featuresConfigValues, loggingConfigValues } from './features.config';
 import { siteConfigValues } from './site.config';
+import { supportConfigValues } from './support.config';
+import { monitoringConfigValues } from './monitoring.config';
 
 export const config = {
   env: APP_ENV,
@@ -36,6 +38,8 @@ export const config = {
   features: featuresConfigValues,
   logging: loggingConfigValues,
   site: siteConfigValues,
+  support: supportConfigValues,
+  monitoring: monitoringConfigValues,
 } as const;
 
 // Every slice has now been evaluated, so this reports the complete set of

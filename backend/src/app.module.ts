@@ -46,6 +46,8 @@ import { RedisModule } from './redis/redis.module';
 import { EventsModule } from './events/events.module';
 import { DomainValidatorModule } from './common/services/domain-validator.module';
 import { AcademicsModule } from './academics/academics.module';
+import { SupportModule } from './support/support.module';
+import { MonitoringModule } from './monitoring/monitoring.module';
 
 @Module({
   imports: [
@@ -238,6 +240,12 @@ import { AcademicsModule } from './academics/academics.module';
     UploadsModule,
     ModerationModule,
     AdminModule,
+    // Public help centre + support-request intake. The admin-facing half lives
+    // inside AdminModule, behind AdminJwtGuard.
+    SupportModule,
+    // Application-level observability. Registers a global interceptor, so it
+    // must be imported for any route to be instrumented.
+    MonitoringModule,
     EventsModule,
   ],
   controllers: [AppController],

@@ -140,7 +140,7 @@ const CommunityGuidelinesPage = lazyWithRetry(() => import('./features/info/page
 const CookiePolicyPage = lazyWithRetry(() => import('./features/info/pages/CookiePolicyPage'));
 const PrivacyPolicyPage = lazyWithRetry(() => import('./features/info/pages/PrivacyPolicyPage'));
 const TermsPage = lazyWithRetry(() => import('./features/info/pages/TermsPage'));
-const ContactPage = lazyWithRetry(() => import('./features/info/pages/ContactPage'));
+const HelpSupportPage = lazyWithRetry(() => import('./features/info/help/HelpSupportPage'));
 
 /**
  * Wraps a route element with a scoped error boundary and suspense fallback.
@@ -341,8 +341,16 @@ export default function App() {
           element: <StaticRoute>{withBoundary(<CookiePolicyPage />, null)}</StaticRoute>,
         },
         {
+          path: '/help-and-support',
+          element: <StaticRoute>{withBoundary(<HelpSupportPage />, null)}</StaticRoute>,
+        },
+        {
+          // The old contact page was a frontend-only form that recorded nothing
+          // and mailed nobody; Help & Support replaces it end to end. Kept as a
+          // redirect rather than removed, because /contact is already linked
+          // from outside the app and from older emails.
           path: '/contact',
-          element: <StaticRoute>{withBoundary(<ContactPage />, null)}</StaticRoute>,
+          element: <Navigate to="/help-and-support" replace />,
         },
         // -- DEV PREVIEW - delete this route before shipping ------------------
         {

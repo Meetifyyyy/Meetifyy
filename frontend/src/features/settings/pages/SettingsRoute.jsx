@@ -83,7 +83,7 @@ function SettingsWelcomePanel() {
 
       <nav className={styles.welcomeLinks} aria-label="Meetifyy">
         <Link to="/about" className={styles.welcomeLink}>About</Link>
-        <Link to="/contact" className={styles.welcomeLink}>Contact</Link>
+        <Link to="/help-and-support" className={styles.welcomeLink}>Help &amp; Support</Link>
         <Link to="/privacy-policy" className={styles.welcomeLink}>Privacy Policy</Link>
         <Link to="/terms-and-conditions" className={styles.welcomeLink}>Terms of Service</Link>
         <Link to="/community-guidelines" className={styles.welcomeLink}>Community Guidelines</Link>

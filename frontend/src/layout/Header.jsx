@@ -473,7 +473,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
           <a href="/">Home</a>
           <a href="#features">Features</a>
           <a href="#about">About</a>
-          <a href="#contact">Contact</a>
+          <a href="/help-and-support">Help &amp; Support</a>
         </nav>
       )}
     </header>

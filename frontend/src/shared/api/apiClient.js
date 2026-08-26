@@ -334,6 +334,12 @@ const PUBLIC_PATHS = [
   // These are called during signup before the user has a session
   '/api/auth/check-username',
   '/api/auth/check-email',
+  // The help centre and the support-request form. These have to work for a
+  // signed-out visitor — someone locked out of their account is exactly the
+  // person who needs them — so without this entry `request` rejects every call
+  // with "Missing access token" before a single byte reaches the network, and
+  // the public Help & Support page can never load its content.
+  '/api/support',
 ];
 
 function isPublicPath(path) {
@@ -987,4 +993,60 @@ export const reportsApi = {
    */
   submit: (targetType, targetId, reason, description, metadata) =>
     apiClient.post('/api/reports', { targetType, targetId, reason, description, metadata }),
+};
+
+/**
+ * Help centre and support requests.
+ *
+ * Every endpoint here is public. The support form has to work for someone who
+ * cannot sign in — that is the whole point of it — so these calls must not
+ * assume a session. `apiClient` attaches a token when one happens to exist and
+ * omits it otherwise, which is exactly the behaviour needed.
+ */
+export const supportApi = {
+  /** Category list and attachment rules, so the form never carries its own copy. */
+  getFormMeta: ({ signal } = {}) => apiClient.get('/api/support/meta', { signal }),
+
+  /** Published categories with their articles, plus the featured FAQ set. */
+  getHelpCentre: ({ signal } = {}) => apiClient.get('/api/support/help', { signal }),
+
+  searchHelp: (query, { signal } = {}) =>
+    apiClient.get(`/api/support/help/search?q=${encodeURIComponent(query)}`, { signal }),
+
+  submitRequest: (payload, { signal } = {}) => apiClient.post('/api/support/requests', payload, { signal }),
+
+  /**
+   * Uploads one attachment and returns its storage key.
+   *
+   * Uses fetch directly rather than `apiClient` because the body is multipart:
+   * `request` sets a JSON content-type, which would stop the browser from
+   * generating the multipart boundary.
+   */
+  uploadAttachment: async (file, { signal } = {}) => {
+    const form = new FormData();
+    form.append('file', file);
+
+    const token = getToken();
+    const res = await fetch(`${getBackendUrl()}/api/support/attachments`, {
+      method: 'POST',
+      body: form,
+      signal,
+      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+    });
+
+    if (!res.ok) {
+      let message = 'That file could not be uploaded.';
+      try {
+        const body = await res.json();
+        if (body?.message) message = Array.isArray(body.message) ? body.message[0] : body.message;
+      } catch {
+        // Non-JSON error body — keep the generic message.
+      }
+      const error = new Error(message);
+      error.status = res.status;
+      throw error;
+    }
+
+    return res.json();
+  },
 };

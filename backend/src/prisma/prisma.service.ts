@@ -141,6 +141,26 @@ export class PrismaService extends PrismaClient<
     });
   }
 
+  /**
+   * Live connection-pool counters, for the monitoring dashboard.
+   *
+   * `pg` exposes total/idle/waiting; "active" is what is left once the idle
+   * ones are subtracted. Saturation shows up here as waiting climbing above
+   * zero, which is the signal that queries are queueing for a connection
+   * rather than running slowly.
+   */
+  getPoolStats(): { active: number; idle: number; waiting: number; total: number } {
+    const total = this.pool.totalCount ?? 0;
+    const idle = this.pool.idleCount ?? 0;
+    return {
+      total,
+      idle,
+      active: Math.max(0, total - idle),
+      waiting: this.pool.waitingCount ?? 0,
+    };
+  }
+
+
   async onModuleInit() {
     const logQueries = config.logging.logQueries;
 
