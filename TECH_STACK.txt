@@ -57,20 +57,7 @@ ENVIRONMENTS
   production ............. not provisioned yet
 
 -------------------------------------------------------------------------------
-2. TEAM — WHO HANDLES WHAT
--------------------------------------------------------------------------------
-
-  Frontend ................ Shravya, Sarthak
-  Backend ................. Somya, Sarthak
-  Security ................ Yash, Sarthak
-  Database ................ Sarthak
-  Design / UX ............. Shravya, Sarthak
-  QA / Testing ............ Shravya, Somya, Yash, Sarthak
-
-  All remaining areas ..... Sarthak
-
--------------------------------------------------------------------------------
-3. AREA RESPONSIBILITIES (FULL)
+2. AREA RESPONSIBILITIES
 -------------------------------------------------------------------------------
 
 AREA                          HANDLED BY
@@ -97,7 +84,7 @@ Mobile / PWA                  Sarthak
 Product                       Sarthak
 
 -------------------------------------------------------------------------------
-4. APP MODULES (for reference)
+3. APP MODULES (for reference)
 -------------------------------------------------------------------------------
 
 Backend modules:
