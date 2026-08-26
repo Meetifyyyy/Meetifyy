@@ -16,7 +16,7 @@ import { ErrorState } from '@shared/components/ui/StateViews';
 import Avatar from '@shared/components/avatar/Avatar';
 import NotFoundState from '@shared/components/ui/NotFoundState';
 import s from './ProfilePage.module.css';
-import defaultCover from '@assets/images/default_cover.webp';
+import defaultCover from '@assets/images/default_profile_cover.webp';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import FollowButton from '@shared/components/ui/FollowButton';

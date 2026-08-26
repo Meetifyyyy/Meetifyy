@@ -18,13 +18,28 @@ import { PrismaService } from '../prisma/prisma.service';
  * every one of those points, and would have been the thing that broke the
  * next time someone touched image handling.
  *
- * Keys are deterministic and content-addressed by version, so re-deploying
- * is idempotent and a redesign is a one-line bump that leaves the old asset
- * untouched for records still pointing at it.
+ * Keys are deterministic and content-addressed by version, so re-deploying is
+ * idempotent and a redesign is a one-line bump. The old object is left in the
+ * bucket — anything still holding its URL keeps resolving — but records are
+ * not left behind on it: `repointOutdatedDefaults` moves every row still
+ * carrying a previous version's default onto the current one, so new art
+ * reaches the people who never chose a picture, not just new sign-ups.
  */
 
-/** Bump when the artwork changes; old keys stay valid for existing rows. */
-const ASSET_VERSION = 'v1';
+/**
+ * Bump when the artwork changes; old keys stay valid for existing rows.
+ *
+ * v2: new default cover art (a violet gradient for profiles, a blue bubble
+ * field for communities). The avatars are byte-identical to v1 — they are
+ * republished under the new version only because the version is shared, and
+ * nothing about them changed.
+ *
+ * Bumping this MOVES existing records onto the new artwork (see
+ * `repointOutdatedDefaults`). Only rows the platform assigned a default are
+ * touched; a picture anyone actually chose is never a `defaults/` key and so
+ * can never match.
+ */
+const ASSET_VERSION = 'v2';
 
 export type DefaultAssetName =
   | 'community-cover'
@@ -67,6 +82,7 @@ export class DefaultAssetsService implements OnModuleInit {
     try {
       await this.ensureUploaded();
       await this.backfillExisting();
+      await this.repointOutdatedDefaults();
     } catch (err) {
       this.logger.error(`Could not publish default assets: ${(err as Error)?.message}`);
     }
@@ -134,6 +150,65 @@ export class DefaultAssetsService implements OnModuleInit {
     if (results.length) this.logger.log(`Backfilled defaults: ${results.join(', ')}`);
   }
 
+  /**
+   * Moves records still carrying an OLDER version's default onto the current
+   * one.
+   *
+   * Without this, bumping the version only reaches accounts created after the
+   * deploy: everyone who never picked a cover keeps the ref they were assigned
+   * on day one, so a redesign lands on nobody and the product shows two
+   * generations of artwork side by side forever.
+   *
+   * What makes this safe to run against live rows is that a `defaults/` key is
+   * never something a person chose. Uploads land under `covers/`, `avatars/`,
+   * `community-covers/` and friends; only this service ever writes a
+   * `defaults/` ref, and it writes it only where the field was empty. So
+   * "starts with the prefix for this asset, and is not the current version" is
+   * exactly the set of records displaying stale platform artwork, and nothing
+   * else — a chosen picture cannot match the pattern however old it is.
+   *
+   * Idempotent: a second run matches nothing, because the first one already
+   * moved every row onto the value it now compares against.
+   */
+  private async repointOutdatedDefaults(): Promise<void> {
+    const results: string[] = [];
+
+    const move = async (
+      name: DefaultAssetName,
+      field: string,
+      updateMany: (args: { where: any; data: any }) => Promise<{ count: number }>,
+    ): Promise<void> => {
+      const current = this.refFor(name);
+      // Nothing published means nothing to point at. Rewriting refs against a
+      // key we could not confirm would replace working images with 404s.
+      if (!current) return;
+
+      const { count } = await updateMany({
+        where: {
+          AND: [
+            { [field]: { startsWith: `/api/media/${this.storageKeyPrefix(name)}` } },
+            { NOT: { [field]: current } },
+          ],
+        },
+        data: { [field]: current },
+      });
+      if (count) results.push(`${count} ${name}`);
+    };
+
+    await move('profile-cover', 'cover', (args) => this.prisma.user.updateMany(args as any));
+    await move('community-cover', 'coverKey', (args) => this.prisma.community.updateMany(args as any));
+    // The avatars carry the same artwork across this bump, but they are moved
+    // too: leaving them on the old key would mean a row holding a default that
+    // is not *the* default, and the next redesign would have two generations
+    // to chase instead of one.
+    await move('profile-avatar', 'avatar', (args) => this.prisma.user.updateMany(args as any));
+    await move('community-avatar', 'avatarKey', (args) => this.prisma.community.updateMany(args as any));
+
+    if (results.length) {
+      this.logger.log(`Moved onto ${ASSET_VERSION} defaults: ${results.join(', ')}`);
+    }
+  }
+
   /** The storage key for a default, or null if it could not be published. */
   keyFor(name: DefaultAssetName): string | null {
     return this.keys.get(name) ?? null;
@@ -146,8 +221,14 @@ export class DefaultAssetsService implements OnModuleInit {
     return key ? `/api/media/${key}` : null;
   }
 
+  /** Everything before the version — the part every generation of an asset
+   *  shares, and therefore what identifies an outdated one. */
+  private storageKeyPrefix(name: DefaultAssetName): string {
+    return `defaults/${name}-`;
+  }
+
   private storageKey(name: DefaultAssetName): string {
-    return `defaults/${name}-${ASSET_VERSION}.webp`;
+    return `${this.storageKeyPrefix(name)}${ASSET_VERSION}.webp`;
   }
 
   /**

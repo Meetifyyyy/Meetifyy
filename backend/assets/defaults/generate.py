@@ -2,24 +2,35 @@
 Builds the default image assets the backend publishes to storage.
 
 These start from the artwork already bundled in the frontend rather than
-inventing new patterns: `default_cover.webp` (a blue blob maze) and
-`default_community_cover.webp` (a marbled multi-colour swirl) are already
+inventing new patterns: `default_profile_cover.webp` (a violet gradient) and
+`default_community_cover.webp` (a blue bubble field) are already
 distinct designs in the product's own visual language, and replacing good
 existing art with something programmatic would have been a regression
 dressed up as a feature. What was missing was not the designs — it was that
 they lived only as bundled front-end fallbacks and were never stored on the
 records they described.
 
-So this converts them to WebP at consistent sizes for upload, and derives the
-one asset that genuinely did not exist: a community default avatar. That is
-cut from the community cover's own pattern, so a community's default icon
-and default cover visibly belong together, while the profile default avatar
+So this converts them to WebP at consistent sizes for upload, and can derive
+the one asset that never existed as art of its own: a community default
+avatar, cut from the community cover's own pattern so a community's default
+icon and default cover visibly belong together. The profile default avatar
 stays the neutral person mark it has always been.
 
-Run from backend/:  python3 assets/defaults/generate.py
+The avatars are NOT rebuilt by default. Deriving the community avatar from
+whatever the cover happens to be right now means a cover redesign silently
+redesigns every default community icon too — which is a bigger change than
+anyone asking for new cover art expects. Pass `--avatars` to rebuild them
+deliberately, after which the covers and icons match again.
+
+Run from backend/:  python3 assets/defaults/generate.py [--avatars]
+
+Whatever this writes, remember to bump ASSET_VERSION in
+`src/uploads/default-assets.service.ts`: the publisher skips any key already
+in the bucket, so new artwork under an old version number is never uploaded.
 """
 from PIL import Image
 import os
+import sys
 
 SRC = "../frontend/src/assets/images"
 OUT = os.path.join(os.path.dirname(__file__))
@@ -71,11 +82,21 @@ def community_avatar_from_cover(cover_img, out_name):
 
 
 if __name__ == "__main__":
-    profile_cover = cover_from("default_cover.webp", "profile-cover.webp")
-    community_cover = cover_from("default_community_cover.webp", "community-cover.webp")
-    square_from("default_avatar.webp", "profile-avatar.webp")
-    community_avatar_from_cover(community_cover, "community-avatar.webp")
+    rebuild_avatars = "--avatars" in sys.argv
 
-    for f in ("profile-cover.webp", "community-cover.webp", "profile-avatar.webp", "community-avatar.webp"):
+    cover_from("default_profile_cover.webp", "profile-cover.webp")
+    community_cover = cover_from("default_community_cover.webp", "community-cover.webp")
+
+    written = ["profile-cover.webp", "community-cover.webp"]
+
+    if rebuild_avatars:
+        square_from("default_avatar.webp", "profile-avatar.webp")
+        community_avatar_from_cover(community_cover, "community-avatar.webp")
+        written += ["profile-avatar.webp", "community-avatar.webp"]
+
+    for f in written:
         p = os.path.join(OUT, f)
         print(f"wrote {f}  {Image.open(p).size}  {os.path.getsize(p) // 1024}KB")
+
+    if not rebuild_avatars:
+        print("kept profile-avatar.webp and community-avatar.webp as they are (pass --avatars to rebuild)")

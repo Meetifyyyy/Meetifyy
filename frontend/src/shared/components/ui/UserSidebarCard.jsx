@@ -11,7 +11,7 @@ import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { useOpenDirectMessage } from '@shared/hooks/useOpenDirectMessage';
 import CoverImage from './CoverImage';
-import defaultCover from '@assets/images/default_cover.webp';
+import defaultCover from '@assets/images/default_profile_cover.webp';
 import s from './UserSidebarCard.module.css';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
 

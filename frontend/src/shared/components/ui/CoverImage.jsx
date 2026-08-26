@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import defaultCover from '@assets/images/default_cover.webp';
+import defaultCover from '@assets/images/default_profile_cover.webp';
 import { getMediaUrl } from '@shared/api/apiClient';
 import styles from './CoverImage.module.css';
 
@@ -40,23 +40,29 @@ export default function CoverImage({
 
   const [loading, setLoading] = useState(!isPreloaded);
 
+  // Reset on a change of COVER, never on a change of `activeUrl`.
+  //
+  // `activeUrl` is derived from `error`, so listing it here meant an error
+  // re-ran this effect, `setError(false)` undid the error, and the src flipped
+  // straight back to the URL that had just failed — which failed again. A
+  // broken cover therefore oscillated instead of settling on the default, and
+  // the fallback image was never what the user ended up looking at.
   useEffect(() => {
     if (isGradient) {
       setLoading(false);
       setError(false);
       return;
     }
-    const preloaded = loadedCoverCache.has(activeUrl) || 
-      activeUrl === fallback || 
-      (typeof activeUrl === 'string' && (activeUrl.startsWith('blob:') || activeUrl.startsWith('data:')));
-
-    if (preloaded) {
-      setLoading(false);
-    } else {
-      setLoading(true);
-    }
+    // A different cover is a fresh attempt: whatever the last one hit is spent.
     setError(false);
-  }, [url, isGradient, activeUrl, fallback]);
+
+    const target = url || fallback;
+    const preloaded = loadedCoverCache.has(target) ||
+      target === fallback ||
+      (typeof target === 'string' && (target.startsWith('blob:') || target.startsWith('data:')));
+
+    setLoading(!preloaded);
+  }, [url, isGradient, fallback]);
 
   useEffect(() => {
     if (!isGradient && imgRef.current && imgRef.current.complete) {
