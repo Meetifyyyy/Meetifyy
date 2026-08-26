@@ -8,7 +8,6 @@ import Skeleton from '@shared/components/skeletons/Skeleton';
 import { getCollegeName } from '@shared/utils/user';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
-import { getMediaUrl } from '@shared/api/apiClient';
 import { useOpenDirectMessage } from '@shared/hooks/useOpenDirectMessage';
 import CoverImage from './CoverImage';
 import defaultCover from '@assets/images/default_profile_cover.webp';

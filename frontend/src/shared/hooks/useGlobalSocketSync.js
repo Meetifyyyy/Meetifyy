@@ -495,12 +495,19 @@ export function useGlobalSocketSync() {
 
         case 'activity.created':
         case 'activity.deleted':
-        // A start-time crossing announced by the server sweep. The open detail
-        // page also has its own timer for this, so both paths converge on the
-        // same refetch; whichever arrives first wins and the second is a no-op.
         case 'activity.started':
         case 'activity.updated': {
           // Structural changes: a new activity appeared or was cancelled/edited.
+          //
+          // `activity.started` is a start-time crossing announced by the server
+          // sweep. The open detail page also has its own timer for this, so both
+          // paths converge on the same refetch; whichever arrives first wins and
+          // the second is a no-op.
+          //
+          // The comment lives here rather than between the case labels above:
+          // an empty case is only allowed to fall through silently when nothing
+          // separates it from the previous one, and a comment in that gap reads
+          // to no-fallthrough as a possibly-missing `break`.
           const actId = event.data?.id || event.data?.activityId;
           queryClient.invalidateQueries({ queryKey: ['activities'] });
           queryClient.invalidateQueries({ queryKey: ['campus-activities'] });
