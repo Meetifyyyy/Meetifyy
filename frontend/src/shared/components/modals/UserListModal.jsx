@@ -4,7 +4,6 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { usersApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
-import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import FollowButton from '../ui/FollowButton';
 import Avatar from '../avatar/Avatar';
 import styles from './UserListModal.module.css';
@@ -17,8 +16,20 @@ export default function UserListModal({ type, profileUsername, onClose }) {
   const { currentUser } = useAuth();
   const observerTargetRef = useRef(null);
 
-  // Back dismisses this dialog rather than navigating the page behind it.
-  useOverlayBack(true, onClose);
+  // This dialog deliberately does NOT register with the OverlayManager.
+  //
+  // It is a URL-owned sub-view: the profile opens it by pushing
+  // `?tab=followers`, and that query param IS its history entry. Registering
+  // here pushed a SECOND entry for the same panel, and the two then fought on
+  // the way out — closing popped one step for the list and another for the
+  // overlay, so a single click on the X walked past the profile and landed on
+  // whatever page came before it. That is the bug: closing the list closed the
+  // whole profile.
+  //
+  // With no entry of its own, Back simply drops the `?tab=` param, the parent
+  // stops rendering this dialog, and the profile underneath is untouched.
+  // Escape and the backdrop go through the same `onClose`, so all three routes
+  // out behave identically.
 
   useEffect(() => {
     const handleKeyDown = (e) => {
