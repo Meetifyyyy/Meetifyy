@@ -14,7 +14,7 @@ host was reset decides who can fix it.
 | What is blocked | What the user sees | Fixable in code? |
 |---|---|---|
 | `dev.meetifyy.app` (the app) | browser error page, nothing loads | **No** — DNS/hosting only |
-| `meetifyy-production.up.railway.app` (the API) | app shell loads, everything fails | **Yes** — done, see "Same-origin API failover" |
+| `api.meetifyy.app` (the API) | app shell loads, everything fails | **Yes** — see "Same-origin API failover" |
 
 The reported symptom is the first row. Fix §1 below.
 
@@ -26,7 +26,7 @@ Taken from an unfiltered network — every host is up, so nothing is down.
 |---|---|---|---|
 | `dev.meetifyy.app` | CNAME → `a91ff774d3898bd9.vercel-dns-017.com` → `216.198.79.1`, `64.29.17.1` (A only, no AAAA) | Vercel, `bom1` edge, HTTP/2, TLS 1.2 + 1.3 all 200 | **No** — no `cf-ray` header |
 | `meetifyy.app` | `104.21.93.27`, `172.67.203.125` + AAAA | Cloudflare | Yes — but returns **error 1000** |
-| `meetifyy-production.up.railway.app` | `69.46.46.14` | Railway, `/health` 200 | No |
+| `api.meetifyy.app` | Azure Container Apps FQDN | Azure Container Apps, `/health` 200 | No |
 
 The zone's nameservers are `sue.ns.cloudflare.com` / `doug.ns.cloudflare.com`, so
 **`meetifyy.app` is already a Cloudflare zone** and `dev` is a record inside it
@@ -64,13 +64,12 @@ Replace the apex A records with a Cloudflare **Redirect Rule** sending
 `meetifyy.app/*` → `https://dev.meetifyy.app/$1` (or to the production hostname
 once there is one). A redirect rule needs no origin, so the loop cannot recur.
 
-## §3 — Move the API off the shared PaaS wildcard
+## §3 — Point the API to api.meetifyy.app
 
-`*.up.railway.app` is shared by every Railway project, which makes it a standing
-blocklist target. Give the API a first-party hostname — `api.meetifyy.app`,
-proxied through the same Cloudflare zone — and point `VITE_API_URL` at it.
-Nothing in the client needs to change: `getBackendUrl()` reads that variable and
-`getMediaUrl()` derives media URLs from it.
+The backend now runs on Azure Container Apps behind `api.meetifyy.app`. Point
+`VITE_API_URL` at `https://api.meetifyy.app`. Configure a CNAME in the
+Cloudflare zone pointing `api.meetifyy.app` to the Azure Container App FQDN.
+See `AZURE_SETUP.md` § Custom Domain for the exact steps.
 
 Do this even after the failover below exists. Failover is a safety net; it is
 not as good as an origin that is simply never blocked.
@@ -80,7 +79,7 @@ not as good as an origin that is simply never blocked.
 For the second row of the table — API blocked, app reachable — the client now
 recovers on its own.
 
-- `vercel.json` rewrites `/_api/:path*` to the Railway backend, so the same API
+- `vercel.json` rewrites `/_api/:path*` to `https://api.meetifyy.app`, so the same API
   is reachable from the app's own origin. It is declared **before** the SPA
   catch-all rewrite, which would otherwise swallow it into `index.html`.
 - `apiClient` starts on the direct origin as before. If a request fails with a
@@ -127,7 +126,7 @@ Run this on the campus network before changing anything. It separates DNS
 blocking, TCP/SNI blocking and TLS interception, which need different fixes.
 
 ```bash
-for h in dev.meetifyy.app meetifyy-production.up.railway.app; do echo "== $h"; getent hosts "$h" || echo "  DNS FAILED"; curl -sS -o /dev/null -w "  http=%{http_code} tls_verify=%{ssl_verify_result} t=%{time_total}\n" --max-time 15 "https://$h/" || echo "  CONNECT FAILED"; done
+for h in dev.meetifyy.app api.meetifyy.app; do echo "== $h"; getent hosts "$h" || echo "  DNS FAILED"; curl -sS -o /dev/null -w "  http=%{http_code} tls_verify=%{ssl_verify_result} t=%{time_total}\n" --max-time 15 "https://$h/" || echo "  CONNECT FAILED"; done
 ```
 
 - **DNS FAILED**, but `dig @1.1.1.1 dev.meetifyy.app` succeeds → resolver-level
@@ -136,7 +135,7 @@ for h in dev.meetifyy.app meetifyy-production.up.railway.app; do echo "== $h"; g
   operator.
 - **CONNECT FAILED / reset** on `dev.meetifyy.app` → IP-range or SNI blocking.
   §1 is the fix.
-- **CONNECT FAILED / reset** on the Railway host only → the failover above
+- **CONNECT FAILED / reset** on the Azure API host only → the failover above
   already handles it; §3 removes the cause.
 - **`tls_verify` non-zero** → the network intercepts TLS with its own CA. Our
   HSTS header (`max-age=63072000; includeSubDomains; preload`) makes that a hard

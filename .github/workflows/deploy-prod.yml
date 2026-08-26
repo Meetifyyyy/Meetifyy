@@ -1,0 +1,249 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Meetifyy — Deploy to PRODUCTION
+#
+# Triggered ONLY by pushes/merges to the `main` branch.
+#
+# Uses the `production` GitHub Environment — the only place production secrets
+# exist. Development jobs running in the `development` environment have zero
+# access to these secrets.
+#
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │ SAFETY GUARANTEE                                                         │
+# │                                                                          │
+# │ The production database URL (DATABASE_URL, DIRECT_URL) is stored ONLY   │
+# │ as a secret on the production Azure Container App. It is NEVER stored    │
+# │ as a GitHub secret and is NEVER present in a development workflow run.   │
+# │                                                                          │
+# │ `prisma migrate deploy` applies ONLY migration files committed to Git.   │
+# │ It NEVER generates new migrations or uses `prisma db push`.              │
+# └──────────────────────────────────────────────────────────────────────────┘
+#
+# Flow:
+#   merge/push to main
+#   → CI checks must pass (ci.yml runs first)
+#   → build Docker image (prod-<sha> tag)
+#   → push to ACR
+#   → run `prisma migrate deploy` → PROD Supabase (via Container App Job)
+#   → deploy to meetifyy-api Container App
+#   → health check
+#
+# Required GitHub Environment secrets (Settings → Environments → production):
+#   AZURE_CLIENT_ID_PROD      — PROD service principal app ID
+#   AZURE_TENANT_ID           — Azure tenant
+#   AZURE_SUBSCRIPTION_ID     — Azure subscription
+#   ACR_LOGIN_SERVER          — e.g. meetifyycr.azurecr.io
+#   AZURE_RESOURCE_GROUP_PROD — e.g. meetifyy-prod-rg
+#   AZURE_CONTAINERAPP_PROD   — e.g. meetifyy-api
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Deploy — Production
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-prod.yml'
+      - 'backend/Dockerfile'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-prod:
+    name: Build & Deploy → PROD
+    runs-on: ubuntu-latest
+    # The `production` GitHub Environment gates access to PROD-only secrets.
+    # Development secrets in the `development` environment are not visible here.
+    #
+    # If the production environment has a required reviewer configured in
+    # GitHub, the deployment will pause here until a reviewer approves it.
+    # This is recommended for production deployments.
+    environment: production
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Azure login (PROD service principal via OIDC) ───────────────────
+      - name: Azure login — PROD
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_PROD }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ── 3. ACR login ───────────────────────────────────────────────────────
+      - name: ACR login
+        run: az acr login --name ${{ secrets.ACR_LOGIN_SERVER }}
+
+      # ── 4. Build & push — tagged prod-<sha> ───────────────────────────────
+      # Production images are tagged `prod-<sha>` and `prod-latest`.
+      # The prod-<sha> tag is immutable and used for rollbacks.
+      # The same Dockerfile and source as development — only env vars differ.
+      - name: Build and push Docker image (prod)
+        env:
+          ACR: ${{ secrets.ACR_LOGIN_SERVER }}
+          SHA: ${{ github.sha }}
+        run: |
+          SHORT_SHA="${SHA::8}"
+          IMAGE="${ACR}/meetifyy-api"
+          PROD_TAG="prod-${SHORT_SHA}"
+          PROD_LATEST="prod-latest"
+
+          docker build \
+            --tag "${IMAGE}:${PROD_TAG}" \
+            --tag "${IMAGE}:${PROD_LATEST}" \
+            --file backend/Dockerfile \
+            backend/
+
+          docker push "${IMAGE}:${PROD_TAG}"
+          docker push "${IMAGE}:${PROD_LATEST}"
+
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${SHORT_SHA}" >> "$GITHUB_ENV"
+          echo "PROD_TAG=${PROD_TAG}" >> "$GITHUB_ENV"
+
+      # ── 5. Prisma migrate deploy → PRODUCTION database ─────────────────────
+      # CRITICAL SAFETY RULES enforced here:
+      #
+      # ✓ `prisma migrate deploy` — the ONLY production-safe command.
+      #   It applies only migration files committed to Git.
+      #   It NEVER generates new migrations.
+      #   It NEVER uses `prisma db push`.
+      #   It NEVER uses `prisma migrate dev`.
+      #   It NEVER modifies schema outside committed migration files.
+      #
+      # ✓ Runs BEFORE the new application image is deployed, so the database
+      #   schema is always ahead of or equal to the running code.
+      #
+      # ✓ The PRODUCTION database URL is stored ONLY as a secret on the PROD
+      #   Container App. It is read from there at runtime and never appears in
+      #   GitHub Actions logs or environment variables accessible to other jobs.
+      #
+      # ✓ If migration fails, the workflow exits 1 — the old application
+      #   continues running against the unchanged database.
+      - name: Prisma migrate deploy → PRODUCTION
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP_PROD }}
+          CONTAINERAPP: ${{ secrets.AZURE_CONTAINERAPP_PROD }}
+          ACR: ${{ secrets.ACR_LOGIN_SERVER }}
+          SHA: ${{ env.SHORT_SHA }}
+          PROD_TAG: ${{ env.PROD_TAG }}
+        run: |
+          JOB_NAME="meetifyy-prod-migrate-${SHA}"
+
+          # Create a one-shot Container App Job using the freshly built PROD image.
+          # The PROD Container App's secret store provides DATABASE_URL and
+          # DIRECT_URL — these point ONLY to the production Supabase database.
+          az containerapp job create \
+            --name "${JOB_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --environment "$(az containerapp show \
+                --name "${CONTAINERAPP}" \
+                --resource-group "${RESOURCE_GROUP}" \
+                --query 'properties.environmentId' \
+                --output tsv)" \
+            --trigger-type Manual \
+            --replica-timeout 300 \
+            --replica-retry-limit 0 \
+            --replica-completion-count 1 \
+            --parallelism 1 \
+            --image "${ACR}/meetifyy-api:${PROD_TAG}" \
+            --registry-server "${ACR}" \
+            --command "npx" \
+            --args "prisma" "migrate" "deploy" \
+            --env-vars \
+              "DATABASE_URL=secretref:database-url" \
+              "DIRECT_URL=secretref:direct-url" \
+            --secrets \
+              "database-url=$(az containerapp secret show \
+                  --name "${CONTAINERAPP}" \
+                  --resource-group "${RESOURCE_GROUP}" \
+                  --secret-name database-url \
+                  --query 'value' --output tsv)" \
+              "direct-url=$(az containerapp secret show \
+                  --name "${CONTAINERAPP}" \
+                  --resource-group "${RESOURCE_GROUP}" \
+                  --secret-name direct-url \
+                  --query 'value' --output tsv)"
+
+          az containerapp job start \
+            --name "${JOB_NAME}" \
+            --resource-group "${RESOURCE_GROUP}"
+
+          echo "Waiting for PRODUCTION migration to complete..."
+          for i in $(seq 1 36); do
+            STATUS=$(az containerapp job execution list \
+              --name "${JOB_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query '[0].properties.status' \
+              --output tsv 2>/dev/null || echo "Unknown")
+            echo "  Migration status: ${STATUS}"
+            if [ "${STATUS}" = "Succeeded" ]; then
+              echo "PRODUCTION migrations applied successfully."
+              break
+            elif [ "${STATUS}" = "Failed" ]; then
+              echo "CRITICAL: PRODUCTION migration FAILED."
+              echo "The running production application has NOT been updated."
+              echo "Investigate the migration logs before retrying."
+              az containerapp job delete --name "${JOB_NAME}" \
+                --resource-group "${RESOURCE_GROUP}" --yes || true
+              exit 1
+            fi
+            sleep 10
+          done
+
+          # Cleanup
+          az containerapp job delete --name "${JOB_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" --yes || true
+
+      # ── 6. Deploy new image to PRODUCTION Container App ───────────────────
+      - name: Deploy to PRODUCTION Container App
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP_PROD }}
+          CONTAINERAPP: ${{ secrets.AZURE_CONTAINERAPP_PROD }}
+          ACR: ${{ secrets.ACR_LOGIN_SERVER }}
+          PROD_TAG: ${{ env.PROD_TAG }}
+        run: |
+          az containerapp update \
+            --name "${CONTAINERAPP}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --image "${ACR}/meetifyy-api:${PROD_TAG}"
+
+          echo "PRODUCTION deployment complete."
+          echo "Image: ${ACR}/meetifyy-api:${PROD_TAG}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+
+      # ── 7. Health check — PRODUCTION ───────────────────────────────────────
+      - name: Post-deploy health check — PRODUCTION
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP_PROD }}
+          CONTAINERAPP: ${{ secrets.AZURE_CONTAINERAPP_PROD }}
+        run: |
+          FQDN=$(az containerapp show \
+            --name "${CONTAINERAPP}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query 'properties.configuration.ingress.fqdn' \
+            --output tsv)
+
+          echo "Checking https://${FQDN}/health ..."
+          for i in $(seq 1 18); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 10 "https://${FQDN}/health" || echo "000")
+            echo "Attempt ${i}: HTTP ${STATUS}"
+            if [ "${STATUS}" = "200" ]; then
+              echo "PRODUCTION health check passed."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "WARNING: PRODUCTION health check did not return 200 within 3 minutes."
+          echo "Check Azure portal → meetifyy-api logs."
+          echo "If the app is broken, roll back with:"
+          echo "  az containerapp update --name ${CONTAINERAPP} --resource-group ${RESOURCE_GROUP} --image ${ACR}/meetifyy-api:<PREVIOUS_PROD_TAG>"

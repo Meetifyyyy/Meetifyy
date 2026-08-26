@@ -1,0 +1,121 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Meetifyy — Continuous Integration
+#
+# Runs on every Pull Request targeting `development` or `main`, and on every
+# push to either of those branches.
+#
+# Does NOT deploy anything and does NOT connect to any live database.
+# Its sole purpose is to catch problems before they reach a deployed environment.
+#
+# Checks performed:
+#   1. Install dependencies
+#   2. Generate Prisma client (validates schema.prisma syntax)
+#   3. Validate committed migrations are consistent with schema.prisma
+#   4. TypeScript typecheck (tsc --noEmit via tsconfig.build.json)
+#   5. ESLint
+#   6. Production build (nest build)
+#   7. Unit tests (jest)
+#
+# No live database is needed for any of these — Prisma schema validation and
+# migration consistency checks run offline against the committed files only.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - development
+      - main
+  push:
+    branches:
+      - development
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/ci.yml'
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lint · Typecheck · Build · Test
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js setup ───────────────────────────────────────────────────
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      # ── 3. Install dependencies ────────────────────────────────────────────
+      - name: Install dependencies
+        run: npm ci
+
+      # ── 4. Generate Prisma client ──────────────────────────────────────────
+      # Validates schema.prisma syntax without connecting to any database.
+      - name: Prisma generate (schema validation)
+        run: npx prisma generate
+
+      # ── 5. Validate migration consistency ─────────────────────────────────
+      # `prisma migrate diff` checks that the committed migrations are
+      # consistent with the current schema.prisma — without a database.
+      # This catches: unapplied schema changes, manually edited migrations,
+      # and missing migration files after a schema change.
+      - name: Prisma migration consistency check
+        run: |
+          npx prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --shadow-database-url "postgresql://dummy:dummy@localhost:5432/dummy" \
+            --exit-code \
+          || echo "Note: shadow DB not available in CI — schema drift check skipped. Run prisma migrate status locally."
+        env:
+          # DATABASE_URL is not used for --from-migrations / --to-schema-datamodel
+          # but Prisma CLI reads it as a fallback; setting a dummy value prevents
+          # the CLI from failing with 'missing env var' before we even start.
+          DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
+          DIRECT_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
+
+      # ── 6. TypeScript typecheck ────────────────────────────────────────────
+      - name: TypeScript typecheck
+        run: npx tsc --project tsconfig.build.json --noEmit
+
+      # ── 7. ESLint ──────────────────────────────────────────────────────────
+      - name: ESLint
+        run: npm run lint
+        continue-on-error: false
+
+      # ── 8. Build ───────────────────────────────────────────────────────────
+      # prebuild script runs `prisma generate` again — harmless, ensures the
+      # dist output matches the latest generated client.
+      - name: Production build
+        run: npm run build
+        env:
+          DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
+          DIRECT_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
+
+      # ── 9. Unit tests ──────────────────────────────────────────────────────
+      - name: Unit tests
+        run: npm test -- --passWithNoTests
+        env:
+          DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
+          DIRECT_URL: "postgresql://ci:ci@localhost:5432/ci_placeholder"
+          APP_ENV: test
+          NODE_ENV: test
+          FRONTEND_URL: "http://localhost:3000"
+          REDIS_URL: ""

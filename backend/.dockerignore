@@ -1,0 +1,45 @@
+# ── Node / build artefacts ────────────────────────────────────────────────────
+node_modules
+dist
+.npm
+
+# ── Environment files (NEVER include real secrets in the image) ───────────────
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# ── Local uploads directory (ephemeral local-dev only, not used in prod) ──────
+uploads/
+
+# ── Test / development-only files ────────────────────────────────────────────
+test/
+**/*.spec.ts
+**/*.test.ts
+coverage/
+jest.config*
+
+# ── Source maps (can be generated from dist if needed) ───────────────────────
+**/*.js.map
+
+# ── Railway / Nixpacks / legacy deployment configs (not needed in image) ──────
+railway.json
+nixpacks.toml
+Procfile
+
+# ── Editor / OS noise ────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.DS_Store
+*.swp
+*.swo
+.git/
+.gitignore
+
+# ── Development scripts (not required at runtime) ─────────────────────────────
+render-templates.ts
+send-all-mailpit.ts
+upload-wordmark.ts
+test-routing-logic.ts
+prisma/benchmark_join.ts
+prisma/seed.ts

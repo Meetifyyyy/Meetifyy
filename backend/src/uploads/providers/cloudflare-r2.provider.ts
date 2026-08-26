@@ -149,7 +149,7 @@ export class CloudflareR2Provider implements StorageProvider {
    * row, so the database ended up referencing objects that only ever existed on
    * one container's filesystem.
    *
-   * On a platform with an ephemeral filesystem — Railway, where this runs —
+   * On a platform with an ephemeral filesystem — Azure Container Apps, where this runs —
    * every deploy wipes that directory. The Media rows survive, the bytes do
    * not, and every post referencing them serves 404s from then on, with no way
    * to recover the image and nothing above warning level in the logs.

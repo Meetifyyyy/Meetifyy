@@ -72,7 +72,7 @@ cd backend && npx prisma migrate dev --name describe_your_change
 ```
 
 Then **commit the folder it generates** under `backend/prisma/migrations/`. That file is
-the deployable unit — Railway runs `prisma migrate deploy` as its pre-deploy step and
+the deployable unit — Azure Container Apps runs `prisma migrate deploy` as a pre-deploy step and
 applies exactly those files, in order. A schema change without a committed migration
 simply never reaches production, and the app boots expecting a column that isn't there.
 
@@ -97,3 +97,29 @@ Useful commands:
 
 `migrate dev` is the only sharp one: against a database whose history has drifted it will
 offer to **reset (wipe) it**. Run it only against your own dev database, never production.
+---
+
+## 🌿 Branch → Environment mapping
+
+| Branch | Deploys to | Database |
+|--------|-----------|----------|
+| `feature/*` | — (CI only) | — |
+| `development` | Azure DEV (`meetifyy-api-dev`) | Supabase DEV |
+| `main` | Azure PROD (`meetifyy-api`) | Supabase PROD |
+
+Schema changes flow:
+
+```
+1. Modify schema.prisma locally
+2. npx prisma migrate dev --name your_change   ← creates migration file
+3. Commit schema.prisma + migrations/ together
+4. Push to development → DEV deploy + DEV migration runs automatically
+5. Test in DEV
+6. PR: development → main → PROD deploy + PROD migration runs automatically
+```
+
+`prisma migrate deploy` (used in both deployment workflows) applies only the
+migration files already committed to Git. It never generates migrations and
+never touches schema outside the committed SQL files.
+
+See `AZURE_SETUP.md §23` for the complete architecture and workflow guide.

@@ -1,0 +1,219 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Meetifyy — Deploy to DEVELOPMENT
+#
+# Triggered by every push to the `development` branch.
+#
+# Deploys to the DEV Azure Container App using the `development` GitHub
+# Environment. Only development secrets are accessible here — production
+# credentials are in a separate `production` environment and are never exposed.
+#
+# Flow:
+#   push to development
+#   → build Docker image (dev-<sha> tag)
+#   → push to ACR
+#   → run `prisma migrate deploy` against DEV Supabase (via Container App Job)
+#   → deploy to meetifyy-api-dev Container App
+#   → health check
+#
+# Required GitHub Environment secrets (Settings → Environments → development):
+#   AZURE_CLIENT_ID_DEV       — DEV service principal app ID
+#   AZURE_TENANT_ID           — Azure tenant (shared — not a secret)
+#   AZURE_SUBSCRIPTION_ID     — Azure subscription (shared — not a secret)
+#   ACR_LOGIN_SERVER          — e.g. meetifyycr.azurecr.io (shared registry)
+#   AZURE_RESOURCE_GROUP_DEV  — e.g. meetifyy-dev-rg
+#   AZURE_CONTAINERAPP_DEV    — e.g. meetifyy-api-dev
+#
+# Database credentials are stored as Container App secrets on the DEV Container
+# App — they are NEVER stored as GitHub secrets. The migration job reads them
+# from the Container App secret store at runtime.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Deploy — Development
+
+on:
+  push:
+    branches:
+      - development
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-dev.yml'
+      - 'backend/Dockerfile'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-dev:
+    name: Build & Deploy → DEV
+    runs-on: ubuntu-latest
+    # The `development` GitHub Environment gates access to DEV-only secrets.
+    # Production secrets in the `production` environment are not visible here.
+    environment: development
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Azure login (DEV service principal via OIDC) ────────────────────
+      - name: Azure login — DEV
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_DEV }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ── 3. ACR login ───────────────────────────────────────────────────────
+      - name: ACR login
+        run: az acr login --name ${{ secrets.ACR_LOGIN_SERVER }}
+
+      # ── 4. Build & push — tagged dev-<sha> ────────────────────────────────
+      # Development images are tagged `dev-<sha>` and `dev-latest` to keep them
+      # clearly separated from production images in the same registry.
+      - name: Build and push Docker image (dev)
+        env:
+          ACR: ${{ secrets.ACR_LOGIN_SERVER }}
+          SHA: ${{ github.sha }}
+        run: |
+          SHORT_SHA="${SHA::8}"
+          IMAGE="${ACR}/meetifyy-api"
+          DEV_TAG="dev-${SHORT_SHA}"
+          DEV_LATEST="dev-latest"
+
+          docker build \
+            --tag "${IMAGE}:${DEV_TAG}" \
+            --tag "${IMAGE}:${DEV_LATEST}" \
+            --file backend/Dockerfile \
+            backend/
+
+          docker push "${IMAGE}:${DEV_TAG}"
+          docker push "${IMAGE}:${DEV_LATEST}"
+
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${SHORT_SHA}" >> "$GITHUB_ENV"
+          echo "DEV_TAG=${DEV_TAG}" >> "$GITHUB_ENV"
+
+      # ── 5. Prisma migrate deploy → DEV database ────────────────────────────
+      # `prisma migrate deploy` applies only the migration files already
+      # committed to Git. It NEVER generates new migrations.
+      #
+      # The DEV database credentials (DATABASE_URL, DIRECT_URL) are stored as
+      # secrets on the DEV Container App — never in GitHub. The migration job
+      # reads them from the Container App secret store at runtime.
+      #
+      # Migration order: BEFORE new image is deployed. The database schema is
+      # always ahead of or equal to the running application code.
+      - name: Prisma migrate deploy → DEV
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP_DEV }}
+          CONTAINERAPP: ${{ secrets.AZURE_CONTAINERAPP_DEV }}
+          ACR: ${{ secrets.ACR_LOGIN_SERVER }}
+          SHA: ${{ env.SHORT_SHA }}
+        run: |
+          JOB_NAME="meetifyy-dev-migrate-${SHA}"
+
+          # Create a one-shot Container App Job using the freshly built image.
+          # The DEV Container App's secret store provides DATABASE_URL and
+          # DIRECT_URL — this is the ONLY database this job can reach.
+          az containerapp job create \
+            --name "${JOB_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --environment "$(az containerapp show \
+                --name "${CONTAINERAPP}" \
+                --resource-group "${RESOURCE_GROUP}" \
+                --query 'properties.environmentId' \
+                --output tsv)" \
+            --trigger-type Manual \
+            --replica-timeout 300 \
+            --replica-retry-limit 1 \
+            --replica-completion-count 1 \
+            --parallelism 1 \
+            --image "${ACR}/meetifyy-api:${DEV_TAG}" \
+            --registry-server "${ACR}" \
+            --command "npx" \
+            --args "prisma" "migrate" "deploy" \
+            --env-vars \
+              "DATABASE_URL=secretref:database-url" \
+              "DIRECT_URL=secretref:direct-url" \
+            --secrets \
+              "database-url=$(az containerapp secret show \
+                  --name "${CONTAINERAPP}" \
+                  --resource-group "${RESOURCE_GROUP}" \
+                  --secret-name database-url \
+                  --query 'value' --output tsv)" \
+              "direct-url=$(az containerapp secret show \
+                  --name "${CONTAINERAPP}" \
+                  --resource-group "${RESOURCE_GROUP}" \
+                  --secret-name direct-url \
+                  --query 'value' --output tsv)"
+
+          az containerapp job start \
+            --name "${JOB_NAME}" \
+            --resource-group "${RESOURCE_GROUP}"
+
+          echo "Waiting for DEV migration to complete..."
+          for i in $(seq 1 30); do
+            STATUS=$(az containerapp job execution list \
+              --name "${JOB_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query '[0].properties.status' \
+              --output tsv 2>/dev/null || echo "Unknown")
+            echo "  Migration status: ${STATUS}"
+            if [ "${STATUS}" = "Succeeded" ]; then
+              echo "DEV migrations applied successfully."
+              break
+            elif [ "${STATUS}" = "Failed" ]; then
+              echo "ERROR: DEV migration failed. Aborting deployment."
+              az containerapp job delete --name "${JOB_NAME}" \
+                --resource-group "${RESOURCE_GROUP}" --yes || true
+              exit 1
+            fi
+            sleep 10
+          done
+
+          # Cleanup
+          az containerapp job delete --name "${JOB_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" --yes || true
+
+      # ── 6. Deploy new image to DEV Container App ───────────────────────────
+      - name: Deploy to DEV Container App
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP_DEV }}
+          CONTAINERAPP: ${{ secrets.AZURE_CONTAINERAPP_DEV }}
+          ACR: ${{ secrets.ACR_LOGIN_SERVER }}
+          TAG: ${{ env.DEV_TAG }}
+        run: |
+          az containerapp update \
+            --name "${CONTAINERAPP}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --image "${ACR}/meetifyy-api:${TAG}"
+
+          echo "DEV deployment complete — image: ${ACR}/meetifyy-api:${TAG}"
+
+      # ── 7. Health check — DEV ──────────────────────────────────────────────
+      - name: Post-deploy health check — DEV
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP_DEV }}
+          CONTAINERAPP: ${{ secrets.AZURE_CONTAINERAPP_DEV }}
+        run: |
+          FQDN=$(az containerapp show \
+            --name "${CONTAINERAPP}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query 'properties.configuration.ingress.fqdn' \
+            --output tsv)
+
+          echo "Checking https://${FQDN}/health ..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 10 "https://${FQDN}/health" || echo "000")
+            echo "Attempt ${i}: HTTP ${STATUS}"
+            if [ "${STATUS}" = "200" ]; then
+              echo "DEV health check passed."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "WARNING: DEV health check did not return 200 within 2 minutes."
+          echo "Check Azure portal → meetifyy-api-dev logs."

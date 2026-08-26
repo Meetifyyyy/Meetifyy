@@ -8,7 +8,7 @@
  * Load order (later files never override values already set by earlier ones,
  * matching the conventional dotenv precedence):
  *
- *   1. real process environment (Railway / Vercel / CI / shell)  ← always wins
+ *   1. real process environment (Azure Container Apps / Vercel / CI / shell)  ← always wins
  *   2. .env.<APP_ENV>.local      (developer-specific, git-ignored)
  *   3. .env.local                (developer-specific, git-ignored)
  *   4. .env.<APP_ENV>            (per-environment, non-secret defaults)

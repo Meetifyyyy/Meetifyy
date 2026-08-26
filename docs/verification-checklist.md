@@ -89,12 +89,12 @@ The zone is already on Cloudflare nameservers. Full detail in
 
 Code cannot fix this. The browser never reaches us, so nothing of ours runs.
 
-### Move the API off the shared PaaS wildcard
+### Verify the API is on api.meetifyy.app
 
-`*.up.railway.app` is shared by every Railway project and is a standing
-blocklist target. Give the API `api.meetifyy.app` in the same Cloudflare zone and
-point `VITE_API_URL` at it. The same-origin `/_api` failover added in this work
-is a safety net, not a substitute.
+The backend runs on Azure Container Apps behind `api.meetifyy.app`. Confirm
+that the CNAME record points to the Container App FQDN and that
+`VITE_API_URL=https://api.meetifyy.app` is set in the Vercel production
+environment. The same-origin `/_api` failover is a safety net, not a substitute.
 
 ---
 
