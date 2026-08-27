@@ -1,35 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Upload, Loader2 } from '@shared/components/icons';
+import { ArrowRight, Upload, Loader2, Plus } from '@shared/components/icons';
+import Avatar from '@shared/components/avatar/Avatar';
 import { useSignup } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';
+import AvatarPickerModal from './AvatarPickerModal';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import { normalizeDicebearUrl } from '@shared/api/apiClient';
+import { generateRandomAvatarSet } from '@shared/utils/dicebear';
 import { showToast } from '@shared/utils/toast';
 import { AuthHeading, AuthButton, styles as s } from '../../shared/ui';
-import defaultAvatarImg from '../../../../assets/images/default_avatar.webp';
-
-const presetAvatars = [
-  'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix',
-  'https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka',
-  'https://api.dicebear.com/7.x/adventurer/svg?seed=Jack',
-  'https://api.dicebear.com/7.x/adventurer/svg?seed=Precious',
-  'https://api.dicebear.com/7.x/adventurer/svg?seed=Luna',
-];
 
 export default function Step5Avatar() {
-  const { signupData, clearSignupData } = useSignup();
+  const { signupData, updateData, clearSignupData } = useSignup();
   const { updateProfile } = useAuth();
   const navigate = useNavigate();
 
   const [avatar, setAvatar] = useState(signupData.avatar || '');
   const [isUploading, setIsUploading] = useState(false);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
 
-  const getProcessedAvatarUrl = (url) => {
+  // Generate a randomized set of only 5 quick avatars on initial step load
+  const [quickAvatars] = useState(() => generateRandomAvatarSet(5));
+
+  const getProcessedAvatarUrl = useCallback((url) => {
     if (!url || !url.includes('api.dicebear.com/')) return url;
     return normalizeDicebearUrl(url);
-  };
+  }, []);
+
+  const handleSelectAvatar = useCallback((url) => {
+    setAvatar(url);
+    updateData({ avatar: url });
+  }, [updateData]);
+
+  const handleClosePicker = useCallback(() => {
+    setIsPickerOpen(false);
+  }, []);
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
@@ -45,7 +52,7 @@ export default function Step5Avatar() {
     setIsUploading(true);
     try {
       const { publicUrl } = await processAndUploadImage(file, 'avatars', { maxWidthOrHeight: 512 });
-      setAvatar(publicUrl);
+      handleSelectAvatar(publicUrl);
     } catch {
       showToast('Upload failed', 'error');
     } finally {
@@ -71,14 +78,7 @@ export default function Step5Avatar() {
             {isUploading ? (
               <Loader2 size={32} className={s.btnSpin} style={{ color: 'var(--color-text-muted)' }} />
             ) : (
-              <img
-                src={avatar ? getProcessedAvatarUrl(avatar) : defaultAvatarImg}
-                alt="Profile preview"
-                onError={(e) => {
-                  e.target.onerror = null;
-                  e.target.src = defaultAvatarImg;
-                }}
-              />
+              <Avatar src={avatar ? getProcessedAvatarUrl(avatar) : null} size="100%" />
             )}
           </div>
           <label className={s.avatarUpload} aria-label="Upload a profile picture">
@@ -90,22 +90,38 @@ export default function Step5Avatar() {
         <div className={s.presetWrap}>
           <span className={s.presetLabel}>Or choose a preset character</span>
           <div className={s.presetRow}>
-            {presetAvatars.map((url) => {
-              const processedUrl = getProcessedAvatarUrl(url);
-              const isSelected = avatar && avatar.split('&backgroundColor=')[0] === url;
+            {quickAvatars.map((item) => {
+              const processedUrl = getProcessedAvatarUrl(item.url);
+              const isSelected = avatar === item.url || avatar === processedUrl;
               return (
                 <button
-                  key={url}
+                  key={item.id}
                   type="button"
-                  onClick={() => setAvatar(url)}
+                  onClick={() => handleSelectAvatar(item.url)}
                   className={`${s.presetBtn} ${isSelected ? s.presetBtnActive : ''}`}
-                  aria-label="Choose preset avatar"
+                  aria-label={`Choose ${item.styleLabel} avatar`}
                   aria-pressed={isSelected}
                 >
-                  <img src={processedUrl} alt="" />
+                  <img
+                    src={processedUrl}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                  />
                 </button>
               );
             })}
+
+            {/* "+" Button to open expanded avatar picker */}
+            <button
+              type="button"
+              className={s.presetMoreBtn}
+              onClick={() => setIsPickerOpen(true)}
+              aria-label="Choose more avatars"
+              title="More avatars"
+            >
+              <Plus size={20} />
+            </button>
           </div>
         </div>
 
@@ -118,6 +134,15 @@ export default function Step5Avatar() {
           {avatar ? 'Complete Registration' : 'Skip & Finish Setup'}
         </AuthButton>
       </div>
+
+      {/* Expanded Avatar Picker Modal */}
+      <AvatarPickerModal
+        isOpen={isPickerOpen}
+        onClose={handleClosePicker}
+        selectedUrl={avatar}
+        onSelect={handleSelectAvatar}
+        forceLight={true}
+      />
     </AnimatedStep>
   );
 }

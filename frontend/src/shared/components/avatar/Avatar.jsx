@@ -24,6 +24,7 @@ export function getProcessedAvatarUrl(src) {
 }
 
 const loadedAvatarCache = new Set();
+const failedAvatarCache = new Set();
 
 const Avatar = forwardRef(({
   src,
@@ -45,14 +46,21 @@ const Avatar = forwardRef(({
     initialProcessedSrc &&
     typeof initialProcessedSrc === 'string' &&
     initialProcessedSrc.trim() &&
-    !initialProcessedSrc.includes('default_avatar')
+    !initialProcessedSrc.includes('default_avatar') &&
+    !failedAvatarCache.has(initialProcessedSrc)
   );
 
-  const [hasError, setHasError] = useState(false);
+  const [hasError, setHasError] = useState(() => failedAvatarCache.has(initialProcessedSrc));
   const [imgSrc, setImgSrc] = useState(initialProcessedSrc);
   const [imgLoading, setImgLoading] = useState(!loadedAvatarCache.has(initialProcessedSrc));
 
   useEffect(() => {
+    if (failedAvatarCache.has(initialProcessedSrc)) {
+      setHasError(true);
+      setImgLoading(false);
+      return;
+    }
+
     setHasError(false);
     setImgSrc(initialProcessedSrc);
     if (loadedAvatarCache.has(initialProcessedSrc) || initialProcessedSrc.startsWith('blob:') || initialProcessedSrc.startsWith('data:')) {
@@ -125,6 +133,7 @@ const Avatar = forwardRef(({
   };
 
   const handleError = () => {
+    if (imgSrc) failedAvatarCache.add(imgSrc);
     setHasError(true);
     setImgLoading(false);
   };

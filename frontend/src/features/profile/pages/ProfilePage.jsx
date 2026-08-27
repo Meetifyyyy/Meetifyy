@@ -22,6 +22,7 @@ import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import FollowButton from '@shared/components/ui/FollowButton';
 import ProfileRightSidebar from '../components/ProfileRightSidebar';
 import ShareProfileModal from '../components/ShareProfileModal';
+import AvatarPickerModal from '@features/auth/signup/components/AvatarPickerModal';
 import ProfilePageSkeleton from '../components/skeletons/ProfilePageSkeleton';
 import { createPortal } from 'react-dom';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
@@ -96,6 +97,7 @@ export default function ProfilePage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [showCoverEditor, setShowCoverEditor] = useState(false);
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
   const [savingCover, setSavingCover] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
@@ -185,6 +187,20 @@ export default function ProfilePage() {
     } finally {
       setSavingCover(false);
       setCropType(null);
+    }
+  };
+
+  const handleSelectDicebearAvatar = async (url) => {
+    try {
+      setSavingCover(true);
+      await updateProfile({ avatar: url });
+      queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(targetUsername) });
+      showToast('Avatar updated', 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Failed to update avatar', 'error');
+    } finally {
+      setSavingCover(false);
     }
   };
 
@@ -378,7 +394,7 @@ export default function ProfilePage() {
                   <>
                     <button
                       className={s.editAvatarBtn}
-                      onClick={() => avatarFileRef.current?.click()}
+                      onClick={() => setIsAvatarPickerOpen(true)}
                       title="Edit avatar"
                       aria-label="Edit avatar"
                       disabled={savingCover}
@@ -612,6 +628,16 @@ export default function ProfilePage() {
           targetPreview={profileUser.bio}
           reportedFrom="profile"
           onSubmitted={() => setHasReported(true)}
+        />
+      )}
+
+      {isOwnProfile && (
+        <AvatarPickerModal
+          isOpen={isAvatarPickerOpen}
+          onClose={() => setIsAvatarPickerOpen(false)}
+          selectedUrl={effectiveUser.avatar}
+          onSelect={handleSelectDicebearAvatar}
+          onUpload={() => avatarFileRef.current?.click()}
         />
       )}
     </>
