@@ -28,6 +28,12 @@ export const EndpointsTable: React.FC<{
     refetchInterval: pollMs,
   });
 
+  const source = data?.source ?? 'raw';
+  const subtitleText =
+    source === 'slow_requests_7d'
+      ? 'Slowest routes · 7-day slow-request records · Select a row to trace recent requests.'
+      : 'Slowest first · Raw request logs · Select a row to trace recent requests.';
+
   const rows = useMemo(() => {
     const list = [...(data?.endpoints ?? [])];
     list.sort((a: any, b: any) => {
@@ -63,7 +69,7 @@ export const EndpointsTable: React.FC<{
     <section className="glass-panel" style={{ overflow: 'hidden', marginBottom: '0.85rem' }}>
       <div style={head}>
         <h3 style={title}>Endpoints</h3>
-        <span style={subtitle}>Slowest first. Select a row to see its recent requests.</span>
+        <span style={subtitle}>{subtitleText}</span>
         {isFetching && <Loader2 size={12} className="spin" style={{ color: 'var(--color-text-dim)' }} />}
       </div>
 

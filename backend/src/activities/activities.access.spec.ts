@@ -396,6 +396,14 @@ describe('Activity access enforcement (service level)', () => {
       const sql = String(prisma.$queryRaw.mock.calls[0][0].join(' '));
       expect(sql).toContain('ON CONFLICT');
     });
+
+    it('rejects join when capacity is exceeded concurrently (0 rows returned by atomic query)', async () => {
+      activityRow = baseActivity('PUBLIC');
+      prisma.$queryRaw.mockResolvedValueOnce([]);
+      await expect(
+        service.joinActivity('act-1', 'user-other'),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   describe('POST /api/activities/:id/bookmark', () => {

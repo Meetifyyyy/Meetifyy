@@ -203,31 +203,12 @@ export class JwtGuard implements CanActivate {
       );
     }
 
-    const now = Date.now();
-    const cached = JwtGuard.tokenCache.get(token);
-    if (cached && cached.expiresAt > now) {
-      request.user = cached.userPayload;
-      return true;
-    }
-    if (cached) {
-      // Expired cache entry — drop it and re-validate.
-      JwtGuard.tokenCache.delete(token);
-    }
-
     const userPayload = await this.validateToken(token);
     if (!userPayload) {
       throw new UnauthorizedException(
         'Invalid or expired authentication token',
       );
     }
-
-    // Cache until the token's own expiry, capped by the guard TTL so revoked
-    // sessions are re-checked at least every CACHE_TTL_MS.
-    const tokenExp = this.parseExp(token);
-    const expiresAt = tokenExp
-      ? Math.min(tokenExp * 1000, now + JwtGuard.CACHE_TTL_MS)
-      : now + JwtGuard.CACHE_TTL_MS;
-    JwtGuard.setCache(token, { userPayload, expiresAt });
 
     request.user = userPayload;
     return true;
@@ -237,14 +218,24 @@ export class JwtGuard implements CanActivate {
    * Validates the token and returns a normalized user payload, or null if the
    * token is invalid/expired. Never trusts an unverified payload.
    */
-  private async validateToken(token: string): Promise<any | null> {
+  public async validateToken(token: string): Promise<any | null> {
+    const now = Date.now();
+    const cached = JwtGuard.tokenCache.get(token);
+    if (cached && cached.expiresAt > now) {
+      return cached.userPayload;
+    }
+    if (cached) {
+      // Expired cache entry — drop it and re-validate.
+      JwtGuard.tokenCache.delete(token);
+    }
+
     const header = this.parseHeader(token);
     const alg = header?.alg;
 
     const normalize = (payload: any) => {
       const userId = payload.sub || payload.id || payload.user_id;
       if (!userId) return null;
-      return {
+      const normalizedPayload = {
         id: userId,
         email: payload.email || `${userId}@meetifyy.user`,
         user_metadata:
@@ -255,6 +246,14 @@ export class JwtGuard implements CanActivate {
         confirmed_at: payload.confirmed_at,
         token,
       };
+
+      const tokenExp = this.parseExp(token);
+      const expiresAt = tokenExp
+        ? Math.min(tokenExp * 1000, now + JwtGuard.CACHE_TTL_MS)
+        : now + JwtGuard.CACHE_TTL_MS;
+      JwtGuard.setCache(token, { userPayload: normalizedPayload, expiresAt });
+
+      return normalizedPayload;
     };
 
     // Fast path 1: asymmetric tokens (ES256/RS256) — Supabase's current signing
@@ -313,7 +312,7 @@ export class JwtGuard implements CanActivate {
         return null;
       }
       const user = data.user;
-      return {
+      const normalizedPayload = {
         id: user.id,
         email: user.email || `${user.id}@meetifyy.user`,
         user_metadata: user.user_metadata || {},
@@ -321,6 +320,14 @@ export class JwtGuard implements CanActivate {
         confirmed_at: (user as any).confirmed_at,
         token,
       };
+
+      const tokenExp = this.parseExp(token);
+      const expiresAt = tokenExp
+        ? Math.min(tokenExp * 1000, now + JwtGuard.CACHE_TTL_MS)
+        : now + JwtGuard.CACHE_TTL_MS;
+      JwtGuard.setCache(token, { userPayload: normalizedPayload, expiresAt });
+
+      return normalizedPayload;
     } catch (e) {
       this.logger.warn(`Token validation error: ${(e as Error).message}`);
       return null;

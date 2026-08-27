@@ -918,13 +918,16 @@ export class UsersService {
           updateData.avatarMedia = { connect: { objectKey } };
         } else if (avatar.startsWith('http')) {
           updateData.avatarMedia = {
-            create: {
-              provider: 'external',
-              bucket: 'external',
-              objectKey: avatar,
-              mimeType: 'image/jpeg',
-              fileSize: 0,
-              ownerId: userId,
+            connectOrCreate: {
+              where: { objectKey: avatar },
+              create: {
+                provider: 'external',
+                bucket: 'external',
+                objectKey: avatar,
+                mimeType: 'image/jpeg',
+                fileSize: 0,
+                ownerId: userId,
+              },
             },
           };
         }
@@ -939,13 +942,16 @@ export class UsersService {
           updateData.coverMedia = { connect: { objectKey } };
         } else if (cover.startsWith('http')) {
           updateData.coverMedia = {
-            create: {
-              provider: 'external',
-              bucket: 'external',
-              objectKey: cover,
-              mimeType: 'image/jpeg',
-              fileSize: 0,
-              ownerId: userId,
+            connectOrCreate: {
+              where: { objectKey: cover },
+              create: {
+                provider: 'external',
+                bucket: 'external',
+                objectKey: cover,
+                mimeType: 'image/jpeg',
+                fileSize: 0,
+                ownerId: userId,
+              },
             },
           };
         }

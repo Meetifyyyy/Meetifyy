@@ -1159,6 +1159,49 @@ model SystemMetric {
   @@index([createdAt])
 }
 
+/// Pre-aggregated 5-minute performance buckets.
+///
+/// One row per 5-minute UTC boundary. Replaces raw RequestLog GROUP BY queries
+/// for the 7-day performance chart: 7d × 24h × 12 = 2,016 rows maximum vs
+/// potentially millions of individual request rows.
+///
+/// Upserted by MetricsAggregatorService on each flush cycle. The @@unique on
+/// bucketAt makes concurrent upserts from multiple instances idempotent.
+model PerformanceBucket {
+  id            String   @id @default(uuid())
+  /// UTC start of the 5-minute window, truncated to the boundary.
+  bucketAt      DateTime
+  totalRequests Int
+  errorCount    Int
+  avgLatencyMs  Float
+  maxLatencyMs  Int
+  p95LatencyMs  Float
+  createdAt     DateTime @default(now())
+
+  @@unique([bucketAt])
+  @@index([bucketAt])
+}
+
+/// Materialized slow-request log for the rolling 7-day view.
+///
+/// Populated by MetricsAggregatorService whenever a RequestLog row's
+/// durationMs exceeds the configured threshold. Pruned on the same schedule
+/// as raw logs. Avoids scanning the full RequestLog table to find the
+/// slowest endpoints.
+model SlowRequest {
+  id         String   @id @default(uuid())
+  route      String   @db.VarChar(300)
+  method     String   @db.VarChar(10)
+  statusCode Int
+  durationMs Int
+  requestId  String?
+  occurredAt DateTime
+
+  @@index([occurredAt])
+  @@index([durationMs])
+  @@index([route, durationMs])
+}
+
 model CollegeRequest {
   id            String   @id @default(uuid())
   name          String

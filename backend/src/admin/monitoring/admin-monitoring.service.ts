@@ -12,13 +12,25 @@ import {
   TimeWindow,
 } from './dto/admin-monitoring.dto';
 
-/** Minutes covered by each selectable window, and the bucket width to use for it. */
-const WINDOWS: Record<TimeWindow, { minutes: number; bucketMinutes: number }> =
-  {
-    '1h': { minutes: 60, bucketMinutes: 1 },
-    '24h': { minutes: 60 * 24, bucketMinutes: 30 },
-    '7d': { minutes: 60 * 24 * 7, bucketMinutes: 180 },
-  };
+/**
+ * Minutes covered by each selectable window, and the bucket width to use.
+ *
+ * For the 1h and 24h windows the raw RequestLog table is queried directly —
+ * those windows are within the 48-hour raw retention window, so the data is
+ * always available and the row counts are small.
+ *
+ * For the 7d window the PerformanceBucket table is used instead. Scanning raw
+ * logs for 7 days can cover hundreds of thousands of rows; the pre-aggregated
+ * buckets answer the same query with at most 2,016 rows.
+ */
+const WINDOWS: Record<
+  TimeWindow,
+  { minutes: number; bucketMinutes: number; useAggregated: boolean }
+> = {
+  '1h': { minutes: 60, bucketMinutes: 1, useAggregated: false },
+  '24h': { minutes: 60 * 24, bucketMinutes: 30, useAggregated: false },
+  '7d': { minutes: 60 * 24 * 7, bucketMinutes: 60, useAggregated: true },
+};
 
 @Injectable()
 export class AdminMonitoringService {
@@ -34,6 +46,7 @@ export class AdminMonitoringService {
    * Deliberately computed over a short trailing window rather than all time:
    * "average latency since the process started" hides a problem that began ten
    * minutes ago, which is the only kind of problem this card exists to show.
+   * The 5-minute window is always within the 48-hour raw retention window.
    */
   async getOverview() {
     const since = minutesAgo(5);
@@ -70,8 +83,6 @@ export class AdminMonitoringService {
       },
       process: {
         uptimeSeconds: Math.round(process.uptime()),
-        // Free-text label only. Never used for a decision, so it cannot become
-        // an environment branch by the back door.
         environmentLabel: config.monitoring.environmentLabel || null,
         collectionEnabled: config.monitoring.enabled,
       },
@@ -79,6 +90,11 @@ export class AdminMonitoringService {
       lastSnapshotAt: latest?.createdAt ?? null,
       buffer: this.writer.getBufferDepth(),
       pollingIntervalMs: config.monitoring.pollingIntervalMs,
+      // Inform the client about retention windows so it can display accurate labels.
+      retention: {
+        rawHours: config.monitoring.retentionDays * 24,
+        aggregationDays: config.monitoring.aggregationRetentionDays,
+      },
     };
   }
 
@@ -95,17 +111,90 @@ export class AdminMonitoringService {
   /**
    * Bucketed time series for the charts.
    *
-   * Aggregated in Postgres with `date_bin` rather than by reading rows into
-   * Node: a 7-day window can cover hundreds of thousands of rows, and shipping
-   * those to the API process to reduce them there would make the monitoring
-   * page the heaviest query in the application.
+   * For the 1h and 24h windows: aggregated in Postgres with `date_bin` over
+   * the raw RequestLog table (always within the 48h retention window).
+   *
+   * For the 7d window: reads from the pre-aggregated PerformanceBucket table,
+   * which holds at most 2,016 rows and requires no heavy GROUP BY aggregation.
    */
   async getTimeseries(query: TimeseriesDto) {
-    const { minutes, bucketMinutes } = WINDOWS[query.window ?? '24h'];
+    const { minutes, bucketMinutes, useAggregated } =
+      WINDOWS[query.window ?? '24h'];
     const since = minutesAgo(minutes);
+
+    if (useAggregated) {
+      return this.getTimeseriesFromBuckets(
+        query.metric,
+        query.window ?? '7d',
+        since,
+        bucketMinutes,
+      );
+    }
+
+    return this.getTimeseriesFromRaw(
+      query.metric,
+      query.window ?? '24h',
+      since,
+      bucketMinutes,
+    );
+  }
+
+  private async getTimeseriesFromBuckets(
+    metric: string,
+    window: TimeWindow,
+    since: Date,
+    bucketMinutes: number,
+  ) {
+    const buckets = await this.prisma.performanceBucket.findMany({
+      where: { bucketAt: { gte: since } },
+      orderBy: { bucketAt: 'asc' },
+    });
+
+    if (metric === 'latency') {
+      return {
+        metric,
+        window,
+        bucketMinutes,
+        source: 'aggregated',
+        points: buckets.map((b) => ({
+          t: b.bucketAt,
+          avgMs: round(b.avgLatencyMs),
+          p95Ms: round(b.p95LatencyMs),
+          maxMs: b.maxLatencyMs,
+        })),
+      };
+    }
+
+    const bucketSeconds = bucketMinutes * 60;
+
+    return {
+      metric,
+      window,
+      bucketMinutes,
+      source: 'aggregated',
+      points: buckets.map((b) => {
+        const total = b.totalRequests;
+        const errors = b.errorCount;
+        return {
+          t: b.bucketAt,
+          total,
+          errors,
+          rps: round(total / bucketSeconds),
+          errorRatePercent: total > 0 ? round((errors / total) * 100) : 0,
+        };
+      }),
+    };
+  }
+
+  private async getTimeseriesFromRaw(
+    metric: string,
+    window: TimeWindow,
+    since: Date,
+    bucketMinutes: number,
+  ) {
     const interval = `${bucketMinutes} minutes`;
 
-    if (query.metric === 'latency') {
+    if (metric === 'latency') {
       const rows = await this.prisma.$queryRaw<
         Array<{ bucket: Date; avg_ms: number; p95_ms: number }>
       >`
@@ -118,9 +207,10 @@ export class AdminMonitoringService {
         ORDER BY bucket ASC`;
 
       return {
-        metric: query.metric,
-        window: query.window ?? '24h',
+        metric,
+        window,
         bucketMinutes,
+        source: 'raw',
         points: rows.map((r) => ({
           t: r.bucket,
           avgMs: round(r.avg_ms),
@@ -143,9 +233,10 @@ export class AdminMonitoringService {
     const bucketSeconds = bucketMinutes * 60;
 
     return {
-      metric: query.metric,
-      window: query.window ?? '24h',
+      metric,
+      window,
       bucketMinutes,
+      source: 'raw',
       points: rows.map((r) => {
         const total = Number(r.total);
         const errors = Number(r.errors);
@@ -153,8 +244,6 @@ export class AdminMonitoringService {
           t: r.bucket,
           total,
           errors,
-          // Per-second rate rather than a raw count, so switching window does
-          // not change the shape of the line for the same traffic.
           rps: round(total / bucketSeconds),
           errorRatePercent: total > 0 ? round((errors / total) * 100) : 0,
         };
@@ -165,11 +254,62 @@ export class AdminMonitoringService {
   /**
    * Per-endpoint breakdown, worst first.
    *
+   * For 1h/24h: aggregated from raw RequestLog (within 48h retention).
+   * For 7d: derived from PerformanceBucket — not per-route, but gives overall
+   *         throughput context alongside the SlowRequest endpoint list.
+   *
    * p95 alongside the average because an endpoint with a good mean and a bad
    * tail is a real user-facing problem that the mean alone conceals.
    */
   async getEndpoints(window: TimeWindow = '24h') {
-    const since = minutesAgo(WINDOWS[window].minutes);
+    const { minutes, useAggregated } = WINDOWS[window];
+    const since = minutesAgo(minutes);
+
+    if (useAggregated) {
+      // For the 7d window derive per-endpoint stats from the SlowRequest table.
+      // This is not identical to a full GROUP BY over 7d of raw logs, but it
+      // surfaces the routes that actually caused slow responses — which is what
+      // an admin debugging latency actually wants to see.
+      const rows = await this.prisma.$queryRaw<
+        Array<{
+          route: string;
+          method: string;
+          requests: bigint;
+          avg_ms: number;
+          p95_ms: number;
+          errors: bigint;
+        }>
+      >`
+        SELECT "route", "method",
+               COUNT(*) AS requests,
+               AVG("durationMs")::float AS avg_ms,
+               PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY "durationMs")::float AS p95_ms,
+               COUNT(*) FILTER (WHERE "statusCode" >= 400) AS errors
+        FROM "SlowRequest"
+        WHERE "occurredAt" >= ${since}
+        GROUP BY "route", "method"
+        ORDER BY p95_ms DESC NULLS LAST
+        LIMIT 50`;
+
+      return {
+        window,
+        source: 'slow_requests_7d',
+        endpoints: rows.map((r) => {
+          const requests = Number(r.requests);
+          const errors = Number(r.errors);
+          return {
+            route: r.route,
+            method: r.method,
+            requests,
+            avgMs: round(r.avg_ms),
+            p95Ms: round(r.p95_ms),
+            errors,
+            errorRatePercent:
+              requests > 0 ? round((errors / requests) * 100) : 0,
+          };
+        }),
+      };
+    }
 
     const rows = await this.prisma.$queryRaw<
       Array<{
@@ -194,6 +334,7 @@ export class AdminMonitoringService {
 
     return {
       window,
+      source: 'raw',
       endpoints: rows.map((r) => {
         const requests = Number(r.requests);
         const errors = Number(r.errors);
@@ -207,6 +348,37 @@ export class AdminMonitoringService {
           errorRatePercent: requests > 0 ? round((errors / requests) * 100) : 0,
         };
       }),
+    };
+  }
+
+  /**
+   * Slowest requests from the rolling 7-day SlowRequest table.
+   *
+   * Unlike a live scan of RequestLog (which is only kept 48 hours), this
+   * table is populated continuously by MetricsAggregatorService and retains
+   * the worst-latency requests for the full 7-day window.
+   */
+  async getSlowRequests(limit = 50) {
+    const since = daysAgo(config.monitoring.aggregationRetentionDays);
+
+    const rows = await this.prisma.slowRequest.findMany({
+      where: { occurredAt: { gte: since } },
+      orderBy: { durationMs: 'desc' },
+      take: Math.min(limit, 200),
+    });
+
+    return {
+      retentionDays: config.monitoring.aggregationRetentionDays,
+      thresholdMs: config.monitoring.slowRequestThresholdMs,
+      rows: rows.map((r) => ({
+        id: r.id,
+        route: r.route,
+        method: r.method,
+        statusCode: r.statusCode,
+        durationMs: r.durationMs,
+        requestId: r.requestId,
+        occurredAt: r.occurredAt,
+      })),
     };
   }
 
@@ -249,7 +421,13 @@ export class AdminMonitoringService {
 
     return {
       data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        retentionHours: config.monitoring.retentionDays * 24,
+      },
     };
   }
 
@@ -273,7 +451,13 @@ export class AdminMonitoringService {
 
     return {
       data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        retentionHours: config.monitoring.retentionDays * 24,
+      },
       // The client renders a hint when traces are off, rather than leaving an
       // admin wondering why every stack is empty.
       stackTracesEnabled: config.monitoring.logStackTraces,
@@ -282,14 +466,15 @@ export class AdminMonitoringService {
 
   /** Latest snapshot plus recent history for the resource gauges. */
   async getSystem(window: TimeWindow = '1h') {
-    const since = minutesAgo(WINDOWS[window].minutes);
+    const { minutes } = WINDOWS[window];
+    const since = minutesAgo(minutes);
 
     const [latest, history] = await Promise.all([
       this.prisma.systemMetric.findFirst({ orderBy: { createdAt: 'desc' } }),
       this.prisma.systemMetric.findMany({
         where: { createdAt: { gte: since } },
         orderBy: { createdAt: 'asc' },
-        // Enough to draw a line without shipping a week of 15-second samples.
+        // Enough to draw a line without shipping a week of samples.
         take: 500,
       }),
     ]);
@@ -299,20 +484,26 @@ export class AdminMonitoringService {
       latest,
       history,
       live: {
-        // Read at request time, so the gauges are current even between
-        // snapshots.
+        // Read at request time, so the gauges are current even between snapshots.
         socketConnections: this.sockets.getConnectionCount(),
         dbPool: this.prisma.getPoolStats(),
         uptimeSeconds: Math.round(process.uptime()),
         buffer: this.writer.getBufferDepth(),
       },
       collectionIntervalMs: config.monitoring.metricsIntervalMs,
+      retentionHours: config.monitoring.retentionDays * 24,
     };
   }
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 function minutesAgo(minutes: number): Date {
   return new Date(Date.now() - minutes * 60 * 1000);
+}
+
+function daysAgo(days: number): Date {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 }
 
 function round(value: number | null | undefined): number {

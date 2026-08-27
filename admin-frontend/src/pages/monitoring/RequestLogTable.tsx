@@ -64,6 +64,8 @@ export const RequestLogTable: React.FC<{
   const active = mode === 'requests' ? requests : errors;
   const meta = active.data?.meta;
 
+  const retentionHours = (active.data?.meta as any)?.retentionHours ?? 48;
+
   return (
     <section id="monitoring-logs" className="glass-panel" style={{ overflow: 'hidden' }}>
       <div style={head}>
@@ -75,7 +77,8 @@ export const RequestLogTable: React.FC<{
             Errors
           </TabButton>
         </div>
-        {active.isFetching && <Loader2 size={12} className="spin" style={{ color: 'var(--color-text-dim)' }} />}
+        <span style={retentionBadge}>Last {retentionHours}h</span>
+        {active.isFetching && <Loader2 size={12} className="spin" style={{ color: 'var(--color-text-dim)', marginLeft: 'auto' }} />}
       </div>
 
       <div style={filterBar}>
@@ -234,7 +237,7 @@ export const RequestLogTable: React.FC<{
             Previous
           </button>
           <span style={{ fontSize: '0.72rem', color: 'var(--color-text-light)' }}>
-            Page {meta.page} of {meta.totalPages} · {meta.total.toLocaleString()} rows
+            Page {meta.page} of {meta.totalPages} · {meta.total.toLocaleString()} rows · last {retentionHours}h
           </span>
           <button
             className="btn-secondary"
@@ -274,6 +277,18 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; icon: React.Re
 );
 
 // ── Styles ─────────────────────────────────────────────────────────────────
+
+const retentionBadge: React.CSSProperties = {
+  fontSize: '0.66rem',
+  fontWeight: 600,
+  color: 'var(--color-text-light)',
+  background: 'var(--color-bg-soft)',
+  border: '1px solid var(--color-border)',
+  borderRadius: '4px',
+  padding: '1px 6px',
+  marginLeft: '0.25rem',
+  whiteSpace: 'nowrap',
+};
 
 const head: React.CSSProperties = {
   display: 'flex',

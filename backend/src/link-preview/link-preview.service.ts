@@ -7,6 +7,8 @@ import {
 import * as cheerio from 'cheerio';
 import { lookup } from 'dns/promises';
 import { isIP } from 'net';
+import * as http from 'http';
+import * as https from 'https';
 
 @Injectable()
 export class LinkPreviewService {
@@ -31,54 +33,7 @@ export class LinkPreviewService {
     await this.assertPublicTarget(parsedUrl);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-      const response = await fetch(url, {
-        headers: { 'User-Agent': 'Meetifyy Link Preview Bot/1.0' },
-        signal: controller.signal,
-        redirect: 'manual',
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        if (response.status >= 300 && response.status < 400) {
-          throw new ForbiddenException(
-            'Redirects are not allowed for link previews',
-          );
-        }
-        throw new UnprocessableEntityException(
-          `Target responded with status ${response.status}`,
-        );
-      }
-
-      // Check content-type to make sure it's HTML, not binary
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('text/html')) {
-        throw new BadRequestException('URL did not return an HTML document');
-      }
-
-      const maxBytes = 1024 * 1024;
-      const contentLength = Number(response.headers.get('content-length') || 0);
-      if (contentLength > maxBytes)
-        throw new BadRequestException('HTML payload too large');
-      if (!response.body) throw new BadRequestException('Empty HTML response');
-      const reader = response.body.getReader();
-      const chunks: Buffer[] = [];
-      let totalBytes = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        totalBytes += value.byteLength;
-        if (totalBytes > maxBytes) {
-          await reader.cancel();
-          throw new BadRequestException('HTML payload too large');
-        }
-        chunks.push(Buffer.from(value));
-      }
-      const html = Buffer.concat(chunks).toString('utf8');
-
+      const html = await this.fetchHtmlSafely(parsedUrl);
       const $ = cheerio.load(html);
 
       const getMeta = (prop: string) =>
@@ -104,13 +59,158 @@ export class LinkPreviewService {
         favicon: `https://www.google.com/s2/favicons?domain=${parsedUrl.hostname}&sz=32`,
       };
     } catch (err: any) {
-      if (err.name === 'AbortError') {
+      if (
+        err instanceof BadRequestException ||
+        err instanceof ForbiddenException ||
+        err instanceof UnprocessableEntityException
+      ) {
+        throw err;
+      }
+      if (err.name === 'AbortError' || err.message?.includes('timed out')) {
         throw new UnprocessableEntityException('Request timed out');
       }
       throw new UnprocessableEntityException(
         `Could not fetch preview: ${err.message}`,
       );
     }
+  }
+
+  /**
+   * Fetches the target HTML document with socket-level DNS verification (DNS pinning).
+   * Verifies the target IP at connection time before the TCP handshake to eliminate
+   * DNS rebinding / TOCTOU SSRF attacks.
+   */
+  private async fetchHtmlSafely(parsedUrl: URL): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const transport = parsedUrl.protocol === 'https:' ? https : http;
+      let settled = false;
+
+      const safeLookup = (
+        hostname: string,
+        options: any,
+        callback: (
+          err: Error | null,
+          address: string | any[],
+          family: number,
+        ) => void,
+      ) => {
+        lookup(hostname, { all: true })
+          .then((entries) => {
+            const addrs = Array.isArray(entries) ? entries : [entries];
+            if (
+              addrs.length === 0 ||
+              addrs.some((e) => this.isPrivateAddress(e.address))
+            ) {
+              return callback(
+                new ForbiddenException('Forbidden target host'),
+                '',
+                4,
+              );
+            }
+            const first = addrs[0];
+            callback(null, first.address, first.family);
+          })
+          .catch((err) => callback(err, '', 4));
+      };
+
+      const req = transport.request(
+        parsedUrl,
+        {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Meetifyy Link Preview Bot/1.0',
+            Accept: 'text/html,application/xhtml+xml',
+          },
+          lookup: safeLookup,
+          timeout: 5000,
+        },
+        (res) => {
+          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400) {
+            settled = true;
+            req.destroy();
+            return reject(
+              new ForbiddenException(
+                'Redirects are not allowed for link previews',
+              ),
+            );
+          }
+
+          if (
+            !res.statusCode ||
+            res.statusCode < 200 ||
+            res.statusCode >= 300
+          ) {
+            settled = true;
+            req.destroy();
+            return reject(
+              new UnprocessableEntityException(
+                `Target responded with status ${res.statusCode || 'unknown'}`,
+              ),
+            );
+          }
+
+          const contentType = res.headers['content-type'] || '';
+          if (!contentType.includes('text/html')) {
+            settled = true;
+            req.destroy();
+            return reject(
+              new BadRequestException('URL did not return an HTML document'),
+            );
+          }
+
+          const maxBytes = 1024 * 1024;
+          const contentLength = Number(res.headers['content-length'] || 0);
+          if (contentLength > maxBytes) {
+            settled = true;
+            req.destroy();
+            return reject(new BadRequestException('HTML payload too large'));
+          }
+
+          const chunks: Buffer[] = [];
+          let totalBytes = 0;
+
+          res.on('data', (chunk: Buffer) => {
+            totalBytes += chunk.length;
+            if (totalBytes > maxBytes) {
+              settled = true;
+              req.destroy();
+              return reject(new BadRequestException('HTML payload too large'));
+            }
+            chunks.push(chunk);
+          });
+
+          res.on('end', () => {
+            if (settled) return;
+            settled = true;
+            if (chunks.length === 0) {
+              return reject(new BadRequestException('Empty HTML response'));
+            }
+            resolve(Buffer.concat(chunks).toString('utf8'));
+          });
+
+          res.on('error', (err) => {
+            if (settled) return;
+            settled = true;
+            reject(err);
+          });
+        },
+      );
+
+      req.on('timeout', () => {
+        if (settled) return;
+        settled = true;
+        req.destroy();
+        reject(new UnprocessableEntityException('Request timed out'));
+      });
+
+      req.on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      });
+
+      req.end();
+    });
   }
 
   private async assertPublicTarget(parsedUrl: URL): Promise<void> {

@@ -8,6 +8,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { ActivityAccessModule } from '../activities/activity-access.module';
 import { CommunitiesModule } from '../communities/communities.module';
 import { BlocksService } from '../users/blocks.service';
+import { JwtGuard } from '../common/guards/jwt.guard';
 
 @Global()
 @Module({
@@ -20,7 +21,7 @@ import { BlocksService } from '../users/blocks.service';
     ActivityAccessModule,
     CommunitiesModule,
   ],
-  providers: [RealtimeGateway, BlocksService],
+  providers: [RealtimeGateway, BlocksService, JwtGuard],
   exports: [RealtimeGateway],
 })
 export class RealtimeModule {}

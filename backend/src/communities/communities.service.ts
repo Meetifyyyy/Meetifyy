@@ -982,13 +982,16 @@ export class CommunitiesService implements OnModuleInit {
         };
       } else if (avatarVal.startsWith('http')) {
         createData.avatarMedia = {
-          create: {
-            provider: 'external',
-            bucket: 'external',
-            objectKey: avatarVal,
-            mimeType: 'image/jpeg',
-            fileSize: 0,
-            ownerId: creatorId,
+          connectOrCreate: {
+            where: { objectKey: avatarVal },
+            create: {
+              provider: 'external',
+              bucket: 'external',
+              objectKey: avatarVal,
+              mimeType: 'image/jpeg',
+              fileSize: 0,
+              ownerId: creatorId,
+            },
           },
         };
       }
@@ -1001,13 +1004,16 @@ export class CommunitiesService implements OnModuleInit {
         };
       } else if (coverVal.startsWith('http')) {
         createData.coverMedia = {
-          create: {
-            provider: 'external',
-            bucket: 'external',
-            objectKey: coverVal,
-            mimeType: 'image/jpeg',
-            fileSize: 0,
-            ownerId: creatorId,
+          connectOrCreate: {
+            where: { objectKey: coverVal },
+            create: {
+              provider: 'external',
+              bucket: 'external',
+              objectKey: coverVal,
+              mimeType: 'image/jpeg',
+              fileSize: 0,
+              ownerId: creatorId,
+            },
           },
         };
       }
@@ -1096,13 +1102,16 @@ export class CommunitiesService implements OnModuleInit {
           };
         } else if (avatarInput.startsWith('http')) {
           updateData.avatarMedia = {
-            create: {
-              provider: 'external',
-              bucket: 'external',
-              objectKey: avatarInput,
-              mimeType: 'image/jpeg',
-              fileSize: 0,
-              ownerId: requestingUserId,
+            connectOrCreate: {
+              where: { objectKey: avatarInput },
+              create: {
+                provider: 'external',
+                bucket: 'external',
+                objectKey: avatarInput,
+                mimeType: 'image/jpeg',
+                fileSize: 0,
+                ownerId: requestingUserId,
+              },
             },
           };
         }
@@ -1120,13 +1129,16 @@ export class CommunitiesService implements OnModuleInit {
           };
         } else if (coverInput.startsWith('http')) {
           updateData.coverMedia = {
-            create: {
-              provider: 'external',
-              bucket: 'external',
-              objectKey: coverInput,
-              mimeType: 'image/jpeg',
-              fileSize: 0,
-              ownerId: requestingUserId,
+            connectOrCreate: {
+              where: { objectKey: coverInput },
+              create: {
+                provider: 'external',
+                bucket: 'external',
+                objectKey: coverInput,
+                mimeType: 'image/jpeg',
+                fileSize: 0,
+                ownerId: requestingUserId,
+              },
             },
           };
         }

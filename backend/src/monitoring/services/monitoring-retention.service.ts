@@ -9,16 +9,31 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { config } from '../../config';
 
 /**
- * Deletes monitoring rows older than the retention window.
+ * Deletes monitoring rows older than their configured retention window.
  *
- * Runs on the same schedule with the same code in every environment; only
- * LOG_RETENTION_DAYS differs. Without this the tables grow without bound, and
- * on a shared Postgres instance that eventually degrades the application these
- * tables exist to observe.
+ * Manages four tables with two different retention policies:
  *
- * Scheduled with `setInterval` rather than a cron library, matching how the
- * rest of this codebase schedules recurring work, so the feature introduces no
- * new dependency.
+ *   Raw tables (48 hours by default):
+ *     • RequestLog
+ *     • ErrorLog
+ *     • SystemMetric
+ *
+ *   Aggregated tables (7 days by default):
+ *     • PerformanceBucket  (5-minute pre-computed stats)
+ *     • SlowRequest        (materialised slow-request records)
+ *
+ * Scheduled with `setInterval` to match the rest of this codebase's
+ * scheduler pattern. Runs every LOG_RETENTION_INTERVAL_MS (default 6 hours).
+ *
+ * Design notes:
+ *   - Runs sequentially, not in parallel: three concurrent bulk deletes would
+ *     compete for connection-pool slots with live traffic.
+ *   - All deletes use the indexed `createdAt`/`occurredAt` columns so Postgres
+ *     uses an index scan rather than a sequential scan.
+ *   - Never loads expired rows into application memory — `deleteMany` with a
+ *     `where` clause pushes the work entirely to the database engine.
+ *   - A failed sweep is logged and skipped; it will be retried on the next
+ *     interval. Monitoring failures must not crash the application.
  */
 @Injectable()
 export class MonitoringRetentionService
@@ -43,7 +58,8 @@ export class MonitoringRetentionService
 
     this.logger.log(
       `monitoring.retention_scheduled ${JSON.stringify({
-        retentionDays: config.monitoring.retentionDays,
+        rawRetentionDays: config.monitoring.retentionDays,
+        aggregationRetentionDays: config.monitoring.aggregationRetentionDays,
         everyMs: config.monitoring.retentionIntervalMs,
       })}`,
     );
@@ -54,47 +70,74 @@ export class MonitoringRetentionService
   }
 
   /**
-   * Removes everything older than the cutoff.
+   * Removes records older than the configured cutoff for each table.
    *
-   * Exposed so the admin API and the seed script can trigger a sweep without
-   * waiting for the timer.
+   * Exposed so the admin API and seed scripts can trigger a sweep on demand
+   * without waiting for the scheduled interval.
+   *
+   * @returns Row counts deleted per table, or `null` if already running.
    */
   async prune(): Promise<{
     requests: number;
     errors: number;
     metrics: number;
+    buckets: number;
+    slowRequests: number;
   } | null> {
     if (this.running) return null;
     this.running = true;
 
-    const cutoff = new Date(
+    const rawCutoff = new Date(
       Date.now() - config.monitoring.retentionDays * 24 * 60 * 60 * 1000,
     );
-    const where = { createdAt: { lt: cutoff } };
+    const aggCutoff = new Date(
+      Date.now() -
+        config.monitoring.aggregationRetentionDays * 24 * 60 * 60 * 1000,
+    );
 
     try {
-      // Sequential rather than parallel: three concurrent bulk deletes hold
-      // three connections and compete with live traffic for the same pool.
-      const requests = await this.prisma.requestLog.deleteMany({ where });
-      const errors = await this.prisma.errorLog.deleteMany({ where });
-      const metrics = await this.prisma.systemMetric.deleteMany({ where });
+      // Sequential — see class comment.
+      const requests = await this.prisma.requestLog.deleteMany({
+        where: { createdAt: { lt: rawCutoff } },
+      });
+      const errors = await this.prisma.errorLog.deleteMany({
+        where: { createdAt: { lt: rawCutoff } },
+      });
+      const metrics = await this.prisma.systemMetric.deleteMany({
+        where: { createdAt: { lt: rawCutoff } },
+      });
+      const buckets = await this.prisma.performanceBucket.deleteMany({
+        where: { bucketAt: { lt: aggCutoff } },
+      });
+      const slowRequests = await this.prisma.slowRequest.deleteMany({
+        where: { occurredAt: { lt: aggCutoff } },
+      });
 
       const result = {
         requests: requests.count,
         errors: errors.count,
         metrics: metrics.count,
+        buckets: buckets.count,
+        slowRequests: slowRequests.count,
       };
 
-      if (result.requests || result.errors || result.metrics) {
+      const anyDeleted = Object.values(result).some((n) => n > 0);
+      if (anyDeleted) {
         this.logger.log(
-          `monitoring.retention_pruned ${JSON.stringify({ cutoff: cutoff.toISOString(), ...result })}`,
+          `monitoring.retention_pruned ${JSON.stringify({
+            rawCutoff: rawCutoff.toISOString(),
+            aggCutoff: aggCutoff.toISOString(),
+            ...result,
+          })}`,
         );
       }
 
       return result;
     } catch (error) {
       this.logger.error(
-        `monitoring.retention_failed ${JSON.stringify({ error: (error as Error).message })}`,
+        `monitoring.retention_failed ${JSON.stringify({
+          error: (error as Error).message,
+        })}`,
       );
       return null;
     } finally {

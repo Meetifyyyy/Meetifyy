@@ -59,9 +59,14 @@ export const monitoringConfigValues = {
   /** Requests at or above this duration are always recorded, whatever the sample rate. */
   slowRequestMs: int('SLOW_REQUEST_MS', { default: '1000', min: 1 }),
 
-  /** How often a system snapshot is taken. */
+  /**
+   * How often a system snapshot is taken.
+   *
+   * 60 seconds is sufficient for resource gauges; 15s was 4× unnecessary writes.
+   * Set METRICS_INTERVAL_MS to a lower value in dev if you need faster samples.
+   */
   metricsIntervalMs: int('METRICS_INTERVAL_MS', {
-    default: '15000',
+    default: '60000',
     min: 1000,
   }),
 
@@ -90,13 +95,57 @@ export const monitoringConfigValues = {
     min: 100,
   }),
 
-  /** Rows older than this are deleted by the retention job. */
-  retentionDays: int('LOG_RETENTION_DAYS', { default: '14', min: 1 }),
+  /**
+   * Raw RequestLog and SystemMetric rows older than this are deleted.
+   *
+   * 2 days (48 hours) keeps enough recent data for live diagnostics without
+   * accumulating millions of rows indefinitely. Long-term trends are served
+   * from the pre-aggregated PerformanceBucket table instead.
+   */
+  retentionDays: int('LOG_RETENTION_DAYS', { default: '2', min: 1 }),
 
   /** How often the retention job runs. */
   retentionIntervalMs: int('LOG_RETENTION_INTERVAL_MS', {
     default: String(6 * 60 * 60 * 1000),
     min: 60_000,
+  }),
+
+  /**
+   * How often the aggregator folds recent RequestLog rows into PerformanceBucket
+   * and extracts SlowRequest records. 5 minutes yields 2,016 bucket rows for
+   * the rolling 7-day chart — a fixed, tiny number versus unbounded raw rows.
+   */
+  aggregationIntervalMs: int('MONITORING_AGGREGATION_INTERVAL_MS', {
+    default: String(5 * 60 * 1000),
+    min: 60_000,
+  }),
+
+  /**
+   * Minimum request duration (ms) for a row to be written into SlowRequest.
+   * Defaults to 800 ms — the same threshold that turns the dashboard orange.
+   */
+  slowRequestThresholdMs: int('MONITORING_SLOW_REQUEST_THRESHOLD_MS', {
+    default: '800',
+    min: 1,
+  }),
+
+  /**
+   * How many slow-request rows to insert per aggregation run (per 5-minute cycle).
+   * Caps the SlowRequest table's growth rate.
+   */
+  slowRequestMaxPerBucket: int('MONITORING_SLOW_REQUEST_MAX_PER_BUCKET', {
+    default: '100',
+    min: 1,
+    max: 1000,
+  }),
+
+  /**
+   * PerformanceBucket and SlowRequest rows are retained for this many days.
+   * 7 days yields at most 2,016 bucket rows for the rolling chart.
+   */
+  aggregationRetentionDays: int('MONITORING_AGGREGATION_RETENTION_DAYS', {
+    default: '7',
+    min: 1,
   }),
 
   /**

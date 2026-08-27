@@ -11,24 +11,50 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Activity, AlertTriangle, Cpu, Gauge, HardDrive, Loader2, Plug, RefreshCw, Timer } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  Clock,
+  Cpu,
+  Database,
+  Gauge,
+  HardDrive,
+  Loader2,
+  Plug,
+  RefreshCw,
+  Timer,
+  Zap,
+} from 'lucide-react';
 
-import { TIME_WINDOWS, type TimeWindow, formatClock, formatUptime, monitoringApi } from './monitoring/monitoringApi';
+import {
+  TIME_WINDOWS,
+  type TimeWindow,
+  formatClock,
+  formatUptime,
+  monitoringApi,
+} from './monitoring/monitoringApi';
 import { EndpointsTable } from './monitoring/EndpointsTable';
 import { RequestLogTable } from './monitoring/RequestLogTable';
+import { SlowRequestsTable } from './monitoring/SlowRequestsTable';
 
 /**
- * Admin -> Server Monitoring.
+ * Admin → Server Monitoring.
  *
  * Application-level observability only. The host's own dashboard already shows
- * container CPU, deploys and crashes; this shows what it cannot - which
+ * container CPU, deploys and crashes; this shows what it cannot — which
  * endpoint is slow, which is failing, and what the process is doing between
  * deploys.
  *
+ * Data retention model:
+ *   • Raw request / error / system logs: 48 hours (for live diagnostics)
+ *   • 5-minute performance buckets: rolling 7 days (for trend charts)
+ *   • Slow request records: rolling 7 days (for slow-request table)
+ *
+ * For 1h/24h windows: charts read from raw RequestLog (within 48h retention).
+ * For the 7d window: charts read from pre-aggregated PerformanceBucket (max 2,016 rows).
+ *
  * Every panel refreshes by polling on an interval the *server* supplies, so the
- * cadence is one config value rather than a number duplicated across the
- * client. The data contract is deliberately plain request/response, so swapping
- * polling for a Socket.IO push later needs no change to these components.
+ * cadence is one config value rather than a number duplicated across the client.
  */
 export const MonitoringPage: React.FC = () => {
   const [window, setWindow] = useState<TimeWindow>('24h');
@@ -37,11 +63,12 @@ export const MonitoringPage: React.FC = () => {
   const overview = useQuery({
     queryKey: ['monitoringOverview'],
     queryFn: () => monitoringApi.getOverview(),
-    // Falls back until the first response tells us the configured cadence.
     refetchInterval: (query) => (query.state.data as any)?.pollingIntervalMs ?? 15000,
   });
 
   const pollMs = overview.data?.pollingIntervalMs ?? 15000;
+  const rawRetentionHours = overview.data?.retention?.rawHours ?? 48;
+  const aggRetentionDays = overview.data?.retention?.aggregationDays ?? 7;
 
   const traffic = useQuery({
     queryKey: ['monitoringTimeseries', 'requests', window],
@@ -63,6 +90,9 @@ export const MonitoringPage: React.FC = () => {
 
   const isDegraded = overview.data?.health === 'degraded';
   const collectionOff = overview.data?.process?.collectionEnabled === false;
+
+  // Chart title suffix based on data source
+  const chartSource = window === '7d' ? `Rolling ${aggRetentionDays}d · 5-min buckets` : `Last ${window} · raw logs`;
 
   if (overview.isLoading) {
     return (
@@ -94,7 +124,11 @@ export const MonitoringPage: React.FC = () => {
         <div>
           <h2 className="page-title">Server Monitoring</h2>
           <p className="page-subtitle">
-            Application-level health: per-endpoint latency, error rates and process resources.
+            Application-level health · per-endpoint latency, error rates and process resources.
+            <span style={retentionChip}>
+              <Clock size={10} />
+              Raw logs: {rawRetentionHours}h · Trends: {aggRetentionDays}d
+            </span>
           </p>
         </div>
 
@@ -112,7 +146,9 @@ export const MonitoringPage: React.FC = () => {
               </option>
             ))}
           </select>
-          {overview.isFetching && <Loader2 size={14} className="spin" style={{ color: 'var(--color-text-dim)' }} />}
+          {overview.isFetching && (
+            <Loader2 size={14} className="spin" style={{ color: 'var(--color-text-dim)' }} />
+          )}
         </div>
       </div>
 
@@ -120,8 +156,8 @@ export const MonitoringPage: React.FC = () => {
         <div style={warnBanner}>
           <AlertTriangle size={15} />
           <span>
-            Collection is turned off (MONITORING_ENABLED). Historical data is still readable, but nothing new is being
-            recorded.
+            Collection is turned off (MONITORING_ENABLED). Historical data is still readable, but
+            nothing new is being recorded.
           </span>
         </div>
       )}
@@ -167,14 +203,30 @@ export const MonitoringPage: React.FC = () => {
 
       {/* ── Charts ───────────────────────────────────────────────────────── */}
       <div style={chartGrid}>
-        <Panel title="Throughput and errors" busy={traffic.isFetching}>
+        <Panel
+          title="Throughput and errors"
+          subtitle={chartSource}
+          busy={traffic.isFetching}
+        >
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={(traffic.data?.points ?? []).map((p: any) => ({ ...p, label: formatClock(p.t, window) }))}>
+            <AreaChart
+              data={(traffic.data?.points ?? []).map((p: any) => ({
+                ...p,
+                label: formatClock(p.t, window),
+              }))}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
               <XAxis dataKey="label" tick={axisTick} minTickGap={28} stroke="var(--color-border)" />
               <YAxis tick={axisTick} width={38} stroke="var(--color-border)" />
               <Tooltip contentStyle={tooltipStyle} />
-              <Area type="monotone" dataKey="rps" name="req/s" stroke="#2563eb" fill="rgba(37,99,235,0.12)" strokeWidth={2} />
+              <Area
+                type="monotone"
+                dataKey="rps"
+                name="req/s"
+                stroke="#2563eb"
+                fill="rgba(37,99,235,0.12)"
+                strokeWidth={2}
+              />
               <Area
                 type="monotone"
                 dataKey="errorRatePercent"
@@ -187,17 +239,51 @@ export const MonitoringPage: React.FC = () => {
           </ResponsiveContainer>
         </Panel>
 
-        <Panel title="Latency" busy={latency.isFetching}>
+        <Panel
+          title="Latency"
+          subtitle={`${chartSource}${window === '7d' ? ' · p95 & avg' : ''}`}
+          busy={latency.isFetching}
+        >
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={(latency.data?.points ?? []).map((p: any) => ({ ...p, label: formatClock(p.t, window) }))}>
+            <LineChart
+              data={(latency.data?.points ?? []).map((p: any) => ({
+                ...p,
+                label: formatClock(p.t, window),
+              }))}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
               <XAxis dataKey="label" tick={axisTick} minTickGap={28} stroke="var(--color-border)" />
               <YAxis tick={axisTick} width={38} stroke="var(--color-border)" unit="ms" />
               <Tooltip contentStyle={tooltipStyle} />
               {/* p95 alongside the mean: an endpoint with a good average and a
                   bad tail is a real problem the mean alone conceals. */}
-              <Line type="monotone" dataKey="avgMs" name="avg" stroke="#2563eb" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="p95Ms" name="p95" stroke="#f59e0b" strokeWidth={2} dot={false} />
+              <Line
+                type="monotone"
+                dataKey="avgMs"
+                name="avg"
+                stroke="#2563eb"
+                strokeWidth={2}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="p95Ms"
+                name="p95"
+                stroke="#f59e0b"
+                strokeWidth={2}
+                dot={false}
+              />
+              {window === '7d' && (
+                <Line
+                  type="monotone"
+                  dataKey="maxMs"
+                  name="max"
+                  stroke="#dc2626"
+                  strokeWidth={1}
+                  dot={false}
+                  strokeDasharray="3 3"
+                />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </Panel>
@@ -205,6 +291,15 @@ export const MonitoringPage: React.FC = () => {
 
       {/* ── System resources ─────────────────────────────────────────────── */}
       <SystemPanel data={system.data} busy={system.isFetching} window={window} />
+
+      {/* ── Slow requests (7-day rolling) ─────────────────────────────────── */}
+      <SlowRequestsTable
+        pollMs={pollMs}
+        onInspectRoute={(route) => {
+          setRouteFilter(route);
+          document.getElementById('monitoring-logs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
+      />
 
       {/* ── Endpoints ────────────────────────────────────────────────────── */}
       <EndpointsTable
@@ -216,7 +311,7 @@ export const MonitoringPage: React.FC = () => {
         }}
       />
 
-      {/* ── Logs ─────────────────────────────────────────────────────────── */}
+      {/* ── Logs (last 48 hours) ─────────────────────────────────────────── */}
       <RequestLogTable pollMs={pollMs} routeFilter={routeFilter} onRouteFilterChange={setRouteFilter} />
     </div>
   );
@@ -240,7 +335,11 @@ const StatCard: React.FC<{
       style={{
         ...statValue,
         color:
-          tone === 'danger' ? 'var(--color-danger)' : tone === 'success' ? 'var(--color-success)' : 'var(--color-text-main)',
+          tone === 'danger'
+            ? 'var(--color-danger)'
+            : tone === 'success'
+            ? 'var(--color-success)'
+            : 'var(--color-text-main)',
       }}
     >
       {value}
@@ -249,61 +348,119 @@ const StatCard: React.FC<{
   </div>
 );
 
-const Panel: React.FC<{ title: string; busy?: boolean; children: React.ReactNode }> = ({ title, busy, children }) => (
+const Panel: React.FC<{
+  title: string;
+  subtitle?: string;
+  busy?: boolean;
+  children: React.ReactNode;
+}> = ({ title, subtitle, busy, children }) => (
   <section className="glass-panel" style={{ padding: '0.9rem 1rem 0.6rem' }}>
     <div style={panelHead}>
-      <h3 style={panelTitle}>{title}</h3>
-      {busy && <Loader2 size={12} className="spin" style={{ color: 'var(--color-text-dim)' }} />}
+      <div>
+        <h3 style={panelTitle}>{title}</h3>
+        {subtitle && <span style={panelSubtitle}>{subtitle}</span>}
+      </div>
+      {busy && (
+        <Loader2 size={12} className="spin" style={{ color: 'var(--color-text-dim)', marginLeft: 'auto' }} />
+      )}
     </div>
     {children}
   </section>
 );
 
-const SystemPanel: React.FC<{ data: any; busy: boolean; window: TimeWindow }> = ({ data, busy, window }) => {
+const SystemPanel: React.FC<{ data: any; busy: boolean; window: TimeWindow }> = ({
+  data,
+  busy,
+  window,
+}) => {
   const latest = data?.latest;
   const live = data?.live;
+  const retentionHours = data?.retentionHours ?? 48;
 
   return (
-    <Panel title="System resources" busy={busy}>
+    <Panel
+      title="System resources"
+      subtitle={`Last ${window} · System metrics retained ${retentionHours}h`}
+      busy={busy}
+    >
       <div style={gaugeGrid}>
-        <Gauge2 icon={<HardDrive size={14} />} label="Memory (RSS)" value={latest ? `${Math.round(latest.memoryRssMb)} MB` : '-'} hint={latest ? `${Math.round(latest.memoryHeapUsedMb)} MB heap` : undefined} />
-        <Gauge2 icon={<Cpu size={14} />} label="CPU" value={latest ? `${latest.cpuPercent.toFixed(1)}%` : '-'} hint="of one core" />
+        <Gauge2
+          icon={<HardDrive size={14} />}
+          label="Memory (RSS)"
+          value={latest ? `${Math.round(latest.memoryRssMb)} MB` : '-'}
+          hint={latest ? `${Math.round(latest.memoryHeapUsedMb)} MB heap` : undefined}
+        />
+        <Gauge2
+          icon={<Cpu size={14} />}
+          label="CPU"
+          value={latest ? `${latest.cpuPercent.toFixed(1)}%` : '-'}
+          hint="of one core"
+        />
         <Gauge2
           icon={<Timer size={14} />}
           label="Event loop lag"
           value={latest ? `${latest.eventLoopLagMs.toFixed(1)} ms` : '-'}
-          // Lag is the symptom CPU alone will not show: a process blocked by
-          // synchronous work looks busy either way, but only lag says requests
-          // are queueing behind it.
           hint="queueing when high"
           tone={latest && latest.eventLoopLagMs > 50 ? 'danger' : 'default'}
         />
         <Gauge2
-          icon={<Gauge size={14} />}
+          icon={<Database size={14} />}
           label="DB pool"
           value={live ? `${live.dbPool.active} / ${live.dbPool.total}` : '-'}
           hint={live ? `${live.dbPool.idle} idle · ${live.dbPool.waiting} waiting` : undefined}
           tone={live && live.dbPool.waiting > 0 ? 'danger' : 'default'}
         />
-        <Gauge2 icon={<Plug size={14} />} label="Socket clients" value={live ? String(live.socketConnections) : '-'} />
         <Gauge2
-          icon={<Activity size={14} />}
+          icon={<Plug size={14} />}
+          label="Socket clients"
+          value={live ? String(live.socketConnections) : '-'}
+        />
+        <Gauge2
+          icon={<Zap size={14} />}
           label="Write buffer"
-          value={live ? String(live.buffer.requests + live.buffer.errors + live.buffer.metrics) : '-'}
+          value={
+            live ? String(live.buffer.requests + live.buffer.errors + live.buffer.metrics) : '-'
+          }
           hint={live?.buffer?.dropped ? `${live.buffer.dropped} dropped` : 'rows awaiting flush'}
           tone={live?.buffer?.dropped ? 'danger' : 'default'}
         />
       </div>
 
       <ResponsiveContainer width="100%" height={160}>
-        <LineChart data={(data?.history ?? []).map((p: any) => ({ ...p, label: formatClock(p.createdAt, window) }))}>
+        <LineChart
+          data={(data?.history ?? []).map((p: any) => ({
+            ...p,
+            label: formatClock(p.createdAt, window),
+          }))}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
           <XAxis dataKey="label" tick={axisTick} minTickGap={28} stroke="var(--color-border)" />
           <YAxis tick={axisTick} width={38} stroke="var(--color-border)" />
           <Tooltip contentStyle={tooltipStyle} />
-          <Line type="monotone" dataKey="memoryRssMb" name="RSS MB" stroke="#7c3aed" strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="cpuPercent" name="CPU %" stroke="#0891b2" strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="socketConnections" name="sockets" stroke="#16a34a" strokeWidth={2} dot={false} />
+          <Line
+            type="monotone"
+            dataKey="memoryRssMb"
+            name="RSS MB"
+            stroke="#7c3aed"
+            strokeWidth={2}
+            dot={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="cpuPercent"
+            name="CPU %"
+            stroke="#0891b2"
+            strokeWidth={2}
+            dot={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="socketConnections"
+            name="sockets"
+            stroke="#16a34a"
+            strokeWidth={2}
+            dot={false}
+          />
         </LineChart>
       </ResponsiveContainer>
     </Panel>
@@ -368,6 +525,21 @@ const warnBanner: React.CSSProperties = {
   borderRadius: 'var(--radius-sm)',
 };
 
+const retentionChip: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '0.25rem',
+  marginLeft: '0.6rem',
+  fontSize: '0.66rem',
+  fontWeight: 600,
+  color: 'var(--color-text-light)',
+  background: 'var(--color-bg-soft)',
+  border: '1px solid var(--color-border)',
+  borderRadius: '4px',
+  padding: '1px 6px',
+  verticalAlign: 'middle',
+};
+
 const cardGrid: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(10.5rem, 1fr))',
@@ -388,9 +560,18 @@ const statLabel: React.CSSProperties = {
   color: 'var(--color-text-light)',
 };
 
-const statValue: React.CSSProperties = { fontSize: '1.3rem', fontWeight: 700, marginTop: '0.25rem', lineHeight: 1.1 };
+const statValue: React.CSSProperties = {
+  fontSize: '1.3rem',
+  fontWeight: 700,
+  marginTop: '0.25rem',
+  lineHeight: 1.1,
+};
 
-const statHint: React.CSSProperties = { fontSize: '0.68rem', color: 'var(--color-text-light)', marginTop: '0.2rem' };
+const statHint: React.CSSProperties = {
+  fontSize: '0.68rem',
+  color: 'var(--color-text-light)',
+  marginTop: '0.2rem',
+};
 
 const chartGrid: React.CSSProperties = {
   display: 'grid',
@@ -401,12 +582,19 @@ const chartGrid: React.CSSProperties = {
 
 const panelHead: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'center',
+  alignItems: 'flex-start',
   gap: '0.4rem',
   marginBottom: '0.6rem',
 };
 
 const panelTitle: React.CSSProperties = { margin: 0, fontSize: '0.85rem', fontWeight: 700 };
+
+const panelSubtitle: React.CSSProperties = {
+  display: 'block',
+  fontSize: '0.67rem',
+  color: 'var(--color-text-light)',
+  marginTop: '0.1rem',
+};
 
 const gaugeGrid: React.CSSProperties = {
   display: 'grid',

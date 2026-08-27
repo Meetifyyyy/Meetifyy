@@ -9,7 +9,7 @@ import {
   OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
+import { Logger, Optional } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { SupabaseService } from '../supabase/supabase.service';
 import { MessagesService } from '../messages/messages.service';
@@ -42,6 +42,7 @@ import { RedisService } from '../redis/redis.service';
 import { CommunitiesService } from '../communities/communities.service';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 import { MentionDto } from '../common/dto/mention.dto';
+import { JwtGuard } from '../common/guards/jwt.guard';
 
 @WebSocketGateway({
   cors: {
@@ -92,6 +93,7 @@ export class RealtimeGateway
     // Reads the live connection count for the monitoring dashboard. The
     // gateway only hands over its server; it keeps no counters of its own.
     private readonly socketMetrics: SocketMetricsCollector,
+    @Optional() private readonly jwtGuard?: JwtGuard,
   ) {}
 
   afterInit() {
@@ -505,52 +507,44 @@ export class RealtimeGateway
       client.disconnect();
       return;
     }
+    let user: any = null;
     try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(
-          Buffer.from(parts[1], 'base64url').toString('utf-8'),
-        );
-        const nowSec = Math.floor(Date.now() / 1000);
-        if (payload && payload.sub && payload.exp && payload.exp > nowSec) {
-          userId = payload.sub;
-          userName =
-            payload.user_metadata?.username ||
-            payload.user_metadata?.displayName ||
-            payload.email ||
-            'Unknown';
-        }
-      }
-    } catch {
-      // Ignore parse error and fall back to Supabase remote check
-    }
-
-    if (!userId) {
-      try {
+      if (this.jwtGuard) {
+        user = await this.jwtGuard.validateToken(token);
+      } else {
         const {
-          data: { user },
+          data: { user: remoteUser },
           error,
         } = await this.supabaseService.client.auth.getUser(token);
-        if (error || !user) {
-          this.logger.warn(`Client connection rejected: invalid token`);
-          client.disconnect();
-          return;
+        if (!error && remoteUser) {
+          user = {
+            id: remoteUser.id,
+            email: remoteUser.email,
+            user_metadata: remoteUser.user_metadata,
+          };
         }
-        userId = user.id;
-        userName =
-          user.user_metadata?.username ||
-          user.user_metadata?.displayName ||
-          user.email ||
-          'Unknown';
-      } catch (err) {
-        this.logger.error(
-          'WebSocket connection authentication check failed',
-          err,
-        );
-        client.disconnect();
-        return;
       }
+    } catch (err) {
+      this.logger.error(
+        'WebSocket connection authentication check failed',
+        err,
+      );
+      client.disconnect();
+      return;
     }
+
+    if (!user || !user.id) {
+      this.logger.warn(`Client connection rejected: invalid token`);
+      client.disconnect();
+      return;
+    }
+
+    userId = user.id;
+    userName =
+      user.user_metadata?.username ||
+      user.user_metadata?.displayName ||
+      user.email ||
+      'Unknown';
 
     (client as any).userId = userId;
     (client as any).userName = userName;

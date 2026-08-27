@@ -5,6 +5,11 @@ import { apiRequest } from '../../api/apiClient';
  *
  * Versioned path so this client and the server can be redeployed
  * independently without a shape change breaking the page.
+ *
+ * Data retention (returned in each response so labels stay accurate):
+ *   • Raw request / error / system logs: 48 hours
+ *   • Performance buckets (5-min aggregates): rolling 7 days
+ *   • Slow request records: rolling 7 days
  */
 
 export type TimeWindow = '1h' | '24h' | '7d';
@@ -42,6 +47,8 @@ export const monitoringApi = {
   getTimeseries: (metric: 'requests' | 'errors' | 'latency', window: TimeWindow) =>
     apiRequest(`${BASE}/timeseries${toQuery({ metric, window })}`),
   getEndpoints: (window: TimeWindow) => apiRequest(`${BASE}/endpoints${toQuery({ window })}`),
+  /** Slowest requests from the rolling 7-day SlowRequest table. */
+  getSlowRequests: () => apiRequest(`${BASE}/slow-requests`),
   getSystem: (window: TimeWindow) => apiRequest(`${BASE}/system${toQuery({ window })}`),
   getLogs: (filters: LogFilters) => apiRequest(`${BASE}/logs${toQuery(filters as Record<string, unknown>)}`),
   getErrors: (params: { route?: string; page?: number }) =>

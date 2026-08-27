@@ -1,4 +1,11 @@
-import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  UseGuards,
+  Req,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Request } from 'express';
 import { UAParser } from 'ua-parser-js';
 import { AuthService } from './auth.service';
@@ -125,8 +132,12 @@ export class AuthController {
 
   @Post('events/welcome')
   @UseGuards(JwtGuard)
-  async triggerWelcomeEmail(@Body() body: TriggerWelcomeEmailDto) {
-    await this.emailService.sendWelcomeEmail(body.email, body.name);
+  async triggerWelcomeEmail(
+    @Body() body: TriggerWelcomeEmailDto,
+    @CurrentUser() user: { id: string; email: string },
+  ) {
+    const recipientEmail = this.resolveRecipientEmail(user, body.email);
+    await this.emailService.sendWelcomeEmail(recipientEmail, body.name);
     return { success: true };
   }
 
@@ -135,7 +146,10 @@ export class AuthController {
   async triggerLoginEmail(
     @Body() body: TriggerLoginEmailDto,
     @Req() req: Request,
+    @CurrentUser() user: { id: string; email: string },
   ) {
+    const recipientEmail = this.resolveRecipientEmail(user, body.email);
+
     // Parse User-Agent from the request header for accurate device/browser/OS info
     const rawUA = body.userAgent || req.headers['user-agent'] || '';
     const parser = new UAParser(rawUA);
@@ -209,7 +223,7 @@ export class AuthController {
     }
 
     await this.emailService.sendNewLoginEmail(
-      body.email,
+      recipientEmail,
       body.name,
       device,
       body.location || 'Unknown Location',
@@ -226,7 +240,10 @@ export class AuthController {
   async triggerPasswordChangedEmail(
     @Body() body: TriggerPasswordChangedEmailDto,
     @Req() req: Request,
+    @CurrentUser() user: { id: string; email: string },
   ) {
+    const recipientEmail = this.resolveRecipientEmail(user, body.email);
+
     // Parse device info from User-Agent
     const rawUA = body.device || req.headers['user-agent'] || '';
     const parser = new UAParser(rawUA);
@@ -234,9 +251,10 @@ export class AuthController {
 
     const browserName = uaResult.browser?.name || 'Unknown Browser';
     const browserVersion = uaResult.browser?.major || '';
-    const browser = browserVersion
-      ? `${browserName} ${browserVersion}`
-      : browserName;
+    const browser =
+      browserVersion
+        ? `${browserName} ${browserVersion}`
+        : browserName;
 
     const deviceType = uaResult.device?.type;
     const deviceModel = uaResult.device?.model;
@@ -268,17 +286,46 @@ export class AuthController {
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
+        second: '2-digit',
         hour12: true,
       });
 
     await this.emailService.sendPasswordChangedEmail(
-      body.email,
+      recipientEmail,
       body.name || 'User',
       time,
       device,
       ip,
     );
     return { success: true };
+  }
+
+  /**
+   * Resolves and verifies that transactional emails are strictly dispatched
+   * to the authenticated caller's verified address, preventing arbitrary email spoofing.
+   */
+  private resolveRecipientEmail(
+    user: { id: string; email: string },
+    suppliedEmail?: string,
+  ): string {
+    const userEmail = user?.email?.toLowerCase()?.trim();
+    const isFallback = !userEmail || userEmail.endsWith('@meetifyy.user');
+
+    if (suppliedEmail) {
+      const cleanSupplied = suppliedEmail.toLowerCase().trim();
+      if (!isFallback && cleanSupplied !== userEmail) {
+        throw new ForbiddenException(
+          'Cannot trigger email notification for an arbitrary recipient',
+        );
+      }
+      return cleanSupplied;
+    }
+
+    if (isFallback) {
+      throw new ForbiddenException('No verified recipient email address found');
+    }
+
+    return userEmail;
   }
 
   @Post('request-college')

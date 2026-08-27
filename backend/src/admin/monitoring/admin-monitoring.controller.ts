@@ -17,11 +17,16 @@ import {
  * breaking a client that has not been redeployed alongside it.
  *
  * Guarded at the controller, not per handler, so a route added later cannot be
- * left unprotected by omission - these responses describe internal routes,
+ * left unprotected by omission — these responses describe internal routes,
  * error messages and resource levels, and are for authenticated admins only.
- * The rate limiter is on top of the session check because these are the most
+ * The rate limiter sits on top of the session check because these are the most
  * expensive queries in the application: a dashboard left open in a loop should
  * not be able to aggregate a week of rows continuously.
+ *
+ * Data retention summary (returned in each response so the UI can label data):
+ *   • Raw request / error / system logs: 48 hours (configurable via LOG_RETENTION_DAYS)
+ *   • Performance buckets (5-min aggregates): 7 days (MONITORING_AGGREGATION_RETENTION_DAYS)
+ *   • Slow request records: 7 days (same as above)
  */
 @UseGuards(AdminJwtGuard, MonitoringRateLimitGuard)
 @Controller('admin/monitoring/v1')
@@ -41,6 +46,12 @@ export class AdminMonitoringController {
   @Get('endpoints')
   getEndpoints(@Query() query: WindowDto) {
     return this.monitoring.getEndpoints(query.window);
+  }
+
+  /** Slowest requests from the rolling 7-day SlowRequest table. */
+  @Get('slow-requests')
+  getSlowRequests() {
+    return this.monitoring.getSlowRequests();
   }
 
   @Get('logs')

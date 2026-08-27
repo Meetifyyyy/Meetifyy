@@ -1769,9 +1769,9 @@ export class ActivitiesService implements OnModuleInit {
       );
     }
 
-    // ── Atomic idempotent upsert — safe under concurrent requests ──────────────
-    // If two requests race, the second one hits the composite-PK conflict and the
-    // ON CONFLICT clause makes it a silent no-op instead of an error.
+    // ── Atomic idempotent upsert with capacity enforcement — safe under concurrent requests ──
+    // If two requests race when capacity is nearly full, the atomic CTE evaluates
+    // the current member count directly in Postgres, preventing over-subscription (TOCTOU).
     //
     // `xmax = 0` is the standard Postgres test for "this row was genuinely
     // INSERTed rather than updated by the conflict path". It's what makes the
@@ -1781,11 +1781,35 @@ export class ActivitiesService implements OnModuleInit {
     const upsertResult = await this.prisma.$queryRaw<
       Array<{ inserted: boolean }>
     >`
+      WITH current_count AS (
+        SELECT COUNT(*)::int AS cnt
+        FROM "CrewActivityMember"
+        WHERE "activityId" = ${activityId} AND "status" = 'MEMBER'
+      ),
+      act AS (
+        SELECT "maxMembers"
+        FROM "CrewActivity"
+        WHERE "id" = ${activityId} AND "deletedAt" IS NULL
+      )
       INSERT INTO "CrewActivityMember" ("userId", "activityId", "status", "joinedAt")
-      VALUES (${userId}, ${activityId}, 'MEMBER', NOW())
+      SELECT ${userId}, ${activityId}, 'MEMBER', NOW()
+      FROM act, current_count
+      WHERE (
+        act."maxMembers" IS NULL
+        OR current_count.cnt < act."maxMembers"
+        OR EXISTS (
+          SELECT 1 FROM "CrewActivityMember"
+          WHERE "userId" = ${userId} AND "activityId" = ${activityId} AND "status" = 'MEMBER'
+        )
+      )
       ON CONFLICT ("userId", "activityId") DO UPDATE SET "status" = 'MEMBER'
       RETURNING (xmax = 0) AS inserted
     `;
+
+    if (!upsertResult || upsertResult.length === 0) {
+      throw new ForbiddenException('Activity is full');
+    }
+
     const isNewMember = upsertResult?.[0]?.inserted === true;
 
     // Await cache clearing BEFORE responding to prevent the frontend's

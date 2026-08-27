@@ -1525,7 +1525,7 @@ export class PostsService {
     if (roots.length > limit) {
       const extra = roots.pop();
       nextCursor = extra
-        ? `${extra.createdAt.toISOString()}__${extra.id}`
+        ? `${extra.createdAt.toISOString()}|${extra.id}`
         : undefined;
     }
 
@@ -1619,12 +1619,12 @@ export class PostsService {
       }
     }
 
-    // Compound keyset cursor "<iso>__<commentId>" (legacy bare-date / bare-id
-    // cursors still parse).
+    // Compound keyset cursor "<iso>|<commentId>" or legacy "<iso>__<commentId>"
     let cursorDate: Date | undefined = undefined;
     let cursorId: string | undefined = undefined;
     if (cursor) {
-      const [datePart, idPart] = cursor.split('__');
+      const delimiter = cursor.includes('|') ? '|' : '__';
+      const [datePart, idPart] = cursor.split(delimiter);
       const parsed = new Date(datePart);
       if (!isNaN(parsed.getTime()) && datePart.includes('T')) {
         cursorDate = parsed;
