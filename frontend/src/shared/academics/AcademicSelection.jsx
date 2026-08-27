@@ -37,6 +37,11 @@ export default function AcademicSelection({
   disabled = false,
   classes = {},
   onCatalogReady,
+  layout = 'stacked',
+  divider = null,
+  coursePlacement = 'top',
+  branchPlacement = 'top',
+  yearPlacement = 'top',
 }) {
   const { courses, loading, error: catalogError } = useAcademicCatalog();
 
@@ -70,12 +75,13 @@ export default function AcademicSelection({
       branch,
       passingYear,
     });
-    if (changed) onChange(clean);
+    if (changed) {
+      onChange(clean);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, courses]);
 
   const handleCourse = (nextCourse) => {
-    if (nextCourse === course) return;
     const { value: clean } = sanitizeAcademicSelection(courses, {
       course: nextCourse,
       branch,
@@ -84,7 +90,9 @@ export default function AcademicSelection({
     onChange(clean);
   };
 
-  const handleBranch = (nextBranch) => onChange({ course, branch: nextBranch, passingYear });
+  const handleBranch = (nextBranch) => {
+    onChange({ course, branch: nextBranch, passingYear });
+  };
 
   const handlePassingYear = (nextYear) => {
     const parsed = /^\d+$/.test(String(nextYear)) ? parseInt(nextYear, 10) : null;
@@ -97,7 +105,7 @@ export default function AcademicSelection({
     slot: classes.messageSlot || '',
     message: classes.message || '',
     error: classes.messageError || '',
-    row: classes.row || '',
+    divider: classes.divider || '',
   };
 
   const Message = ({ text }) =>
@@ -109,57 +117,100 @@ export default function AcademicSelection({
 
   const isDisabled = disabled || loading;
 
+  const renderDivider = (key) => {
+    if (divider) return <React.Fragment key={key}>{divider}</React.Fragment>;
+    if (c.divider) return <div key={key} className={c.divider} />;
+    return null;
+  };
+
+  const courseField = (
+    <div className={c.group} key="academic-course-group">
+      <label className={c.label} id="academic-course-label" htmlFor="academic-course-select">
+        Course
+      </label>
+      <Select
+        id="academic-course-select"
+        value={course}
+        onChange={handleCourse}
+        placeholder={loading ? 'Loading courses…' : 'Select Course'}
+        options={courseOptions}
+        disabled={isDisabled}
+        aria-labelledby="academic-course-label"
+        placement={coursePlacement}
+      />
+      <div className={c.slot}><Message text={errors.course} /></div>
+    </div>
+  );
+
+  const branchField = (
+    <div className={c.group} key="academic-branch-group">
+      <label className={c.label} id="academic-branch-label" htmlFor="academic-branch-select">
+        Branch
+      </label>
+      <Select
+        id="academic-branch-select"
+        value={branch}
+        onChange={handleBranch}
+        placeholder={course ? 'Select Branch' : 'Select a course first'}
+        options={branchOptions}
+        disabled={isDisabled || !course}
+        aria-labelledby="academic-branch-label"
+        placement={branchPlacement}
+      />
+      <div className={c.slot}><Message text={errors.branch} /></div>
+    </div>
+  );
+
+  const yearField = (
+    <div className={c.group} key="academic-year-group">
+      <label className={c.label} id="academic-year-label" htmlFor="academic-year-select">
+        Passing Year
+      </label>
+      <Select
+        id="academic-year-select"
+        value={passingYear === null ? '' : String(passingYear)}
+        onChange={handlePassingYear}
+        placeholder="Select Passing Year"
+        options={yearOptions}
+        disabled={isDisabled}
+        aria-labelledby="academic-year-label"
+        placement={yearPlacement}
+      />
+      <div className={c.slot}><Message text={errors.passingYear ?? errors.currentYear} /></div>
+    </div>
+  );
+
+  if (layout === 'grid') {
+    return (
+      <>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', width: '100%', alignItems: 'start' }}>
+          <div style={{ minWidth: 0 }}>{courseField}</div>
+          <div style={{ minWidth: 0 }}>{yearField}</div>
+        </div>
+        {branchField}
+        {catalogError ? (
+          <div className={`${c.message} ${c.error}`} role="alert">
+            <AlertCircle size={13} /> {catalogError}
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <>
+      <div style={{ display: 'flex', gap: '0.75rem', width: '100%', alignItems: 'start' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>{courseField}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>{yearField}</div>
+      </div>
+      {renderDivider('div-1')}
+      {branchField}
+      {renderDivider('div-2')}
       {catalogError ? (
         <div className={`${c.message} ${c.error}`} role="alert">
           <AlertCircle size={13} /> {catalogError}
         </div>
       ) : null}
-
-      {/* Row 1: Course & Passing Year side-by-side */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', width: '100%', alignItems: 'start' }}>
-        <div className={c.group} style={{ minWidth: 0 }}>
-          <span className={c.label} id="academic-course-label">Course</span>
-          <Select
-            value={course}
-            onChange={handleCourse}
-            placeholder={loading ? 'Loading courses…' : 'Select Course'}
-            options={courseOptions}
-            disabled={isDisabled}
-            aria-labelledby="academic-course-label"
-          />
-          <div className={c.slot}><Message text={errors.course} /></div>
-        </div>
-
-        <div className={c.group} style={{ minWidth: 0 }}>
-          <span className={c.label} id="academic-year-label">Passing Year</span>
-          <Select
-            value={passingYear === null ? '' : String(passingYear)}
-            onChange={handlePassingYear}
-            placeholder="Select Passing Year"
-            options={yearOptions}
-            disabled={isDisabled}
-            aria-labelledby="academic-year-label"
-          />
-          <div className={c.slot}><Message text={errors.passingYear ?? errors.currentYear} /></div>
-        </div>
-      </div>
-
-      {/* Row 2: Branch */}
-      <div className={c.group}>
-        <span className={c.label} id="academic-branch-label">Branch</span>
-        <Select
-          value={branch}
-          onChange={handleBranch}
-          placeholder={course ? 'Select Branch' : 'Select a course first'}
-          options={branchOptions}
-          disabled={isDisabled || !course}
-          aria-labelledby="academic-branch-label"
-          placement="top"
-        />
-        <div className={c.slot}><Message text={errors.branch} /></div>
-      </div>
     </>
   );
 }

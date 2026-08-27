@@ -338,6 +338,11 @@ const PUBLIC_PATHS = [
   // with "Missing access token" before a single byte reaches the network, and
   // the public Help & Support page can never load its content.
   '/api/support',
+  // Public reference data: signup needs the catalog before a session exists,
+  // and colleges are required for the college-selection step of signup.
+  // The backend controller marks both as deliberately unauthenticated.
+  '/api/academics/catalog',
+  '/api/academics/colleges',
 ];
 
 function isPublicPath(path) {

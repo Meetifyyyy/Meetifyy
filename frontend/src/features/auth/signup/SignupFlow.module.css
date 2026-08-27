@@ -71,6 +71,7 @@
 .customSelectList.openUpward {
   top: auto;
   bottom: calc(100% + 6px);
+  max-height: 180px;
   box-shadow: 0 -18px 40px -12px rgba(15, 23, 42, 0.22);
 }
 
