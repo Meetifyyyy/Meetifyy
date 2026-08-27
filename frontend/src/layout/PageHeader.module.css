@@ -325,10 +325,15 @@
     background: rgba(var(--color-primary-rgb, 37, 99, 235), 0.08) !important;
   }
 
-  .tabActive {
+  .tabBtn.tabActive,
+  .tabBtn.tabActive:hover {
     background: var(--color-primary) !important;
     color: white !important;
     border-color: var(--color-primary) !important;
+  }
+
+  .tabsUnderline .tabActive::after {
+    display: none;
   }
 
   .tabIcon {

@@ -15,9 +15,8 @@ import { validateAcademicSelection } from '@shared/academics/academicCatalog';
 import {
   Pencil, Lock, Eye, EyeOff, AlertCircle, Trash2,
   User, GraduationCap, Shield, Bell, HelpCircle, LogOut,
-  ChevronRight, ChevronDown, Check, X, Mail, Ban,
+  ChevronRight, ChevronDown, Check, X, Mail, Ban, CheckCircle2,
 } from '@shared/components/icons';
-import CustomDatePicker from '@shared/components/ui/CustomDatePicker';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import styles from './SettingsRoute.module.css';
 import useDevToolsStore from '@shared/stores/devToolsStore';
@@ -65,7 +64,9 @@ function useIsLargeScreen() {
           mql.removeListener(handleChange);
         }
       };
-    } catch (_) {}
+    } catch (_) {
+      return;
+    }
   }, []);
 
   return isLarge;
@@ -79,7 +80,6 @@ function SettingsWelcomePanel() {
     <div className={styles.welcomePanel}>
       <div className={styles.welcomeBrand}>
         <img src={wordmark} alt="Meetifyy" className={styles.welcomeWordmark} />
-        <p className={styles.welcomeTagline}>Manage your account, privacy, and preferences.</p>
       </div>
 
       <nav className={styles.welcomeLinks} aria-label="Meetifyy">
@@ -91,7 +91,7 @@ function SettingsWelcomePanel() {
         <Link to="/cookie-policy" className={styles.welcomeLink}>Cookie Policy</Link>
       </nav>
 
-      <p className={styles.version}>Meetify · v1.0.0</p>
+      <p className={styles.version}>Meetifyy · v1.0.0</p>
     </div>
   );
 }
@@ -104,7 +104,7 @@ INTERESTS_BY_CATEGORY.forEach(category => {
   });
 });
 
-function CustomSelect({ value, onChange, options, disabled, placeholder, searchable }) {
+function CustomSelect({ value, onChange, options = [], disabled, placeholder, searchable, placement = 'bottom', id }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const containerRef = useRef(null);
@@ -132,14 +132,19 @@ function CustomSelect({ value, onChange, options, disabled, placeholder, searcha
   }, [options, searchQuery, searchable]);
 
   return (
-    <div className={`${styles.customSelectContainer} ${disabled ? styles.disabledSelect : ''}`} ref={containerRef}>
+    <div className={`${styles.customSelectContainer} ${disabled ? styles.disabledSelect : ''} ${isOpen ? styles.customSelectOpen : ''}`} ref={containerRef}>
       <button 
+        id={id}
         type="button"
-        className={styles.selectButton} 
+        className={`${styles.selectButton} ${isOpen ? styles.selectButtonActive : ''}`} 
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
       >
-        <span className={styles.selectValue} title={selectedOption ? selectedOption.label : (placeholder || 'Select...')}>
+        <span
+          className={`${styles.selectValue} ${!selectedOption ? styles.selectPlaceholder : ''}`}
+        >
           {selectedOption ? selectedOption.label : (placeholder || 'Select...')}
         </span>
         <ChevronDown
@@ -150,13 +155,16 @@ function CustomSelect({ value, onChange, options, disabled, placeholder, searcha
       </button>
 
       {isOpen && (
-        <div className={styles.selectDropdown}>
+        <div
+          className={`${styles.selectDropdown} ${placement === 'top' ? styles.selectDropdownTop : ''}`}
+          role="listbox"
+        >
           {searchable && (
             <div className={styles.selectSearchContainer}>
               <input
                 type="text"
                 className={styles.selectSearchInput}
-                placeholder="Search..."
+                placeholder="Search options..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 onClick={e => e.stopPropagation()}
@@ -170,6 +178,8 @@ function CustomSelect({ value, onChange, options, disabled, placeholder, searcha
                 <button
                   key={opt.value}
                   type="button"
+                  role="option"
+                  aria-selected={String(opt.value) === String(value)}
                   className={`${styles.selectOption} ${String(opt.value) === String(value) ? styles.selectOptionActive : ''}`}
                   onClick={() => {
                     onChange(opt.value);
@@ -177,9 +187,9 @@ function CustomSelect({ value, onChange, options, disabled, placeholder, searcha
                     setSearchQuery('');
                   }}
                 >
-                  {opt.label}
+                  <span className={styles.selectOptionLabel}>{opt.label}</span>
                   {String(opt.value) === String(value) && (
-                    <Check size={16} strokeWidth={3} color="var(--color-primary)" />
+                    <Check size={16} strokeWidth={3} className={styles.selectOptionCheck} />
                   )}
                 </button>
               ))
@@ -198,14 +208,15 @@ export default function SettingsRoute() {
   const setNotificationLabEnabled = useDevToolsStore((s) => s.setNotificationLabEnabled);
   const { currentUser, session, updateProfile, updateSettings, updateCurrentUser, changePassword, logout, collegeName } = useAuth();
   const { openPreferences: openCookiePreferences } = useCookieConsent();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
-  const goBack = useSmartBack();
-  const { smartNavigate } = useSmartNavigation();
-  const queryClient = useQueryClient();
+  const { panel: panelParam } = useParams();
   const isLargeScreen = useIsLargeScreen();
 
-  const { panel: panelParam } = useParams();
+  const goBack = useSmartBack();
+  const { smartNavigate } = useSmartNavigation();
+
   const canonicalPanel = PANEL_ALIASES[panelParam] || panelParam || null;
   const isKnownPanel = !canonicalPanel || SETTINGS_PANELS.includes(canonicalPanel);
   const activePanel = isKnownPanel ? canonicalPanel : null; // null = main list
@@ -221,7 +232,14 @@ export default function SettingsRoute() {
   // Account & Profile state
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [bio, setBio] = useState(currentUser?.bio || '');
-  const [birthday, setBirthday] = useState(currentUser?.birthday || '');
+  
+  // Birthday state broken down like signup (Month dropdown, Day input, Year input)
+  const initialDobParts = (currentUser?.birthday || '').split('-');
+  const [birthYear, setBirthYear] = useState(initialDobParts[0] || '');
+  const [birthMonth, setBirthMonth] = useState(initialDobParts[1] ? String(parseInt(initialDobParts[1], 10)) : '');
+  const [birthDay, setBirthDay] = useState(initialDobParts[2] ? String(parseInt(initialDobParts[2], 10)) : '');
+  const [dobAttempted, setDobAttempted] = useState(false);
+
   // Single controlled object, same shape the signup step uses.
   const [academic, setAcademic] = useState(() => ({
     course: currentUser?.course || '',
@@ -277,9 +295,6 @@ export default function SettingsRoute() {
   const [showOnlineStatus, setShowOnlineStatus] = useState(settingsObj.showOnlineStatus ?? true);
   const [readReceipts, setReadReceipts] = useState(settingsObj.readReceipts ?? true);
 
-
-
-
   // Delete account state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   // Help & Support drawer
@@ -312,7 +327,12 @@ export default function SettingsRoute() {
           if (user) {
             setDisplayName(user.displayName || '');
             setBio(user.bio || '');
-            setBirthday(user.birthday || '');
+            if (user.birthday) {
+              const parts = user.birthday.split('-');
+              setBirthYear(parts[0] || '');
+              setBirthMonth(parts[1] ? String(parseInt(parts[1], 10)) : '');
+              setBirthDay(parts[2] ? String(parseInt(parts[2], 10)) : '');
+            }
             setAcademic({
               course: user.course || '',
               branch: user.branch || '',
@@ -352,23 +372,23 @@ export default function SettingsRoute() {
         showToast('Bio too long (max 200)', 'error');
         return;
       }
-      if (birthday) {
-        const parts = birthday.split('-');
-        if (parts.length === 3) {
-          const dobRes = validateDOB(parts[0], parts[1], parts[2]);
-          if (!dobRes.isValid) {
-            showToast(dobRes.error || 'Invalid date of birth', 'error');
-            return;
-          }
+      let finalBirthday = currentUser?.birthday || '';
+      if (birthYear || birthMonth || birthDay) {
+        const dobRes = validateDOB(birthYear, birthMonth, birthDay);
+        if (!dobRes.isValid) {
+          setDobAttempted(true);
+          showToast(dobRes.error || 'Invalid date of birth', 'error');
+          return;
         }
+        finalBirthday = dobRes.dobString;
       }
       closePanel();
       showToast('Profile updated', 'success');
       if (updateCurrentUser) {
-        updateCurrentUser({ ...currentUser, displayName, bio, birthday });
+        updateCurrentUser({ ...currentUser, displayName, bio, birthday: finalBirthday });
       }
       queryClient.invalidateQueries({ queryKey: ['profile'] });
-      updateProfile({ displayName, bio, birthday }).catch(err => {
+      updateProfile({ displayName, bio, birthday: finalBirthday }).catch(err => {
         console.error('Failed to update profile:', err);
         showToast(err?.message || "Couldn't save profile", 'error');
       });
@@ -558,7 +578,10 @@ export default function SettingsRoute() {
       {/* Profile & Academic section */}
       <div className={styles.sectionLabel}>Profile &amp; Academic</div>
       <div className={styles.group}>
-        <button className={styles.row} onClick={() => openPanel('profile')}>
+        <button
+          className={`${styles.row} ${activePanel === 'profile' && isLargeScreen ? styles.rowActive : ''}`}
+          onClick={() => openPanel('profile')}
+        >
           <span className={styles.rowIcon}>
             <User size={20} strokeWidth={2} />
           </span>
@@ -566,7 +589,10 @@ export default function SettingsRoute() {
           <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
         </button>
         <div className={styles.divider} />
-        <button className={styles.row} onClick={() => openPanel('academic')}>
+        <button
+          className={`${styles.row} ${activePanel === 'academic' && isLargeScreen ? styles.rowActive : ''}`}
+          onClick={() => openPanel('academic')}
+        >
           <span className={styles.rowIcon}>
             <GraduationCap size={20} strokeWidth={2} />
           </span>
@@ -578,7 +604,10 @@ export default function SettingsRoute() {
       {/* Security section */}
       <div className={styles.sectionLabel}>Security</div>
       <div className={styles.group}>
-        <button className={styles.row} onClick={() => openPanel('security')}>
+        <button
+          className={`${styles.row} ${activePanel === 'security' && isLargeScreen ? styles.rowActive : ''}`}
+          onClick={() => openPanel('security')}
+        >
           <span className={styles.rowIcon}>
             <Lock size={20} strokeWidth={2} />
           </span>
@@ -590,7 +619,10 @@ export default function SettingsRoute() {
       {/* Preferences section */}
       <div className={styles.sectionLabel}>Preferences</div>
       <div className={styles.group}>
-        <button className={styles.row} onClick={() => openPanel('privacy')}>
+        <button
+          className={`${styles.row} ${activePanel === 'privacy' && isLargeScreen ? styles.rowActive : ''}`}
+          onClick={() => openPanel('privacy')}
+        >
           <span className={styles.rowIcon}>
             <Shield size={20} strokeWidth={2} />
           </span>
@@ -598,7 +630,10 @@ export default function SettingsRoute() {
           <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
         </button>
         <div className={styles.divider} />
-        <button className={styles.row} onClick={() => openPanel('notifications')}>
+        <button
+          className={`${styles.row} ${activePanel === 'notifications' && isLargeScreen ? styles.rowActive : ''}`}
+          onClick={() => openPanel('notifications')}
+        >
           <span className={styles.rowIcon}>
             <Bell size={20} strokeWidth={2} />
           </span>
@@ -707,13 +742,15 @@ export default function SettingsRoute() {
         </>
       )}
 
-      <p className={styles.version}>Meetify · v1.0.0</p>
+      <div className={styles.mobileOnlyWelcome}>
+        <SettingsWelcomePanel />
+      </div>
     </div>
   );
 
   const profilePanel = (
     <div className={`${styles.body} animate-in`}>
-      <div className={styles.group}>
+      <div className={styles.group} style={{ overflow: 'visible' }}>
         <div className={styles.inputRow}>
           <label className={styles.inputLabel} htmlFor="settings-display-name">Display Name</label>
           <input
@@ -727,7 +764,6 @@ export default function SettingsRoute() {
             onChange={e => setDisplayName(e.target.value.slice(0, 30))}
           />
         </div>
-        <div className={styles.divider} />
         <div className={styles.inputRow}>
           <label className={styles.inputLabel} htmlFor="settings-username">Username</label>
           <input
@@ -740,7 +776,6 @@ export default function SettingsRoute() {
             disabled
           />
         </div>
-        <div className={styles.divider} />
         <div className={styles.inputRow}>
           <label className={styles.inputLabel} htmlFor="settings-bio">Bio</label>
           <input
@@ -753,13 +788,67 @@ export default function SettingsRoute() {
             onChange={e => setBio(e.target.value.slice(0, 200))}
           />
         </div>
-        <div className={styles.divider} />
         <div className={styles.inputRow}>
-          <label className={styles.inputLabel}>Date of Birth</label>
-          <CustomDatePicker
-            value={birthday}
-            onChange={val => setBirthday(val)}
-          />
+          <label className={styles.inputLabel} htmlFor="settings-dob-month">Birthday</label>
+          <div className={styles.dobRow}>
+            <div className={styles.dobMonthWrapper}>
+              <CustomSelect
+                id="settings-dob-month"
+                value={birthMonth}
+                placement="top"
+                onChange={val => {
+                  setBirthMonth(val);
+                  if (dobAttempted) setDobAttempted(false);
+                }}
+                placeholder="Month"
+                options={Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
+                  value: String(m),
+                  label: new Date(0, m - 1).toLocaleString('default', { month: 'short' }),
+                }))}
+              />
+            </div>
+            <input
+              id="settings-dob-day"
+              type="text"
+              inputMode="numeric"
+              maxLength={2}
+              className={`${styles.dobInput} ${dobAttempted && (birthDay || birthMonth || birthYear) && !validateDOB(birthYear, birthMonth, birthDay).isValid ? styles.inputInvalid : ''}`}
+              placeholder="Day"
+              value={birthDay}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/\D/g, '').slice(0, 2);
+                if (raw === '') {
+                  setBirthDay('');
+                  return;
+                }
+                const num = parseInt(raw, 10);
+                if (num > 31) return;
+                setBirthDay(raw);
+                if (dobAttempted) setDobAttempted(false);
+              }}
+              aria-label="Day"
+            />
+            <input
+              id="settings-dob-year"
+              type="text"
+              inputMode="numeric"
+              maxLength={4}
+              className={`${styles.dobInput} ${dobAttempted && (birthDay || birthMonth || birthYear) && !validateDOB(birthYear, birthMonth, birthDay).isValid ? styles.inputInvalid : ''}`}
+              placeholder="Year"
+              value={birthYear}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                setBirthYear(val);
+                if (dobAttempted) setDobAttempted(false);
+              }}
+              aria-label="Year"
+            />
+          </div>
+          {dobAttempted && (birthYear || birthMonth || birthDay) && !validateDOB(birthYear, birthMonth, birthDay).isValid && (
+            <div className={styles.errorText}>
+              <AlertCircle size={12} /> {validateDOB(birthYear, birthMonth, birthDay).error}
+            </div>
+          )}
         </div>
       </div>
       <button className={styles.saveBtn} onClick={handleSave}>Save Changes</button>
@@ -770,7 +859,7 @@ export default function SettingsRoute() {
     <div className={`${styles.body} animate-in`}>
       <div className={styles.lockedInfoCard}>
         <div className={styles.lockedCardHeader}>
-          <Lock size={14} className={styles.lockedIcon} />
+          <CheckCircle2 size={16} className={styles.lockedIcon} />
           <span className={styles.lockedHeaderTitle}>Verified Student Identity</span>
         </div>
         <div className={styles.lockedField}>
@@ -798,6 +887,9 @@ export default function SettingsRoute() {
           onChange={setAcademic}
           Select={CustomSelect}
           showErrors={academicAttempted}
+          coursePlacement="top"
+          branchPlacement="top"
+          yearPlacement="top"
           errors={{
             course: !academic.course ? 'Please select your course.' : null,
             branch: !academic.branch ? 'Please select your branch.' : null,
@@ -807,10 +899,11 @@ export default function SettingsRoute() {
                 : null,
           }}
           classes={{
-            selectGroup: styles.selectRow,
+            selectGroup: styles.inputRow,
             selectLabel: styles.inputLabel,
             messageSlot: styles.selectErrorSlot,
             messageError: styles.errorText,
+            divider: styles.nestedDivider,
           }}
         />
       </div>
@@ -823,24 +916,26 @@ export default function SettingsRoute() {
       <div className={styles.group}>
         {/* Current password */}
         <div className={styles.inputRow}>
-          <label className={styles.inputLabel}>Current Password</label>
+          <label className={styles.inputLabel} htmlFor="currentPasswordInput">Current Password</label>
           <div className={styles.passwordInputWrapper}>
             <input
               id="currentPasswordInput"
+              name="currentPassword"
               className={styles.input}
               type={showCurrentPassword ? 'text' : 'password'}
               value={currentPassword}
+              autoComplete="new-password"
               onChange={e => {
                 setCurrentPassword(e.target.value);
                 if (passwordErrors.current) setPasswordErrors(prev => ({ ...prev, current: null }));
               }}
-              placeholder="••••••••"
             />
             <button
               type="button"
               onMouseDown={e => e.preventDefault()}
               onClick={() => toggleVisibility('currentPasswordInput', setShowCurrentPassword)}
               className={styles.eyeBtn}
+              aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
             >
               {showCurrentPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
@@ -852,28 +947,28 @@ export default function SettingsRoute() {
           )}
         </div>
 
-        <div className={styles.divider} />
-
         {/* New password */}
         <div className={styles.inputRow}>
-          <label className={styles.inputLabel}>New Password</label>
+          <label className={styles.inputLabel} htmlFor="newPasswordInput">New Password</label>
           <div className={styles.passwordInputWrapper}>
             <input
               id="newPasswordInput"
+              name="newPassword"
               className={styles.input}
               type={showNewPassword ? 'text' : 'password'}
               value={newPassword}
+              autoComplete="new-password"
               onChange={e => {
                 setNewPassword(e.target.value);
                 if (passwordErrors.new) setPasswordErrors(prev => ({ ...prev, new: null }));
               }}
-              placeholder="••••••••"
             />
             <button
               type="button"
               onMouseDown={e => e.preventDefault()}
               onClick={() => toggleVisibility('newPasswordInput', setShowNewPassword)}
               className={styles.eyeBtn}
+              aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
             >
               {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
@@ -885,28 +980,28 @@ export default function SettingsRoute() {
           )}
         </div>
 
-        <div className={styles.divider} />
-
         {/* Confirm password */}
         <div className={styles.inputRow}>
-          <label className={styles.inputLabel}>Confirm New Password</label>
+          <label className={styles.inputLabel} htmlFor="confirmPasswordInput">Confirm New Password</label>
           <div className={styles.passwordInputWrapper}>
             <input
               id="confirmPasswordInput"
+              name="confirmPassword"
               className={styles.input}
               type={showConfirmPassword ? 'text' : 'password'}
               value={confirmPassword}
+              autoComplete="new-password"
               onChange={e => {
                 setConfirmPassword(e.target.value);
                 if (passwordErrors.confirm) setPasswordErrors(prev => ({ ...prev, confirm: null }));
               }}
-              placeholder="••••••••"
             />
             <button
               type="button"
               onMouseDown={e => e.preventDefault()}
               onClick={() => toggleVisibility('confirmPasswordInput', setShowConfirmPassword)}
               className={styles.eyeBtn}
+              aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
             >
               {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
@@ -1020,7 +1115,7 @@ export default function SettingsRoute() {
   );
 
   const interestsPanel = (
-    <>
+    <div className={styles.interestsContainer}>
       <div className={`${styles.body} ${styles.bodyInterests} animate-in`}>
         <div className={styles.interestsHeader}>
           <p className={styles.interestsSubheadline}>
@@ -1063,8 +1158,16 @@ export default function SettingsRoute() {
           })}
         </div>
       </div>
-      <button className={`${styles.saveBtn} ${styles.floatingSaveBtn}`} onClick={handleSave}>Save Interests</button>
-    </>
+      <div className={styles.floatingSaveWrapper}>
+        <button 
+          type="button"
+          className={styles.floatingSaveBtn} 
+          onClick={handleSave}
+        >
+          Save Interests
+        </button>
+      </div>
+    </div>
   );
 
   // Address hygiene, after every hook has run so the order stays stable.
