@@ -294,7 +294,7 @@ export default function SupportRequestForm({ meta, presetCategory, onClose }) {
         subject: form.subject.trim(),
         description: form.description.trim(),
         attachments: readyAttachments.length ? readyAttachments : undefined,
-        clientContext: collectBrowserInfo(),
+        browserInfo: collectBrowserInfo(),
       };
 
       const response = await supportApi.submitSupportRequest(payload);
