@@ -198,6 +198,32 @@ export default function HelpSupportPage() {
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const goToArticle = (article) => {
+    if (query) setQuery('');
+
+    const formCategory = formCategoryForSlug[article.categorySlug];
+    if (formCategory) setPresetCategory(formCategory);
+
+    setOpenArticleId(article.id);
+
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const articleEl =
+          document.getElementById(`help-article-${article.id}`) ||
+          document.getElementById(`help-article-${article.slug}`);
+        if (articleEl) {
+          articleEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          const triggerBtn = articleEl.querySelector('button');
+          triggerBtn?.focus({ preventScroll: true });
+        } else if (article.categorySlug) {
+          document
+            .getElementById(`help-category-${article.categorySlug}`)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 50);
+    });
+  };
+
   const showBrowse = loadState === 'ready' && !isSearchActive;
 
   return (
@@ -335,12 +361,7 @@ export default function HelpSupportPage() {
                 key={article.id}
                 type="button"
                 className={styles.quickLink}
-                onClick={() => {
-                  setOpenArticleId(article.id);
-                  document
-                    .getElementById(`help-category-${article.categorySlug}`)
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }}
+                onClick={() => goToArticle(article)}
               >
                 <span>{article.question}</span>
                 <ArrowRight size={13} aria-hidden="true" className={styles.quickLinkIcon} />

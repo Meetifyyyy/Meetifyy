@@ -17,6 +17,7 @@
     "dev:admin": "npm --prefix admin-frontend run dev"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "docx": "^9.7.1"
   }
 }

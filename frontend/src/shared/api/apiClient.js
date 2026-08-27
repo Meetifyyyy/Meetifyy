@@ -1014,6 +1014,7 @@ export const supportApi = {
     apiClient.get(`/api/support/help/search?q=${encodeURIComponent(query)}`, { signal }),
 
   submitRequest: (payload, { signal } = {}) => apiClient.post('/api/support/requests', payload, { signal }),
+  submitSupportRequest: (payload, options) => supportApi.submitRequest(payload, options),
 
   /**
    * Uploads one attachment and returns its storage key.

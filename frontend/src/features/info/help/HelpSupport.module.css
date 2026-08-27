@@ -234,6 +234,7 @@
   border: 1px solid #e7e5e4;
   border-radius: 12px;
   overflow: hidden;
+  scroll-margin-top: 6.5rem;
   transition: border-color 0.24s ease, box-shadow 0.24s ease;
 }
 
@@ -815,7 +816,7 @@
 
 .successPanel {
   margin-top: 1rem;
-  padding: 2.25rem 1.75rem;
+  padding: 2.5rem 2rem;
   text-align: center;
   background: #ffffff;
   border: 1px solid #e7e5e4;
@@ -829,15 +830,15 @@
   justify-content: center;
   width: 3rem;
   height: 3rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
   border-radius: 9999px;
   background: rgba(22, 163, 74, 0.1);
   color: #16a34a;
 }
 
 .successTitle {
-  margin: 0 0 0.5rem;
-  font-size: 1.2rem;
+  margin: 0 0 0.85rem;
+  font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.015em;
   color: #0c0a09;
@@ -845,61 +846,17 @@
 
 .successText {
   margin: 0 auto;
-  max-width: 32rem;
-  font-size: 0.9rem;
-  line-height: 1.7;
+  max-width: 34rem;
+  font-size: 0.95rem;
+  line-height: 1.75;
   color: #57534e;
 }
 
-.ticketBox {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin: 1.35rem 0;
-  padding: 0.7rem 0.7rem 0.7rem 1.2rem;
-  background: #0c0a09;
-  border-radius: 12px;
-}
-
-.ticketLabel {
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: #a8a29e;
-}
-
-.ticketNumber {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 1.25rem;
+.requestIdHighlight {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   font-weight: 700;
-  letter-spacing: 0.09em;
-  color: #ffffff;
-}
-
-.copyBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  height: 2.1rem;
-  padding: 0 0.8rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  font-family: inherit;
   color: #0c0a09;
-  background: #ffffff;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.copyBtn:hover {
-  background: #e7e5e4;
-}
-
-.copyBtnDone {
-  color: #16a34a;
+  letter-spacing: 0.02em;
 }
 
 /* ── Skeleton ────────────────────────────────────────────────────────────── */
@@ -970,11 +927,6 @@
   .formPanel,
   .successPanel {
     padding: 1.15rem;
-  }
-
-  .ticketBox {
-    width: 100%;
-    justify-content: space-between;
   }
 
   .formActions .primaryBtn {

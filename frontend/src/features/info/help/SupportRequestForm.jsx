@@ -5,13 +5,13 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
-  Copy,
   FileText,
   Loader2,
   Send,
   Upload,
   X,
 } from '@shared/components/icons';
+import CustomSelect from '@shared/components/ui/CustomSelect';
 import styles from './HelpSupport.module.css';
 
 const MAX_DESCRIPTION = 10000;
@@ -76,20 +76,32 @@ function formatBytes(bytes) {
 function validate(form) {
   const errors = {};
 
-  if (!form.email.trim()) errors.email = 'Enter your email address so we can reply.';
-  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+  const name = form.name.trim();
+  if (!name) errors.name = 'Enter your name.';
+  else if (name.length < 2) errors.name = 'Name must be at least 2 characters.';
+  else if (name.length > 100) errors.name = 'Name cannot exceed 100 characters.';
+
+  const email = form.email.trim();
+  if (!email) errors.email = 'Enter your email address so we can reply.';
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     errors.email = 'That does not look like a valid email address.';
+  } else if (email.length > 254) {
+    errors.email = 'Email cannot exceed 254 characters.';
   }
 
   if (!form.category) errors.category = 'Choose the area your issue relates to.';
 
-  if (!form.subject.trim()) errors.subject = 'Add a short subject.';
-  else if (form.subject.trim().length < 3) errors.subject = 'The subject is too short.';
+  const subject = form.subject.trim();
+  if (!subject) errors.subject = 'Add a short subject.';
+  else if (subject.length < 3) errors.subject = 'The subject is too short.';
+  else if (subject.length > MAX_SUBJECT) errors.subject = `Subject cannot exceed ${MAX_SUBJECT} characters.`;
 
   const description = form.description.trim();
   if (!description) errors.description = 'Describe what happened.';
   else if (description.length < MIN_DESCRIPTION) {
     errors.description = `Please add a little more detail, at least ${MIN_DESCRIPTION} characters.`;
+  } else if (description.length > MAX_DESCRIPTION) {
+    errors.description = `Description cannot exceed ${MAX_DESCRIPTION} characters.`;
   }
 
   return errors;
@@ -102,7 +114,6 @@ export default function SupportRequestForm({ meta, presetCategory, onClose }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [result, setResult] = useState(null);
-  const [copied, setCopied] = useState(false);
 
   const fileInputRef = useRef(null);
   // Read at submit time rather than held in state: the field is never touched
@@ -112,7 +123,6 @@ export default function SupportRequestForm({ meta, presetCategory, onClose }) {
   const errorSummaryRef = useRef(null);
   const successRef = useRef(null);
   const panelRef = useRef(null);
-  const copyTimer = useRef(null);
   // Guards against a double submit landing two tickets. `submitting` drives the
   // button, but a second submit event can fire before React has re-rendered.
   const inFlightRef = useRef(false);
@@ -125,8 +135,6 @@ export default function SupportRequestForm({ meta, presetCategory, onClose }) {
   useEffect(() => {
     if (presetCategory) setForm((prev) => (prev.category ? prev : { ...prev, category: presetCategory }));
   }, [presetCategory]);
-
-  useEffect(() => () => clearTimeout(copyTimer.current), []);
 
   // Focus moves to the outcome so a screen-reader user is not left at the
   // submit button wondering whether anything happened.
@@ -148,21 +156,23 @@ export default function SupportRequestForm({ meta, presetCategory, onClose }) {
 
   async function handleFiles(event) {
     const picked = Array.from(event.target.files ?? []);
-    // Reset immediately so choosing the same file twice still fires a change.
-    event.target.value = '';
     if (!picked.length) return;
 
+    // Reset the input so picking the same file again (e.g. after fixing it)
+    // fires a change event.
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
     const maxFiles = limits?.maxFiles ?? 5;
-    const room = maxFiles - files.length;
-    if (room <= 0) {
-      setSubmitError(`You can attach at most ${maxFiles} files.`);
-      return;
-    }
+    const maxBytes = limits?.maxBytesPerFile ?? 10 * 1024 * 1024;
+    const allowed = new Set(limits?.allowedMimeTypes ?? []);
 
-    for (const file of picked.slice(0, room)) {
-      const localId = `${file.name}-${file.size}-${Date.now()}-${Math.random()}`;
+    const remainingSlots = Math.max(0, maxFiles - files.length);
+    const toProcess = picked.slice(0, remainingSlots);
 
-      if (limits && file.size > limits.maxBytesPerFile) {
+    for (const file of toProcess) {
+      const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      if (allowed.size && !allowed.has(file.type)) {
         setFiles((prev) => [
           ...prev,
           {
@@ -170,80 +180,129 @@ export default function SupportRequestForm({ meta, presetCategory, onClose }) {
             name: file.name,
             size: file.size,
             status: 'error',
-            error: `Too large, max ${formatBytes(limits.maxBytesPerFile)}`,
+            error: 'Unsupported file type',
           },
         ]);
         continue;
       }
-      if (limits && !limits.allowedMimeTypes.includes(file.type)) {
+
+      if (file.size > maxBytes) {
         setFiles((prev) => [
           ...prev,
-          { localId, name: file.name, size: file.size, status: 'error', error: 'Unsupported file type' },
+          {
+            localId,
+            name: file.name,
+            size: file.size,
+            status: 'error',
+            error: `Exceeds ${formatBytes(maxBytes)} limit`,
+          },
         ]);
         continue;
       }
 
-      setFiles((prev) => [...prev, { localId, name: file.name, size: file.size, status: 'uploading' }]);
+      // Optimistic item: visible immediately with a spinner while the upload runs.
+      setFiles((prev) => [
+        ...prev,
+        {
+          localId,
+          name: file.name,
+          size: file.size,
+          mimeType: file.type,
+          status: 'uploading',
+        },
+      ]);
 
       try {
-        const uploaded = await supportApi.uploadAttachment(file);
-        setFiles((prev) => prev.map((f) => (f.localId === localId ? { ...f, status: 'done', key: uploaded.key } : f)));
+        const uploadResult = await supportApi.uploadAttachment(file);
+        setFiles((prev) =>
+          prev.map((item) =>
+            item.localId === localId
+              ? {
+                  ...item,
+                  status: 'ready',
+                  key: uploadResult.key || uploadResult.storageKey,
+                  storageKey: uploadResult.key || uploadResult.storageKey,
+                  attachmentId: uploadResult.mediaId || uploadResult.attachmentId,
+                  url: uploadResult.url,
+                }
+              : item,
+          ),
+        );
       } catch (error) {
         setFiles((prev) =>
-          prev.map((f) =>
-            f.localId === localId ? { ...f, status: 'error', error: error.message || 'Upload failed' } : f,
+          prev.map((item) =>
+            item.localId === localId
+              ? {
+                  ...item,
+                  status: 'error',
+                  error: error.message || 'Upload failed',
+                }
+              : item,
           ),
         );
       }
     }
   }
 
-  const removeFile = (localId) => setFiles((prev) => prev.filter((f) => f.localId !== localId));
+  function removeFile(localId) {
+    setFiles((prev) => prev.filter((f) => f.localId !== localId));
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
+
     if (inFlightRef.current) return;
-    setSubmitError(null);
 
-    const nextErrors = validate(form);
-    if (Object.keys(nextErrors).length) {
-      setErrors(nextErrors);
-      // Focus the first field that failed, so the fix is one keystroke away.
-      document.getElementById(`support-${Object.keys(nextErrors)[0]}`)?.focus();
+    // Honeypot tripped: silently refuse without sending to the API.
+    if (honeypotRef.current && honeypotRef.current.value) {
+      setResult({ ticketNumber: 'MFT-000000' });
       return;
     }
 
-    if (files.some((f) => f.status === 'uploading')) {
-      setSubmitError('Wait for your attachments to finish uploading, then send.');
+    const validationErrors = validate(form);
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      // Focus the first invalid field so keyboard and screen-reader users are
+      // carried directly to the problem.
+      const firstKey = Object.keys(validationErrors)[0];
+      const target = panelRef.current?.querySelector(`[name="${firstKey}"]`);
+      target?.focus();
       return;
     }
 
-    inFlightRef.current = true;
+    // Do not submit while an attachment is half-way through uploading.
+    const anyUploading = files.some((f) => f.status === 'uploading');
+    if (anyUploading) return;
+
+    // Only successfully uploaded files make it into the ticket payload.
+    const readyAttachments = files
+      .filter((f) => f.status === 'ready' && (f.key || f.storageKey))
+      .map((f) => ({
+        key: f.key || f.storageKey,
+        filename: f.name,
+      }));
+
     setSubmitting(true);
+    setSubmitError(null);
+    inFlightRef.current = true;
+
     try {
-      const response = await supportApi.submitRequest({
+      const payload = {
+        name: form.name.trim(),
         email: form.email.trim(),
-        name: form.name.trim() || undefined,
         category: form.category,
         subject: form.subject.trim(),
         description: form.description.trim(),
-        // The name is sent alongside the key so the confirmation email can
-        // show what was attached; the server sanitizes it before storing.
-        attachments: files.filter((f) => f.status === 'done').map((f) => ({ key: f.key, filename: f.name })),
-        browserInfo: collectBrowserInfo(),
-        pageContext:
-          typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : undefined,
-        // Empty for anyone who can see the form. The server treats a filled
-        // value as a scripted submission.
-        website: honeypotRef.current?.value || undefined,
-      });
+        attachments: readyAttachments.length ? readyAttachments : undefined,
+        clientContext: collectBrowserInfo(),
+      };
 
+      const response = await supportApi.submitSupportRequest(payload);
       setResult(response);
       setForm(EMPTY_FORM);
       setFiles([]);
+      setErrors({});
     } catch (error) {
-      // Distinguished so the user is told what to actually do next. Anything
-      // else keeps the server's own message, which is already user-facing.
       if (error.status === 429) {
         setSubmitError(
           error.message ||
@@ -264,18 +323,6 @@ export default function SupportRequestForm({ meta, presetCategory, onClose }) {
     }
   }
 
-  async function copyTicketNumber() {
-    try {
-      await navigator.clipboard.writeText(result.ticketNumber);
-      setCopied(true);
-      copyTimer.current = setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard access can be refused (insecure context, permission). The
-      // number is on screen and selectable, so this is not worth an error.
-      setCopied(false);
-    }
-  }
-
   // ── Success ────────────────────────────────────────────────────────────────
 
   if (result) {
@@ -286,25 +333,11 @@ export default function SupportRequestForm({ meta, presetCategory, onClose }) {
         </div>
         <h3 className={styles.successTitle}>Support request submitted successfully</h3>
 
-        <div className={styles.ticketBox}>
-          <div style={{ textAlign: 'left' }}>
-            <div className={styles.ticketLabel}>Request ID</div>
-            <div className={styles.ticketNumber}>{result.ticketNumber}</div>
-          </div>
-          <button
-            type="button"
-            onClick={copyTicketNumber}
-            className={`${styles.copyBtn} ${copied ? styles.copyBtnDone : ''}`}
-          >
-            {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-
         <p className={styles.successText}>
-          We have received your request and sent a confirmation email to your email address. Please keep your Request
-          ID for future communication. You can reply to that email at any time to add more detail, and you do not need
-          to be signed in.
+          Your request has been submitted successfully. Your Request ID is{' '}
+          <strong className={styles.requestIdHighlight}>{result.ticketNumber}</strong>. A copy of your request
+          details has also been sent to your registered email address. Our support team will review your request and
+          work to resolve the issue as soon as possible.
         </p>
 
         {result.redactedSensitiveContent && (
@@ -364,18 +397,29 @@ export default function SupportRequestForm({ meta, presetCategory, onClose }) {
       <div className={styles.fieldGrid}>
         <div className={styles.field}>
           <label className={styles.label} htmlFor="support-name">
-            Name <span className={styles.optional}>(optional)</span>
+            Name <span className={styles.required} aria-hidden="true">*</span>
           </label>
           <input
             id="support-name"
             name="name"
             type="text"
             autoComplete="name"
-            className={styles.input}
+            required
+            aria-required="true"
+            maxLength={100}
+            aria-invalid={Boolean(errors.name)}
+            aria-describedby={errors.name ? 'support-name-error' : undefined}
+            className={`${styles.input} ${errors.name ? styles.inputError : ''}`}
             placeholder="What should we call you?"
             value={form.name}
             onChange={setField('name')}
           />
+          {errors.name && (
+            <span className={styles.errorText} id="support-name-error">
+              <AlertCircle size={13} aria-hidden="true" />
+              {errors.name}
+            </span>
+          )}
         </div>
 
         <div className={styles.field}>
@@ -389,21 +433,18 @@ export default function SupportRequestForm({ meta, presetCategory, onClose }) {
             autoComplete="email"
             required
             aria-required="true"
+            maxLength={254}
             aria-invalid={Boolean(errors.email)}
-            aria-describedby={errors.email ? 'support-email-error' : 'support-email-hint'}
+            aria-describedby={errors.email ? 'support-email-error' : undefined}
             className={`${styles.input} ${errors.email ? styles.inputError : ''}`}
-            placeholder="you@college.edu"
+            placeholder="email address"
             value={form.email}
             onChange={setField('email')}
           />
-          {errors.email ? (
+          {errors.email && (
             <span className={styles.errorText} id="support-email-error">
               <AlertCircle size={13} aria-hidden="true" />
               {errors.email}
-            </span>
-          ) : (
-            <span className={styles.hint} id="support-email-hint">
-              We send your Request ID and all replies here.
             </span>
           )}
         </div>
@@ -412,24 +453,19 @@ export default function SupportRequestForm({ meta, presetCategory, onClose }) {
           <label className={styles.label} htmlFor="support-category">
             Issue category <span className={styles.required} aria-hidden="true">*</span>
           </label>
-          <select
+          <CustomSelect
             id="support-category"
             name="category"
+            value={form.category}
+            onChange={setField('category')}
+            options={categories}
+            placeholder="Choose a category"
             required
             aria-required="true"
             aria-invalid={Boolean(errors.category)}
             aria-describedby={errors.category ? 'support-category-error' : undefined}
-            className={`${styles.select} ${errors.category ? styles.inputError : ''}`}
-            value={form.category}
-            onChange={setField('category')}
-          >
-            <option value="">Choose a category</option>
-            {categories.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            error={Boolean(errors.category)}
+          />
           {errors.category && (
             <span className={styles.errorText} id="support-category-error">
               <AlertCircle size={13} aria-hidden="true" />
@@ -587,9 +623,9 @@ export default function SupportRequestForm({ meta, presetCategory, onClose }) {
             </>
           )}
         </button>
-        <span className={styles.hint}>
-          {uploading ? 'Waiting for your attachments to finish uploading.' : 'We will email you a Request ID straight away.'}
-        </span>
+        {uploading && (
+          <span className={styles.hint}>Waiting for your attachments to finish uploading.</span>
+        )}
       </div>
     </form>
   );

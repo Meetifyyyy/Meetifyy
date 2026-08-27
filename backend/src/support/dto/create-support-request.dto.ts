@@ -3,6 +3,7 @@ import {
   IsEmail,
   IsEnum,
   IsIn,
+  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
@@ -31,7 +32,11 @@ export class SupportBrowserInfoDto {
 
 export class SupportAttachmentRefDto {
   /** Storage key returned by POST /support/attachments. */
-  @IsString() @MaxLength(300) key: string;
+  @Transform(trim)
+  @IsString({ message: 'Attachment key must be a string' })
+  @IsNotEmpty({ message: 'Attachment key is required' })
+  @MaxLength(300, { message: 'Attachment key is too long' })
+  key: string;
 
   /**
    * Original filename, for display only.
@@ -43,44 +48,50 @@ export class SupportAttachmentRefDto {
    * worst a caller can do is mislabel their own attachment in their own receipt.
    */
   @IsOptional()
-  @IsString()
-  @MaxLength(200)
+  @Transform(trim)
+  @IsString({ message: 'Filename must be a string' })
+  @MaxLength(200, { message: 'Filename is too long' })
   filename?: string;
 }
 
 export class CreateSupportRequestDto {
   @Transform(trim)
-  @IsEmail({}, { message: 'Enter a valid email address' })
-  @MaxLength(254)
-  email: string;
+  @IsString({ message: 'Name must be a string' })
+  @IsNotEmpty({ message: 'Enter your name' })
+  @MinLength(2, { message: 'Name must be at least 2 characters' })
+  @MaxLength(100, { message: 'Name cannot exceed 100 characters' })
+  name: string;
 
-  @IsOptional()
   @Transform(trim)
-  @IsString()
-  @MaxLength(100)
-  name?: string;
+  @IsEmail({}, { message: 'Enter a valid email address' })
+  @MaxLength(254, { message: 'Email address cannot exceed 254 characters' })
+  email: string;
 
   // Restricted to the public list rather than the whole enum: the legacy
   // members exist only so old rows still parse, and `OTHER` already covers
   // anything the current list does not.
-  @IsEnum(SupportCategory)
+  @IsEnum(SupportCategory, { message: 'Invalid support category' })
   @IsIn(PUBLIC_SUPPORT_CATEGORIES as SupportCategory[], {
     message: 'Choose one of the listed categories',
   })
   category: SupportCategory;
 
   @Transform(trim)
-  @IsString()
+  @IsString({ message: 'Subject must be a string' })
+  @IsNotEmpty({ message: 'Add a subject' })
   @MinLength(3, { message: 'Subject must be at least 3 characters' })
-  @MaxLength(200)
+  @MaxLength(200, { message: 'Subject cannot exceed 200 characters' })
   subject: string;
 
   @Transform(trim)
-  @IsString()
+  @IsString({ message: 'Description must be a string' })
+  @IsNotEmpty({ message: 'Please describe the issue' })
   @MinLength(20, {
     message: 'Please describe the issue in at least 20 characters',
   })
-  @MaxLength(10000)
+  @MaxLength(10000, {
+    message: 'Description cannot exceed 10000 characters',
+  })
   description: string;
 
   @IsOptional()

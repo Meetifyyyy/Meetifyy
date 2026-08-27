@@ -15,7 +15,10 @@ function FaqItem({ article, isOpen, onToggle, headingLevel = 'h3' }) {
   const Heading = headingLevel;
 
   return (
-    <div className={`${styles.faqItem} ${isOpen ? styles.faqItemOpen : ''}`}>
+    <div
+      id={`help-article-${article.id}`}
+      className={`${styles.faqItem} ${isOpen ? styles.faqItemOpen : ''}`}
+    >
       <Heading style={{ margin: 0 }}>
         <button
           type="button"

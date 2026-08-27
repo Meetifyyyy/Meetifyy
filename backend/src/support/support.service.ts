@@ -96,7 +96,7 @@ export class SupportService {
 
     const ticket = await this.createTicketWithUniqueNumber({
       email: dto.email.trim().toLowerCase(),
-      name: dto.name?.trim() || null,
+      name: dto.name.trim(),
       category: dto.category,
       subject,
       description,
