@@ -28,7 +28,7 @@ export default function LandingHero() {
           transition={{ duration: 0.7, delay: 0.2 }}
           className={styles.desc}
         >
-          Connect, share stories, and build real friendships — all on one platform designed for campus life.
+          Meet new people, share your moments, and make campus life unforgettable.
         </motion.p>
 
         {/* CTAs */}

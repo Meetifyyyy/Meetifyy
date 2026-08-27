@@ -149,9 +149,19 @@ export default function Step2Academic() {
 
         {/* Domain-not-registered inline callout */}
         {isDomainNotRegistered && (
-          <div className={`${s.message} ${s.messageError}`} role="alert" style={{ marginTop: '-1.25rem' }}>
+          <div
+            className={`${s.message} ${s.messageError}`}
+            role="alert"
+            style={{
+              marginTop: '-1.25rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              flexWrap: 'wrap',
+            }}
+          >
             <AlertCircle size={13} style={{ flexShrink: 0 }} />
-            {' '}Your college isn&apos;t added yet.{' '}
+            <span>Your college isn&apos;t added yet.</span>
             <button
               type="button"
               onClick={() => navigate('/?request=college#join')}
@@ -161,14 +171,18 @@ export default function Step2Academic() {
                 padding: 0,
                 color: '#5C47FA',
                 fontWeight: 700,
-                textDecoration: 'underline',
                 cursor: 'pointer',
                 font: 'inherit',
                 fontSize: 'inherit',
+                lineHeight: 'inherit',
                 whiteSpace: 'nowrap',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.2rem',
               }}
             >
-              Request to add it →
+              <span style={{ textDecoration: 'underline' }}>Request to add it</span>
+              <ArrowRight size={12} style={{ flexShrink: 0 }} />
             </button>
           </div>
         )}

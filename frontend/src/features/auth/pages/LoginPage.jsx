@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { ArrowRight, AlertCircle } from '@shared/components/icons';
@@ -16,17 +16,20 @@ export default function LoginPage() {
 
   const [user, setUser] = useState('');
   const [pass, setPass] = useState('');
+  const passRef = useRef(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const trimmedUser = user.trim();
+    // Browser autofill may not fire onChange — read directly from the DOM as fallback.
+    const effectivePass = pass || passRef.current?.value || '';
     if (!trimmedUser) {
       setError('Please enter your username or email.');
       return;
     }
-    if (!pass) {
+    if (!effectivePass) {
       setError('Please enter your password.');
       return;
     }
@@ -34,7 +37,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await login(trimmedUser, pass);
+      await login(trimmedUser, effectivePass);
       // On success the auth state change navigates away; keep the spinner up.
     } catch (err) {
       setError(err.message || 'Invalid username or password.');
@@ -45,7 +48,7 @@ export default function LoginPage() {
   return (
     <AuthShell
       headline={'Good to see\n*you again.*'}
-      subtext="Your circles, your chats, your campus — right where you left them."
+      subtext="Your circles, your chats, your campus - right where you left them."
     >
       <div className={s.content}>
         <AuthHeading title="Welcome back" subtitle="Let's pick up right where we left off." />
@@ -55,7 +58,7 @@ export default function LoginPage() {
             id="login-user"
             label="Username or Email"
             type="text"
-            autoComplete="username"
+            autoComplete="off"
             value={user}
             error={error && !user.trim() ? error : null}
             onChange={(e) => {
@@ -68,12 +71,17 @@ export default function LoginPage() {
           <PasswordField
             id="login-password"
             label="Password"
-            autoComplete="current-password"
+            autoComplete="new-password"
+            ref={passRef}
             value={pass}
             error={error && user.trim() && !pass ? error : null}
             onChange={(e) => {
               setPass(e.target.value);
               if (error) setError(null);
+            }}
+            onInput={(e) => {
+              // Sync browser autofill into React state (autofill fires input but not change)
+              if (e.target.value && !pass) setPass(e.target.value);
             }}
           />
 
@@ -95,7 +103,7 @@ export default function LoginPage() {
             loading={loading}
             loadingText="Logging in..."
             icon={<ArrowRight size={18} />}
-            disabled={!user.trim() || !pass}
+            disabled={!user.trim() || (!pass && !passRef.current?.value)}
             style={{ marginTop: '0.35rem' }}
           >
             Log in

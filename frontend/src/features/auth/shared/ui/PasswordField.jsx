@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { forwardRef, useLayoutEffect, useRef, useState } from 'react';
 import { Eye, EyeOff } from '@shared/components/icons';
 import AuthField from './AuthField';
 import s from './authKit.module.css';
@@ -6,8 +6,11 @@ import s from './authKit.module.css';
 /**
  * A password AuthField with a built-in show/hide toggle. Same visual language as
  * every other field; the toggle never steals focus from the input.
+ *
+ * Wrapped with forwardRef so callers can attach a ref directly to the underlying
+ * input element (needed to read browser-autofilled values that don't fire onChange).
  */
-export default function PasswordField({ id, label = 'Password', ...props }) {
+const PasswordField = forwardRef(function PasswordField({ id, label = 'Password', ...props }, ref) {
   const [visible, setVisible] = useState(false);
   const inputRef = useRef(null);
   const caretRef = useRef(null);
@@ -48,7 +51,7 @@ export default function PasswordField({ id, label = 'Password', ...props }) {
 
   return (
     <AuthField
-      ref={inputRef}
+      ref={ref || inputRef}
       id={id}
       label={label}
       type={visible ? 'text' : 'password'}
@@ -57,4 +60,6 @@ export default function PasswordField({ id, label = 'Password', ...props }) {
       {...props}
     />
   );
-}
+});
+
+export default PasswordField;
