@@ -6,68 +6,68 @@ export default function CommunityGuidelinesPage() {
   const guidelines = [
     {
       num: 1,
-      title: 'Be Respectful & Kind',
-      desc: 'Treat every member of the Meetifyy community with baseline respect. While healthy debates and discussions are encouraged, personal attacks, insults, intimidation, or sustained harassment will absolutely not be tolerated under any circumstances.'
+      title: 'Treat Others with Respect',
+      desc: 'Engage with other members of the Meetifyy community with basic courtesy and respect. Healthy disagreement is welcome; personal attacks, sustained insults, and intimidation are not.'
     },
     {
       num: 2,
-      title: 'Zero Tolerance for Bullying or Harassment',
-      desc: 'Do not bully, threaten, stalk, or repeatedly contact someone after they have asked you to stop. Furthermore, encouraging or organizing others to harass an individual or group is strictly prohibited.'
+      title: 'No Bullying or Harassment',
+      desc: 'Do not bully, threaten, stalk, or repeatedly contact someone who has asked you to stop. Organizing or encouraging others to target a specific person or group is prohibited.'
     },
     {
       num: 3,
       title: 'No Hate Speech or Discrimination',
-      desc: 'Meetifyy is an inclusive platform. Do not post content or engage in behavior that promotes, encourages, or incites hatred, violence, or discrimination against anyone based on race, ethnicity, national origin, religion, gender identity, disability, or sexual orientation.'
+      desc: 'Meetifyy is open to students of every background. Do not post content that promotes hatred, incites violence, or discriminates against any person or group on the basis of race, ethnicity, national origin, religion, gender, gender identity, disability, or sexual orientation.'
     },
     {
       num: 4,
-      title: 'Keep Content Safe and Appropriate',
-      desc: 'Do not share sexually explicit material, non-consensual intimate imagery, graphic violence, illegal content, or any media that promotes self-harm, eating disorders, or dangerous real-world activities.'
+      title: 'Keep Content Appropriate',
+      desc: 'Do not share sexually explicit material, non-consensual intimate imagery, graphic violence, or illegal content. Do not post content that promotes, glorifies, or provides instructions for self-harm, suicide, or dangerous activities. Educational, harm-reduction, and recovery-oriented discussion is permitted.'
     },
     {
       num: 5,
-      title: 'Be Authentic & Honest',
-      desc: 'Do not impersonate another person, student organization, or university official. Do not create fake identities or intentionally misrepresent your campus affiliation to deceive others.'
+      title: 'Be Honest About Who You Are',
+      desc: 'Do not impersonate another person, student organization, or institution. Do not create accounts with false identities or misrepresent your institutional affiliation to deceive others.'
     },
     {
       num: 6,
-      title: 'Respect Personal Privacy (No Doxxing)',
-      desc: 'Never share another person’s private or personally identifiable information without their explicit, verifiable consent. This includes phone numbers, private email addresses, home or dorm addresses, ID documents, or screenshots of private conversations.'
+      title: 'Respect Personal Privacy',
+      desc: 'Do not share another person\'s private information without their permission. This includes home or dorm addresses, phone numbers, private email addresses, identity documents, and screenshots of private conversations. Sharing such information without consent, regardless of where it was originally obtained, is not allowed.'
     },
     {
       num: 7,
-      title: 'No Spam, Scams, or Exploitation',
-      desc: 'Do not send unsolicited spam messages, phishing links, fraudulent offers, or engage in excessive self-promotion. Using automated scripts or fake accounts to manipulate engagement is prohibited.'
+      title: 'No Spam, Scams, or Deception',
+      desc: 'Do not send unsolicited bulk messages, phishing links, or fraudulent offers. Excessive self-promotion and the use of automated accounts or scripts to manipulate engagement are prohibited.'
     },
     {
       num: 8,
-      title: 'Community & Event Standards',
-      desc: 'Community creators and event organizers must provide accurate information, clearly define the purpose of their groups, and actively moderate to ensure compliance with these Guidelines. Meetifyy reserves the right to disband communities or cancel events that violate our policies.'
+      title: 'Community and Event Responsibility',
+      desc: 'Community creators and event organizers are responsible for providing accurate information and keeping their communities and events in compliance with these Guidelines. Meetifyy may remove or close communities and events that breach our policies.'
     },
     {
       num: 9,
-      title: 'Direct Messaging Etiquette',
-      desc: 'Use the direct messaging feature responsibly. Do not harass, threaten, or send explicit content. If a user asks you to stop contacting them or blocks you, attempting to bypass those restrictions is a severe violation.'
+      title: 'Messaging Etiquette',
+      desc: 'Use direct messages in good faith. Do not send harassing, threatening, or explicitly sexual messages. If someone asks you to stop contacting them or blocks you, respect that. Attempting to circumvent a block is a violation of these Guidelines.'
     },
     {
       num: 10,
-      title: 'Intellectual Property Respect',
-      desc: 'Only upload or share content that you have created yourself or have explicit legal permission to use. Do not claim ownership over the creative work of others.'
+      title: 'Respect Intellectual Property',
+      desc: 'Only post or share content you have created yourself or have the right to use. Do not claim ownership of other people\'s creative work.'
     },
     {
       num: 11,
       title: 'Reporting Violations',
-      desc: 'If you witness behavior or content that violates these Guidelines, please utilize our in-app reporting tools immediately. Your reports are confidential and critical to maintaining community safety.'
+      desc: 'If you see content or behavior that violates these Guidelines, use the in-app reporting tools. Reports help us keep the Platform safe. Reported information may be reviewed by Meetifyy staff and, where required by law or safety considerations, shared with relevant authorities.'
     },
     {
       num: 12,
-      title: 'Enforcement & Disciplinary Action',
-      desc: 'Meetifyy takes these Guidelines seriously. Violations may result in content removal, feature restrictions, temporary account suspension, or permanent bans. We will also report illegal activities to law enforcement when necessary and required by law.'
+      title: 'Enforcement',
+      desc: 'Violations of these Guidelines may result in content removal, feature restrictions, account suspension, or permanent bans, depending on severity and context. Illegal activity will be reported to law enforcement where required.'
     },
     {
       num: 13,
-      title: 'Policy Updates',
-      desc: 'We may update these Community Guidelines as our platform evolves. Continued use of Meetifyy signifies your agreement to abide by the most current version of these rules.'
+      title: 'Updates to These Guidelines',
+      desc: 'We may revise these Community Guidelines as the Platform grows. We will update the date at the top of the page when changes are made. Continued use of Meetifyy means you agree to the current version of these Guidelines.'
     }
   ];
 
@@ -75,18 +75,22 @@ export default function CommunityGuidelinesPage() {
     <StaticDocLayout
       badge="Safety & Culture"
       title="Community Guidelines"
-      subtitle="The foundational standards for maintaining a safe, respectful, and inclusive environment for every student on Meetifyy."
-      effectiveDate="17 July 2026"
+      subtitle="The standards that keep Meetifyy safe, respectful, and worth showing up to."
+      effectiveDate="27 August 2026"
       noHeroCard
       leftAlign
     >
       <section className={styles.cleanSection}>
         <h2 className={styles.cleanSectionTitle}>Our Shared Commitment</h2>
         <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem' }}>
-          Welcome to Meetifyy! Our core mission is to help students discover communities, collaborate on projects, and build meaningful relationships across campuses. To achieve this, we rely on a shared commitment to safety and respect.
+          Meetifyy exists to help students find their people: study partners, collaborators, friends,
+          and communities that share their interests. That only works if everyone here acts in good
+          faith.
         </p>
         <p className={styles.hierarchyParagraph}>
-          These Community Guidelines establish the strict standards expected from every individual using the Platform. By participating in the Meetifyy ecosystem, you agree to adhere to these rules and help us foster an environment where everyone feels secure and welcome.
+          These Guidelines describe the behavior we expect from every person on the Platform. They
+          apply to all content and interactions, whether in public communities, private messages, or
+          event pages. By using Meetifyy, you agree to follow them.
         </p>
       </section>
 
@@ -98,13 +102,14 @@ export default function CommunityGuidelinesPage() {
       ))}
 
       <section className={styles.cleanSection} style={{ borderBottom: 'none' }}>
-        <h2 className={styles.cleanSectionTitle}>14. Trust & Safety Contact</h2>
+        <h2 className={styles.cleanSectionTitle}>14. Contact</h2>
         <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem' }}>
-          If you have questions regarding these Community Guidelines, or if you need to escalate a severe safety concern, please contact our Trust & Safety team directly:
+          If you need to escalate a safety concern or have a question about these Guidelines,
+          contact us directly:
         </p>
-        <a href="mailto:meetify0@gmail.com" className={styles.emailBtn} style={{ marginTop: '1rem', display: 'inline-flex' }}>
+        <a href="mailto:app.meetifyy@gmail.com" className={styles.emailBtn} style={{ marginTop: '1rem', display: 'inline-flex' }}>
           <Mail size={18} />
-          meetify0@gmail.com
+          app.meetifyy@gmail.com
         </a>
       </section>
     </StaticDocLayout>

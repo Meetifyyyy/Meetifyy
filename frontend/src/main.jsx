@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './shared/context/AuthContext';
+import { CookieConsentProvider } from './shared/context/CookieConsentContext';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from './shared/context/ThemeContext';
 import App from './App.jsx';
@@ -84,15 +85,17 @@ createRoot(document.getElementById('root')).render(
   <QueryClientProvider client={queryClient}>
     <StrictMode>
       <ThemeProvider>
-        <AuthProvider>
-          <MediaViewerProvider>
-            <UsersMapProvider>
-              <Toaster position="bottom-center" duration={2500} />
-              <App />
-              <MediaViewer />
-            </UsersMapProvider>
-          </MediaViewerProvider>
-        </AuthProvider>
+        <CookieConsentProvider>
+          <AuthProvider>
+            <MediaViewerProvider>
+              <UsersMapProvider>
+                <Toaster position="bottom-center" duration={2500} />
+                <App />
+                <MediaViewer />
+              </UsersMapProvider>
+            </MediaViewerProvider>
+          </AuthProvider>
+        </CookieConsentProvider>
       </ThemeProvider>
     </StrictMode>
   </QueryClientProvider>,

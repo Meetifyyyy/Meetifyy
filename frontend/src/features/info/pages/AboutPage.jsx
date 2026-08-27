@@ -9,10 +9,12 @@ export default function AboutPage() {
     >
       {/* Intro section */}
       <p className={styles.changaIntroText}>
-        Meetifyy is a student-first platform designed to help college students connect with like-minded people, discover communities, participate in events, find project teammates, and build lasting relationships both inside and outside the classroom.
+        Meetifyy is a student-first platform built to help college students find their people:
+        whether that's a study partner, a hackathon team, a club, or just someone who shares the
+        same niche interest.
       </p>
       <div className={styles.heroImageWrapper}>
-        <img src="/about_hero.webp" alt="Meetifyy" className={styles.heroImage} />
+        <img src="/about_hero.webp" alt="Students connecting on Meetifyy" className={styles.heroImage} />
       </div>
 
       {/* What You'll Find Here */}
@@ -20,34 +22,42 @@ export default function AboutPage() {
         <span className={styles.bigEmoji}>🎓</span>
         <h2 className={styles.cleanSectionTitle}>What You'll Find Here</h2>
         <p className={styles.hierarchyParagraph}>
-          Find new campus friends, study partners, hackathon collaborators, club communities, and local events—all brought together in one place.
+          Communities organized around courses, clubs, and shared interests. Campus events you
+          can discover and RSVP to. Crew activities where you can find collaborators for projects
+          and hackathons. And direct messaging to actually connect with the people you meet.
         </p>
       </section>
 
-      {/* Mission & Vision */}
+      {/* Mission */}
       <section className={styles.centerSection}>
         <span className={styles.bigEmoji}>🚀</span>
-        <h2 className={styles.cleanSectionTitle}>Our Mission & Vision</h2>
+        <h2 className={styles.cleanSectionTitle}>Why We Built This</h2>
         <p className={styles.hierarchyParagraph}>
-          We make student connections effortless and meaningful. We envision a future where every college student finds a community where they truly belong.
+          College is one of the best times to meet people who shape how you think and what you do
+          next. But between classes, different schedules, and the sheer size of most campuses, it's
+          genuinely hard to find your community. Meetifyy tries to make that easier.
         </p>
       </section>
 
       {/* What Makes Us Different */}
       <section className={styles.centerSection}>
         <span className={styles.bigEmoji}>💡</span>
-        <h2 className={styles.cleanSectionTitle}>What Makes Meetifyy Different?</h2>
+        <h2 className={styles.cleanSectionTitle}>Built for Real Connections</h2>
         <p className={styles.hierarchyParagraph}>
-          Built for real-world campus interactions instead of endless doom-scrolling. Connect directly with peers who share your academic and personal goals.
+          Meetifyy is organized around campus life and real-world activities rather than follower
+          counts and viral content. The goal is to connect you with people at your college who
+          actually share your goals, not to keep you scrolling.
         </p>
       </section>
 
       {/* Our Values */}
       <section className={styles.centerSection}>
         <span className={styles.bigEmoji}>❤️</span>
-        <h2 className={styles.cleanSectionTitle}>Our Core Values</h2>
+        <h2 className={styles.cleanSectionTitle}>What We Care About</h2>
         <p className={styles.hierarchyParagraph}>
-          Community first, inclusivity always, authentic connections over vanity metrics, and a safe, respectful environment for everyone.
+          Community over metrics. An environment where every student feels welcome. Honest
+          connections rather than performative ones. And a platform that respects your privacy and
+          doesn't make money from your attention.
         </p>
       </section>
 
@@ -56,10 +66,11 @@ export default function AboutPage() {
         <span className={styles.bigEmoji}>✨</span>
         <h2 className={styles.cleanSectionTitle}>Join the Community</h2>
         <p className={styles.hierarchyParagraph}>
-          Whether you’re a freshman, club leader, or builder, Meetifyy is built for you.
+          Whether you're in your first week or your final semester, Meetifyy is a good place to
+          start.
         </p>
         <p className={styles.highlightText} style={{ textAlign: 'center' }}>
-          Because college isn’t just about earning a degree—it’s about finding your people.
+          College is more than a degree. It's about the people you meet along the way.
         </p>
       </section>
     </StaticDocLayout>
