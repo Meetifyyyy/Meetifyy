@@ -423,7 +423,7 @@ export default function FindYourCrewPage() {
                       </div>
                     ) : (
                       <div className={styles.emptyAll}>
-                        Nothing here yet. Start something above, or create an
+                        No activities yet. Start something above, or create an
                         activity for later.
                       </div>
                     )
@@ -556,7 +556,7 @@ function EmptyOrSearch({ searching, label }) {
   }
   return (
     <div className={styles.subEmpty}>
-      {label || 'Nothing here yet.'}
+      {label || 'No activities yet.'}
     </div>
   );
 }

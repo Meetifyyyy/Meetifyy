@@ -99,6 +99,7 @@ export default function NotificationList({
       <EmptyState
         title="All caught up!"
         message="You have no new notifications right now."
+        style={{ minHeight: '60vh' }}
         icon={
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem', opacity: 0.5 }}>
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />

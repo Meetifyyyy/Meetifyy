@@ -1,6 +1,6 @@
-export function EmptyState({ title = 'Nothing to see here', message, icon, action }) {
+export function EmptyState({ title = 'Nothing to see here', message, icon, action, className, style }) {
   return (
-    <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--color-text-muted)', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+    <div className={className} style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--color-text-muted)', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', ...style }}>
       {icon ? icon : (
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem', opacity: 0.5 }}>
           <circle cx="12" cy="12" r="10" />

@@ -186,7 +186,7 @@ export default function CampusPage() {
             showCount={false}
             events={upcoming.events}
             isLoading={upcoming.isLoading}
-            emptyText="No upcoming events yet. Check back soon!"
+            emptyText="No events yet."
             canManage={isCampusRep}
             onEdit={(ev) => setEventFormState({ event: ev })}
             onDelete={setDeleteCandidate}
@@ -222,7 +222,7 @@ export default function CampusPage() {
           ) : campusActivityItems.length === 0 ? (
             <div className={eventStyles.emptyState}>
               <p className={eventStyles.emptyText}>
-                No college activities yet. Create one from Crew and set it to College.
+                No activities yet.
               </p>
             </div>
           ) : (

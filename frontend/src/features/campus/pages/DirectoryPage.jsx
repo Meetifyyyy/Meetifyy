@@ -36,15 +36,6 @@ const SearchableMajorSelect = ({ value, onChange }) => {
     [courses],
   );
 
-  const groupedMajors = useMemo(() => {
-    return courseOptions.reduce((acc, course) => {
-      const firstLetter = course.label[0].toUpperCase();
-      if (!acc[firstLetter]) acc[firstLetter] = [];
-      acc[firstLetter].push(course);
-      return acc;
-    }, {});
-  }, [courseOptions]);
-
   const selectedLabel = value === 'All' ? 'Course' : courseOptions.find(m => m.value === value)?.label || 'Course';
 
   return (
@@ -63,25 +54,16 @@ const SearchableMajorSelect = ({ value, onChange }) => {
       {isOpen && (
         <div className={styles.customDropdownMenu}>
           <div className={styles.customDropdownList}>
-            <div
-              className={`${styles.customDropdownOption} ${value === 'All' ? styles.selected : ''}`}
-              onClick={() => { onChange('All'); setIsOpen(false); }}
-            >
-              All Majors
-            </div>
-
-            {Object.entries(groupedMajors).sort(([a], [b]) => a.localeCompare(b)).map(([letter, majors]) => (
-              <div key={letter}>
-                <div className={styles.customDropdownGroupHeader}>{letter}</div>
-                {majors.map(m => (
-                  <div
-                    key={m.value}
-                    className={`${styles.customDropdownOption} ${value === m.value ? styles.selected : ''}`}
-                    onClick={() => { onChange(m.value); setIsOpen(false); }}
-                  >
-                    {m.label}
-                  </div>
-                ))}
+            {courseOptions.map(m => (
+              <div
+                key={m.value}
+                className={`${styles.customDropdownOption} ${value === m.value ? styles.selected : ''}`}
+                onClick={() => { 
+                  onChange(value === m.value ? 'All' : m.value); 
+                  setIsOpen(false); 
+                }}
+              >
+                {m.label}
               </div>
             ))}
 
@@ -129,18 +111,14 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
       {isOpen && (
         <div className={styles.customDropdownMenu} style={{ width: '180px' }}>
           <div className={styles.customDropdownList}>
-            <div
-              className={`${styles.customDropdownOption} ${value === 'All' ? styles.selected : ''}`}
-              onClick={() => { onChange('All'); setIsOpen(false); }}
-            >
-              All Passing Years
-            </div>
-            
             {years.map(y => (
               <div
                 key={y}
                 className={`${styles.customDropdownOption} ${value === y.toString() ? styles.selected : ''}`}
-                onClick={() => { onChange(y.toString()); setIsOpen(false); }}
+                onClick={() => { 
+                  onChange(value === y.toString() ? 'All' : y.toString()); 
+                  setIsOpen(false); 
+                }}
               >
                 {yearLabel(y)}
               </div>
@@ -158,6 +136,10 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
  * removed by the migration — so a card never renders an empty line.
  */
 function DirectorySubtitle({ user }) {
+  if (!user?.course || !user?.branch || (!user?.passingYear && !user?.currentYear)) {
+    return <>Campus Member</>;
+  }
+
   // Course + year only — the branch name is far too long for a directory card.
   const summary = useAcademicSummary(user, { branch: false });
   return <>{summary || 'Campus Member'}</>;

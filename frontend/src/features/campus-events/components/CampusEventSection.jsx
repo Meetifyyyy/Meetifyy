@@ -15,7 +15,7 @@ export default function CampusEventSection({
   events = [],
   showCount = true,
   isLoading = false,
-  emptyText = 'Nothing here yet.',
+  emptyText = 'No events yet.',
   canManage = false,
   onEdit,
   onDelete,
