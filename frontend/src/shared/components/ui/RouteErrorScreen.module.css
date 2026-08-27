@@ -1,6 +1,144 @@
 /* RouteErrorScreen — contained error card for route-level React crashes.
    Matches NotFoundState styling exactly: card wrapper, icon circle, typography. */
 
+/* Onboarding full-screen error state — matches Onboarding theme exactly */
+.onboardingFullScreenWrapper {
+  position: fixed;
+  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100dvh;
+  min-height: 100dvh;
+  z-index: 99999;
+  background: #ffffff !important;
+  color: #0f172a !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+}
+
+.blobA {
+  width: 520px;
+  height: 520px;
+  top: -18%;
+  right: -12%;
+  background: radial-gradient(circle, rgba(92, 71, 250, 0.16), transparent 70%);
+}
+
+.blobB {
+  width: 460px;
+  height: 460px;
+  bottom: -16%;
+  left: -12%;
+  background: radial-gradient(circle, rgba(255, 107, 53, 0.12), transparent 70%);
+}
+
+.onboardingContainer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem 1.5rem;
+  width: 100%;
+  max-width: 420px;
+  margin: auto;
+  animation: reSlideIn 0.25s ease-out;
+}
+
+.onboardingIconWrapper {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.35rem;
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
+.onboardingTitle {
+  font-family: var(--font-family-display, sans-serif);
+  font-weight: 700;
+  font-size: 1.4rem;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  margin: 0 0 0.5rem 0;
+  color: #0f172a !important;
+  text-align: center;
+}
+
+.onboardingMessage {
+  font-family: var(--font-family-sans, sans-serif);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #64748b !important;
+  margin: 0 0 1.5rem 0;
+  text-align: center;
+  max-width: 320px;
+}
+
+.onboardingActions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.onboardingPrimaryBtn {
+  padding: 0.75rem 2rem;
+  background: var(--color-brand-primary, #5c47fa) !important;
+  color: #ffffff !important;
+  border: none;
+  border-radius: 100px;
+  font-family: var(--font-family-sans, sans-serif);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(92, 71, 250, 0.28);
+  transition: background 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboardingPrimaryBtn:hover {
+  background: var(--color-brand-accent, #4b36e8) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(92, 71, 250, 0.35);
+}
+
+.onboardingPrimaryBtn:active {
+  transform: translateY(0);
+}
+
 .fullPageWrapper {
   width: 100%;
   height: calc(100dvh - 60px - 0.5rem);
@@ -154,29 +292,34 @@
     box-shadow: none;
   }
 
-  .container {
+  .container,
+  .onboardingContainer {
     padding: 1rem;
     max-width: 320px;
   }
 
-  .iconWrapper {
+  .iconWrapper,
+  .onboardingIconWrapper {
     width: 72px;
     height: 72px;
     margin-bottom: 1.25rem;
   }
 
-  .iconWrapper svg {
+  .iconWrapper svg,
+  .onboardingIconWrapper svg {
     width: 34px;
     height: 34px;
   }
 
-  .title {
+  .title,
+  .onboardingTitle {
     font-size: 1.35rem;
     margin-bottom: 0.5rem;
   }
 
-  .message {
-    font-size: 0.9rem;
+  .message,
+  .onboardingMessage {
+    font-size: 0.875rem;
     max-width: 280px;
     margin-bottom: 1.5rem;
     line-height: 1.45;
@@ -184,10 +327,18 @@
 
   .primaryBtn {
     padding: 0.75rem 1.8rem;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
   }
 
-  .actions {
+  .onboardingPrimaryBtn {
+    width: 100%;
+    max-width: 280px;
+    padding: 0.75rem 1.8rem;
+    font-size: 0.875rem;
+  }
+
+  .actions,
+  .onboardingActions {
     flex-direction: column;
     align-items: center;
   }
@@ -197,6 +348,6 @@
     width: 100%;
     max-width: 280px;
     padding: 0.75rem 1.6rem;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
   }
 }

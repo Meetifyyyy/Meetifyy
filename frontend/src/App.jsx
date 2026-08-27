@@ -1,6 +1,7 @@
 import { lazy, Suspense, useMemo, useEffect } from 'react';
 import { IS_DEV_BUILD } from '@config';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
+import { QueryErrorResetBoundary } from '@tanstack/react-query';
 import { SmartBackTracker } from './shared/hooks/useSmartBack';
 import { useAuth } from './shared/context/AuthContext';
 import { useVersionCheck } from './shared/hooks/useVersionCheck';
@@ -10,6 +11,7 @@ import SocketManager from './shared/components/SocketManager';
 import OverlayHistoryBridge from './shared/components/OverlayHistoryBridge';
 import LegacyPathRedirect from './shared/components/LegacyPathRedirect';
 import { setRedirectIntent, consumeRedirectIntent, clearRedirectIntent } from './shared/utils/redirectIntent';
+import CookieBanner, { CookiePreferencesModal } from './shared/components/CookieBanner/CookieBanner';
 // DEV PREVIEW — remove before shipping
 import CriticalErrorScreen from './shared/components/ui/CriticalErrorScreen';
 import useDevToolsStore from './shared/stores/devToolsStore';
@@ -147,18 +149,22 @@ const HelpSupportPage = lazyWithRetry(() => import('./features/info/help/HelpSup
  * @param {JSX.Element} element - The route element to wrap.
  * @param {JSX.Element} [fallback] - Custom skeleton. Defaults to full-page shell for public routes.
  */
-function withBoundary(element, fallback = null) {
+function withBoundary(element, fallback = null, boundaryProps = {}) {
   // element.type is the lazy component reference — unique per route.
   // Keying the boundary on it ensures React mounts a fresh boundary
   // instance for every distinct page, so a stale hasError never bleeds
   // into an unrelated route.
   const boundaryKey = element.type;
   return (
-    <RouteErrorBoundary key={boundaryKey} resetKey={boundaryKey}>
-      <Suspense fallback={fallback}>
-        {element}
-      </Suspense>
-    </RouteErrorBoundary>
+    <QueryErrorResetBoundary key={boundaryKey}>
+      {({ reset }) => (
+        <RouteErrorBoundary key={boundaryKey} resetKey={boundaryKey} onResetQueries={reset} {...boundaryProps}>
+          <Suspense fallback={fallback}>
+            {element}
+          </Suspense>
+        </RouteErrorBoundary>
+      )}
+    </QueryErrorResetBoundary>
   );
 }
 
@@ -266,6 +272,8 @@ export default function App() {
           <ScrollRestoration />
           <SocketManager />
           <NotificationLabMount />
+          <CookieBanner />
+          <CookiePreferencesModal />
           <Outlet />
         </ErrorBoundary>
       ),
@@ -392,7 +400,7 @@ export default function App() {
             </ProtectedRoute>
           ),
           children: [
-            { path: '/onboarding', element: withBoundary(<OnboardingRoute />) },
+            { path: '/onboarding', element: withBoundary(<OnboardingRoute />, null, { fullScreen: true }) },
             {
               element: <DashboardLayoutWrapper />,
               children: [

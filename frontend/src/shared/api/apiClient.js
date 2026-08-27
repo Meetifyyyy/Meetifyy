@@ -166,16 +166,14 @@ export const normalizeDicebearUrl = (url) => {
   if (!url || typeof url !== 'string') return url;
   if (!url.includes('api.dicebear.com/')) return url;
 
-  const bg = 'b6e3f4';
-
-  let cleanUrl = url;
-  if (cleanUrl.includes('backgroundColor=')) {
-    cleanUrl = cleanUrl.replace(/backgroundColor=[^&]+/g, `backgroundColor=${bg}`);
-  } else {
-    const joinChar = cleanUrl.includes('?') ? '&' : '?';
-    cleanUrl = `${cleanUrl}${joinChar}backgroundColor=${bg}`;
+  // Preserve existing backgroundColor parameter if already defined on the avatar URL
+  if (url.includes('backgroundColor=')) {
+    return url;
   }
-  return cleanUrl;
+
+  const bg = 'b6e3f4';
+  const joinChar = url.includes('?') ? '&' : '?';
+  return `${url}${joinChar}backgroundColor=${bg}`;
 };
 
 export const getMediaUrl = (pathOrUrl) => {

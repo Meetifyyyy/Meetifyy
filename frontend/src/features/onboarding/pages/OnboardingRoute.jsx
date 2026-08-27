@@ -11,6 +11,7 @@ import { showToast } from '@shared/utils/toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, ArrowLeft } from '@shared/components/icons';
 import { resolveCommunityAvatar } from '@shared/utils/avatar';
+import { communityMemberCount } from '@shared/utils/community';
 
 
 // Draft persistence so a mid-onboarding reload doesn't wipe the user's picks.
@@ -59,7 +60,7 @@ export default function OnboardingRoute() {
   const { currentUser, completeOnboarding } = useAuth();
   const { communities } = useCommunities();
   const navigate = useNavigate();
-  
+
   const [step, setStep] = useState(() => (parseInt(sessionStorage.getItem(ONB_STEP_KEY), 10) === 2 ? 2 : 1));
   const [selectedInterests, setSelectedInterests] = useState(() => {
     const saved = readJSON(ONB_INTERESTS_KEY, []);
@@ -109,7 +110,7 @@ export default function OnboardingRoute() {
   // `history.pushState`, which wipes the router's `idx` stamp — every history
   // distance measured afterwards (a collapse, a multi-step Back) was measured
   // against an index that had silently reset to zero.
-  useOverlayBack(true, () => {}, {
+  useOverlayBack(true, () => { }, {
     onBack: () => {
       setStep((prev) => (prev > 1 ? prev - 1 : prev));
       return true; // never let Back leave onboarding
@@ -137,7 +138,7 @@ export default function OnboardingRoute() {
   };
 
   const toggleCommunity = (id) => {
-    setSelectedCommunities(prev => 
+    setSelectedCommunities(prev =>
       prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
     );
   };
@@ -235,18 +236,18 @@ export default function OnboardingRoute() {
             <h1 className={styles.headline}>What are you into?</h1>
             <p className={styles.subheadline}>
               {selectedInterests.length >= 1
-                ? `You can select up to 10 topics (${selectedInterests.length}/10)`
+                ? `You can select up to 10 interests (${selectedInterests.length}/10)`
                 : "Choose a few tags to personalize your profile and customize your feed."}
             </p>
 
             {/* Header bar above interests */}
             <div className={styles.sectionHeaderBar}>
-              <span className={styles.sectionHeaderText}>{showAll ? 'All Categories' : 'Popular Topics'}</span>
-              <span 
+              <span className={styles.sectionHeaderText}>{showAll ? 'All Categories' : 'Popular Interests'}</span>
+              <span
                 className={styles.exploreTextLink}
                 onClick={() => setShowAll(!showAll)}
               >
-                {showAll ? 'Show top picks' : 'See all topics →'}
+                {showAll ? 'Show top picks' : 'See all interests →'}
               </span>
             </div>
 
@@ -305,7 +306,7 @@ export default function OnboardingRoute() {
                                 {rowTags.map((tag, tagIndex) => {
                                   const isSelected = selectedInterests.includes(tag.label);
                                   return (
-                                    <div 
+                                    <div
                                       key={tagIndex}
                                       className={`${styles.optionPill} ${isSelected ? styles.selected : ''}`}
                                       onClick={() => toggleInterest(tag.label)}
@@ -327,8 +328,8 @@ export default function OnboardingRoute() {
             </AnimatePresence>
 
             <div className={styles.actionsFooter}>
-              <button 
-                className={styles.continueBtn} 
+              <button
+                className={styles.continueBtn}
                 onClick={handleNext}
                 disabled={selectedInterests.length === 0}
               >
@@ -340,12 +341,12 @@ export default function OnboardingRoute() {
 
         {step === 2 && (
           <div className={styles.stepWrap}>
-            <button type="button" onClick={() => setStep(1)} aria-label="Back to interests" className={styles.backLink}>
-              <ArrowLeft size={16} /> Back
+            <button type="button" onClick={() => setStep(1)} aria-label="Back to interests" className={styles.backBtn}>
+              <ArrowLeft size={18} />
             </button>
             <h1 className={styles.headline}>Join your first spaces</h1>
             <p className={styles.subheadline}>Based on your interests, we recommend these communities.</p>
-            
+
             <div className={styles.communitiesList}>
               {suggestedCommunities.map(comm => {
                 // Reads `avatarKey` and resolves it, like every other
@@ -353,10 +354,16 @@ export default function OnboardingRoute() {
                 // API does not store.
                 const commAvatar = resolveCommunityAvatar(comm);
                 const isImage = Boolean(commAvatar);
+                const isSelected = selectedCommunities.includes(comm.id);
+                const baseCount = communityMemberCount(comm);
+                const memberCount = isSelected && !comm.isJoined
+                  ? baseCount + 1
+                  : (!isSelected && comm.isJoined ? Math.max(0, baseCount - 1) : baseCount);
+
                 return (
                   <div key={comm.id} className={styles.communityCard}>
                     <div className={styles.commInfo}>
-                      <div 
+                      <div
                         className={styles.commAvatar}
                         style={{
                           background: isImage ? 'var(--color-bg-white)' : (comm.color || 'var(--color-primary)'),
@@ -364,26 +371,28 @@ export default function OnboardingRoute() {
                         }}
                       >
                         {isImage ? (
-                          <img src={commAvatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                          <img src={commAvatar} alt={comm.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
                         ) : (
                           comm.name.charAt(0).toUpperCase()
                         )}
                       </div>
                       <div className={styles.commText}>
                         <span className={styles.commName}>{comm.name}</span>
-                        <span className={styles.commDesc}>{comm.members?.toLocaleString() || '0'} members</span>
+                        <span className={styles.commDesc}>
+                          {memberCount.toLocaleString()} {memberCount === 1 ? 'member' : 'members'}
+                        </span>
                       </div>
                     </div>
-                  <button 
-                    className={`${styles.joinBtn} ${selectedCommunities.includes(comm.id) ? styles.joined : ''}`}
-                    onClick={() => toggleCommunity(comm.id)}
-                  >
-                    {selectedCommunities.includes(comm.id) ? 'Joined' : 'Join'}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
+                    <button
+                      className={`${styles.joinBtn} ${isSelected ? styles.joined : ''}`}
+                      onClick={() => toggleCommunity(comm.id)}
+                    >
+                      {isSelected ? 'Joined' : 'Join'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
 
             <div className={styles.actionsFooter}>
               <button className={styles.continueBtn} onClick={handleNext}>

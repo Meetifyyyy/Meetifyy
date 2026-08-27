@@ -89,6 +89,27 @@ export class RouteErrorBoundary extends Component {
     }
   }
 
+  handleRetry = () => {
+    if (typeof this.props.onResetQueries === 'function') {
+      try {
+        this.props.onResetQueries();
+      } catch {
+        // ignore
+      }
+    }
+
+    if (this.state.retryCount >= 1) {
+      window.location.reload();
+      return;
+    }
+
+    this.setState(s => ({
+      hasError: false,
+      error: null,
+      retryCount: s.retryCount + 1,
+    }));
+  };
+
   render() {
     // Blank screen while the page silently reloads after a chunk error
     if (this.state.isChunkReloading) return null;
@@ -96,7 +117,8 @@ export class RouteErrorBoundary extends Component {
     if (this.state.hasError) {
       return (
         <RouteErrorScreen
-          onRetry={() => this.setState(s => ({ hasError: false, error: null, retryCount: s.retryCount + 1 }))}
+          fullScreen={this.props.fullScreen}
+          onRetry={this.handleRetry}
         />
       );
     }
