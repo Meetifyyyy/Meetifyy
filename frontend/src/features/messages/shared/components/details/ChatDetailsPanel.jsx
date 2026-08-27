@@ -444,7 +444,9 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       bio: conversation.bio || null,
       course: conversation.course || null,
       branch: conversation.branch || null,
-      currentYear: Number.isInteger(conversation.currentYear) ? conversation.currentYear : null,
+      passingYear: Number.isInteger(conversation.passingYear ?? conversation.currentYear)
+        ? (conversation.passingYear ?? conversation.currentYear)
+        : null,
       university: conversation.university || conversation.college || null
     };
   }, [isOneOnOne, conversation, users]);

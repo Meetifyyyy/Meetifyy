@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, ArrowRight, School, Compass, X, Check, Loader2 } from '@shared/components/icons';
+import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import styles from './SignupJourneyCTA.module.css';
 
 const titleVariants = {
@@ -84,6 +85,18 @@ export default function SignupJourneyCTA() {
   const [isSuccess, setIsSuccess] = useState(false);
 
   useEffect(() => {
+    // Automatically open modal when redirected from signup flow with request=college or #join
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('request') === 'college' || window.location.hash === '#join') {
+      setIsModalOpen(true);
+      const section = document.getElementById('join');
+      if (section) {
+        section.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     if (!isModalOpen) return;
 
     document.documentElement.classList.add('landing-modal-open');
@@ -132,6 +145,22 @@ export default function SignupJourneyCTA() {
 
     setIsSubmitting(true);
     try {
+      // Check if domain is already whitelisted by checking the email
+      const checkRes = await fetch('/api/auth/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: collegeEmail.trim().toLowerCase() }),
+      });
+      const checkData = await checkRes.json();
+
+      // If available is true, or if it says it's already registered, it means the domain IS whitelisted.
+      if (checkData.available === true || checkData.reason === 'This email is already registered. Please sign in.') {
+        setErrorMsg('Your college is already added to Meetifyy! You can sign up directly.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // If domain is not whitelisted, submit the request
       const res = await fetch('/api/auth/request-college', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -145,7 +174,9 @@ export default function SignupJourneyCTA() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'Failed to submit campus request');
+        let msg = data.message || 'Failed to submit campus request';
+        if (Array.isArray(msg)) msg = msg[0];
+        throw new Error(msg);
       }
 
       setIsSuccess(true);
@@ -350,7 +381,9 @@ export default function SignupJourneyCTA() {
             >
               <div className={styles.modalHeader}>
                 <div>
-                  <h3 className={styles.modalTitle}>Bring Meetifyy To My Campus 🚀</h3>
+                  <h3 className={styles.modalTitle}>
+                    Bring <img src={wordmark} alt="Meetifyy" className={styles.titleWordmark} /> To Your Campus 🚀
+                  </h3>
                   <p className={styles.modalSubtitle}>
                     Submit your college domain details. Our admin team will verify and enable your campus whitelist.
                   </p>
@@ -369,7 +402,7 @@ export default function SignupJourneyCTA() {
                     Request Submitted! 🎉
                   </h4>
                   <p className={styles.successText}>
-                    We will verify your institution details and notify you at <strong>{personalEmail}</strong> as soon as your campus domain is whitelisted.
+                    We will verify your institutional details and notify you at <strong>{personalEmail}</strong> as soon as there is any update.
                   </p>
                   <button type="button" onClick={handleCloseModal} className={styles.modalSubmitBtn}>
                     Got it!

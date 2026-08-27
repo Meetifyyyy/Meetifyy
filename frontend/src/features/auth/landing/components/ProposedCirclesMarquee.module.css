@@ -56,7 +56,6 @@
   display: flex;
   overflow: hidden;
   width: 100%;
-  user-select: none;
   padding: 0.625rem 0;
 }
 

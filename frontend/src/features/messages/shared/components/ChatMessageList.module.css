@@ -28,9 +28,6 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
   margin-bottom: 0.3rem;
   flex-shrink: 0;
 }

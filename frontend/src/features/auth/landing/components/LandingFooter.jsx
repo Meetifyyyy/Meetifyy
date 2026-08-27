@@ -1,10 +1,12 @@
 import { useNavigate } from 'react-router-dom';
+import { useCookieConsent } from '@shared/context/CookieConsentContext';
 import logoImg from '@assets/images/meetify_logo.webp';
 import wordmarkImg from '@assets/images/meetifyy_wordmark.svg';
 import styles from './LandingFooter.module.css';
 
 export default function LandingFooter() {
   const navigate = useNavigate();
+  const { openPreferences } = useCookieConsent();
 
   const handleNav = (path) => {
     navigate(path);
@@ -111,6 +113,15 @@ export default function LandingFooter() {
                     Cookie Policy
                   </button>
                 </li>
+                <li>
+                  <button
+                    onClick={openPreferences}
+                    className={styles.linkBtn}
+                    aria-label="Manage cookie preferences"
+                  >
+                    Cookie Preferences
+                  </button>
+                </li>
               </ul>
             </div>
           </div>
@@ -124,6 +135,5 @@ export default function LandingFooter() {
     </footer>
   );
 }
-
 
 

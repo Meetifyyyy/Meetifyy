@@ -60,7 +60,8 @@ function MatchCard() {
   const areaLabel = getAreaLabel(area);
   const intent = `Wants to ${getActivityVerb(activity)}${areaLabel ? ` near ${areaLabel}` : ''}`;
 
-  const subline = [candidate?.course, candidate?.branch, yearLabel(candidate?.currentYear)]
+  const candidateYear = candidate?.passingYear ?? candidate?.currentYear;
+  const subline = [candidate?.course, candidate?.branch, yearLabel(candidateYear)]
     .filter(Boolean)
     .join(' · ');
 
@@ -258,6 +259,5 @@ function Avatar({ candidate }) {
 
 function yearLabel(year) {
   if (!Number.isFinite(year) || year <= 0) return null;
-  const suffix = { 1: 'st', 2: 'nd', 3: 'rd' }[year] || 'th';
-  return `${year}${suffix} year`;
+  return String(year);
 }

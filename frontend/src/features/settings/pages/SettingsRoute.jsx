@@ -23,6 +23,7 @@ import styles from './SettingsRoute.module.css';
 import useDevToolsStore from '@shared/stores/devToolsStore';
 import BlockedContacts from '../panels/BlockedContacts';
 import { IS_DEV_BUILD, config } from '@config';
+import { useCookieConsent } from '@shared/context/CookieConsentContext';
 
 // Large-device split layout only kicks in at this width — tablets and phones
 // keep the existing single-pane list/detail swap untouched.
@@ -196,6 +197,7 @@ export default function SettingsRoute() {
   const notificationLabEnabled = useDevToolsStore((s) => s.notificationLabEnabled);
   const setNotificationLabEnabled = useDevToolsStore((s) => s.setNotificationLabEnabled);
   const { currentUser, session, updateProfile, updateSettings, updateCurrentUser, changePassword, logout, collegeName } = useAuth();
+  const { openPreferences: openCookiePreferences } = useCookieConsent();
   const navigate = useNavigate();
   const location = useLocation();
   const goBack = useSmartBack();
@@ -224,7 +226,9 @@ export default function SettingsRoute() {
   const [academic, setAcademic] = useState(() => ({
     course: currentUser?.course || '',
     branch: currentUser?.branch || '',
-    currentYear: Number.isInteger(currentUser?.currentYear) ? currentUser.currentYear : null,
+    passingYear: Number.isInteger(currentUser?.passingYear ?? currentUser?.currentYear)
+      ? (currentUser?.passingYear ?? currentUser?.currentYear)
+      : null,
   }));
   const [academicAttempted, setAcademicAttempted] = useState(false);
   const { courses: academicCourses } = useAcademicCatalog();
@@ -312,7 +316,9 @@ export default function SettingsRoute() {
             setAcademic({
               course: user.course || '',
               branch: user.branch || '',
-              currentYear: Number.isInteger(user.currentYear) ? user.currentYear : null,
+              passingYear: Number.isInteger(user.passingYear ?? user.currentYear)
+                ? (user.passingYear ?? user.currentYear)
+                : null,
             });
             setSelectedInterests(user.interests || []);
             if (updateCurrentUser) {
@@ -383,7 +389,7 @@ export default function SettingsRoute() {
         ...currentUser,
         course: academic.course,
         branch: academic.branch,
-        currentYear: academic.currentYear,
+        passingYear: academic.passingYear,
       };
       if (updateCurrentUser) {
         updateCurrentUser(updatedUser);
@@ -392,7 +398,7 @@ export default function SettingsRoute() {
       updateProfile({
         course: academic.course,
         branch: academic.branch,
-        currentYear: academic.currentYear,
+        passingYear: academic.passingYear,
       }).catch(err => {
         console.error('Failed to update academic info:', err);
         showToast(err?.message || "Couldn't save academic details", 'error');
@@ -651,6 +657,14 @@ export default function SettingsRoute() {
           <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
         </button>
         <div className={styles.divider} />
+        <button className={styles.row} onClick={openCookiePreferences}>
+          <span className={styles.rowIcon}>
+            <Shield size={20} strokeWidth={2} />
+          </span>
+          <span className={styles.rowLabel}>Cookie Preferences</span>
+          <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
+        </button>
+        <div className={styles.divider} />
         <button className={`${styles.row} ${styles.rowDanger}`} onClick={() => setShowDeleteConfirm(true)}>
           <span className={styles.rowIcon}>
             <Trash2 size={20} strokeWidth={2} />
@@ -786,10 +800,10 @@ export default function SettingsRoute() {
           showErrors={academicAttempted}
           errors={{
             course: !academic.course ? 'Please select your course.' : null,
-            branch: academic.course && !academic.branch ? 'Please select your branch.' : null,
-            currentYear:
-              academic.course && !Number.isInteger(academic.currentYear)
-                ? 'Please select your current year.'
+            branch: !academic.branch ? 'Please select your branch.' : null,
+            passingYear:
+              !Number.isInteger(academic.passingYear)
+                ? 'Please select your passing year.'
                 : null,
           }}
           classes={{

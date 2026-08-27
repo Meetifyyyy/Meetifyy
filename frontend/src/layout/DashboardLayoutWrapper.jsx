@@ -57,6 +57,32 @@ export default function DashboardLayoutWrapper() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigate]);
 
+  useEffect(() => {
+    document.body.setAttribute('data-disable-text-selection', 'true');
+    
+    const handleCopy = (e) => {
+      const target = e.target;
+      if (
+        target.tagName === 'INPUT' || 
+        target.tagName === 'TEXTAREA' || 
+        target.isContentEditable
+      ) {
+        return;
+      }
+      if (target.closest && target.closest('[data-text-selectable="true"]')) {
+        return;
+      }
+      e.preventDefault();
+    };
+
+    document.addEventListener('copy', handleCopy);
+
+    return () => {
+      document.body.removeAttribute('data-disable-text-selection');
+      document.removeEventListener('copy', handleCopy);
+    };
+  }, []);
+
   const handleCommunityClick = (id) => {
     navigate(`/communities/${id}`);
   };

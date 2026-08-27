@@ -661,6 +661,15 @@
   font-weight: 700;
   color: #0f172a;
   margin-bottom: 0.25rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.titleWordmark {
+  height: 0.7em;
+  margin: 0.1em 0.25rem 0;
 }
 
 .modalSubtitle {
@@ -809,3 +818,14 @@
   border-radius: 8px;
   font-size: 0.78rem;
 }
+
+@media (min-width: 640px) {
+  .modalBackdrop {
+    align-items: center;
+  }
+  .modalCard {
+    border-radius: 24px;
+    max-height: 90vh;
+  }
+}
+

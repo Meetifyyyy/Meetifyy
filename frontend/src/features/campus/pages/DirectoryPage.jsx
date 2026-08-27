@@ -12,7 +12,7 @@ import pageStyles from './DirectoryPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import { useAcademicCatalog } from '@shared/academics/useAcademicCatalog';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
-import { yearLabel } from '@shared/academics/academicCatalog';
+import { yearLabel, validPassingYears } from '@shared/academics/academicCatalog';
 import { useDirectory } from '@shared/hooks/useProfile';
 import { useDebounce } from '@shared/hooks/useDebounce';
 
@@ -111,7 +111,7 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const selectedLabel = value === 'All' ? 'Year' : yearLabel(Number(value));
+  const selectedLabel = value === 'All' ? 'Passing Year' : yearLabel(Number(value));
 
   return (
     <div ref={dropdownRef} style={{ position: 'relative' }}>
@@ -133,7 +133,7 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
               className={`${styles.customDropdownOption} ${value === 'All' ? styles.selected : ''}`}
               onClick={() => { onChange('All'); setIsOpen(false); }}
             >
-              Class Year
+              All Passing Years
             </div>
             
             {years.map(y => (
@@ -220,14 +220,11 @@ export default function DirectoryPage() {
       if (!matches) return false;
     }
     if (dirBranch !== 'All' && currentUser.course !== dirBranch) return false;
-    if (dirYear !== 'All' && String(currentUser.currentYear ?? '') !== dirYear) return false;
+    if (dirYear !== 'All' && String(currentUser.passingYear ?? currentUser.currentYear ?? '') !== dirYear) return false;
     return true;
   }, [currentUser, searchQuery, dirBranch, dirYear]);
 
-  // Current academic year, not a year of passing. 6 covers the longest
-  // programme in the catalogue (Ph.D); shorter courses simply have no members
-  // in the higher buckets.
-  const classYears = [1, 2, 3, 4, 5, 6];
+  const classYears = useMemo(() => validPassingYears(), []);
 
   return (
     <main className={`centre centre-wide ${styles.hubContainer}`}>

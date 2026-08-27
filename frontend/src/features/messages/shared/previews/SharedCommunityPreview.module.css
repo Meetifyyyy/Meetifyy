@@ -11,7 +11,6 @@
   box-shadow: none;
   box-sizing: border-box;
   transition: opacity 0.15s ease;
-  user-select: none;
   min-width: 180px;
   max-width: 280px;
   margin-top: 4px;
