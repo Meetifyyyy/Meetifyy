@@ -120,7 +120,7 @@ export class AuthController {
   @Post('check-email')
   @UseGuards(AuthRateLimitGuard)
   async checkEmail(@Body() body: CheckEmailDto) {
-    return this.authService.checkEmailAvailability(body.email);
+    return this.authService.checkEmailAvailability(body.email, body.collegeId);
   }
 
   @Post('events/welcome')

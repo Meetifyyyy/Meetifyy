@@ -16,18 +16,19 @@ import { formatAcademic } from './academicCatalog';
  * Pass `parts` to drop segments on tighter surfaces, e.g. `{ branch: false }`
  * for "B.Tech • 2nd Year" or `{ branch: false, year: false }` for "B.Tech".
  *
- * @param {{ course?: string|null, branch?: string|null, currentYear?: number|null }|null|undefined} user
+ * @param {{ course?: string|null, branch?: string|null, passingYear?: number|null, currentYear?: number|null }|null|undefined} user
  * @param {{ branch?: boolean, year?: boolean }} [parts]
  * @returns {string|null}
  */
 export function useAcademicSummary(user, parts = {}) {
   const { courses } = useAcademicCatalog();
   const { branch: withBranch = true, year: withYear = true } = parts;
+  const yearVal = user?.passingYear ?? user?.currentYear;
   return useMemo(
-    () => formatAcademic(courses, user?.course, user?.branch, user?.currentYear, {
+    () => formatAcademic(courses, user?.course, user?.branch, yearVal, {
       branch: withBranch,
       year: withYear,
     }),
-    [courses, user?.course, user?.branch, user?.currentYear, withBranch, withYear],
+    [courses, user?.course, user?.branch, yearVal, withBranch, withYear],
   );
 }

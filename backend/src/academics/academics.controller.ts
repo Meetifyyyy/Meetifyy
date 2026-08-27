@@ -22,4 +22,16 @@ export class AcademicsController {
   getCatalog() {
     return { courses: this.academicsService.getCatalog() };
   }
+
+  /**
+   * GET /api/academics/colleges
+   *
+   * Delivers active, approved colleges and approved email domains for
+   * unauthenticated signup and directory selection.
+   */
+  @Get('colleges')
+  @CacheControl('no-cache, no-store, must-revalidate')
+  async getColleges() {
+    return { colleges: await this.academicsService.getColleges() };
+  }
 }

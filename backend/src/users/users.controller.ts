@@ -109,7 +109,7 @@ export class UsersController {
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
   ) {
-    const currentYear =
+    const passingYear =
       year && /^\d+$/.test(year) ? parseInt(year, 10) : undefined;
     const limitNum = limit
       ? Math.min(Math.max(parseInt(limit, 10) || 30, 1), 50)
@@ -118,7 +118,7 @@ export class UsersController {
       search: search || undefined,
       course: course && course !== 'All' ? course : undefined,
       branch: branch && branch !== 'All' ? branch : undefined,
-      currentYear,
+      passingYear,
       limit: limitNum,
       cursor: cursor || undefined,
     });

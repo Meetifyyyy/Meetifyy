@@ -149,7 +149,7 @@ model User {
   bio                        String?
   course                     String?
   branch                     String?
-  currentYear                Int?
+  passingYear                Int?
   location                   String?
   createdAt                  DateTime                    @default(now())
   updatedAt                  DateTime                    @updatedAt
@@ -220,10 +220,10 @@ model User {
 
   @@index([collegeId])
   @@index([collegeId, createdAt(sort: Desc)])
-  // Campus directory filter patterns: WHERE collegeId=? AND course=? / branch=? / currentYear=?.
+  // Campus directory filter patterns: WHERE collegeId=? AND course=? / branch=? / passingYear=?.
   @@index([collegeId, course])
   @@index([collegeId, course, branch])
-  @@index([collegeId, currentYear])
+  @@index([collegeId, passingYear])
   @@index([deletedAt, createdAt])
   @@index([lastSeenAt])
   @@index([createdAt])

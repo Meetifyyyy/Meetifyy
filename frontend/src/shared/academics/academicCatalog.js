@@ -10,7 +10,7 @@ import { apiClient } from '@shared/api/apiClient';
  *
  * @typedef {{ id: string, name: string }} AcademicBranch
  * @typedef {{ id: string, name: string, durationYears: number, branches: AcademicBranch[] }} AcademicCourse
- * @typedef {{ course: string, branch: string, currentYear: number|null }} AcademicSelectionValue
+ * @typedef {{ course: string, branch: string, passingYear: number|null }} AcademicSelectionValue
  */
 
 const CACHE_KEY = 'meetifyy_academic_catalog_v1';
@@ -83,35 +83,18 @@ export function branchesForCourse(courses, courseId) {
   return findCourse(courses, courseId)?.branches || [];
 }
 
-/** @returns {number[]} e.g. [1,2,3,4] — derived from the course's own duration. */
-export function yearsForCourse(courses, courseId) {
-  const course = findCourse(courses, courseId);
-  if (!course) return [];
-  return Array.from({ length: course.durationYears }, (_, i) => i + 1);
+/** @returns {number[]} e.g. [2026, 2027, ... 2036] dynamically from current year to current year + 10 */
+export function validPassingYears(nowYear = new Date().getFullYear()) {
+  return Array.from({ length: 11 }, (_, i) => nowYear + i);
 }
 
-const YEAR_LABELS = {
-  1: '1st Year',
-  2: '2nd Year',
-  3: '3rd Year',
-  4: '4th Year',
-  5: '5th Year',
-  6: '6th Year',
-};
-
 export function yearLabel(year) {
-  return YEAR_LABELS[year] || `Year ${year}`;
+  return String(year);
 }
 
 /**
  * Drops any part of a selection that is not valid against the catalogue, keeping
  * the parts that still are.
- *
- * This is what makes refresh/restore safe: a draft saved before the catalogue
- * changed (or hand-edited in devtools) can hold a branch that no longer belongs
- * to its course, or a 4th year on a 3-year course. Silently keeping those would
- * show the user a selection the server will reject on submit, so each field is
- * cleared independently rather than the whole selection being thrown away.
  *
  * @returns {{ value: AcademicSelectionValue, changed: boolean, cleared: string[] }}
  */
@@ -120,12 +103,25 @@ export function sanitizeAcademicSelection(courses, raw) {
   const courseId = typeof raw?.course === 'string' ? raw.course : '';
   const course = findCourse(courses, courseId);
 
+  const rawYear = raw?.passingYear ?? raw?.currentYear;
+  let passingYear = Number.isInteger(rawYear)
+    ? rawYear
+    : /^\d+$/.test(String(rawYear ?? ''))
+      ? parseInt(rawYear, 10)
+      : null;
+
+  const currentYearNow = new Date().getFullYear();
+  if (passingYear !== null && (passingYear < currentYearNow || passingYear > currentYearNow + 10)) {
+    passingYear = null;
+    cleared.push('passingYear');
+  }
+
   if (courseId && !course) {
-    // Unknown course invalidates everything below it.
+    // Unknown course invalidates course and branch, but passingYear can stand on its own
     return {
-      value: { course: '', branch: '', currentYear: null },
+      value: { course: '', branch: '', passingYear },
       changed: true,
-      cleared: ['course', 'branch', 'currentYear'],
+      cleared: ['course', 'branch', ...cleared],
     };
   }
 
@@ -135,40 +131,27 @@ export function sanitizeAcademicSelection(courses, raw) {
     cleared.push('branch');
   }
 
-  let currentYear = Number.isInteger(raw?.currentYear)
-    ? raw.currentYear
-    : /^\d+$/.test(String(raw?.currentYear ?? ''))
-      ? parseInt(raw.currentYear, 10)
-      : null;
-  if (currentYear !== null && (!course || currentYear < 1 || currentYear > course.durationYears)) {
-    currentYear = null;
-    cleared.push('currentYear');
-  }
-
   return {
-    value: { course: course ? courseId : '', branch, currentYear },
+    value: { course: course ? courseId : '', branch, passingYear },
     changed: cleared.length > 0,
     cleared,
   };
 }
 
 /**
- * "B.Tech • Computer Science & Engineering • 2nd Year".
- * Mirrors the server-side formatter so profiles read identically everywhere, and
- * degrades for legacy users whose academic fields were cleared by the migration.
- * Surfaces with less room can drop parts: the directory shows course + year, and
- * the profile's academic tag shows the course alone.
+ * "B.Tech • Computer Science & Engineering • 2028".
+ * Mirrors the server-side formatter so profiles read identically everywhere.
  * @param {{ branch?: boolean, year?: boolean }} [parts] which segments to include
  * @returns {string|null}
  */
-export function formatAcademic(courses, course, branch, currentYear, parts = {}) {
+export function formatAcademic(courses, course, branch, passingYear, parts = {}) {
   const { branch: withBranch = true, year: withYear = true } = parts;
   const c = findCourse(courses, course);
   if (!c) return null;
   const b = c.branches.find((x) => x.id === branch);
   const out = [c.name];
   if (withBranch && b && b.id !== 'general') out.push(b.name);
-  if (withYear && Number.isInteger(currentYear) && currentYear > 0) out.push(yearLabel(currentYear));
+  if (withYear && Number.isInteger(passingYear) && passingYear > 0) out.push(yearLabel(passingYear));
   return out.join(' • ');
 }
 
@@ -176,9 +159,9 @@ export function formatAcademic(courses, course, branch, currentYear, parts = {})
 export const ACADEMIC_ERRORS = {
   COURSE_REQUIRED: 'Please select your course.',
   BRANCH_REQUIRED: 'Please select your branch.',
-  YEAR_REQUIRED: 'Please select your current year.',
+  YEAR_REQUIRED: 'Please select your passing year.',
   BRANCH_NOT_IN_COURSE: 'This branch is not available for the selected course.',
-  YEAR_NOT_IN_COURSE: 'This year is not valid for the selected course.',
+  YEAR_INVALID: 'Please select a valid passing year.',
 };
 
 /** Client-side pre-submit check. The server re-validates regardless. */
@@ -188,9 +171,12 @@ export function validateAcademicSelection(courses, value) {
   if (!course) return ACADEMIC_ERRORS.COURSE_REQUIRED;
   if (!value.branch) return ACADEMIC_ERRORS.BRANCH_REQUIRED;
   if (!course.branches.some((b) => b.id === value.branch)) return ACADEMIC_ERRORS.BRANCH_NOT_IN_COURSE;
-  if (!Number.isInteger(value.currentYear)) return ACADEMIC_ERRORS.YEAR_REQUIRED;
-  if (value.currentYear < 1 || value.currentYear > course.durationYears) {
-    return ACADEMIC_ERRORS.YEAR_NOT_IN_COURSE;
+  
+  const rawYear = value?.passingYear ?? value?.currentYear;
+  if (!Number.isInteger(rawYear)) return ACADEMIC_ERRORS.YEAR_REQUIRED;
+  const now = new Date().getFullYear();
+  if (rawYear < now || rawYear > now + 10) {
+    return ACADEMIC_ERRORS.YEAR_INVALID;
   }
   return null;
 }

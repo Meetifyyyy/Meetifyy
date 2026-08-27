@@ -1,13 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { AcademicsService, ACADEMIC_ERRORS } from './academics.service';
-import {
-  ACADEMIC_CATALOG,
-  findCourse,
-  validYearsForCourse,
-} from './academic-catalog';
+import { ACADEMIC_CATALOG, validPassingYears } from './academic-catalog';
 
 describe('AcademicsService', () => {
   const service = new AcademicsService();
+  const currentYearNow = new Date().getFullYear();
 
   const expectReject = (input: any, message: string) => {
     expect(() => service.validate(input)).toThrow(BadRequestException);
@@ -21,82 +18,102 @@ describe('AcademicsService', () => {
       for (const course of ACADEMIC_CATALOG) {
         expect(course.branches.length).toBeGreaterThan(0);
         expect(course.durationYears).toBeGreaterThanOrEqual(1);
-        // Branch ids only need to be unique WITHIN a course, since they are
-        // always resolved together with a course id.
         const bIds = course.branches.map((b) => b.id);
         expect(new Set(bIds).size).toBe(bIds.length);
       }
     });
 
-    it('derives year options from course duration', () => {
-      expect(validYearsForCourse('btech')).toEqual([1, 2, 3, 4]);
-      expect(validYearsForCourse('bca')).toEqual([1, 2, 3]);
-      expect(validYearsForCourse('ba-llb')).toEqual([1, 2, 3, 4, 5]);
-      expect(validYearsForCourse('llm')).toEqual([1]);
-      // Lateral entry runs one year shorter than the standard programme.
-      expect(validYearsForCourse('btech-lateral')).toEqual([1, 2, 3]);
-      expect(validYearsForCourse('nope')).toEqual([]);
+    it('dynamically derives passing year options covering current year to current year + 10', () => {
+      const years = validPassingYears(currentYearNow);
+      expect(years.length).toBe(11);
+      expect(years[0]).toBe(currentYearNow);
+      expect(years[10]).toBe(currentYearNow + 10);
     });
   });
 
   describe('accepts valid selections', () => {
-    it('accepts a real course/branch/year triple', () => {
+    it('accepts a real course/branch/passingYear triple', () => {
       expect(
-        service.validate({ course: 'btech', branch: 'cse', currentYear: 2 }),
+        service.validate({
+          course: 'btech',
+          branch: 'cse',
+          passingYear: currentYearNow + 2,
+        }),
       ).toEqual({
         course: 'btech',
         branch: 'cse',
-        currentYear: 2,
+        passingYear: currentYearNow + 2,
       });
     });
 
     it('accepts a numeric string year, as sent by an HTML select', () => {
       expect(
-        service.validate({ course: 'bca', branch: 'general', currentYear: '3' })
-          .currentYear,
-      ).toBe(3);
+        service.validate({
+          course: 'bca',
+          branch: 'general',
+          passingYear: String(currentYearNow + 1),
+        }).passingYear,
+      ).toBe(currentYearNow + 1);
     });
 
-    it('accepts the final year of every course in the catalogue', () => {
-      for (const course of ACADEMIC_CATALOG) {
-        const branch = course.branches[0];
-        expect(() =>
-          service.validate({
-            course: course.id,
-            branch: branch.id,
-            currentYear: course.durationYears,
-          }),
-        ).not.toThrow();
-      }
+    it('accepts current year and current year + 10', () => {
+      expect(() =>
+        service.validate({
+          course: 'btech',
+          branch: 'cse',
+          passingYear: currentYearNow,
+        }),
+      ).not.toThrow();
+
+      expect(() =>
+        service.validate({
+          course: 'btech',
+          branch: 'cse',
+          passingYear: currentYearNow + 10,
+        }),
+      ).not.toThrow();
     });
   });
 
   describe('rejects untrusted input', () => {
     it('rejects an unknown course', () => {
       expectReject(
-        { course: 'hogwarts', branch: 'cse', currentYear: 1 },
+        {
+          course: 'hogwarts',
+          branch: 'cse',
+          passingYear: currentYearNow + 1,
+        },
         ACADEMIC_ERRORS.COURSE_UNKNOWN,
       );
     });
 
     it('rejects a branch belonging to a different course', () => {
-      // 'business-analytics' is an MBA branch, not a B.Tech one.
       expectReject(
-        { course: 'btech', branch: 'business-analytics', currentYear: 1 },
+        {
+          course: 'btech',
+          branch: 'business-analytics',
+          passingYear: currentYearNow + 1,
+        },
         ACADEMIC_ERRORS.BRANCH_NOT_IN_COURSE,
       );
     });
 
-    it('rejects a year beyond the course duration', () => {
-      // BCA is a 3-year programme.
+    it('rejects a year before current year or beyond current year + 10', () => {
       expectReject(
-        { course: 'bca', branch: 'general', currentYear: 4 },
-        ACADEMIC_ERRORS.YEAR_NOT_IN_COURSE,
+        {
+          course: 'bca',
+          branch: 'general',
+          passingYear: currentYearNow - 1,
+        },
+        ACADEMIC_ERRORS.YEAR_INVALID,
       );
-      // LLM is a single year.
       expectReject(
-        { course: 'llm', branch: 'banking-finance-cyber', currentYear: 2 },
-        ACADEMIC_ERRORS.YEAR_NOT_IN_COURSE,
+        {
+          course: 'bca',
+          branch: 'general',
+          passingYear: currentYearNow + 11,
+        },
+        ACADEMIC_ERRORS.YEAR_INVALID,
       );
     });
 
@@ -117,7 +134,7 @@ describe('AcademicsService', () => {
           service.validate({
             course: 'btech',
             branch: 'cse',
-            currentYear: bad,
+            passingYear: bad,
           }),
         ).toThrow(BadRequestException);
       }
@@ -125,11 +142,11 @@ describe('AcademicsService', () => {
 
     it('rejects missing fields', () => {
       expectReject(
-        { branch: 'cse', currentYear: 1 },
+        { branch: 'cse', passingYear: currentYearNow + 1 },
         ACADEMIC_ERRORS.COURSE_REQUIRED,
       );
       expectReject(
-        { course: 'btech', currentYear: 1 },
+        { course: 'btech', passingYear: currentYearNow + 1 },
         ACADEMIC_ERRORS.BRANCH_REQUIRED,
       );
       expectReject(
@@ -140,13 +157,17 @@ describe('AcademicsService', () => {
 
     it('rejects non-string course/branch types', () => {
       expect(() =>
-        service.validate({ course: 123, branch: 'cse', currentYear: 1 }),
+        service.validate({
+          course: 123,
+          branch: 'cse',
+          passingYear: currentYearNow + 1,
+        }),
       ).toThrow(BadRequestException);
       expect(() =>
         service.validate({
           course: 'btech',
           branch: { id: 'cse' },
-          currentYear: 1,
+          passingYear: currentYearNow + 1,
         }),
       ).toThrow(BadRequestException);
     });
@@ -158,26 +179,23 @@ describe('AcademicsService', () => {
     });
 
     it('treats null/empty as absent, not as an invalid attempt', () => {
-      // A signup draft spreads `currentYear: null` before that step is reached;
-      // rejecting it would break an otherwise valid profile update.
       expect(
         service.validateIfPresent({
           course: '',
           branch: '',
-          currentYear: null,
+          passingYear: null,
         }),
       ).toBeNull();
       expect(
         service.validateIfPresent({
           course: null,
           branch: null,
-          currentYear: null,
+          passingYear: null,
         }),
       ).toBeNull();
     });
 
     it('still validates a partial update rather than silently accepting it', () => {
-      // Sending only a course must not persist a course with no branch.
       expect(() => service.validateIfPresent({ course: 'btech' })).toThrow(
         BadRequestException,
       );
@@ -186,30 +204,30 @@ describe('AcademicsService', () => {
 
   describe('isComplete', () => {
     it('is true only for a fully valid triple', () => {
-      expect(service.isComplete('btech', 'cse', 3)).toBe(true);
-      expect(service.isComplete('btech', 'cse', 9)).toBe(false);
-      expect(service.isComplete('btech', 'business-analytics', 1)).toBe(false);
+      expect(service.isComplete('btech', 'cse', currentYearNow + 2)).toBe(true);
+      expect(service.isComplete('btech', 'cse', currentYearNow - 1)).toBe(false);
+      expect(service.isComplete('btech', 'cse', currentYearNow + 15)).toBe(false);
+      expect(service.isComplete('btech', 'business-analytics', currentYearNow + 1)).toBe(false);
       expect(service.isComplete(null, null, null)).toBe(false);
-      // Legacy rows left empty by the migration must read as incomplete, not crash.
       expect(service.isComplete(undefined, undefined, undefined)).toBe(false);
     });
   });
 
   describe('format', () => {
-    it('renders course, branch and year', () => {
-      expect(service.format('btech', 'cse', 2)).toBe(
-        'B.Tech • Computer Science & Engineering • 2nd Year',
+    it('renders course, branch and passing year', () => {
+      expect(service.format('btech', 'cse', 2028)).toBe(
+        'B.Tech • Computer Science & Engineering • 2028',
       );
     });
 
     it('omits a meaningless "General" branch', () => {
-      expect(service.format('bcom', 'general', 1)).toBe('B.Com • 1st Year');
+      expect(service.format('bcom', 'general', 2027)).toBe('B.Com • 2027');
     });
 
     it('degrades gracefully for incomplete legacy profiles', () => {
       expect(service.format('btech', null, null)).toBe('B.Tech');
       expect(service.format(null, null, null)).toBeNull();
-      expect(service.format('unknown-course', 'cse', 1)).toBeNull();
+      expect(service.format('unknown-course', 'cse', 2028)).toBeNull();
     });
   });
 });

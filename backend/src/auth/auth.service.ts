@@ -87,7 +87,7 @@ export class AuthService {
         u."bio",
         u."course",
         u."branch",
-        u."currentYear",
+        u."passingYear",
         u."location",
         u."createdAt",
         u."updatedAt",
@@ -317,7 +317,7 @@ export class AuthService {
         bio: row.bio,
         course: row.course,
         branch: row.branch,
-        currentYear: row.currentYear,
+        passingYear: row.passingYear,
         location: row.location,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -692,7 +692,13 @@ export class AuthService {
 
   async checkEmailAvailability(
     email: string,
-  ): Promise<{ available: boolean; reason?: string }> {
+    collegeId?: string,
+  ): Promise<{
+    available: boolean;
+    reason?: string;
+    collegeName?: string;
+    collegeId?: string;
+  }> {
     // Cheapest check first — reject malformed input before any DB / domain work.
     const trimmed = (email || '').trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -703,11 +709,52 @@ export class AuthService {
       };
     }
 
+    const domain = trimmed.split('@')[1] || '';
+
+    // If collegeId is provided, get target college name for clearer error messaging
+    let targetCollegeName: string | undefined;
+    if (collegeId) {
+      const targetCollege = await this.prisma.college.findUnique({
+        where: { id: collegeId },
+        select: { name: true, shortName: true },
+      });
+      if (targetCollege) {
+        targetCollegeName = targetCollege.shortName || targetCollege.name;
+      }
+    }
+
     // Domain gating (approved-college check) — served from an O(1) in-memory cache.
     const domainValidation =
       await this.domainValidatorService.validateDomain(trimmed);
     if (!domainValidation.isValid) {
-      return { available: false, reason: domainValidation.reason };
+      if (targetCollegeName) {
+        const commonCommercialDomains = [
+          'gmail.com',
+          'yahoo.com',
+          'outlook.com',
+          'hotmail.com',
+          'icloud.com',
+          'protonmail.com',
+          'zoho.com',
+          'mail.com',
+          'aol.com',
+        ];
+        return {
+          available: false,
+          reason: `Please use your official ${targetCollegeName} email.`,
+        };
+      }
+      return { available: false, reason: 'Please select your college first.' };
+    }
+
+    // Check collegeId match if collegeId was provided
+    if (collegeId && domainValidation.info?.collegeId !== collegeId) {
+      const emailCollegeName =
+        domainValidation.info?.collegeName || 'another institution';
+      return {
+        available: false,
+        reason: `This email belongs to ${emailCollegeName}. Please enter your official ${targetCollegeName || 'college'} email.`,
+      };
     }
 
     // Existence check. Emails are stored already-lowercased (Supabase normalizes
@@ -728,14 +775,11 @@ export class AuthService {
       };
     }
 
-    // NOTE: A pending (unverified) Supabase signup for this email is surfaced to
-    // the user by supabase.auth.signUp itself (it returns identities=[] and the
-    // frontend shows "a signup is already pending"). We intentionally do not
-    // probe the Supabase admin API here — the previous listUsers call was a
-    // no-op (it fetched one arbitrary user and discarded it) and added latency
-    // for no benefit.
-
-    return { available: true };
+    return {
+      available: true,
+      collegeId: domainValidation.info?.collegeId,
+      collegeName: domainValidation.info?.collegeName,
+    };
   }
 
   /** Returns only the IDs of posts the user has bookmarked — fast select, bundled into auth sync. */

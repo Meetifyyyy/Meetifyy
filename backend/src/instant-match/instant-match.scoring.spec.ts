@@ -19,7 +19,7 @@ describe('computeCompatibility', () => {
     interests: [],
     course: null,
     branch: null,
-    currentYear: null,
+    passingYear: null,
   };
 
   it('scores an entirely unknown pair at the neutral midpoint', () => {
@@ -39,7 +39,7 @@ describe('computeCompatibility', () => {
       interests: ['chess', 'music'],
       course: 'BTech',
       branch: 'CSE',
-      currentYear: 2,
+      passingYear: 2027,
     };
     const b = {
       ...blank,
@@ -52,7 +52,7 @@ describe('computeCompatibility', () => {
       interests: ['music'],
       course: 'BTech',
       branch: 'ECE',
-      currentYear: 3,
+      passingYear: 2028,
     };
     expect(computeMatchScore(a, b)).toBe(computeMatchScore(b, a));
   });
@@ -263,12 +263,12 @@ describe('computeCompatibility', () => {
 
     it('treats a neighbouring year as closer than a distant one', () => {
       const near = computeCompatibility(
-        { ...blank, currentYear: 2 },
-        { ...blank, currentYear: 3 },
+        { ...blank, passingYear: 2027 },
+        { ...blank, passingYear: 2028 },
       ).breakdown.community;
       const far = computeCompatibility(
-        { ...blank, currentYear: 1 },
-        { ...blank, currentYear: 4 },
+        { ...blank, passingYear: 2026 },
+        { ...blank, passingYear: 2030 },
       ).breakdown.community;
       expect(near).toBeGreaterThan(far);
     });

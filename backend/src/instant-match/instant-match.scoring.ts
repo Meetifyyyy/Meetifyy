@@ -31,7 +31,7 @@ export interface QueueEntryContext {
   interests?: string[];
   course?: string | null;
   branch?: string | null;
-  currentYear?: number | null;
+  passingYear?: number | null;
   /** ms epoch — how long this side has been waiting. */
   joinedAt?: number | null;
   /** Number of prior conversations between the two users, if known. */
@@ -221,8 +221,8 @@ function scoreCommunity(a: QueueEntryContext, b: QueueEntryContext): number {
   const branchB = norm(b.branch);
   if (branchA && branchB) parts.push(branchA === branchB ? 1 : 0.2);
 
-  if (a.currentYear != null && b.currentYear != null) {
-    const gap = Math.abs(a.currentYear - b.currentYear);
+  if (a.passingYear != null && b.passingYear != null) {
+    const gap = Math.abs(a.passingYear - b.passingYear);
     parts.push(gap === 0 ? 1 : gap === 1 ? 0.6 : 0.25);
   }
 

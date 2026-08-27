@@ -21,11 +21,14 @@ import { apiClient } from '@shared/api/apiClient';
  * @param {boolean} opts.enabled  Skip checking (e.g. while format is invalid).
  * @param {number} [opts.debounceMs=300]
  */
-export function useAvailabilityCheck(value, { endpoint, field, enabled = true, debounceMs = 300 }) {
+export function useAvailabilityCheck(value, { endpoint, field, extraBody, enabled = true, debounceMs = 300 }) {
   const [status, setStatus] = useState(null);
   const [reason, setReason] = useState('');
-  // value -> { available: boolean, reason: string }. Only successful lookups are cached.
+  // cacheKey -> { available: boolean, reason: string }. Only successful lookups are cached.
   const cacheRef = useRef(new Map());
+
+  const extraBodyStr = extraBody ? JSON.stringify(extraBody) : '';
+  const cacheKey = extraBodyStr ? `${value}|${extraBodyStr}` : value;
 
   useEffect(() => {
     if (!enabled || !value) {
@@ -34,7 +37,7 @@ export function useAvailabilityCheck(value, { endpoint, field, enabled = true, d
       return;
     }
 
-    const cached = cacheRef.current.get(value);
+    const cached = cacheRef.current.get(cacheKey);
     if (cached) {
       setStatus(cached.available ? 'available' : 'taken');
       setReason(cached.reason || '');
@@ -47,10 +50,11 @@ export function useAvailabilityCheck(value, { endpoint, field, enabled = true, d
     const timer = setTimeout(async () => {
       setStatus('checking');
       try {
-        const res = await apiClient.post(endpoint, { [field]: value }, { signal: controller.signal });
+        const payload = { [field]: value, ...(extraBody || {}) };
+        const res = await apiClient.post(endpoint, payload, { signal: controller.signal });
         if (!active) return;
         const available = res?.available === true;
-        cacheRef.current.set(value, { available, reason: res?.reason || '' });
+        cacheRef.current.set(cacheKey, { available, reason: res?.reason || '' });
         setStatus(available ? 'available' : 'taken');
         setReason(res?.reason || '');
       } catch (err) {
@@ -66,7 +70,7 @@ export function useAvailabilityCheck(value, { endpoint, field, enabled = true, d
       controller.abort();
       clearTimeout(timer);
     };
-  }, [value, enabled, endpoint, field, debounceMs]);
+  }, [value, cacheKey, enabled, endpoint, field, debounceMs, extraBodyStr]);
 
   return { status, reason, cache: cacheRef.current };
 }

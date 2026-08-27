@@ -47,7 +47,7 @@ export interface MatchCandidateDto {
   avatar: string | null;
   course: string | null;
   branch: string | null;
-  currentYear: number | null;
+  passingYear: number | null;
   interests: string[];
   bio: string | null;
 }
@@ -115,7 +115,7 @@ const USER_CARD_SELECT = {
   avatar: true,
   course: true,
   branch: true,
-  currentYear: true,
+  passingYear: true,
   interests: true,
   bio: true,
 } as const;
@@ -431,7 +431,7 @@ export class InstantMatchService implements OnModuleInit {
       interests: string[];
       course: string | null;
       branch: string | null;
-      currentYear: number | null;
+      passingYear: number | null;
     },
     priorConversations: number | null = null,
   ) {
@@ -446,7 +446,7 @@ export class InstantMatchService implements OnModuleInit {
       interests: user.interests ?? [],
       course: user.course,
       branch: user.branch,
-      currentYear: user.currentYear,
+      passingYear: user.passingYear,
       joinedAt: entry.joinedAt.getTime(),
       priorConversations,
     };
@@ -1379,7 +1379,7 @@ export class InstantMatchService implements OnModuleInit {
     avatar: string | null;
     course: string | null;
     branch: string | null;
-    currentYear: number | null;
+    passingYear: number | null;
     interests: string[];
     bio: string | null;
   }): MatchCandidateDto {
@@ -1390,7 +1390,7 @@ export class InstantMatchService implements OnModuleInit {
       avatar: u.avatar,
       course: u.course,
       branch: u.branch,
-      currentYear: u.currentYear,
+      passingYear: u.passingYear,
       interests: u.interests ?? [],
       bio: u.bio,
     };

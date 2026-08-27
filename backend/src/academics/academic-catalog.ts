@@ -335,36 +335,26 @@ export function findBranch(
 }
 
 /** Valid Current Year values for a course, e.g. [1,2,3,4] for B.Tech. */
-export function validYearsForCourse(
-  courseId: string | null | undefined,
+/** Returns dynamic passing year options: [currentYear ... currentYear + 10] */
+export function validPassingYears(
+  nowYear: number = new Date().getFullYear(),
 ): number[] {
-  const course = findCourse(courseId);
-  if (!course) return [];
-  return Array.from({ length: course.durationYears }, (_, i) => i + 1);
+  return Array.from({ length: 11 }, (_, i) => nowYear + i);
 }
 
-export const YEAR_LABELS: Readonly<Record<number, string>> = {
-  1: '1st Year',
-  2: '2nd Year',
-  3: '3rd Year',
-  4: '4th Year',
-  5: '5th Year',
-  6: '6th Year',
-};
-
 export function yearLabel(year: number): string {
-  return YEAR_LABELS[year] ?? `Year ${year}`;
+  return String(year);
 }
 
 /**
- * "B.Tech • Computer Science & Engineering • 2nd Year", omitting any part that is
+ * "B.Tech • Computer Science & Engineering • 2028", omitting any part that is
  * missing so a partially-filled profile degrades instead of rendering "undefined".
  * Returns null when there is nothing meaningful to show.
  */
 export function formatAcademicSummary(
   courseId: string | null | undefined,
   branchId: string | null | undefined,
-  currentYear: number | null | undefined,
+  passingYear: number | null | undefined,
 ): string | null {
   const course = findCourse(courseId);
   if (!course) return null;
@@ -372,7 +362,7 @@ export function formatAcademicSummary(
   const parts = [course.name];
   // "General" carries no information next to the course name, so it is dropped.
   if (branch && branch.id !== GENERAL.id) parts.push(branch.name);
-  if (typeof currentYear === 'number' && currentYear > 0)
-    parts.push(yearLabel(currentYear));
+  if (typeof passingYear === 'number' && passingYear > 0)
+    parts.push(yearLabel(passingYear));
   return parts.join(' • ');
 }

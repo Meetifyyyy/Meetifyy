@@ -70,7 +70,7 @@ export class UsersService {
         college: { select: { id: true, name: true } },
         course: true,
         branch: true,
-        currentYear: true,
+        passingYear: true,
         settings: {
           select: {
             showOnlineStatus: true,
@@ -149,7 +149,7 @@ export class UsersService {
         collegeId: true,
         course: true,
         branch: true,
-        currentYear: true,
+        passingYear: true,
         college: { select: { name: true } },
         settings: {
           select: {
@@ -177,7 +177,7 @@ export class UsersService {
   }
 
   /**
-   * Server-side campus directory: search + course/branch/currentYear filters with
+   * Server-side campus directory: search + course/branch/passingYear filters with
    * keyset (cursor) pagination on (createdAt desc, id desc). Scoped to the
    * caller's college so a directory can scale past the previous 50-row client
    * cap without ever downloading the whole college. Presence is batched.
@@ -191,6 +191,7 @@ export class UsersService {
       search?: string;
       course?: string;
       branch?: string;
+      passingYear?: number;
       currentYear?: number;
       limit?: number;
       cursor?: string;
@@ -221,6 +222,7 @@ export class UsersService {
       }
     }
 
+    const yearFilter = opts.passingYear ?? opts.currentYear;
     const where: any = {
       collegeId: me.collegeId,
       id: { not: userId },
@@ -228,7 +230,7 @@ export class UsersService {
       deletedAt: null,
       ...(opts.course ? { course: opts.course } : {}),
       ...(opts.branch ? { branch: opts.branch } : {}),
-      ...(opts.currentYear ? { currentYear: opts.currentYear } : {}),
+      ...(yearFilter ? { passingYear: yearFilter } : {}),
       ...(search
         ? {
             OR: [
@@ -263,7 +265,7 @@ export class UsersService {
         collegeId: true,
         course: true,
         branch: true,
-        currentYear: true,
+        passingYear: true,
         createdAt: true,
         settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
       },
@@ -331,7 +333,7 @@ export class UsersService {
         college: true,
         course: true,
         branch: true,
-        currentYear: true,
+        passingYear: true,
         profileCompleted: true,
         settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
       },
@@ -496,7 +498,7 @@ export class UsersService {
       isCampusRep: targetUser.isCampusRep,
       course: targetUser.course,
       branch: targetUser.branch,
-      currentYear: targetUser.currentYear,
+      passingYear: targetUser.passingYear,
       location: targetUser.location,
       interests: targetUser.interests || [],
       verified: targetUser.emailVerified,
@@ -957,29 +959,29 @@ export class UsersService {
     let academic: {
       course: string;
       branch: string;
-      currentYear: number;
+      passingYear: number;
     } | null = null;
     try {
       academic = this.academicsService.validateIfPresent({
         course: data.course,
         branch: data.branch,
-        currentYear: data.currentYear,
+        passingYear: data.passingYear ?? data.currentYear,
       });
     } catch (err) {
       // Log the rejected combination (ids only — no personal data) so an invalid
       // pairing reaching the server is diagnosable without replaying the request.
       this.logger.warn(
-        `[ACADEMIC] rejected for user=${userId} course=${data.course ?? '-'} branch=${data.branch ?? '-'} year=${data.currentYear ?? '-'}: ${(err as Error).message}`,
+        `[ACADEMIC] rejected for user=${userId} course=${data.course ?? '-'} branch=${data.branch ?? '-'} year=${data.passingYear ?? data.currentYear ?? '-'}: ${(err as Error).message}`,
       );
       throw err;
     }
     if (academic) {
       updateData.course = academic.course;
       updateData.branch = academic.branch;
-      updateData.currentYear = academic.currentYear;
+      updateData.passingYear = academic.passingYear;
       // Debug-level: useful while a user is completing onboarding, silent in prod.
       this.logger.debug(
-        `[ACADEMIC] accepted for user=${userId} course=${academic.course} branch=${academic.branch} year=${academic.currentYear}`,
+        `[ACADEMIC] accepted for user=${userId} course=${academic.course} branch=${academic.branch} year=${academic.passingYear}`,
       );
     }
 
@@ -1048,7 +1050,7 @@ export class UsersService {
         birthday: true,
         course: true,
         branch: true,
-        currentYear: true,
+        passingYear: true,
         location: true,
         interests: true,
         profileCompleted: true,

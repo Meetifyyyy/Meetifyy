@@ -13,9 +13,13 @@ export class CheckUsernameDto {
 }
 
 export class CheckEmailDto {
-  @IsEmail()
-  @IsNotEmpty()
+  @IsEmail({}, { message: 'Please provide a valid email address' })
+  @IsNotEmpty({ message: 'Email address is required' })
   email: string;
+
+  @IsOptional()
+  @IsString()
+  collegeId?: string;
 }
 
 export class LoginDto {
@@ -104,23 +108,23 @@ export class TriggerPasswordChangedEmailDto {
 }
 
 export class CreateCollegeRequestDto {
-  @IsString()
-  @IsNotEmpty()
-  @Length(2, 80)
+  @IsString({ message: 'Full name must be a string' })
+  @IsNotEmpty({ message: 'Full name is required' })
+  @Length(2, 80, { message: 'Full name must be between 2 and 80 characters' })
   name: string;
 
-  @IsString()
-  @IsNotEmpty()
-  @Length(3, 120)
+  @IsString({ message: 'College name must be a string' })
+  @IsNotEmpty({ message: 'College name is required' })
+  @Length(3, 120, { message: 'College name must be between 3 and 120 characters' })
   collegeName: string;
 
-  @IsEmail()
-  @IsNotEmpty()
-  @Length(5, 100)
+  @IsEmail({}, { message: 'College email must be a valid email address' })
+  @IsNotEmpty({ message: 'College email is required' })
+  @Length(5, 100, { message: 'College email must be between 5 and 100 characters' })
   collegeEmail: string;
 
-  @IsEmail()
-  @IsNotEmpty()
-  @Length(5, 100)
+  @IsEmail({}, { message: 'Personal email must be a valid email address' })
+  @IsNotEmpty({ message: 'Personal email is required' })
+  @Length(5, 100, { message: 'Personal email must be between 5 and 100 characters' })
   personalEmail: string;
 }

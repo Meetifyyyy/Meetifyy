@@ -32,7 +32,7 @@ const StepRenderer = () => {
   return (
     <AuthShell
       headline={'Join a campus\nthat gets you.'}
-      subtext="A few quick steps and you're in — verified, matched, and ready to connect."
+      subtext="A few quick steps and you're in, verified, matched, and ready to connect."
     >
       <StepProgress
         currentStep={currentStep}

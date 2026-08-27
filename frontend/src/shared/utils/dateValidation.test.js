@@ -49,10 +49,10 @@ describe('validateDOB', () => {
       expect(res.error).toBe('You must be at least 18 years old.');
     });
 
-    it('rejects future DOB within current year', () => {
+    it('rejects future DOB / underage within current year', () => {
       const res = validateDOB(2024, 6, 1);
       expect(res.isValid).toBe(false);
-      expect(res.error).toBe('Date of birth cannot be in the future.');
+      expect(res.error).toBe('You must be at least 18 years old.');
     });
   });
 
@@ -61,24 +61,43 @@ describe('validateDOB', () => {
       vi.setSystemTime(new Date(2024, 4, 15));
     });
 
-    it('rejects February 30', () => {
-      expect(validateDOB(2020, 2, 30).isValid).toBe(false);
+    it('rejects February 30 with descriptive error', () => {
+      const res = validateDOB(2020, 2, 30);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toBe('February has only 29 days.');
     });
 
-    it('rejects February 31', () => {
-      expect(validateDOB(2020, 2, 31).isValid).toBe(false);
+    it('rejects February 31 with descriptive error', () => {
+      const res = validateDOB(2021, 2, 31);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toBe('February has only 28 days.');
     });
 
-    it('rejects April 31', () => {
-      expect(validateDOB(2020, 4, 31).isValid).toBe(false);
+    it('rejects April 31 with descriptive error', () => {
+      const res = validateDOB(2000, 4, 31);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toBe('April has only 30 days.');
     });
 
-    it('rejects February 29 on non-leap years', () => {
-      expect(validateDOB(2023, 2, 29).isValid).toBe(false);
+    it('rejects June 31, September 31, November 31', () => {
+      expect(validateDOB(2000, 6, 31).error).toBe('June has only 30 days.');
+      expect(validateDOB(2000, 9, 31).error).toBe('September has only 30 days.');
+      expect(validateDOB(2000, 11, 31).error).toBe('November has only 30 days.');
+    });
+
+    it('rejects February 29 on non-leap years with year-specific error', () => {
+      const res = validateDOB(2023, 2, 29);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toBe('February has only 28 days in 2023.');
     });
 
     it('accepts February 29 on leap years', () => {
       expect(validateDOB(2004, 2, 29).isValid).toBe(true);
+    });
+
+    it('rejects days outside 1-31', () => {
+      expect(validateDOB(2000, 1, 0).error).toBe('Day must be between 1 and 31.');
+      expect(validateDOB(2000, 1, 32).error).toBe('Day must be between 1 and 31.');
     });
   });
 
@@ -104,7 +123,7 @@ describe('validateDOB', () => {
 
     it('rejects age over 120 / before 1950', () => {
       expect(validateDOB(1899, 1, 1).isValid).toBe(false);
-      expect(validateDOB(1899, 1, 1).error).toBe('Year of birth must be between 1950 and 2024.');
+      expect(validateDOB(1899, 1, 1).error).toBe('Please enter a valid date of birth.');
     });
   });
 });

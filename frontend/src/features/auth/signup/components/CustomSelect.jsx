@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { ChevronDown } from '@shared/components/icons';
+import { ChevronDown, Check } from '@shared/components/icons';
 import styles from '../SignupFlow.module.css';
 
 // Damerau-Levenshtein distance to calculate spelling edit distance (tolerates insertions, deletions, substitutions, transpositions)
@@ -64,7 +64,6 @@ function scoreMatchIndexed(opt, normQuery, queryWords) {
   // 4. Word-level exact/prefix match
   let wordPrefixMatches = 0;
   let wordExactMatches = 0;
-  const matchRanges = [];
 
   for (const qWord of queryWords) {
     for (const tWord of textWords) {
@@ -144,12 +143,43 @@ function scoreMatchIndexed(opt, normQuery, queryWords) {
   return { score: 0, matchRanges: [] };
 }
 
-export default function CustomSelect({ value, onChange, options, placeholder, searchable = false }) {
+export default function CustomSelect({
+  value,
+  onChange,
+  options,
+  placeholder,
+  searchable = false,
+  isInvalid = false,
+  className = '',
+  footerAction = null,
+  placement = 'auto',
+}) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isUpward, setIsUpward] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const containerRef = useRef(null);
+
+  const toggleDropdown = () => {
+    if (!isOpen && containerRef.current) {
+      if (placement === 'top') {
+        setIsUpward(true);
+      } else if (placement === 'bottom') {
+        setIsUpward(false);
+      } else {
+        const rect = containerRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        if (spaceBelow < 240 && spaceAbove > 160) {
+          setIsUpward(true);
+        } else {
+          setIsUpward(false);
+        }
+      }
+    }
+    setIsOpen(!isOpen);
+  };
 
   // Debounce input value changes
   useEffect(() => {
@@ -179,40 +209,33 @@ export default function CustomSelect({ value, onChange, options, placeholder, se
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const selectedOption = options.find(opt => String(opt.value) === String(value));
+  const selectedOption = useMemo(() => {
+    return options.find(opt => opt.value === value || (value !== '' && value !== null && value !== undefined && Number(opt.value) === Number(value)));
+  }, [options, value]);
 
-  // Precompute normalized labels and words to speed up matching
+  const isOptionSelected = (opt) => {
+    if (opt.value === value) return true;
+    if (value !== '' && value !== null && value !== undefined && Number(opt.value) === Number(value)) return true;
+    return false;
+  };
+
+  // Pre-process options for high performance matching
   const indexedOptions = useMemo(() => {
-    return options.map(opt => {
-      const labelStr = String(opt.label);
-      const normalizedLabel = labelStr.toLowerCase()
-        .replace(/[^a-z0-9\s]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      return {
-        ...opt,
-        label: labelStr,
-        normalizedLabel,
-        words: normalizedLabel.split(' ')
-      };
-    });
+    return (options || []).map(opt => ({
+      ...opt,
+      normalizedLabel: opt.label.toLowerCase().trim(),
+      words: opt.label.toLowerCase().trim().split(/\s+/).filter(Boolean)
+    }));
   }, [options]);
 
+  // High performance filtered options using memoization and scoring
   const filteredOptions = useMemo(() => {
-    if (!searchable || !debouncedQuery) {
-      return indexedOptions.map(opt => ({ ...opt, matchRanges: [] }));
+    if (!searchable || !debouncedQuery.trim()) {
+      return indexedOptions;
     }
 
-    const normQuery = debouncedQuery.toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!normQuery) {
-      return indexedOptions.map(opt => ({ ...opt, matchRanges: [] }));
-    }
-
-    const queryWords = normQuery.split(' ');
+    const normQuery = debouncedQuery.toLowerCase().trim();
+    const queryWords = normQuery.split(/\s+/).filter(Boolean);
 
     const scored = indexedOptions
       .map(opt => {
@@ -229,9 +252,9 @@ export default function CustomSelect({ value, onChange, options, placeholder, se
     <div className={styles.customSelectContainer} ref={containerRef}>
       <button 
         type="button" 
-        className={styles.dateSelect} 
-        onClick={() => setIsOpen(!isOpen)}
-        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '48px', minWidth: 0 }}
+        className={`${styles.dateSelect} ${isInvalid ? styles.invalid : ''} ${className}`.trim()} 
+        onClick={toggleDropdown}
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0, width: '100%' }}
       >
         <span 
           title={selectedOption ? selectedOption.label : placeholder}
@@ -240,7 +263,7 @@ export default function CustomSelect({ value, onChange, options, placeholder, se
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            marginRight: '0.5rem',
+            marginRight: '0.35rem',
             minWidth: 0,
             flex: 1,
             textAlign: 'left'
@@ -248,11 +271,11 @@ export default function CustomSelect({ value, onChange, options, placeholder, se
         >
           {selectedOption ? selectedOption.label : placeholder}
         </span>
-        <ChevronDown size={18} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', color: 'var(--color-text-muted)', flexShrink: 0 }} />
+        <ChevronDown size={16} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', color: 'var(--color-text-muted)', flexShrink: 0 }} />
       </button>
       
       {isOpen && (
-        <div className={styles.customSelectList} style={{ padding: searchable ? 0 : '0.25rem' }}>
+        <div className={`${styles.customSelectList} ${isUpward ? styles.openUpward : ''}`} style={{ padding: searchable ? 0 : '0.25rem' }}>
           {searchable && (
             <div style={{ padding: '0.5rem', position: 'sticky', top: 0, background: 'white', zIndex: 1, borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center' }}>
               <input 
@@ -273,7 +296,7 @@ export default function CustomSelect({ value, onChange, options, placeholder, se
             {filteredOptions.length > 0 ? filteredOptions.map((opt) => (
               <li 
                 key={opt.value} 
-                className={`${styles.customSelectOption} ${String(opt.value) === String(value) ? styles.selected : ''}`}
+                className={`${styles.customSelectOption} ${isOptionSelected(opt) ? styles.selected : ''}`}
                 onClick={() => {
                   onChange(opt.value);
                   setIsOpen(false);
@@ -281,12 +304,27 @@ export default function CustomSelect({ value, onChange, options, placeholder, se
                   setDebouncedQuery('');
                 }}
               >
-                {opt.label}
+                <span>{opt.label}</span>
+                {isOptionSelected(opt) && <Check size={16} className={styles.optionCheck} />}
               </li>
             )) : (
               <li className={styles.customSelectOption} style={{ color: 'var(--color-text-muted)', cursor: 'default' }}>No results found</li>
             )}
           </ul>
+          {footerAction && (
+            <div
+              className={styles.customSelectFooter}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                setInputValue('');
+                setDebouncedQuery('');
+                footerAction.onClick?.();
+              }}
+            >
+              <span>{footerAction.label}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

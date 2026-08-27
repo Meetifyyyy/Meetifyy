@@ -17,21 +17,13 @@ export default function Step1Identity() {
 
   const initialDob = signupData.birthday || '';
   const initialParts = initialDob ? initialDob.split('-') : ['', '', ''];
-  const [year, setYear] = useState(initialParts[0]);
-  const [month, setMonth] = useState(initialParts[1]);
-  const [day, setDay] = useState(initialParts[2]);
+  const initialYear = initialParts[0] || '';
+  const initialMonth = initialParts[1] ? String(parseInt(initialParts[1], 10)) : '';
+  const initialDay = initialParts[2] ? String(parseInt(initialParts[2], 10)) : '';
+  const [year, setYear] = useState(initialYear);
+  const [month, setMonth] = useState(initialMonth);
+  const [day, setDay] = useState(initialDay);
   const [attempted, setAttempted] = useState(false);
-
-  const daysInMonth = useMemo(() => {
-    if (!month) return 31;
-    const m = parseInt(month, 10);
-    const y = year ? parseInt(year, 10) : 2024;
-    return new Date(y, m, 0).getDate();
-  }, [month, year]);
-
-  useEffect(() => {
-    if (day && parseInt(day, 10) > daysInMonth) setDay('');
-  }, [daysInMonth, day]);
 
   // ── Validation ────────────────────────────────────────────────────────────
   const nameError = useMemo(() => {
@@ -125,34 +117,59 @@ export default function Step1Identity() {
           }}
         />
 
-        <div className={s.selectGroup}>
+        <div className={`${s.selectGroup} ${attempted && dobError ? s.isInvalid : ''}`}>
           <span className={s.selectLabel}>Birthday</span>
           <div className={s.selectRow}>
             <CustomSelect
               value={month}
               onChange={setMonth}
               placeholder="Month"
+              isInvalid={attempted && !!dobError}
               options={Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
                 value: m,
                 label: new Date(0, m - 1).toLocaleString('default', { month: 'short' }),
               }))}
             />
-            <CustomSelect
-              value={day}
-              onChange={setDay}
+            <input
+              id="signup-dob-day"
+              type="text"
+              inputMode="numeric"
+              maxLength={2}
+              className={`${s.input} ${attempted && dobError ? s.invalid : ''}`}
               placeholder="Day"
-              options={Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => ({ value: d, label: d }))}
+              value={day}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/\D/g, '').slice(0, 2);
+                if (raw === '') {
+                  setDay('');
+                  return;
+                }
+                const num = parseInt(raw, 10);
+                if (num > 31) {
+                  return;
+                }
+                setDay(raw);
+              }}
+              aria-label="Day"
             />
-            <CustomSelect
-              value={year}
-              onChange={setYear}
+            <input
+              id="signup-dob-year"
+              type="text"
+              inputMode="numeric"
+              maxLength={4}
+              className={`${s.input} ${attempted && dobError ? s.invalid : ''}`}
               placeholder="Year"
-              options={Array.from({ length: new Date().getFullYear() - 1950 + 1 }, (_, i) => new Date().getFullYear() - i).map((y) => ({ value: y, label: y }))}
+              value={year}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                setYear(val);
+              }}
+              aria-label="Year"
             />
           </div>
           <div className={s.messageSlot}>
             {attempted && dobError ? (
-              <div className={`${s.message} ${s.messageError}`}>
+              <div className={`${s.message} ${s.messageError}`} role="alert">
                 <AlertCircle size={13} /> {dobError}
               </div>
             ) : null}

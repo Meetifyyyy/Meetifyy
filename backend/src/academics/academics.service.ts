@@ -1,4 +1,5 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Optional } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import {
   ACADEMIC_CATALOG,
   AcademicCourse,
@@ -11,37 +12,76 @@ import {
 export interface AcademicSelection {
   course: string;
   branch: string;
-  currentYear: number;
+  passingYear: number;
 }
 
 /** Error copy lives here so client and server report the same wording. */
 export const ACADEMIC_ERRORS = {
   COURSE_REQUIRED: 'Please select your course.',
   BRANCH_REQUIRED: 'Please select your branch.',
-  YEAR_REQUIRED: 'Please select your current year.',
+  YEAR_REQUIRED: 'Please select your passing year.',
   COURSE_UNKNOWN: 'Please select your course.',
   BRANCH_NOT_IN_COURSE: 'This branch is not available for the selected course.',
-  YEAR_NOT_IN_COURSE: 'This year is not valid for the selected course.',
+  YEAR_INVALID: 'Please select a valid passing year.',
 } as const;
 
 @Injectable()
 export class AcademicsService {
+  constructor(@Optional() private readonly prisma?: PrismaService) {}
+
   /** The catalogue as served to clients. */
   getCatalog(): readonly AcademicCourse[] {
     return ACADEMIC_CATALOG;
   }
 
   /**
-   * Validates a course/branch/year triple. Every field is treated as untrusted:
-   * the client's dropdowns are a convenience, not a constraint, so a handcrafted
-   * request pairing "B.Tech" with an MBA branch, or a 3-year course with a 4th
-   * year, is rejected here regardless of what the UI allows.
+   * Fetches active approved colleges and their domains from the database.
+   */
+  async getColleges(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      shortName?: string | null;
+      domains: string[];
+    }>
+  > {
+    if (!this.prisma) return [];
+    const colleges = await this.prisma.college.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        status: 'APPROVED',
+      },
+      select: {
+        id: true,
+        name: true,
+        shortName: true,
+        domains: {
+          where: { status: 'ACTIVE' },
+          select: { domain: true, isPrimary: true },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return colleges.map((c) => ({
+      id: c.id,
+      name: c.name,
+      shortName: c.shortName,
+      domains: c.domains.map((d) => d.domain),
+    }));
+  }
+
+  /**
+   * Validates a course/branch/passingYear triple. Every field is treated as untrusted:
+   * passingYear must be dynamically between Current Year and Current Year + 10.
    *
    * Throws BadRequestException with a message the UI can show verbatim.
    */
   validate(input: {
     course?: unknown;
     branch?: unknown;
+    passingYear?: unknown;
     currentYear?: unknown;
   }): AcademicSelection {
     const courseId =
@@ -60,9 +100,7 @@ export class AcademicsService {
       throw new BadRequestException(ACADEMIC_ERRORS.BRANCH_NOT_IN_COURSE);
     }
 
-    // Accept a number or a numeric string, but nothing else — "2nd", NaN, 2.5,
-    // negatives and Infinity all fall through to the range check below.
-    const rawYear = input.currentYear;
+    const rawYear = input.passingYear ?? input.currentYear;
     const year =
       typeof rawYear === 'number'
         ? rawYear
@@ -70,13 +108,16 @@ export class AcademicsService {
           ? parseInt(rawYear.trim(), 10)
           : NaN;
 
+    const currentYearNow = new Date().getFullYear();
+    const maxPassingYear = currentYearNow + 10;
+
     if (!Number.isInteger(year))
       throw new BadRequestException(ACADEMIC_ERRORS.YEAR_REQUIRED);
-    if (year < 1 || year > course.durationYears) {
-      throw new BadRequestException(ACADEMIC_ERRORS.YEAR_NOT_IN_COURSE);
+    if (year < currentYearNow || year > maxPassingYear) {
+      throw new BadRequestException(ACADEMIC_ERRORS.YEAR_INVALID);
     }
 
-    return { course: courseId, branch: branchId, currentYear: year };
+    return { course: courseId, branch: branchId, passingYear: year };
   }
 
   /**
@@ -87,43 +128,40 @@ export class AcademicsService {
   validateIfPresent(input: {
     course?: unknown;
     branch?: unknown;
+    passingYear?: unknown;
     currentYear?: unknown;
   }): AcademicSelection | null {
-    // `undefined`, `null` and `''` all mean "not supplied". Callers routinely
-    // spread a whole form object here — a signup draft carries `currentYear:
-    // null` before the user reaches that step — and treating those as an attempt
-    // to set academic data would reject an otherwise valid profile update.
     const absent = (v: unknown) => v === undefined || v === null || v === '';
     if (
       absent(input.course) &&
       absent(input.branch) &&
+      absent(input.passingYear) &&
       absent(input.currentYear)
     ) {
       return null;
     }
-    // Anything partially filled still goes through full validation, so a request
-    // cannot persist a course without a branch.
     return this.validate(input);
   }
 
-  /** True when a stored triple is still valid — used when loading legacy rows. */
+  /** True when a stored triple is still valid. */
   isComplete(
     course?: string | null,
     branch?: string | null,
-    currentYear?: number | null,
+    passingYear?: number | null,
   ): boolean {
-    if (!course || !branch || typeof currentYear !== 'number') return false;
+    if (!course || !branch || typeof passingYear !== 'number') return false;
     const c = findCourse(course);
     if (!c) return false;
     if (!findBranch(course, branch)) return false;
-    return currentYear >= 1 && currentYear <= c.durationYears;
+    const now = new Date().getFullYear();
+    return passingYear >= now && passingYear <= now + 10;
   }
 
   format(
     course?: string | null,
     branch?: string | null,
-    currentYear?: number | null,
+    passingYear?: number | null,
   ): string | null {
-    return formatAcademicSummary(course, branch, currentYear);
+    return formatAcademicSummary(course, branch, passingYear);
   }
 }

@@ -80,7 +80,7 @@ export interface FakeUser {
   avatar: string | null;
   course: string | null;
   branch: string | null;
-  currentYear: number | null;
+  passingYear: number | null;
   interests: string[];
   bio: string | null;
 }
@@ -105,7 +105,7 @@ export class PrismaFake {
       avatar: null,
       course: 'B.Tech',
       branch: 'CSE',
-      currentYear: 2,
+      passingYear: 2028,
       interests: [],
       bio: null,
       ...overrides,
