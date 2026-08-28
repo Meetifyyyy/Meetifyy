@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback } from 'react';
+import { Suspense, lazy, useCallback, useRef, useEffect } from 'react';
 import { Search, X } from '@shared/components/icons';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
@@ -52,6 +52,8 @@ export default function ChatAreaLayout({
   setShowSearch,
   searchQuery,
   setSearchQuery,
+  openSearch,
+  closeSearch,
   handleCopyMessage,
   handleUnsend,
   handleDeleteForMe,
@@ -69,39 +71,41 @@ export default function ChatAreaLayout({
 }) {
   const { openViewer } = useMediaViewer();
   const { sendDirectMessage } = useMessageActions();
+  const searchInputRef = useRef(null);
 
-  // Back closes whichever panel is over the thread before it leaves the
-  // conversation. Both the find-in-chat bar and the details panel sit *over*
-  // the chat, so dismissing one is what a Back press means while it is open —
-  // navigating away and taking the panel along is a page the user did not ask
-  // to leave.
-  //
-  // Identical cleanup to the X button (both call these), so Back and the
-  // button are indistinguishable: the query is cleared either way rather than
-  // being left behind to re-highlight the thread on the next open.
-  const closeSearch = useCallback(() => {
-    setShowSearch?.(false);
-    setSearchQuery?.('');
-  }, [setShowSearch, setSearchQuery]);
+  const handleCloseSearch = useCallback(() => {
+    if (typeof closeSearch === 'function') {
+      closeSearch();
+    } else {
+      setShowSearch?.(false);
+      setSearchQuery?.('');
+    }
+  }, [closeSearch, setShowSearch, setSearchQuery]);
+
+  const handleOpenSearch = useCallback(() => {
+    if (typeof openSearch === 'function') {
+      openSearch();
+    } else {
+      setShowDetails?.(false);
+      setShowSearch?.(true);
+    }
+  }, [openSearch, setShowDetails, setShowSearch]);
 
   const closeDetails = useCallback(() => setShowDetails?.(false), [setShowDetails]);
 
-  /**
-   * ONLY the search bar registers here. The details panel must not.
-   *
-   * `showDetails` is URL state (`?view=details`, pushed — see
-   * useChatAreaState), so it already participates in real history and Back
-   * already closes it. Registering it with the OverlayManager as well made
-   * two mechanisms push for one panel, and the manager's `navigate(-1)` on
-   * teardown then rewound into an entry that still carried `?view=details`.
-   *
-   * That is what reopened the details page when the user cancelled a search
-   * they had started from it: opening search pushes a no-`view` entry, and
-   * closing it popped one entry too many, straight back into details. Leaving
-   * details to its own URL-based back handling means the pop lands where the
-   * search bar was opened from and stops there.
-   */
-  useOverlayBack(Boolean(showSearch), closeSearch);
+  // Use overlay back without pushing synthetic history states to eliminate history racing & flicker
+  useOverlayBack(Boolean(showSearch), handleCloseSearch, { pushHistoryState: false });
+
+  // Auto-focus search input whenever search opens
+  useEffect(() => {
+    if (showSearch) {
+      const timer = setTimeout(() => {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }, 30);
+      return () => clearTimeout(timer);
+    }
+  }, [showSearch]);
 
   const messages = conversation?.messages || [];
 
@@ -143,10 +147,7 @@ export default function ChatAreaLayout({
           users={users}
           onBack={closeDetails}
           onClose={closeDetails}
-          onSearch={() => {
-            setShowDetails(false);
-            setShowSearch(true);
-          }}
+          onSearch={handleOpenSearch}
           onLeaveActivity={onLeaveActivity}
         />
       </div>
@@ -161,23 +162,37 @@ export default function ChatAreaLayout({
         <div className={styles.searchBar}>
           <Search size={16} className={styles.searchIcon} />
           <input
+            ref={searchInputRef}
             type="text"
             className={styles.searchInput}
             placeholder="Find in chat..."
             value={searchQuery || ''}
             onChange={(e) => setSearchQuery?.(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                handleCloseSearch();
+              }
+            }}
             aria-label="Find in chat"
             autoFocus
           />
           {searchQuery && (
-            <button type="button" className={styles.searchAction} onClick={() => setSearchQuery?.('')}>
+            <button
+              type="button"
+              className={styles.searchAction}
+              onClick={() => {
+                setSearchQuery?.('');
+                searchInputRef.current?.focus();
+              }}
+            >
               Clear
             </button>
           )}
           <button
             type="button"
             className={styles.searchAction}
-            onClick={closeSearch}
+            onClick={handleCloseSearch}
             aria-label="Close search"
           >
             <X size={18} />

@@ -61,7 +61,13 @@ export default function DMChatArea({
           onClearChat={onClearChat}
           onTogglePin={onTogglePin}
           onToggleMute={onToggleMute}
-          onToggleSearch={() => state.setShowSearch(prev => !prev)}
+          onToggleSearch={() => {
+            if (state.showSearch) {
+              state.closeSearch();
+            } else {
+              state.openSearch();
+            }
+          }}
           onOpenDetails={() => state.setShowDetails(true)}
         />
       }

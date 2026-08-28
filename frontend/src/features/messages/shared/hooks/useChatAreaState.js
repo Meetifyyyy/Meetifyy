@@ -55,8 +55,16 @@ export function useChatAreaState(conversation) {
   const location = useLocation();
   // Did *this* session push the details entry? A panel reached by reload or a
   // shared link has no entry of ours behind it, so popping would walk the user
-  // out of the app instead of closing a panel.
   const pushedDetailsRef = useRef(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Sync pushedDetailsRef when showDetails closes via any means (e.g. browser Back)
+  useEffect(() => {
+    if (!showDetails) {
+      pushedDetailsRef.current = false;
+    }
+  }, [showDetails]);
 
   const setShowDetails = useCallback(
     (next) => {
@@ -70,8 +78,7 @@ export function useChatAreaState(conversation) {
         navigate(-1);
         return;
       }
-      // Deep-linked open: drop the param in place. A push here would leave a
-      // "closed" entry that Back immediately undoes — the same trap.
+      // Deep-linked open or already at target: drop the param in place
       const params = new URLSearchParams(location.search);
       params.delete('view');
       const search = params.toString();
@@ -79,8 +86,22 @@ export function useChatAreaState(conversation) {
     },
     [setDetailsView, navigate, location.pathname, location.search]
   );
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+
+  const openSearch = useCallback(() => {
+    if (showDetails) {
+      pushedDetailsRef.current = false;
+      const params = new URLSearchParams(location.search);
+      params.delete('view');
+      const search = params.toString();
+      navigate({ pathname: location.pathname, search: search ? `?${search}` : '' }, { replace: true });
+    }
+    setShowSearch(true);
+  }, [showDetails, location.pathname, location.search, navigate]);
+
+  const closeSearch = useCallback(() => {
+    setShowSearch(false);
+    setSearchQuery('');
+  }, []);
 
   const { typingUsers, isTyping, typingText, handleKeystroke, stopTypingNow } =
     useTypingIndicator(conversation?.id, currentUser?.id);
@@ -197,6 +218,8 @@ export function useChatAreaState(conversation) {
     setShowSearch,
     searchQuery,
     setSearchQuery,
+    openSearch,
+    closeSearch,
 
     // Handlers
     handleCopyMessage,

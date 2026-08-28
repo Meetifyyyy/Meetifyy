@@ -23,6 +23,10 @@ import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCrewActivities, useCrewActions } from '@shared/hooks/useCrew';
 import { useGroupActions } from '@shared/hooks/useGroupActions';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import {
+  MAX_COVERED_IMAGE_SIZE_BYTES,
+  COVERED_IMAGE_SIZE_ERROR_MESSAGE,
+} from '@shared/constants/mediaLimits';
 import { commitDraftImage } from '@shared/utils/draftImageCache';
 import { sortGroupMembers } from '@shared/utils/memberSort';
 import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -362,6 +366,11 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
+        showToast(COVERED_IMAGE_SIZE_ERROR_MESSAGE, 'error');
+        e.target.value = '';
+        return;
+      }
       const originalAvatar = conversation.avatarKey || conversation.avatar || '';
       const tempUrl = URL.createObjectURL(file);
       setEditAvatar(tempUrl);
@@ -731,7 +740,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             </>
           )}
 
-          {isGroup && !isClosed && isMember && (() => {
+          {isGroup && (() => {
             const isApprovalRequired = (
               whoCanJoin === 'APPROVAL' || 
               whoCanJoin === 'Request required' || 
@@ -744,17 +753,19 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
 
             return (
               <div className={styles.actionButtonsRow}>
-                <div className={styles.actionIconContainer}>
-                  <button
-                    type="button"
-                    className={styles.actionIconButton}
-                    onClick={() => setShowInviteModal(true)}
-                    title="Invite"
-                  >
-                    <UserPlus size={24} />
-                  </button>
-                  <span className={styles.actionIconLabel}>Invite</span>
-                </div>
+                {!isClosed && isMember && (
+                  <div className={styles.actionIconContainer}>
+                    <button
+                      type="button"
+                      className={styles.actionIconButton}
+                      onClick={() => setShowInviteModal(true)}
+                      title="Invite"
+                    >
+                      <UserPlus size={24} />
+                    </button>
+                    <span className={styles.actionIconLabel}>Invite</span>
+                  </div>
+                )}
 
                 <div className={styles.actionIconContainer}>
                   <button
@@ -770,7 +781,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                   <span className={styles.actionIconLabel}>Search</span>
                 </div>
 
-                {isApprovalRequired && (
+                {!isClosed && isMember && isApprovalRequired && (
                   <div className={styles.actionIconContainer}>
                     <button
                       type="button"
@@ -852,7 +863,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
               </button>
             )}
 
-            <div className={styles.section}>
+            <div className={`${styles.section} ${styles.membersSection}`}>
               <h3 className={styles.sectionTitle}>Members ({memberIds.length})</h3>
               <div className={styles.memberList}>
                 {memberIds.map(uid => {
