@@ -85,7 +85,7 @@ export default function CampusEventsPage() {
         <CampusEventSection
           scope="upcoming"
           title="Upcoming events"
-          emoji="📅"
+          emoji="🎟️"
           events={upcoming.events}
           isLoading={upcoming.isLoading}
           emptyText="No upcoming events yet. Check back soon!"

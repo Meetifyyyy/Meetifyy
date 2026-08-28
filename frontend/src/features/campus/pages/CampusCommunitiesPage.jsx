@@ -70,7 +70,10 @@ export default function CampusCommunitiesPage() {
                 <button className={styles.headerSquareBtn} onClick={() => goBack('/campus')} title="Back to Campus">
                   <ArrowLeft size={20} />
                 </button>
-                <h1 className={styles.collegeTitle} style={{ margin: 0 }}>Campus Communities</h1>
+                <h1 className={styles.collegeTitle} style={{ margin: 0 }}>
+                  <span className={styles.desktopTitle}>Campus Communities</span>
+                  <span className={styles.mobileTitle}>Communities</span>
+                </h1>
               </div>
               <div className={styles.headerActions}>
                 <button className={styles.headerSquareBtn} onClick={() => setShowSearch(true)} title="Search Communities">
@@ -85,47 +88,89 @@ export default function CampusCommunitiesPage() {
         </header>
       </div>
 
-      <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: collegeCommunities.length > 0 ? 'stretch' : 'center', justifyContent: collegeCommunities.length > 0 ? 'flex-start' : 'center', padding: collegeCommunities.length > 0 ? '0 1rem' : '2rem 1rem', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+      <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
         {collegeCommunities.length > 0 ? (
-          <CommunityGrid>
-            {collegeCommunities.map(community => (
-              <CommunityCard
-                key={community.id}
-                comm={community}
-                onClick={() => navigate(`/communities/${community.id}`, { state: { from: location.pathname } })}
-              />
-            ))}
-          </CommunityGrid>
+          <div style={{ padding: '0 1rem' }}>
+            <CommunityGrid>
+              {collegeCommunities.map(community => (
+                <CommunityCard
+                  key={community.id}
+                  comm={community}
+                  onClick={() => navigate(`/communities/${community.id}`, { state: { from: location.pathname } })}
+                />
+              ))}
+            </CommunityGrid>
+          </div>
         ) : (
-          <>
-            <div style={{ fontSize: '4.5rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'center', alignItems: 'center', filter: 'drop-shadow(0 8px 16px rgba(0,0,0,0.2))' }}>🚀</div>
-            <h2 style={{ margin: '0', color: 'var(--color-text-main)', fontSize: '1.5rem', fontWeight: '700', letterSpacing: '-0.02em' }}>Your Campus Needs Its First Community</h2>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', margin: '-0.75rem 0 1.25rem 0', maxWidth: '300px', lineHeight: 1.15 }}>Be the pioneer. Create a community around your shared interests.</p>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            flex: 1,
+            minHeight: 'calc(65vh - 100px)',
+            padding: '2rem 1rem',
+            boxSizing: 'border-box',
+          }}>
+            <div style={{
+              fontSize: '3.25rem',
+              lineHeight: 1,
+              marginBottom: '0.4rem',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              filter: 'drop-shadow(0 6px 12px rgba(0,0,0,0.15))'
+            }}>
+              🚀
+            </div>
+            <h2 style={{
+              margin: '0 0 0.25rem 0',
+              color: 'var(--color-text-main)',
+              fontSize: '1.35rem',
+              fontWeight: '700',
+              letterSpacing: '-0.02em',
+              textAlign: 'center',
+              lineHeight: 1.25,
+            }}>
+              No Community
+            </h2>
+            <p style={{
+              color: 'var(--color-text-muted)',
+              fontSize: '0.88rem',
+              margin: '0 0 1rem 0',
+              textAlign: 'center',
+              lineHeight: 1.35,
+              maxWidth: '320px',
+            }}>
+              Your campus needs its first community
+            </p>
             <button
+              type="button"
               onClick={() => setIsCreateModalOpen(true)}
               style={{
-                background: 'var(--color-primary)',
+                background: 'var(--color-primary, #2563eb)',
                 color: 'white',
                 border: 'none',
-                padding: '0.75rem 1.5rem',
+                padding: '0.65rem 1.35rem',
                 borderRadius: '24px',
                 fontWeight: '600',
-                fontSize: '0.95rem',
+                fontSize: '0.88rem',
                 cursor: 'pointer',
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.5rem',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-                transition: 'transform 0.2s, box-shadow 0.2s',
-                margin: '0 auto'
+                justifyContent: 'center',
+                gap: '0.4rem',
+                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.25)',
+                transition: 'background 0.2s ease, opacity 0.2s ease',
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.2)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)'; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-primary-hover, #1d4ed8)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--color-primary, #2563eb)'; }}
             >
-              <Plus size={18} />
+              <Plus size={16} />
               Create Community
             </button>
-          </>
+          </div>
         )}
       </div>
 

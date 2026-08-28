@@ -10,7 +10,7 @@ import styles from './CampusEvents.module.css';
 export default function CampusEventSection({
   scope,
   title,
-  emoji,
+  emoji = null,
   live = false,
   events = [],
   showCount = true,
@@ -55,7 +55,7 @@ export default function CampusEventSection({
         </div>
       ) : events.length === 0 ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyEmoji}>{emoji}</span>
+          {emoji ? <span className={styles.emptyEmoji}>{emoji}</span> : null}
           <p className={styles.emptyText}>{emptyText}</p>
         </div>
       ) : (
