@@ -32,7 +32,9 @@ export class AdminDashboardService {
       this.prisma.user.count({
         where: { lastSeenAt: { gte: startOfToday }, deletedAt: null },
       }),
-      this.prisma.user.count({ where: { createdAt: { gte: startOfToday } } }),
+      this.prisma.user.count({
+        where: { createdAt: { gte: startOfToday }, deletedAt: null },
+      }),
       this.prisma.user.count({
         where: { emailVerified: true, deletedAt: null },
       }),

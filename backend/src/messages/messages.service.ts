@@ -24,6 +24,7 @@ import { BlocksService } from '../users/blocks.service';
 import { resolvePresenceVisibilityForViewer } from '../users/privacy.helper';
 import { MentionsService } from '../mentions/mentions.service';
 import { buildReplyToSnapshot, REPLY_TO_SELECT } from './reply-preview.util';
+import { MediaCleanupService } from '../uploads/media-cleanup.service';
 
 /** The one question MessagesService asks the Instant Match domain. Kept to a
  *  single method so the coupling between the two stays visible and small. */
@@ -69,6 +70,7 @@ export class MessagesService
     // before the optional param because a required parameter cannot follow one.
     blocksService: BlocksService,
     @Optional() private readonly redisService?: RedisService,
+    @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {
     super(
       prisma,
@@ -1466,7 +1468,7 @@ export class MessagesService
       }),
       this.prisma.conversation.findUnique({
         where: { id: realConvId },
-        select: { editGroupPermission: true },
+        select: { editGroupPermission: true, avatarKey: true },
       }),
     ]);
 
@@ -1494,22 +1496,49 @@ export class MessagesService
       avatarVal = undefined;
     }
 
-    const [updated, participantRows] = await Promise.all([
-      this.prisma.conversation.update({
-        where: { id: realConvId },
-        data: {
-          ...(data.name !== undefined ? { name: data.name } : {}),
-          ...(data.description !== undefined
-            ? { description: data.description }
-            : {}),
-          ...(avatarVal !== undefined ? { avatarKey: avatarVal } : {}),
-        },
-      }),
-      this.prisma.conversationParticipant.findMany({
-        where: { conversationId: realConvId, leftAt: null, deletedAt: null },
-        select: { userId: true },
-      }),
-    ]);
+    let updated: any;
+    let participantRows: any[];
+    try {
+      [updated, participantRows] = await Promise.all([
+        this.prisma.conversation.update({
+          where: { id: realConvId },
+          data: {
+            ...(data.name !== undefined ? { name: data.name } : {}),
+            ...(data.description !== undefined
+              ? { description: data.description }
+              : {}),
+            ...(avatarVal !== undefined ? { avatarKey: avatarVal } : {}),
+          },
+        }),
+        this.prisma.conversationParticipant.findMany({
+          where: { conversationId: realConvId, leftAt: null, deletedAt: null },
+          select: { userId: true },
+        }),
+      ]);
+    } catch (err) {
+      if (avatarVal) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(avatarVal, userId)
+          .catch(() => {});
+      }
+      throw err;
+    }
+
+    if (
+      avatarVal !== undefined &&
+      conversation?.avatarKey &&
+      conversation.avatarKey !== updated.avatarKey
+    ) {
+      this.mediaCleanupService
+        ?.handleMediaReplacement(
+          'GROUP_AVATAR',
+          realConvId,
+          conversation.avatarKey,
+          updated.avatarKey,
+          userId,
+        )
+        .catch(() => {});
+    }
 
     this.invalidateUserConversationsCache(participantRows.map((p) => p.userId));
 

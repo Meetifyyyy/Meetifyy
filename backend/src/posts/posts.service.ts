@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, MentionSource, NotificationEntityType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,6 +15,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { MentionsService } from '../mentions/mentions.service';
 import { StorageService } from '../uploads/uploads.service';
+import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { MentionDto } from '../common/dto/mention.dto';
 import { ContentDeletionAuthorizer } from './content-deletion.authorizer';
 
@@ -31,6 +33,7 @@ export class PostsService {
     private readonly mentionsService: MentionsService,
     private readonly storageService: StorageService,
     private readonly contentDeletionAuthorizer: ContentDeletionAuthorizer,
+    @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {}
 
   /**
@@ -321,9 +324,82 @@ export class PostsService {
     return formattedPost;
   }
 
+  /**
+   * Shared transactional core for post deletion.
+   * Soft-deletes post, scrubs comments, hard-deletes disposable engagement relations,
+   * and collects media keys for subsequent R2 deletion.
+   * Used identically by deletePost() and CommunitiesService.deleteCommunity().
+   */
+  async deletePostInternal(
+    tx: any,
+    postId: string,
+    now = new Date(),
+  ): Promise<string[]> {
+    // 1. Soft-delete the post row.
+    await tx.post.update({
+      where: { id: postId },
+      data: { deletedAt: now },
+    });
+
+    // 2. Scrub every comment fully — same behaviour as deleteComment(), so
+    //    no original text or mentions survive anywhere, even in the DB.
+    //    isDeleted is set so every read path (shapeComments, fetchCommentPage)
+    //    uses the tombstone branch without needing to check deletedAt.
+    await tx.comment.updateMany({
+      where: { postId },
+      data: {
+        deletedAt: now,
+        isDeleted: true,
+        text: '',
+        mentions: Prisma.DbNull,
+        likeCount: 0,
+      },
+    });
+
+    // 3. Hard-delete all disposable engagement relations. These have no
+    //    independent user-facing purpose once the post is gone, and database
+    //    cascades cannot reach them because we use soft deletes on Post.
+    await tx.postLike.deleteMany({ where: { postId } });
+    await tx.postBookmark.deleteMany({ where: { postId } });
+    await tx.postShare.deleteMany({ where: { postId } });
+    await tx.postHashtag.deleteMany({ where: { postId } });
+
+    // Mention records reference the post as their source.
+    await tx.mention.deleteMany({
+      where: { sourceId: postId, sourceType: 'POST' },
+    });
+
+    // Comment mentions — the sourceId is the commentId; find all comments on
+    // this post and delete their mention entries.
+    const commentIds = await tx.comment
+      .findMany({ where: { postId }, select: { id: true } })
+      .then((rows: any[]) => rows.map((r) => r.id));
+
+    if (commentIds.length > 0) {
+      await tx.mention.deleteMany({
+        where: { sourceId: { in: commentIds }, sourceType: 'COMMENT' },
+      });
+      await tx.commentLike.deleteMany({
+        where: { commentId: { in: commentIds } },
+      });
+    }
+
+    await tx.pollVote.deleteMany({ where: { postId } });
+    await tx.pollOption.deleteMany({ where: { postId } });
+
+    // Collect media keys for this post
+    const mediaRows = await tx.media.findMany({
+      where: { postId },
+      select: { objectKey: true },
+    });
+    return mediaRows.map((m: any) => m.objectKey);
+  }
+
   async deletePost(postId: string, userId: string) {
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
     if (!post) throw new NotFoundException('Post not found');
+    // Already deleted — treat as idempotent success so retries are safe.
+    if (post.deletedAt) throw new NotFoundException('Post not found');
 
     // Server-side, on the one path every client shares. Hiding the delete
     // button is a courtesy; this is the rule.
@@ -336,22 +412,29 @@ export class PostsService {
       'post',
     );
 
-    await this.prisma.$transaction([
-      this.prisma.post.update({
-        where: { id: postId },
-        data: { deletedAt: new Date() },
-      }),
-      // isDeleted must be set alongside deletedAt — every other read path
-      // (shapeComments, fetchCommentPage) branches on isDeleted, not deletedAt,
-      // to decide whether to scrub/placeholder a comment. Leaving isDeleted
-      // false here would have been a latent inconsistency for any future code
-      // path that reads a comment by id independent of its (now-gone) post.
-      this.prisma.comment.updateMany({
-        where: { postId },
-        data: { deletedAt: new Date(), isDeleted: true },
-      }),
-      this.prisma.postBookmark.deleteMany({ where: { postId } }),
-    ]);
+    const now = new Date();
+    let mediaKeys: string[] = [];
+
+    // Use the interactive-callback form so we can chain dependent deletes.
+    await this.prisma.$transaction(async (tx) => {
+      mediaKeys = await this.deletePostInternal(tx, postId, now);
+    });
+
+    // Queue physical R2 objects for durable deletion after transaction commit.
+    if (mediaKeys.length > 0) {
+      if (this.mediaCleanupService) {
+        this.mediaCleanupService.queueMediaDeletion(mediaKeys);
+      } else {
+        const deleteMediaJobs = mediaKeys.map((key) =>
+          this.storageService.delete(key).catch((err) => {
+            this.logger.warn(
+              `Post media cleanup failed for key=${key} post=${postId}: ${err?.message || err}`,
+            );
+          }),
+        );
+        Promise.all(deleteMediaJobs).catch(() => {});
+      }
+    }
 
     // Community posts already reach every member via the community_<id> room
     // (handled by the gateway's commId branch). For a personal post there's no
@@ -364,8 +447,8 @@ export class PostsService {
       [userId],
     );
 
-    // Removed by someone else: the author is told. Fired here, at the point of
-    // deletion, so no caller can skip it by using a different entry point.
+    // 7. Removed by someone else: the author is told. Fired here, at the point of
+    //    deletion, so no caller can skip it by using a different entry point.
     if (authority !== 'author') {
       this.notifyContentRemoved({
         actorId: userId,

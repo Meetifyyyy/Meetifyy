@@ -4,8 +4,10 @@ import {
   ForbiddenException,
   Logger,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { PresenceService } from '../presence/presence.service';
@@ -19,6 +21,7 @@ import {
 } from './moderator-permissions';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
+import { MediaCleanupService } from '../uploads/media-cleanup.service';
 
 @Injectable()
 export class CommunitiesService implements OnModuleInit {
@@ -39,6 +42,7 @@ export class CommunitiesService implements OnModuleInit {
     private readonly blocksService: BlocksService,
     private readonly notificationsService: NotificationsService,
     private readonly notificationFactory: NotificationFactory,
+    @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {
     this.redis = this.redisService.getClient();
   }
@@ -406,7 +410,12 @@ export class CommunitiesService implements OnModuleInit {
             },
           },
           _count: {
-            select: { members: true, posts: true },
+            select: {
+              members: {
+                where: { user: { deletedAt: null, accountStatus: 'ACTIVE' } },
+              },
+              posts: { where: { deletedAt: null } },
+            },
           },
         },
       });
@@ -1019,26 +1028,42 @@ export class CommunitiesService implements OnModuleInit {
       }
     }
 
-    const created = await this.prisma.community.create({
-      data: createData,
-      include: {
-        members: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                username: true,
-                displayName: true,
-                avatar: true,
+    let created: any;
+    try {
+      created = await this.prisma.community.create({
+        data: createData,
+        include: {
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  displayName: true,
+                  avatar: true,
+                },
               },
             },
           },
+          _count: {
+            select: { members: true, posts: true },
+          },
         },
-        _count: {
-          select: { members: true, posts: true },
-        },
-      },
-    });
+      });
+    } catch (err) {
+      if (avatarVal) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(avatarVal, creatorId)
+          .catch(() => {});
+      }
+      if (coverVal) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(coverVal, creatorId)
+          .catch(() => {});
+      }
+      throw err;
+    }
+
     this.domainEventService.emit('community.created', {
       communityId: created.id,
       creatorId,
@@ -1055,7 +1080,7 @@ export class CommunitiesService implements OnModuleInit {
   ) {
     const community = await this.prisma.community.findUnique({
       where: { id: communityId },
-      select: { ownerId: true },
+      select: { ownerId: true, avatarKey: true, coverKey: true },
     });
     if (!community) throw new NotFoundException('Community not found');
 
@@ -1074,25 +1099,28 @@ export class CommunitiesService implements OnModuleInit {
 
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
-    const descriptionInput =
-      data.description !== undefined ? data.description : data.desc;
-    if (descriptionInput !== undefined)
-      updateData.description = descriptionInput;
-
+    if (data.description !== undefined || data.desc !== undefined) {
+      updateData.description = data.description || data.desc;
+    }
     if (data.isPrivate !== undefined) {
       updateData.isPrivate = Boolean(data.isPrivate);
-    } else if (data.privacy !== undefined) {
-      updateData.isPrivate = data.privacy === 'private';
+    }
+    if (data.color !== undefined) {
+      updateData.color =
+        typeof data.color === 'string' && data.color.trim()
+          ? data.color.trim().slice(0, 200)
+          : null;
     }
 
     const rawAvatarInput =
       data.avatarKey !== undefined ? data.avatarKey : data.avatar;
-    // Clearing the avatar (null / '') is legitimate and must still be honoured;
+    // Clearing the avatar is an explicit action (sending null or empty string);
     // only a non-empty value that cannot be a media reference is discarded.
     const avatarInput =
       rawAvatarInput === null || rawAvatarInput === ''
         ? null
         : this.sanitizeMediaRef(rawAvatarInput);
+
     if (rawAvatarInput !== undefined) {
       updateData.avatarKey = avatarInput;
       if (avatarInput && typeof avatarInput === 'string') {
@@ -1115,13 +1143,15 @@ export class CommunitiesService implements OnModuleInit {
             },
           };
         }
+      } else {
+        updateData.avatarMediaId = null;
       }
     }
 
     const coverInput =
       data.coverKey !== undefined ? data.coverKey : data.coverImage;
     if (coverInput !== undefined) {
-      updateData.coverKey = coverInput;
+      updateData.coverKey = coverInput || null;
       if (coverInput && typeof coverInput === 'string') {
         if (coverInput.startsWith('/api/media/')) {
           updateData.coverMedia = {
@@ -1142,13 +1172,63 @@ export class CommunitiesService implements OnModuleInit {
             },
           };
         }
+      } else {
+        updateData.coverMediaId = null;
       }
     }
 
-    const updated = await this.prisma.community.update({
-      where: { id: communityId },
-      data: updateData,
-    });
+    let updated: any;
+    try {
+      updated = await this.prisma.community.update({
+        where: { id: communityId },
+        data: updateData,
+      });
+    } catch (err) {
+      if (avatarInput) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(avatarInput, requestingUserId)
+          .catch(() => {});
+      }
+      if (coverInput) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(coverInput, requestingUserId)
+          .catch(() => {});
+      }
+      throw err;
+    }
+
+    if (
+      rawAvatarInput !== undefined &&
+      community.avatarKey &&
+      community.avatarKey !== updated.avatarKey
+    ) {
+      this.mediaCleanupService
+        ?.handleMediaReplacement(
+          'COMMUNITY_AVATAR',
+          communityId,
+          community.avatarKey,
+          updated.avatarKey,
+          requestingUserId,
+        )
+        .catch(() => {});
+    }
+
+    if (
+      coverInput !== undefined &&
+      community.coverKey &&
+      community.coverKey !== updated.coverKey
+    ) {
+      this.mediaCleanupService
+        ?.handleMediaReplacement(
+          'COMMUNITY_COVER',
+          communityId,
+          community.coverKey,
+          updated.coverKey,
+          requestingUserId,
+        )
+        .catch(() => {});
+    }
+
     this.domainEventService.emit('community.updated', {
       communityId,
       community: updated,
@@ -1424,12 +1504,23 @@ export class CommunitiesService implements OnModuleInit {
 
     const now = new Date();
 
-    // 1. Find all post IDs associated with this community
+    // 1. Find all post IDs (and media keys) BEFORE the transaction so we have
+    //    them for R2 cleanup after commit without doing extra I/O inside the tx.
     const communityPosts = await this.prisma.post.findMany({
       where: { communityId },
       select: { id: true },
     });
     const postIds = communityPosts.map((p) => p.id);
+
+    // Collect media object keys for every post so we can delete R2 files after.
+    const postMediaRows =
+      postIds.length > 0
+        ? await this.prisma.media.findMany({
+            where: { postId: { in: postIds } },
+            select: { objectKey: true },
+          })
+        : [];
+    const postMediaKeys = postMediaRows.map((m) => m.objectKey);
 
     await this.prisma.$transaction(async (tx) => {
       // ✅ 1. Soft-delete the community record
@@ -1445,13 +1536,28 @@ export class CommunitiesService implements OnModuleInit {
           data: { deletedAt: now },
         });
 
-        // ✅ 3. Soft-delete all comments on community posts
+        // ✅ 3. Fully scrub all comments on community posts — same behaviour
+        //       as a direct comment deletion so no original text survives in DB.
         await tx.comment.updateMany({
           where: { postId: { in: postIds } },
-          data: { deletedAt: now, isDeleted: true },
+          data: {
+            deletedAt: now,
+            isDeleted: true,
+            text: '',
+            mentions: Prisma.DbNull,
+            likeCount: 0,
+          },
         });
 
-        // ✅ 4. Clean up likes, bookmarks, shares, hashtags, mentions, poll votes for those posts
+        // Collect comment IDs for CommentLike + comment Mention cleanup.
+        const commentRows = await tx.comment.findMany({
+          where: { postId: { in: postIds } },
+          select: { id: true },
+        });
+        const commentIds = commentRows.map((c) => c.id);
+
+        // ✅ 4. Clean up likes, bookmarks, shares, hashtags, mentions, poll
+        //       votes, comment likes, and join requests for those posts.
         await tx.postLike.deleteMany({
           where: { postId: { in: postIds } },
         });
@@ -1468,9 +1574,21 @@ export class CommunitiesService implements OnModuleInit {
           where: { postId: { in: postIds } },
         });
 
+        // Post-source mentions (sourceId = postId)
         await tx.mention.deleteMany({
-          where: { sourceId: { in: postIds } },
+          where: { sourceId: { in: postIds }, sourceType: 'POST' },
         });
+
+        if (commentIds.length > 0) {
+          // Comment-source mentions (sourceId = commentId)
+          await tx.mention.deleteMany({
+            where: { sourceId: { in: commentIds }, sourceType: 'COMMENT' },
+          });
+          // CommentLike rows
+          await tx.commentLike.deleteMany({
+            where: { commentId: { in: commentIds } },
+          });
+        }
 
         await tx.pollVote.deleteMany({
           where: { postId: { in: postIds } },
@@ -1479,6 +1597,13 @@ export class CommunitiesService implements OnModuleInit {
         await tx.pollOption.deleteMany({
           where: { postId: { in: postIds } },
         });
+
+        // Remove post Media rows — R2 files deleted after transaction commits.
+        if (postMediaKeys.length > 0) {
+          await tx.media.deleteMany({
+            where: { objectKey: { in: postMediaKeys } },
+          });
+        }
 
         // ✅ 5. Clean up notifications related to these posts
         await tx.notification.deleteMany({
@@ -1498,9 +1623,25 @@ export class CommunitiesService implements OnModuleInit {
       await tx.communityMember.deleteMany({
         where: { communityId },
       });
+
+      // ✅ 8. Remove all community join requests
+      await tx.communityJoinRequest.deleteMany({
+        where: { communityId },
+      });
     });
 
-    // ✅ 8. Invalidate all relevant Redis & local memory caches
+    // ✅ 9. Queue physical R2 objects for durable deletion AFTER commit.
+    const mediaKeysToClean = [
+      community.avatarKey,
+      community.coverKey,
+      ...postMediaKeys,
+    ].filter(Boolean) as string[];
+
+    if (mediaKeysToClean.length > 0 && this.mediaCleanupService) {
+      this.mediaCleanupService.queueMediaDeletion(mediaKeysToClean);
+    }
+
+    // ✅ 10. Invalidate all relevant Redis & local memory caches
     await this.invalidateCommunityCache(
       communityId,
       community.collegeId ?? undefined,
@@ -1526,7 +1667,7 @@ export class CommunitiesService implements OnModuleInit {
       }
     }
 
-    // ✅ 9. Emit real-time domain event so WebSockets notify all clients immediately
+    // ✅ 11. Emit real-time domain event so WebSockets notify all clients immediately
     this.domainEventService.emit('community.deleted', {
       communityId,
       deletedAt: now.toISOString(),
@@ -1534,4 +1675,122 @@ export class CommunitiesService implements OnModuleInit {
 
     return { success: true, communityId };
   }
+
+  /**
+   * Gracefully handles communities owned by a deleting user.
+   * If other members exist: reassigns ownership to the oldest moderator/member.
+   * If user was sole member: soft-deletes the community and its resources.
+   * Runs as part of the user deletion database transaction.
+   */
+  async reassignOrDeleteForUser(
+    userId: string,
+    tx: any,
+    now = new Date(),
+  ): Promise<{ mediaKeysToClean: string[] }> {
+    const mediaKeysToClean: string[] = [];
+
+    const ownedCommunities = await tx.community.findMany({
+      where: { ownerId: userId, deletedAt: null },
+      select: { id: true, name: true, avatarKey: true, coverKey: true },
+    });
+
+    for (const comm of ownedCommunities) {
+      // Find candidate successors, prioritizing MODERATOR first, then oldest MEMBER.
+      const candidates = await tx.communityMember.findMany({
+        where: { communityId: comm.id, userId: { not: userId } },
+        orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
+        select: { userId: true, role: true },
+        take: 1,
+      });
+
+      if (candidates.length > 0) {
+        const successor = candidates[0];
+        // Transfer ownership
+        await tx.community.update({
+          where: { id: comm.id },
+          data: { ownerId: successor.userId },
+        });
+        await tx.communityMember.update({
+          where: {
+            userId_communityId: {
+              userId: successor.userId,
+              communityId: comm.id,
+            },
+          },
+          data: { role: 'OWNER' },
+        });
+        this.logger.log(
+          `Transferred ownership of community ${comm.id} (${comm.name}) from ${userId} to ${successor.userId}`,
+        );
+      } else {
+        // No other members: soft-delete the empty community and its posts
+        await tx.community.update({
+          where: { id: comm.id },
+          data: { deletedAt: now, memberCount: 0, ownerId: null },
+        });
+
+        // Find community posts to clean
+        const postRows = await tx.post.findMany({
+          where: { communityId: comm.id },
+          select: { id: true },
+        });
+        const postIds = postRows.map((p: any) => p.id);
+
+        if (postIds.length > 0) {
+          await tx.post.updateMany({
+            where: { id: { in: postIds } },
+            data: { deletedAt: now },
+          });
+          await tx.comment.updateMany({
+            where: { postId: { in: postIds } },
+            data: {
+              deletedAt: now,
+              isDeleted: true,
+              text: '',
+              mentions: Prisma.DbNull,
+              likeCount: 0,
+            },
+          });
+          await tx.postLike.deleteMany({ where: { postId: { in: postIds } } });
+          await tx.postBookmark.deleteMany({
+            where: { postId: { in: postIds } },
+          });
+          await tx.postShare.deleteMany({ where: { postId: { in: postIds } } });
+          await tx.postHashtag.deleteMany({
+            where: { postId: { in: postIds } },
+          });
+          await tx.mention.deleteMany({
+            where: { sourceId: { in: postIds }, sourceType: 'POST' },
+          });
+          await tx.pollVote.deleteMany({ where: { postId: { in: postIds } } });
+          await tx.pollOption.deleteMany({
+            where: { postId: { in: postIds } },
+          });
+          await tx.notification.deleteMany({
+            where: { entityId: { in: postIds } },
+          });
+
+          const commPostMedia = await tx.media.findMany({
+            where: { postId: { in: postIds } },
+            select: { objectKey: true },
+          });
+          commPostMedia.forEach((m: any) => mediaKeysToClean.push(m.objectKey));
+        }
+
+        if (comm.avatarKey) mediaKeysToClean.push(comm.avatarKey);
+        if (comm.coverKey) mediaKeysToClean.push(comm.coverKey);
+
+        await tx.communityJoinRequest.deleteMany({
+          where: { communityId: comm.id },
+        });
+        await tx.communityMember.deleteMany({
+          where: { communityId: comm.id },
+        });
+      }
+    }
+
+    return { mediaKeysToClean };
+  }
 }
+
+

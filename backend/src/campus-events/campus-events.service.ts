@@ -15,9 +15,10 @@ import {
   CampusEventScope,
 } from './dto/campus-event.dto';
 import {
-  sanitizeRegistrationUrl,
   assertCoherentEventTimes,
+  sanitizeRegistrationUrl,
 } from './campus-event.util';
+import { MediaCleanupService } from '../uploads/media-cleanup.service';
 
 // Columns returned for cards/detail. Kept lean to avoid over-fetching.
 const EVENT_SELECT = {
@@ -49,6 +50,7 @@ export class CampusEventsService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly redisService?: RedisService,
+    @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {
     this.redis = this.redisService?.getClient() ?? null;
   }
@@ -287,23 +289,33 @@ export class CampusEventsService {
 
     const posterKey = await this.resolvePosterKey(dto.posterUrl, user.id);
 
-    const created = await this.prisma.campusEvent.create({
-      data: {
-        campusId: user.collegeId!,
-        title: dto.title,
-        description: dto.description ?? null,
-        posterUrl: posterKey,
-        eventDate,
-        startTime,
-        endTime,
-        hostedBy: dto.hostedBy,
-        venue: dto.venue.trim(),
-        registrationUrl,
-        createdBy: user.id,
-        status: 'DRAFT',
-      },
-      select: EVENT_SELECT,
-    });
+    let created: any;
+    try {
+      created = await this.prisma.campusEvent.create({
+        data: {
+          campusId: user.collegeId!,
+          title: dto.title,
+          description: dto.description ?? null,
+          posterUrl: posterKey,
+          eventDate,
+          startTime,
+          endTime,
+          hostedBy: dto.hostedBy,
+          venue: dto.venue.trim(),
+          registrationUrl,
+          createdBy: user.id,
+          status: 'DRAFT',
+        },
+        select: EVENT_SELECT,
+      });
+    } catch (err) {
+      if (posterKey) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(posterKey, user.id)
+          .catch(() => {});
+      }
+      throw err;
+    }
 
     await this.invalidateCampus(user.collegeId!);
     return created;
@@ -367,11 +379,37 @@ export class CampusEventsService {
       data.endTime = endTime;
     }
 
-    const updated = await this.prisma.campusEvent.update({
-      where: { id: eventId },
-      data,
-      select: EVENT_SELECT,
-    });
+    let updated: any;
+    try {
+      updated = await this.prisma.campusEvent.update({
+        where: { id: eventId },
+        data,
+        select: EVENT_SELECT,
+      });
+    } catch (err) {
+      if (data.posterUrl) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(data.posterUrl, userId)
+          .catch(() => {});
+      }
+      throw err;
+    }
+
+    if (
+      data.posterUrl !== undefined &&
+      event.posterUrl &&
+      event.posterUrl !== updated.posterUrl
+    ) {
+      this.mediaCleanupService
+        ?.handleMediaReplacement(
+          'CAMPUS_EVENT_POSTER',
+          eventId,
+          event.posterUrl,
+          updated.posterUrl,
+          userId,
+        )
+        .catch(() => {});
+    }
 
     await this.invalidateCampus(event.campusId);
     return updated;
@@ -408,6 +446,9 @@ export class CampusEventsService {
       where: { id: eventId },
       data: { deletedAt: new Date() },
     });
+    if (event.posterUrl && this.mediaCleanupService) {
+      this.mediaCleanupService.queueMediaDeletion([event.posterUrl]);
+    }
     await this.invalidateCampus(event.campusId);
     return { success: true };
   }

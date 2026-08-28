@@ -15,6 +15,7 @@ import { DomainEventService } from '../../events/domain-event.service';
 import { RedisService } from '../../redis/redis.service';
 import { generatePublicId } from '../../common/utils/public-id.util';
 import { MentionsService } from '../../mentions/mentions.service';
+import { MediaCleanupService } from '../../uploads/media-cleanup.service';
 
 @Injectable()
 export class GroupChatsService extends MessagingCoreService {
@@ -29,6 +30,7 @@ export class GroupChatsService extends MessagingCoreService {
     // notification fan-out runs through it on every group send.
     blocksService: BlocksService,
     @Optional() private readonly redisService?: RedisService,
+    @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {
     super(
       prisma,
@@ -550,22 +552,49 @@ export class GroupChatsService extends MessagingCoreService {
       avatarVal = undefined;
     }
 
-    const [updated, participantRows] = await Promise.all([
-      this.prisma.conversation.update({
-        where: { id: realConvId },
-        data: {
-          ...(data.name !== undefined ? { name: data.name } : {}),
-          ...(data.description !== undefined
-            ? { description: data.description }
-            : {}),
-          ...(avatarVal !== undefined ? { avatarKey: avatarVal } : {}),
-        },
-      }),
-      this.prisma.conversationParticipant.findMany({
-        where: { conversationId: realConvId, leftAt: null, deletedAt: null },
-        select: { userId: true },
-      }),
-    ]);
+    let updated: any;
+    let participantRows: any[];
+    try {
+      [updated, participantRows] = await Promise.all([
+        this.prisma.conversation.update({
+          where: { id: realConvId },
+          data: {
+            ...(data.name !== undefined ? { name: data.name } : {}),
+            ...(data.description !== undefined
+              ? { description: data.description }
+              : {}),
+            ...(avatarVal !== undefined ? { avatarKey: avatarVal } : {}),
+          },
+        }),
+        this.prisma.conversationParticipant.findMany({
+          where: { conversationId: realConvId, leftAt: null, deletedAt: null },
+          select: { userId: true },
+        }),
+      ]);
+    } catch (err) {
+      if (avatarVal) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(avatarVal, userId)
+          .catch(() => {});
+      }
+      throw err;
+    }
+
+    if (
+      avatarVal !== undefined &&
+      conversation?.avatarKey &&
+      conversation.avatarKey !== updated.avatarKey
+    ) {
+      this.mediaCleanupService
+        ?.handleMediaReplacement(
+          'GROUP_AVATAR',
+          realConvId,
+          conversation.avatarKey,
+          updated.avatarKey,
+          userId,
+        )
+        .catch(() => {});
+    }
 
     const participantIds = participantRows.map((p) => p.userId);
     this.invalidateUserConversationsCache(participantIds);

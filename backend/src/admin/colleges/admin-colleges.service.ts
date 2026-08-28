@@ -6,12 +6,15 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DomainValidatorService } from '../../common/services/domain-validator.service';
+import { MediaCleanupService } from '../../uploads/media-cleanup.service';
+import { Optional } from '@nestjs/common';
 
 @Injectable()
 export class AdminCollegesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly domainValidatorService: DomainValidatorService,
+    @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {}
 
   private async notifyCacheChange() {
@@ -192,33 +195,46 @@ export class AdminCollegesService {
       );
     }
 
-    await this.deleteSoftDeletedDomains(cleanedDomains);
-
-    const created = await this.prisma.college.create({
-      data: {
-        name: dto.name.trim(),
-        shortName: dto.shortName?.trim() || null,
-        slug,
-        city: dto.city?.trim() || null,
-        state: dto.state?.trim() || null,
-        country: dto.country?.trim() || null,
-        logoKey: dto.logoKey || null,
-        bannerKey: dto.bannerKey || null,
-        isPrivate: dto.isPrivate || false,
-        status: 'APPROVED',
-        domains: {
-          create: cleanedDomains.map((domain, index) => ({
-            domain,
-            isPrimary: index === 0,
-            status: 'ACTIVE',
-            isVerified: true,
-          })),
+    let created: any;
+    try {
+      created = await this.prisma.college.create({
+        data: {
+          name: dto.name.trim(),
+          shortName: dto.shortName?.trim() || null,
+          slug,
+          city: dto.city?.trim() || null,
+          state: dto.state?.trim() || null,
+          country: dto.country?.trim() || null,
+          logoKey: dto.logoKey || null,
+          bannerKey: dto.bannerKey || null,
+          isPrivate: dto.isPrivate || false,
+          status: 'APPROVED',
+          domains: {
+            create: cleanedDomains.map((domain, index) => ({
+              domain,
+              isPrimary: index === 0,
+              status: 'ACTIVE',
+              isVerified: true,
+            })),
+          },
         },
-      },
-      include: {
-        domains: true,
-      },
-    });
+        include: {
+          domains: true,
+        },
+      });
+    } catch (err) {
+      if (dto.logoKey) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(dto.logoKey)
+          .catch(() => {});
+      }
+      if (dto.bannerKey) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(dto.bannerKey)
+          .catch(() => {});
+      }
+      throw err;
+    }
 
     await this.notifyCacheChange();
     return created;
@@ -315,11 +331,56 @@ export class AdminCollegesService {
       }
     }
 
-    const updated = await this.prisma.college.update({
-      where: { id },
-      data,
-      include: { domains: true },
-    });
+    let updated: any;
+    try {
+      updated = await this.prisma.college.update({
+        where: { id },
+        data,
+        include: { domains: true },
+      });
+    } catch (err) {
+      if (dto.logoKey) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(dto.logoKey)
+          .catch(() => {});
+      }
+      if (dto.bannerKey) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(dto.bannerKey)
+          .catch(() => {});
+      }
+      throw err;
+    }
+
+    if (
+      dto.logoKey !== undefined &&
+      existing.logoKey &&
+      existing.logoKey !== updated.logoKey
+    ) {
+      this.mediaCleanupService
+        ?.handleMediaReplacement(
+          'COLLEGE_LOGO',
+          id,
+          existing.logoKey,
+          updated.logoKey,
+        )
+        .catch(() => {});
+    }
+
+    if (
+      dto.bannerKey !== undefined &&
+      existing.bannerKey &&
+      existing.bannerKey !== updated.bannerKey
+    ) {
+      this.mediaCleanupService
+        ?.handleMediaReplacement(
+          'COLLEGE_BANNER',
+          id,
+          existing.bannerKey,
+          updated.bannerKey,
+        )
+        .catch(() => {});
+    }
 
     await this.notifyCacheChange();
     return updated;

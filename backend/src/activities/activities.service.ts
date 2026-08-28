@@ -23,6 +23,7 @@ import {
 } from './activity-authorization.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { RedisService } from '../redis/redis.service';
+import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { ActivityVisibility } from '@prisma/client';
 
 @Injectable()
@@ -41,6 +42,7 @@ export class ActivitiesService implements OnModuleInit {
     @Optional()
     @InjectQueue(NOTIFICATIONS_QUEUE)
     private readonly notifQueue?: Queue,
+    @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {
     this.redis = this.redisService?.getClient() ?? null;
   }
@@ -1550,41 +1552,51 @@ export class ActivitiesService implements OnModuleInit {
       },
     };
 
-    const createdActivity = await this.prisma.crewActivity.create({
-      data: createData,
-      select: {
-        id: true,
-        creatorId: true,
-        title: true,
-        description: true,
-        coverImage: true,
-        coverColor: true,
-        startDate: true,
-        endDate: true,
-        location: true,
-        status: true,
-        visibility: true,
-        shareToCampus: true,
-        maxMembers: true,
-        createdAt: true,
-        updatedAt: true,
-        members: {
-          take: 5,
-          select: {
-            userId: true,
-            status: true,
-            user: {
-              select: {
-                id: true,
-                username: true,
-                displayName: true,
-                avatar: true,
+    let createdActivity: any;
+    try {
+      createdActivity = await this.prisma.crewActivity.create({
+        data: createData,
+        select: {
+          id: true,
+          creatorId: true,
+          title: true,
+          description: true,
+          coverImage: true,
+          coverColor: true,
+          startDate: true,
+          endDate: true,
+          location: true,
+          status: true,
+          visibility: true,
+          shareToCampus: true,
+          maxMembers: true,
+          createdAt: true,
+          updatedAt: true,
+          members: {
+            take: 5,
+            select: {
+              userId: true,
+              status: true,
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  displayName: true,
+                  avatar: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
+    } catch (err) {
+      if (data.coverImage) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(data.coverImage, creatorId)
+          .catch(() => {});
+      }
+      throw err;
+    }
 
     setImmediate(async () => {
       this.domainEventService.emit('activity.created', {
