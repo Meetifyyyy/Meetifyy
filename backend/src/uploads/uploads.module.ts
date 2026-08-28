@@ -2,6 +2,7 @@ import { Module, Global } from '@nestjs/common';
 import { UploadsController } from './uploads.controller';
 import { StorageService } from './uploads.service';
 import { DefaultAssetsService } from './default-assets.service';
+import { MediaCleanupService } from './media-cleanup.service';
 import { CloudflareR2Provider } from './providers/cloudflare-r2.provider';
 import { PrismaModule } from '../prisma/prisma.module';
 
@@ -17,7 +18,13 @@ import { PrismaModule } from '../prisma/prisma.module';
     },
     StorageService,
     DefaultAssetsService,
+    MediaCleanupService,
   ],
-  exports: [StorageService, DefaultAssetsService, 'STORAGE_PROVIDER'],
+  exports: [
+    StorageService,
+    DefaultAssetsService,
+    MediaCleanupService,
+    'STORAGE_PROVIDER',
+  ],
 })
 export class UploadsModule {}
