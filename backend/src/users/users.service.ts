@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
@@ -25,6 +26,8 @@ import {
 import { clearAuthSyncCache } from '../auth/auth.service';
 import { validateBirthday } from '../common/utils/birthday-validation.util';
 import { AcademicsService } from '../academics/academics.service';
+import { MediaCleanupService } from '../uploads/media-cleanup.service';
+import { JwtGuard } from '../common/guards/jwt.guard';
 
 @Injectable()
 export class UsersService {
@@ -39,6 +42,7 @@ export class UsersService {
     private readonly presenceService: PresenceService,
     private readonly academicsService: AcademicsService,
     @InjectQueue(NOTIFICATIONS_QUEUE) private readonly notifQueue: Queue,
+    @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {}
 
   /**
@@ -50,9 +54,12 @@ export class UsersService {
    * each other's status here.
    */
   async getAllUsers(limit: number, offset: number, currentUserId?: string) {
-    const where = await this.blocksService.injectBlockFilter(
+    const where: any = await this.blocksService.injectBlockFilter(
       currentUserId,
-      {},
+      {
+        accountStatus: 'ACTIVE',
+        deletedAt: null,
+      },
       'id',
     );
     const users = await this.prisma.user.findMany({
@@ -132,11 +139,15 @@ export class UsersService {
       excludeUserId = userIdOrCollegeId;
     }
 
+    const where: any = {
+      collegeId,
+      accountStatus: 'ACTIVE',
+      deletedAt: null,
+      ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+    };
+
     const users = await this.prisma.user.findMany({
-      where: {
-        collegeId,
-        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
-      },
+      where,
       take: limit,
       skip: offset,
       select: {
@@ -335,11 +346,14 @@ export class UsersService {
         branch: true,
         passingYear: true,
         profileCompleted: true,
+        deletedAt: true,
         settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
       },
     });
     // Same body as the block case below, so the two are indistinguishable.
-    if (!user) throw new NotFoundException("This profile isn't available.");
+    // Also return 404 for soft-deleted users so no stale data is served.
+    if (!user || user.deletedAt)
+      throw new NotFoundException("This profile isn't available.");
 
     if (
       currentUserId &&
@@ -397,8 +411,16 @@ export class UsersService {
         },
         _count: {
           select: {
-            followers: true,
-            following: true,
+            followers: {
+              where: {
+                follower: { deletedAt: null, accountStatus: 'ACTIVE' },
+              },
+            },
+            following: {
+              where: {
+                following: { deletedAt: null, accountStatus: 'ACTIVE' },
+              },
+            },
             posts: {
               where: {
                 deletedAt: null,
@@ -410,7 +432,7 @@ export class UsersService {
       },
     });
 
-    if (!targetUser) {
+    if (!targetUser || targetUser.deletedAt) {
       throw new NotFoundException("This profile isn't available.");
     }
 
@@ -911,7 +933,7 @@ export class UsersService {
     }
 
     if (avatar !== undefined) {
-      updateData.avatar = avatar;
+      updateData.avatar = avatar || null;
       if (avatar && typeof avatar === 'string') {
         if (avatar.startsWith('/api/media/')) {
           const objectKey = avatar.replace('/api/media/', '');
@@ -931,11 +953,13 @@ export class UsersService {
             },
           };
         }
+      } else {
+        updateData.avatarMediaId = null;
       }
     }
 
     if (cover !== undefined) {
-      updateData.cover = cover;
+      updateData.cover = cover || null;
       if (cover && typeof cover === 'string') {
         if (cover.startsWith('/api/media/')) {
           const objectKey = cover.replace('/api/media/', '');
@@ -955,6 +979,8 @@ export class UsersService {
             },
           };
         }
+      } else {
+        updateData.coverMediaId = null;
       }
     }
 
@@ -1030,40 +1056,95 @@ export class UsersService {
 
     clearAuthSyncCache(userId);
 
-    const updated = await this.prisma.user.upsert({
-      where: { id: userId },
-      update: updateData,
-      create: {
-        id: userId,
-        username: fallbackUsername,
-        displayName: fallbackDisplayName,
-        email: realEmail,
-        ...updateData,
-        notificationPrefs: {
-          create: {},
+    const userBefore =
+      avatar !== undefined || cover !== undefined
+        ? await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { avatar: true, cover: true },
+          })
+        : null;
+
+    let updated: any;
+    try {
+      updated = await this.prisma.user.upsert({
+        where: { id: userId },
+        update: updateData,
+        create: {
+          id: userId,
+          username: fallbackUsername,
+          displayName: fallbackDisplayName,
+          email: realEmail,
+          ...updateData,
+          notificationPrefs: {
+            create: {},
+          },
         },
-      },
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-        isCampusRep: true,
-        avatar: true,
-        collegeId: true,
-        college: { select: { id: true, name: true } },
-        cover: true,
-        bio: true,
-        birthday: true,
-        course: true,
-        branch: true,
-        passingYear: true,
-        location: true,
-        interests: true,
-        profileCompleted: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          isCampusRep: true,
+          avatar: true,
+          collegeId: true,
+          college: { select: { id: true, name: true } },
+          cover: true,
+          bio: true,
+          birthday: true,
+          course: true,
+          branch: true,
+          passingYear: true,
+          location: true,
+          interests: true,
+          profileCompleted: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    } catch (err) {
+      if (avatar !== undefined && avatar) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(avatar, userId)
+          .catch(() => {});
+      }
+      if (cover !== undefined && cover) {
+        this.mediaCleanupService
+          ?.discardFailedNewUpload(cover, userId)
+          .catch(() => {});
+      }
+      throw err;
+    }
+
+    if (
+      avatar !== undefined &&
+      userBefore?.avatar &&
+      userBefore.avatar !== updated.avatar
+    ) {
+      this.mediaCleanupService
+        ?.handleMediaReplacement(
+          'USER_AVATAR',
+          userId,
+          userBefore.avatar,
+          updated.avatar,
+          userId,
+        )
+        .catch(() => {});
+    }
+
+    if (
+      cover !== undefined &&
+      userBefore?.cover &&
+      userBefore.cover !== updated.cover
+    ) {
+      this.mediaCleanupService
+        ?.handleMediaReplacement(
+          'USER_COVER',
+          userId,
+          userBefore.cover,
+          updated.cover,
+          userId,
+        )
+        .catch(() => {});
+    }
 
     // A changed avatar or cover has to reach everyone else, not just the person
     // who changed it. Both are denormalised into most payloads the app renders
@@ -1666,4 +1747,340 @@ export class UsersService {
 
     return results;
   }
+
+  /**
+   * Self-service account deletion.
+   *
+   * Complete Lifecycle:
+   *  1. Verify user exists and is not already deleted.
+   *  2. Immediately revoke user token in JwtGuard to prevent concurrent writes.
+   *  3. DB transaction:
+   *     a. Anonymize + soft-delete user row (accountStatus = 'DELETED', deletedAt = now).
+   *     b. Soft-delete all posts authored by the user & scrub their comments.
+   *     c. Reassign ownership of user-owned communities or soft-delete if sole member.
+   *     d. Hard-delete all disposable user-level relational data.
+   *     e. Scrub user's comments across all other posts.
+   *  4. Post-commit cleanup:
+   *     - Queue avatar, cover, and post media for durable R2 deletion with retries.
+   *     - Clear auth sync cache & remove Redis presence.
+   *     - Revoke Supabase auth identity.
+   *  5. Emit user.deleted domain event.
+   */
+  async deleteAccount(userId: string): Promise<{ success: true }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        avatar: true,
+        cover: true,
+        deletedAt: true,
+      },
+    });
+
+    if (!user || user.deletedAt) {
+      throw new NotFoundException("This profile isn't available.");
+    }
+
+    // Immediately revoke the user token so no new authenticated requests succeed
+    JwtGuard.revokeUser(userId);
+    clearAuthSyncCache(userId);
+
+    // Capture media keys before the transaction
+    const avatarKey = user.avatar
+      ? this.mediaCleanupService?.extractStorageKey(user.avatar) ?? null
+      : null;
+    const coverKey = user.cover
+      ? this.mediaCleanupService?.extractStorageKey(user.cover) ?? null
+      : null;
+
+    const allMediaKeysToClean: string[] = [];
+    if (avatarKey) allMediaKeysToClean.push(avatarKey);
+    if (coverKey) allMediaKeysToClean.push(coverKey);
+
+    const now = new Date();
+    const anonSuffix = userId.slice(0, 8);
+    const anonUsername = `deleted_${anonSuffix}_${Date.now()}`;
+    const anonEmail = `deleted_${userId}@deleted.meetifyy`;
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Anonymize and mark user as DELETED
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          deletedAt: now,
+          accountStatus: 'DELETED',
+          displayName: 'Deleted User',
+          username: anonUsername,
+          email: anonEmail,
+          collegeEmail: null,
+          avatar: null,
+          cover: null,
+          bio: null,
+          birthday: null,
+          interests: [],
+          location: null,
+          profileCompleted: false,
+        },
+      });
+
+      // 2. Soft-delete all posts authored by this user & clean their engagement relations
+      const userPosts = await tx.post.findMany({
+        where: { authorId: userId, deletedAt: null },
+        select: { id: true },
+      });
+      const userPostIds = userPosts.map((p: any) => p.id);
+
+      if (userPostIds.length > 0) {
+        await tx.post.updateMany({
+          where: { id: { in: userPostIds } },
+          data: { deletedAt: now },
+        });
+
+        await tx.comment.updateMany({
+          where: { postId: { in: userPostIds } },
+          data: {
+            deletedAt: now,
+            isDeleted: true,
+            text: '',
+            mentions: Prisma.DbNull,
+            likeCount: 0,
+          },
+        });
+
+        await tx.postLike.deleteMany({ where: { postId: { in: userPostIds } } });
+        await tx.postBookmark.deleteMany({
+          where: { postId: { in: userPostIds } },
+        });
+        await tx.postShare.deleteMany({
+          where: { postId: { in: userPostIds } },
+        });
+        await tx.postHashtag.deleteMany({
+          where: { postId: { in: userPostIds } },
+        });
+        await tx.mention.deleteMany({
+          where: { sourceId: { in: userPostIds }, sourceType: 'POST' },
+        });
+        await tx.pollVote.deleteMany({
+          where: { postId: { in: userPostIds } },
+        });
+        await tx.pollOption.deleteMany({
+          where: { postId: { in: userPostIds } },
+        });
+        await tx.notification.deleteMany({
+          where: { entityId: { in: userPostIds } },
+        });
+
+        // Collect post media keys
+        const userPostMedia = await tx.media.findMany({
+          where: { postId: { in: userPostIds } },
+          select: { objectKey: true },
+        });
+        userPostMedia.forEach((m: any) => allMediaKeysToClean.push(m.objectKey));
+      }
+
+      // 3. Gracefully handle user-owned communities (transfer or delete)
+      const ownedCommunities = await tx.community.findMany({
+        where: { ownerId: userId, deletedAt: null },
+        select: { id: true, name: true, avatarKey: true, coverKey: true },
+      });
+
+      for (const comm of ownedCommunities) {
+        const candidates = await tx.communityMember.findMany({
+          where: { communityId: comm.id, userId: { not: userId } },
+          orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
+          select: { userId: true, role: true },
+          take: 1,
+        });
+
+        if (candidates.length > 0) {
+          const successor = candidates[0];
+          await tx.community.update({
+            where: { id: comm.id },
+            data: { ownerId: successor.userId },
+          });
+          await tx.communityMember.update({
+            where: {
+              userId_communityId: {
+                userId: successor.userId,
+                communityId: comm.id,
+              },
+            },
+            data: { role: 'OWNER' },
+          });
+          this.logger.log(
+            `Transferred ownership of community ${comm.id} from ${userId} to ${successor.userId}`,
+          );
+        } else {
+          // Sole member: soft-delete the community and its posts
+          await tx.community.update({
+            where: { id: comm.id },
+            data: { deletedAt: now, memberCount: 0, ownerId: null },
+          });
+
+          const commPosts = await tx.post.findMany({
+            where: { communityId: comm.id, deletedAt: null },
+            select: { id: true },
+          });
+          const commPostIds = commPosts.map((p: any) => p.id);
+
+          if (commPostIds.length > 0) {
+            await tx.post.updateMany({
+              where: { id: { in: commPostIds } },
+              data: { deletedAt: now },
+            });
+            await tx.comment.updateMany({
+              where: { postId: { in: commPostIds } },
+              data: {
+                deletedAt: now,
+                isDeleted: true,
+                text: '',
+                mentions: Prisma.DbNull,
+                likeCount: 0,
+              },
+            });
+            await tx.postLike.deleteMany({
+              where: { postId: { in: commPostIds } },
+            });
+            await tx.postBookmark.deleteMany({
+              where: { postId: { in: commPostIds } },
+            });
+            await tx.postShare.deleteMany({
+              where: { postId: { in: commPostIds } },
+            });
+            await tx.postHashtag.deleteMany({
+              where: { postId: { in: commPostIds } },
+            });
+            await tx.mention.deleteMany({
+              where: { sourceId: { in: commPostIds }, sourceType: 'POST' },
+            });
+            await tx.pollVote.deleteMany({
+              where: { postId: { in: commPostIds } },
+            });
+            await tx.pollOption.deleteMany({
+              where: { postId: { in: commPostIds } },
+            });
+            await tx.notification.deleteMany({
+              where: { entityId: { in: commPostIds } },
+            });
+
+            const commMedia = await tx.media.findMany({
+              where: { postId: { in: commPostIds } },
+              select: { objectKey: true },
+            });
+            commMedia.forEach((m: any) => allMediaKeysToClean.push(m.objectKey));
+          }
+
+          if (comm.avatarKey) allMediaKeysToClean.push(comm.avatarKey);
+          if (comm.coverKey) allMediaKeysToClean.push(comm.coverKey);
+
+          await tx.communityJoinRequest.deleteMany({
+            where: { communityId: comm.id },
+          });
+          await tx.communityMember.deleteMany({
+            where: { communityId: comm.id },
+          });
+        }
+      }
+
+      // 4. Hard-delete all disposable user-level relationships
+      await tx.follow.deleteMany({
+        where: { OR: [{ followerId: userId }, { followingId: userId }] },
+      });
+      await tx.postBookmark.deleteMany({ where: { userId } });
+      await tx.postLike.deleteMany({ where: { userId } });
+      await tx.commentLike.deleteMany({ where: { userId } });
+      await tx.activityBookmark.deleteMany({ where: { userId } });
+      await tx.activityInvitation.deleteMany({
+        where: { OR: [{ inviterId: userId }, { inviteeId: userId }] },
+      });
+      await tx.crewActivityMember.deleteMany({ where: { userId } });
+      await tx.matchQueueEntry.deleteMany({ where: { userId } });
+      await tx.block.deleteMany({
+        where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+      });
+      await tx.mute.deleteMany({ where: { muterId: userId } });
+      await tx.notification.deleteMany({ where: { recipientId: userId } });
+      await tx.communityMember.deleteMany({ where: { userId } });
+      await tx.communityJoinRequest.deleteMany({ where: { userId } });
+      await tx.recentSearch.deleteMany({ where: { userId } });
+      await tx.deletedMessage.deleteMany({ where: { userId } });
+      await tx.messageReaction.deleteMany({ where: { userId } });
+      await tx.conversationJoinRequest.deleteMany({ where: { userId } });
+      await tx.notificationPreferences.deleteMany({ where: { userId } });
+      await tx.userSettings.deleteMany({ where: { userId } });
+
+      // 5. Scrub the user's comments across all other posts
+      await tx.comment.updateMany({
+        where: { authorId: userId, isDeleted: false },
+        data: {
+          isDeleted: true,
+          deletedAt: now,
+          text: '',
+          mentions: Prisma.DbNull,
+          likeCount: 0,
+        },
+      });
+    });
+
+    // 6. Post-commit: Queue durable R2 media deletions with automatic retries
+    if (allMediaKeysToClean.length > 0 && this.mediaCleanupService) {
+      this.mediaCleanupService.queueMediaDeletion(allMediaKeysToClean);
+    }
+
+    // 7. Presence cleanup
+    this.presenceService.removePresence(userId).catch((err) => {
+      this.logger.warn(
+        `Presence removal failed for deleted user ${userId}: ${err?.message || err}`,
+      );
+    });
+
+    // 8. Supabase Auth identity deletion
+    this.deleteSupabaseUser(userId);
+
+    // 9. Invalidate Redis user-profile cache keys if present
+    const redis = this.redisService.getClient();
+    if (redis) {
+      redis
+        .del(`user:${userId}`, `profile:${userId}`)
+        .catch(() => {});
+    }
+
+    this.domainEventService.emit('user.deleted', { userId });
+
+    return { success: true };
+  }
+
+  /** Fire-and-forget helper: deletes the Supabase auth identity with retry capability. */
+  private deleteSupabaseUser(userId: string): void {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      this.logger.warn(
+        `Supabase env vars not set — skipping auth identity deletion for user ${userId}`,
+      );
+      return;
+    }
+
+    import('@supabase/supabase-js')
+      .then(({ createClient }) => {
+        const admin = createClient(supabaseUrl, serviceRoleKey);
+        return admin.auth.admin.deleteUser(userId);
+      })
+      .then(({ error }) => {
+        if (error) {
+          this.logger.warn(
+            `Supabase auth deletion failed for user ${userId}: ${error.message}`,
+          );
+        } else {
+          this.logger.log(`Supabase auth identity removed for user ${userId}`);
+        }
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `Supabase auth deletion threw for user ${userId}: ${err?.message || err}`,
+        );
+      });
+  }
 }
+

@@ -151,6 +151,14 @@ export class UsersController {
     return this.usersService.updateSettings(req.user.id, data);
   }
 
+  // NOTE: registered BEFORE the catch-all `:username` route so the literal
+  // string "me" is never treated as a profile lookup.
+  @Delete('me')
+  @UseGuards(JwtGuard)
+  async deleteAccount(@Req() req: any) {
+    return this.usersService.deleteAccount(req.user.id);
+  }
+
   @Get(':username')
   @UseGuards(JwtGuard)
   @CacheControl('private, no-cache')

@@ -1351,6 +1351,7 @@ enum AccountStatus {
   ACTIVE
   SUSPENDED
   BANNED
+  DELETED
 }
 
 enum NotificationType {

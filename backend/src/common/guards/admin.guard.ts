@@ -52,9 +52,10 @@ export class AdminGuard implements CanActivate {
 
     if (
       dbUser.accountStatus === 'BANNED' ||
-      dbUser.accountStatus === 'SUSPENDED'
+      dbUser.accountStatus === 'SUSPENDED' ||
+      dbUser.accountStatus === 'DELETED'
     ) {
-      throw new ForbiddenException('Account suspended');
+      throw new ForbiddenException('Account suspended or deactivated');
     }
 
     const isAuthorizedRole =

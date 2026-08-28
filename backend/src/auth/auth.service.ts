@@ -1,6 +1,7 @@
 import {
   Injectable,
   UnauthorizedException,
+  ForbiddenException,
   NotFoundException,
   ConflictException,
   BadRequestException,
@@ -156,6 +157,13 @@ export class AuthService {
 
     if (rows && rows.length > 0) {
       const row = rows[0];
+
+      if (row.accountStatus === 'DELETED' || row.deletedAt) {
+        throw new UnauthorizedException('Account has been deleted');
+      }
+      if (row.accountStatus === 'BANNED' || row.accountStatus === 'SUSPENDED') {
+        throw new ForbiddenException('Account has been suspended or banned');
+      }
 
       // Perform domain lookup for college auto-linking, but DO NOT block existing accounts
       // if their domain was later deactivated/removed from admin portal.

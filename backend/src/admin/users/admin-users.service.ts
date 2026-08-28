@@ -150,7 +150,7 @@ export class AdminUsersService {
 
     await this.prisma.user.update({
       where: { id },
-      data: { deletedAt: new Date(), accountStatus: 'BANNED' },
+      data: { deletedAt: new Date(), accountStatus: 'DELETED' },
     });
 
     return { success: true };

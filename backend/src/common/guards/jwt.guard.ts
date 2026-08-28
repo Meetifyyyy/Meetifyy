@@ -41,8 +41,26 @@ interface CachedTokenUser {
 export class JwtGuard implements CanActivate {
   private readonly logger = new Logger(JwtGuard.name);
   private static readonly tokenCache = new Map<string, CachedTokenUser>();
+  private static readonly revokedUsers = new Set<string>();
   private static readonly CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly MAX_CACHE_SIZE = 10000;
+
+  /**
+   * Instantly revokes all authentication tokens for a deleted/deactivated user.
+   */
+  public static revokeUser(userId: string): void {
+    if (!userId) return;
+    JwtGuard.revokedUsers.add(userId);
+    for (const [token, cached] of JwtGuard.tokenCache.entries()) {
+      if (cached.userPayload?.id === userId) {
+        JwtGuard.tokenCache.delete(token);
+      }
+    }
+  }
+
+  public static isUserRevoked(userId: string): boolean {
+    return JwtGuard.revokedUsers.has(userId);
+  }
 
   // ── JWKS cache (asymmetric ES256/RS256 signing keys) ──────────────────────
   // Supabase's current signing key is asymmetric (ECC P-256 → ES256 tokens), so
@@ -207,6 +225,12 @@ export class JwtGuard implements CanActivate {
     if (!userPayload) {
       throw new UnauthorizedException(
         'Invalid or expired authentication token',
+      );
+    }
+
+    if (userPayload.id && JwtGuard.isUserRevoked(userPayload.id)) {
+      throw new UnauthorizedException(
+        'Account has been deleted or deactivated',
       );
     }
 

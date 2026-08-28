@@ -283,4 +283,30 @@ export class PresenceService {
     }
     return result;
   }
+
+  /**
+   * Fully removes a user's presence entry — called on account deletion so the
+   * user no longer appears online in any presence query after deletion.
+   * Also cancels any pending disconnect grace timer.
+   */
+  async removePresence(userId: string): Promise<void> {
+    // Cancel any pending disconnect timer first.
+    if (this.disconnectTimers.has(userId)) {
+      clearTimeout(this.disconnectTimers.get(userId));
+      this.disconnectTimers.delete(userId);
+    }
+    try {
+      if (this.redis) {
+        await this.redis.del(this.getPresenceKey(userId));
+      } else {
+        this.memoryPresence.delete(userId);
+      }
+      this.logger.log(`Removed presence for deleted user=${userId}`);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to remove presence for user=${userId}: ${(err as any)?.message || err}`,
+      );
+    }
+  }
 }
+
