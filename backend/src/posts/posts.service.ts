@@ -145,6 +145,7 @@ export class PostsService {
     communityId?: string,
     poll?: any,
     mentions?: MentionDto[],
+    mediaKeys?: string[],
   ) {
     if (communityId) {
       await this.assertCanPostInCommunity(authorId, communityId);
@@ -159,50 +160,48 @@ export class PostsService {
     );
 
     // ── Safe media attach ──────────────────────────────────────────────────────
-    // Verify the media BEFORE creating the post so a bad/missing key produces a
-    // clear 400 instead of an opaque Prisma P2025 that fails the whole request
-    // (and never silently drops the reference). Only the owner's own, not-yet-
-    // attached media may be linked.
-    let mediaToConnect: string | undefined;
-    if (mediaKey) {
-      const objectKey = mediaKey.replace('/api/media/', '');
-      const media = await this.prisma.media.findUnique({
-        where: { objectKey },
-        select: { id: true, ownerId: true, postId: true },
+    const allMediaKeys = mediaKeys && mediaKeys.length > 0 ? mediaKeys : (mediaKey ? [mediaKey] : []);
+    let mediaIdsToConnect: string[] = [];
+
+    if (allMediaKeys.length > 0) {
+      if (allMediaKeys.length > 6) {
+        throw new BadRequestException('A maximum of 6 media items can be attached to a post');
+      }
+
+      const objectKeys = allMediaKeys.map(k => k.replace('/api/media/', ''));
+      const mediaList = await this.prisma.media.findMany({
+        where: { objectKey: { in: objectKeys } },
+        select: { id: true, ownerId: true, postId: true, objectKey: true },
       });
-      if (!media || media.ownerId !== authorId) {
-        this.logger.warn(
-          `createPost: media not found or not owned (author=${authorId}, key=${objectKey})`,
-        );
-        throw new BadRequestException('Media not found or not owned');
+
+      if (mediaList.length !== objectKeys.length) {
+        this.logger.warn(`createPost: some media not found (author=${authorId})`);
+        throw new BadRequestException('One or more media items were not found');
       }
-      // The Media row is written when the presigned URL is issued, i.e. BEFORE
-      // the browser has uploaded anything. A PUT that never completed — dropped
-      // connection, closed tab, a storage outage — therefore leaves a perfectly
-      // valid-looking row pointing at an object that does not exist, and
-      // attaching it produced a post whose image 404s forever with no clue why.
-      //
-      // One HeadObject at attach time turns that into a retryable error while
-      // the user still has the file selected.
-      const stored = await this.storageService.exists(objectKey);
-      if (!stored) {
-        this.logger.warn(
-          `createPost: media row exists but object is missing from storage (key=${objectKey})`,
-        );
-        throw new BadRequestException(
-          'Image upload did not finish. Please re-select the image and try again.',
-        );
+
+      for (const m of mediaList) {
+        if (m.ownerId !== authorId) {
+          throw new BadRequestException('One or more media items are not owned by you');
+        }
+        if (m.postId && m.postId !== '') {
+          throw new BadRequestException('One or more media items are already attached to a post');
+        }
       }
-      if (media.postId && media.postId !== '') {
-        this.logger.warn(
-          `createPost: media already attached to another post (key=${objectKey}, postId=${media.postId})`,
-        );
-        throw new BadRequestException('Media is already attached to a post');
-      }
-      mediaToConnect = media.id;
-      this.logger.log(
-        `createPost: attaching media id=${media.id} key=${objectKey} author=${authorId}`,
+
+      const existenceChecks = await Promise.all(
+        objectKeys.map(k => this.storageService.exists(k))
       );
+      
+      if (existenceChecks.some(exists => !exists)) {
+        this.logger.warn(`createPost: one or more media objects missing from storage (author=${authorId})`);
+        throw new BadRequestException('One or more image uploads did not finish. Please re-select the image and try again.');
+      }
+
+      mediaIdsToConnect = objectKeys.map(key => {
+        return mediaList.find(m => m.objectKey === key)!.id;
+      });
+
+      this.logger.log(`createPost: attaching ${mediaIdsToConnect.length} media items author=${authorId}`);
     }
 
     const post = await this.prisma.post.create({
@@ -212,9 +211,9 @@ export class PostsService {
         communityId,
         mentions:
           sanitizedMentions.length > 0 ? (sanitizedMentions as any) : undefined,
-        media: mediaToConnect
+        media: mediaIdsToConnect.length > 0
           ? {
-              connect: { id: mediaToConnect },
+              connect: mediaIdsToConnect.map(id => ({ id })),
             }
           : undefined,
       },
@@ -240,6 +239,21 @@ export class PostsService {
         },
       },
     });
+
+    if (allMediaKeys.length > 0) {
+      await Promise.all(
+        allMediaKeys.map(async (key, index) => {
+          const objectKey = key.replace('/api/media/', '');
+          const thumbKey = objectKey.replace(/\.([a-z0-9]+)$/i, '_thumb.webp');
+          
+          const mediaId = mediaIdsToConnect[index];
+          await this.prisma.media.update({
+            where: { id: mediaId },
+            data: { order: index }
+          });
+        })
+      );
+    }
 
     let createdPollOptions: any[] = [];
     if (poll && Array.isArray(poll.options) && poll.options.length > 0) {
@@ -582,7 +596,7 @@ export class PostsService {
                 'height', m.height,
                 'mimeType', m."mimeType",
                 'type', m.type
-              )
+              ) ORDER BY m."order" ASC, m."createdAt" ASC
             )
             FROM "Media" m 
             WHERE m."postId" = p.id
@@ -1676,6 +1690,7 @@ export class PostsService {
         }),
         this.prisma.media.findMany({
           where: { postId },
+          orderBy: [{ order: 'asc' }, { id: 'asc' }],
         }),
         // Root-paginated first page — no longer silently capped at 50 flat rows;
         // subsequent pages load via getComments(). Each page is a set of complete
@@ -1874,7 +1889,7 @@ export class PostsService {
                 college: { select: { id: true, name: true } },
               },
             },
-            media: true,
+            media: { orderBy: [{ order: 'asc' }, { id: 'asc' }] },
             pollOptions: {
               orderBy: { id: 'asc' },
               include: { _count: { select: { votes: true } } },

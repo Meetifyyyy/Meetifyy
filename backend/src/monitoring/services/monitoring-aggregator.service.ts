@@ -119,7 +119,6 @@ export class MetricsAggregatorService implements OnModuleInit, OnModuleDestroy {
         _count: { _all: true },
         _avg: { durationMs: true },
         _max: { durationMs: true },
-        _sum: { durationMs: false } as any,
       }),
       // p95 requires a raw percentile — Prisma ORM cannot express this.
       this.prisma.$queryRaw<Array<{ p95: number }>>`

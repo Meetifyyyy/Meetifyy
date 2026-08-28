@@ -28,12 +28,18 @@ import { MentionDto } from '../common/dto/mention.dto';
 
 export class CreatePostDto {
   @IsString()
-  @MaxLength(2000)
+  @MaxLength(5000, { message: 'Max 5,000 characters' })
   text: string;
 
   @IsString()
   @IsOptional()
   mediaKey?: string;
+
+  @IsArray()
+  @ArrayMaxSize(6, { message: 'Max 6 media items allowed' })
+  @IsString({ each: true })
+  @IsOptional()
+  mediaKeys?: string[];
 
   @IsString()
   @IsOptional()
@@ -98,6 +104,7 @@ export class PostsController {
       dto.communityId,
       dto.poll,
       dto.mentions,
+      dto.mediaKeys,
     );
   }
 
