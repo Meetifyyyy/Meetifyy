@@ -63,7 +63,7 @@ function applyTransform(imgEl, tx, ty, scale, animated = false) {
 // Component
 // ─────────────────────────────────────────────
 
-export default function ImageViewer({ src, onToggleControls, preloadNext, preloadPrev }) {
+export default function ImageViewer({ src, mediaRef, onToggleControls, preloadNext, preloadPrev }) {
   const wrapRef = useRef(null);
   const imgRef = useRef(null);
 
@@ -515,16 +515,23 @@ export default function ImageViewer({ src, onToggleControls, preloadNext, preloa
   }, []);
 
   // ─────────────────────────────────────
-  // Reset on src change (unmount + remount via key, but also guard here)
+  // Reset on src change
   // ─────────────────────────────────────
 
   useEffect(() => {
-    setLoaded(false);
-    setError(false);
-    setEntering(true);
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      setLoaded(true);
+      setEntering(false);
+      measureVp();
+      measureImg();
+    } else {
+      setLoaded(false);
+      setError(false);
+      setEntering(true);
+    }
     resetState();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src]);
+  }, [src, measureVp, measureImg, resetState]);
 
   // ─────────────────────────────────────
   // Resize handler
@@ -631,9 +638,20 @@ export default function ImageViewer({ src, onToggleControls, preloadNext, preloa
           />
         ) : (
           <img
-            ref={imgRef}
+            ref={(el) => {
+              imgRef.current = el;
+              if (mediaRef) mediaRef.current = el;
+              if (el && el.complete && el.naturalWidth > 0 && !loaded) {
+                setLoaded(true);
+                setEntering(false);
+                measureVp();
+                measureImg();
+              }
+            }}
             src={src}
             alt="Media"
+            decoding="async"
+            fetchPriority="high"
             className={`${styles.mediaImage} ${entering ? styles.entering : styles.entered}`}
             style={{ opacity: loaded ? 1 : 0 }}
             onLoad={handleLoad}

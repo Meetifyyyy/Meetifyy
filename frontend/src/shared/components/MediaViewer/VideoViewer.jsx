@@ -1,12 +1,23 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import styles from './MediaViewer.module.css';
+import {
+  Play,
+  Pause,
+  RefreshCw as ReplayIconComp,
+  VolumeHigh,
+  VolumeLow,
+  VolumeOff as VolumeMuteComp,
+  Maximize,
+  Minimize,
+} from '@shared/components/icons';
+import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
-const HIDE_DELAY_MS = 2800;
+const HIDE_DELAY_MS = 3000;
 const SEEK_TOOLTIP_WIDTH = 52;
 const VOLUME_KEY = '__mv_volume__';
-const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_MS = 280;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function fmt(s) {
@@ -27,70 +38,43 @@ function saveVolume(v) {
   try { localStorage.setItem(VOLUME_KEY, String(v)); } catch {}
 }
 
-// ─── Icons (inline SVG, no external dependency) ──────────────────────────────
-const PlayIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden="true">
-    <path d="M8 5v14l11-7z" />
-  </svg>
-);
-const PauseIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden="true">
-    <path d="M6 19h4V5H6zm8-14v14h4V5z" />
-  </svg>
-);
-const ReplayIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden="true">
-    <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
-  </svg>
-);
-const VolumeHighIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">
-    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
-  </svg>
-);
-const VolumeLowIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">
-    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
-  </svg>
-);
-const VolumeMuteIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">
-    <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
-  </svg>
-);
-const FullscreenEnterIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">
-    <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
-  </svg>
-);
-const FullscreenExitIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">
-    <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
-  </svg>
-);
 // ─── Seek Ripple ──────────────────────────────────────────────────────────────
 function SeekRipple({ direction, visible }) {
   if (!visible) return null;
+  const isLeft = direction === 'left';
   return (
-    <div className={`${styles.seekRipple} ${direction === 'left' ? styles.seekRippleLeft : styles.seekRippleRight}`}>
-      <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-        {direction === 'left'
-          ? <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z" />
-          : <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z" />}
-      </svg>
-      <span className={styles.seekRippleLabel}>{direction === 'left' ? '-10s' : '+10s'}</span>
+    <div
+      className={`${styles.seekRipple} ${isLeft ? styles.seekRippleLeft : styles.seekRippleRight}`}
+      aria-hidden="true"
+    >
+      <div className={styles.seekRippleIconWrap}>
+        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+          {isLeft ? (
+            <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z" />
+          ) : (
+            <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z" />
+          )}
+        </svg>
+      </div>
+      <span className={styles.seekRippleLabel}>{isLeft ? '-10s' : '+10s'}</span>
     </div>
   );
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function VideoViewer({ src, onControlsChange, onStageClick }) {
+export default function VideoViewer({ src, mediaRef, onControlsChange, onStageClick }) {
   const wrapRef       = useRef(null);
   const videoRef      = useRef(null);
   const progressRef   = useRef(null);
   const hideTimerRef  = useRef(null);
   const rafRef        = useRef(null);
-  const lastTapRef    = useRef({ time: 0, x: 0 });
+
+  // Tap tracking
+  const lastTapRef          = useRef({ time: 0, x: 0, y: 0, zone: null });
+  const clickTimerRef        = useRef(null);
+  const touchStartRef       = useRef({ x: 0, y: 0, time: 0 });
+  const touchMovedRef       = useRef(false);
+  const isTouchHandledRef   = useRef(false);
 
   // ── Playback state ──────────────────────────────────────────────────────────
   const [playing, setPlaying]       = useState(false);
@@ -114,13 +98,14 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
   const [ctrlVisible, setCtrlVisible] = useState(true);
   const [isDragging, setIsDragging]   = useState(false);
 
+  // Notify parent MediaViewer of control visibility changes
   useEffect(() => {
     if (onControlsChange) onControlsChange(ctrlVisible);
   }, [ctrlVisible, onControlsChange]);
 
   // ── Hover tooltip on progress bar ──────────────────────────────────────────
-  const [hoverTime, setHoverTime]     = useState(null);    // seconds
-  const [hoverX, setHoverX]           = useState(0);       // px from left of bar
+  const [hoverTime, setHoverTime]     = useState(null);
+  const [hoverX, setHoverX]           = useState(0);
 
   // ── Speed & menus ───────────────────────────────────────────────────────────
   const [speed, setSpeed]             = useState(1);
@@ -139,24 +124,35 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
   // ── Center play/pause flash feedback ──────────────────────────────────────
   const [tapFeedback, setTapFeedback]   = useState(null); // 'play' | 'pause' | null
   const tapFeedbackTimerRef             = useRef(null);
-  const clickTimerRef                   = useRef(null);
 
-  // ─── Auto-hide helpers ──────────────────────────────────────────────────────
-  const showControls = useCallback(() => {
-    setCtrlVisible(true);
+  // ─── Auto-hide timer ────────────────────────────────────────────────────────
+  const resetHideTimer = useCallback(() => {
     clearTimeout(hideTimerRef.current);
-    const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-    if (!isTouchDevice) {
+    // Auto-hide only when playing and not dragging
+    const v = videoRef.current;
+    if (v && !v.paused && !v.ended && !isDragging) {
       hideTimerRef.current = setTimeout(() => {
         setCtrlVisible(false);
       }, HIDE_DELAY_MS);
     }
-  }, []);
+  }, [isDragging]);
 
-  const keepControls = useCallback(() => {
-    clearTimeout(hideTimerRef.current);
+  const showControls = useCallback(() => {
     setCtrlVisible(true);
-  }, []);
+    resetHideTimer();
+  }, [resetHideTimer]);
+
+  const toggleControls = useCallback(() => {
+    setCtrlVisible((prev) => {
+      const next = !prev;
+      if (next) {
+        resetHideTimer();
+      } else {
+        clearTimeout(hideTimerRef.current);
+      }
+      return next;
+    });
+  }, [resetHideTimer]);
 
   const handleActivity = useCallback(() => {
     showControls();
@@ -239,7 +235,6 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
     const attemptPlay = () => {
       v.play().catch((err) => {
         if (!active) return;
-        // If autoplay is blocked by browser policy, try muted autoplay
         if (err.name === 'NotAllowedError') {
           v.muted = true;
           setMuted(true);
@@ -247,7 +242,6 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
             console.warn('Muted autoplay also blocked:', err2);
           });
         } else if (err.name !== 'AbortError') {
-          // Ignore AbortError, other errors set error state
           setIsLoading(false);
           setError(true);
         }
@@ -273,18 +267,41 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
     setVolume(vol);
     setMuted(false);
 
-    const onPlay         = () => { setPlaying(true);  setEnded(false); startProgressLoop(); };
-    const onPause        = () => { setPlaying(false); stopProgressLoop(); };
-    const onEnded        = () => { setPlaying(false); setEnded(true);  stopProgressLoop(); keepControls(); };
+    // Register with global video registry with priority 10 (MediaViewer active video)
+    const deregister = feedVideoRegistry.register('media-viewer-video', v, 10);
+    feedVideoRegistry.requestPlay('media-viewer-video');
+
+    const onPlay = () => {
+      feedVideoRegistry.requestPlay('media-viewer-video');
+      setPlaying(true);
+      setEnded(false);
+      startProgressLoop();
+      resetHideTimer();
+    };
+
+    const onPause = () => {
+      feedVideoRegistry.notifyPause('media-viewer-video');
+      setPlaying(false);
+      stopProgressLoop();
+      clearTimeout(hideTimerRef.current);
+      setCtrlVisible(true); // Keep controls visible when paused
+    };
+
+    const onEnded = () => {
+      feedVideoRegistry.notifyPause('media-viewer-video');
+      setPlaying(false);
+      setEnded(true);
+      stopProgressLoop();
+      clearTimeout(hideTimerRef.current);
+      setCtrlVisible(true); // Keep controls visible on end
+    };
+
     const onWaiting      = () => setIsBuf(true);
-    const onPlaying      = () => setIsBuf(false);
+    const onPlaying      = () => { setIsBuf(false); resetHideTimer(); };
     const onCanPlay      = () => { setIsLoading(false); setIsBuf(false); };
     const onLoadedMeta   = () => { setDuration(v.duration); setIsLoading(false); };
     const onLoadStart    = () => { setIsLoading(true); setError(false); };
-    const onError        = () => {
-      setIsLoading(false);
-      setError(true);
-    };
+    const onError        = () => { setIsLoading(false); setError(true); };
     const onVolumeChange = () => { setMuted(v.muted); setVolume(v.volume); };
     const onRateChange   = () => setSpeed(v.playbackRate);
     const onFsChange     = () => setIsFullscreen(!!document.fullscreenElement);
@@ -324,8 +341,23 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
       v.removeEventListener('ratechange',       onRateChange);
       document.removeEventListener('fullscreenchange', onFsChange);
       stopProgressLoop();
+      deregister();
     };
-  }, [src, startProgressLoop, stopProgressLoop, keepControls]);
+  }, [src, startProgressLoop, stopProgressLoop, resetHideTimer]);
+
+  // ─── Tab/Page visibility: pause when tab hidden ──────────────────────────
+  useEffect(() => {
+    const onVisChange = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      if (document.hidden && !v.paused) {
+        v.pause();
+        feedVideoRegistry.notifyPause('media-viewer-video');
+      }
+    };
+    document.addEventListener('visibilitychange', onVisChange);
+    return () => document.removeEventListener('visibilitychange', onVisChange);
+  }, []);
 
   // ─── Pause & cleanup on unmount only ───────────────────────────────────────
   useEffect(() => {
@@ -333,13 +365,17 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
       const v = videoRef.current;
       if (v) {
         v.pause();
+        feedVideoRegistry.notifyPause('media-viewer-video');
       }
       stopProgressLoop();
       clearTimeout(hideTimerRef.current);
+      clearTimeout(clickTimerRef.current);
       clearTimeout(rippleTimerRef.current);
+      clearTimeout(tapFeedbackTimerRef.current);
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     };
   }, [stopProgressLoop]);
+
   // ─── Playback actions ─────────────────────────────────────────────────────
   const togglePlay = useCallback(() => {
     setShowSpeedMenu(false);
@@ -400,7 +436,6 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
       document.exitFullscreen?.().catch(() => {});
     }
   }, []);
-
 
   // ─── Keyboard shortcuts ──────────────────────────────────────────────────
   useEffect(() => {
@@ -467,7 +502,7 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
     return () => window.removeEventListener('keydown', handler);
   }, [togglePlay, seekBy, adjustVolume, toggleMute, toggleFullscreen, showControls]);
 
-  // Close speed menu on outside click (capture phase so stopPropagation cannot block it)
+  // Close speed menu on outside click
   useEffect(() => {
     if (!showSpeedMenu) return;
     const handleOutsideClick = (e) => {
@@ -481,8 +516,6 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
       window.removeEventListener('pointerdown', handleOutsideClick, true);
     };
   }, [showSpeedMenu]);
-
-
 
   // ─── Seek bar ────────────────────────────────────────────────────────────
   const getSeekFraction = useCallback((clientX) => {
@@ -502,10 +535,11 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
   const handleProgressMouseDown = useCallback((e) => {
     e.stopPropagation();
     setIsDragging(true);
-    keepControls();
+    clearTimeout(hideTimerRef.current);
+    setCtrlVisible(true);
     const frac = getSeekFraction(e.clientX);
     commitSeek(frac);
-  }, [getSeekFraction, commitSeek, keepControls]);
+  }, [getSeekFraction, commitSeek]);
 
   useEffect(() => {
     if (!isDragging) return;
@@ -513,18 +547,17 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
       const frac = getSeekFraction(e.clientX);
       commitSeek(frac);
     };
-    const onUp = () => setIsDragging(false);
+    const onUp = () => {
+      setIsDragging(false);
+      resetHideTimer();
+    };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
     return () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
     };
-  }, [isDragging, getSeekFraction, commitSeek]);
-
-  useEffect(() => {
-    if (!isDragging) showControls();
-  }, [isDragging]);
+  }, [isDragging, getSeekFraction, commitSeek, resetHideTimer]);
 
   const handleProgressMouseMove = useCallback((e) => {
     const bar = progressRef.current;
@@ -545,9 +578,10 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
     e.stopPropagation();
     const touch = e.touches[0];
     setIsDragging(true);
-    keepControls();
+    clearTimeout(hideTimerRef.current);
+    setCtrlVisible(true);
     commitSeek(getSeekFraction(touch.clientX));
-  }, [getSeekFraction, commitSeek, keepControls]);
+  }, [getSeekFraction, commitSeek]);
 
   useEffect(() => {
     if (!isDragging) return;
@@ -555,14 +589,17 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
       const touch = e.touches[0];
       if (touch) commitSeek(getSeekFraction(touch.clientX));
     };
-    const onEnd = () => setIsDragging(false);
+    const onEnd = () => {
+      setIsDragging(false);
+      resetHideTimer();
+    };
     document.addEventListener('touchmove', onMove, { passive: true });
     document.addEventListener('touchend', onEnd);
     return () => {
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onEnd);
     };
-  }, [isDragging, getSeekFraction, commitSeek]);
+  }, [isDragging, getSeekFraction, commitSeek, resetHideTimer]);
 
   // ─── Volume ───────────────────────────────────────────────────────────────
   const handleVolumeChange = useCallback((e) => {
@@ -589,121 +626,169 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
     clearTimeout(tapFeedbackTimerRef.current);
     requestAnimationFrame(() => {
       setTapFeedback(type);
-      tapFeedbackTimerRef.current = setTimeout(() => setTapFeedback(null), 600);
+      tapFeedbackTimerRef.current = setTimeout(() => setTapFeedback(null), 550);
     });
   }, []);
 
-  // ─── Mobile touch handling (single-tap → play/pause, double-tap → seek) ──
+  // ─── Seek ripple helper ──────────────────────────────────────────────────
   const triggerRipple = useCallback((dir) => {
-    setRipple(dir);
+    setRipple(null);
     clearTimeout(rippleTimerRef.current);
-    rippleTimerRef.current = setTimeout(() => setRipple(null), 700);
+    requestAnimationFrame(() => {
+      setRipple(dir);
+      rippleTimerRef.current = setTimeout(() => setRipple(null), 650);
+    });
   }, []);
 
-  const handleWrapTouch = useCallback((e) => {
+  // ─── Calculate interaction zone (Left 30%, Center 40%, Right 30%) ───────
+  const getTapZone = useCallback((clientX) => {
+    const el = videoRef.current || wrapRef.current;
+    if (!el) return 'center';
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return 'center';
+    const ratio = (clientX - rect.left) / rect.width;
+    if (ratio < 0.30) return 'left';
+    if (ratio > 0.70) return 'right';
+    return 'center';
+  }, []);
+
+  // ─── Touch Gesture Handling for 3 Zones & Double-Tap Seeking ─────────────
+  const handleTouchStart = useCallback((e) => {
     if (e.target.closest('[data-controls]')) return;
-    if (e.cancelable) {
-      e.preventDefault();
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    touchMovedRef.current = false;
+  }, []);
+
+  const handleTouchMove = useCallback((e) => {
+    if (touchMovedRef.current) return;
+    const touch = e.touches[0];
+    const dist = Math.hypot(
+      touch.clientX - touchStartRef.current.x,
+      touch.clientY - touchStartRef.current.y
+    );
+    if (dist > 12) {
+      touchMovedRef.current = true;
+      // Moving cancels any pending tap
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
     }
+  }, []);
+
+  const handleTouchEnd = useCallback((e) => {
+    if (e.target.closest('[data-controls]')) return;
+    if (touchMovedRef.current) return;
+
+    // Flag to suppress synthetic mouse clicks
+    isTouchHandledRef.current = true;
+    setTimeout(() => { isTouchHandledRef.current = false; }, 400);
+
     onStageClick?.();
 
-    const isVideoElement = videoRef.current && (e.target === videoRef.current || videoRef.current.contains(e.target));
+    const touch = e.changedTouches[0] || touchStartRef.current;
+    const zone = getTapZone(touch.clientX);
+    const now = Date.now();
+    const prev = lastTapRef.current;
 
-    if (isVideoElement) {
-      const now   = Date.now();
-      const touch = e.touches[0];
-      const prev  = lastTapRef.current;
+    const isDoubleTap =
+      now - prev.time < DOUBLE_TAP_MS &&
+      Math.hypot(touch.clientX - prev.x, touch.clientY - prev.y) < 50;
 
-      if (now - prev.time < DOUBLE_TAP_MS && Math.abs(touch.clientX - prev.x) < 30) {
-        // Double-tap → seek ±10s
-        clearTimeout(clickTimerRef.current);
-        const isLeft = touch.clientX < window.innerWidth / 2;
-        seekBy(isLeft ? -10 : 10);
-        triggerRipple(isLeft ? 'left' : 'right');
-        lastTapRef.current = { time: 0, x: 0, doubleTapTime: now };
+    if (isDoubleTap) {
+      // Double tap confirmed — cancel pending single-tap action!
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+      lastTapRef.current = { time: 0, x: 0, y: 0, zone: null };
+
+      if (zone === 'left') {
+        // Left 30%: Seek backward 10s
+        seekBy(-10);
+        triggerRipple('left');
+      } else if (zone === 'right') {
+        // Right 30%: Seek forward 10s
+        seekBy(10);
+        triggerRipple('right');
       } else {
-        // First tap → schedule play/pause after double-tap window
-        lastTapRef.current = { time: now, x: touch.clientX };
-        clearTimeout(clickTimerRef.current);
-        clickTimerRef.current = setTimeout(() => {
+        // Center 40%: Double tap should NOT seek
+        showControls();
+      }
+    } else {
+      // First tap — record & schedule single tap
+      lastTapRef.current = { time: now, x: touch.clientX, y: touch.clientY, zone };
+      clearTimeout(clickTimerRef.current);
+
+      clickTimerRef.current = setTimeout(() => {
+        clickTimerRef.current = null;
+
+        // SINGLE TAP ACTION
+        if (zone === 'center') {
+          // Center 40%: Play/Pause toggle
           const v = videoRef.current;
           const willPlay = v ? (v.paused || v.ended) : !playing;
           togglePlay();
           triggerTapFeedback(willPlay ? 'play' : 'pause');
-        }, DOUBLE_TAP_MS + 20);
-      }
-    } else {
-      // Touch outside video area (backdrop/stage) → toggle controls visibility
-      setCtrlVisible((prev) => {
-        const next = !prev;
-        if (onControlsChange) onControlsChange(next);
-        return next;
-      });
+          if (willPlay) {
+            showControls(); // Show controls briefly, auto-hide in 3s
+          } else {
+            setCtrlVisible(true); // Stay visible while paused
+          }
+        } else {
+          // Left 30% / Right 30%: Toggle controls visibility
+          toggleControls();
+        }
+      }, DOUBLE_TAP_MS + 20);
     }
-  }, [seekBy, triggerRipple, togglePlay, triggerTapFeedback, playing, onControlsChange, onStageClick]);
+  }, [getTapZone, seekBy, triggerRipple, showControls, togglePlay, triggerTapFeedback, toggleControls, playing, onStageClick]);
 
-  const handleWrapTouchMove = useCallback((e) => {
-    // If the user drags, cancel the pending tap (play/pause)
-    clearTimeout(clickTimerRef.current);
-  }, []);
-
-  // ─── Click handler on wrap — distinguishes video area vs backdrop area ──
-  const handleWrapClick = useCallback((e) => {
-    // If clicking on controls, let them handle it
+  // ─── Desktop Click & Double-Click ─────────────────────────────────────────
+  const handleClick = useCallback((e) => {
+    if (isTouchHandledRef.current) return;
     if (e.target.closest('[data-controls]')) return;
     e.stopPropagation();
     onStageClick?.();
 
-    const isVideoElement = videoRef.current && (e.target === videoRef.current || videoRef.current.contains(e.target));
+    const zone = getTapZone(e.clientX);
+    clearTimeout(clickTimerRef.current);
 
-    if (isVideoElement) {
-      // Tapping/clicking directly on the video area → Play / Pause
-      clearTimeout(clickTimerRef.current);
-      clickTimerRef.current = setTimeout(() => {
+    clickTimerRef.current = setTimeout(() => {
+      clickTimerRef.current = null;
+      if (zone === 'center') {
         const v = videoRef.current;
         const willPlay = v ? (v.paused || v.ended) : !playing;
         togglePlay();
         triggerTapFeedback(willPlay ? 'play' : 'pause');
-      }, 250);
-    } else {
-      // Tapping/clicking outside the video area (backdrop/stage) → Toggle Controls Visibility
-      setCtrlVisible((prev) => {
-        const next = !prev;
-        if (onControlsChange) onControlsChange(next);
-        return next;
-      });
-    }
-  }, [togglePlay, triggerTapFeedback, playing, onControlsChange, onStageClick]);
+        if (willPlay) {
+          showControls();
+        } else {
+          setCtrlVisible(true);
+        }
+      } else {
+        toggleControls();
+      }
+    }, 240);
+  }, [getTapZone, togglePlay, triggerTapFeedback, toggleControls, showControls, playing, onStageClick]);
 
-  // ─── Double-click on wrap → seek 10s ─────────────────────────────────────
-  const handleWrapDoubleClick = useCallback((e) => {
+  const handleDoubleClick = useCallback((e) => {
+    if (isTouchHandledRef.current) return;
     if (e.target.closest('[data-controls]')) return;
     e.stopPropagation();
     clearTimeout(clickTimerRef.current);
+    clickTimerRef.current = null;
 
-    // If a recent touch handled this via custom double-tap, skip duplicate action
-    if (Date.now() - (lastTapRef.current.doubleTapTime || 0) < 500) {
-      return;
+    const zone = getTapZone(e.clientX);
+    if (zone === 'left') {
+      seekBy(-10);
+      triggerRipple('left');
+    } else if (zone === 'right') {
+      seekBy(10);
+      triggerRipple('right');
+    } else {
+      showControls();
     }
-
-    const isVideoElement = videoRef.current && (e.target === videoRef.current || videoRef.current.contains(e.target));
-    if (isVideoElement) {
-      const rect = videoRef.current.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const isLeft = clickX < rect.width / 2;
-      seekBy(isLeft ? -10 : 10);
-      triggerRipple(isLeft ? 'left' : 'right');
-    }
-  }, [seekBy, triggerRipple]);
+  }, [getTapZone, seekBy, triggerRipple, showControls]);
 
   // ─── Volume display helpers ───────────────────────────────────────────────
   const effectiveVolume = muted ? 0 : volume;
-  const VolumeIcon = effectiveVolume === 0
-    ? VolumeMuteIcon
-    : effectiveVolume < 0.5
-      ? VolumeLowIcon
-      : VolumeHighIcon;
-
   const showSpinner = (isLoading || (isBuffering && playing)) && !error;
   const hasDuration = duration > 0 && isFinite(duration);
 
@@ -713,15 +798,19 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
       ref={wrapRef}
       className={styles.videoWrap}
       onMouseMove={handleActivity}
-      onClick={handleWrapClick}
-      onDoubleClick={handleWrapDoubleClick}
-      onTouchStart={handleWrapTouch}
-      onTouchMove={handleWrapTouchMove}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       data-fullscreen={isFullscreen || undefined}
     >
-      {/* ── Video element — no click/dblclick handlers; events bubble to wrap ── */}
+      {/* ── Video element ── */}
       <video
-        ref={videoRef}
+        ref={(el) => {
+          videoRef.current = el;
+          if (mediaRef) mediaRef.current = el;
+        }}
         src={src}
         className={styles.viewerVideo}
         playsInline
@@ -729,6 +818,7 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
         preload="auto"
         aria-label="Video player"
         style={{ opacity: isLoading ? 0 : 1, transition: 'opacity 0.3s ease' }}
+        onDragStart={(e) => e.preventDefault()}
       />
 
       {/* ── Loading / Buffering spinner ───────────────────────────────────── */}
@@ -763,7 +853,7 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
         </div>
       )}
 
-      {/* ── Seek ripple ───────────────────────────────────────────────────── */}
+      {/* ── Seek ripple (left 30% / right 30% double-tap) ──────────────────── */}
       <SeekRipple direction="left"  visible={ripple === 'left'}  />
       <SeekRipple direction="right" visible={ripple === 'right'} />
 
@@ -793,9 +883,7 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
           aria-label="Replay video"
           title="Replay"
         >
-          <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
-            <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
-          </svg>
+          <ReplayIconComp size={32} strokeWidth={1.75} />
         </button>
       )}
 
@@ -841,12 +929,17 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
           <div className={styles.videoControlsRow}>
             <div className={styles.videoCtrlGroup}>
               <button
-                className={styles.videoBtn}
+                className={`${styles.videoBtn} ${!playing && !ended ? styles.videoBtnPlay : ''}`}
                 onClick={(e) => { e.stopPropagation(); togglePlay(); }}
                 aria-label={ended ? 'Replay' : playing ? 'Pause' : 'Play'}
                 title={ended ? 'Replay (K)' : playing ? 'Pause (K)' : 'Play (K)'}
               >
-                {ended ? <ReplayIcon /> : playing ? <PauseIcon /> : <PlayIcon />}
+                {ended
+                  ? <ReplayIconComp size={22} strokeWidth={1.75} />
+                  : playing
+                    ? <Pause size={22} strokeWidth={1.75} />
+                    : <Play size={22} strokeWidth={1.75} />
+                }
               </button>
               <div className={styles.videoVolGroup}>
                 <button
@@ -855,7 +948,12 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
                   aria-label={muted || volume === 0 ? 'Unmute' : 'Mute'}
                   title="Mute (M)"
                 >
-                  <VolumeIcon />
+                  {effectiveVolume === 0
+                    ? <VolumeMuteComp size={18} strokeWidth={1.75} />
+                    : effectiveVolume < 0.5
+                      ? <VolumeLow size={18} strokeWidth={1.75} />
+                      : <VolumeHigh size={18} strokeWidth={1.75} />
+                  }
                 </button>
                 <div className={styles.videoVolSliderWrap}>
                   <input
@@ -908,7 +1006,10 @@ export default function VideoViewer({ src, onControlsChange, onStageClick }) {
                 aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
                 title={isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
               >
-                {isFullscreen ? <FullscreenExitIcon /> : <FullscreenEnterIcon />}
+                {isFullscreen
+                  ? <Minimize size={18} strokeWidth={1.75} />
+                  : <Maximize size={18} strokeWidth={1.75} />
+                }
               </button>
             </div>
           </div>

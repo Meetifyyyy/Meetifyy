@@ -3,18 +3,25 @@ import { createPortal } from 'react-dom';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
-import { isImageUrl } from '@shared/utils/avatar';
 import { showToast } from '@shared/utils/toast';
 import ImageViewer from './ImageViewer';
 import VideoViewer from './VideoViewer';
 import styles from './MediaViewer.module.css';
-import SharePostModal from '@features/feed/components/modals/SharePostModal';
-import { isSafeUrl } from '@shared/utils/urlSanitize';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import ForwardMessageModal from '@features/messages/shared/components/modals/ForwardMessageModal';
 import { useConversations } from '@shared/hooks/useMessages';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
-import { getMediaUrl } from '@shared/api/apiClient';
+import {
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Forward,
+  MoreVertical,
+  Download,
+  Share,
+  Flag,
+  Trash2,
+} from '@shared/components/icons';
 
 /** Detect video items by explicit type field OR URL extension. */
 function isVideo(item) {
@@ -22,59 +29,119 @@ function isVideo(item) {
   // Explicit type always wins
   if (item.type === 'video') return true;
   if (item.type === 'image') return false;
-  // Fallback: sniff by URL
-  const u = (item.url || '').toLowerCase().split('?')[0]; // strip query params
-  return u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.ogg') ||
-         u.endsWith('.mov') || u.endsWith('.avi') || u.endsWith('.mkv') ||
-         u.startsWith('data:video');
+  // Fall back to URL sniff for legacy callers
+  const url = (item.url || '').toLowerCase().split('?')[0];
+  return /\.(mp4|webm|mov|mkv|avi|flv|m4v|ogv)$/.test(url);
 }
+
+// ── Gesture constants ──────────────────────────────────────────────────────────
+/** Minimum pointer movement (px) before we lock the gesture axis. */
+const AXIS_LOCK_THRESHOLD = 10;
+/** Horizontal: fraction of viewport width that triggers navigate. */
+const SWIPE_DISTANCE_THRESHOLD = 0.25;
+/** Horizontal: pointer speed (px/ms) that triggers navigate even if distance is short. */
+const SWIPE_VELOCITY_THRESHOLD = 0.45;
+/** Horizontal boundary resistance factor (0–1). Lower = more rubbery. */
+const BOUNDARY_RESISTANCE = 0.3;
+/** Vertical: fraction of viewport height that triggers dismiss. */
+const DISMISS_DISTANCE_THRESHOLD = 0.30;
+/** Vertical: pointer speed (px/ms) that triggers dismiss. */
+const DISMISS_VELOCITY_THRESHOLD = 0.70;
+/** Vertical: minimum absolute distance (px) before velocity alone can dismiss. */
+const DISMISS_MIN_FOR_VELOCITY = 40;
+/** Vertical: damping applied to raw drag delta during dismiss gesture. */
+const DISMISS_DRAG_DAMPEN = 0.88;
 
 export default function MediaViewer() {
   const { state, closeViewer, navigate, savedScrollRef } = useMediaViewer();
   const { open, items, index, meta } = state;
 
-  const overlayRef = useRef(null);
-  const stageRef = useRef(null);
-  const dragState = useRef({
-    startY: 0,
-    startX: 0,
-    currentY: 0,
-    dragging: false,
-    startTime: 0,
-    isVertical: false,
-    lockAxis: false
-  });
-  const [visible, setVisible] = useState(false);
+  const overlayRef  = useRef(null);
+  const stageRef    = useRef(null);
+  /** Ref forwarded to the media element (img or video) for vertical drag. */
+  const mediaElRef  = useRef(null);
+
+  const [visible, setVisible]               = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
+  const [showMoreMenu, setShowMoreMenu]     = useState(false);
   const [showForwardModal, setShowForwardModal] = useState(false);
-  const { conversations } = useConversations();
-  const { sendDirectMessage } = useMessageActions();
-  const [savedUrls, setSavedUrls] = useState(() => new Set());
   const [showReportModal, setShowReportModal] = useState(false);
-  const [hasReported, setHasReported] = useState(false);
+  const [hasReported, setHasReported]       = useState(false);
+  const [downloadState, setDownloadState]   = useState(null);
+  const downloadAbortRef = useRef(null);
   const didClose = useRef(false);
 
   const handleClose = useCallback(() => {
     setVisible(false);
+    controlsHiddenByGesture.current = false;
+    // Pause all feed videos (below MediaViewer priority 10) on close
+    if (typeof window !== 'undefined') {
+      import('@shared/utils/feedVideoRegistry')
+        .then(({ feedVideoRegistry: r }) => r.pauseAll(10))
+        .catch(() => {});
+    }
     setTimeout(closeViewer, 280);
   }, [closeViewer]);
 
   useOverlayBack(open, handleClose);
-
-  // Nothing behind the viewer scrolls while it is open — not the feed, not a
-  // chat's message list.
   useScrollLock(open);
 
   const currentItem = items[index] || null;
-  const prevItem = items[index - 1] || null;
-  const nextItem = items[index + 1] || null;
+  const prevItem    = items[index - 1] || null;
+  const nextItem    = items[index + 1] || null;
+  const isVid       = isVideo(currentItem);
 
-  // Derived here so effects can reference it
-  const isVid = isVideo(currentItem);
+  // Keep index in a ref so gesture callbacks always see the latest value
+  // without needing to be recreated on every index change.
+  const indexRef      = useRef(index);
+  const itemsLenRef   = useRef(items.length);
+  useEffect(() => { indexRef.current = index; }, [index]);
+  useEffect(() => { itemsLenRef.current = items.length; }, [items.length]);
 
-  // ── Open / close animation ──
+  // Ref to mirror controlsVisible without causing gesture-path re-renders
+  const controlsVisibleRef     = useRef(true);
+  const controlsHiddenByGesture = useRef(false);
+
+  // ── Smart adjacent image preloading (idle-scheduled, cancel-safe) ──────────
+  const preloadImgsRef = useRef([]);
+  useEffect(() => {
+    if (!open || !items || items.length <= 1) return;
+
+    // Cancel previous preloads
+    preloadImgsRef.current.forEach((img) => { img.src = ''; });
+    preloadImgsRef.current = [];
+
+    const candidates = [items[index + 1], items[index - 1]].filter(
+      (item) => item && item.url && !isVideo(item),
+    );
+    if (candidates.length === 0) return;
+
+    const schedule = typeof requestIdleCallback === 'function'
+      ? (fn) => requestIdleCallback(fn, { timeout: 250 })
+      : (fn) => setTimeout(fn, 100);
+
+    let handle;
+    handle = schedule(() => {
+      candidates.forEach((item) => {
+        const img = new Image();
+        img.src = item.url;
+        preloadImgsRef.current.push(img);
+      });
+    });
+
+    return () => {
+      if (typeof cancelIdleCallback === 'function' && typeof handle === 'number') {
+        cancelIdleCallback(handle);
+      } else {
+        clearTimeout(handle);
+      }
+      preloadImgsRef.current.forEach((img) => { img.src = ''; });
+      preloadImgsRef.current = [];
+    };
+  }, [open, items, index]);
+
+
+  // ── Open / close animation ──────────────────────────────────────────────────
   useEffect(() => {
     if (open) {
       didClose.current = false;
@@ -85,7 +152,6 @@ export default function MediaViewer() {
     }
   }, [open]);
 
-  // Restore scroll after close animation
   useEffect(() => {
     if (!open && !didClose.current) {
       didClose.current = true;
@@ -96,171 +162,331 @@ export default function MediaViewer() {
     }
   }, [open]);
 
-  // Close more menu on outside click (capture phase so stopPropagation cannot block it)
+  // ── Close more menu on outside click ───────────────────────────────────────
   useEffect(() => {
     if (!showMoreMenu) return;
-    const handleOutsideClick = (e) => {
+    const handle = (e) => {
       if (e.target.closest(`.${styles.moreMenuWrap}`)) return;
       setShowMoreMenu(false);
     };
-    window.addEventListener('click', handleOutsideClick, true);
-    window.addEventListener('pointerdown', handleOutsideClick, true);
+    window.addEventListener('click', handle, true);
+    window.addEventListener('pointerdown', handle, true);
     return () => {
-      window.removeEventListener('click', handleOutsideClick, true);
-      window.removeEventListener('pointerdown', handleOutsideClick, true);
+      window.removeEventListener('click', handle, true);
+      window.removeEventListener('pointerdown', handle, true);
     };
   }, [showMoreMenu]);
 
-  // ── Keyboard navigation ──
+  // ── Keyboard navigation ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
       if (e.key === 'Escape') { handleClose(); return; }
-      // When a video is open, let VideoViewer own arrow keys and media keys
       if (isVid) return;
-      if (e.key === 'ArrowLeft') navigate(-1);
+      if (e.key === 'ArrowLeft')  navigate(-1);
       if (e.key === 'ArrowRight') navigate(1);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [open, navigate, isVid, handleClose]);
 
-  // ── Focus trap ──
+  // ── Focus trap ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (open) overlayRef.current?.focus();
   }, [open]);
 
-  // ── Swipe-to-dismiss ──
+  // ═══════════════════════════════════════════════════════════════════════════
+  // UNIFIED GESTURE SYSTEM
   //
-  // These are attached natively rather than as JSX props because React's
-  // touchmove listener is passive: `preventDefault` inside it is ignored, so a
-  // vertical drag on the stage scrolled the feed (or the chat) underneath the
-  // viewer instead of only dragging the image. A non-passive listener on the
-  // stage claims the gesture, and useScrollLock freezes whatever is behind.
-  const handleStageTouchStart = useCallback((e) => {
-    if (e.touches.length !== 1) return;
-    if (e.target.closest('[data-zoomed="true"]')) return;
+  // One single state machine handles all drag/swipe interactions. The machine
+  // lives in a ref (no React state re-renders during active gesture) for
+  // 60fps performance.
+  //
+  // Priority:
+  //   Tap / tiny movement (<AXIS_LOCK_THRESHOLD px)  →  no gesture
+  //   Horizontal dominant (|dx| > |dy|)              →  swipe to navigate
+  //   Vertical dominant   (|dy| > |dx|)              →  drag to dismiss
+  //
+  // Once axis is locked it CANNOT switch for that gesture.
+  //
+  // The gesture targets:
+  //   H-swipe:  stageRef  (the whole media stage container)
+  //   V-dismiss: mediaElRef (only the <img> or <video> element)
+  //             overlay background opacity (via style, not state)
+  //
+  // Controls (top bar, nav buttons, info panel) are absolutely positioned
+  // outside the stage or inside the overlay — they never translate with it.
+  // ═══════════════════════════════════════════════════════════════════════════
 
-    dragState.current = {
-      startY: e.touches[0].clientY,
-      startX: e.touches[0].clientX,
-      currentY: e.touches[0].clientY,
-      dragging: true,
-      startTime: Date.now(),
-      isVertical: false,
-      lockAxis: false,
-    };
-  }, []);
+  /**
+   * @typedef {Object} GestureState
+   * @property {number}  startX
+   * @property {number}  startY
+   * @property {number}  startTime
+   * @property {number}  lastX       - Most recent pointer X (for velocity)
+   * @property {number}  lastY
+   * @property {number}  lastTime
+   * @property {'h'|'v'|null} axis   - null = undecided
+   * @property {boolean} active
+   */
+  const gestureRef = useRef(/** @type {GestureState} */ ({
+    startX: 0, startY: 0,
+    lastX: 0,  lastY: 0,
+    startTime: 0, lastTime: 0,
+    axis: null,
+    active: false,
+  }));
 
-  const handleStageTouchMove = useCallback((e) => {
-    if (!dragState.current.dragging) return;
-    const touch = e.touches[0];
-    const dy = touch.clientY - dragState.current.startY;
-    const dx = touch.clientX - dragState.current.startX;
-    const state = dragState.current;
-
-    if (!state.lockAxis) {
-      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-        state.lockAxis = true;
-        if (Math.abs(dy) > Math.abs(dx)) {
-          state.isVertical = true;
-        } else {
-          state.dragging = false;
-          return;
-        }
-      } else {
-        return;
-      }
-    }
-
-    if (!state.isVertical) return;
-
-    // The gesture is ours from here on: nothing underneath may scroll with it.
-    if (e.cancelable) e.preventDefault();
-
-    state.currentY = touch.clientY;
-
-    const dampen = (val) => val * 0.85;
-    const dragY = dampen(dy);
-    const windowHeight = window.visualViewport?.height || window.innerHeight;
-    const progress = Math.min(Math.abs(dragY) / (windowHeight * 0.7), 1);
-
-    const scale = 1 - (progress * 0.25);
-    const opacity = 1 - progress;
-
+  /** Reset the stage and media element transforms after gesture. */
+  const resetGestureTransforms = useCallback((animated = true) => {
+    const ease = animated ? 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none';
     if (stageRef.current) {
-      stageRef.current.style.transition = 'none';
-      stageRef.current.style.transform = `translate3d(0, ${dragY}px, 0) scale(${scale})`;
+      stageRef.current.style.transition = ease;
+      stageRef.current.style.transform  = '';
+    }
+    if (mediaElRef.current) {
+      mediaElRef.current.style.transition = ease;
+      mediaElRef.current.style.transform  = '';
     }
     if (overlayRef.current) {
-      overlayRef.current.style.transition = 'none';
-      overlayRef.current.style.backgroundColor = `rgba(0, 0, 0, ${opacity * 0.92})`;
+      overlayRef.current.style.transition = animated ? 'background-color 0.32s ease' : 'none';
+      overlayRef.current.style.backgroundColor = '';
     }
-
-    if (Math.abs(dy) > 20) setControlsVisible(false);
-  }, []);
-
-  const handleStageTouchEnd = useCallback(() => {
-    if (!dragState.current.dragging || !dragState.current.isVertical) {
-      dragState.current.dragging = false;
-      return;
-    }
-    dragState.current.dragging = false;
-
-    const dy = dragState.current.currentY - dragState.current.startY;
-    const dt = Date.now() - dragState.current.startTime;
-    const velocity = Math.abs(dy) / dt;
-    const vh = window.visualViewport?.height || window.innerHeight;
-    const threshold = vh * 0.18;
-
-    if (Math.abs(dy) > threshold || velocity > 0.65) {
-      const sign = dy > 0 ? 1 : -1;
-      const finishY = sign * vh;
-
-      if (stageRef.current) {
-        stageRef.current.style.transition = 'transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-        stageRef.current.style.transform = `translate3d(0, ${finishY}px, 0) scale(0.6)`;
-      }
-      if (overlayRef.current) {
-        overlayRef.current.style.transition = 'background-color 0.25s ease';
-        overlayRef.current.style.backgroundColor = 'rgba(0, 0, 0, 0)';
-      }
-      handleClose();
-    } else {
-      setControlsVisible(true);
-      if (stageRef.current) {
-        stageRef.current.style.transition = 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-        stageRef.current.style.transform = 'translate3d(0, 0px, 0) scale(1)';
-      }
-      if (overlayRef.current) {
-        overlayRef.current.style.transition = 'background-color 0.35s ease';
-        overlayRef.current.style.backgroundColor = '';
-      }
-
+    // Clear after transition so CSS classes take over again
+    if (animated) {
       setTimeout(() => {
         if (stageRef.current) {
-          stageRef.current.style.transition = '';
-          stageRef.current.style.transform = '';
+          stageRef.current.style.transition  = '';
+          stageRef.current.style.transform   = '';
+        }
+        if (mediaElRef.current) {
+          mediaElRef.current.style.transition = '';
+          mediaElRef.current.style.transform  = '';
         }
         if (overlayRef.current) {
-          overlayRef.current.style.transition = '';
-          overlayRef.current.style.backgroundColor = '';
+          overlayRef.current.style.transition       = '';
+          overlayRef.current.style.backgroundColor  = '';
         }
-      }, 350);
+      }, 340);
     }
-  }, [handleClose]);
+  }, []);
 
+  /** Check whether the pointer-down target is inside a video control zone. */
+  const isVideoControl = (target) => {
+    return !!(
+      target.closest('[data-controls]') ||
+      target.closest('input[type="range"]') ||
+      target.closest('[role="slider"]') ||
+      target.closest('button') ||
+      target.closest('[role="listbox"]') ||
+      target.closest('[role="option"]') ||
+      target.tagName === 'INPUT' ||
+      target.tagName === 'BUTTON'
+    );
+  };
+
+  const onGestureStart = useCallback((clientX, clientY, target) => {
+    // Skip if already zoomed into image
+    if (target.closest('[data-zoomed="true"]')) return;
+    // Skip if on a video control element — video manages its own touch
+    if (isVid && isVideoControl(target)) return;
+
+    gestureRef.current = {
+      startX: clientX,
+      startY: clientY,
+      lastX: clientX,
+      lastY: clientY,
+      startTime: Date.now(),
+      lastTime: Date.now(),
+      axis: null,
+      active: true,
+    };
+  }, [isVid]);
+
+  const onGestureMove = useCallback((clientX, clientY) => {
+    const g = gestureRef.current;
+    if (!g.active) return;
+
+    const dx = clientX - g.startX;
+    const dy = clientY - g.startY;
+    const adx = Math.abs(dx);
+    const ady = Math.abs(dy);
+
+    // Update velocity tracking
+    g.lastX    = clientX;
+    g.lastY    = clientY;
+    g.lastTime = Date.now();
+
+    // Axis detection — wait until user moves far enough to determine intent
+    if (!g.axis) {
+      if (adx < AXIS_LOCK_THRESHOLD && ady < AXIS_LOCK_THRESHOLD) return;
+      g.axis = adx >= ady ? 'h' : 'v';
+    }
+
+    if (g.axis === 'h') {
+      // ── Horizontal: slide stage ──────────────────────────────────────────
+      const atLeft  = index === 0;
+      const atRight = index === items.length - 1;
+      let translateX = dx;
+
+      // Boundary resistance: rubber-band at first/last item
+      if ((atLeft && dx > 0) || (atRight && dx < 0)) {
+        translateX = dx * BOUNDARY_RESISTANCE;
+      }
+
+      if (stageRef.current) {
+        stageRef.current.style.transition = 'none';
+        stageRef.current.style.transform  = `translateX(${translateX}px)`;
+      }
+    } else {
+      // ── Vertical: move only the media element ────────────────────────────
+      const dampened = dy * DISMISS_DRAG_DAMPEN;
+      const vh       = window.visualViewport?.height || window.innerHeight;
+      const progress = Math.min(Math.abs(dampened) / (vh * 0.55), 1);
+      const bgOpacity = 1 - (progress * 0.85);
+
+      if (mediaElRef.current) {
+        mediaElRef.current.style.transition = 'none';
+        mediaElRef.current.style.transform  = `translateY(${dampened}px)`;
+      }
+      if (overlayRef.current) {
+        overlayRef.current.style.transition      = 'none';
+        overlayRef.current.style.backgroundColor = `rgba(0,0,0,${bgOpacity})`;
+      }
+
+      // Fade controls as the user drags — one-shot ref flag (no React state in hot path)
+      if (!controlsHiddenByGesture.current && Math.abs(dy) > 20) {
+        controlsHiddenByGesture.current = true;
+        setControlsVisible(false);
+      }
+    }
+  }, []);
+
+  const onGestureEnd = useCallback(() => {
+    const g = gestureRef.current;
+    if (!g.active) return;
+    g.active = false;
+
+    // Clear will-change set during gesture start
+    if (stageRef.current) stageRef.current.style.willChange = '';
+
+    const dx  = g.lastX - g.startX;
+    const dy  = g.lastY - g.startY;
+    const dt  = Math.max(g.lastTime - g.startTime, 1);
+    const vx  = Math.abs(dx) / dt;  // px/ms
+    const vy  = Math.abs(dy) / dt;
+    const idx = indexRef.current;
+    const len = itemsLenRef.current;
+
+    if (g.axis === 'h') {
+      const vw             = window.visualViewport?.width || window.innerWidth;
+      const distThreshold  = vw * SWIPE_DISTANCE_THRESHOLD;
+      const swipeLeft      = dx < 0;
+      const swipeRight     = dx > 0;
+      const pastDist       = Math.abs(dx) > distThreshold;
+      const pastVelocity   = vx > SWIPE_VELOCITY_THRESHOLD && Math.abs(dx) > 30;
+
+      if ((pastDist || pastVelocity) && swipeLeft && idx < len - 1) {
+        resetGestureTransforms(false);
+        navigate(1);
+      } else if ((pastDist || pastVelocity) && swipeRight && idx > 0) {
+        resetGestureTransforms(false);
+        navigate(-1);
+      } else {
+        resetGestureTransforms(true);
+      }
+    } else if (g.axis === 'v') {
+      const vh            = window.visualViewport?.height || window.innerHeight;
+      const distThreshold = vh * DISMISS_DISTANCE_THRESHOLD;
+      const absDy         = Math.abs(dy);
+      const pastDist      = absDy > distThreshold;
+      const pastVelocity  = vy > DISMISS_VELOCITY_THRESHOLD && absDy > DISMISS_MIN_FOR_VELOCITY;
+
+      if (pastDist || pastVelocity) {
+        // Dismiss
+        const sign    = dy > 0 ? 1 : -1;
+        const finishY = sign * vh;
+        if (mediaElRef.current) {
+          mediaElRef.current.style.transition = 'transform 0.24s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+          mediaElRef.current.style.transform  = `translateY(${finishY}px)`;
+        }
+        if (overlayRef.current) {
+          overlayRef.current.style.transition       = 'background-color 0.24s ease';
+          overlayRef.current.style.backgroundColor  = 'rgba(0,0,0,0)';
+        }
+        handleClose();
+      } else {
+        // Snap back
+        controlsHiddenByGesture.current = false;
+        setControlsVisible(true);
+        resetGestureTransforms(true);
+      }
+    } else {
+      // No axis determined — just snap back
+      resetGestureTransforms(false);
+    }
+  }, [navigate, handleClose, resetGestureTransforms]);
+
+  // ── Pointer events on stage (desktop mouse + touchpad) ─────────────────────
+  // We use pointer events so we get mouse AND touch in one handler, but we
+  // install the touch events manually (non-passive) to allow preventDefault.
+  const handleStagePointerDown = useCallback((e) => {
+    // Ignore right-click / middle-click
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // Touch events handled by the native listeners below
+    if (e.pointerType === 'touch') return;
+    // Set will-change for GPU promotion during gesture
+    if (stageRef.current) stageRef.current.style.willChange = 'transform';
+    onGestureStart(e.clientX, e.clientY, e.target);
+  }, [onGestureStart]);
+
+  const handleStagePointerMove = useCallback((e) => {
+    if (e.pointerType === 'touch') return;
+    onGestureMove(e.clientX, e.clientY);
+  }, [onGestureMove]);
+
+  const handleStagePointerUp = useCallback((e) => {
+    if (e.pointerType === 'touch') return;
+    onGestureEnd();
+  }, [onGestureEnd]);
+
+  // ── Touch events (non-passive so we can call preventDefault) ───────────────
+  const handleStageTouchStart = useCallback((e) => {
+    if (e.touches.length !== 1) return;
+    // Set will-change for GPU promotion during gesture
+    if (stageRef.current) stageRef.current.style.willChange = 'transform';
+    const t = e.touches[0];
+    onGestureStart(t.clientX, t.clientY, e.target);
+  }, [onGestureStart]);
+
+  const handleStageTouchMove = useCallback((e) => {
+    if (!gestureRef.current.active) return;
+    const g = gestureRef.current;
+    const t = e.touches[0];
+
+    // Only prevent-default once we've locked an axis — avoids blocking scroll
+    // on tiny taps, and allows the page underneath to handle ambiguous starts.
+    if (g.axis && e.cancelable) e.preventDefault();
+
+    onGestureMove(t.clientX, t.clientY);
+  }, [onGestureMove]);
+
+  const handleStageTouchEnd = useCallback(() => {
+    onGestureEnd();
+  }, [onGestureEnd]);
+
+  // Attach native (non-passive) touch events to the stage DOM node
   useEffect(() => {
     const stage = stageRef.current;
-    if (!open || !stage) return undefined;
-    stage.addEventListener('touchstart', handleStageTouchStart, { passive: true });
-    stage.addEventListener('touchmove', handleStageTouchMove, { passive: false });
-    stage.addEventListener('touchend', handleStageTouchEnd, { passive: true });
-    stage.addEventListener('touchcancel', handleStageTouchEnd, { passive: true });
+    if (!open || !stage) return;
+    stage.addEventListener('touchstart',  handleStageTouchStart, { passive: true });
+    stage.addEventListener('touchmove',   handleStageTouchMove,  { passive: false });
+    stage.addEventListener('touchend',    handleStageTouchEnd,   { passive: true });
+    stage.addEventListener('touchcancel', handleStageTouchEnd,   { passive: true });
     return () => {
-      stage.removeEventListener('touchstart', handleStageTouchStart);
-      stage.removeEventListener('touchmove', handleStageTouchMove);
-      stage.removeEventListener('touchend', handleStageTouchEnd);
+      stage.removeEventListener('touchstart',  handleStageTouchStart);
+      stage.removeEventListener('touchmove',   handleStageTouchMove);
+      stage.removeEventListener('touchend',    handleStageTouchEnd);
       stage.removeEventListener('touchcancel', handleStageTouchEnd);
     };
   }, [open, handleStageTouchStart, handleStageTouchMove, handleStageTouchEnd]);
@@ -274,69 +500,79 @@ export default function MediaViewer() {
     if (e.target === overlayRef.current) handleClose();
   };
 
+  // ── Download ────────────────────────────────────────────────────────────────
   const handleDownload = async () => {
+    if (downloadState) return;
     const url = currentItem?.url;
     if (!url) return;
-    showToast('Downloading…');
+    const isVideoItem = currentItem.type === 'video' || currentItem.isVideo;
+
+    setDownloadState('preparing');
+    const controller = new AbortController();
+    downloadAbortRef.current = controller;
+
     try {
-      const response = await fetch(url);
-      const blob = await response.blob();
+      const cacheBustUrl = url + (url.includes('?') ? '&' : '?') + `download=${Date.now()}`;
+      const response = await fetch(cacheBustUrl, { signal: controller.signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setDownloadState('downloading');
+
+      let blob = await response.blob();
+      let filename = url.split('/').pop()?.split('?')[0] || 'media';
+      let extension = filename.split('.').pop() || '';
+
+      if (!isVideoItem && (blob.type === 'image/webp' || extension.toLowerCase() === 'webp')) {
+        setDownloadState('converting');
+        const imageBitmap = await createImageBitmap(blob);
+        const canvas = document.createElement('canvas');
+        canvas.width  = imageBitmap.width;
+        canvas.height = imageBitmap.height;
+        canvas.getContext('2d').drawImage(imageBitmap, 0, 0);
+        blob = await new Promise((res, rej) =>
+          canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob failed')), 'image/png')
+        );
+        filename = filename.replace(/\.webp$/i, '.png');
+        if (!filename.toLowerCase().endsWith('.png')) filename += '.png';
+      }
+
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = url.split('/').pop()?.split('?')[0] || 'media';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(blobUrl);
-    } catch (_) {
-      if (!isSafeUrl(url)) return;
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = url.split('/').pop()?.split('?')[0] || 'media';
-      a.target = '_blank';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      a.href = blobUrl; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+
+      setDownloadState('completed');
+      setTimeout(() => setDownloadState(null), 1500);
+    } catch (err) {
+      setDownloadState(err.name === 'AbortError' ? 'cancelled' : 'failed');
+      setTimeout(() => setDownloadState(null), 2000);
+    } finally {
+      downloadAbortRef.current = null;
     }
+  };
+
+  const handleCancelDownload = () => {
+    downloadAbortRef.current?.abort();
   };
 
   const handleShare = async () => {
-    if (meta?.source === 'Post' && meta?.post) {
-      setShowShareModal(true);
-      return;
-    }
     const url = currentItem?.url;
     if (!url) return;
     try {
-      if (navigator.share) {
-        await navigator.share({ url });
-      } else {
-        await navigator.clipboard?.writeText(url);
-        showToast('Link copied');
-      }
+      if (navigator.share) await navigator.share({ url });
+      else { await navigator.clipboard?.writeText(url); showToast('Link copied'); }
     } catch (_) {}
-  };
-
-  const handleSave = () => {
-    if (!currentItem?.url) return;
-    setSavedUrls(prev => {
-      const next = new Set(prev);
-      if (next.has(currentItem.url)) next.delete(currentItem.url);
-      else next.add(currentItem.url);
-      return next;
-    });
-    setShowMoreMenu(false);
   };
 
   if (!open) return null;
 
   const hasMany = items.length > 1;
-  const fromPost = meta?.source === 'Post' && !isVid;
 
   return createPortal(
     <div
       ref={overlayRef}
+      data-media-viewer="true"
+      data-theme="dark"
       className={`${styles.overlay} ${visible ? styles.visible : ''}`}
       onClick={handleOverlayClick}
       tabIndex={-1}
@@ -355,21 +591,15 @@ export default function MediaViewer() {
       <div className={`${styles.topBar} ${controlsVisible ? styles.controlsVisible : ''}`}>
         <div className={styles.topBarLeft}>
           <button className={styles.iconBtn} onClick={handleClose} aria-label="Close">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+            <X size={18} strokeWidth={2} />
           </button>
         </div>
 
         <div className={styles.topBarRight}>
-          {/* Forward */}
+          {/* Forward — only for DM attachments */}
           {meta?.source !== 'Post' && (
             <button className={styles.iconBtn} onClick={() => setShowForwardModal(true)} aria-label="Forward">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="15 17 20 12 15 7" />
-                <path d="M4 18v-2a4 4 0 0 1 4-4h12" />
-              </svg>
+              <Forward size={18} strokeWidth={1.75} />
             </button>
           )}
 
@@ -379,30 +609,53 @@ export default function MediaViewer() {
               className={styles.iconBtn}
               onClick={(e) => { e.stopPropagation(); setShowMoreMenu(!showMoreMenu); }}
               aria-label="More options"
+              aria-haspopup="menu"
+              aria-expanded={showMoreMenu}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="5" r="2.2" /><circle cx="12" cy="12" r="2.2" /><circle cx="12" cy="19" r="2.2" />
-              </svg>
+              <MoreVertical size={18} strokeWidth={1.75} />
             </button>
-            <div className={`${styles.moreMenu} ${showMoreMenu ? styles.open : ''}`} onClick={(e) => e.stopPropagation()}>
-              <button className={styles.moreMenuItem} onClick={() => { handleDownload(); setShowMoreMenu(false); }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                Download
-              </button>
+            <div
+              className={`${styles.moreMenu} ${showMoreMenu ? styles.open : ''}`}
+              role="menu"
+              onClick={(e) => e.stopPropagation()}
+            >
               <button
                 className={styles.moreMenuItem}
-                onClick={() => {
-                  setShowMoreMenu(false);
-                  if (!hasReported) setShowReportModal(true);
-                }}
+                role="menuitem"
+                onClick={() => { handleDownload(); setShowMoreMenu(false); }}
+              >
+                <Download size={15} strokeWidth={1.75} />
+                Download
+              </button>
+
+              {meta?.source !== 'Post' && (
+                <button
+                  className={styles.moreMenuItem}
+                  role="menuitem"
+                  onClick={() => { handleShare(); setShowMoreMenu(false); }}
+                >
+                  <Share size={15} strokeWidth={1.75} />
+                  Share
+                </button>
+              )}
+
+              <button
+                className={styles.moreMenuItem}
+                role="menuitem"
+                onClick={() => { setShowMoreMenu(false); if (!hasReported) setShowReportModal(true); }}
                 disabled={hasReported}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" /></svg>
+                <Flag size={15} strokeWidth={1.75} />
                 {hasReported ? 'Already Reported' : 'Report'}
               </button>
+
               {meta?.isOwner && (
-                <button className={`${styles.moreMenuItem} ${styles.danger}`} onClick={() => { showToast('Deleted'); handleClose(); setShowMoreMenu(false); }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                <button
+                  className={`${styles.moreMenuItem} ${styles.danger}`}
+                  role="menuitem"
+                  onClick={() => { showToast('Deleted'); handleClose(); setShowMoreMenu(false); }}
+                >
+                  <Trash2 size={15} strokeWidth={1.75} />
                   Delete
                 </button>
               )}
@@ -411,16 +664,25 @@ export default function MediaViewer() {
         </div>
       </div>
 
-      {/* ── Media stage ── */}
-      <div 
-        className={styles.stage} 
+      {/* ── Media stage ──
+          Pointer events drive the gesture system on desktop.
+          Touch events are attached natively (non-passive) below.
+          Only the stage translates for H-swipe; only the media element
+          inside translates for V-dismiss. ── */}
+      <div
+        className={styles.stage}
         ref={stageRef}
+        onPointerDown={handleStagePointerDown}
+        onPointerMove={handleStagePointerMove}
+        onPointerUp={handleStagePointerUp}
+        onPointerCancel={handleStagePointerUp}
         onClick={() => setShowMoreMenu(false)}
       >
         {currentItem?.url && (isVid ? (
           <VideoViewer
             key={currentItem.url}
             src={currentItem.url}
+            mediaRef={mediaElRef}
             onControlsChange={setControlsVisible}
             onStageClick={() => setShowMoreMenu(false)}
           />
@@ -428,6 +690,7 @@ export default function MediaViewer() {
           <ImageViewer
             key={currentItem.url}
             src={currentItem.url}
+            mediaRef={mediaElRef}
             onToggleControls={toggleControls}
             preloadNext={nextItem?.url}
             preloadPrev={prevItem?.url}
@@ -435,7 +698,7 @@ export default function MediaViewer() {
         ))}
       </div>
 
-      {/* ── Nav buttons ── */}
+      {/* ── Nav buttons — outside stage so they don't translate with it ── */}
       {hasMany && (
         <>
           <button
@@ -444,9 +707,7 @@ export default function MediaViewer() {
             disabled={index === 0}
             aria-label="Previous"
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
+            <ChevronLeft size={20} strokeWidth={2.25} />
           </button>
           <button
             className={`${styles.navBtn} ${styles.navNext} ${controlsVisible ? styles.controlsVisible : ''}`}
@@ -454,44 +715,14 @@ export default function MediaViewer() {
             disabled={index === items.length - 1}
             aria-label="Next"
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
+            <ChevronRight size={20} strokeWidth={2.25} />
           </button>
         </>
       )}
 
-      {/* ── Info panel ── */}
-      {meta && (
-        <div className={`${styles.infoPanel} ${fromPost ? styles.infoPanelStandalone : ''} ${controlsVisible ? styles.controlsVisible : ''}`}>
-          {meta.authorAvatar && isImageUrl(meta.authorAvatar) ? (
-            <img src={getMediaUrl(meta.authorAvatar)} alt={meta.authorName} className={styles.infoAvatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
-          ) : (
-            <div className={styles.infoAvatarPlaceholder}>
-              {(meta.authorName || 'U').charAt(0).toUpperCase()}
-            </div>
-          )}
-          <div className={styles.infoText}>
-            <div className={styles.infoAuthor}>{meta.authorName || 'Unknown'}</div>
-            <div className={styles.infoMeta}>
-              {meta.timestamp}{meta.source ? ` · ${meta.source}` : ''}
-            </div>
-            {currentItem?.caption && (
-              <div className={styles.infoCaption}>{currentItem.caption}</div>
-            )}
-          </div>
-        </div>
-      )}
 
-      {showShareModal && meta?.post && (
-        <SharePostModal
-          isOpen={showShareModal}
-          onClose={() => setShowShareModal(false)}
-          post={meta.post}
-          author={meta.author}
-        />
-      )}
 
+      {/* ── Modals ── */}
       <ReportModal
         isOpen={showReportModal}
         onClose={() => setShowReportModal(false)}
@@ -505,30 +736,74 @@ export default function MediaViewer() {
       />
 
       {showForwardModal && (
-        <ForwardMessageModal
+        <LazyForwardModal
           isOpen={showForwardModal}
-          msg={{ mediaUrl: currentItem?.url, mediaType: currentItem?.type || 'image' }}
-          conversations={conversations || []}
+          currentItem={currentItem}
           onClose={() => setShowForwardModal(false)}
-          onConfirmForward={async (targetIds) => {
-            try {
-              for (const id of targetIds) {
-                await sendDirectMessage(id, {
-                  text: '',
-                  mediaUrl: currentItem?.url,
-                  mediaType: currentItem?.type || 'image'
-                });
-              }
-            } catch (e) {
-              // ignore
-            } finally {
-              setShowForwardModal(false);
-            }
-          }}
         />
       )}
 
+      {downloadState && (
+        <div className={styles.downloadModalOverlay}>
+          <div className={styles.downloadModal}>
+            {['preparing', 'downloading', 'converting'].includes(downloadState) ? (
+              <div className={styles.downloadSpinner} />
+            ) : downloadState === 'completed' ? (
+              <div className={styles.downloadIconSuccess}>✓</div>
+            ) : (
+              <div className={styles.downloadIconError}>✕</div>
+            )}
+            <div className={styles.downloadText}>
+              {downloadState === 'preparing'   && 'Preparing download…'}
+              {downloadState === 'downloading' && 'Downloading media…'}
+              {downloadState === 'converting'  && 'Converting to PNG…'}
+              {downloadState === 'completed'   && 'Download completed'}
+              {downloadState === 'failed'      && 'Download failed'}
+              {downloadState === 'cancelled'   && 'Download cancelled'}
+            </div>
+            {['preparing', 'downloading', 'converting'].includes(downloadState) && (
+              <button className={styles.downloadCancelBtn} onClick={handleCancelDownload}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>,
     document.body
+  );
+}
+
+/**
+ * Lazy component that only subscribes to conversations and message action hooks
+ * when the forward modal is actually opened.
+ */
+function LazyForwardModal({ isOpen, currentItem, onClose }) {
+  const { conversations } = useConversations();
+  const { sendDirectMessage } = useMessageActions();
+
+  if (!isOpen) return null;
+
+  return (
+    <ForwardMessageModal
+      isOpen={isOpen}
+      msg={{ mediaUrl: currentItem?.url, mediaType: currentItem?.type || 'image' }}
+      conversations={conversations || []}
+      onClose={onClose}
+      onConfirmForward={async (targetIds) => {
+        try {
+          for (const id of targetIds) {
+            await sendDirectMessage(id, {
+              text: '',
+              mediaUrl: currentItem?.url,
+              mediaType: currentItem?.type || 'image',
+            });
+          }
+        } catch (_) {}
+        finally {
+          onClose();
+        }
+      }}
+    />
   );
 }

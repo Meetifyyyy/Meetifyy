@@ -30,6 +30,15 @@ class OverlayManager {
     this.init();
   }
 
+  navigate(to, options) {
+    if (typeof this.navigator === 'function') {
+      return this.navigator(to, options);
+    }
+    if (typeof window !== 'undefined') {
+      window.location.assign(typeof to === 'string' ? to : (to?.pathname || '/'));
+    }
+  }
+
   init() {
     if (this.listenerInitialized || typeof window === 'undefined') return;
     this.listenerInitialized = true;
