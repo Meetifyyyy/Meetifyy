@@ -35,6 +35,11 @@ const queryClient = new QueryClient({
   },
 });
 
+// Enable CSS :active pseudo-class on mobile Safari / iOS touch devices
+if (typeof document !== 'undefined') {
+  document.addEventListener('touchstart', () => {}, { passive: true });
+}
+
 // Disable browser context menu on images and videos globally
 if (typeof window !== 'undefined') {
   window.addEventListener('contextmenu', (e) => {

@@ -77,6 +77,11 @@
   color: var(--color-text-main);
 }
 
+.bottomNavItem:active {
+  transform: scale(0.92);
+  transition: transform 0.05s ease;
+}
+
 .bottomNavItem.active {
   color: var(--color-primary);
   font-weight: 600;

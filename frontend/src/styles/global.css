@@ -913,12 +913,43 @@ textarea {
   font-family: inherit;
 }
 
-button {
-  transition: transform 0.15s ease, opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+/* ─────────────────────────────────────────────────────────────
+   GLOBAL RESPONSIVE INTERACTION & TOUCH ERGONOMICS ARCHITECTURE
+   ───────────────────────────────────────────────────────────── */
+
+/* Optimized touch manipulation — removes 300ms double-tap delay on mobile */
+button,
+[role="button"],
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+a,
+select {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
-button:active {
-  transform: scale(0.97);
+/* Base button transitions for fast, fluid tactile response */
+button,
+[role="button"] {
+  transition: transform 0.15s ease, opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Tactile :active press feedback on touch & click (zero-specificity :where allows component overrides) */
+:where(button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]):active:not(:disabled):not([aria-disabled="true"]) {
+  transform: scale(0.96);
+  opacity: 0.92;
+  transition: transform 0.05s ease, opacity 0.05s ease;
+}
+
+/* Accessibility: Clear focus-visible rings for keyboard users, cleanly avoiding tap-focus outlines */
+:where(button, [role="button"], a, input, select, textarea):focus:not(:focus-visible) {
+  outline: none;
+}
+
+:where(button, [role="button"], a):focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
 }
 
 .no-scrollbar {

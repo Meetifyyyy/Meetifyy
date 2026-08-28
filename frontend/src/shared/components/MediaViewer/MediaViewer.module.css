@@ -1,13 +1,39 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   MEDIA VIEWER — Theme-Aware Stylesheet
+   
+   Architecture:
+   • Controls that float over the media stage (close, nav, counter, top-bar)
+     always need dark-contrast styling because the stage background is always
+     dark/black regardless of the page theme. They use --mv-* custom properties
+     defined on .overlay (never inherited from the page theme).
+   
+   • The bottom info panel (author, text, PostActions) lives inside a card with
+     data-theme="dark" so the PostActions buttons and text always use the dark
+     token set — consistent, readable, and premium against the viewer.
+   
+   • The viewer backdrop/scrim gradients are styled via global.css overrides
+     (see bottom of this file's companion block in global.css) because CSS
+     Modules cannot use [data-theme="dark"] ancestor selectors.
+   
+   • All hardcoded zinc/gray colors from the original have been replaced with
+     either --mv-* stage-appropriate tokens or design-system CSS variables.
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Stage-level tokens: always dark, since the stage is always dark ──────── */
 .overlay {
-  --mv-btn-bg: #18181b;
-  --mv-btn-bg-hover: #27272a;
-  --mv-btn-border: transparent;
-  --mv-btn-color: #ffffff;
-  --mv-btn-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --mv-menu-bg: #18181b;
-  --mv-menu-border: rgba(255, 255, 255, 0.2);
-  --mv-menu-color: #ffffff;
-  --mv-menu-hover: rgba(255, 255, 255, 0.1);
+  /* Frosted dark glass for controls floating over the media */
+  --mv-btn-bg:        rgba(0, 0, 0, 0.52);
+  --mv-btn-bg-hover:  rgba(0, 0, 0, 0.70);
+  --mv-btn-border:    rgba(255, 255, 255, 0.16);
+  --mv-btn-color:     #ffffff;
+  --mv-btn-shadow:    0 4px 14px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
+
+  /* More-menu: always dark since the viewer is always dark */
+  --mv-menu-bg:     var(--color-bg-white);
+  --mv-menu-border: var(--color-border);
+  --mv-menu-color:  var(--color-text-main);
+  --mv-menu-hover:  var(--color-border-light);
+
   position: fixed;
   inset: 0;
   z-index: 10000;
@@ -15,15 +41,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.3s ease;
+  transition: background var(--transition-slow, 0.3s ease);
   outline: none;
 }
 
+/* Default (no theme attr / fallback) */
 .overlay.visible {
-  background: rgba(0, 0, 0, 0.92);
+  background: #000000;
 }
 
-/* ── Top Bar ── */
+/* ── Top Bar ────────────────────────────────────────────────────────────────
+   Floats over the media — always needs dark gradient for readability */
 .topBar {
   position: fixed;
   top: 0;
@@ -35,7 +63,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 12px;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, transparent 100%);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.42) 0%, transparent 100%);
   opacity: 0;
   transform: translateY(-8px);
   transition: opacity 0.25s ease, transform 0.25s ease;
@@ -60,28 +88,38 @@
   gap: 0.25rem;
 }
 
+/* ── Icon Buttons (close, forward, more) ────────────────────────────────────
+   Always on dark stage background → frosted dark glass style */
 .iconBtn {
   width: 38px;
   height: 38px;
   border-radius: var(--radius-full);
-  border: none !important;
+  border: 1px solid var(--mv-btn-border) !important;
   background: var(--mv-btn-bg);
   color: var(--mv-btn-color);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
   flex-shrink: 0;
   box-shadow: var(--mv-btn-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .iconBtn:hover {
   background: var(--mv-btn-bg-hover);
+  border-color: rgba(255, 255, 255, 0.3) !important;
 }
 
 .iconBtn:active {
   transform: scale(0.95);
+}
+
+.iconBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 /* ── Media Stage ── */
@@ -100,11 +138,12 @@
 }
 
 .overlay.visible .stage {
-  transform: scale(1) translate3d(0,0,0);
+  transform: scale(1) translate3d(0, 0, 0);
   opacity: 1;
 }
 
-/* ── Nav Arrows ── */
+/* ── Nav Arrows ─────────────────────────────────────────────────────────────
+   Float over media — always dark-stage style */
 .navBtn {
   position: fixed;
   top: 50%;
@@ -113,7 +152,7 @@
   width: 44px;
   height: 44px;
   border-radius: var(--radius-full);
-  border: none !important;
+  border: 1px solid var(--mv-btn-border) !important;
   background: var(--mv-btn-bg);
   color: var(--mv-btn-color);
   display: flex;
@@ -122,8 +161,10 @@
   cursor: pointer;
   box-shadow: var(--mv-btn-shadow);
   opacity: 0;
-  transition: opacity 0.25s ease, background 0.15s ease, transform 0.15s ease, color 0.15s ease;
+  transition: opacity 0.25s ease, background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
   pointer-events: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .navBtn.controlsVisible {
@@ -133,6 +174,7 @@
 
 .navBtn:hover {
   background: var(--mv-btn-bg-hover);
+  border-color: rgba(255, 255, 255, 0.3) !important;
 }
 
 .navBtn:active {
@@ -144,17 +186,16 @@
   cursor: not-allowed;
 }
 
+.navBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 .navPrev { left: 1rem; }
 .navNext { right: 1rem; }
 
-/* ── Counter ── */
+/* ── Counter Badge ── */
 .counter {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, calc(-50% - 0px));
-  pointer-events: none;
-  /* will be below the media, just a reference; actual display is in topBar */
   display: none;
 }
 
@@ -177,6 +218,8 @@
   opacity: 0;
   transition: opacity 0.25s ease;
   pointer-events: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .counterBadge.controlsVisible {
@@ -184,93 +227,140 @@
   pointer-events: auto;
 }
 
-/* ── Info Panel ── */
-.infoPanel {
+/* ══════════════════════════════════════════════════════════════════════════════
+   BOTTOM CONTEXT / INFO PANEL
+   The card has data-theme="dark" on it (set in JSX), so the PostActions
+   buttons and all text always resolve to dark-theme tokens, giving a
+   consistent, premium dark look independent of the page theme.
+══════════════════════════════════════════════════════════════════════════════ */
+
+.bottomContextScrim {
   position: fixed;
-  bottom: 80px;
-  left: 1.25rem;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 3.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  /* Scrim gradient — dark variant as default.
+     Light-mode override is applied via global.css: .mediaViewerScrimLight */
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.90) 0%,
+    rgba(0, 0, 0, 0.60) 50%,
+    rgba(0, 0, 0, 0.20) 80%,
+    transparent 100%
+  );
   z-index: 10001;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  max-width: min(400px, calc(100vw - 2.5rem));
+  pointer-events: none;
   opacity: 0;
   transform: translateY(8px);
   transition: opacity 0.25s ease, transform 0.25s ease;
-  pointer-events: none;
+  display: flex;
+  justify-content: flex-start;
 }
 
-.infoPanel.controlsVisible {
+.bottomContextScrim.controlsVisible {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Offset when viewing video with bottom video controls */
+.bottomContextVideo {
+  bottom: calc(54px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 0.5rem;
+}
+
+/* Info card — data-theme="dark" ensures dark token values */
+.bottomContextContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: 100%;
+  max-width: min(540px, calc(100vw - 2.5rem));
+  /* var(--color-bg-white) in dark theme = #202020 */
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3), 0 8px 32px rgba(0, 0, 0, 0.55);
   pointer-events: auto;
 }
 
-.infoPanelStandalone {
-  bottom: 16px;
+/* ── Author Row ── */
+.authorRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
-.infoAvatar {
-  width: 36px;
-  height: 36px;
+.authorAvatar {
+  width: 40px;
+  height: 40px;
   border-radius: var(--radius-full);
   object-fit: cover;
   flex-shrink: 0;
-  border: 2px solid rgba(255,255,255,0.2);
+  border: 1px solid var(--color-border) !important;
 }
 
-.infoAvatarPlaceholder {
-  width: 36px;
-  height: 36px;
+.authorAvatarPlaceholder {
+  width: 40px;
+  height: 40px;
   border-radius: var(--radius-full);
   background: var(--color-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-family-sans);
-  font-weight: 700;
+  font-family: var(--font-family-display);
+  font-weight: 600;
   font-size: 0.85rem;
   color: #fff;
   flex-shrink: 0;
-  border: 2px solid rgba(255,255,255,0.2);
+  border: none !important;
 }
 
-.infoText {
+.authorMeta {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.1rem;
 }
 
-.infoAuthor {
-  font-family: var(--font-family-sans);
-  font-size: 0.875rem;
+/* Using design-system tokens — resolve from the card's data-theme="dark" */
+.authorName {
+  font-family: var(--font-family-display);
   font-weight: 600;
-  color: #fff;
+  font-size: 0.88rem;
+  color: var(--color-text-main);
   line-height: 1.2;
 }
 
-.infoMeta {
+.postTimestamp {
   font-family: var(--font-family-sans);
-  font-size: 0.75rem;
-  color: rgba(255,255,255,0.6);
+  font-size: 0.72rem;
+  color: var(--color-text-light);
+  font-weight: 400;
+  margin-top: 1px;
   line-height: 1.2;
 }
 
-.infoCaption {
+.postText {
   font-family: var(--font-family-sans);
-  font-size: 0.78rem;
-  color: rgba(255,255,255,0.8);
-  margin-top: 0.1rem;
-  line-height: 1.4;
+  font-size: 0.92rem;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--color-text-main);
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+  max-width: 100%;
 }
 
-
-
-/* ── More Menu ── */
+/* ── More Menu ─────────────────────────────────────────────────────────────
+   Positioned relative to the icon button in the top bar.
+   The .overlay element has no data-theme, so it inherits from <html>.
+   We therefore use the --mv-menu-* tokens (defined on .overlay with the
+   global surface variables) so the menu looks correct in both themes. */
 .moreMenuWrap {
   position: relative;
 }
@@ -282,7 +372,7 @@
   background: var(--mv-menu-bg);
   border: 1px solid var(--mv-menu-border);
   border-radius: var(--radius-md);
-  box-shadow: var(--mv-btn-shadow);
+  box-shadow: var(--shadow-lg);
   padding: 0.35rem;
   min-width: 160px;
   opacity: 0;
@@ -320,11 +410,29 @@
   background: var(--mv-menu-hover);
 }
 
+.moreMenuItem:active {
+  background: var(--mv-menu-hover);
+  transform: scale(0.98);
+}
+
+.moreMenuItem:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
 .moreMenuItem.danger {
   color: var(--color-danger);
 }
 
-/* ── Image Viewer ── */
+.moreMenuItem:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   IMAGE VIEWER
+══════════════════════════════════════════════════════════════════════════════ */
+
 .imageWrap {
   position: relative;
   width: 100%;
@@ -332,10 +440,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Cursor is toggled imperatively via classList */
   cursor: default;
   overflow: hidden;
-  /* Prevent callout on long-press (iOS) */
   -webkit-touch-callout: none;
 }
 
@@ -343,6 +449,7 @@
   cursor: grabbing !important;
 }
 
+/* Media itself is NEVER tinted — only surrounding UI adapts */
 .mediaImage {
   max-width: 100%;
   max-height: 100dvh;
@@ -350,13 +457,10 @@
   border-radius: 2px;
   will-change: transform;
   transform-origin: center center;
-  /* transform is applied imperatively by JS — only opacity uses CSS transition */
   transition: opacity 0.32s ease;
   user-select: none;
   -webkit-user-drag: none;
-  /* pointer-events: none so the wrap element receives all mouse events */
   pointer-events: none;
-  /* Prevent native image drag ghost on desktop */
   -webkit-user-select: none;
   cursor: zoom-in;
 }
@@ -369,7 +473,8 @@
   opacity: 1;
 }
 
-/* ── Skeleton / Loading ── */
+/* ── Skeleton / Loading ─────────────────────────────────────────────────────
+   Stage is always dark so white shimmer is always appropriate */
 .skeleton {
   position: absolute;
   inset: 0;
@@ -384,26 +489,27 @@
   border-radius: var(--radius-lg);
   background: linear-gradient(
     90deg,
-    rgba(255,255,255,0.06) 25%,
-    rgba(255,255,255,0.12) 50%,
-    rgba(255,255,255,0.06) 75%
+    rgba(255, 255, 255, 0.05) 25%,
+    rgba(255, 255, 255, 0.10) 50%,
+    rgba(255, 255, 255, 0.05) 75%
   );
   background-size: 400% 100%;
   animation: shimmer 1.5s infinite;
 }
 
 @keyframes shimmer {
-  0% { background-position: 100% 0; }
+  0%   { background-position: 100% 0; }
   100% { background-position: -100% 0; }
 }
 
-/* ── Broken Media ── */
+/* ── Broken / Error State ───────────────────────────────────────────────────
+   Stage is always dark */
 .brokenWrap {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1rem;
-  color: rgba(255,255,255,0.5);
+  color: rgba(255, 255, 255, 0.55);
   font-family: var(--font-family-sans);
 }
 
@@ -417,9 +523,10 @@
 
 /* ══════════════════════════════════════════════════════════════════════════════
    VIDEO VIEWER — Premium Player
+   All video controls sit on the always-dark stage, so they always use
+   frosted-glass dark styling regardless of the page theme.
 ══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── Wrapper ─────────────────────────────────────────────────────────────── */
 .videoWrap {
   position: relative;
   width: 100%;
@@ -431,11 +538,9 @@
   cursor: pointer;
   outline: none;
   -webkit-tap-highlight-color: transparent;
-  /* Hardware-accelerated layer */
   transform: translateZ(0);
 }
 
-/* Fullscreen adaptations */
 .videoWrap:fullscreen,
 .videoWrap:-webkit-full-screen {
   background: #000;
@@ -444,7 +549,7 @@
   cursor: default;
 }
 
-/* ── Video element ────────────────────────────────────────────────────────── */
+/* Video element — never filtered or tinted */
 .viewerVideo {
   max-width: 100%;
   max-height: 100dvh;
@@ -453,12 +558,11 @@
   object-fit: contain;
   outline: none;
   display: block;
-  /* GPU composite */
   will-change: transform;
   transform: translateZ(0);
 }
 
-/* ── Loading / Buffering spinner ─────────────────────────────────────────── */
+/* ── Buffering Spinner ── */
 .videoSpinnerWrap {
   position: absolute;
   inset: 0;
@@ -472,7 +576,7 @@
 .videoSpinner {
   width: 48px;
   height: 48px;
-  border: 3px solid rgba(255,255,255,0.15);
+  border: 3px solid rgba(255, 255, 255, 0.15);
   border-top-color: #fff;
   border-radius: 50%;
   animation: vSpin 0.75s linear infinite;
@@ -482,7 +586,7 @@
   to { transform: rotate(360deg); }
 }
 
-/* ── Error state ─────────────────────────────────────────────────────────── */
+/* ── Error State ── */
 .videoError {
   position: absolute;
   inset: 0;
@@ -491,7 +595,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.85rem;
-  color: rgba(255,255,255,0.55);
+  color: rgba(255, 255, 255, 0.55);
   font-family: var(--font-family-sans);
   font-size: 0.88rem;
   pointer-events: auto;
@@ -500,15 +604,15 @@
 
 .videoError svg {
   opacity: 0.45;
-  color: rgba(255,255,255,0.7);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .videoRetryBtn {
   margin-top: 0.25rem;
   padding: 0.45rem 1.2rem;
   border-radius: var(--radius-full);
-  border: 1px solid rgba(255,255,255,0.25);
-  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
   font-family: var(--font-family-sans);
   font-size: 0.82rem;
@@ -516,13 +620,24 @@
   cursor: pointer;
   transition: background 0.15s;
   backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .videoRetryBtn:hover {
-  background: rgba(255,255,255,0.16);
+  background: rgba(255, 255, 255, 0.16);
 }
 
-/* ── Seek ripple (mobile double-tap) ─────────────────────────────────────── */
+.videoRetryBtn:active {
+  transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.videoRetryBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ── Seek Ripple (mobile double-tap) ── */
 .seekRipple {
   position: absolute;
   top: 50%;
@@ -530,32 +645,48 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   color: #fff;
   pointer-events: none;
   opacity: 0;
-  animation: rippleFade 0.65s ease forwards;
-  z-index: 5;
+  animation: rippleFade 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  z-index: 25;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
-.seekRippleLeft  { left: 10%; }
-.seekRippleRight { right: 10%; }
+.seekRippleLeft  { left: 14%; }
+.seekRippleRight { right: 14%; }
+
+.seekRippleIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
 .seekRippleLabel {
   font-family: var(--font-family-sans);
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
 @keyframes rippleFade {
-  0%   { opacity: 0;   transform: translateY(-50%) scale(0.85); }
-  20%  { opacity: 1;   transform: translateY(-50%) scale(1); }
-  75%  { opacity: 1; }
-  100% { opacity: 0;   transform: translateY(-50%) scale(1.05); }
+  0%   { opacity: 0; transform: translateY(-50%) scale(0.7); }
+  25%  { opacity: 1; transform: translateY(-50%) scale(1); }
+  75%  { opacity: 1; transform: translateY(-50%) scale(1); }
+  100% { opacity: 0; transform: translateY(-50%) scale(1.15); }
 }
 
+/* ── Center Replay Button ── */
 .centerReplayBtn {
   position: absolute;
   top: 50%;
@@ -564,27 +695,28 @@
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: #18181b;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  color: #ffffff;
+  background: rgba(0, 0, 0, 0.60);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
   z-index: 15;
   transition: transform 0.18s ease, background 0.15s ease;
   animation: replayIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .centerReplayBtn:hover {
-  background: #27272a;
+  background: rgba(0, 0, 0, 0.78);
 }
 
 @media (hover: hover) and (pointer: fine) {
-
   .centerReplayBtn:hover {
-  transform: translate(-50%, -50%) scale(1.08);
+    transform: translate(-50%, -50%) scale(1.08);
   }
 }
 
@@ -592,12 +724,17 @@
   transform: translate(-50%, -50%) scale(0.95);
 }
 
+.centerReplayBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 @keyframes replayIn {
   from { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
   to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
-/* ── Controls overlay ────────────────────────────────────────────────────── */
+/* ── Controls Overlay ── */
 .videoControlsOverlay {
   position: absolute;
   inset: 0;
@@ -614,23 +751,19 @@
   opacity: 1;
 }
 
-/* ── Bottom gradient ─────────────────────────────────────────────────────── */
+/* ── Bottom Gradient ── */
 .videoGradient {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 100px;
-  background: linear-gradient(
-    to top,
-    rgba(0,0,0,0.5) 0%,
-    transparent 100%
-  );
+  height: 110px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, transparent 100%);
   pointer-events: none;
   border-radius: 0 0 2px 2px;
 }
 
-/* ── Progress area ───────────────────────────────────────────────────────── */
+/* ── Progress Area ── */
 .videoProgressArea {
   position: relative;
   padding: 0 1.25rem;
@@ -638,12 +771,12 @@
   z-index: 1;
 }
 
-/* ── Seek tooltip ────────────────────────────────────────────────────────── */
+/* ── Seek Tooltip ── */
 .seekTooltip {
   position: absolute;
   bottom: calc(100% + 12px);
   transform: translateX(-50%);
-  background: rgba(0,0,0,0.82);
+  background: rgba(0, 0, 0, 0.82);
   color: #fff;
   font-family: var(--font-family-sans);
   font-size: 0.72rem;
@@ -654,14 +787,15 @@
   white-space: nowrap;
   pointer-events: none;
   backdrop-filter: blur(6px);
-  border: 1px solid rgba(255,255,255,0.12);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   z-index: 2;
 }
 
-/* ── Progress track ──────────────────────────────────────────────────────── */
+/* ── Progress Track ── */
 .videoProgressTrack {
   width: 100%;
-  height: 18px;   /* larger hit-target */
+  height: 18px;
   position: relative;
   cursor: pointer;
   display: flex;
@@ -673,7 +807,7 @@
   left: 0;
   right: 0;
   height: 3px;
-  background: rgba(255,255,255,0.18);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 3px;
   pointer-events: none;
   transition: height 0.15s;
@@ -687,7 +821,7 @@
   position: absolute;
   left: 0;
   height: 3px;
-  background: rgba(255,255,255,0.32);
+  background: rgba(255, 255, 255, 0.35);
   border-radius: 3px;
   pointer-events: none;
 }
@@ -719,7 +853,7 @@
   border-radius: var(--radius-full);
   transform: translate(-50%, -50%) scale(0);
   pointer-events: none;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.45);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
   transition: width 0.15s, height 0.15s, transform 0.15s;
 }
 
@@ -729,13 +863,12 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-
   .videoProgressTrack:hover .videoProgressThumb {
-  transform: translate(-50%, -50%) scale(1);
+    transform: translate(-50%, -50%) scale(1);
   }
 }
 
-/* ── Controls row ────────────────────────────────────────────────────────── */
+/* ── Controls Row ── */
 .videoControlsRow {
   display: flex;
   align-items: center;
@@ -746,7 +879,6 @@
   position: relative;
 }
 
-/* Interactive children of controls overlay get pointer-events when visible */
 .controlsOverlayVisible .videoControlsRow,
 .controlsOverlayVisible .videoProgressArea,
 .controlsOverlayVisible .videoBtn,
@@ -762,25 +894,38 @@
   gap: 0.1rem;
 }
 
-/* ── Control buttons ─────────────────────────────────────────────────────── */
+/* ── Video Control Buttons (always on dark stage) ── */
 .videoBtn {
   width: 38px;
   height: 38px;
   border: none !important;
-  background: #18181b;
-  color: #ffffff;
+  background: rgba(0, 0, 0, 0.52);
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   border-radius: 50%;
-  transition: background 0.15s, transform 0.12s, color 0.12s;
+  transition: background 0.15s, transform 0.12s;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 0;
+  line-height: 0;
+}
+
+.videoBtn svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.videoBtnPlay svg {
+  margin-left: 2px;
 }
 
 .videoBtn:hover {
-  background: #27272a;
+  background: rgba(0, 0, 0, 0.70);
   color: #fff;
 }
 
@@ -792,7 +937,6 @@
   color: var(--color-primary);
 }
 
-/* Focus ring */
 .videoBtn:focus-visible,
 .videoProgressTrack:focus-visible,
 .videoSpeedBtn:focus-visible {
@@ -800,7 +944,7 @@
   outline-offset: 2px;
 }
 
-/* ── Volume group ────────────────────────────────────────────────────────── */
+/* ── Volume Group ── */
 .videoVolGroup {
   display: inline-flex;
   align-items: center;
@@ -808,18 +952,20 @@
   min-width: 38px;
   max-width: 38px;
   border-radius: 20px;
-  background: var(--mv-btn-bg);
+  background: rgba(0, 0, 0, 0.52);
   border: none !important;
-  box-shadow: var(--mv-btn-shadow);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
   overflow: hidden;
   transition: max-width 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s ease;
   flex-shrink: 0;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .videoVolGroup:hover,
 .videoVolGroup:focus-within {
   max-width: 140px;
-  background: var(--mv-btn-bg-hover);
+  background: rgba(0, 0, 0, 0.70);
 }
 
 .videoVolGroup .videoBtn {
@@ -829,6 +975,7 @@
   width: 38px;
   height: 38px;
   flex-shrink: 0;
+  backdrop-filter: none;
 }
 
 .videoVolSliderWrap {
@@ -854,7 +1001,7 @@
   height: 4px;
   background: linear-gradient(
     to right,
-    var(--color-primary, #6366f1) calc(var(--vol, 1) * 100%),
+    var(--color-primary) calc(var(--vol, 1) * 100%),
     rgba(255, 255, 255, 0.25) calc(var(--vol, 1) * 100%)
   );
   border-radius: 4px;
@@ -873,7 +1020,7 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #ffffff;
+  background: #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
   cursor: pointer;
 }
@@ -882,29 +1029,30 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #ffffff;
+  background: #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
   border: none;
   cursor: pointer;
 }
 
-/* ── Time display ────────────────────────────────────────────────────────── */
+/* ── Time Display ── */
 .videoTime {
   font-family: var(--font-family-sans);
   font-size: 0.76rem;
   font-weight: 500;
-  color: #fff;
+  color: rgba(255, 255, 255, 0.92);
   white-space: nowrap;
   letter-spacing: 0.03em;
   padding: 0 0.35rem;
   user-select: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .videoTimeSep {
-  color: rgba(255,255,255,0.5);
+  color: rgba(255, 255, 255, 0.5);
 }
 
-/* ── Speed control ───────────────────────────────────────────────────────── */
+/* ── Speed Control ── */
 .videoSpeedWrap {
   position: relative;
 }
@@ -914,24 +1062,25 @@
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: rgba(255,255,255,0.92);
-  background: #18181b;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(0, 0, 0, 0.52);
   border: none !important;
   border-radius: 20px;
   padding: 0.2rem 0.65rem;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.12s;
+  transition: background 0.15s, transform 0.12s;
   white-space: nowrap;
   height: 26px;
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .videoSpeedBtn:hover {
-  background: #27272a;
-  border-color: rgba(255,255,255,0.3);
+  background: rgba(0, 0, 0, 0.70);
   color: #fff;
 }
 
@@ -943,14 +1092,15 @@
   position: absolute;
   bottom: calc(100% + 10px);
   right: 0;
-  background: #18181b;
-  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(12, 12, 12, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 12px;
-  box-shadow: 0 12px 36px rgba(0,0,0,0.75);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.72);
   padding: 0.45rem;
   min-width: 120px;
   z-index: 20;
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   animation: speedMenuIn 0.18s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
@@ -965,7 +1115,7 @@
   font-family: var(--font-family-sans);
   font-size: 0.78rem;
   font-weight: 500;
-  color: rgba(255,255,255,0.75);
+  color: rgba(255, 255, 255, 0.75);
   background: none;
   border: none;
   border-radius: 7px;
@@ -980,14 +1130,18 @@
 }
 
 .videoSpeedOption:hover {
-  background: rgba(255,255,255,0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
+}
+
+.videoSpeedOption:active {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .videoSpeedOption.active {
   color: #fff;
   font-weight: 700;
-  background: rgba(255,255,255,0.06);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .videoSpeedOption.active::after {
@@ -1000,7 +1154,7 @@
   flex-shrink: 0;
 }
 
-/* ── Keyboard hint ───────────────────────────────────────────────────────── */
+/* ── Keyboard Hints ── */
 .videoKeyHints {
   position: absolute;
   top: 50%;
@@ -1008,16 +1162,43 @@
   transform: translate(-50%, -50%);
   pointer-events: none;
   opacity: 0;
-  /* Hidden by default, show briefly on open via animation */
   display: none;
 }
 
 .videoKeyHints span {
   font-family: var(--font-family-sans);
   font-size: 0.72rem;
-  color: rgba(255,255,255,0.4);
+  color: rgba(255, 255, 255, 0.4);
   letter-spacing: 0.04em;
   white-space: nowrap;
+}
+
+/* ── Tap Feedback ── */
+.tapFeedback {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.52);
+  color: #fff;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: tapFeedbackAnim 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes tapFeedbackAnim {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  20%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  80%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.4); }
 }
 
 /* ── Responsive ── */
@@ -1025,26 +1206,31 @@
   to { transform: rotate(360deg); }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px), (pointer: coarse) {
   .navBtn {
-    width: 36px;
-    height: 36px;
+    display: none !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .bottomContextScrim {
+    padding: 2.25rem 0.85rem calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 
-  .navPrev { left: 0.5rem; }
-  .navNext { right: 0.5rem; }
-
-  .infoPanel {
-    bottom: 80px;
-    left: 0.75rem;
-    max-width: calc(100vw - 1.5rem);
+  .bottomContextContainer {
+    max-width: calc(100vw - 1.7rem);
+    gap: 0.45rem;
   }
 
-  .infoPanelStandalone {
-    bottom: 12px;
+  .postText {
+    -webkit-line-clamp: 2;
+    font-size: 0.82rem;
   }
 
-  /* On mobile, always show volume slider expanded */
+  .bottomContextVideo {
+    bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+  }
+
   .videoVolSliderWrap {
     width: 0 !important;
     display: none;
@@ -1062,7 +1248,6 @@
     padding: 0 0.75rem;
   }
 
-  /* Make touch targets larger */
   .videoBtn {
     width: 42px;
     height: 42px;
@@ -1085,42 +1270,146 @@
   }
 }
 
-/* ── Tap Feedback (Central Play/Pause Flash) ── */
-.tapFeedback {
+/* ══════════════════════════════════════════════════════════════════════════════
+   DOWNLOAD PROGRESS MODAL
+   The card uses var(--color-bg-white) / var(--color-border) etc., which the
+   overlay's data-theme="dark" attr resolves to dark tokens — correct here.
+══════════════════════════════════════════════════════════════════════════════ */
+
+.downloadModalOverlay {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  z-index: 10;
+  inset: 0;
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  animation: tapFeedbackAnim 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: downloadFadeIn 0.2s ease-out forwards;
 }
 
-@keyframes tapFeedbackAnim {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.6);
+.downloadModal {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  min-width: 240px;
+  box-shadow: var(--shadow-lg);
+  color: var(--color-text-main);
+}
+
+.downloadSpinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: downloadSpin 1s linear infinite;
+}
+
+.downloadIconSuccess,
+.downloadIconError {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: bold;
+}
+
+.downloadIconSuccess {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-success, #10B981);
+}
+
+.downloadIconError {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--color-danger);
+}
+
+.downloadText {
+  font-family: var(--font-family-sans);
+  font-size: 0.92rem;
+  font-weight: 500;
+  text-align: center;
+  color: var(--color-text-main);
+}
+
+.downloadCancelBtn {
+  margin-top: 0.25rem;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  font-family: var(--font-family-sans);
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.downloadCancelBtn:hover {
+  background: var(--color-border-light);
+  border-color: var(--color-border-dark);
+  color: var(--color-text-main);
+}
+
+.downloadCancelBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@keyframes downloadSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes downloadFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   REDUCED MOTION
+══════════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .topBar,
+  .stage,
+  .navBtn,
+  .counterBadge,
+  .bottomContextScrim,
+  .iconBtn,
+  .moreMenu,
+  .videoControlsOverlay,
+  .videoVolGroup,
+  .videoSpeedMenu,
+  .downloadModalOverlay {
+    transition: none !important;
+    animation: none !important;
   }
-  20% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+
+  .skeletonRect {
+    animation: none;
+    background: rgba(255, 255, 255, 0.07);
   }
-  80% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+
+  .videoSpinner,
+  .downloadSpinner {
+    animation-duration: 1.5s;
   }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(1.4);
+
+  .tapFeedback,
+  .seekRipple,
+  .centerReplayBtn {
+    animation: none !important;
   }
 }

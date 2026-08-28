@@ -4,6 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import fs from 'fs';
 import { visualizer } from 'rollup-plugin-visualizer';
+import { postcssHoverMedia } from './scripts/postcss-hover-media.js';
 
 const BUILD_TIME = Date.now();
 
@@ -101,6 +102,13 @@ export default defineConfig(({ mode }) => {
     }),
     visualizer({ open: false, filename: 'stats.html', gzipSize: true, brotliSize: true })
   ],
+  css: {
+    postcss: {
+      plugins: [
+        postcssHoverMedia({ mediaQuery: '(hover: hover) and (pointer: fine)' })
+      ]
+    }
+  },
   build: {
     rollupOptions: {
       onwarn(warning, warn) {
