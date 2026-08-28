@@ -150,115 +150,113 @@ export default function SocketManager() {
           }
         }
       } else if (!isMuted && window.location.pathname !== '/onboarding') {
-        toast.custom((t) => {
-          const isGroupMessage = Boolean(notification.metadata?.isGroup || notification.metadata?.conversationType === 'GROUP');
-          const notifTypeRaw = (notification.type || '').toLowerCase();
-          // Strictly only "someone joined your activity" — exclude invites
-          const isActivityJoin = notifTypeRaw === 'join_request' || notifTypeRaw === 'activity_join';
-          // "Someone invited you to join an activity"
-          const isActivityInvite = notifTypeRaw === 'activity_invite';
+        const isGroupMessage = Boolean(notification.metadata?.isGroup || notification.metadata?.conversationType === 'GROUP');
+        const notifTypeRaw = (notification.type || '').toLowerCase();
+        // Strictly only "someone joined your activity" — exclude invites
+        const isActivityJoin = notifTypeRaw === 'join_request' || notifTypeRaw === 'activity_join';
+        // "Someone invited you to join an activity"
+        const isActivityInvite = notifTypeRaw === 'activity_invite';
 
-          const actorUsername = notification.actor?.username || notification.metadata?.actorUsername || notification.metadata?.actorName || '';
-          const actorName = (isActivityJoin || isActivityInvite)
-            ? (actorUsername || notification.actor?.displayName || notification.metadata?.actorDisplayName || 'Someone')
-            : (notification.actor?.displayName || notification.actor?.username || notification.metadata?.actorDisplayName || notification.metadata?.actorName || notification.metadata?.actorUsername || 'Someone');
-          const actorAvatar = notification.actor?.avatar || notification.metadata?.actorAvatar || '';
-          const groupName = notification.metadata?.conversationName || notification.title || 'Group';
-          const groupAvatar = notification.metadata?.conversationAvatar || '';
+        const actorUsername = notification.actor?.username || notification.metadata?.actorUsername || notification.metadata?.actorName || '';
+        const actorName = (isActivityJoin || isActivityInvite)
+          ? (actorUsername || notification.actor?.displayName || notification.metadata?.actorDisplayName || 'Someone')
+          : (notification.actor?.displayName || notification.actor?.username || notification.metadata?.actorDisplayName || notification.metadata?.actorName || notification.metadata?.actorUsername || 'Someone');
+        const actorAvatar = notification.actor?.avatar || notification.metadata?.actorAvatar || '';
+        const groupName = notification.metadata?.conversationName || notification.title || 'Group';
+        const groupAvatar = notification.metadata?.conversationAvatar || '';
 
-          const notifType = (notification.type || '').toLowerCase();
+        const notifType = (notification.type || '').toLowerCase();
 
-          let bodyText = notification.body || notification.title || '';
-          if (isActivityJoin) {
-            bodyText = `${actorName} joined the activity.`;
-          } else if (isActivityInvite) {
-            bodyText = `${actorName} invited you to join.`;
-          } else if (notifType === 'follow') {
-            bodyText = 'started following you.';
-          } else if (notifType === 'like') {
-            bodyText = 'liked your post.';
-          } else if (notifType === 'comment_like') {
-            bodyText = 'liked your comment.';
-          } else if (notifType === 'comment') {
-            if (notification.metadata?.isReply || bodyText.includes('replied to your comment:')) {
-              if (bodyText.includes('replied to your comment:')) {
-                bodyText = bodyText.substring(bodyText.indexOf('replied to your comment:')).trim();
-              } else {
-                bodyText = 'replied to your comment.';
-              }
-            } else if (bodyText.includes('commented:')) {
-              bodyText = bodyText.substring(bodyText.indexOf('commented:')).trim();
+        let bodyText = notification.body || notification.title || '';
+        if (isActivityJoin) {
+          bodyText = `${actorName} joined the activity.`;
+        } else if (isActivityInvite) {
+          bodyText = `${actorName} invited you to join.`;
+        } else if (notifType === 'follow') {
+          bodyText = 'started following you.';
+        } else if (notifType === 'like') {
+          bodyText = 'liked your post.';
+        } else if (notifType === 'comment_like') {
+          bodyText = 'liked your comment.';
+        } else if (notifType === 'comment') {
+          if (notification.metadata?.isReply || bodyText.includes('replied to your comment:')) {
+            if (bodyText.includes('replied to your comment:')) {
+              bodyText = bodyText.substring(bodyText.indexOf('replied to your comment:')).trim();
             } else {
-              bodyText = 'commented on your post.';
+              bodyText = 'replied to your comment.';
             }
-          } else if (notifType === 'mention') {
-            bodyText = 'mentioned you.';
-          } else if (notifType === 'message') {
-            const textSnippet = notification.metadata?.messageText || notification.body || '';
-            if (isGroupMessage) {
-              bodyText = `${actorName}: ${textSnippet}`;
-            } else {
-              bodyText = textSnippet;
-            }
-          } else if (bodyText.startsWith(actorName)) {
-            bodyText = bodyText.substring(actorName.length).trim();
+          } else if (bodyText.includes('commented:')) {
+            bodyText = bodyText.substring(bodyText.indexOf('commented:')).trim();
+          } else {
+            bodyText = 'commented on your post.';
           }
-
-          if (!bodyText) {
-            bodyText = notification.title || 'sent a notification.';
+        } else if (notifType === 'mention') {
+          bodyText = 'mentioned you.';
+        } else if (notifType === 'message') {
+          const textSnippet = notification.metadata?.messageText || notification.body || '';
+          if (isGroupMessage) {
+            bodyText = `${actorName}: ${textSnippet}`;
+          } else {
+            bodyText = textSnippet;
           }
+        } else if (bodyText.startsWith(actorName)) {
+          bodyText = bodyText.substring(actorName.length).trim();
+        }
 
-          const activityName = notification.metadata?.activityName || notification.metadata?.activityTitle
-            // Only fall back to notification.title when it's not a generic backend label
-            || (notification.title && !['activity invitation', 'activity invite'].includes((notification.title || '').toLowerCase()) ? notification.title : null)
-            || 'Activity';
-          const rawActivityImage = notification.metadata?.activityImage;
-          const activityImage = rawActivityImage ? getMediaUrl(rawActivityImage) : getDefaultActivityCover(activityName || notification.entityId || '');
-          const activityDate = notification.metadata?.activityDate || notification.metadata?.startDate || null;
+        if (!bodyText) {
+          bodyText = notification.title || 'sent a notification.';
+        }
 
-          const handleClick = () => {
-            toast.dismiss(t);
-            if (notifType === 'message') {
-              const convId = notification.metadata?.conversationId || notification.entityId;
-              if (convId) {
-                const origin = window.location.pathname.startsWith('/messages') || window.location.pathname.startsWith('/inbox') ? '/notifications' : window.location.pathname;
-                navigate(`/messages/${convId}`, { state: { from: origin } });
-                return;
-              }
+        const activityName = notification.metadata?.activityName || notification.metadata?.activityTitle
+          // Only fall back to notification.title when it's not a generic backend label
+          || (notification.title && !['activity invitation', 'activity invite'].includes((notification.title || '').toLowerCase()) ? notification.title : null)
+          || 'Activity';
+        const rawActivityImage = notification.metadata?.activityImage;
+        const activityImage = rawActivityImage ? getMediaUrl(rawActivityImage) : getDefaultActivityCover(activityName || notification.entityId || '');
+        const activityDate = notification.metadata?.activityDate || notification.metadata?.startDate || null;
+
+        const handleClick = (toastId) => {
+          if (toastId) toast.dismiss(toastId);
+          if (notifType === 'message') {
+            const convId = notification.metadata?.conversationId || notification.entityId;
+            if (convId) {
+              const origin = window.location.pathname.startsWith('/messages') || window.location.pathname.startsWith('/inbox') ? '/notifications' : window.location.pathname;
+              navigate(`/messages/${convId}`, { state: { from: origin } });
+              return;
             }
-            if (isActivityJoin || isActivityInvite) {
-              const activityId = notification.entityId || notification.metadata?.activityId;
-              if (activityId) {
-                navigate(`/crew/${activityId}`, { state: { from: window.location.pathname } });
-                return;
-              }
+          }
+          if (isActivityJoin || isActivityInvite) {
+            const activityId = notification.entityId || notification.metadata?.activityId;
+            if (activityId) {
+              navigate(`/crew/${activityId}`, { state: { from: window.location.pathname } });
+              return;
             }
-            navigate('/notifications');
-          };
+          }
+          navigate('/notifications');
+        };
 
-          // Both joins and invites show the activity cover + calendar badge
-          const showActivityThumb = isActivityJoin || isActivityInvite;
-          const displayAvatar = showActivityThumb ? activityImage : (isGroupMessage ? groupAvatar : actorAvatar);
-          // Use activity name as the card title for both join and invite
-          const displayTitle = showActivityThumb ? activityName : actorName;
+        // Both joins and invites show the activity cover + calendar badge
+        const showActivityThumb = isActivityJoin || isActivityInvite;
+        const displayAvatar = showActivityThumb ? activityImage : (isGroupMessage ? groupAvatar : actorAvatar);
+        // Use activity name as the card title for both join and invite
+        const displayTitle = showActivityThumb ? activityName : actorName;
 
-          return (
-            <InstantNotificationCard
-              avatar={showActivityThumb ? activityImage : displayAvatar}
-              isGroup={isGroupMessage}
-              isActivity={showActivityThumb}
-              groupName={groupName}
-              actorName={displayTitle}
-              bodyText={isGroupMessage ? (notification.metadata?.messageText || '') : bodyText}
-              subText={null}
-              thumbnail={null}
-              activityDate={showActivityThumb ? activityDate : undefined}
-              time="just now"
-              onClick={handleClick}
-              onDismiss={() => toast.dismiss(t)}
-            />
-          );
-        }, { duration: 5000, position: 'top-center', dismissible: false });
+        toast.custom((t) => (
+          <InstantNotificationCard
+            avatar={showActivityThumb ? activityImage : displayAvatar}
+            isGroup={isGroupMessage}
+            isActivity={showActivityThumb}
+            groupName={groupName}
+            actorName={displayTitle}
+            bodyText={isGroupMessage ? (notification.metadata?.messageText || '') : bodyText}
+            subText={null}
+            thumbnail={null}
+            activityDate={showActivityThumb ? activityDate : undefined}
+            time="just now"
+            onClick={() => handleClick(t)}
+            onDismiss={() => toast.dismiss(t)}
+          />
+        ), { duration: 5000, position: 'top-center', dismissible: false });
       }
     };
 
@@ -1009,37 +1007,35 @@ export default function SocketManager() {
           : Boolean(targetConv?.muted || targetConv?.isMuted);
 
         if (!isMuted && window.location.pathname !== '/onboarding') {
-          toast.custom((t) => {
-            const actorName = message.senderName || message.sender?.displayName || message.sender?.username || 'Someone';
-            const actorAvatar = message.senderAvatar || message.sender?.avatar || '';
-            const isGroupMessage = Boolean(message.isGroup || targetConv?.isGroup);
-            // A system message already names the person inside its own text
-            // ("@gyu changed group name to ..."), and it has no author in the
-            // sense a chat message does. Passing an actorName made the card
-            // prefix it with the sender, producing "Gyu: @gyu changed group
-            // name to ..." — the same person twice, one of them mid-sentence.
-            const isSystem = isSystemMessage(message);
-            const groupName = targetConv?.name || 'Group';
-            const groupAvatar = targetConv?.avatar || '';
-            const textSnippet = message.text || (message.mediaType === 'image' ? 'Sent a photo' : message.mediaType === 'video' ? 'Sent a video' : message.mediaUrl ? 'Sent media' : 'New message');
+          const actorName = message.senderName || message.sender?.displayName || message.sender?.username || 'Someone';
+          const actorAvatar = message.senderAvatar || message.sender?.avatar || '';
+          const isGroupMessage = Boolean(message.isGroup || targetConv?.isGroup);
+          // A system message already names the person inside its own text
+          // ("@gyu changed group name to ..."), and it has no author in the
+          // sense a chat message does. Passing an actorName made the card
+          // prefix it with the sender, producing "Gyu: @gyu changed group
+          // name to ..." — the same person twice, one of them mid-sentence.
+          const isSystem = isSystemMessage(message);
+          const groupName = targetConv?.name || 'Group';
+          const groupAvatar = targetConv?.avatar || '';
+          const textSnippet = message.text || (message.mediaType === 'image' ? 'Sent a photo' : message.mediaType === 'video' ? 'Sent a video' : message.mediaUrl ? 'Sent media' : 'New message');
 
-            return (
-              <InstantNotificationCard
-                avatar={isGroupMessage ? (groupAvatar || actorAvatar) : actorAvatar}
-                isGroup={isGroupMessage}
-                groupName={groupName}
-                actorName={isSystem ? null : actorName}
-                bodyText={textSnippet}
-                time="just now"
-                onClick={() => {
-                  toast.dismiss(t);
-                  const origin = window.location.pathname.startsWith('/messages') || window.location.pathname.startsWith('/inbox') ? '/home' : window.location.pathname;
-                  navigate(`/messages/${convId}`, { state: { from: origin } });
-                }}
-                onDismiss={() => toast.dismiss(t)}
-              />
-            );
-          }, { duration: 4000, position: 'top-center', dismissible: false });
+          toast.custom((t) => (
+            <InstantNotificationCard
+              avatar={isGroupMessage ? (groupAvatar || actorAvatar) : actorAvatar}
+              isGroup={isGroupMessage}
+              groupName={groupName}
+              actorName={isSystem ? null : actorName}
+              bodyText={textSnippet}
+              time="just now"
+              onClick={() => {
+                toast.dismiss(t);
+                const origin = window.location.pathname.startsWith('/messages') || window.location.pathname.startsWith('/inbox') ? '/home' : window.location.pathname;
+                navigate(`/messages/${convId}`, { state: { from: origin } });
+              }}
+              onDismiss={() => toast.dismiss(t)}
+            />
+          ), { duration: 4000, position: 'top-center', dismissible: false });
         }
       }
     };

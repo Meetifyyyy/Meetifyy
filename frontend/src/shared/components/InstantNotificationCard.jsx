@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback } from 'react';
-import { motion } from 'framer-motion';
 import Avatar from './avatar/Avatar';
 import CalendarIcon from './ui/CalendarIcon';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { DEFAULT_ACTIVITY_COVERS, getDefaultActivityCover } from '../utils/activityCover';
+import styles from './InstantNotificationCard.module.css';
 
 export default function InstantNotificationCard({
   avatar,
@@ -16,94 +16,78 @@ export default function InstantNotificationCard({
   subText,
   thumbnail,
   time = 'just now',
-  joinerAvatar,
+  joinerAvatar: _joinerAvatar,
   activityDate,
   onClick,
   onDismiss,
 }) {
   const isMobile = useIsMobile();
-  const [dismissDirection, setDismissDirection] = useState(null);
-  const dragDistanceRef = useRef(0);
+  const [dismissed, setDismissed] = useState(false);
+  const touchStartXRef = useRef(0);
+  const touchDeltaXRef = useRef(0);
+  const cardRef = useRef(null);
 
   const displayName = isGroup ? groupName : actorName || name;
   const displayAvatar = avatar;
 
-  const handleDragStart = useCallback(() => {
-    dragDistanceRef.current = 0;
+  const handleTouchStart = useCallback((e) => {
+    touchStartXRef.current = e.touches[0].clientX;
+    touchDeltaXRef.current = 0;
   }, []);
 
-  const handleDragEnd = useCallback((_, info) => {
-    const offsetX = info.offset.x;
-    const velocityX = info.velocity.x;
-    dragDistanceRef.current = Math.abs(offsetX);
-
-    // Sensible threshold for mobile swipe-to-dismiss:
-    // Distance > 60px or flick velocity > 250 px/s in either direction
-    if (offsetX > 60 || velocityX > 250) {
-      setDismissDirection('right');
-      setTimeout(() => {
-        onDismiss?.();
-      }, 180);
-    } else if (offsetX < -60 || velocityX < -250) {
-      setDismissDirection('left');
-      setTimeout(() => {
-        onDismiss?.();
-      }, 180);
+  const handleTouchMove = useCallback((e) => {
+    const deltaX = e.touches[0].clientX - touchStartXRef.current;
+    touchDeltaXRef.current = deltaX;
+    if (cardRef.current && Math.abs(deltaX) > 8) {
+      cardRef.current.style.transform = `translateX(${deltaX}px)`;
+      cardRef.current.style.opacity = `${Math.max(0.2, 1 - Math.abs(deltaX) / 250)}`;
     }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    const deltaX = touchDeltaXRef.current;
+    if (Math.abs(deltaX) > 75) {
+      setDismissed(true);
+      if (cardRef.current) {
+        cardRef.current.style.transition = 'transform 0.2s ease-out, opacity 0.2s ease-out';
+        cardRef.current.style.transform = `translateX(${deltaX > 0 ? 350 : -350}px)`;
+        cardRef.current.style.opacity = '0';
+      }
+      setTimeout(() => {
+        onDismiss?.();
+      }, 200);
+    } else if (cardRef.current) {
+      cardRef.current.style.transition = 'transform 0.2s ease-out, opacity 0.2s ease-out';
+      cardRef.current.style.transform = 'translateX(0)';
+      cardRef.current.style.opacity = '1';
+      setTimeout(() => {
+        if (cardRef.current) cardRef.current.style.transition = '';
+      }, 200);
+    }
+    touchDeltaXRef.current = 0;
   }, [onDismiss]);
 
   const handleClick = useCallback((e) => {
-    // If the user performed a drag gesture on mobile, suppress the click navigation
-    if (isMobile && (dragDistanceRef.current > 8 || dismissDirection)) {
-      dragDistanceRef.current = 0;
+    if (Math.abs(touchDeltaXRef.current) > 10 || dismissed) {
       return;
     }
     onClick?.(e);
-  }, [isMobile, dismissDirection, onClick]);
-
-  const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 400;
-  const exitX = screenWidth + 80;
+  }, [dismissed, onClick]);
 
   return (
-    <motion.div
-      drag={isMobile ? 'x' : false}
-      dragDirectionLock={isMobile}
-      dragConstraints={isMobile ? { left: 0, right: 0 } : undefined}
-      dragElastic={isMobile ? 1.0 : undefined}
-      onDragStart={isMobile ? handleDragStart : undefined}
-      onDragEnd={isMobile ? handleDragEnd : undefined}
-      animate={{
-        x: dismissDirection === 'right' ? exitX : dismissDirection === 'left' ? -exitX : 0,
-        opacity: dismissDirection ? 0 : 1,
-      }}
-      transition={{ type: 'spring', stiffness: 420, damping: 28, mass: 0.6 }}
+    <div
+      ref={cardRef}
+      className={styles.card}
+      role="status"
+      aria-live="polite"
+      onTouchStart={isMobile ? handleTouchStart : undefined}
+      onTouchMove={isMobile ? handleTouchMove : undefined}
+      onTouchEnd={isMobile ? handleTouchEnd : undefined}
       onClick={handleClick}
-      whileHover={!isMobile ? { scale: 1.015 } : undefined}
-      whileTap={{ scale: 0.985 }}
-      style={{
-        background: 'var(--color-bg-white, #ffffff)',
-        border: '1px solid var(--color-border, #e2e8f0)',
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.03)',
-        borderRadius: '16px',
-        padding: '12px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        width: '360px',
-        maxWidth: 'calc(100vw - 24px)',
-        margin: '0 auto',
-        boxSizing: 'border-box',
-        cursor: isMobile ? 'default' : 'pointer',
-        fontFamily: 'var(--font-family-sans, sans-serif)',
-        touchAction: isMobile ? 'pan-y' : 'auto',
-        userSelect: 'none',
-        overflow: 'hidden',
-      }}
     >
-      <div style={{ flexShrink: 0, position: 'relative', width: '48px', height: '48px' }}>
+      <div className={styles.avatarWrap}>
         {isActivity ? (
           <>
-            {/* Activity cover image */}
             <img
               src={displayAvatar || getDefaultActivityCover(displayName)}
               alt=""
@@ -111,20 +95,13 @@ export default function InstantNotificationCard({
                 e.target.onerror = null;
                 e.target.src = DEFAULT_ACTIVITY_COVERS[0];
               }}
-              style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '12px',
-                objectFit: 'cover',
-                display: 'block',
-              }}
+              className={styles.activityCover}
             />
-            {/* Calendar badge at bottom-right */}
-            <div style={{ position: 'absolute', bottom: '-6px', right: '-8px', zIndex: 2 }}>
+            <div className={styles.calendarBadge}>
               <CalendarIcon
                 date={activityDate}
                 size="badge"
-                style={{ border: '2.5px solid var(--color-bg-white, #ffffff)', boxShadow: 'none' }}
+                style={{ border: '2px solid var(--color-bg-white, #ffffff)', boxShadow: 'none' }}
               />
             </div>
           </>
@@ -132,43 +109,26 @@ export default function InstantNotificationCard({
           <Avatar
             src={displayAvatar}
             name={displayName}
-            size="40px"
+            size="42px"
             isGroup={isGroup}
           />
         )}
       </div>
 
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%' }}>
-          <strong
-            style={{
-              color: 'var(--color-text-main, #0f172a)',
-              fontWeight: 700,
-              fontSize: '0.86rem',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
+      <div className={styles.content}>
+        <div className={styles.headerRow}>
+          <strong className={styles.title}>
             {displayName}
           </strong>
-          <span style={{ fontSize: '0.72rem', color: 'var(--color-text-light, #94a3b8)', fontWeight: 500, flexShrink: 0 }}>
+          <span className={styles.time}>
             {time}
           </span>
         </div>
 
-        <div
-          style={{
-            fontSize: '0.83rem',
-            color: 'var(--color-text-muted, #475569)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
+        <div className={styles.body}>
           {isGroup && actorName ? (
             <>
-              <span style={{ fontWeight: 600, color: 'var(--color-text-main, #0f172a)' }}>{actorName}:</span>{' '}
+              <span className={styles.actorPrefix}>{actorName}:</span>{' '}
               {bodyText}
             </>
           ) : (
@@ -177,16 +137,7 @@ export default function InstantNotificationCard({
         </div>
 
         {subText ? (
-          <div
-            style={{
-              fontSize: '0.76rem',
-              fontWeight: 600,
-              color: 'var(--color-text-light, #94a3b8)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
+          <div className={styles.subText}>
             {subText}
           </div>
         ) : null}
@@ -196,16 +147,9 @@ export default function InstantNotificationCard({
         <img
           src={thumbnail}
           alt=""
-          style={{
-            flexShrink: 0,
-            width: '38px',
-            height: '38px',
-            borderRadius: '8px',
-            objectFit: 'cover',
-            border: '1px solid var(--color-border, #e2e8f0)',
-          }}
+          className={styles.thumbnail}
         />
       ) : null}
-    </motion.div>
+    </div>
   );
 }

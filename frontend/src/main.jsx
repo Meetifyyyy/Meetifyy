@@ -94,7 +94,22 @@ createRoot(document.getElementById('root')).render(
           <AuthProvider>
             <MediaViewerProvider>
               <UsersMapProvider>
-                <Toaster position="bottom-center" duration={2500} />
+                <Toaster 
+                  position="top-center" 
+                  duration={4500} 
+                  gap={10}
+                  visibleToasts={4}
+                  toastOptions={{
+                    style: {
+                      background: 'transparent',
+                      border: 'none',
+                      boxShadow: 'none',
+                      padding: 0,
+                      width: '380px',
+                      maxWidth: 'calc(100vw - 24px)',
+                    }
+                  }}
+                />
                 <App />
                 <MediaViewer />
               </UsersMapProvider>
