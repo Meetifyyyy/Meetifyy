@@ -222,6 +222,7 @@
   justify-content: center;
   padding: 1rem;
   animation: overlayIn 0.2s ease both;
+  overflow-y: auto;
 }
 
 @keyframes overlayIn {
@@ -324,8 +325,10 @@
 
 /* Modal Body */
 .modalBody {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding: 1.125rem 1.25rem;
   display: flex;
@@ -333,11 +336,33 @@
   gap: 0.875rem;
 }
 
+.modalBody > * {
+  flex-shrink: 0;
+}
+
+.modalBody::-webkit-scrollbar {
+  width: 5px;
+}
+
+.modalBody::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modalBody::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-dark, #CBD5E1);
+  border-radius: 4px;
+}
+
+.modalBody::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-light, #94A3B8);
+}
+
 .bodyLead {
   font-size: 0.785rem;
   color: var(--color-text-muted);
   line-height: 1.6;
   margin: 0;
+  flex-shrink: 0;
 }
 
 /* Category List */
@@ -348,6 +373,8 @@
   border-radius: 10px;
   overflow: hidden;
   background: var(--color-bg-white);
+  flex-shrink: 0;
+  min-height: fit-content;
 }
 
 .categoryItem {
@@ -356,6 +383,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  flex-shrink: 0;
 }
 
 .categoryItem:last-child {
@@ -423,6 +451,7 @@
   color: var(--color-text-light);
   line-height: 1.5;
   margin: 0;
+  flex-shrink: 0;
 }
 
 .policyNote a {
@@ -490,9 +519,13 @@
 }
 
 @media (max-width: 500px) {
+  .overlay {
+    padding: 0.75rem;
+  }
+
   .modal {
     border-radius: 12px;
-    max-height: 92dvh;
+    max-height: min(92dvh, calc(100dvh - 1.5rem));
   }
 
   .modalHeader,

@@ -1,7 +1,10 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { X, Lock, Shield, RefreshCw } from '@shared/components/icons';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import styles from './CookieBanner.module.css';
 
 /** Cookie icon - clean custom SVG */
@@ -70,7 +73,10 @@ export function CookiePreferencesModal() {
     }
   }, [preferencesOpen]);
 
-  // Escape to close
+  // Back button and Escape dismiss the overlay
+  useOverlayBack(preferencesOpen, closePreferences);
+  useScrollLock(preferencesOpen);
+
   useEffect(() => {
     if (!preferencesOpen) return;
     const onKey = (e) => { if (e.key === 'Escape') closePreferences(); };
@@ -78,17 +84,9 @@ export function CookiePreferencesModal() {
     return () => document.removeEventListener('keydown', onKey);
   }, [preferencesOpen, closePreferences]);
 
-  // Lock body scroll
-  useEffect(() => {
-    if (!preferencesOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, [preferencesOpen]);
-
   if (!preferencesOpen) return null;
 
-  return (
+  return createPortal(
     <div
       className={styles.overlay}
       role="dialog"
@@ -96,7 +94,7 @@ export function CookiePreferencesModal() {
       aria-label="How Meetifyy Uses Storage"
       onClick={(e) => { if (e.target === e.currentTarget) closePreferences(); }}
     >
-      <div className={styles.modal}>
+      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className={styles.modalHeader}>
           <div className={styles.headerLeft}>
@@ -164,7 +162,8 @@ export function CookiePreferencesModal() {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

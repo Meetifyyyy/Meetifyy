@@ -154,8 +154,11 @@
   font-weight: 400;
   line-height: 1.45;
   white-space: pre-wrap;
-  word-break: normal;
-  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .msgTextTimeWrap {
@@ -173,6 +176,39 @@
      above it). The bubble still shrink-wraps: its width comes from the widest
      child, and this row contributes its own text + time. */
   width: 100%;
+}
+
+/* Show more / Show less toggle — rendered inline at the end of the text */
+.msgTextContent {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.msgSeeMoreBtn {
+  display: inline;
+  background: none;
+  border: none;
+  padding: 0 0 0 0.25rem;
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  vertical-align: baseline;
+  transition: opacity 0.15s ease;
+}
+
+.msgSeeMoreBtn:hover {
+  opacity: 0.75;
+  text-decoration: underline;
+}
+
+.msgSeeMoreBtnMe {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.msgSeeMoreBtnThem {
+  color: var(--color-primary);
 }
 
 .msgImageCardContainer,
@@ -878,6 +914,7 @@
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
+  max-width: 100%;
 }
 
 .msgMainRowMe {

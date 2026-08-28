@@ -1332,7 +1332,14 @@ export default function CreateActivityPage() {
           exactly the way an image does, instead of falling back to flat black. */}
       <div className={styles.ambientBg} aria-hidden="true">
         {hasCoverImage ? (
-          <img src={formData.coverImage} alt="" className={styles.ambientImg} />
+          <img
+            src={formData.coverImage}
+            alt=""
+            className={styles.ambientImg}
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+          />
         ) : isColorCover ? (
           <div className={styles.ambientColor} style={{ background: formData.coverColor }} />
         ) : null}
@@ -1392,7 +1399,14 @@ export default function CreateActivityPage() {
               style={isColorCover ? { background: formData.coverColor } : undefined}
             >
               {hasCoverImage && (
-                <img src={formData.coverImage} alt="Cover" className={styles.coverImg} />
+                <img
+                  src={formData.coverImage}
+                  alt="Cover"
+                  className={styles.coverImg}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
               )}
               {formData.coverStatus === 'processing' && (
                 <div className={styles.coverBusy} role="status" aria-live="polite">

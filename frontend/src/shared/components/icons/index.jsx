@@ -28,7 +28,9 @@ import {
   Pacman02Icon,
   Copy01Icon,
   Delete02Icon,
+  Download04Icon,
   Edit02Icon,
+  EllipsisVerticalIcon,
   File02Icon,
   FileImageIcon,
   FileRemoveIcon,
@@ -50,13 +52,20 @@ import {
   Logout01Icon,
   Mail01Icon,
   MailValidation01Icon,
+  ArrowExpand01Icon,
+  ArrowShrink01Icon,
+  FullScreenIcon,
+  MaximizeScreenIcon,
+  MinimizeScreenIcon,
+  Moon02Icon,
+  MoreHorizontalIcon,
+  MoreVerticalIcon,
   Megaphone01Icon,
   Menu01Icon,
   Mic01Icon,
-  Moon02Icon,
-  MoreVerticalIcon,
   Notification03Icon,
   NotificationOff03Icon,
+  PauseIcon,
   PinIcon,
   PlayIcon,
   RefreshIcon,
@@ -69,6 +78,7 @@ import {
   ShieldMinusIcon,
   ShieldOffIcon,
   ShieldPlusIcon,
+  Share01Icon,
   SparklesIcon,
   StickerIcon,
   Sun03Icon,
@@ -86,6 +96,10 @@ import {
   Video01Icon,
   ViewIcon,
   ViewOffSlashIcon,
+  VolumeHighIcon,
+  VolumeLowIcon,
+  VolumeMute01Icon,
+  VolumeOffIcon,
   WifiDisconnected01Icon,
 } from '@hugeicons/core-free-icons';
 
@@ -157,6 +171,7 @@ const GLYPHS = {
   // -- Chrome
   Menu: Menu01Icon,
   MoreVertical: MoreVerticalIcon,
+  MoreHorizontal: MoreHorizontalIcon,
   Search: Search01Icon,
   Settings: Settings02Icon,
   Plus: Add01Icon,
@@ -236,8 +251,19 @@ const GLYPHS = {
   FileX: FileRemoveIcon,
   Video: Video01Icon,
   Play: PlayIcon,
+  Pause: PauseIcon,
   Upload: Upload03Icon,
-  BarChart2: BarChartIcon,
+  Download: Download04Icon,
+  Maximize: ArrowExpand01Icon,
+  Minimize: ArrowShrink01Icon,
+  FullScreen: FullScreenIcon,
+  MaximizeScreen: MaximizeScreenIcon,
+  MinimizeScreen: MinimizeScreenIcon,
+  VolumeHigh: VolumeHighIcon,
+  VolumeLow: VolumeLowIcon,
+  VolumeMute: VolumeMute01Icon,
+  VolumeOff: VolumeOffIcon,
+  Share: Share01Icon,
 
   // -- Content
   Bookmark: Bookmark02Icon,
@@ -279,6 +305,7 @@ export const WifiOff = /*#__PURE__*/ icon(GLYPHS.WifiOff, 'WifiOff');
 export const Sparkles = /*#__PURE__*/ icon(GLYPHS.Sparkles, 'Sparkles');
 export const Menu = /*#__PURE__*/ icon(GLYPHS.Menu, 'Menu');
 export const MoreVertical = /*#__PURE__*/ icon(GLYPHS.MoreVertical, 'MoreVertical');
+export const MoreHorizontal = /*#__PURE__*/ icon(GLYPHS.MoreHorizontal, 'MoreHorizontal');
 export const Search = /*#__PURE__*/ icon(GLYPHS.Search, 'Search');
 export const Settings = /*#__PURE__*/ icon(GLYPHS.Settings, 'Settings');
 export const Plus = /*#__PURE__*/ icon(GLYPHS.Plus, 'Plus');
@@ -336,8 +363,20 @@ export const FileText = /*#__PURE__*/ icon(GLYPHS.FileText, 'FileText');
 export const FileX = /*#__PURE__*/ icon(GLYPHS.FileX, 'FileX');
 export const Video = /*#__PURE__*/ icon(GLYPHS.Video, 'Video');
 export const Play = /*#__PURE__*/ icon(GLYPHS.Play, 'Play');
+export const Pause = /*#__PURE__*/ icon(GLYPHS.Pause, 'Pause');
 export const Upload = /*#__PURE__*/ icon(GLYPHS.Upload, 'Upload');
+export const Download = /*#__PURE__*/ icon(GLYPHS.Download, 'Download');
 export const BarChart2 = /*#__PURE__*/ icon(GLYPHS.BarChart2, 'BarChart2');
+export const Maximize = /*#__PURE__*/ icon(GLYPHS.Maximize, 'Maximize');
+export const Minimize = /*#__PURE__*/ icon(GLYPHS.Minimize, 'Minimize');
+export const FullScreen = /*#__PURE__*/ icon(GLYPHS.FullScreen, 'FullScreen');
+export const MaximizeScreen = /*#__PURE__*/ icon(GLYPHS.MaximizeScreen, 'MaximizeScreen');
+export const MinimizeScreen = /*#__PURE__*/ icon(GLYPHS.MinimizeScreen, 'MinimizeScreen');
+export const VolumeHigh = /*#__PURE__*/ icon(GLYPHS.VolumeHigh, 'VolumeHigh');
+export const VolumeLow = /*#__PURE__*/ icon(GLYPHS.VolumeLow, 'VolumeLow');
+export const VolumeMute = /*#__PURE__*/ icon(GLYPHS.VolumeMute, 'VolumeMute');
+export const VolumeOff = /*#__PURE__*/ icon(GLYPHS.VolumeOff, 'VolumeOff');
+export const Share = /*#__PURE__*/ icon(GLYPHS.Share, 'Share');
 export const Bookmark = /*#__PURE__*/ icon(GLYPHS.Bookmark, 'Bookmark');
 export const Trash2 = /*#__PURE__*/ icon(GLYPHS.Trash2, 'Trash2');
 export const Pencil = /*#__PURE__*/ icon(GLYPHS.Pencil, 'Pencil');

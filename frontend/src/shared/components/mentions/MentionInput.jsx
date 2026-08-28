@@ -107,6 +107,7 @@ export default function MentionInput({
   const atOffsetRef = useRef(0);
   const caretOffsetRef = useRef(0);
   const lastParsedTextRef = useRef(null);
+  const savedRangeRef = useRef(null);
 
   const { suggestions, loading } = useMentionSuggestions({
     query: mentionQuery,
@@ -114,12 +115,30 @@ export default function MentionInput({
     maxResults: 15
   });
 
-  // Connect external inputRef if provided
-  useEffect(() => {
-    if (inputRef) {
-      inputRef.current = editorRef.current;
+  // Track active selection range within the editor
+  const saveSelection = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      if (el.contains(range.startContainer)) {
+        savedRangeRef.current = range.cloneRange();
+      }
     }
-  }, [inputRef]);
+  }, []);
+
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const el = editorRef.current;
+      if (!el) return;
+      if (document.activeElement === el || el.contains(document.activeElement)) {
+        saveSelection();
+      }
+    };
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [saveSelection]);
 
   // Convert incoming value to standardized { text, mentions }
   const currentVal = useCallback(() => {
@@ -180,87 +199,6 @@ export default function MentionInput({
 
     return { text: textString, mentions };
   }, []);
-
-  /**
-   * Mirrors an externally-supplied value into the DOM — form resets, initial
-   * load, a draft restored from elsewhere.
-   *
-   * While the editor has focus the DOM is authoritative and this effect keeps
-   * its hands off, because rewriting `innerHTML` destroys the selection: the
-   * caret jumps to the start of the field mid-word.
-   *
-   * It used to guard on `lastParsedTextRef.current === text` instead, which
-   * held only while the parent's state was exactly in step with the DOM. Any
-   * re-render carrying a value that had not caught up yet — a post refetch
-   * landing after a comment was added or deleted, a `comment.created` socket
-   * event, anything asynchronous — failed that check and rewrote the field
-   * underneath the user. The character being typed was wiped and the caret was
-   * thrown to position zero, which is what made spaces "not work" and made the
-   * composer feel like it had stopped accepting input.
-   *
-   * The one external write worth honouring while focused is a clear, which is
-   * how every caller resets the field after a successful submit.
-   */
-  useEffect(() => {
-    const el = editorRef.current;
-    if (!el) return;
-
-    const { text, mentions = [] } = currentVal();
-    const isFocused = document.activeElement === el;
-
-    if (isFocused && text) {
-      // Typing in progress. Whatever the parent is holding is at best an echo
-      // of what is already on screen, and at worst stale.
-      return;
-    }
-
-    lastParsedTextRef.current = text;
-
-    if (!text) {
-      // Skip the DOM write when it is already empty, so a parent that re-renders
-      // on every keystroke cannot repeatedly reset a field the user just focused.
-      if (el.innerHTML !== '') el.innerHTML = '';
-      el.setAttribute('data-empty', 'true');
-      return;
-    }
-
-    el.setAttribute('data-empty', 'false');
-
-    if (!mentions || mentions.length === 0) {
-      el.innerHTML = convertUrlsToChipsHTML(text).replace(/\n/g, '<br>');
-      return;
-    }
-
-    // Sort mentions by start index
-    const sorted = [...mentions].sort((a, b) => a.start - b.start);
-    let html = '';
-    let cursor = 0;
-
-    sorted.forEach(m => {
-      if (m.start >= cursor && m.end <= text.length && text.slice(m.start, m.end) === `@${m.username}`) {
-        html += convertUrlsToChipsHTML(text.slice(cursor, m.start)).replace(/\n/g, '<br>');
-        html += `<span class="${styles.pill}" contenteditable="false" data-user-id="${escapeHtml(String(m.userId))}" data-username="${escapeHtml(m.username)}">@${escapeHtml(m.username)}</span>`;
-        cursor = m.end;
-      }
-    });
-
-    html += convertUrlsToChipsHTML(text.slice(cursor)).replace(/\n/g, '<br>');
-    el.innerHTML = html;
-  }, [value, currentVal]);
-
-  // Focus on autoFocus
-  useEffect(() => {
-    if (autoFocus && editorRef.current) {
-      editorRef.current.focus();
-      // Move caret to end
-      const range = document.createRange();
-      range.selectNodeContents(editorRef.current);
-      range.collapse(false);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-  }, [autoFocus]);
 
   // Handle typing and caret check for @ suggestions
   const handleInput = useCallback(() => {
@@ -338,6 +276,139 @@ export default function MentionInput({
 
     setMentionActive(false);
   }, [onChange, parseDOM, singleLine]);
+
+  // Insert text/emoji at current or saved cursor position, then reposition caret directly after
+  const insertTextAtCursor = useCallback((textToInsert) => {
+    const el = editorRef.current;
+    if (!el || !textToInsert) return;
+
+    el.focus();
+
+    const sel = window.getSelection();
+    let range = savedRangeRef.current;
+
+    // Check if saved range is valid and inside editor
+    if (!range || !el.contains(range.startContainer)) {
+      if (sel && sel.rangeCount > 0 && el.contains(sel.getRangeAt(0).startContainer)) {
+        range = sel.getRangeAt(0);
+      } else {
+        range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+      }
+    }
+
+    try {
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (_) {
+      // Ignore selection errors on edge cases
+    }
+
+    // Delete any selected content
+    range.deleteContents();
+
+    // Insert text
+    const textNode = document.createTextNode(textToInsert);
+    range.insertNode(textNode);
+
+    // Place caret immediately after the inserted text node
+    const newRange = document.createRange();
+    newRange.setStart(textNode, textNode.length);
+    newRange.setEnd(textNode, textNode.length);
+    newRange.collapse(true);
+
+    try {
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+      savedRangeRef.current = newRange.cloneRange();
+    } catch (_) {
+      // Ignore
+    }
+
+    handleInput();
+  }, [handleInput]);
+
+  // Connect external inputRef if provided and attach insertTextAtCursor
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.insertTextAtCursor = insertTextAtCursor;
+    }
+    if (inputRef) {
+      if (typeof inputRef === 'function') {
+        inputRef(editorRef.current);
+      } else {
+        inputRef.current = editorRef.current;
+      }
+    }
+  }, [inputRef, insertTextAtCursor]);
+
+  /**
+   * Mirrors an externally-supplied value into the DOM — form resets, initial
+   * load, a draft restored from elsewhere.
+   *
+   * While the editor has focus or matches the last parsed text, keep DOM intact
+   * to avoid resetting selection and jumping the caret to the start.
+   */
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+
+    const { text, mentions = [] } = currentVal();
+    const isFocused = document.activeElement === el;
+
+    if ((isFocused || lastParsedTextRef.current === text) && text) {
+      // Typing or programmatic insertion in progress.
+      return;
+    }
+
+    lastParsedTextRef.current = text;
+
+    if (!text) {
+      // Skip the DOM write when it is already empty
+      if (el.innerHTML !== '') el.innerHTML = '';
+      el.setAttribute('data-empty', 'true');
+      return;
+    }
+
+    el.setAttribute('data-empty', 'false');
+
+    if (!mentions || mentions.length === 0) {
+      el.innerHTML = convertUrlsToChipsHTML(text).replace(/\n/g, '<br>');
+      return;
+    }
+
+    // Sort mentions by start index
+    const sorted = [...mentions].sort((a, b) => a.start - b.start);
+    let html = '';
+    let cursor = 0;
+
+    sorted.forEach(m => {
+      if (m.start >= cursor && m.end <= text.length && text.slice(m.start, m.end) === `@${m.username}`) {
+        html += convertUrlsToChipsHTML(text.slice(cursor, m.start)).replace(/\n/g, '<br>');
+        html += `<span class="${styles.pill}" contenteditable="false" data-user-id="${escapeHtml(String(m.userId))}" data-username="${escapeHtml(m.username)}">@${escapeHtml(m.username)}</span>`;
+        cursor = m.end;
+      }
+    });
+
+    html += convertUrlsToChipsHTML(text.slice(cursor)).replace(/\n/g, '<br>');
+    el.innerHTML = html;
+  }, [value, currentVal]);
+
+  // Focus on autoFocus
+  useEffect(() => {
+    if (autoFocus && editorRef.current) {
+      editorRef.current.focus();
+      // Move caret to end
+      const range = document.createRange();
+      range.selectNodeContents(editorRef.current);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      savedRangeRef.current = range.cloneRange();
+    }
+  }, [autoFocus]);
 
   const handleSelectSuggestion = useCallback((user) => {
     const node = activeNodeRef.current;
@@ -483,13 +554,16 @@ export default function MentionInput({
         contentEditable={true}
         onInput={handleInput}
         onKeyDown={handleKeyDownInternal}
+        onKeyUp={saveSelection}
+        onMouseUp={saveSelection}
+        onTouchEnd={saveSelection}
         onPaste={handlePaste}
-        // PostComposer has always passed an onFocus (to expand itself the moment
-        // the field is clicked) and this component never accepted it, so the
-        // prop went nowhere. It was masked because the first keystroke expands
-        // the composer too — the field just did not open until you typed.
-        onFocus={onFocus}
-        onBlur={() => {
+        onFocus={(e) => {
+          saveSelection();
+          if (onFocus) onFocus(e);
+        }}
+        onBlur={(e) => {
+          saveSelection();
           // Delay closing so dropdown click can register
           setTimeout(() => setMentionActive(false), 200);
         }}

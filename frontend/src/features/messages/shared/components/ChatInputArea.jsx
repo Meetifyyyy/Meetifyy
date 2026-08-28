@@ -3,7 +3,6 @@ import MentionInput from '@shared/components/mentions/MentionInput';
 import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
 import styles from './ChatInputAreaStyles.module.css';
 import { useVoiceRecorder } from '@features/messages/hooks/useVoiceRecorder';
-import { processAndUploadImage, uploadFileDirect } from '@shared/utils/mediaPipeline';
 import { toast } from 'sonner';
 import { showToast } from '@shared/utils/toast';
 import ReplyPreviewContent from './ReplyPreviewContent';
@@ -25,7 +24,6 @@ export default function ChatInputArea({
   const sendMessageFn = propOnSendMessage || onSend;
   const [inputValue, setInputValue] = useState({ text: '', mentions: [] });
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -293,12 +291,16 @@ export default function ChatInputArea({
             {showEmojiPicker && (
               <div style={{ position: 'absolute', bottom: '100%', left: '1.25rem', marginBottom: '0.5rem', zIndex: 100 }}>
                 <LazyEmojiPicker
-                  theme="auto"
                   onEmojiSelect={(emoji) => {
-                    setInputValue(prev => {
-                      const curText = typeof prev === 'string' ? prev : (prev?.text || '');
-                      return typeof prev === 'string' ? curText + emoji.native : { ...prev, text: curText + emoji.native };
-                    });
+                    if (inputRef.current?.insertTextAtCursor) {
+                      inputRef.current.insertTextAtCursor(emoji.native);
+                    } else {
+                      setInputValue(prev => {
+                        const curText = typeof prev === 'string' ? prev : (prev?.text || '');
+                        return typeof prev === 'string' ? curText + emoji.native : { ...prev, text: curText + emoji.native };
+                      });
+                      inputRef.current?.focus();
+                    }
                     setShowEmojiPicker(false);
                   }}
                 />

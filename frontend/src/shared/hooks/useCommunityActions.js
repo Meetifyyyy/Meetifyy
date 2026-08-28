@@ -42,14 +42,14 @@ export function useCommunityActions() {
 
   const addPost = async (text, poll, communityId, media, mentions) => {
     try {
-      // The verified storage key, not the display URL. `media.url` happened to
-      // round-trip because the server strips a `/api/media/` prefix back off it,
-      // which is an accident of that one URL shape rather than a contract.
-      const mediaKey = media?.mediaKey || media?.url || (typeof media === 'string' ? media : undefined);
+      const mediaKeys = Array.isArray(media) 
+        ? media.map(m => m.mediaKey || m.url || (typeof m === 'string' ? m : undefined)).filter(Boolean)
+        : [];
+      
       const newPost = await postsApi.createPost({
         text,
         communityId,
-        mediaKey,
+        mediaKeys: mediaKeys.length > 0 ? mediaKeys : undefined,
         mentions,
         poll: poll || undefined,
       });

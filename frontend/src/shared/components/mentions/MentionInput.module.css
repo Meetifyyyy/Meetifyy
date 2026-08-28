@@ -19,9 +19,11 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   min-height: 24px;
-  max-height: 150px;
+  max-height: 100px;
   overflow-y: auto;
   position: relative;
+  padding-right: 6px;
+  box-sizing: border-box;
   transition: max-height 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
@@ -60,11 +62,20 @@
 
 /* Scrollbar styling */
 .editor::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
+}
+.editor::-webkit-scrollbar-track {
+  background: transparent;
 }
 .editor::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 3px;
+  background: var(--color-border-dark, rgba(0, 0, 0, 0.25));
+  border-radius: 4px;
+}
+.editor::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-light, rgba(0, 0, 0, 0.4));
+}
+:global([data-theme='dark']) .editor::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .urlChip {

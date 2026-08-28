@@ -241,7 +241,7 @@ export const deriveThumbnailKey = (rawSrc) => {
 
   // Only derive for our folder/uuid.ext keys; skip if it's already a thumbnail.
   if (/_thumb\.[a-z0-9]+$/i.test(key)) return null;
-  const match = key.match(/^([a-z0-9_-]+)\/([A-Za-z0-9._-]+)\.(webp|jpe?g|png|gif)$/i);
+  const match = key.match(/^([a-z0-9_-]+)\/([A-Za-z0-9._-]+)\.(webp|jpe?g|png|gif|mp4|webm|ogv|mov)$/i);
   if (!match) return null;
   const [, folder, name] = match;
   return `${folder}/${name}_thumb.webp`;

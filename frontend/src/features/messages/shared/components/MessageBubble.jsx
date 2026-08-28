@@ -27,6 +27,10 @@ import {
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { checkIsMe, getMsgTimestamp } from '../utils/cacheUtils';
 import { getMediaUrl } from '@shared/api/apiClient';
+import { normalizeBodyText, truncateBodyText } from '@shared/utils/bodyText';
+
+// Messages longer than this are clipped behind a "Show more" toggle.
+const MSG_LIMITS = { maxChars: 300, maxLines: 10 };
 
 // How long a finger must stay put before the message menu opens, and how far it
 // may drift while doing so. The drift budget is what separates a deliberate
@@ -595,6 +599,7 @@ const MessageBubble = memo(function MessageBubble({
   const touchHandled = useRef(false);
   const replyHandler = onReplyTo || onReply;
   const [mediaError, setMediaError] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const fireContextMenu = (e, msgObj) => {
     if (!onContextMenu) return;
@@ -1021,10 +1026,34 @@ const MessageBubble = memo(function MessageBubble({
             )
           )}
 
-          <div className={styles.msgTextTimeWrap}>
-            {hasText && <RichText content={messageText} className={styles.msgText} highlight={searchQuery} />}
-            <div className={styles.msgTimeLabel}>{timeText}</div>
-          </div>
+          {hasText && (() => {
+            const normalizedMsg = normalizeBodyText(messageText);
+            const clip = truncateBodyText(normalizedMsg, MSG_LIMITS);
+            const needsTruncation = clip.needsTruncation;
+            const displayedText = needsTruncation && !isExpanded ? clip.text : normalizedMsg;
+            return (
+              <div className={styles.msgTextTimeWrap}>
+                <div className={styles.msgTextContent}>
+                  <RichText content={displayedText} className={styles.msgText} highlight={searchQuery} />
+                  {needsTruncation && (
+                    <button
+                      type="button"
+                      className={`${styles.msgSeeMoreBtn} ${isMe ? styles.msgSeeMoreBtnMe : styles.msgSeeMoreBtnThem}`}
+                      onClick={(e) => { e.stopPropagation(); setIsExpanded((v) => !v); }}
+                    >
+                      {' '}{isExpanded ? 'Show less' : 'Show more'}
+                    </button>
+                  )}
+                </div>
+                <div className={styles.msgTimeLabel}>{timeText}</div>
+              </div>
+            );
+          })()}
+          {!hasText && (
+            <div className={styles.msgTextTimeWrap}>
+              <div className={styles.msgTimeLabel}>{timeText}</div>
+            </div>
+          )}
         </div>
         {!mediaError && (
           <MessageHoverActions msg={msg} isMe={isMe} onReplyTo={replyHandler} onContextMenu={onContextMenu} />
