@@ -399,7 +399,7 @@ const thumbSizeForFolder = (folder) => {
   if (folder === 'avatars' || folder === 'groups' || folder === 'community-icons') return 160;
   if (folder === 'communities') return 256;
   if (folder === 'profile-covers' || folder === 'community-covers') return 640;
-  return 480; // posts
+  return 1080; // posts
 };
 
 export const processAndUploadImage = async (file, folder = 'general', compressOptions = {}, onProgress = null, signal = null, options = {}) => {
@@ -505,24 +505,29 @@ export const processAndUploadVideo = async (file, folder = 'general', onProgress
   const meta = await generateVideoPoster(file).catch(() => null);
   report(8, 'preparing');
 
+  const originalRes = await uploadFileDirect(file, folder, (percent) => {
+    report(band(8, 90, percent), 'uploading');
+  }, signal, null, { width: meta?.width, height: meta?.height, duration: meta?.duration });
+
   let thumbnailUrl = null;
   let posterKey = null;
-  if (meta?.posterBlob) {
-    try {
-      const posterFile = new File([meta.posterBlob], 'poster.webp', { type: 'image/webp' });
-      const posterRes = await uploadFileDirect(posterFile, folder, (percent) => {
-        report(band(8, 14, percent), 'preparing');
-      }, signal, null, { width: meta?.width, height: meta?.height });
-      thumbnailUrl = posterRes?.publicUrl || null;
-      posterKey = posterRes?.key || null;
-    } catch (err) {
-      if (err?.name === 'AbortError') throw err;
+
+  if (meta?.posterBlob && originalRes?.key) {
+    const variantKey = deriveThumbnailKey(originalRes.key);
+    if (variantKey) {
+      try {
+        const posterFile = new File([meta.posterBlob], 'poster.webp', { type: 'image/webp' });
+        await uploadFileDirect(posterFile, folder, (percent) => {
+          report(band(90, 99, percent), 'finishing');
+        }, signal, variantKey, { width: meta?.width, height: meta?.height });
+        thumbnailUrl = originalRes.publicUrl ? originalRes.publicUrl.replace(/\.([a-z0-9]+)$/i, '_thumb.webp') : null;
+        posterKey = variantKey;
+      } catch (err) {
+        if (err?.name === 'AbortError') throw err;
+      }
     }
   }
 
-  const originalRes = await uploadFileDirect(file, folder, (percent) => {
-    report(band(14, 99, percent), 'uploading');
-  }, signal, null, { width: meta?.width, height: meta?.height, duration: meta?.duration });
   report(100, 'done');
 
   console.info('[mediaPipeline] video upload done', { key: originalRes?.key, url: originalRes?.publicUrl });

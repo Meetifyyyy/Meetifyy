@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef, memo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, memo, useCallback, useId } from 'react';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { deriveThumbnailKey, getMediaUrl } from '@shared/api/apiClient';
+import { Play, Pause, VolumeHigh, VolumeOff, Maximize } from '@shared/components/icons';
+import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
 import styles from './MediaGrid.module.css';
 
 // A post's image must never be replaced by an unrelated picture. This used to
@@ -11,148 +13,298 @@ import styles from './MediaGrid.module.css';
 // nothing but its own container, after one delayed retry of the real URL.
 const RETRY_DELAYS_MS = [1200, 4000];
 
+
+/**
+ * Format seconds to m:ss string — pure helper, defined once outside component.
+ */
+function fmtTime(s) {
+  if (!s || !isFinite(s) || s < 0) return '0:00';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
 /**
  * Custom inline video player component for post feed cards.
- * - Shows timer pill when not hovering
- * - Shows sleek controls (Play/Pause, Seek, Mute, Expand) on hover
- * - NO 3-dots menu button
- * - Clicking expand or video opens MediaViewer
+ *
+ * Performance model:
+ *  - React state drives ONLY: playing (button icon), muted (volume icon).
+ *  - currentTime / duration / seekbar progress are updated via direct DOM
+ *    writes inside a single RAF loop — zero React re-renders per frame.
+ *  - IntersectionObserver gates autoplay to visible videos only.
+ *  - feedVideoRegistry enforces one-active-video-at-a-time across the feed.
  */
-function InlineVideoPlayer({ src, isPortrait, aspect, handleVideoLoaded, handleItemClick, index }) {
+const InlineVideoPlayer = memo(function InlineVideoPlayer({
+  src,
+  isPortrait,
+  aspect,
+  handleVideoLoaded,
+  handleItemClick,
+  index,
+}) {
+  const uid = useId(); // Stable unique id for registry
   const videoRef = useRef(null);
-  const [playing, setPlaying] = useState(true);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [muted, setMuted] = useState(false);
+  const rafRef   = useRef(null);
 
-  const fmt = (s) => {
-    if (!s || !isFinite(s) || s < 0) return '0:00';
-    const m = Math.floor(s / 60);
-    const sec = Math.floor(s % 60);
-    return `${m}:${String(sec).padStart(2, '0')}`;
-  };
+  // ── Only React state that actually changes rendered icon ────────────────
+  const [playing, setPlaying] = useState(false);
+  const [muted,   setMuted]   = useState(true);  // start muted for autoplay
 
-  const togglePlay = (e) => {
+  // ── DOM refs for timer pill + seekbar (bypasses React render on timeupdate) ──
+  const timerPillRef  = useRef(null);
+  const timerTextRef  = useRef(null);
+  const seekbarRef    = useRef(null);
+
+  // ── Duration (set once on loadedmetadata, rarely changes) ───────────────
+  const durationRef = useRef(0);
+  // For seekbar max attr (needs DOM access, not React controlled)
+  const seekbarMaxRef = useRef(100);
+
+  // ── RAF-based progress loop ─────────────────────────────────────────────
+  const startRAF = useCallback(() => {
+    const tick = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      const ct  = v.currentTime;
+      const dur = durationRef.current;
+      const pct = dur > 0 ? ct / dur : 0;
+
+      // Update timer pill text
+      if (timerTextRef.current) {
+        timerTextRef.current.textContent = `${fmtTime(ct)} / ${fmtTime(dur)}`;
+      }
+
+      // Update seekbar value + progress css var directly
+      const sb = seekbarRef.current;
+      if (sb) {
+        sb.value = String(ct);
+        sb.style.setProperty('--progress', `${pct * 100}%`);
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  const stopRAF = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+  }, []);
+
+  // ── Video event listeners ────────────────────────────────────────────────
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+
+    // Register with the global registry (priority 0 = feed video)
+    const deregister = feedVideoRegistry.register(uid, v, 0);
+
+    const onPlay  = () => { setPlaying(true);  startRAF(); };
+    const onPause = () => {
+      setPlaying(false);
+      stopRAF();
+      feedVideoRegistry.notifyPause(uid);
+    };
+    const onEnded = () => { setPlaying(false); stopRAF(); };
+    const onLoadedMeta = (e) => {
+      durationRef.current  = e.target.duration;
+      seekbarMaxRef.current = e.target.duration;
+      if (seekbarRef.current) {
+        seekbarRef.current.max = String(e.target.duration);
+      }
+      handleVideoLoaded(index, e);
+    };
+    const onVolumeChange = () => setMuted(v.muted);
+
+    v.addEventListener('play',          onPlay);
+    v.addEventListener('pause',         onPause);
+    v.addEventListener('ended',         onEnded);
+    v.addEventListener('loadedmetadata', onLoadedMeta);
+    v.addEventListener('volumechange',  onVolumeChange);
+
+    return () => {
+      v.removeEventListener('play',          onPlay);
+      v.removeEventListener('pause',         onPause);
+      v.removeEventListener('ended',         onEnded);
+      v.removeEventListener('loadedmetadata', onLoadedMeta);
+      v.removeEventListener('volumechange',  onVolumeChange);
+      stopRAF();
+      deregister();
+    };
+  }, [src, uid, index, handleVideoLoaded, startRAF, stopRAF]);
+
+  // ── IntersectionObserver: only play when ≥40% visible ───────────────────
+  useEffect(() => {
+    const wrapEl = videoRef.current?.parentElement;
+    if (!wrapEl) return;
+
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        const v = videoRef.current;
+        if (!v) return;
+
+        if (entry.intersectionRatio >= 0.4) {
+          // Attempt autoplay via registry
+          feedVideoRegistry.requestPlay(uid);
+          v.play().catch(() => {});
+        } else {
+          // Left viewport — pause
+          if (!v.paused) {
+            v.pause();
+            feedVideoRegistry.notifyPause(uid);
+          }
+        }
+      },
+      { threshold: [0, 0.4] },
+    );
+
+    obs.observe(wrapEl);
+    return () => obs.disconnect();
+  }, [uid]);
+
+  // ── Page visibility: pause when tab hidden ───────────────────────────────
+  useEffect(() => {
+    const onVisChange = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      if (document.hidden && !v.paused) {
+        v.pause();
+        feedVideoRegistry.notifyPause(uid);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisChange);
+    return () => document.removeEventListener('visibilitychange', onVisChange);
+  }, [uid]);
+
+  // ── Cleanup RAF + pause on unmount ───────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      stopRAF();
+      const v = videoRef.current;
+      if (v && !v.paused) v.pause();
+    };
+  }, [stopRAF]);
+
+  // ── Stable callbacks ──────────────────────────────────────────────────────
+  const togglePlay = useCallback((e) => {
     e.stopPropagation();
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) {
-      v.play();
-      setPlaying(true);
+      feedVideoRegistry.requestPlay(uid);
+      v.play().catch(() => {});
     } else {
       v.pause();
-      setPlaying(false);
     }
-  };
+  }, [uid]);
 
-  const toggleMute = (e) => {
+  const toggleMute = useCallback((e) => {
     e.stopPropagation();
     const v = videoRef.current;
     if (!v) return;
     v.muted = !v.muted;
-    setMuted(v.muted);
-  };
+  }, []);
 
-  const handleSeek = (e) => {
+  const handleSeek = useCallback((e) => {
     e.stopPropagation();
     const v = videoRef.current;
     if (!v) return;
-    const val = parseFloat(e.target.value);
-    v.currentTime = val;
-    setCurrentTime(val);
-  };
+    v.currentTime = parseFloat(e.target.value);
+  }, []);
 
-  const timeString = `${fmt(currentTime)} / ${fmt(duration)}`;
+  const handleExpandClick = useCallback((e) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (v && !v.paused) v.pause();
+    handleItemClick(e, index);
+  }, [handleItemClick, index]);
+
+  const handleContainerClick = useCallback((e) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (v && !v.paused) v.pause();
+    handleItemClick(e, index);
+  }, [handleItemClick, index]);
 
   return (
     <div
       className={`${styles.singleMediaContainer} ${
         isPortrait ? styles.singleMediaPortrait : styles.singleMediaLandscape
       }`}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (videoRef.current) videoRef.current.pause();
-        handleItemClick(e, index);
-      }}
+      onClick={handleContainerClick}
     >
       <div className={`${styles.videoWrapper} ${styles.inlineVideoWrap}`} style={{ '--aspect': aspect }}>
         <video
           ref={videoRef}
           src={src}
-          autoPlay
           playsInline
-          muted={muted}
-          onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
-          onLoadedMetadata={(e) => {
-            setDuration(e.target.duration);
-            handleVideoLoaded(index, e);
-          }}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
+          muted  /* start muted; IntersectionObserver will unmute if registry allows */
+          preload="metadata"
           className={`${styles.singleVideo} ${styles.loaded}`}
         />
 
-        {/* Timer pill when not hovering */}
-        <div className={styles.inlineTimerPill}>
-          {timeString}
+        {/* Timer pill — updated directly by RAF, NOT by React state */}
+        <div ref={timerPillRef} className={styles.inlineTimerPill}>
+          <span ref={timerTextRef}>0:00 / 0:00</span>
         </div>
 
         {/* Full controls overlay on hover */}
         <div className={styles.inlineControlsOverlay} onClick={(e) => e.stopPropagation()}>
-          <button className={styles.inlineCtrlBtn} onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
-            {playing ? (
-              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                <path d="M6 19h4V5H6zm8-14v14h4V5z" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-            )}
-          </button>
+          <div className={styles.inlineProgressTrackWrap}>
+            {/* Uncontrolled input — value and --progress updated by RAF */}
+            <input
+              ref={seekbarRef}
+              type="range"
+              min={0}
+              max={100}
+              step={0.1}
+              defaultValue={0}
+              onChange={handleSeek}
+              className={styles.inlineSeekBar}
+              aria-label="Seek"
+            />
+          </div>
 
-          <span className={styles.inlineTimeText}>{timeString}</span>
+          <div className={styles.inlineControlsRow}>
+            <div className={styles.inlineCtrlGroupLeft}>
+              <button
+                className={`${styles.inlineCtrlBtn} ${!playing ? styles.inlineCtrlBtnPlay : ''}`}
+                onClick={togglePlay}
+                aria-label={playing ? 'Pause' : 'Play'}
+              >
+                {playing
+                  ? <Pause size={14} strokeWidth={1.75} />
+                  : <Play  size={14} strokeWidth={1.75} />}
+              </button>
+              {/* Timer text in controls row — reuse same ref via separate span */}
+              <span className={styles.inlineTimeText} aria-hidden="true">
+                {/* Populated by RAF; initial placeholder */}
+                <span ref={(el) => { if (el && !timerTextRef.current) timerTextRef.current = el; }} />
+              </span>
+            </div>
 
-          <input
-            type="range"
-            min={0}
-            max={duration || 100}
-            step={0.1}
-            value={currentTime}
-            onChange={handleSeek}
-            className={styles.inlineSeekBar}
-          />
+            <div className={styles.inlineCtrlGroupRight}>
+              <button className={styles.inlineCtrlBtn} onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
+                {muted
+                  ? <VolumeOff  size={14} strokeWidth={1.75} />
+                  : <VolumeHigh size={14} strokeWidth={1.75} />}
+              </button>
 
-          <button className={styles.inlineCtrlBtn} onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
-            {muted ? (
-              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
-              </svg>
-            )}
-          </button>
-
-          <button
-            className={styles.inlineCtrlBtn}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (videoRef.current) videoRef.current.pause();
-              handleItemClick(e, index);
-            }}
-            aria-label="Expand media viewer"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
-            </svg>
-          </button>
+              <button
+                className={styles.inlineCtrlBtn}
+                onClick={handleExpandClick}
+                aria-label="Expand media viewer"
+              >
+                <Maximize size={14} strokeWidth={1.75} />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
-}
+});
 
 /**
  * Normalizes a raw media object/string/array into a standardized array of items with intrinsic aspect ratio.
@@ -221,7 +373,7 @@ function normalizeMedia(mediaInput) {
   }).filter(Boolean);
 }
 
-export function MediaGrid({ media, onMediaClick }) {
+export function MediaGrid({ media, onMediaClick, onRemove }) {
   const [mediaList, setMediaList] = useState(() => normalizeMedia(media));
   const [loadedStates, setLoadedStates] = useState({});
   // Indices whose media could not be loaded after the retries below. Kept in
@@ -353,6 +505,19 @@ export function MediaGrid({ media, onMediaClick }) {
     }
   };
 
+  const renderRemoveButton = (index) => {
+    if (!onRemove) return null;
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); onRemove(index); }}
+        className={styles.removeBtn}
+        title="Remove attachment"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    );
+  };
+
   // Single Media item (Image or Video)
   if (mediaList.length === 1) {
     const item = mediaList[0];
@@ -443,6 +608,7 @@ export function MediaGrid({ media, onMediaClick }) {
                 <path d="M8 5v14l11-7z" />
               </svg>
             </div>
+            {renderRemoveButton(0)}
           </div>
         </div>
       );
@@ -482,6 +648,7 @@ export function MediaGrid({ media, onMediaClick }) {
               }`}
             />
           )}
+          {renderRemoveButton(0)}
         </div>
       </div>
     );
@@ -509,6 +676,14 @@ export function MediaGrid({ media, onMediaClick }) {
                     className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
                   />
                 )}
+                {item.isVideo && (
+                  <div className={styles.playButtonOverlay} aria-label="Play video">
+                    <svg className={styles.playIcon} viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </div>
+                )}
+                {renderRemoveButton(index)}
               </div>
             );
           })}
@@ -537,6 +712,14 @@ export function MediaGrid({ media, onMediaClick }) {
                 className={`${styles.gridImage} ${loadedStates[0] ? styles.loaded : styles.loading}`}
               />
             )}
+            {mediaList[0].isVideo && (
+              <div className={styles.playButtonOverlay} aria-label="Play video">
+                <svg className={styles.playIcon} viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </div>
+            )}
+            {renderRemoveButton(0)}
           </div>
           <div className={styles.gridThreeRight}>
             {mediaList.slice(1, 3).map((item, idx) => {
@@ -557,6 +740,14 @@ export function MediaGrid({ media, onMediaClick }) {
                       className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
                     />
                   )}
+                  {item.isVideo && (
+                    <div className={styles.playButtonOverlay} aria-label="Play video">
+                      <svg className={styles.playIcon} viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </div>
+                  )}
+                  {renderRemoveButton(index)}
                 </div>
               );
             })}
@@ -566,15 +757,16 @@ export function MediaGrid({ media, onMediaClick }) {
     );
   }
 
-  // Four or More Images (2x2 Grid with +N overlay)
+  // Four or More Images (2x2 Grid)
   const displayItems = mediaList.slice(0, 4);
-  const remainingCount = mediaList.length - 4;
+  const totalCount = mediaList.length;
 
   return (
     <div className={styles.mediaContainer}>
       <div className={styles.gridFour}>
         {displayItems.map((item, index) => {
-          const isLast = index === 3 && remainingCount > 0;
+          const isLast = index === 3 && totalCount > 4;
+          const overlayCount = totalCount - 3; // +2 for 5, +3 for 6
           const subSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
           return (
             <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
@@ -591,11 +783,19 @@ export function MediaGrid({ media, onMediaClick }) {
                   className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
                 />
               )}
-              {isLast && (
-                <div className={styles.moreOverlay}>
-                  <span>+{remainingCount}</span>
+              {item.isVideo && !isLast && (
+                <div className={styles.playButtonOverlay} aria-label="Play video">
+                  <svg className={styles.playIcon} viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
                 </div>
               )}
+              {isLast && (
+                <div className={styles.moreOverlay}>
+                  <span>+{overlayCount}</span>
+                </div>
+              )}
+              {renderRemoveButton(index)}
             </div>
           );
         })}

@@ -96,13 +96,13 @@ function Feed({ onPostClick }) {
     };
   }, []);
 
-  const handleNewPost = useCallback(async (text, pollData, mediaData, mentions) => {
-    if (!(pollData || text || mediaData)) return;
+  const handleNewPost = useCallback(async (text, pollData, mediaDataList, mentions) => {
+    if (!(pollData || text || (mediaDataList && mediaDataList.length > 0))) return;
 
-    // Pass the VERIFIED storage key to the backend.
+    // Pass the VERIFIED storage keys to the backend.
     const created = await postsApi.createPost({
       text,
-      mediaKey: mediaData?.mediaKey,
+      mediaKeys: mediaDataList?.map(m => m.mediaKey).filter(Boolean),
       mentions,
       poll: pollData || undefined,
     });

@@ -1,8 +1,6 @@
-import { useState, useRef, useEffect, memo, Suspense } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
 import { useAuth } from '@shared/context/AuthContext';
-import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import Avatar from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import MediaGrid from '../post/MediaGrid';
@@ -28,7 +26,7 @@ const overlayStyle = {
 function PostComposer({ onSubmit }) {
   const { loading, currentUser } = useAuth();
   const [value, setValue] = useState({ text: '', mentions: [] });
-  const [media, setMedia] = useState(null);
+  const [media, setMedia] = useState([]);
   const [isPosting, setIsPosting] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [showPoll, setShowPoll] = useState(false);
@@ -38,34 +36,32 @@ function PostComposer({ onSubmit }) {
 
   const composerRef = useRef(null);
   const inputRef = useRef(null);
-  const fileRef = useRef(null);
+  const imageFileRef = useRef(null);
+  const videoFileRef = useRef(null);
   const emojiPanelRef = useRef(null);
-  const pollPanelRef = useRef(null);
   const emojiBtnRef = useRef(null);
   const pollBtnRef = useRef(null);
 
-  // Upload lifecycle: the in-flight upload's AbortController and a promise that
-  // resolves to the uploaded descriptor ({ mediaKey, url, type, width, height })
-  // or rejects. handlePost awaits this so a fast "Post" click can never race the
-  // upload, and a verified storage key is always what reaches the backend.
-  const uploadAbortRef = useRef(null);
-  const uploadPromiseRef = useRef(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  // Maps of previewUrl -> AbortController/Promise
+  const uploadAbortRefs = useRef(new Map());
+  const uploadPromiseRefs = useRef(new Map());
 
-  // Abort any in-flight upload on unmount + revoke the preview object URL.
+  // Abort any in-flight upload on unmount + revoke preview URLs
   useEffect(() => {
     return () => {
-      uploadAbortRef.current?.abort();
-      if (media?.previewUrl) {
-        try { URL.revokeObjectURL(media.previewUrl); } catch (_) { /* ignore */ }
-      }
+      uploadAbortRefs.current.forEach(controller => controller.abort());
+      media.forEach(m => {
+        if (m.previewUrl) {
+          try { URL.revokeObjectURL(m.previewUrl); } catch (_) {}
+        }
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const hasContent = Boolean(
     (typeof value === 'string' ? value : value?.text)?.trim() ||
-    media ||
+    media.length > 0 ||
     showPoll ||
     showEmoji
   );
@@ -96,34 +92,37 @@ function PostComposer({ onSubmit }) {
 
     if (showPoll) {
       const opts = pollOptions.map((o) => o.trim()).filter(Boolean);
-      if (!text && opts.length < 2 && !media) return;
+      if (!text && opts.length < 2 && media.length === 0) return;
     } else {
-      if (!text && !media) return;
+      if (!text && media.length === 0) return;
     }
 
     setIsPosting(true);
-    let finalMedia = null;
+    let finalMedia = [];
 
     try {
-      // ── Verify media is uploaded before creating the post ──────────────────
-      // The upload was kicked off at selection time. Await whatever state it's in
-      // so the post can NEVER reference an un-uploaded/blob file.
-      if (media?.file) {
-        let uploaded;
-        try {
-          uploaded = await uploadPromiseRef.current;
-        } catch (uploadErr) {
-          console.error('[PostComposer] media upload failed, blocking post', uploadErr);
-          setMedia((prev) => (prev ? { ...prev, status: 'error', error: uploadErr?.message || 'Upload failed' } : prev));
-          setIsPosting(false);
-          return; // keep the selection so the user can retry
+      if (media.length > 0) {
+        const promises = media.map(m => uploadPromiseRefs.current.get(m.previewUrl));
+        const results = [];
+        
+        for (let i = 0; i < media.length; i++) {
+          let uploaded;
+          try {
+            uploaded = await promises[i];
+          } catch (uploadErr) {
+            console.error('[PostComposer] media upload failed', uploadErr);
+            setMedia((prev) => prev.map((p, idx) => idx === i ? { ...p, status: 'error', error: uploadErr?.message || 'Upload failed' } : p));
+            setIsPosting(false);
+            return;
+          }
+          if (!uploaded?.mediaKey) {
+            setMedia((prev) => prev.map((p, idx) => idx === i ? { ...p, status: 'error', error: 'Upload did not complete' } : p));
+            setIsPosting(false);
+            return;
+          }
+          results.push(uploaded);
         }
-        if (!uploaded?.mediaKey) {
-          setMedia((prev) => (prev ? { ...prev, status: 'error', error: 'Upload did not complete' } : prev));
-          setIsPosting(false);
-          return;
-        }
-        finalMedia = uploaded;
+        finalMedia = results;
       }
 
       if (showPoll) {
@@ -136,19 +135,17 @@ function PostComposer({ onSubmit }) {
         await onSubmit(text, null, finalMedia, mentions);
       }
 
-      // Success — clear composer. The uploaded media is now attached to the post,
-      // so there's nothing to discard.
-      if (media?.previewUrl) {
-        try { URL.revokeObjectURL(media.previewUrl); } catch (_) { /* ignore */ }
-      }
+      media.forEach(m => {
+        if (m.previewUrl) {
+          try { URL.revokeObjectURL(m.previewUrl); } catch (_) {}
+        }
+      });
       setValue({ text: '', mentions: [] });
-      setMedia(null);
-      setUploadProgress(0);
-      uploadPromiseRef.current = null;
+      setMedia([]);
+      uploadPromiseRefs.current.clear();
+      uploadAbortRefs.current.clear();
       setIsExpanded(false);
     } catch (err) {
-      // Post creation failed AFTER a successful upload — keep the media (still
-      // owned + unattached) so the user can retry without re-uploading.
       console.error('[PostComposer] post creation failed', err);
       showToast(err?.message || 'Post failed', 'error');
     } finally {
@@ -161,12 +158,15 @@ function PostComposer({ onSubmit }) {
   // Resolves to { mediaKey, url, type, width, height }; rejects on failure.
   const startUpload = (file, type, previewUrl) => {
     const controller = new AbortController();
-    uploadAbortRef.current = controller;
-    setUploadProgress(0);
+    uploadAbortRefs.current.set(previewUrl, controller);
 
     const uploader = type === 'video'
-      ? processAndUploadVideo(file, 'posts', (p) => setUploadProgress(p), controller.signal)
-      : processAndUploadImage(file, 'posts', { maxWidthOrHeight: 1920 }, (p) => setUploadProgress(p), controller.signal);
+      ? processAndUploadVideo(file, 'posts', (p) => {
+          setMedia((prev) => prev.map(m => m.previewUrl === previewUrl ? { ...m, progress: p } : m));
+        }, controller.signal)
+      : processAndUploadImage(file, 'posts', { maxWidthOrHeight: 1920 }, (p) => {
+          setMedia((prev) => prev.map(m => m.previewUrl === previewUrl ? { ...m, progress: p } : m));
+        }, controller.signal);
 
     const promise = uploader.then((res) => {
       const descriptor = {
@@ -177,79 +177,100 @@ function PostComposer({ onSubmit }) {
         height: res?.height || null,
       };
       if (!descriptor.mediaKey) throw new Error('Upload did not return a storage key');
-      console.info('[PostComposer] media ready', descriptor);
-      // Only apply if this upload still corresponds to the current selection.
-      setMedia((prev) => (prev && prev.previewUrl === previewUrl
-        ? { ...prev, status: 'ready', ...descriptor }
-        : prev));
+      
+      setMedia((prev) => prev.map(m => m.previewUrl === previewUrl ? { ...m, status: 'ready', ...descriptor } : m));
       return descriptor;
     }).catch((err) => {
-      if (err?.name === 'AbortError') { console.info('[PostComposer] upload aborted'); throw err; }
+      if (err?.name === 'AbortError') throw err;
       console.error('[PostComposer] upload error', err);
-      setMedia((prev) => (prev && prev.previewUrl === previewUrl
-        ? { ...prev, status: 'error', error: err?.message || 'Upload failed' }
-        : prev));
+      setMedia((prev) => prev.map(m => m.previewUrl === previewUrl ? { ...m, status: 'error', error: err?.message || 'Upload failed' } : m));
       throw err;
     });
 
-    uploadPromiseRef.current = promise;
-    // Prevent unhandled-rejection noise; handlePost awaits this same promise.
+    uploadPromiseRefs.current.set(previewUrl, promise);
     promise.catch(() => {});
   };
 
-  const removeMedia = () => {
-    // Cancel any in-flight upload and clean up an already-uploaded orphan so a
-    // discarded selection never leaves a dangling storage object / Media row.
-    uploadAbortRef.current?.abort();
-    const current = media;
-    if (current?.mediaKey && current.status === 'ready') {
-      uploadsApi.discard(current.mediaKey).catch(() => { /* best-effort */ });
-    }
-    if (current?.previewUrl) {
-      try { URL.revokeObjectURL(current.previewUrl); } catch (_) { /* ignore */ }
-    }
-    setMedia(null);
-    setUploadProgress(0);
-    uploadPromiseRef.current = null;
+  const removeMedia = (previewUrl) => {
+    uploadAbortRefs.current.get(previewUrl)?.abort();
+    uploadAbortRefs.current.delete(previewUrl);
+    uploadPromiseRefs.current.delete(previewUrl);
+
+    setMedia((prev) => {
+      const current = prev.find(m => m.previewUrl === previewUrl);
+      if (current?.mediaKey && current.status === 'ready') {
+        uploadsApi.discard(current.mediaKey).catch(() => {});
+      }
+      if (current?.previewUrl) {
+        try { URL.revokeObjectURL(current.previewUrl); } catch (_) {}
+      }
+      return prev.filter(m => m.previewUrl !== previewUrl);
+    });
   };
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const handleFileChange = (e, expectedType) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+
+    let availableSlots = 6 - media.length;
+    if (availableSlots <= 0) {
+      showToast('Maximum 6 media items allowed', 'error');
+      e.target.value = '';
+      return;
+    }
+
+    let filesToProcess = files;
+    if (files.length > availableSlots) {
+      filesToProcess = files.slice(0, availableSlots);
+      showToast('Max 6 files allowed.', 'error');
+    }
 
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
-    if (file.size > MAX_FILE_SIZE) {
-      showToast('File size limit is 50 MB', 'error');
-      e.target.value = '';
-      return;
+    const newMedia = [];
+
+    for (const file of filesToProcess) {
+      if (file.size > MAX_FILE_SIZE) {
+        showToast(`File ${file.name} exceeds 50MB limit`, 'error');
+        continue;
+      }
+
+      const isVideo = file.type.startsWith('video/');
+      const isImage = file.type.startsWith('image/');
+
+      if (expectedType === 'image' && !isImage) {
+        showToast('Please select an image file.', 'error');
+        continue;
+      }
+
+      if (expectedType === 'video' && !isVideo) {
+        showToast('Please select a video file.', 'error');
+        continue;
+      }
+
+      if (!isVideo && !isImage) {
+        showToast(`Unsupported file type: ${file.name}`, 'error');
+        continue;
+      }
+
+      const type = isVideo ? 'video' : 'image';
+      const previewUrl = URL.createObjectURL(file);
+      newMedia.push({ type, previewUrl, file, status: 'uploading', progress: 0, mediaKey: null, url: null });
     }
 
-    const isVideo = file.type.startsWith('video/');
-    const isImage = file.type.startsWith('image/');
-    if (!isVideo && !isImage) {
-      showToast('Unsupported file type', 'error');
-      e.target.value = '';
-      return;
+    if (newMedia.length > 0) {
+      setMedia((prev) => [...prev, ...newMedia]);
+      setIsExpanded(true);
+      newMedia.forEach(m => startUpload(m.file, m.type, m.previewUrl));
     }
-
-    // Replace any previous selection cleanly (abort + discard old orphan).
-    if (media) removeMedia();
-
-    const type = isVideo ? 'video' : 'image';
-    const previewUrl = URL.createObjectURL(file);
-    console.info('[PostComposer] file selected', { name: file.name, type: file.type, size: file.size });
-    setMedia({ type, previewUrl, file, status: 'uploading', mediaKey: null, url: null });
-    setIsExpanded(true);
+    
     e.target.value = '';
-
-    startUpload(file, type, previewUrl);
   };
 
-  // Retry a failed upload with the same file (no re-selection needed).
-  const retryUpload = () => {
-    if (!media?.file) return;
-    setMedia((prev) => (prev ? { ...prev, status: 'uploading', error: null } : prev));
-    startUpload(media.file, media.type, media.previewUrl);
+  const retryUpload = (previewUrl) => {
+    const m = media.find(x => x.previewUrl === previewUrl);
+    if (!m?.file) return;
+    setMedia((prev) => prev.map(x => x.previewUrl === previewUrl ? { ...x, status: 'uploading', error: null, progress: 0 } : x));
+    startUpload(m.file, m.type, m.previewUrl);
   };
 
   const togglePoll = () => {
@@ -263,13 +284,17 @@ function PostComposer({ onSubmit }) {
   };
 
   const insertEmoji = (emoji) => {
-    setValue((v) => {
-      const currentText = typeof v === 'string' ? v : (v?.text || '');
-      const currentMentions = v?.mentions || [];
-      return { text: currentText + emoji, mentions: currentMentions };
-    });
     setIsExpanded(true);
-    inputRef.current?.focus();
+    if (inputRef.current?.insertTextAtCursor) {
+      inputRef.current.insertTextAtCursor(emoji);
+    } else {
+      setValue((v) => {
+        const currentText = typeof v === 'string' ? v : (v?.text || '');
+        const currentMentions = v?.mentions || [];
+        return { text: currentText + emoji, mentions: currentMentions };
+      });
+      inputRef.current?.focus();
+    }
   };
 
   const addPollOption = () => {
@@ -400,59 +425,38 @@ function PostComposer({ onSubmit }) {
             </div>
           )}
 
-          {media && (
-            <div style={{ position: 'relative', width: '100%' }}>
-              <button
-                onClick={removeMedia}
-                style={{
-                  position: 'absolute',
-                  top: '14px',
-                  right: '10px',
-                  background: 'rgba(15, 23, 42, 0.75)',
-                  backdropFilter: 'blur(4px)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '50%',
-                  width: '30px',
-                  height: '30px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  zIndex: 20,
-                  transition: 'background 0.2s ease',
-                }}
-                title="Remove attachment"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-              </button>
+          {media.length > 0 && (
+            <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <MediaGrid 
+                media={media.map(m => ({ url: m.previewUrl, type: m.type }))} 
+                onRemove={(idx) => removeMedia(media[idx].previewUrl)}
+              />
 
-              <MediaGrid media={[{ url: media.previewUrl, type: media.type }]} />
-
-              {/* Uploading overlay with progress */}
-              {media.status === 'uploading' && (
-                <div style={overlayStyle}>
-                  <div style={{ width: '70%', maxWidth: '220px', height: '6px', background: 'rgba(255,255,255,0.3)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ width: `${uploadProgress}%`, height: '100%', background: '#fff', transition: 'width 0.2s ease' }} />
+              {media.some(m => m.status === 'uploading') && (
+                <div style={{ padding: '12px 16px', background: 'var(--color-bg-subtle)', borderRadius: '8px', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ fontWeight: 600 }}>
+                    Uploading {media.filter(m => m.status === 'ready').length} / {media.length} items...
                   </div>
-                  <span style={{ color: '#fff', fontSize: '0.85rem', marginTop: '8px' }}>
-                    {uploadProgress < 100 ? `Uploading ${uploadProgress}%` : 'Finishing…'}
-                  </span>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {media.map((m, idx) => (
+                      <div key={idx} style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                        {m.status === 'uploading' && <div style={{ width: `${m.progress}%`, height: '100%', background: 'var(--color-primary)', transition: 'width 0.2s' }} />}
+                        {m.status === 'ready' && <div style={{ width: '100%', height: '100%', background: 'var(--color-success)' }} />}
+                        {m.status === 'error' && <div style={{ width: '100%', height: '100%', background: 'var(--color-danger)' }} />}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
-              {/* Failed overlay with retry */}
-              {media.status === 'error' && (
-                <div style={overlayStyle}>
-                  <span style={{ color: '#fff', fontSize: '0.85rem', marginBottom: '10px', textAlign: 'center', padding: '0 12px' }}>
-                    {media.error || 'Upload failed'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={retryUpload}
-                    style={{ background: '#fff', color: '#0f172a', border: 'none', borderRadius: '999px', padding: '6px 16px', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}
+              {media.some(m => m.status === 'error') && (
+                <div style={{ padding: '12px 16px', background: 'var(--color-danger-subtle)', color: 'var(--color-danger)', borderRadius: '8px', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Some uploads failed.</span>
+                  <button 
+                    onClick={() => media.forEach(m => { if (m.status === 'error') retryUpload(m.previewUrl); })}
+                    style={{ background: 'transparent', color: 'inherit', border: '1px solid currentColor', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontWeight: 600 }}
                   >
-                    Retry upload
+                    Retry Failed
                   </button>
                 </div>
               )}
@@ -461,8 +465,15 @@ function PostComposer({ onSubmit }) {
 
           <div className={styles.composerActions}>
             <div className={styles.composerActionsLeft}>
-              <input ref={fileRef} type="file" accept="image/*,video/*" onChange={handleFileChange} hidden />
-              <button className={styles.composerIconBtn} title="Image" onClick={() => fileRef.current?.click()}>
+              <input ref={imageFileRef} type="file" accept="image/*" multiple onChange={(e) => handleFileChange(e, 'image')} hidden />
+              <input ref={videoFileRef} type="file" accept="video/*" multiple onChange={(e) => handleFileChange(e, 'video')} hidden />
+              <button 
+                className={styles.composerIconBtn} 
+                title={media.length >= 6 ? "Maximum 6 media items allowed" : "Image"} 
+                onClick={() => imageFileRef.current?.click()}
+                disabled={media.length >= 6}
+                style={{ opacity: media.length >= 6 ? 0.5 : 1, cursor: media.length >= 6 ? 'not-allowed' : 'pointer' }}
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                   <circle cx="8.5" cy="8.5" r="1.5" />
@@ -470,13 +481,20 @@ function PostComposer({ onSubmit }) {
                 </svg>
                 <span>Image</span>
               </button>
-              <button className={styles.composerIconBtn} title="Video" onClick={() => fileRef.current?.click()}>
+              <button 
+                className={styles.composerIconBtn} 
+                title={media.length >= 6 ? "Maximum 6 media items allowed" : "Video"} 
+                onClick={() => videoFileRef.current?.click()}
+                disabled={media.length >= 6}
+                style={{ opacity: media.length >= 6 ? 0.5 : 1, cursor: media.length >= 6 ? 'not-allowed' : 'pointer' }}
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="2" y="7" width="16" height="10" rx="2" ry="2" />
                   <polygon points="18 10 22 8 22 16 18 14" />
                 </svg>
                 <span>Video</span>
               </button>
+
               <button
                 ref={pollBtnRef}
                 className={`${styles.composerIconBtn}${showPoll ? ` ${styles.active}` : ''}`}

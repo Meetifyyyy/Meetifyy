@@ -11,18 +11,16 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities } from '@shared/hooks/useCommunities';
 import { timeAgo } from '@shared/utils/time';
 import styles from './Post.module.css';
+import PostActions from './PostActions';
 import SharePostModal from '../modals/SharePostModal';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import MediaGrid from './MediaGrid';
-import { useLikePost } from '../../hooks/useLikePost';
-import { useSavePost } from '../../hooks/useSavePost';
 import { useDeletePost } from '../../hooks/useDeletePost';
 import { useVotePoll } from '../../hooks/useVotePoll';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { getMediaUrl } from '@shared/api/apiClient';
-import { Bookmark } from '@shared/components/icons';
 
 function PollCard({ poll, postId }) {
   const { currentUser } = useAuth();
@@ -141,8 +139,6 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
 
   const id = postData?.id;
 
-  const { mutate: toggleLike } = useLikePost();
-  const { mutate: toggleSave } = useSavePost();
   const { mutate: deletePost } = useDeletePost();
 
   useEffect(() => {
@@ -164,16 +160,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
 
   if (!postData) return null;
 
-  const { authorId, time, text, mentions, poll, likeCount, commentCount, hasLiked, isLiked, isLikedByMe: rawIsLiked, isBookmarked: rawIsBookmarked, hasBookmarked } = postData;
-
-  const rawIsLikedByMe = hasLiked !== undefined ? !!hasLiked : (isLiked !== undefined ? !!isLiked : (rawIsLiked !== undefined ? !!rawIsLiked : (postData.likedBy ? postData.likedBy.includes(currentUser?.id) : false)));
-  const isLikedByMe = toggleRegistry.getLatestIntent(`likePost:${id}`, rawIsLikedByMe);
-
-  const likes = likeCount !== undefined ? likeCount : (postData.likesCount !== undefined ? postData.likesCount : (postData.likes || 0));
-  const comments = commentCount !== undefined ? commentCount : (postData.commentsCount !== undefined ? postData.commentsCount : (postData.comments || 0));
-
-  const rawIsSaved = hasBookmarked !== undefined ? !!hasBookmarked : !!rawIsBookmarked;
-  const isSaved = toggleRegistry.getLatestIntent(`savePost:${id}`, rawIsSaved);
+  const { authorId, time, text, mentions, poll } = postData;
 
   const author = postData.author || { id: authorId, displayName: 'User', username: 'user', avatar: null };
 
@@ -222,19 +209,6 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
   const handleCardClick = () => {
     if (isDetailed) return;
     if (onClick) onClick(postData);
-  };
-
-  const toggleLikeHandler = (e) => {
-    e.stopPropagation();
-    const entityKey = `likePost:${id}`;
-    const nextLiked = toggleRegistry.getNextToggleIntent(entityKey, isLikedByMe);
-    toggleLike({ postId: id, isLiked: nextLiked });
-  };
-
-  const handleShare = (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setShowShareModal(true);
   };
 
   // The post now carries its own community from the API, which is the only
@@ -431,7 +405,15 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
                 onClick={(e) => e.stopPropagation()}
               >
                 {postData.linkPreview.image && (
-                  <img src={getMediaUrl(postData.linkPreview.image)} alt="" loading="lazy" className={styles.linkPreviewImg} />
+                  <img
+                    src={getMediaUrl(postData.linkPreview.image)}
+                    alt=""
+                    loading="lazy"
+                    className={styles.linkPreviewImg}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
                 )}
                 <div className={styles.linkPreviewBody}>
                   {postData.linkPreview.site && (
@@ -455,59 +437,13 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
         </div>
       )}
 
-      <div className={styles.postActions} style={{ marginTop: '0.5rem', paddingTop: '0' }}>
-        <button className={`${styles.postActionBtn} ${isLikedByMe ? styles.liked : ''}`} onClick={toggleLikeHandler}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill={isLikedByMe ? 'var(--color-primary)' : 'none'} stroke={isLikedByMe ? 'var(--color-primary)' : 'currentColor'} strokeWidth="2">
-            <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
-          </svg>
-          <span className={styles.postActionCount}>{likes}</span>
-        </button>
-        <button className={styles.postActionBtn} onClick={(e) => { e.stopPropagation(); if (onClick) onClick(postData); }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
-          </svg>
-          <span className={styles.postActionCount}>{comments}</span>
-        </button>
-        <button className={styles.postActionBtn} onClick={handleShare}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="18" cy="5" r="3" />
-            <circle cx="6" cy="12" r="3" />
-            <circle cx="18" cy="19" r="3" />
-            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-          </svg>
-          <span className={styles.shareText} style={{ fontSize: '0.85rem', fontWeight: 600 }}>Share</span>
-        </button>
-        <button className={`${styles.postActionBtn} ${isSaved ? styles.saved : ''}`} onClick={(e) => { 
-          e.stopPropagation(); 
-          const entityKey = `savePost:${id}`;
-          const nextSaved = toggleRegistry.getNextToggleIntent(entityKey, isSaved);
-          toggleSave({ postId: id, isSaved: nextSaved, postData }); 
-        }}>
-          {/* strokeWidth 2 rather than the Hugeicons default 1.5: the like,
-              comment and share glyphs beside it in this row are hand-drawn at 2,
-              and a lighter bookmark among them reads as a rendering bug.
-              The saved state recolours through `color` because the glyph's path
-              carries its own stroke="currentColor", which an svg-level stroke
-              cannot override. */}
-          <Bookmark
-            size={18}
-            strokeWidth={2}
-            color={isSaved ? 'var(--color-primary)' : undefined}
-            fill={isSaved ? 'var(--color-primary)' : 'none'}
-          />
-          <span className={styles.shareText} style={{ fontSize: '0.85rem', fontWeight: 600 }}>{isSaved ? 'Saved' : 'Save'}</span>
-        </button>
-      </div>
-
-      {showShareModal && (
-        <SharePostModal 
-          isOpen={showShareModal} 
-          onClose={() => setShowShareModal(false)} 
-          post={postData} 
-          author={author} 
-        />
-      )}
+      <PostActions
+        post={postData}
+        authorOverride={author}
+        onCommentClick={() => {
+          if (onClick) onClick(postData);
+        }}
+      />
 
       {showDeleteConfirm && (
         <div onClick={(e) => e.stopPropagation()}>
