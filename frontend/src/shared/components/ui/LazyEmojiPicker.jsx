@@ -19,7 +19,7 @@ export default function LazyEmojiPicker(props) {
     previewPosition: 'none',
     skinTonePosition: 'search',
     navPosition: 'top',
-    dynamicWidth: true,
+    perLine: 9,
     maxFrequentRows: 2,
     ...props,
   };

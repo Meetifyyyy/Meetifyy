@@ -1204,3 +1204,51 @@ body[data-disable-text-selection="true"] [data-text-selectable="true"],
   -webkit-user-select: text;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   EMOJI MART PICKER THEME & DESIGN SYSTEM INTEGRATION
+   ───────────────────────────────────────────────────────────── */
+em-emoji-picker {
+  --rgb-background: 255, 255, 255;
+  --rgb-color: 15, 23, 42;
+  --rgb-accent: 37, 99, 235;
+  --rgb-input: 241, 245, 249;
+  --em-rgb-background: 255, 255, 255;
+  --em-rgb-color: 15, 23, 42;
+  --em-rgb-accent: 37, 99, 235;
+  --em-rgb-input: 241, 245, 249;
+  --color-border: var(--color-border, #E2E8F0);
+  --color-border-over: var(--color-border-dark, #CBD5E1);
+  --em-color-border: var(--color-border, #E2E8F0);
+  --em-color-border-over: var(--color-border-dark, #CBD5E1);
+  --font-family: var(--font-family-sans, 'Inter', -apple-system, sans-serif);
+  --border-radius: var(--radius-lg, 14px);
+  --shadow: var(--shadow-lg, 0 12px 32px rgba(15, 23, 42, 0.08));
+  --category-icon-size: 18px;
+
+  width: 352px !important;
+  max-width: min(352px, calc(100vw - 24px)) !important;
+  max-height: min(420px, 65vh);
+  border: 1px solid var(--color-border, #E2E8F0);
+  border-radius: var(--radius-lg, 14px);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04));
+  background-color: var(--color-bg-white, #FFFFFF);
+  overflow: hidden;
+  display: block;
+}
+
+[data-theme="dark"] em-emoji-picker {
+  --rgb-background: 32, 32, 32;
+  --rgb-color: 255, 255, 255;
+  --rgb-accent: 37, 99, 235;
+  --rgb-input: 42, 42, 42;
+  --em-rgb-background: 32, 32, 32;
+  --em-rgb-color: 255, 255, 255;
+  --em-rgb-accent: 37, 99, 235;
+  --em-rgb-input: 42, 42, 42;
+  --color-border: var(--color-border, #404040);
+  --color-border-over: var(--color-border-dark, #4D4D4D);
+  --em-color-border: var(--color-border, #404040);
+  --em-color-border-over: var(--color-border-dark, #4D4D4D);
+  background-color: var(--color-bg-white, #202020);
+  border-color: var(--color-border, #404040);
+}
