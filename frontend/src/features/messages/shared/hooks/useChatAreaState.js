@@ -6,7 +6,7 @@ import { useConversations } from '@shared/hooks/useMessages';
 import { useTypingIndicator } from './useTypingIndicator';
 import { removeMessageFromCache, updateMessageInCache, updateConversationPreview } from '../utils/cacheUtils';
 import { messagesApi } from '@shared/api/apiClient';
-import { toast } from 'sonner';
+import { showToast } from '@shared/utils/toast';
 import { useUrlState } from '@shared/hooks/useUrlState';
 import { useLocation, useNavigate } from 'react-router-dom';
 
@@ -101,7 +101,7 @@ export function useChatAreaState(conversation) {
   const handleCopyMessage = useCallback((msg) => {
     if (msg?.text) {
       navigator.clipboard.writeText(msg.text);
-      toast.success('Copied');
+      showToast('Copied', 'success');
     }
   }, []);
 
@@ -133,7 +133,7 @@ export function useChatAreaState(conversation) {
     try {
       await messagesApi.unsendMessage(targetMsgId);
     } catch {
-      toast.error("Couldn't unsend");
+      showToast("Couldn't unsend", 'error');
       convIds.forEach((cId) => {
         queryClient.invalidateQueries({ queryKey: ['messages', cId] });
       });
@@ -155,7 +155,7 @@ export function useChatAreaState(conversation) {
     try {
       await messagesApi.deleteMessageForMe(msg.id);
     } catch {
-      toast.error("Couldn't delete message");
+      showToast("Couldn't delete message", 'error');
       convIds.forEach((cId) => {
         queryClient.invalidateQueries({ queryKey: ['messages', cId] });
       });

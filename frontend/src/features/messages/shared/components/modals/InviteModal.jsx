@@ -9,7 +9,7 @@ import styles from './InviteModal.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useConversations } from '@shared/hooks/useMessages';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
-import { toast } from 'sonner';
+import { showToast } from '@shared/utils/toast';
 import { generateConversationUrl } from '@shared/utils/conversationUrl';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
@@ -46,7 +46,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
     const link = `${window.location.origin}${relativeUrl}`;
     navigator.clipboard.writeText(link).then(() => {
       setCopied(true);
-      toast.success('Invite link copied');
+      showToast('Invite link copied', 'success');
       setTimeout(() => {
         setCopied(false);
         copyLockRef.current = false;
@@ -87,7 +87,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
 
       setSentTo(prev => new Set(prev).add(user.id));
     } catch {
-      toast.error("Couldn't send invite");
+      showToast("Couldn't send invite", 'error');
     } finally {
       setSendingIds(prev => {
         const next = new Set(prev);

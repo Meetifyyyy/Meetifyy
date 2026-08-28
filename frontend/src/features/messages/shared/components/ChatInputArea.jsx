@@ -3,7 +3,6 @@ import MentionInput from '@shared/components/mentions/MentionInput';
 import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
 import styles from './ChatInputAreaStyles.module.css';
 import { useVoiceRecorder } from '@features/messages/hooks/useVoiceRecorder';
-import { toast } from 'sonner';
 import { showToast } from '@shared/utils/toast';
 import ReplyPreviewContent from './ReplyPreviewContent';
 import LiveWaveform from './LiveWaveform';
@@ -63,7 +62,7 @@ export default function ChatInputArea({
     levelsRef: voiceLevelsRef,
   } = useVoiceRecorder({
     onSend: (audioUrl, mediaType, duration) => sendMessageFn && sendMessageFn(conversation.id, '', replyingTo, [], audioUrl, 'audio', null, null, { duration }),
-    showToast: (msg) => toast.error(msg),
+    showToast: (msg) => showToast(msg, 'error'),
   });
 
   const handleAttachClick = () => {

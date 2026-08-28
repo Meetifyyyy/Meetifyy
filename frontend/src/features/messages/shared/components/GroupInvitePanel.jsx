@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
+import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import NotFoundState from '@shared/components/ui/NotFoundState';
 import { getMediaUrl } from '@shared/api/apiClient';
@@ -94,14 +94,14 @@ export default function GroupInvitePanel({ groupId, onBack, showChatOnMobile }) 
     try {
       const result = await join(groupId);
       if (result?.status === 'JOINED') {
-        toast.success(result.alreadyMember ? 'Already joined' : `Joined ${preview.name}`);
+        showToast(result.alreadyMember ? 'Already joined' : `Joined ${preview.name}`, 'success');
         openGroup(result);
       } else {
-        toast.success('Join request sent');
+        showToast('Join request sent', 'success');
         refetch();
       }
     } catch (err) {
-      toast.error(inviteErrorMessage(err));
+      showToast(inviteErrorMessage(err), 'error');
       // A join that failed because the state moved on (group closed, user
       // blocked) should leave the panel showing the new truth.
       refetch();

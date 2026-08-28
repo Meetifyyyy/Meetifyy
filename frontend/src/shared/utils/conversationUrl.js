@@ -1,4 +1,4 @@
-import { slugify, getConversationSlug } from './slugify';
+import { getConversationSlug } from './slugify';
 
 /**
  * Generates a canonical public URL for a conversation.

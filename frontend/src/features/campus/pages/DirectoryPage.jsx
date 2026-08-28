@@ -136,10 +136,6 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
  * removed by the migration — so a card never renders an empty line.
  */
 function DirectorySubtitle({ user }) {
-  if (!user?.course || !user?.branch || (!user?.passingYear && !user?.currentYear)) {
-    return <>Campus Member</>;
-  }
-
   // Course + year only — the branch name is far too long for a directory card.
   const summary = useAcademicSummary(user, { branch: false });
   return <>{summary || 'Campus Member'}</>;

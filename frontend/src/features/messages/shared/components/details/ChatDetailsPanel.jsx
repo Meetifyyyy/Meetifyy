@@ -22,7 +22,6 @@ import GroupJoinRequestsPage from './GroupJoinRequestsPage';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCrewActivities, useCrewActions } from '@shared/hooks/useCrew';
 import { useGroupActions } from '@shared/hooks/useGroupActions';
-import { toast } from 'sonner';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import { commitDraftImage } from '@shared/utils/draftImageCache';
 import { sortGroupMembers } from '@shared/utils/memberSort';

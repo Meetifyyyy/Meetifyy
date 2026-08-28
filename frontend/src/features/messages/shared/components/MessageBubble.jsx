@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
+import { showToast } from '@shared/utils/toast';
 
 import { Reply, MoreVertical, Image as ImageIcon, AlertCircle, Play } from '@shared/components/icons';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
@@ -458,15 +458,15 @@ function GroupInviteCard({ msg, currentUser, navigate, isMe }) {
     try {
       const result = await join(targetGroupId);
       if (result?.status === 'JOINED') {
-        toast.success(result.alreadyMember ? 'Already joined' : `Joined ${groupName}`);
+        showToast(result.alreadyMember ? 'Already joined' : `Joined ${groupName}`, 'success');
         // The conversation list and history caches were invalidated by the
         // mutation, so the group is ready to open immediately.
         navigateToGroup(result);
       } else {
-        toast.success('Join request sent');
+        showToast('Join request sent', 'success');
       }
     } catch (err) {
-      toast.error(inviteErrorMessage(err));
+      showToast(inviteErrorMessage(err), 'error');
     }
   };
 

@@ -230,7 +230,7 @@ function PostComposer({ onSubmit }) {
 
     for (const file of filesToProcess) {
       if (file.size > MAX_FILE_SIZE) {
-        showToast(`File ${file.name} exceeds 50MB limit`, 'error');
+        showToast('File size limit is 50MB', 'error');
         continue;
       }
 
@@ -248,7 +248,7 @@ function PostComposer({ onSubmit }) {
       }
 
       if (!isVideo && !isImage) {
-        showToast(`Unsupported file type: ${file.name}`, 'error');
+        showToast('Unsupported file type', 'error');
         continue;
       }
 
