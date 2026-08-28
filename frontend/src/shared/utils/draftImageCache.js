@@ -136,10 +136,16 @@ export async function commitDraftImage(imageSource, folder = 'general') {
     }
   }
 
-  // 4. If it's a remote URL (e.g., Unsplash/Giphy URL not yet cached)
+  // 4. If it's a remote URL (e.g., preset URL or other external source)
   if (typeof imageSource === 'string' && (imageSource.startsWith('http://') || imageSource.startsWith('https://'))) {
-    // If it's already on our storage backend (e.g. supabase), no need to re-upload
-    if (imageSource.includes('/storage/v1/object/') || imageSource.includes('/uploads/')) {
+    // If it's already on our storage backend (e.g. R2, Supabase, presets), no need to re-upload
+    if (
+      imageSource.includes('/storage/v1/object/') ||
+      imageSource.includes('/uploads/') ||
+      imageSource.includes('/presets/') ||
+      imageSource.includes('.r2.dev') ||
+      imageSource.includes('cdn.meetifyy.app')
+    ) {
       return imageSource;
     }
     return await processAndUploadRemoteUrl(imageSource, folder);

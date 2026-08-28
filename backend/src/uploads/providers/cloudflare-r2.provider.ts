@@ -10,6 +10,7 @@ import {
   DeleteObjectCommand,
   HeadObjectCommand,
   CopyObjectCommand,
+  ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
@@ -301,6 +302,43 @@ export class CloudflareR2Provider implements StorageProvider {
   }
 
   async list(folder: string): Promise<any[]> {
-    return []; // Placeholder for R2 implementation of listing
+    if (!this.isConfigured || !this.s3) {
+      const localFolder = this.getLocalFilePath(folder);
+      if (!fs.existsSync(localFolder)) return [];
+      try {
+        const files = fs.readdirSync(localFolder, { recursive: true });
+        return files.map((f) => ({
+          Key: `${folder}/${f}`,
+          Size: 0,
+        }));
+      } catch (_) {
+        return [];
+      }
+    }
+
+    try {
+      const prefix = folder.endsWith('/') ? folder : `${folder}/`;
+      const allObjects: any[] = [];
+      let continuationToken: string | undefined;
+
+      do {
+        const res = await this.s3.send(
+          new ListObjectsV2Command({
+            Bucket: this.bucketName,
+            Prefix: prefix,
+            ContinuationToken: continuationToken,
+          }),
+        );
+        if (res.Contents) {
+          allObjects.push(...res.Contents);
+        }
+        continuationToken = res.NextContinuationToken;
+      } while (continuationToken);
+
+      return allObjects;
+    } catch (e) {
+      this.logger.error(`Failed to list objects in folder ${folder}`, e);
+      return [];
+    }
   }
 }

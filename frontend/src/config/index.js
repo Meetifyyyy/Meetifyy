@@ -99,8 +99,6 @@ export const config = {
   },
 
   integrations: {
-    unsplashKey: str('VITE_UNSPLASH_KEY'),
-    giphyKey: str('VITE_GIPHY_KEY'),
     sentryDsn: str('VITE_SENTRY_DSN'),
     analyticsId: str('VITE_ANALYTICS_ID'),
   },

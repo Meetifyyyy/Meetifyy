@@ -14,6 +14,7 @@ import { usersApi, activitiesApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCrewActivities } from '@shared/hooks/useCrew';
+import { getDefaultActivityCover } from '@shared/utils/activityCover';
 
 export default function RightPanel({ children, className = '' }) {
   return <aside className={`${styles.rightPanel} ${className}`.trim()}>{children}</aside>;
@@ -23,24 +24,7 @@ export function NotificationsActivity() {
   const { notifications, isLoading } = useNotifications();
   const users = useUsersMap();
   const navigate = useNavigate();
-  const { DEFAULT_ACTIVITY_COVERS, getDefaultActivityCover } = React.useMemo(() => {
-    // Inline the same deterministic cover logic used across the app
-    const covers = [
-      'https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1528605248644-14dd04022da1?q=80&w=800&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1551818255-e6e10975bc17?q=80&w=800&auto=format&fit=crop',
-    ];
-    const fn = (idOrTitle = '') => {
-      let hash = 0;
-      const str = String(idOrTitle || '');
-      for (let i = 0; i < str.length; i++) { hash = (hash << 5) - hash + str.charCodeAt(i); hash |= 0; }
-      return covers[Math.abs(hash) % covers.length];
-    };
-    return { DEFAULT_ACTIVITY_COVERS: covers, getDefaultActivityCover: fn };
-  }, []);
+
 
   const displayNotifs = notifications.slice(0, 4);
 

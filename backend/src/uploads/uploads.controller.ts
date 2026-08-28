@@ -20,6 +20,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response, Request } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import {
   MAX_COVERED_IMAGE_SIZE_BYTES,
   COVERED_IMAGE_SIZE_ERROR_MESSAGE,
@@ -282,6 +283,67 @@ export class UploadsController {
     });
   }
 
+  /** Cached manifest JSON in memory with its computed ETag and Last-Modified */
+  private static cachedManifest: {
+    data: any;
+    etag: string;
+    lastModified: string;
+  } | null = null;
+
+  private static getManifest() {
+    if (UploadsController.cachedManifest) {
+      return UploadsController.cachedManifest;
+    }
+    try {
+      const manifestPath = path.join(__dirname, 'preset-media.manifest.json');
+      if (fs.existsSync(manifestPath)) {
+        const raw = fs.readFileSync(manifestPath, 'utf-8');
+        const data = JSON.parse(raw);
+        const etag = `"${crypto.createHash('sha256').update(raw).digest('hex').substring(0, 16)}"`;
+        const lastModified = data.lastModified || new Date().toUTCString();
+        UploadsController.cachedManifest = { data, etag, lastModified };
+        return UploadsController.cachedManifest;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /**
+   * GET /api/media/preset-media
+   * Returns the curated media manifest with ETag, Last-Modified, and 304 support.
+   */
+  @Get('preset-media')
+  getPresetMedia(@Req() req: Request, @Res() res: Response) {
+    const manifest = UploadsController.getManifest();
+    if (!manifest) {
+      return res.status(200).json({ version: '1.0.0', images: [], gifs: [] });
+    }
+
+    const ifNoneMatch = req.headers['if-none-match'];
+    const ifModifiedSince = req.headers['if-modified-since'];
+
+    if (
+      (ifNoneMatch && ifNoneMatch === manifest.etag) ||
+      (ifModifiedSince && ifModifiedSince === manifest.lastModified)
+    ) {
+      res.setHeader('ETag', manifest.etag);
+      res.setHeader('Last-Modified', manifest.lastModified);
+      res.setHeader(
+        'Cache-Control',
+        'public, max-age=3600, stale-while-revalidate=86400',
+      );
+      return res.status(304).end();
+    }
+
+    res.setHeader('ETag', manifest.etag);
+    res.setHeader('Last-Modified', manifest.lastModified);
+    res.setHeader(
+      'Cache-Control',
+      'public, max-age=3600, stale-while-revalidate=86400',
+    );
+    return res.status(200).json(manifest.data);
+  }
+
   /**
    * POST /api/media/signed-urls
    * Retrieve signed URLs in bulk for an array of object keys.
@@ -421,13 +483,6 @@ export class UploadsController {
           <path d="M50 42 a 16 16 0 1 0 0 -32 a 16 16 0 1 0 0 32 Z M50 50 c -22 0 -36 14 -36 28 v 12 h 72 v -12 c 0 -14 -14 -28 -36 -28 Z" fill="#94a3b8"/>
         </svg>
       `.trim(),
-      );
-    }
-
-    if (folder === 'posts' || key.includes('posts/') || key.includes('post')) {
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      return res.redirect(
-        'https://images.unsplash.com/photo-1517842645767-c639042777db?w=800&auto=format&fit=crop&q=80',
       );
     }
 

@@ -466,15 +466,8 @@ const EMPTY_DATE_TIME = {
   endDateYear: null, endDateMonth: null, endDateDay: null,
   endTimeHour: '', endTimeMinute: '', endTimeAmPm: '',
 };
+import { DEFAULT_ACTIVITY_COVERS as RANDOM_COVERS } from '@shared/constants/presetMedia';
 
-const RANDOM_COVERS = [
-  'https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=800&auto=format&fit=crop', // Event crowd
-  'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800&auto=format&fit=crop', // Concert
-  'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?q=80&w=800&auto=format&fit=crop', // Tech setup
-  'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?q=80&w=800&auto=format&fit=crop', // Meetup
-  'https://images.unsplash.com/photo-1528605248644-14dd04022da1?q=80&w=800&auto=format&fit=crop', // Workshop
-  'https://images.unsplash.com/photo-1551818255-e6e10975bc17?q=80&w=800&auto=format&fit=crop', // Tech event
-];
 /**
  * Solid-colour covers used when the user explicitly removes the cover image.
  * Mid-tone hues that stay legible under the white overlay text.

@@ -100,7 +100,7 @@
   background: var(--color-bg-soft, rgba(0, 0, 0, 0.05));
   padding: 4px;
   border-radius: var(--radius-md);
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.75rem;
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.06));
 }
 
@@ -125,48 +125,11 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.isSearchBox {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  background: var(--color-bg-soft, rgba(0, 0, 0, 0.04));
-  border: 1px solid var(--color-border, #d1d5db);
-  border-radius: var(--radius-md);
-  padding: 0.65rem 1rem;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-}
-
-.isSearchBox:focus-within {
-  border-color: var(--color-primary, #6366f1);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-  background: var(--color-bg-white, #ffffff);
-}
-
-.isSearchIcon {
-  color: var(--color-text-muted, #6b7280);
-}
-
-.isSearchInput {
-  flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--color-text-main, #111827);
-  font-family: var(--font-family-sans);
-  font-size: 0.9rem;
-}
-
-.isSearchInput::placeholder {
-  color: var(--color-text-light, #9ca3af);
-  opacity: 0.7;
-}
-
 .uploadBtn {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  margin-top: 0.85rem;
   padding: 0.75rem 1rem;
   background: var(--color-primary, #6366f1);
   color: #ffffff;
@@ -240,7 +203,7 @@
 }
 
 .isResultBtn {
-  background: var(--color-bg-white, #ffffff);
+  background: var(--color-bg-soft, rgba(0, 0, 0, 0.04));
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   padding: 0;
   cursor: pointer;
@@ -249,6 +212,9 @@
   position: relative;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   aspect-ratio: 1;
+  contain: layout style paint;
+  content-visibility: auto;
+  contain-intrinsic-size: 130px 130px;
 }
 
 .isResultBtn:hover {
@@ -257,9 +223,8 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-
   .isResultBtn:hover {
-  transform: scale(0.97);
+    transform: scale(0.97);
   }
 }
 

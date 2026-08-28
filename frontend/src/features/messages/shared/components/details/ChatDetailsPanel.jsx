@@ -243,9 +243,8 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       if (text && typeof text === 'string') {
         const urls = text.match(/\bhttps?:\/\/\S+/gi) || [];
         urls.forEach(url => {
-          const cleanUrl = url.split(/[?#]/)[0];
-          const isImg = /\.(png|jpe?g|gif|webp)/i.test(cleanUrl) || url.includes('giphy.com') || url.includes('unsplash.com') || url.startsWith('data:image/');
-          const isVid = /\.(mp4|mov)/i.test(cleanUrl) || url.startsWith('data:video/');
+          const isImg = /\.(png|jpe?g|gif|webp|svg|avif)/i.test(cleanUrl) || url.startsWith('data:image/') || url.includes('/presets/') || url.includes('/storage/v1/object/');
+          const isVid = /\.(mp4|mov|webm)/i.test(cleanUrl) || url.startsWith('data:video/');
           if (isImg) list.push({ type: 'image', url, createdAt: new Date(createdAt).getTime() });
           else if (isVid) list.push({ type: 'video', url, createdAt: new Date(createdAt).getTime() });
         });
