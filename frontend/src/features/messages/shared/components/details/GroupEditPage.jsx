@@ -3,6 +3,7 @@ import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './GroupEditPage.module.css';
 import Avatar from '@shared/components/avatar/Avatar';
 import ImageSearchModal from '@shared/components/modals/ImageSearchModal';
+import { ALLOWED_IMAGE_ACCEPT } from '@shared/constants/mediaLimits';
 
 export default function GroupEditPage({
   conversation,
@@ -79,7 +80,7 @@ export default function GroupEditPage({
 
           <input 
             type="file" 
-            accept="image/*" 
+            accept={ALLOWED_IMAGE_ACCEPT} 
             ref={fileInputRef} 
             style={{ display: 'none' }} 
             onChange={handleFileChange} 

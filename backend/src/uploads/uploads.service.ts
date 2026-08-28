@@ -10,6 +10,12 @@ import { ConfigService } from '@nestjs/config';
 import { config } from '../config';
 import { SUPPORT_ATTACHMENT_LIMITS } from '../support/support.constants';
 import { sanitizeFilename, sniffMimeType } from './attachment-inspection.util';
+import {
+  MAX_COVERED_IMAGE_SIZE_BYTES,
+  MAX_MEDIA_UPLOAD_SIZE_BYTES,
+  COVERED_IMAGE_SIZE_ERROR_MESSAGE,
+  isCoveredImageFolder,
+} from './uploads.constants';
 
 @Injectable()
 export class StorageService {
@@ -53,6 +59,12 @@ export class StorageService {
     folder = 'general',
   ) {
     const safeFolder = this.normalizeFolder(folder);
+    if (
+      isCoveredImageFolder(safeFolder) &&
+      file.size > MAX_COVERED_IMAGE_SIZE_BYTES
+    ) {
+      throw new BadRequestException(COVERED_IMAGE_SIZE_ERROR_MESSAGE);
+    }
     const ext = this.extensionForMime(file.mimetype);
     const randomHex = require('crypto').randomBytes(16).toString('hex');
     const key = `${safeFolder}/${randomHex}.${ext}`;
@@ -101,11 +113,20 @@ export class StorageService {
     if (typeof contentType !== 'string' || !this.isAllowedMimeType(contentType))
       throw new BadRequestException('Unsupported content type');
     const requestedFileSize = Number(fileSize || 0);
+    const maxAllowedSize = isCoveredImageFolder(safeFolder)
+      ? MAX_COVERED_IMAGE_SIZE_BYTES
+      : MAX_MEDIA_UPLOAD_SIZE_BYTES;
     if (
       !Number.isFinite(requestedFileSize) ||
       requestedFileSize < 0 ||
-      requestedFileSize > 50 * 1024 * 1024
+      requestedFileSize > maxAllowedSize
     ) {
+      if (
+        isCoveredImageFolder(safeFolder) &&
+        requestedFileSize > MAX_COVERED_IMAGE_SIZE_BYTES
+      ) {
+        throw new BadRequestException(COVERED_IMAGE_SIZE_ERROR_MESSAGE);
+      }
       throw new BadRequestException('Invalid file size');
     }
 

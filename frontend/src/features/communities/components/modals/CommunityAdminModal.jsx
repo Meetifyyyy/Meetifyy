@@ -5,6 +5,11 @@ import { communitiesApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl } from '@shared/utils/avatar';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import {
+  MAX_COVERED_IMAGE_SIZE_BYTES,
+  COVERED_IMAGE_SIZE_ERROR_MESSAGE,
+  ALLOWED_IMAGE_ACCEPT,
+} from '@shared/constants/mediaLimits';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import defaultCommunityCover from '@assets/images/default_community_cover.webp';
@@ -345,12 +350,17 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
                   </button>
                   <input 
                     type="file" 
-                    accept="image/*"
+                    accept={ALLOWED_IMAGE_ACCEPT}
                     ref={avatarInputRef}
                     style={{ display: 'none' }}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
+                      if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
+                        showToast(COVERED_IMAGE_SIZE_ERROR_MESSAGE, 'error');
+                        e.target.value = '';
+                        return;
+                      }
                       setCropFile(file);
                       setCropType('avatar');
                       e.target.value = '';
@@ -393,12 +403,17 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
               </button>
               <input 
                 type="file" 
-                accept="image/*"
+                accept={ALLOWED_IMAGE_ACCEPT}
                 ref={coverInputRef}
                 style={{ display: 'none' }}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
+                  if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
+                    showToast(COVERED_IMAGE_SIZE_ERROR_MESSAGE, 'error');
+                    e.target.value = '';
+                    return;
+                  }
                   setCropFile(file);
                   setCropType('cover');
                   e.target.value = '';

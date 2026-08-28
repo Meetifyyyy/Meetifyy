@@ -5,6 +5,11 @@ import { showToast } from '@shared/utils/toast';
 import styles from './CreateCommunityModal.module.css';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import {
+  MAX_COVERED_IMAGE_SIZE_BYTES,
+  COVERED_IMAGE_SIZE_ERROR_MESSAGE,
+  ALLOWED_IMAGE_ACCEPT,
+} from '@shared/constants/mediaLimits';
 import { generateInitialAvatarFile } from '@shared/utils/generateAvatarImage';
 
 const colors26 = [
@@ -151,12 +156,12 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
 
     const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      showToast('Invalid format (use JPG, PNG, WebP)', 'error');
+      showToast('Invalid image format', 'error');
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      showToast('File too large (max 5MB)', 'error');
+    if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
+      showToast(COVERED_IMAGE_SIZE_ERROR_MESSAGE, 'error');
       return;
     }
 
@@ -472,7 +477,7 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept={ALLOWED_IMAGE_ACCEPT}
                   style={{ display: 'none' }}
                   onChange={handleFileChange}
                 />

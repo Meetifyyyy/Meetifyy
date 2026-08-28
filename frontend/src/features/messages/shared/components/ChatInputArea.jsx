@@ -4,6 +4,7 @@ import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
 import styles from './ChatInputAreaStyles.module.css';
 import { useVoiceRecorder } from '@features/messages/hooks/useVoiceRecorder';
 import { showToast } from '@shared/utils/toast';
+import { ALLOWED_MEDIA_ACCEPT } from '@shared/constants/mediaLimits';
 import ReplyPreviewContent from './ReplyPreviewContent';
 import LiveWaveform from './LiveWaveform';
 
@@ -282,7 +283,7 @@ export default function ChatInputArea({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,video/*"
+              accept={ALLOWED_MEDIA_ACCEPT}
               style={{ display: 'none' }}
               onChange={handleFileChange}
             />

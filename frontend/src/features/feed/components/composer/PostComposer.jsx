@@ -9,6 +9,7 @@ import { processAndUploadImage, processAndUploadVideo } from '@shared/utils/medi
 import { uploadsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { normalizeBodyText } from '@shared/utils/bodyText';
+import { ALLOWED_IMAGE_ACCEPT } from '@shared/constants/mediaLimits';
 
 const overlayStyle = {
   position: 'absolute',
@@ -465,8 +466,8 @@ function PostComposer({ onSubmit }) {
 
           <div className={styles.composerActions}>
             <div className={styles.composerActionsLeft}>
-              <input ref={imageFileRef} type="file" accept="image/*" multiple onChange={(e) => handleFileChange(e, 'image')} hidden />
-              <input ref={videoFileRef} type="file" accept="video/*" multiple onChange={(e) => handleFileChange(e, 'video')} hidden />
+              <input ref={imageFileRef} type="file" accept={ALLOWED_IMAGE_ACCEPT} multiple onChange={(e) => handleFileChange(e, 'image')} hidden />
+              <input ref={videoFileRef} type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" multiple onChange={(e) => handleFileChange(e, 'video')} hidden />
               <button 
                 className={styles.composerIconBtn} 
                 title={media.length >= 6 ? "Maximum 6 media items allowed" : "Image"} 

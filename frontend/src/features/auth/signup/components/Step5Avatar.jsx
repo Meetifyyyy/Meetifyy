@@ -7,6 +7,11 @@ import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';
 import AvatarPickerModal from './AvatarPickerModal';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import {
+  MAX_COVERED_IMAGE_SIZE_BYTES,
+  COVERED_IMAGE_SIZE_ERROR_MESSAGE,
+  ALLOWED_IMAGE_ACCEPT,
+} from '@shared/constants/mediaLimits';
 import { normalizeDicebearUrl } from '@shared/api/apiClient';
 import { generateRandomAvatarSet } from '@shared/utils/dicebear';
 import { showToast } from '@shared/utils/toast';
@@ -42,9 +47,8 @@ export default function Step5Avatar() {
     const file = e.target.files[0];
     if (!file) return;
 
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
-    if (file.size > MAX_FILE_SIZE) {
-      showToast('File too large (max 50MB)', 'error');
+    if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
+      showToast(COVERED_IMAGE_SIZE_ERROR_MESSAGE, 'error');
       e.target.value = '';
       return;
     }
@@ -83,7 +87,7 @@ export default function Step5Avatar() {
           </div>
           <label className={s.avatarUpload} aria-label="Upload a profile picture">
             <Upload size={17} />
-            <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
+            <input type="file" accept={ALLOWED_IMAGE_ACCEPT} onChange={handleFileChange} style={{ display: 'none' }} />
           </label>
         </div>
 

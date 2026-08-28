@@ -2,6 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import { X, ImagePlus, CalendarRange } from '@shared/components/icons';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import {
+  MAX_COVERED_IMAGE_SIZE_BYTES,
+  COVERED_IMAGE_SIZE_ERROR_MESSAGE,
+  ALLOWED_IMAGE_ACCEPT,
+} from '@shared/constants/mediaLimits';
 import { showToast } from '@shared/utils/toast';
 import { useCreateCampusEvent, useUpdateCampusEvent, usePublishCampusEvent } from '@shared/hooks/useCampusEvents';
 import { toLocalDate, toLocalTime, combineDateTime, isSafeRegistrationUrl, formatCardDate } from '../utils/formatEvent';
@@ -168,14 +173,14 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
     const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     const ALLOWED_EXT  = /\.(jpe?g|png|webp|gif)$/i;
     if (!ALLOWED_MIME.includes(file.type) || !ALLOWED_EXT.test(file.name)) {
-      const errMsg = 'Invalid image format (JPG, PNG, WebP)';
+      const errMsg = 'Invalid image format';
       setError(errMsg);
       showToast(errMsg, 'error');
       setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
       return;
     }
-    if (file.size > 20 * 1024 * 1024) {
-      const errMsg = 'Image must be under 20MB';
+    if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
+      const errMsg = COVERED_IMAGE_SIZE_ERROR_MESSAGE;
       setError(errMsg);
       showToast(errMsg, 'error');
       setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
@@ -412,7 +417,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
               <input
                 className={styles.hiddenFile}
                 type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
+                accept={ALLOWED_IMAGE_ACCEPT}
                 disabled={uploading}
                 onChange={handleFileSelect}
               />

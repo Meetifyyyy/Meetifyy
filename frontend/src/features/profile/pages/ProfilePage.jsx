@@ -19,6 +19,11 @@ import s from './ProfilePage.module.css';
 import defaultCover from '@assets/images/default_profile_cover.webp';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import {
+  MAX_COVERED_IMAGE_SIZE_BYTES,
+  COVERED_IMAGE_SIZE_ERROR_MESSAGE,
+  ALLOWED_IMAGE_ACCEPT,
+} from '@shared/constants/mediaLimits';
 import FollowButton from '@shared/components/ui/FollowButton';
 import ProfileRightSidebar from '../components/ProfileRightSidebar';
 import ShareProfileModal from '../components/ShareProfileModal';
@@ -137,8 +142,8 @@ export default function ProfilePage() {
   const handleCoverImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      showToast('Image too large (max 10MB)', 'error');
+    if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
+      showToast(COVERED_IMAGE_SIZE_ERROR_MESSAGE, 'error');
       e.target.value = '';
       return;
     }
@@ -150,8 +155,8 @@ export default function ProfilePage() {
   const handleAvatarUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      showToast('Image too large (max 10MB)', 'error');
+    if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
+      showToast(COVERED_IMAGE_SIZE_ERROR_MESSAGE, 'error');
       e.target.value = '';
       return;
     }
@@ -406,7 +411,7 @@ export default function ProfilePage() {
                     <input
                       ref={avatarFileRef}
                       type="file"
-                      accept="image/*"
+                      accept={ALLOWED_IMAGE_ACCEPT}
                       style={{ display: 'none' }}
                       onChange={handleAvatarUpload}
                     />
@@ -587,7 +592,7 @@ export default function ProfilePage() {
             <input
               ref={coverFileRef}
               type="file"
-              accept="image/*"
+              accept={ALLOWED_IMAGE_ACCEPT}
               style={{ display: 'none' }}
               onChange={handleCoverImageUpload}
             />

@@ -2,7 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './ImageSearchModal.module.css';
 import { X, Search, Upload, Loader2 } from '@shared/components/icons';
-import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import {
+  MAX_COVERED_IMAGE_SIZE_BYTES,
+  COVERED_IMAGE_SIZE_ERROR_MESSAGE,
+  ALLOWED_IMAGE_ACCEPT,
+} from '@shared/constants/mediaLimits';
 import { compressAndCacheDraftImage } from '@shared/utils/draftImageCache';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
@@ -163,14 +167,13 @@ export default function ImageSearchModal({ onClose, onSelect, theme }) {
   const handleCustomUpload = (e) => {
     const file = e.target.files?.[0];
     if (file) {
-      const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
       if (!file.type.startsWith('image/')) {
         showToast('Only image files allowed', 'error');
         e.target.value = '';
         return;
       }
-      if (file.size > MAX_SIZE) {
-        showToast('File size limit is 10 MB', 'error');
+      if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
+        showToast(COVERED_IMAGE_SIZE_ERROR_MESSAGE, 'error');
         e.target.value = '';
         return;
       }
@@ -274,7 +277,7 @@ export default function ImageSearchModal({ onClose, onSelect, theme }) {
 
             <input
               type="file"
-              accept="image/*"
+              accept={ALLOWED_IMAGE_ACCEPT}
               ref={fileInputRef}
               style={{ display: 'none' }}
               onChange={handleCustomUpload}

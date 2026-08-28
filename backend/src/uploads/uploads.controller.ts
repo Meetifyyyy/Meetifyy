@@ -20,6 +20,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response, Request } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
+import {
+  MAX_COVERED_IMAGE_SIZE_BYTES,
+  COVERED_IMAGE_SIZE_ERROR_MESSAGE,
+  isCoveredImageFolder,
+} from './uploads.constants';
 
 /**
  * Resolved-redirect cache for GET /api/media/*.
@@ -228,10 +233,16 @@ export class UploadsController {
     const filePath = path.resolve(resolvedUploadsDir, key);
     if (!filePath.startsWith(`${resolvedUploadsDir}${path.sep}`))
       throw new BadRequestException('Invalid storage path');
-    const maxUploadBytes = 25 * 1024 * 1024;
+    const folder = key.split('/')[0] || 'general';
+    const isCovered = isCoveredImageFolder(folder);
+    const maxUploadBytes = isCovered
+      ? MAX_COVERED_IMAGE_SIZE_BYTES
+      : 50 * 1024 * 1024;
     const declaredLength = Number(req.headers['content-length'] || 0);
     if (declaredLength > maxUploadBytes)
-      throw new BadRequestException('File is too large');
+      throw new BadRequestException(
+        isCovered ? COVERED_IMAGE_SIZE_ERROR_MESSAGE : 'File is too large',
+      );
     const folderPath = path.dirname(filePath);
 
     if (!fs.existsSync(folderPath)) {
@@ -249,7 +260,11 @@ export class UploadsController {
         writeStream.destroy();
         req.destroy();
         if (!res.headersSent)
-          res.status(413).json({ error: 'File is too large' });
+          res.status(413).json({
+            error: isCovered
+              ? COVERED_IMAGE_SIZE_ERROR_MESSAGE
+              : 'File is too large',
+          });
       }
     });
     req.pipe(writeStream);

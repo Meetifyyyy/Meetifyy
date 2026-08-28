@@ -1,5 +1,6 @@
 import imageCompression from 'browser-image-compression';
 import { apiClient, deriveThumbnailKey, getBackendUrl, getAccessToken } from '../api/apiClient';
+import { MAX_COVERED_IMAGE_SIZE_MB } from '../constants/mediaLimits';
 
 /**
  * Creates an instantly-available local preview URL for a File/Blob.
@@ -173,11 +174,14 @@ export const generateVideoPoster = async (file, options = {}) => {
  */
 export const validateFile = (file, options = {}) => {
   const { maxSizeMB = 10, allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] } = options;
-  if (!allowedTypes.includes(file.type)) {
-    throw new Error(`Invalid file type. Allowed: ${allowedTypes.join(', ')}`);
+  if (!file) {
+    throw new Error('No file provided');
   }
-  if (file.size / 1024 / 1024 > maxSizeMB) {
-    throw new Error(`File is too large. Max size is ${maxSizeMB}MB.`);
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('Invalid image format');
+  }
+  if (file.size > maxSizeMB * 1024 * 1024) {
+    throw new Error(`File size limit is ${maxSizeMB} MB`);
   }
   return true;
 };
@@ -407,7 +411,9 @@ export const processAndUploadImage = async (file, folder = 'general', compressOp
   // slice because it dominates wall-clock time on real connections.
   //   0-10  prepare/compress   10-88 original upload   88-98 thumbnail   100 done
   const report = makeProgressReporter(onProgress);
-  validateFile(file);
+  const isPostOrChat = folder === 'posts' || folder === 'chat';
+  const maxSizeMB = options.maxSizeMB || (isPostOrChat ? 50 : MAX_COVERED_IMAGE_SIZE_MB);
+  validateFile(file, { maxSizeMB });
   report(2, 'preparing');
 
   // Two thumbnail strategies:
