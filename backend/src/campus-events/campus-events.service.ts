@@ -326,7 +326,13 @@ export class CampusEventsService {
     const user = await this.requireCampusRep(userId);
     const event = await this.prisma.campusEvent.findFirst({
       where: { id: eventId, deletedAt: null },
-      select: { id: true, campusId: true, createdBy: true, status: true },
+      select: {
+        id: true,
+        campusId: true,
+        createdBy: true,
+        status: true,
+        posterUrl: true,
+      },
     });
     if (!event) throw new NotFoundException('Campus event not found.');
     // Ownership + campus-boundary enforcement.
