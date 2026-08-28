@@ -2,20 +2,13 @@ import { createPortal } from 'react-dom';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useModeratorPermissions } from '@shared/hooks/useModeratorPermissions';
+import { ShieldPlus } from '@shared/components/icons';
 import ModeratorPermissionList from './ModeratorPermissionList';
 import styles from './PromotionModals.module.css';
 
 /**
  * The owner's confirmation before handing someone moderator powers.
- *
- * Promotion used to be an instant menu action. Making someone a moderator
- * grants real authority over other people's content and membership, and it is
- * one tap away from "remove member" in the same menu — so it gets a deliberate
- * confirmation that spells out exactly what is being granted.
- *
- * Nothing happens until Confirm. Every other exit — Cancel, the backdrop,
- * Escape, hardware Back — is a cancel, which is why `onCancel` is the single
- * close handler passed to all of them.
+ * Follows the standard application confirmation modal design.
  */
 export default function PromoteModeratorModal({ memberName, isBusy, onConfirm, onCancel }) {
   const { permissions, isLoading, isError } = useModeratorPermissions();
@@ -37,6 +30,10 @@ export default function PromoteModeratorModal({ memberName, isBusy, onConfirm, o
       aria-labelledby="promote-mod-title"
     >
       <div className={styles.card}>
+        <div className={styles.badge} aria-hidden="true">
+          <ShieldPlus size={24} strokeWidth={2} />
+        </div>
+
         <h2 id="promote-mod-title" className={styles.title}>
           Make {memberName || 'this member'} a moderator?
         </h2>

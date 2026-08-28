@@ -133,26 +133,14 @@
   filter: brightness(1.08);
 }
 
-@media (hover: hover) and (pointer: fine) {
-
-  .confirmBtnLeave:hover {
-  transform: translateY(-1px);
-  }
-}
-
 .confirmBtnPrimary {
-  background: var(--color-text-main, #0f172a);
-  color: var(--color-text-inverse, #ffffff);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: var(--color-primary, #2563eb);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
 }
 
 .confirmBtnPrimary:hover {
-  filter: brightness(1.15);
+  background: var(--color-primary-hover, #1d4ed8);
+  filter: brightness(1.05);
 }
 
-@media (hover: hover) and (pointer: fine) {
-
-  .confirmBtnPrimary:hover {
-  transform: translateY(-1px);
-  }
-}

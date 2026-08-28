@@ -10,6 +10,11 @@ import { showToast } from '@shared/utils/toast';
 import { isImageUrl, resolveCommunityAvatar } from '@shared/utils/avatar';
 import { isCommunityMember, isCommunityOwner, resolveCommunityCover } from '@shared/utils/community';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
+import {
+  MAX_COVERED_IMAGE_SIZE_BYTES,
+  COVERED_IMAGE_SIZE_ERROR_MESSAGE,
+  ALLOWED_IMAGE_ACCEPT,
+} from '@shared/constants/mediaLimits';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
@@ -101,9 +106,8 @@ function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreateP
   const handleImageUpload = (e, field) => {
     const file = e.target.files[0];
     if (!file) return;
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
-    if (file.size > MAX_FILE_SIZE) {
-      showToast('File too large (max 50MB)', 'error');
+    if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
+      showToast(COVERED_IMAGE_SIZE_ERROR_MESSAGE, 'error');
       e.target.value = '';
       return;
     }
@@ -165,7 +169,7 @@ function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreateP
           <>
             <input 
               type="file" 
-              accept="image/*" 
+              accept={ALLOWED_IMAGE_ACCEPT} 
               ref={coverInputRef} 
               style={{ display: 'none' }} 
               onChange={e => handleImageUpload(e, 'coverImage')} 
@@ -212,7 +216,7 @@ function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreateP
                   <>
                     <input 
                       type="file" 
-                      accept="image/*" 
+                      accept={ALLOWED_IMAGE_ACCEPT} 
                       ref={avatarInputRef} 
                       style={{ display: 'none' }} 
                       onChange={e => handleImageUpload(e, 'avatar')} 

@@ -16,6 +16,7 @@ export default function ConfirmModal({
   confirmText = 'Confirm',
   confirmLabel,
   isDestructive = false,
+  icon = null,
 }) {
   const overlayRef = useRef(null);
   const actualDesc = desc || description;
@@ -46,11 +47,11 @@ export default function ConfirmModal({
     <div className={styles.confirmOverlay} ref={overlayRef} onClick={(e) => { if (e.target === overlayRef.current) handleClose(); }}>
       <div className={styles.confirmModal}>
         <div className={`${styles.confirmIcon} ${isDestructive ? styles.confirmIconDestructive : styles.confirmIconPrimary}`}>
-          {isDestructive ? (
+          {icon || (isDestructive ? (
             <AlertTriangle size={24} strokeWidth={2} />
           ) : (
             <Info size={24} strokeWidth={2} />
-          )}
+          ))}
         </div>
         <div className={styles.confirmTitle}>{title}</div>
         {actualDesc && <div className={styles.confirmDesc}>{actualDesc}</div>}
