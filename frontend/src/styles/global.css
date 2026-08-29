@@ -134,6 +134,7 @@ html {
      doesn't trigger that promotion, and overflow-y stays genuinely `visible` —
      restoring the window as the one true scroll container app-wide. */
   overflow-x: clip;
+  scrollbar-gutter: stable;
   background: radial-gradient(circle at center, var(--bg-gradient-center) 0%, var(--bg-gradient-mid) 45%, var(--bg-gradient-edge) 100%) fixed;
   background-color: var(--bg-gradient-mid, #f0f5fc);
 }
@@ -801,26 +802,27 @@ button,
   scrollbar-color: rgba(140, 140, 140, 0.35) transparent;
 }
 
-/* Completely hide the window scrollbar on routes that opt in (home, search),
-   toggled on <html> by WindowScrollbarToggle. Content stays scrollable. */
-html.hide-window-scrollbar {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-html.hide-window-scrollbar::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
-}
-
-@keyframes spin {
-  0% {
-    transform: rotate(0deg);
+/* ── Mobile scrollbar suppression ───────────────────────────────────────────
+   Hides scrollbars on every touch/mobile device without touching desktop.
+   `pointer: coarse` is the right signal — it matches phones and tablets where
+   a finger is the primary pointer, regardless of OS or browser.
+   Scrolling itself is unaffected: only the visual track/thumb is removed.
+   `scrollbar-width: none` covers Firefox; `::-webkit-scrollbar { width: 0 }`
+   covers Safari/Chrome/WebView on iOS & Android.
+   The `!important` on scrollbar-width is needed to win against the
+   `* { scrollbar-width: thin }` rule above, which has the same specificity. */
+@media (pointer: coarse) {
+  *,
+  *::before,
+  *::after {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
   }
 
-  100% {
-    transform: rotate(360deg);
+  *::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
   }
 }
 
