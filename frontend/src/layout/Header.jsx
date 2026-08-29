@@ -365,21 +365,17 @@ export default function Header({ variant = 'dashboard', wide = false }) {
         document.body,
       )}
 
-      {/* Center Search Bar */}
+      {/* Center Search Bar — always uses the 3-col dashboard grid overlay
+          so the search bar sits in the same column (and therefore has the
+          same width and left offset) as the center feed on every section. */}
       {variant === 'dashboard' && (
-        wide ? (
-          <div className={styles.headerSearchLegacy}>
+        <div className={`${dashboardStyles.dashboard} ${styles.headerGridAbsolute}`}>
+          <div className={styles.gridEmptyCol} />
+          <div className={styles.headerSearchGridMode}>
             <GlobalSearch />
           </div>
-        ) : (
-          <div className={`${dashboardStyles.dashboard} ${styles.headerGridAbsolute}`}>
-            <div className={styles.gridEmptyCol} />
-            <div className={styles.headerSearchGridMode}>
-              <GlobalSearch />
-            </div>
-            <div className={styles.gridEmptyCol} />
-          </div>
-        )
+          <div className={styles.gridEmptyCol} />
+        </div>
       )}
 
       {variant === 'dashboard' ? (
