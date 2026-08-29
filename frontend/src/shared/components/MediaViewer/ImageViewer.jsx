@@ -651,7 +651,7 @@ export default function ImageViewer({ src, mediaRef, onToggleControls, preloadNe
             src={src}
             alt="Media"
             decoding="async"
-            fetchPriority="high"
+            fetchpriority="high"
             className={`${styles.mediaImage} ${entering ? styles.entering : styles.entered}`}
             style={{ opacity: loaded ? 1 : 0 }}
             onLoad={handleLoad}

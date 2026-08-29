@@ -122,7 +122,7 @@ const MediaGridItem = memo(function MediaGridItem({
         height={item.height || 360}
         loading={priority ? 'eager' : 'lazy'}
         decoding="async"
-        fetchPriority={priority ? 'high' : 'auto'}
+        fetchpriority={priority ? 'high' : 'auto'}
         onError={handleError}
       />
     </button>
@@ -206,26 +206,11 @@ export default function ImageSearchModal({ onClose, onSelect, theme }) {
   };
 
   const handleSelectItem = useCallback(
-    async (itemUrl) => {
-      if (activeTab === 'gifs' || isGifUrl(itemUrl)) {
-        const token = ++selectionTokenRef.current;
-        setIsCompressingRemote(true);
-        try {
-          const { previewUrl } = await compressAndCacheDraftImage(itemUrl);
-          if (!isCurrent(token)) return;
-          onSelect(previewUrl || itemUrl);
-          onClose();
-        } catch (_) {
-          if (!isCurrent(token)) return;
-          showToast('Could not load that GIF. Please try another.', 'error');
-        } finally {
-          if (isCurrent(token)) setIsCompressingRemote(false);
-        }
-      } else {
-        setCropTarget(itemUrl);
-      }
+    (itemUrl) => {
+      onSelect(itemUrl);
+      onClose();
     },
-    [activeTab, onClose, onSelect],
+    [onClose, onSelect],
   );
 
   const handleCropComplete = async (croppedFile) => {
