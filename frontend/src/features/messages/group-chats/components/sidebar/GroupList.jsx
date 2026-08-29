@@ -4,6 +4,7 @@ import GroupItem from './GroupItem';
 import GroupContextMenu from './GroupContextMenu';
 import NewMessageModal from '../../../shared/components/modals/NewMessageModal';
 import ConversationSkeleton from '../../../shared/components/skeletons/ConversationSkeleton';
+import ConversationEmptyState from '../../../shared/components/sidebar/ConversationEmptyState';
 import styles from '../../../shared/components/sidebar/ConversationList.module.css';
 
 export default function GroupList({
@@ -100,9 +101,12 @@ export default function GroupList({
             <ConversationSkeleton />
           </>
         ) : filteredConvs.length === 0 ? (
-          <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-            <p style={{ fontSize: '0.9rem', margin: 0 }}>{searchVal ? 'No group chats match your search' : 'No group chats yet'}</p>
-          </div>
+          <ConversationEmptyState
+            searchVal={searchVal}
+            activeFilter={activeFilter === 'Unread' ? 'Unread' : 'Groups'}
+            onClearSearch={() => setSearchVal('')}
+            onNewMessage={() => setIsModalOpen(true)}
+          />
         ) : (
           filteredConvs.map((conv) => (
             <GroupItem

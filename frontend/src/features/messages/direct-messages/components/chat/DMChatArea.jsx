@@ -11,6 +11,7 @@ export default function DMChatArea({
   onToggleMute,
   onBlockUser,
   onBack,
+  onNewMessage,
   showChatOnMobile,
   isLoading,
   notFound,
@@ -43,8 +44,7 @@ export default function DMChatArea({
       onCancelUpload={onCancelUpload}
       onSendMessage={onSendMessage}
       onBack={onBack}
-      emptyIcon="💬"
-      emptyLabel="Select a conversation"
+      onNewMessage={onNewMessage}
       inputDisabled={isBlocked}
       inputDisabledReason={
         conversation?.isBlockedByMe

@@ -4,6 +4,7 @@ import DMItem from './DMItem';
 import DMContextMenu from './DMContextMenu';
 import NewMessageModal from '../../../shared/components/modals/NewMessageModal';
 import ConversationSkeleton from '../../../shared/components/skeletons/ConversationSkeleton';
+import ConversationEmptyState from '../../../shared/components/sidebar/ConversationEmptyState';
 import styles from '../../../shared/components/sidebar/ConversationList.module.css';
 
 export default function DMList({
@@ -100,9 +101,12 @@ export default function DMList({
             <ConversationSkeleton />
           </>
         ) : filteredConvs.length === 0 ? (
-          <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-            <p style={{ fontSize: '0.9rem', margin: 0 }}>{searchVal ? 'No direct messages match your search' : 'No direct messages yet'}</p>
-          </div>
+          <ConversationEmptyState
+            searchVal={searchVal}
+            activeFilter={activeFilter === 'Unread' ? 'Unread' : 'DMs'}
+            onClearSearch={() => setSearchVal('')}
+            onNewMessage={() => setIsModalOpen(true)}
+          />
         ) : (
           filteredConvs.map((conv) => (
             <DMItem

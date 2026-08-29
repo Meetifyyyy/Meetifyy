@@ -24,6 +24,7 @@ import GroupContextMenu from '../../group-chats/components/sidebar/GroupContextM
 import GroupInvitePanel from '../../shared/components/GroupInvitePanel';
 import NewMessageModal from '../../shared/components/modals/NewMessageModal';
 import ConversationSkeleton from '../../shared/components/skeletons/ConversationSkeleton';
+import ConversationEmptyState from '../../shared/components/sidebar/ConversationEmptyState';
 
 import styles from './MessagesLayout.module.css';
 import sidebarStyles from '../../shared/components/sidebar/ConversationList.module.css';
@@ -359,9 +360,12 @@ export default function MessagesLayout() {
                 <ConversationSkeleton />
               </>
             ) : filteredConvs.length === 0 ? (
-              <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                <p style={{ fontSize: '0.9rem', margin: 0 }}>{searchVal ? 'No conversations match your search' : 'No conversations yet'}</p>
-              </div>
+              <ConversationEmptyState
+                searchVal={searchVal}
+                activeFilter={activeFilter}
+                onClearSearch={() => setSearchVal('')}
+                onNewMessage={() => setIsModalOpen(true)}
+              />
             ) : (
               filteredConvs.map((conv) => {
                 const type = getConvType(conv);
@@ -437,6 +441,7 @@ export default function MessagesLayout() {
                 onTogglePin={togglePinConversation}
                 onToggleMute={toggleMuteConversation}
                 onBack={handleBack}
+                onNewMessage={() => setIsModalOpen(true)}
                 showChatOnMobile={showChatOnMobile}
                 isLoading={isConversationsLoading || (isMessagesLoading && allMessages.length === 0)}
                 notFound={isChatInvalid}
@@ -455,6 +460,7 @@ export default function MessagesLayout() {
               onToggleMute={toggleMuteConversation}
               onBlockUser={toggleBlockUser}
               onBack={handleBack}
+              onNewMessage={() => setIsModalOpen(true)}
               showChatOnMobile={showChatOnMobile}
               isLoading={activeConv?.isDraft ? false : (isConversationsLoading || (isMessagesLoading && allMessages.length === 0))}
               notFound={isChatInvalid}
