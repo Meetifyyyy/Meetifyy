@@ -508,14 +508,13 @@ export class AuthService {
           username: finalUsername,
           displayName,
           email: email,
-          // Every new profile starts with the platform defaults, written onto
-          // the row like any uploaded image rather than substituted at render
-          // time. The profile cover is a deliberately different design from
-          // the community one, so the two surfaces never look alike.
+          // Every new profile starts with the platform avatar default written
+          // onto the row. Cover starts as null — the frontend renders the
+          // theme-aware empty cover state via CSS (--empty-cover-bg).
           avatar:
             sbUser.user_metadata?.avatar ||
             this.defaultAssets.refFor('profile-avatar'),
-          cover: this.defaultAssets.refFor('profile-cover'),
+          cover: null,
           collegeId: collegeId,
           collegeEmail: email,
           birthday: userBirthday,

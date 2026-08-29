@@ -10,7 +10,6 @@ import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsD
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { useOpenDirectMessage } from '@shared/hooks/useOpenDirectMessage';
 import CoverImage from './CoverImage';
-import defaultCover from '@assets/images/default_profile_cover.webp';
 import s from './UserSidebarCard.module.css';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
 
@@ -182,7 +181,6 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
       <div className={s.coverWrap}>
         <CoverImage
           cover={effectiveUser.cover}
-          fallback={defaultCover}
           className={s.coverPhoto}
         />
       </div>

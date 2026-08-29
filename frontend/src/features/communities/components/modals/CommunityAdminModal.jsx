@@ -12,7 +12,6 @@ import {
 } from '@shared/constants/mediaLimits';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
-import defaultCommunityCover from '@assets/images/default_community_cover.webp';
 import styles from './CommunityAdminModal.module.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
@@ -378,7 +377,23 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
                     <div className="spinner" style={{ width: '28px', height: '28px', borderWidth: '3px', borderColor: '#ffffff', borderTopColor: 'transparent' }} />
                   </div>
                 )}
-                <img src={getMediaUrl(coverImage) || defaultCommunityCover} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.onerror = null; e.target.src = defaultCommunityCover; }} />
+                {(() => {
+                  const resolvedCoverUrl = getMediaUrl(coverImage);
+                  const hasRealCover = Boolean(
+                    resolvedCoverUrl &&
+                    coverImage &&
+                    !coverImage.includes('/api/media/defaults/')
+                  );
+                  return hasRealCover ? (
+                    <img
+                      src={resolvedCoverUrl}
+                      alt="Cover"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <div style={{ width: '100%', height: '100%', background: 'var(--empty-cover-gradient, linear-gradient(135deg, #f1f3f5 0%, #e9ecef 100%))' }} />
+                  );
+                })()}
               </div>
               <button 
                 type="button"

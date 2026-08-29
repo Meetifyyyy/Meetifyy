@@ -32,7 +32,6 @@ import { useJoinCommunity } from '../../hooks/useJoinCommunity';
 import { useCommunityById } from '@shared/hooks/useCommunities';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import ShareCommunityModal from '../modals/ShareCommunityModal';
-import defaultCommunityCover from '@assets/images/default_community_cover.webp';
 import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
 
 /** Posts fetched per page. Sized to fill roughly one screen plus a little,
@@ -144,26 +143,34 @@ function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreateP
   // `coverKey` is the column; reading `coverImage` found nothing for most
   // communities, and the raw value is a storage key rather than a URL.
   const resolvedCover = resolveCommunityCover(comm);
-  const coverSrc = (!coverError && resolvedCover) ? resolvedCover : defaultCommunityCover;
+  // Treat old platform-default keys the same as null: the empty CSS state
+  // replaces them instead of requesting a deleted R2 object.
+  const hasCover = Boolean(
+    !coverError &&
+    resolvedCover &&
+    !resolvedCover.includes('/api/media/defaults/')
+  );
 
   return (
     <div className={styles.heroSection}>
       <div className={styles.heroCover}>
-        {(coverLoading || isUploading) && (
+        {(isUploading || (hasCover && coverLoading)) && (
           <div className={styles.coverSkeleton} />
         )}
-        <img
-          src={coverSrc}
-          alt=""
-          className={`${styles.heroCoverImg} ${coverLoading ? styles.imgHidden : styles.imgVisible}`}
-          onLoad={() => setCoverLoading(false)}
-          onError={() => {
-            setCoverError(true);
-            setCoverLoading(false);
-          }}
-          draggable={false}
-          style={{ cursor: 'default', userSelect: 'none', pointerEvents: 'none' }}
-        />
+        {hasCover && (
+          <img
+            src={resolvedCover}
+            alt=""
+            className={`${styles.heroCoverImg} ${coverLoading ? styles.imgHidden : styles.imgVisible}`}
+            onLoad={() => setCoverLoading(false)}
+            onError={() => {
+              setCoverError(true);
+              setCoverLoading(false);
+            }}
+            draggable={false}
+            style={{ cursor: 'default', userSelect: 'none', pointerEvents: 'none' }}
+          />
+        )}
         <div className={styles.heroCoverOverlay} />
         {isAdmin && (
           <>

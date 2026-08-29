@@ -1,78 +1,80 @@
 import { useState, useEffect, useRef } from 'react';
-import defaultCover from '@assets/images/default_profile_cover.webp';
 import { getMediaUrl } from '@shared/api/apiClient';
 import styles from './CoverImage.module.css';
 
-export function getCleanCoverUrl(cover, fallback = defaultCover) {
+/**
+ * Resolves a stored cover value into either a gradient descriptor, a URL, or
+ * an "empty" signal when nothing has been uploaded.
+ *
+ * Empty covers render as a subtle `var(--empty-cover-gradient)` area — theme-aware
+ * (#F1F3F5 light / #202225 dark) — with no image request at all.
+ */
+export function getCleanCoverUrl(cover) {
   if (!cover || typeof cover !== 'string' || !cover.trim()) {
-    return { isGradient: false, url: fallback };
+    return { isEmpty: true };
   }
   const clean = cover.trim();
+  // Strip out old platform-default keys that were written to the DB before
+  // this system was removed — treat them the same as null/empty.
+  if (clean.includes('/api/media/defaults/')) {
+    return { isEmpty: true };
+  }
   if (clean.startsWith('linear-gradient') || clean.startsWith('radial-gradient') || clean.startsWith('conic-gradient')) {
     return { isGradient: true, gradient: clean };
   }
   if (clean.startsWith('data:image/') || clean.startsWith('blob:')) {
-    return { isGradient: false, url: clean };
+    return { isEmpty: false, url: clean };
   }
-  return { isGradient: false, url: getMediaUrl(clean) };
+  return { isEmpty: false, url: getMediaUrl(clean) };
 }
 
 const loadedCoverCache = new Set();
 
 export default function CoverImage({
   cover,
-  fallback = defaultCover,
   alt = 'Cover photo',
   className = '',
   style = {},
   children
 }) {
-  const { isGradient, gradient, url } = getCleanCoverUrl(cover, fallback);
+  const resolved = getCleanCoverUrl(cover);
   const [error, setError] = useState(false);
   const imgRef = useRef(null);
 
-  const activeUrl = (!error && url) ? url : fallback;
+  const isEmpty = resolved.isEmpty || error;
+  const isGradient = !isEmpty && resolved.isGradient;
+  const url = (!isEmpty && !isGradient) ? resolved.url : null;
 
-  const isPreloaded = isGradient || 
-    loadedCoverCache.has(activeUrl) || 
-    activeUrl === fallback || 
-    (typeof activeUrl === 'string' && (activeUrl.startsWith('blob:') || activeUrl.startsWith('data:')));
+  const isPreloaded = isEmpty || isGradient ||
+    (url && loadedCoverCache.has(url)) ||
+    (url && (url.startsWith('blob:') || url.startsWith('data:')));
 
   const [loading, setLoading] = useState(!isPreloaded);
 
-  // Reset on a change of COVER, never on a change of `activeUrl`.
-  //
-  // `activeUrl` is derived from `error`, so listing it here meant an error
-  // re-ran this effect, `setError(false)` undid the error, and the src flipped
-  // straight back to the URL that had just failed — which failed again. A
-  // broken cover therefore oscillated instead of settling on the default, and
-  // the fallback image was never what the user ended up looking at.
   useEffect(() => {
-    if (isGradient) {
+    if (isEmpty || isGradient) {
       setLoading(false);
       setError(false);
       return;
     }
-    // A different cover is a fresh attempt: whatever the last one hit is spent.
     setError(false);
-
-    const target = url || fallback;
-    const preloaded = loadedCoverCache.has(target) ||
-      target === fallback ||
-      (typeof target === 'string' && (target.startsWith('blob:') || target.startsWith('data:')));
-
+    const preloaded = url && (
+      loadedCoverCache.has(url) ||
+      url.startsWith('blob:') ||
+      url.startsWith('data:')
+    );
     setLoading(!preloaded);
-  }, [url, isGradient, fallback]);
+  }, [cover]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!isGradient && imgRef.current && imgRef.current.complete) {
-      if (activeUrl) loadedCoverCache.add(activeUrl);
+    if (!isEmpty && !isGradient && imgRef.current && imgRef.current.complete) {
+      if (url) loadedCoverCache.add(url);
       setLoading(false);
     }
-  }, [activeUrl, isGradient]);
+  }, [url, isEmpty, isGradient]);
 
   const handleLoad = () => {
-    if (activeUrl) loadedCoverCache.add(activeUrl);
+    if (url) loadedCoverCache.add(url);
     setLoading(false);
   };
 
@@ -84,13 +86,15 @@ export default function CoverImage({
   return (
     <div className={`${styles.coverWrap} ${className}`} style={style}>
       {loading && <div className={styles.coverSkeleton} />}
-      
-      {isGradient ? (
-        <div className={styles.coverGradient} style={{ background: gradient }} />
+
+      {isEmpty ? (
+        <div className={styles.coverEmpty} />
+      ) : isGradient ? (
+        <div className={styles.coverGradient} style={{ background: resolved.gradient }} />
       ) : (
         <img
           ref={imgRef}
-          src={activeUrl}
+          src={url}
           alt={alt}
           className={`${styles.coverImg} ${loading ? styles.hidden : styles.visible}`}
           onLoad={handleLoad}

@@ -944,9 +944,10 @@ export class CommunitiesService implements OnModuleInit {
     const avatarVal =
       this.sanitizeMediaRef(data.avatarKey ?? data.avatar) ??
       this.defaultAssets.refFor('community-avatar');
+    // Cover starts as null — the frontend renders the theme-aware empty cover
+    // state via CSS (--empty-cover-bg) when no image has been uploaded.
     const coverVal =
-      this.sanitizeMediaRef(data.coverKey ?? data.coverImage) ??
-      this.defaultAssets.refFor('community-cover');
+      this.sanitizeMediaRef(data.coverKey ?? data.coverImage) ?? null;
     const descVal = data.description || data.desc;
 
     const createData: any = {
