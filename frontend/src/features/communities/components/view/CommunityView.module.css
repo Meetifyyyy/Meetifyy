@@ -118,7 +118,7 @@
   aspect-ratio: 5 / 1;
   overflow: hidden;
   border-radius: 24px 24px 0 0;
-  background: var(--color-bg-alt);
+  background: var(--empty-cover-gradient, linear-gradient(135deg, #f1f3f5 0%, #e9ecef 100%));
 }
 
 .heroCoverImg {

@@ -29,10 +29,8 @@ import { PrismaService } from '../prisma/prisma.service';
 /**
  * Bump when the artwork changes; old keys stay valid for existing rows.
  *
- * v2: new default cover art (a violet gradient for profiles, a blue bubble
- * field for communities). The avatars are byte-identical to v1 — they are
- * republished under the new version only because the version is shared, and
- * nothing about them changed.
+ * Covers are no longer managed here — they render as theme-aware empty states
+ * via CSS (--empty-cover-bg). Only avatar defaults remain.
  *
  * Bumping this MOVES existing records onto the new artwork (see
  * `repointOutdatedDefaults`). Only rows the platform assigned a default are
@@ -42,11 +40,9 @@ import { PrismaService } from '../prisma/prisma.service';
 const ASSET_VERSION = 'v2';
 
 export type DefaultAssetName =
-  'community-cover' | 'profile-cover' | 'community-avatar' | 'profile-avatar';
+  'community-avatar' | 'profile-avatar';
 
 const ASSETS: DefaultAssetName[] = [
-  'community-cover',
-  'profile-cover',
   'community-avatar',
   'profile-avatar',
 ];
@@ -104,20 +100,13 @@ export class DefaultAssetsService implements OnModuleInit {
    * already filled no longer matches.
    */
   private async backfillExisting(): Promise<void> {
-    // `{ in: [null, ''] }` looks like it matches both, and does not. Prisma
-    // compiles it to `IN (NULL, '')`, and SQL's three-valued logic means
-    // `x = NULL` is never true — so a NULL column never matched and the
-    // backfill silently updated nothing at all. An explicit OR is the only
-    // form that catches both.
     const isMissing = (field: string) =>
       ({
         OR: [{ [field]: null }, { [field]: '' }],
       }) as any;
 
     const communityAvatar = this.refFor('community-avatar');
-    const communityCover = this.refFor('community-cover');
     const profileAvatar = this.refFor('profile-avatar');
-    const profileCover = this.refFor('profile-cover');
 
     const results: string[] = [];
 
@@ -128,26 +117,12 @@ export class DefaultAssetsService implements OnModuleInit {
       });
       if (count) results.push(`${count} community avatars`);
     }
-    if (communityCover) {
-      const { count } = await this.prisma.community.updateMany({
-        where: isMissing('coverKey'),
-        data: { coverKey: communityCover },
-      });
-      if (count) results.push(`${count} community covers`);
-    }
     if (profileAvatar) {
       const { count } = await this.prisma.user.updateMany({
         where: isMissing('avatar'),
         data: { avatar: profileAvatar },
       });
       if (count) results.push(`${count} profile avatars`);
-    }
-    if (profileCover) {
-      const { count } = await this.prisma.user.updateMany({
-        where: isMissing('cover'),
-        data: { cover: profileCover },
-      });
-      if (count) results.push(`${count} profile covers`);
     }
 
     if (results.length)
@@ -186,8 +161,6 @@ export class DefaultAssetsService implements OnModuleInit {
       }) => Promise<{ count: number }>,
     ): Promise<void> => {
       const current = this.refFor(name);
-      // Nothing published means nothing to point at. Rewriting refs against a
-      // key we could not confirm would replace working images with 404s.
       if (!current) return;
 
       const { count } = await updateMany({
@@ -206,16 +179,7 @@ export class DefaultAssetsService implements OnModuleInit {
       if (count) results.push(`${count} ${name}`);
     };
 
-    await move('profile-cover', 'cover', (args) =>
-      this.prisma.user.updateMany(args),
-    );
-    await move('community-cover', 'coverKey', (args) =>
-      this.prisma.community.updateMany(args),
-    );
-    // The avatars carry the same artwork across this bump, but they are moved
-    // too: leaving them on the old key would mean a row holding a default that
-    // is not *the* default, and the next redesign would have two generations
-    // to chase instead of one.
+    // Avatars only — covers are now null/empty and handled by CSS.
     await move('profile-avatar', 'avatar', (args) =>
       this.prisma.user.updateMany(args),
     );
@@ -297,9 +261,7 @@ export class DefaultAssetsService implements OnModuleInit {
     name: DefaultAssetName,
     key: string,
   ): Promise<void> {
-    const dimensions = name.endsWith('cover')
-      ? { width: 1600, height: 400 }
-      : { width: 512, height: 512 };
+    const dimensions = { width: 512, height: 512 };
 
     const data = {
       objectKey: key,

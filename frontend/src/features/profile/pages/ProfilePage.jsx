@@ -16,7 +16,6 @@ import { ErrorState } from '@shared/components/ui/StateViews';
 import Avatar from '@shared/components/avatar/Avatar';
 import NotFoundState from '@shared/components/ui/NotFoundState';
 import s from './ProfilePage.module.css';
-import defaultCover from '@assets/images/default_profile_cover.webp';
 import MediaCropper from '@shared/components/media/MediaCropper';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import {
@@ -327,7 +326,6 @@ export default function ProfilePage() {
             <div className={s.coverWrap}>
               <CoverImage
                 cover={effectiveUser.cover}
-                fallback={defaultCover}
                 className={s.coverPhoto}
               />
               {/* Own profile — edit cover button */}
@@ -338,10 +336,9 @@ export default function ProfilePage() {
                   title="Edit cover"
                   aria-label="Edit cover"
                 >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                   </svg>
-                  Edit cover
                 </button>
               )}
               <button className={s.mobileBackBtn} onClick={() => goBack('/home')} aria-label="Go back">
