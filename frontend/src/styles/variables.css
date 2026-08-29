@@ -57,6 +57,9 @@
   --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
   --shadow-premium: 0 16px 40px rgba(15, 23, 42, 0.06), 0 4px 8px rgba(15, 23, 42, 0.03);
 
+  /* === Empty cover state (profile + community, no uploaded image) === */
+  --empty-cover-gradient: linear-gradient(135deg, #ecf1f6 0%, #c8d3db 100%);
+
   /* === Glassmorphism === */
   --bg-glass: rgba(255, 255, 255, 0.75);
   --blur-glass: blur(16px);
@@ -93,6 +96,9 @@
   --bg-gradient-center: #1E1E1E;
   --bg-gradient-mid: #121212;
   --bg-gradient-edge: #000000;
+
+  /* === Empty cover state (dark mode) === */
+  --empty-cover-gradient: linear-gradient(135deg, #404650 0%, #22262c 100%);
 
   --bg-glass: rgba(32, 32, 32, 0.75);
   --border-glass: 1px solid rgba(255, 255, 255, 0.1);

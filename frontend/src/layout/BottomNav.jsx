@@ -5,15 +5,14 @@ import Avatar from '@shared/components/avatar/Avatar';
 import NavIcon from './NavIcon';
 import { CampusOutline, CampusSolid } from './CampusIcon';
 import { CrewOutline, CrewSolid } from './CrewIcon';
+import { MessagesOutline, MessagesSolid } from './MessageIcon';
 import styles from './BottomNav.module.css';
 import {
   HomeIcon as HomeOutline,
-  ChatBubbleOvalLeftEllipsisIcon as MessagesOutline,
   UserIcon as ProfileOutline,
 } from '@heroicons/react/24/outline';
 import {
   HomeIcon as HomeSolid,
-  ChatBubbleOvalLeftEllipsisIcon as MessagesSolid,
   UserIcon as ProfileSolid,
 } from '@heroicons/react/24/solid';
 

@@ -57,8 +57,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
 }
 
@@ -68,8 +68,8 @@
 .bottomNavItem > svg,
 .iconWrapper > svg,
 .navIcon > svg {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
 }
 

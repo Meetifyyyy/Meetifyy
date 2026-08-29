@@ -10,10 +10,10 @@ import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import NavIcon from './NavIcon';
 import { CampusOutline, CampusSolid } from './CampusIcon';
 import { CrewOutline, CrewSolid } from './CrewIcon';
+import { MessagesOutline, MessagesSolid } from './MessageIcon';
 import styles from './Sidebar.module.css';
 import {
   HomeIcon as HomeOutline,
-  ChatBubbleOvalLeftEllipsisIcon as MessagesOutline,
   UserGroupIcon as CommunitiesOutline,
   UserIcon as ProfileOutline,
   Cog6ToothIcon as SettingsOutline,
@@ -23,7 +23,6 @@ import {
 } from '@heroicons/react/24/outline';
 import {
   HomeIcon as HomeSolid,
-  ChatBubbleOvalLeftEllipsisIcon as MessagesSolid,
   UserGroupIcon as CommunitiesSolid,
   UserIcon as ProfileSolid,
   Cog6ToothIcon as SettingsSolid,
