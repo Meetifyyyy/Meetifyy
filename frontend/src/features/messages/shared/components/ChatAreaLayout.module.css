@@ -136,19 +136,74 @@
   align-items: center;
   justify-content: center;
   flex: 1;
-  gap: 12px;
+  padding: 2rem;
+  text-align: center;
   color: var(--color-text-muted, #71717a);
 }
 
 .emptyStateIcon {
-  font-size: 2.5rem;
-  opacity: 0.5;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(var(--color-primary-rgb, 37, 99, 235), 0.08);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(var(--color-primary-rgb, 37, 99, 235), 0.15);
+  box-shadow: 0 4px 14px rgba(var(--color-primary-rgb, 37, 99, 235), 0.08);
 }
 
-.emptyState p {
+:global([data-theme="dark"]) .emptyStateIcon {
+  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.15);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.emptyStateTitle {
+  font-family: var(--font-family-display, inherit);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.emptyStateDesc {
   font-size: 0.9rem;
-  font-weight: 500;
-  margin: 0;
+  color: var(--color-text-muted);
+  max-width: 320px;
+  line-height: 1.45;
+  margin: 0 0 1.25rem;
+}
+
+.emptyStateBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--color-primary);
+  color: #ffffff;
+  border: none;
+  padding: 0.65rem 1.35rem;
+  border-radius: 100px;
+  font-family: var(--font-family-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(var(--color-primary-rgb, 37, 99, 235), 0.25);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.emptyStateBtn:hover {
+  background: var(--color-primary-hover, var(--color-primary));
+  box-shadow: 0 4px 14px rgba(var(--color-primary-rgb, 37, 99, 235), 0.35);
+  transform: translateY(-1px);
+}
+
+.emptyStateBtn:active {
+  transform: translateY(0);
 }
 
 /* ── Typing bubble (sits between message list and input) ─── */

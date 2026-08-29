@@ -15,6 +15,7 @@ export default function GroupChatArea({
   onTogglePin,
   onToggleMute,
   onBack,
+  onNewMessage,
   showChatOnMobile,
   isLoading,
   notFound,
@@ -91,6 +92,7 @@ export default function GroupChatArea({
       onCancelUpload={onCancelUpload}
       onSendMessage={onSendMessage}
       onBack={onBack}
+      onNewMessage={onNewMessage}
       emptyIcon="👥"
       emptyLabel="Select a conversation"
       showTypingAvatar
