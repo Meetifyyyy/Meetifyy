@@ -1,0 +1,215 @@
+/* ── Settings Skeleton Module CSS ── */
+.page {
+  --settings-gutter: 20px;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 60px - 0.5rem);
+  max-height: calc(100dvh - 60px - 0.5rem);
+  overflow: hidden;
+  box-sizing: border-box;
+  background: var(--color-bg-white, #ffffff);
+  border-radius: var(--radius-xl, 20px);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
+}
+
+:global([data-theme="dark"]) .page {
+  background: var(--color-bg-alt, #181a1f);
+  border-color: var(--color-border, #333945);
+}
+
+/* ── Mobile Full-Screen Full-Bleed Adjustments ── */
+@media (max-width: 768px) {
+  .page {
+    --settings-gutter: 16px;
+    border-radius: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    height: 100% !important;
+    min-height: 100dvh !important;
+    max-height: none !important;
+  }
+
+  .topBar {
+    border-top-left-radius: 0 !important;
+    border-top-right-radius: 0 !important;
+    padding: 0 8px;
+  }
+}
+
+/* ── Top Bar Skeleton ── */
+.topBar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 58px;
+  padding: 0 16px;
+  background: var(--color-bg-white);
+  border-bottom: 1px solid var(--color-border-light);
+  border-top-left-radius: var(--radius-xl, 20px);
+  border-top-right-radius: var(--radius-xl, 20px);
+}
+
+:global([data-theme="dark"]) .topBar {
+  background: var(--color-bg-alt, #181a1f);
+  border-color: var(--color-border, #333945);
+}
+
+/* ── Split Layout Container ── */
+.splitBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Left Navigation List Pane ── */
+.listPane {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  background: var(--color-bg-white);
+}
+
+.listPane::-webkit-scrollbar {
+  display: none;
+}
+
+:global([data-theme="dark"]) .listPane {
+  background: var(--color-bg-alt, #181a1f);
+}
+
+/* ── Right Detail Content Pane ── */
+.detailPane {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  background: var(--color-bg-white);
+}
+
+.detailPane::-webkit-scrollbar {
+  display: none;
+}
+
+:global([data-theme="dark"]) .detailPane {
+  background: var(--color-bg-alt, #181a1f);
+}
+
+/* ── Responsive Split Breakdown ── */
+@media (min-width: 1024px) {
+  .listPane {
+    width: 320px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--color-border-light);
+    display: flex !important;
+  }
+
+  :global([data-theme="dark"]) .listPane {
+    border-right-color: var(--color-border, #333945);
+  }
+
+  .detailPane {
+    flex: 1;
+    min-width: 0;
+    display: flex !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  /* On mobile/tablet, show only list when no panel, or detail when panel is active */
+  .hideMobileList {
+    display: none !important;
+  }
+
+  .hideMobileDetail {
+    display: none !important;
+  }
+}
+
+/* ── Inner Scrollable Content ── */
+.bodyContent {
+  flex: 1;
+  padding: 16px 0 32px;
+}
+
+/* ── Section Header / Label Skeleton ── */
+.sectionLabelWrap {
+  padding: 16px var(--settings-gutter) 8px;
+}
+
+/* ── Minimal Card Group Skeleton ── */
+.cardGroup {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg, 16px);
+  margin: 0 var(--settings-gutter) 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
+}
+
+:global([data-theme="dark"]) .cardGroup {
+  background: var(--color-bg-alt, #181a1f);
+  border-color: var(--color-border, #333945);
+}
+
+/* ── List Row Silhouette ── */
+.rowItem {
+  display: flex;
+  align-items: center;
+  padding: 12px var(--settings-gutter);
+  gap: 12px;
+}
+
+.rowDivider {
+  height: 1px;
+  background: var(--color-border-light);
+  margin-left: calc(var(--settings-gutter) + 48px);
+}
+
+:global([data-theme="dark"]) .rowDivider {
+  background: var(--color-border, #333945);
+}
+
+/* ── Detail Pane Header Block ── */
+.detailHeaderBlock {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px var(--settings-gutter) 20px;
+}
+
+/* ── Detail Pane Form Group Block ── */
+.detailFieldBlock {
+  padding: 16px var(--settings-gutter);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fieldDivider {
+  height: 1px;
+  background: var(--color-border-light);
+  margin: 0 var(--settings-gutter);
+}
+
+:global([data-theme="dark"]) .fieldDivider {
+  background: var(--color-border, #333945);
+}
+
+/* ── Action / Save Button Placeholder ── */
+.actionBtnWrap {
+  padding: 16px var(--settings-gutter) 0;
+}
