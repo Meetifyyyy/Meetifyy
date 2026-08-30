@@ -795,6 +795,9 @@ export const usersApi = {
 export const dmApi = {
   getConversations: (limit, offset) => apiClient.get(`/api/dm?limit=${limit || 20}&offset=${offset || 0}`),
   lookupDM: (targetUserId) => apiClient.get(`/api/dm/lookup/${targetUserId}`),
+  // Answers "can these two message each other right now?" without creating a
+  // conversation — used by the draft screen, which has no conversation to read.
+  getMessagingEligibility: (targetUserId) => apiClient.get(`/api/dm/eligibility/${targetUserId}`),
   startDM: (targetUserId) => apiClient.post('/api/dm', { targetUserId }),
   startInstantMatch: (targetUserId, activity) => apiClient.post('/api/dm/instant-match', { targetUserId, activity }),
   getHistory: (conversationId, deviceId, beforeCursor, limit) => {

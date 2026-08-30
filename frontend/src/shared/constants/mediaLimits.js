@@ -51,3 +51,46 @@ export function validateCoveredImageFile(file) {
   }
   return { valid: true };
 }
+
+// ── Account verification documents ───────────────────────────────────────────
+//
+// Verification images are held to different rules than ordinary media, in both
+// directions. They are stricter about what is accepted — a document has to be a
+// still image the server can verify the bytes of, so animated GIF is out — and
+// deliberately *looser* about compression, because a reviewer has to read the
+// text on a college ID and recognise a face in a selfie. The generic post
+// settings (1920px, quality 0.8, 1 MB target) are tuned for a feed photo and
+// throw away exactly the detail an identity decision depends on.
+
+/** Formats accepted for a verification document. Mirrors the server allowlist. */
+export const VERIFICATION_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+/** Ceiling on the file a user may pick, before processing. */
+export const VERIFICATION_MAX_UPLOAD_MB = 25;
+
+/**
+ * Processing options for verification documents.
+ *
+ * Tuned for legibility over file size, which is the opposite of every other
+ * image in the app. A reviewer has to read the small print on a college ID and
+ * recognise a face in a selfie, so these documents are converted to WebP —
+ * which also strips EXIF and normalises orientation — and otherwise left as
+ * close to the original as the encoder allows. 3200px keeps detail on an ID
+ * photographed at arm's length, and the 12 MB ceiling exists only to stop a
+ * pathological file, not to shrink a normal one.
+ */
+export const VERIFICATION_COMPRESS_OPTIONS = {
+  maxWidthOrHeight: 3200,
+  initialQuality: 0.95,
+  maxSizeMB: 12,
+  fileType: 'image/webp',
+};
+
+/** Shortest edge we will accept — below this an ID is not reviewable. */
+export const VERIFICATION_MIN_DIMENSION = 320;
+
+/** The two documents a submission is made of, in payload order. */
+export const VERIFICATION_DOCUMENTS = {
+  selfie: { field: 'selfieMediaId', label: 'selfie' },
+  collegeId: { field: 'idCardMediaId', label: 'college ID' },
+};
