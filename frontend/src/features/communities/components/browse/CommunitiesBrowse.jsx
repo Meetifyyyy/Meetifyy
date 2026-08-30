@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PlusIcon } from '@heroicons/react/24/outline';
+import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities } from '@shared/hooks/useCommunities';
 import { categoriesList } from '@constants/communityCategories';
+import { openVerificationModal } from '@shared/stores/verificationModalStore';
 
 import { useDebounce } from '@shared/hooks/useDebounce';
 import { EmptyState, ErrorState } from '@shared/components/ui/StateViews';
@@ -14,12 +16,21 @@ import PageHeader from '@layout/PageHeader';
 import styles from './CommunitiesBrowse.module.css';
 
 export default function CommunitiesBrowse({ onOpenCommunity }) {
+  const { currentUser } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState(location.state?.category || 'all');
   const [showCreate, setShowCreate] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 200);
+
+  const handleCreateClick = () => {
+    if (currentUser?.verificationStatus !== 'VERIFIED') {
+      openVerificationModal('Verify your student ID to create a community.');
+      return;
+    }
+    setShowCreate(true);
+  };
 
   useEffect(() => {
     if (location.state?.category) {
@@ -107,7 +118,7 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
           <button
             type="button"
             className={styles.createIconBtn}
-            onClick={() => setShowCreate(true)}
+            onClick={handleCreateClick}
             aria-label="Create Community"
             title="Create Community"
           >
@@ -169,7 +180,7 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
                 <button
                   type="button"
                   className={styles.emptyCreateBtn}
-                  onClick={() => setShowCreate(true)}
+                  onClick={handleCreateClick}
                 >
                   <PlusIcon className={styles.btnIcon} />
                   <span>Create a Community</span>

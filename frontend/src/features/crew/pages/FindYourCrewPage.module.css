@@ -3,6 +3,9 @@
   flex-direction: column;
   gap: 1.25rem;
   width: 100%;
+  flex: 1;
+  min-height: calc(100dvh - 180px);
+  padding-bottom: 2.5rem;
 }
 
 .createIconBtn {
@@ -28,17 +31,18 @@
 @media (hover: hover) and (pointer: fine) {
 
   .createIconBtn:hover {
-  transform: scale(1.05);
+    transform: scale(1.05);
   }
 }
 
 .layout {
   display: flex;
   gap: 1.5rem;
-  align-items: flex-start;
+  align-items: stretch;
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  flex: 1;
   box-sizing: border-box;
 }
 
@@ -58,6 +62,11 @@
   flex-shrink: 0;
 }
 
+.mobileCreateCardWrapper {
+  display: none;
+  width: 100%;
+}
+
 .loader {
   padding: 3rem 0;
   text-align: center;
@@ -72,6 +81,7 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  flex: 1;
   box-sizing: border-box;
 }
 
@@ -80,7 +90,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-top: 0.5rem;
+  margin-top: 0rem;
 }
 
 .sectionTitle {
@@ -207,7 +217,7 @@
 @media (hover: hover) and (pointer: fine) {
 
   .mobileCreateBtn:hover {
-  transform: translateY(-2px);
+    transform: translateY(-2px);
   }
 }
 
@@ -238,53 +248,10 @@
   border-color: var(--color-border-dark);
 }
 
-/* Below 1024px there is no room for a 380px rail beside the list, and letting
-   it wrap underneath turned the sidebar into a giant Create Activity card
-   dumped in the middle of the page. It is supplementary content, so it goes
-   away entirely — the header's + button still creates an activity. */
-@media (max-width: 1024px) {
-  .sidebarWrapper {
-    display: none;
-  }
-}
-
-@media (max-width: 768px) {
-  .page {
-    padding: 0rem 0 80px;
-  }
-
-  .sectionTitle {
-    font-size: 1rem;
-  }
-
-  .list {
-    gap: 0.75rem;
-  }
-}
-
-@media (max-width: 640px) {
-  .page {
-    padding: 0rem 0 80px;
-  }
-
-  .listSection {
-    gap: 0.75rem;
-  }
-
-  .sectionTitle {
-    font-size: 1rem;
-  }
-
-  .loadMoreBtn {
-    font-size: 0.88rem;
-    padding: 0.65rem 1.25rem;
-  }
-}
-
 .myActivitiesWrapper {
   display: flex;
   flex-direction: column;
-  gap: 1.75rem;
+  gap: 1rem;
   width: 100%;
 }
 
@@ -343,31 +310,73 @@
   margin-left: 0.25rem;
 }
 
-/* "All" with nothing in any section. The Instant Match strip sits above it, so
-   this only has to explain the blank, not offer a way out of it. */
+/* ── Full Space Empty Box (All, College, 1-on-1, Saved) ── */
+.subEmptyFull,
 .emptyAll {
-  padding: 2.5rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  color: var(--color-text-muted);
-  font-size: 0.9rem;
-  line-height: 1.5;
-}
-
-.subEmpty {
-  padding: 1.25rem;
+  flex: 1;
+  width: 100%;
+  min-height: clamp(280px, 45vh, 480px);
+  padding: 2.5rem 1.5rem;
   background: var(--color-bg-secondary, rgba(0, 0, 0, 0.02));
   border: 1px dashed var(--color-border-subtle, rgba(0, 0, 0, 0.1));
-  border-radius: 14px;
+  border-radius: 20px;
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+/* ── Activity Card Sized Empty Box (My Activities subsections) ── */
+.subEmptyCard,
+.subEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  width: 100%;
+  min-height: 100px;
+  padding: 1.25rem 1rem;
+  background: var(--color-bg-secondary, rgba(0, 0, 0, 0.02));
+  border: 1px dashed var(--color-border-subtle, rgba(0, 0, 0, 0.1));
+  border-radius: 16px;
   color: var(--color-text-muted);
   font-size: 0.88rem;
-  text-align: center;
+  box-sizing: border-box;
 }
-/* ── Empty section CTA ───────────────────────────────────────────────────────
- * An empty list is an invitation to create, not a blank slate: a short line of
- * context above the same Create Activity card used elsewhere on the page.
- * ─────────────────────────────────────────────────────────────────────────── */
-/* The card keeps the same footprint it has as the page-level empty state. */
-/* Back affordance shown when a section is expanded in place ("See all"). */
+
+/* ── Full Space Search Empty State ── */
+.emptyFull {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  flex: 1;
+  width: 100%;
+  min-height: clamp(280px, 45vh, 480px);
+  gap: 0.4rem;
+  padding: 2.5rem 1.5rem;
+  background: var(--color-bg-secondary, rgba(255, 255, 255, 0.02));
+  border: 1px dashed var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 20px;
+  box-sizing: border-box;
+}
+
+[data-theme="dark"] .subEmptyFull,
+[data-theme="dark"] .emptyAll,
+[data-theme="dark"] .subEmptyCard,
+[data-theme="dark"] .subEmpty,
+[data-theme="dark"] .emptyFull {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+}
+
+/* ── Empty section CTA ── */
 .sectionBackBtn {
   display: inline-flex;
   align-items: center;
@@ -391,4 +400,146 @@
 .sectionBackBtn:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+
+/* Below 1024px there is no room for a 380px rail beside the list */
+@media (max-width: 1024px) {
+  .sidebarWrapper {
+    display: none;
+  }
+
+  .mobileCreateCardWrapper {
+    display: block;
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .mobileCreateCardWrapper {
+    display: block;
+    width: 100%;
+    margin-bottom: 0rem;
+  }
+
+  .page {
+    padding: 0;
+    gap: 0.85rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100dvh - 60px - 70px - 1rem);
+    box-sizing: border-box;
+  }
+
+  .layout {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: 0.85rem;
+  }
+
+  .listSection {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: 0.75rem;
+  }
+
+  .sectionTitle {
+    font-size: 1rem;
+  }
+
+  .list {
+    gap: 0.75rem;
+  }
+
+  /* Default empty box on mobile for non-All tabs (College, 1-on-1, Saved) stretches cleanly above bottom nav */
+  .subEmptyFull,
+  .emptyAll,
+  .emptyFull {
+    flex: 1;
+    width: 100%;
+    min-height: calc(100dvh - 250px) !important;
+    border-radius: 18px;
+    padding: 2rem 1.25rem;
+    font-size: 0.95rem;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  /* On the All tab where the Create Activity card sits above it, height adjusts cleanly */
+  .subEmptyFullAllTab,
+  .emptyFullAllTab,
+  .subEmptyAll {
+    min-height: max(160px, calc(100dvh - 485px)) !important;
+  }
+
+  .subEmptyCard,
+  .subEmpty {
+    min-height: 90px;
+    border-radius: 14px;
+    padding: 1rem 0.85rem;
+    font-size: 0.84rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .mobileCreateCardWrapper {
+    margin-bottom: 0.1rem;
+  }
+
+  .page {
+    padding: 0;
+    min-height: calc(100dvh - 60px - 70px - 0.75rem);
+  }
+
+  .listSection {
+    gap: 0.75rem;
+  }
+
+  .sectionTitle {
+    font-size: 1rem;
+  }
+
+  .loadMoreBtn {
+    font-size: 0.88rem;
+    padding: 0.65rem 1.25rem;
+  }
+
+  .subEmptyFull,
+  .emptyAll,
+  .emptyFull {
+    flex: 1;
+    width: 100%;
+    min-height: calc(100dvh - 245px) !important;
+    border-radius: 16px;
+    padding: 1.75rem 1rem;
+    font-size: 0.92rem;
+  }
+
+  .subEmptyFullAllTab,
+  .emptyFullAllTab,
+  .subEmptyAll {
+    min-height: max(150px, calc(100dvh - 480px)) !important;
+  }
+
+  .subEmptyCard,
+  .subEmpty {
+    min-height: 85px;
+    border-radius: 12px;
+    padding: 0.85rem 0.75rem;
+    font-size: 0.82rem;
+  }
 }

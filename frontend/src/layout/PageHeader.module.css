@@ -235,34 +235,66 @@
 }
 
 .tabsPills .tabBtn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
+  text-align: center;
   gap: 6px;
   background: var(--color-bg-white, #ffffff);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
   border-radius: 9999px;
-  padding: 7px 16px;
+  padding: 8px 18px;
   font-family: var(--font-family-sans);
   font-size: 0.88rem;
   font-weight: 600;
   color: var(--color-text-main);
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.2s ease;
+  user-select: none;
+  line-height: 1.2;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
 .tabsPills .tabBtn:hover {
-  border-color: var(--color-primary);
+  border-color: var(--color-border-dark, rgba(0, 0, 0, 0.2));
   color: var(--color-text-main);
-  background: var(--color-bg-hover, rgba(0, 0, 0, 0.03));
+  background: var(--color-bg-hover, rgba(0, 0, 0, 0.04));
+}
+
+.tabsPills .tabBtn:active {
+  opacity: 0.85;
 }
 
 .tabsPills .tabActive,
 .tabsPills .tabActive:hover {
-  background: #2563eb !important;
+  background: var(--color-primary, #2563eb) !important;
   color: #ffffff !important;
-  font-weight: 700 !important;
-  border-color: #2563eb !important;
+  font-weight: 600 !important;
+  border-color: var(--color-primary, #2563eb) !important;
+  opacity: 1 !important;
+}
+
+.tabsPills .tabActive:active {
+  opacity: 0.9 !important;
+}
+
+[data-theme="dark"] .tabsPills .tabBtn {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-main, #f1f5f9);
+}
+
+[data-theme="dark"] .tabsPills .tabBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .tabsPills .tabActive,
+[data-theme="dark"] .tabsPills .tabActive:hover {
+  background: var(--color-primary, #2563eb) !important;
+  border-color: var(--color-primary, #2563eb) !important;
+  color: #ffffff !important;
 }
 
 .tabIcon {
