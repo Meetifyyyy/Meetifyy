@@ -1,35 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { X, Lock, Shield, RefreshCw } from '@shared/components/icons';
+import { X, Lock, Shield, RefreshCw, Cookie } from '@shared/components/icons';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import styles from './CookieBanner.module.css';
-
-/** Cookie icon - clean custom SVG */
-function CookieIcon({ size = 15 }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <circle cx="8"  cy="10" r="1"   fill="currentColor" stroke="none" />
-      <circle cx="14" cy="8"  r="1"   fill="currentColor" stroke="none" />
-      <circle cx="9"  cy="15" r="1.4" fill="currentColor" stroke="none" />
-      <circle cx="15" cy="14" r="1"   fill="currentColor" stroke="none" />
-      <path d="M19 5c-1 0-2-.4-2.7-1" />
-    </svg>
-  );
-}
 
 /* ─────────────────────────────────────────────────────────────
    Storage categories - user-focused plain language
@@ -99,20 +75,22 @@ export function CookiePreferencesModal() {
         <div className={styles.modalHeader}>
           <div className={styles.headerLeft}>
             <div className={styles.headerIconWrap} aria-hidden="true">
-              <CookieIcon size={16} />
+              <Cookie size={18} />
             </div>
-            <div>
+            <div className={styles.headerTextGroup}>
               <h2 className={styles.modalTitle}>How Meetifyy Uses Storage</h2>
-              <p className={styles.modalSubtitle}>Essential and functional storage. No advertising or analytics tracking.</p>
+              <p className={styles.modalSubtitle}>Essential storage only. No tracking.</p>
             </div>
           </div>
           <button
             ref={closeRef}
+            type="button"
             className={styles.closeBtn}
             onClick={closePreferences}
+            title="Close"
             aria-label="Close storage information"
           >
-            <X size={14} />
+            <X size={15} />
           </button>
         </div>
 
@@ -128,13 +106,8 @@ export function CookiePreferencesModal() {
             {CATEGORIES.map(({ id, icon: Icon, name, description }) => (
               <div key={id} className={styles.categoryItem} role="listitem">
                 <div className={styles.catHeaderRow}>
-                  <div className={styles.catTitleWrap}>
-                    <Icon size={14} className={styles.catIcon} aria-hidden="true" />
-                    <span className={styles.catName}>{name}</span>
-                  </div>
-                  <span className={styles.statusActive} aria-label="Always active">
-                    Always active
-                  </span>
+                  <Icon size={17} className={styles.catIcon} aria-hidden="true" />
+                  <span className={styles.catName}>{name}</span>
                 </div>
                 <p className={styles.catDesc}>{description}</p>
               </div>
@@ -157,7 +130,7 @@ export function CookiePreferencesModal() {
             <span className={styles.footerDot} aria-hidden="true">·</span>
             <Link to="/cookie-policy" onClick={closePreferences}>Cookie Policy</Link>
           </div>
-          <button className={styles.gotItBtn} onClick={closePreferences}>
+          <button type="button" className={styles.gotItBtn} onClick={closePreferences}>
             Got it
           </button>
         </div>
@@ -182,7 +155,7 @@ export default function CookieBanner() {
         <div className={styles.bannerHeader}>
           <div className={styles.bannerTitleGroup}>
             <div className={styles.bannerIconWrap} aria-hidden="true">
-              <CookieIcon size={14} />
+              <Cookie size={16} />
             </div>
             <h3 className={styles.bannerTitle}>Your privacy matters</h3>
           </div>
@@ -190,9 +163,10 @@ export default function CookieBanner() {
             type="button"
             className={styles.bannerCloseBtn}
             onClick={acknowledge}
+            title="Dismiss"
             aria-label="Dismiss privacy notice"
           >
-            <X size={13} />
+            <X size={14} />
           </button>
         </div>
 
