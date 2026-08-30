@@ -62,12 +62,19 @@ function SeekRipple({ direction, visible }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function VideoViewer({ src, mediaRef, onControlsChange, onStageClick }) {
+export default function VideoViewer({ src, mediaRef, onControlsChange, onStageClick, isCurrent = true }) {
   const wrapRef       = useRef(null);
   const videoRef      = useRef(null);
   const progressRef   = useRef(null);
   const hideTimerRef  = useRef(null);
   const rafRef        = useRef(null);
+
+  // Pause video if slide becomes non-current
+  useEffect(() => {
+    if (!isCurrent && videoRef.current && !videoRef.current.paused) {
+      videoRef.current.pause();
+    }
+  }, [isCurrent]);
 
   // Tap tracking
   const lastTapRef          = useRef({ time: 0, x: 0, y: 0, zone: null });
@@ -809,12 +816,12 @@ export default function VideoViewer({ src, mediaRef, onControlsChange, onStageCl
       <video
         ref={(el) => {
           videoRef.current = el;
-          if (mediaRef) mediaRef.current = el;
+          if (isCurrent && mediaRef) mediaRef.current = el;
         }}
         src={src}
         className={styles.viewerVideo}
         playsInline
-        autoPlay
+        autoPlay={isCurrent}
         preload="auto"
         aria-label="Video player"
         style={{ opacity: isLoading ? 0 : 1, transition: 'opacity 0.3s ease' }}

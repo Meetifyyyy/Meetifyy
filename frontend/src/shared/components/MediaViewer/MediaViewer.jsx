@@ -58,6 +58,7 @@ export default function MediaViewer() {
 
   const overlayRef  = useRef(null);
   const stageRef    = useRef(null);
+  const trackRef    = useRef(null);
   /** Ref forwarded to the media element (img or video) for vertical drag. */
   const mediaElRef  = useRef(null);
 
@@ -102,12 +103,12 @@ export default function MediaViewer() {
   const controlsVisibleRef     = useRef(true);
   const controlsHiddenByGesture = useRef(false);
 
-  // ── Smart adjacent image preloading (idle-scheduled, cancel-safe) ──────────
+  // ── Smart adjacent image preloading (immediate async decode, memory-safe) ──
   const preloadImgsRef = useRef([]);
   useEffect(() => {
     if (!open || !items || items.length <= 1) return;
 
-    // Cancel previous preloads
+    // Clear previous preloads
     preloadImgsRef.current.forEach((img) => { img.src = ''; });
     preloadImgsRef.current = [];
 
@@ -116,25 +117,17 @@ export default function MediaViewer() {
     );
     if (candidates.length === 0) return;
 
-    const schedule = typeof requestIdleCallback === 'function'
-      ? (fn) => requestIdleCallback(fn, { timeout: 250 })
-      : (fn) => setTimeout(fn, 100);
-
-    let handle;
-    handle = schedule(() => {
-      candidates.forEach((item) => {
-        const img = new Image();
-        img.src = item.url;
-        preloadImgsRef.current.push(img);
-      });
+    candidates.forEach((item) => {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = item.url;
+      if (typeof img.decode === 'function') {
+        img.decode().catch(() => {});
+      }
+      preloadImgsRef.current.push(img);
     });
 
     return () => {
-      if (typeof cancelIdleCallback === 'function' && typeof handle === 'number') {
-        cancelIdleCallback(handle);
-      } else {
-        clearTimeout(handle);
-      }
       preloadImgsRef.current.forEach((img) => { img.src = ''; });
       preloadImgsRef.current = [];
     };
@@ -146,11 +139,24 @@ export default function MediaViewer() {
     if (open) {
       didClose.current = false;
       setControlsVisible(true);
+      if (trackRef.current) {
+        trackRef.current.style.transition = 'none';
+        trackRef.current.style.transform = `translate3d(-${index * 100}%, 0, 0)`;
+      }
       requestAnimationFrame(() => setVisible(true));
     } else {
       setVisible(false);
     }
   }, [open]);
+
+  // Sync track position smoothly when index changes
+  useEffect(() => {
+    if (!open) return;
+    if (trackRef.current && !gestureRef.current.active) {
+      trackRef.current.style.transition = 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+      trackRef.current.style.transform  = `translate3d(-${index * 100}%, 0, 0)`;
+    }
+  }, [index, open]);
 
   useEffect(() => {
     if (!open && !didClose.current) {
@@ -237,13 +243,9 @@ export default function MediaViewer() {
     active: false,
   }));
 
-  /** Reset the stage and media element transforms after gesture. */
+  /** Reset the media element and overlay transforms after vertical dismiss gesture. */
   const resetGestureTransforms = useCallback((animated = true) => {
     const ease = animated ? 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none';
-    if (stageRef.current) {
-      stageRef.current.style.transition = ease;
-      stageRef.current.style.transform  = '';
-    }
     if (mediaElRef.current) {
       mediaElRef.current.style.transition = ease;
       mediaElRef.current.style.transform  = '';
@@ -255,10 +257,6 @@ export default function MediaViewer() {
     // Clear after transition so CSS classes take over again
     if (animated) {
       setTimeout(() => {
-        if (stageRef.current) {
-          stageRef.current.style.transition  = '';
-          stageRef.current.style.transform   = '';
-        }
         if (mediaElRef.current) {
           mediaElRef.current.style.transition = '';
           mediaElRef.current.style.transform  = '';
@@ -303,19 +301,17 @@ export default function MediaViewer() {
     };
   }, [isVid]);
 
-  const onGestureMove = useCallback((clientX, clientY) => {
+  const rafIdRef = useRef(null);
+
+  const applyGestureTransform = useCallback(() => {
+    rafIdRef.current = null;
     const g = gestureRef.current;
     if (!g.active) return;
 
-    const dx = clientX - g.startX;
-    const dy = clientY - g.startY;
+    const dx = g.lastX - g.startX;
+    const dy = g.lastY - g.startY;
     const adx = Math.abs(dx);
     const ady = Math.abs(dy);
-
-    // Update velocity tracking
-    g.lastX    = clientX;
-    g.lastY    = clientY;
-    g.lastTime = Date.now();
 
     // Axis detection — wait until user moves far enough to determine intent
     if (!g.axis) {
@@ -324,9 +320,11 @@ export default function MediaViewer() {
     }
 
     if (g.axis === 'h') {
-      // ── Horizontal: slide stage ──────────────────────────────────────────
-      const atLeft  = index === 0;
-      const atRight = index === items.length - 1;
+      // ── Horizontal: slide track continuously ──────────────────────────────
+      const idx = indexRef.current;
+      const len = itemsLenRef.current;
+      const atLeft  = idx === 0;
+      const atRight = idx === len - 1;
       let translateX = dx;
 
       // Boundary resistance: rubber-band at first/last item
@@ -334,11 +332,13 @@ export default function MediaViewer() {
         translateX = dx * BOUNDARY_RESISTANCE;
       }
 
-      if (stageRef.current) {
-        stageRef.current.style.transition = 'none';
-        stageRef.current.style.transform  = `translateX(${translateX}px)`;
+      if (trackRef.current) {
+        const vw = stageRef.current?.clientWidth || window.visualViewport?.width || window.innerWidth;
+        const totalX = -idx * vw + translateX;
+        trackRef.current.style.transition = 'none';
+        trackRef.current.style.transform  = `translate3d(${totalX}px, 0, 0)`;
       }
-    } else {
+    } else if (g.axis === 'v') {
       // ── Vertical: move only the media element ────────────────────────────
       const dampened = dy * DISMISS_DRAG_DAMPEN;
       const vh       = window.visualViewport?.height || window.innerHeight;
@@ -347,7 +347,7 @@ export default function MediaViewer() {
 
       if (mediaElRef.current) {
         mediaElRef.current.style.transition = 'none';
-        mediaElRef.current.style.transform  = `translateY(${dampened}px)`;
+        mediaElRef.current.style.transform  = `translate3d(0, ${dampened}px, 0)`;
       }
       if (overlayRef.current) {
         overlayRef.current.style.transition      = 'none';
@@ -363,12 +363,18 @@ export default function MediaViewer() {
   }, []);
 
   const onGestureEnd = useCallback(() => {
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+
     const g = gestureRef.current;
     if (!g.active) return;
     g.active = false;
 
     // Clear will-change set during gesture start
     if (stageRef.current) stageRef.current.style.willChange = '';
+    if (trackRef.current) trackRef.current.style.willChange = '';
 
     const dx  = g.lastX - g.startX;
     const dy  = g.lastY - g.startY;
@@ -379,7 +385,7 @@ export default function MediaViewer() {
     const len = itemsLenRef.current;
 
     if (g.axis === 'h') {
-      const vw             = window.visualViewport?.width || window.innerWidth;
+      const vw             = stageRef.current?.clientWidth || window.visualViewport?.width || window.innerWidth;
       const distThreshold  = vw * SWIPE_DISTANCE_THRESHOLD;
       const swipeLeft      = dx < 0;
       const swipeRight     = dx > 0;
@@ -387,13 +393,22 @@ export default function MediaViewer() {
       const pastVelocity   = vx > SWIPE_VELOCITY_THRESHOLD && Math.abs(dx) > 30;
 
       if ((pastDist || pastVelocity) && swipeLeft && idx < len - 1) {
-        resetGestureTransforms(false);
+        if (trackRef.current) {
+          trackRef.current.style.transition = 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+          trackRef.current.style.transform  = `translate3d(-${(idx + 1) * 100}%, 0, 0)`;
+        }
         navigate(1);
       } else if ((pastDist || pastVelocity) && swipeRight && idx > 0) {
-        resetGestureTransforms(false);
+        if (trackRef.current) {
+          trackRef.current.style.transition = 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+          trackRef.current.style.transform  = `translate3d(-${(idx - 1) * 100}%, 0, 0)`;
+        }
         navigate(-1);
       } else {
-        resetGestureTransforms(true);
+        if (trackRef.current) {
+          trackRef.current.style.transition = 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+          trackRef.current.style.transform  = `translate3d(-${idx * 100}%, 0, 0)`;
+        }
       }
     } else if (g.axis === 'v') {
       const vh            = window.visualViewport?.height || window.innerHeight;
@@ -408,7 +423,7 @@ export default function MediaViewer() {
         const finishY = sign * vh;
         if (mediaElRef.current) {
           mediaElRef.current.style.transition = 'transform 0.24s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-          mediaElRef.current.style.transform  = `translateY(${finishY}px)`;
+          mediaElRef.current.style.transform  = `translate3d(0, ${finishY}px, 0)`;
         }
         if (overlayRef.current) {
           overlayRef.current.style.transition       = 'background-color 0.24s ease';
@@ -423,57 +438,58 @@ export default function MediaViewer() {
       }
     } else {
       // No axis determined — just snap back
+      if (trackRef.current) {
+        trackRef.current.style.transition = 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+        trackRef.current.style.transform  = `translate3d(-${idx * 100}%, 0, 0)`;
+      }
       resetGestureTransforms(false);
     }
   }, [navigate, handleClose, resetGestureTransforms]);
 
-  // ── Pointer events on stage (desktop mouse + touchpad) ─────────────────────
-  // We use pointer events so we get mouse AND touch in one handler, but we
-  // install the touch events manually (non-passive) to allow preventDefault.
-  const handleStagePointerDown = useCallback((e) => {
-    // Ignore right-click / middle-click
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    // Touch events handled by the native listeners below
-    if (e.pointerType === 'touch') return;
-    // Set will-change for GPU promotion during gesture
-    if (stageRef.current) stageRef.current.style.willChange = 'transform';
-    onGestureStart(e.clientX, e.clientY, e.target);
-  }, [onGestureStart]);
-
-  const handleStagePointerMove = useCallback((e) => {
-    if (e.pointerType === 'touch') return;
-    onGestureMove(e.clientX, e.clientY);
-  }, [onGestureMove]);
-
-  const handleStagePointerUp = useCallback((e) => {
-    if (e.pointerType === 'touch') return;
-    onGestureEnd();
-  }, [onGestureEnd]);
-
-  // ── Touch events (non-passive so we can call preventDefault) ───────────────
+  // ── Touch events (touch-only: desktop mouse drag navigation is disabled) ──
   const handleStageTouchStart = useCallback((e) => {
     if (e.touches.length !== 1) return;
     // Set will-change for GPU promotion during gesture
     if (stageRef.current) stageRef.current.style.willChange = 'transform';
+    if (trackRef.current) trackRef.current.style.willChange = 'transform';
     const t = e.touches[0];
     onGestureStart(t.clientX, t.clientY, e.target);
   }, [onGestureStart]);
 
   const handleStageTouchMove = useCallback((e) => {
-    if (!gestureRef.current.active) return;
     const g = gestureRef.current;
+    if (!g.active || e.touches.length !== 1) return;
     const t = e.touches[0];
 
-    // Only prevent-default once we've locked an axis — avoids blocking scroll
-    // on tiny taps, and allows the page underneath to handle ambiguous starts.
-    if (g.axis && e.cancelable) e.preventDefault();
+    g.lastX    = t.clientX;
+    g.lastY    = t.clientY;
+    g.lastTime = Date.now();
 
-    onGestureMove(t.clientX, t.clientY);
-  }, [onGestureMove]);
+    // Only prevent-default once we've locked an axis or moved enough — avoids blocking scroll
+    // on tiny taps, and allows the page underneath to handle ambiguous starts.
+    const dx = Math.abs(t.clientX - g.startX);
+    const dy = Math.abs(t.clientY - g.startY);
+    if ((g.axis || dx > 4 || dy > 4) && e.cancelable) {
+      e.preventDefault();
+    }
+
+    if (!rafIdRef.current) {
+      rafIdRef.current = requestAnimationFrame(applyGestureTransform);
+    }
+  }, [applyGestureTransform]);
 
   const handleStageTouchEnd = useCallback(() => {
     onGestureEnd();
   }, [onGestureEnd]);
+
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+  }, []);
 
   // Attach native (non-passive) touch events to the stage DOM node
   useEffect(() => {
@@ -665,53 +681,71 @@ export default function MediaViewer() {
       </div>
 
       {/* ── Media stage ──
-          Pointer events drive the gesture system on desktop.
-          Touch events are attached natively (non-passive) below.
-          Only the stage translates for H-swipe; only the media element
-          inside translates for V-dismiss. ── */}
+          Touch events are attached natively (non-passive) for mobile swipe & dismiss gestures.
+          Desktop users navigate with arrow buttons & keyboard. ── */}
       <div
         className={styles.stage}
         ref={stageRef}
-        onPointerDown={handleStagePointerDown}
-        onPointerMove={handleStagePointerMove}
-        onPointerUp={handleStagePointerUp}
-        onPointerCancel={handleStagePointerUp}
         onClick={() => setShowMoreMenu(false)}
       >
-        {currentItem?.url && (isVid ? (
-          <VideoViewer
-            key={currentItem.url}
-            src={currentItem.url}
-            mediaRef={mediaElRef}
-            onControlsChange={setControlsVisible}
-            onStageClick={() => setShowMoreMenu(false)}
-          />
-        ) : (
-          <ImageViewer
-            key={currentItem.url}
-            src={currentItem.url}
-            mediaRef={mediaElRef}
-            onToggleControls={toggleControls}
-            preloadNext={nextItem?.url}
-            preloadPrev={prevItem?.url}
-          />
-        ))}
+        <div
+          className={styles.stageTrack}
+          ref={trackRef}
+          style={{ transform: `translate3d(-${index * 100}%, 0, 0)` }}
+        >
+          {items.map((item, i) => {
+            const shouldRender = Math.abs(i - index) <= 1;
+            const isCurrent = i === index;
+            const isItemVideo = isVideo(item);
+
+            return (
+              <div key={item?.url || i} className={styles.slide} data-slide-index={i}>
+                {shouldRender && item?.url && (
+                  isItemVideo ? (
+                    <VideoViewer
+                      key={item.url}
+                      src={item.url}
+                      mediaRef={isCurrent ? mediaElRef : null}
+                      onControlsChange={isCurrent ? setControlsVisible : undefined}
+                      onStageClick={() => setShowMoreMenu(false)}
+                      isCurrent={isCurrent}
+                    />
+                  ) : (
+                    <ImageViewer
+                      key={item.url}
+                      src={item.url}
+                      mediaRef={isCurrent ? mediaElRef : null}
+                      onToggleControls={toggleControls}
+                      isCurrent={isCurrent}
+                    />
+                  )
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* ── Nav buttons — outside stage so they don't translate with it ── */}
       {hasMany && (
         <>
           <button
+            type="button"
             className={`${styles.navBtn} ${styles.navPrev} ${controlsVisible ? styles.controlsVisible : ''}`}
             onClick={(e) => { e.stopPropagation(); navigate(-1); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             disabled={index === 0}
             aria-label="Previous"
           >
             <ChevronLeft size={20} strokeWidth={2.25} />
           </button>
           <button
+            type="button"
             className={`${styles.navBtn} ${styles.navNext} ${controlsVisible ? styles.controlsVisible : ''}`}
             onClick={(e) => { e.stopPropagation(); navigate(1); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             disabled={index === items.length - 1}
             aria-label="Next"
           >

@@ -63,7 +63,7 @@ function applyTransform(imgEl, tx, ty, scale, animated = false) {
 // Component
 // ─────────────────────────────────────────────
 
-export default function ImageViewer({ src, mediaRef, onToggleControls, preloadNext, preloadPrev }) {
+export default function ImageViewer({ src, mediaRef, onToggleControls, preloadNext, preloadPrev, isCurrent = true }) {
   const wrapRef = useRef(null);
   const imgRef = useRef(null);
 
@@ -143,6 +143,12 @@ export default function ImageViewer({ src, mediaRef, onToggleControls, preloadNe
     applyTransform(imgRef.current, 0, 0, 1, false);
     if (wrapRef.current) wrapRef.current.removeAttribute('data-zoomed');
   }, []);
+
+  useEffect(() => {
+    if (!isCurrent) {
+      resetState();
+    }
+  }, [isCurrent, resetState]);
 
   // ─────────────────────────────────────
   // Commit transform helper
@@ -640,7 +646,7 @@ export default function ImageViewer({ src, mediaRef, onToggleControls, preloadNe
           <img
             ref={(el) => {
               imgRef.current = el;
-              if (mediaRef) mediaRef.current = el;
+              if (isCurrent && mediaRef) mediaRef.current = el;
               if (el && el.complete && el.naturalWidth > 0 && !loaded) {
                 setLoaded(true);
                 setEntering(false);
@@ -650,8 +656,9 @@ export default function ImageViewer({ src, mediaRef, onToggleControls, preloadNe
             }}
             src={src}
             alt="Media"
+            loading="eager"
             decoding="async"
-            fetchpriority="high"
+            fetchpriority={isCurrent ? "high" : "auto"}
             className={`${styles.mediaImage} ${entering ? styles.entering : styles.entered}`}
             style={{ opacity: loaded ? 1 : 0 }}
             onLoad={handleLoad}
