@@ -11,6 +11,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { MentionsService } from '../mentions/mentions.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
+import { verificationAccessMockProvider } from '../common/verification/testing/verification-access.mock';
 
 /**
  * Covers every state the invite UI can render. The join path is shared by both
@@ -44,6 +45,7 @@ describe('group invites', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        verificationAccessMockProvider(),
         MessagesService,
         {
           provide: PrismaService,

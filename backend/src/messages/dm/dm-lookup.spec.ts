@@ -5,6 +5,7 @@ import { PresenceService } from '../../presence/presence.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { MentionsService } from '../../mentions/mentions.service';
 import { blocksServiceMockProvider } from '../../users/testing/blocks.service.mock';
+import { verificationAccessMockProvider } from '../../common/verification/testing/verification-access.mock';
 
 /**
  * `lookupExistingDM` answers "is there a DM here I can open?" for every Send
@@ -44,6 +45,7 @@ describe('DmService — lookupExistingDM', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        verificationAccessMockProvider(),
         blocksServiceMockProvider(),
         DmService,
         { provide: PrismaService, useValue: prisma },

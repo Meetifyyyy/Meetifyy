@@ -4,6 +4,8 @@ import { WsException } from '@nestjs/websockets';
 import { Test } from '@nestjs/testing';
 import { VerificationGuard } from './verification.guard';
 import { PrismaService } from '../../prisma/prisma.service';
+import { VerificationAccessService } from '../verification/verification-access.service';
+import { DomainEventService } from '../../events/domain-event.service';
 import { IS_VERIFIED_ONLY_KEY } from '../decorators/verified-only.decorator';
 
 /**
@@ -47,11 +49,16 @@ describe('VerificationGuard', () => {
     const module = await Test.createTestingModule({
       providers: [
         VerificationGuard,
+        // The real policy service, backed by the mock Prisma: the guard now
+        // delegates the status rule to it, so stubbing it out would test nothing.
+        VerificationAccessService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: DomainEventService, useValue: { emit: jest.fn() } },
       ],
     }).compile();
 
     guard = module.get<VerificationGuard>(VerificationGuard);
+    module.get(VerificationAccessService).invalidateAll();
     reflector = module.get<Reflector>(Reflector);
     jest.clearAllMocks();
     // Default: feature flag enabled

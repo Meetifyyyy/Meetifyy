@@ -2,12 +2,17 @@ import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@
 import { Reflector } from '@nestjs/core';
 import { WsException } from '@nestjs/websockets';
 import { IS_VERIFIED_ONLY_KEY } from '../decorators/verified-only.decorator';
-import { VerificationStatus } from '@prisma/client';
-import { PrismaService } from '../../prisma/prisma.service';
+import { VerificationAccessService } from '../verification/verification-access.service';
 
 @Injectable()
 export class VerificationGuard implements CanActivate {
-  constructor(private reflector: Reflector, private prisma: PrismaService) {}
+  constructor(
+    private reflector: Reflector,
+    // The feature flag and the "which statuses count" rule both live in the
+    // policy service now, so this guard and the messaging services can never
+    // drift into two different definitions of "verified".
+    private verificationAccess: VerificationAccessService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isVerifiedOnly = this.reflector.getAllAndOverride<boolean>(IS_VERIFIED_ONLY_KEY, [
@@ -23,14 +28,9 @@ export class VerificationGuard implements CanActivate {
     const client = context.getType() === 'ws' ? context.switchToWs().getClient() : null;
     const userId = request?.user?.id || client?.userId;
 
-    const isVerificationEnabled = process.env.FEATURE_VERIFICATION_ENABLED !== 'false';
-    
-    if (isVerificationEnabled && userId) {
-      const dbUser = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { verificationStatus: true }
-      });
-      if (!dbUser || dbUser.verificationStatus !== VerificationStatus.VERIFIED) {
+    if (this.verificationAccess.isEnforcementEnabled() && userId) {
+      const eligible = await this.verificationAccess.isUserEligible(userId);
+      if (!eligible) {
         if (context.getType() === 'ws') {
           throw new WsException('Account verification is required to perform this action.');
         } else {

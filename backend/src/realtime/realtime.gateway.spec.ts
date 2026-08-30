@@ -1,4 +1,5 @@
 import { RealtimeGateway } from './realtime.gateway';
+import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
 
 describe('RealtimeGateway — Authentication', () => {
   let gateway: RealtimeGateway;
@@ -13,6 +14,7 @@ describe('RealtimeGateway — Authentication', () => {
   let communitiesService: any;
   let blocksService: any;
   let socketMetrics: any;
+  let verificationAccess: any;
   let jwtGuard: any;
 
   beforeEach(() => {
@@ -48,6 +50,7 @@ describe('RealtimeGateway — Authentication', () => {
     socketMetrics = {
       registerServer: jest.fn(),
     };
+    verificationAccess = createVerificationAccessMock();
     jwtGuard = {
       validateToken: jest.fn(),
     };
@@ -64,6 +67,7 @@ describe('RealtimeGateway — Authentication', () => {
       communitiesService,
       blocksService,
       socketMetrics,
+      verificationAccess,
       jwtGuard,
     );
   });

@@ -16,6 +16,7 @@ import { RedisService } from '../../redis/redis.service';
 import { generatePublicId } from '../../common/utils/public-id.util';
 import { MentionsService } from '../../mentions/mentions.service';
 import { MediaCleanupService } from '../../uploads/media-cleanup.service';
+import { VerificationAccessService } from '../../common/verification/verification-access.service';
 
 @Injectable()
 export class GroupChatsService extends MessagingCoreService {
@@ -29,6 +30,9 @@ export class GroupChatsService extends MessagingCoreService {
     // Required (and ahead of the optional param): block filtering of the
     // notification fan-out runs through it on every group send.
     blocksService: BlocksService,
+    // Same reasoning as blocksService: verification gating on every send runs
+    // through this, so it must fail at boot rather than silently disappear.
+    verificationAccess: VerificationAccessService,
     @Optional() private readonly redisService?: RedisService,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {
@@ -38,6 +42,7 @@ export class GroupChatsService extends MessagingCoreService {
       domainEventService,
       mentionsService,
       blocksService,
+      verificationAccess,
     );
     this.redis = this.redisService?.getClient() ?? null;
   }
@@ -223,6 +228,15 @@ export class GroupChatsService extends MessagingCoreService {
       (id) => id && id !== currentUserId,
     );
     const allParticipantIds = [...new Set([...filteredUserIds, currentUserId])];
+
+    // Everyone in the founding roster must be eligible. Once the group exists
+    // a member whose verification later lapses only loses the ability to post
+    // (see the send-time check) — the group is not dissolved around them.
+    await this.verificationAccess.assertUsersEligible(
+      allParticipantIds,
+      currentUserId,
+    );
+
     const participantRows = allParticipantIds.map((id) => ({
       userId: id,
       role: id === currentUserId ? ('OWNER' as const) : ('MEMBER' as const),
@@ -580,21 +594,14 @@ export class GroupChatsService extends MessagingCoreService {
       throw err;
     }
 
-    if (
-      avatarVal !== undefined &&
-      conversation?.avatarKey &&
-      conversation.avatarKey !== updated.avatarKey
-    ) {
-      this.mediaCleanupService
-        ?.handleMediaReplacement(
-          'GROUP_AVATAR',
-          realConvId,
-          conversation.avatarKey,
-          updated.avatarKey,
-          userId,
-        )
-        .catch(() => {});
-    }
+    this.mediaCleanupService?.replaceEntityMedia({
+      entityType: 'GROUP_AVATAR',
+      entityId: realConvId,
+      previous: conversation?.avatarKey,
+      next: updated.avatarKey,
+      ownerId: userId,
+      submitted: avatarVal !== undefined,
+    });
 
     const participantIds = participantRows.map((p) => p.userId);
     this.invalidateUserConversationsCache(participantIds);
@@ -628,6 +635,14 @@ export class GroupChatsService extends MessagingCoreService {
     if (!participant) {
       throw new ForbiddenException('Not a member of this conversation');
     }
+
+    // Both sides of an add must be eligible: the member doing the adding, and
+    // the account being pulled in. Same neutral wording as the block refusal
+    // above, so the caller learns nothing about the target's status.
+    await this.verificationAccess.assertUsersEligible(
+      [requesterId, targetUserId],
+      requesterId,
+    );
 
     // Block enforcement: don't let a member pull someone they've blocked (or who
     // blocked them) into a shared group.

@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { groupApi } from '@shared/api/apiClient';
 import { useChatAreaState } from '@features/messages/shared/hooks/useChatAreaState';
+import { useMessagingEligibility } from '@shared/hooks/useMessagingEligibility';
+import { resolveComposerState } from '@shared/utils/messagingEligibility';
 import ChatAreaLayout from '@features/messages/shared/components/ChatAreaLayout';
 import GroupChatHeader from './GroupChatHeader';
 
@@ -68,14 +70,23 @@ export default function GroupChatArea({
     String(effectiveConv?.ownerId || effectiveConv?.hostId || effectiveConv?.creatorId) ===
     String(currentUser?.id) || (effectiveConv?.admins || []).includes(currentUser?.id);
 
-  const inputDisabled = isBanned || isKicked || isPending;
-  const inputDisabledReason = isBanned
-    ? 'You have been banned from this group'
-    : isKicked
-    ? 'You have been removed from this group'
-    : isPending
-    ? 'Your join request is pending'
-    : null;
+  // A group is gated on the sender only — one member losing verification must
+  // not silence the group for everyone else. Membership problems keep their own
+  // more specific wording and are checked first.
+  const { canSend, reason: verificationReason } = useMessagingEligibility(effectiveConv);
+
+  const { disabled: inputDisabled, reason: inputDisabledReason } =
+    resolveComposerState({
+      membershipReason: isBanned
+        ? 'You have been banned from this group'
+        : isKicked
+          ? 'You have been removed from this group'
+          : isPending
+            ? 'Your join request is pending'
+            : null,
+      canSend,
+      verificationReason,
+    });
 
   return (
     <ChatAreaLayout

@@ -6,6 +6,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { MentionsService } from '../mentions/mentions.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
+import { verificationAccessMockProvider } from '../common/verification/testing/verification-access.mock';
 
 describe('MessagesService', () => {
   let service: MessagesService;
@@ -15,6 +16,7 @@ describe('MessagesService', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        verificationAccessMockProvider(),
         MessagesService,
         {
           provide: PrismaService,

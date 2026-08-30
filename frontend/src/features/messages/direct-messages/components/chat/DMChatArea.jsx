@@ -1,4 +1,6 @@
 import { useChatAreaState } from '@features/messages/shared/hooks/useChatAreaState';
+import { useMessagingEligibility } from '@shared/hooks/useMessagingEligibility';
+import { resolveComposerState } from '@shared/utils/messagingEligibility';
 import ChatAreaLayout from '@features/messages/shared/components/ChatAreaLayout';
 import DMChatHeader from './DMChatHeader';
 
@@ -29,6 +31,20 @@ export default function DMChatArea({
     conversation?.isBlockedByMe || conversation?.isBlockedByThem || conversation?.blocked,
   );
 
+  // Messaging requires BOTH people to be verified. The conversation itself
+  // still opens and its history still renders — only the composer is replaced,
+  // and it comes back on its own the moment both sides are eligible again.
+  const { canSend, reason: unavailableReason } = useMessagingEligibility(conversation);
+
+  // One resolver, shared with the group chat area, so the precedence between a
+  // block and a verification lapse cannot drift between the two surfaces.
+  const composer = resolveComposerState({
+    isBlockedByMe: Boolean(conversation?.isBlockedByMe),
+    isBlocked,
+    canSend,
+    verificationReason: unavailableReason,
+  });
+
   return (
     <ChatAreaLayout
       {...state}
@@ -45,14 +61,8 @@ export default function DMChatArea({
       onSendMessage={onSendMessage}
       onBack={onBack}
       onNewMessage={onNewMessage}
-      inputDisabled={isBlocked}
-      inputDisabledReason={
-        conversation?.isBlockedByMe
-          ? 'You blocked this user. Unblock them to continue messaging.'
-          : isBlocked
-            ? 'You can no longer send messages to this user.'
-            : null
-      }
+      inputDisabled={composer.disabled}
+      inputDisabledReason={composer.reason}
       header={
         <DMChatHeader
           conversation={conversation}

@@ -20,6 +20,7 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import { NotificationFactory } from '../../notifications/notification.factory';
 import { SendMessageDto } from '../core/dto/send-message.dto';
 import { emitMessageNew } from '../message-alert.util';
+import { VerificationAccessService } from '../../common/verification/verification-access.service';
 
 @Controller('api/dm')
 export class DmController {
@@ -29,6 +30,7 @@ export class DmController {
     private readonly notificationsService: NotificationsService,
     private readonly notificationFactory: NotificationFactory,
     private readonly blocksService: BlocksService,
+    private readonly verificationAccess: VerificationAccessService,
   ) {}
 
   @Get()
@@ -52,6 +54,42 @@ export class DmController {
   ) {
     const userId = req.user?.id;
     return this.dmService.lookupExistingDM(userId, targetUserId);
+  }
+
+  /**
+   * Can these two people message each other right now?
+   *
+   * The composer state is derived from the conversation payload wherever one
+   * exists. This endpoint covers the case that has no conversation yet — the
+   * draft screen opened from a profile's Message button — so it can render the
+   * unavailable state without first creating a conversation row to ask about.
+   *
+   * Deliberately NOT `@VerifiedOnly()`: an unverified caller is precisely who
+   * needs the answer, and refusing them here would leave the draft screen
+   * unable to explain itself.
+   */
+  @Get('eligibility/:targetUserId')
+  @UseGuards(JwtGuard)
+  async getMessagingEligibility(
+    @Req() req: any,
+    @Param('targetUserId') targetUserId: string,
+  ) {
+    const userId = req.user?.id;
+    const map = await this.verificationAccess.getEligibilityMap([
+      userId,
+      targetUserId,
+    ]);
+    const selfEligible = map.get(userId) !== false;
+    const targetEligible =
+      !targetUserId || targetUserId === userId
+        ? selfEligible
+        : map.get(targetUserId) !== false;
+    return {
+      targetUserId,
+      selfEligible,
+      targetEligible,
+      canMessage: selfEligible && targetEligible,
+    };
   }
 
   @Post()

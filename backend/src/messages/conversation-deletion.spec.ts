@@ -6,6 +6,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { MentionsService } from '../mentions/mentions.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
+import { verificationAccessMockProvider } from '../common/verification/testing/verification-access.mock';
 
 /**
  * Deleting a conversation is per-participant, and permanent for the participant
@@ -52,6 +53,7 @@ describe('MessagesService — deleting a conversation', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        verificationAccessMockProvider(),
         MessagesService,
         { provide: PrismaService, useValue: prisma },
         {
@@ -179,6 +181,7 @@ describe('MessagingCoreService — per-user conversation actions', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        verificationAccessMockProvider(),
         MessagesService,
         { provide: PrismaService, useValue: prisma },
         {

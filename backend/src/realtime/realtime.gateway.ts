@@ -44,6 +44,7 @@ import { ActivityAuthorizationService } from '../activities/activity-authorizati
 import { MentionDto } from '../common/dto/mention.dto';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
+import { VerificationAccessService } from '../common/verification/verification-access.service';
 
 @WebSocketGateway({
   cors: {
@@ -94,6 +95,9 @@ export class RealtimeGateway
     // Reads the live connection count for the monitoring dashboard. The
     // gateway only hands over its server; it keeps no counters of its own.
     private readonly socketMetrics: SocketMetricsCollector,
+    // The same policy the HTTP guard and the messaging services use, so a
+    // socket cannot become the one path with a looser rule.
+    private readonly verificationAccess: VerificationAccessService,
     @Optional() private readonly jwtGuard?: JwtGuard,
   ) {}
 
@@ -275,6 +279,16 @@ export class RealtimeGateway
   }
 
   private handleDomainEvent(payload: any) {
+    // Cross-instance cache invalidation. VerificationAccessService caches
+    // status in process, and this handler runs on EVERY instance (the event
+    // arrives over Redis pub/sub), so an approval or revocation on one node
+    // evicts the stale entry on all of them. Without this the cache's TTL
+    // would be the real security window instead of a backstop.
+    if (payload.type === 'user:verification_changed') {
+      const changedUserId = payload.data?.userId || payload.targetUserId;
+      if (changedUserId) this.verificationAccess.invalidate(changedUserId);
+    }
+
     if (payload.type === 'user.settings_updated') {
       const uId = payload.targetUserId || payload.data?.userId;
       if (uId) {
@@ -948,6 +962,10 @@ export class RealtimeGateway
     const userId = (client as any).userId;
     const userName = (client as any).userName || 'Someone';
     if (!userId || !data?.conversationId) return;
+    // A typing indicator is a message-composer signal. Silently dropping it
+    // (rather than throwing) keeps a stale client from spraying error acks
+    // while it is refused; the composer it came from is already disabled.
+    if (!(await this.verificationAccess.isUserEligible(userId))) return;
     await this.emitToConversation(data.conversationId, 'typing:start', {
       conversationId: data.conversationId,
       userId,
