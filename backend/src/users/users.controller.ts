@@ -83,8 +83,14 @@ export class UsersController {
     return this.usersService.getOnlineFriends(req.user.id, limitNum);
   }
 
+  // The campus surfaces are verification-gated. The frontend already renders a
+  // locked page for them, but that gate wrapped only the JSX — the page's
+  // queries still ran, so an unverified account fetched the whole campus
+  // directory into its client cache and the lock was decoration. The read has
+  // to be refused here for the restriction to mean anything.
   @Get('campus')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   @CacheControl('private, no-cache')
   async getCampusUsers(
     @Req() req: any,
@@ -100,6 +106,7 @@ export class UsersController {
   // Registered before the catch-all `:username` route below.
   @Get('directory')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   @CacheControl('private, no-cache')
   async getDirectory(
     @Req() req: any,

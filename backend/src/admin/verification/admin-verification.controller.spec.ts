@@ -1,8 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AdminVerificationController } from './admin-verification.controller';
 import { AdminVerificationService } from './admin-verification.service';
-import { JwtGuard } from '../../common/guards/jwt.guard';
-import { AdminGuard } from '../../common/guards/admin.guard';
+import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import { VerificationStatus } from '@prisma/client';
 
 describe('AdminVerificationController', () => {
@@ -24,9 +23,7 @@ describe('AdminVerificationController', () => {
         },
       ],
     })
-      .overrideGuard(JwtGuard)
-      .useValue({ canActivate: jest.fn(() => true) })
-      .overrideGuard(AdminGuard)
+      .overrideGuard(AdminJwtGuard)
       .useValue({ canActivate: jest.fn(() => true) })
       .compile();
 
@@ -56,14 +53,46 @@ describe('AdminVerificationController', () => {
   });
 
   describe('updateStatus', () => {
+    /** What AdminJwtGuard attaches after verifying the admin session. */
+    const req = { admin: { id: 'super-admin-7' } };
+
     it('should call updateStatus on service with correct params', async () => {
       const updateResponse = { request: { id: 'req-1' }, user: { id: 'user-1' } };
       mockAdminVerificationService.updateStatus.mockResolvedValue(updateResponse);
 
-      const result = await controller.updateStatus('req-1', VerificationStatus.VERIFIED, 'Looks good');
+      const result = await controller.updateStatus(
+        req,
+        'req-1',
+        VerificationStatus.VERIFIED,
+        'Looks good',
+      );
 
-      expect(service.updateStatus).toHaveBeenCalledWith('req-1', VerificationStatus.VERIFIED, 'Looks good');
+      expect(service.updateStatus).toHaveBeenCalledWith(
+        'req-1',
+        VerificationStatus.VERIFIED,
+        'Looks good',
+        'super-admin-7',
+      );
       expect(result).toEqual(updateResponse);
+    });
+
+    it('takes the reviewer from the session, never from the request body', async () => {
+      mockAdminVerificationService.updateStatus.mockResolvedValue({});
+
+      await controller.updateStatus(
+        // A caller trying to attribute the review to someone else.
+        { admin: { id: 'super-admin-7' }, body: { reviewerId: 'super-admin-1' } },
+        'req-1',
+        VerificationStatus.REJECTED,
+        'Blurry',
+      );
+
+      expect(service.updateStatus).toHaveBeenCalledWith(
+        'req-1',
+        VerificationStatus.REJECTED,
+        'Blurry',
+        'super-admin-7',
+      );
     });
   });
 });

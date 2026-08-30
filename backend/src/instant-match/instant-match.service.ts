@@ -9,6 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BlocksService } from '../users/blocks.service';
+import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { MessagesService } from '../messages/messages.service';
 import {
   computeCompatibility,
@@ -198,6 +199,7 @@ export class InstantMatchService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly messagesService: MessagesService,
     private readonly blocksService: BlocksService,
+    private readonly verificationAccess: VerificationAccessService,
   ) {}
 
   onModuleInit() {
@@ -215,11 +217,10 @@ export class InstantMatchService implements OnModuleInit {
    * existing entry rather than stacking duplicates (userId is unique).
    */
   async joinQueue(dto: JoinQueueDto): Promise<void> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: dto.userId },
-      select: { verificationStatus: true },
-    });
-    if (!user || user.verificationStatus !== 'VERIFIED') {
+    // Through the shared policy rather than its own `verificationStatus !==
+    // 'VERIFIED'` comparison: one definition of eligibility, one feature flag,
+    // and the cached lookup the rest of the app already pays for.
+    if (!(await this.verificationAccess.isUserEligible(dto.userId))) {
       throw new ForbiddenException('Account verification is required for Instant Match');
     }
 
@@ -652,6 +653,33 @@ export class InstantMatchService implements OnModuleInit {
     if (!fresh || fresh.status !== 'PENDING') return;
     if (!fresh.aAccepted || !fresh.bAccepted) {
       this.logger.log(`match:half-accepted ${session.id}`);
+      return;
+    }
+
+    // Re-check eligibility for BOTH people before the chat exists.
+    //
+    // The `@VerifiedOnly()` guard on `match:respond` only vouches for whoever
+    // is calling right now; it says nothing about the other side, whose
+    // verification may have been revoked at any point while this match sat
+    // PENDING. Without this, a pair matched minutes ago could still be handed
+    // a 24h conversation with someone who is no longer allowed to message —
+    // and the messaging layer would then refuse every send inside a chat the
+    // product had just promised them.
+    const eligibility = await this.verificationAccess.getEligibilityMap([
+      session.userAId,
+      session.userBId,
+    ]);
+    if (
+      eligibility.get(session.userAId) === false ||
+      eligibility.get(session.userBId) === false
+    ) {
+      this.logger.warn(
+        `match:refused-ineligible ${session.id} — a participant is no longer eligible`,
+      );
+      await this.prisma.matchSession.updateMany({
+        where: { id: session.id, status: 'PENDING' },
+        data: { status: 'EXPIRED' },
+      });
       return;
     }
 

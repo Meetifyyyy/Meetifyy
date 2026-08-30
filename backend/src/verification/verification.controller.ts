@@ -3,7 +3,12 @@ import { VerificationService } from './verification.service';
 import { JwtGuard } from '../common/guards';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
-@Controller('verification')
+// `api/verification`, not `verification`. Every other user-facing controller in
+// the app is mounted under `api/`, the client has always posted to
+// `/api/verification/request`, and there is no global prefix — so this handler
+// was mounted at a path nothing called. Submitting verification 404'd, which is
+// why no account could progress past UNVERIFIED through the UI at all.
+@Controller('api/verification')
 @UseGuards(JwtGuard)
 export class VerificationController {
   constructor(private readonly verificationService: VerificationService) {}

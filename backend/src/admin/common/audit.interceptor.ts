@@ -51,6 +51,7 @@ export class AuditInterceptor implements NestInterceptor {
         else if (url.includes('/admin/flags')) targetType = 'FEATURE_FLAG';
         else if (url.includes('/admin/settings')) targetType = 'SYSTEM_SETTING';
         else if (url.includes('/admin/content')) targetType = 'CONTENT';
+        else if (url.includes('/admin/verification')) targetType = 'VERIFICATION';
 
         if (
           !targetId &&
@@ -71,7 +72,20 @@ export class AuditInterceptor implements NestInterceptor {
           action = 'USER_UPDATE_CAPABILITIES';
         else if (url.includes('/force-logout')) action = 'USER_FORCE_LOGOUT';
         else if (url.includes('/campus-rep')) action = 'USER_SET_CAMPUS_REP';
-        else if (url.includes('/status'))
+        // Checked before the generic `/status` rule below, which would
+        // otherwise flatten an identity decision into VERIFICATION_STATUS_CHANGE
+        // and lose which way it went.
+        else if (targetType === 'VERIFICATION' && url.includes('/status')) {
+          const decided = String(body?.status || '').toUpperCase();
+          action =
+            decided === 'VERIFIED'
+              ? 'VERIFICATION_APPROVE'
+              : decided === 'REJECTED'
+                ? 'VERIFICATION_REJECT'
+                : decided === 'RESUBMISSION_REQUIRED'
+                  ? 'VERIFICATION_REQUEST_RESUBMISSION'
+                  : 'VERIFICATION_STATUS_CHANGE';
+        } else if (url.includes('/status'))
           action = `${targetType}_STATUS_CHANGE`;
         else if (url.includes('/domains')) action = 'COLLEGE_DOMAIN_CHANGE';
         else if (url.includes('/reply')) action = 'SUPPORT_TICKET_REPLY';
@@ -81,6 +95,11 @@ export class AuditInterceptor implements NestInterceptor {
         delete sanitizedBody.password;
         delete sanitizedBody.otp;
         delete sanitizedBody.totpCode;
+        // A reviewer's note can quote what they saw on an identity document.
+        // The decision and who made it are what an audit trail needs; the
+        // note's contents are not, and this row is read back into an admin
+        // list view. The reason itself is still stored on the request row.
+        if (targetType === 'VERIFICATION') delete sanitizedBody.adminNotes;
 
         // Async write to AuditLog (non-blocking)
         this.prisma.auditLog

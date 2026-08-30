@@ -4,6 +4,7 @@ import {
   setRealtimeGatewayRef,
 } from './instant-match.service';
 import { PrismaFake } from './testing/prisma-fake';
+import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
 
 /**
  * The dedicated 24h Instant Match chat.
@@ -69,6 +70,7 @@ describe('Instant Match chat lifecycle', () => {
       prisma as any,
       messages,
       blocksStubFor(prisma),
+      createVerificationAccessMock() as any,
     );
   });
 
