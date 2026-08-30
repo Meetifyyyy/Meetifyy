@@ -20,6 +20,7 @@ import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import { useJoinActivity } from '../hooks/useJoinActivity';
 import { useActivityLifecycle } from '../hooks/useActivityLifecycle';
 import { useActivityById, useActivityAttendees } from '@shared/hooks/useCrew';
+import { useAmbientTint } from '@shared/hooks/useAmbientTint';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 // Deferred: the discussion pulls its own message page and joins a socket room.
 // Loading it with the route made the detail page wait on a module and a request
@@ -30,6 +31,7 @@ const ActivityDiscussion = lazy(() =>
 );
 import ActivityDetailSkeleton from '../components/ActivityDetailSkeleton';
 import NotFoundState from '@shared/components/ui/NotFoundState';
+import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import { activitiesApi, getMediaUrl } from '@shared/api/apiClient';
 
 /* ── Access denied ─────────────────────────────────────────────
@@ -311,63 +313,11 @@ export default function ActivityDetailPage() {
   const isMobile = useIsMobile();
   const containerRef = useRef(null);
 
-  useEffect(() => {
-    const solid = activity?.coverColor;
-    if (solid) {
-      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(solid);
-      if (m && containerRef.current) {
-        containerRef.current.style.setProperty(
-          '--extracted-rgb',
-          `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}`,
-        );
-      }
-      return;
-    }
-
-    const coverImage = activity?.coverImage;
-    if (!coverImage) return;
-
-    let active = true;
-    const timer = setTimeout(() => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.src = coverImage;
-      img.onload = () => {
-        if (!active) return;
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = 10;
-          canvas.height = 10;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return;
-          ctx.drawImage(img, 0, 0, 10, 10);
-          const data = ctx.getImageData(0, 0, 10, 10).data;
-
-          let r = 0, g = 0, b = 0, count = 0;
-          for (let i = 0; i < data.length; i += 4) {
-            r += data[i];
-            g += data[i+1];
-            b += data[i+2];
-            count++;
-          }
-          r = Math.round(r / count);
-          g = Math.round(g / count);
-          b = Math.round(b / count);
-
-          if (containerRef.current) {
-            containerRef.current.style.setProperty('--extracted-rgb', `${r}, ${g}, ${b}`);
-          }
-        } catch (e) {
-          console.warn('Failed to extract dominant color from cover image:', e);
-        }
-      };
-    }, 50);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [activity?.coverImage, activity?.coverColor]);
+  useAmbientTint(containerRef, {
+    coverImage: activity?.coverImage,
+    coverColor: activity?.coverColor,
+    coverMode: activity?.coverMode || (activity?.coverColor ? 'color' : 'image'),
+  });
 
   const [showShareModal, setShowShareModal] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
@@ -526,26 +476,37 @@ export default function ActivityDetailPage() {
   const coverColor = activity?.coverColor || null;
   const coverImgUrl = activity?.coverImage ? getMediaUrl(activity.coverImage) : getDefaultCover(title || cleanId);
 
+  useEffect(() => {
+    if (currentUser && currentUser.verificationStatus !== 'VERIFIED') {
+      openVerificationModal('Verify your account to view activity details.');
+      navigate('/crew', { replace: true });
+    }
+  }, [currentUser, navigate]);
+
+  if (currentUser?.verificationStatus !== 'VERIFIED') {
+    return null;
+  }
+
   return (
     <div ref={containerRef} data-theme="dark" className={styles.root}>
-      {/* Ambient Blurred Background */}
-      <div className={styles.ambientBg}>
-        {coverColor ? (
-          <div className={styles.ambientImg} style={{ background: coverColor }} />
-        ) : (
-          <img 
-            src={coverImgUrl} 
-            alt="" 
-            className={styles.ambientImg} 
-            onError={(e) => {
-              e.target.onerror = null;
-              e.target.src = DEFAULT_COVERS[0];
-            }}
-          />
-        )}
-      </div>
+        {/* Ambient Blurred Background */}
+        <div className={styles.ambientBg}>
+          {coverColor ? (
+            <div className={styles.ambientImg} style={{ background: coverColor }} />
+          ) : (
+            <img 
+              src={coverImgUrl} 
+              alt="" 
+              className={styles.ambientImg} 
+              onError={(e) => {
+                e.target.onerror = null;
+                e.target.src = DEFAULT_COVERS[0];
+              }}
+            />
+          )}
+        </div>
 
-      <div className={styles.glass}>
+        <div className={styles.glass}>
         {/* Top Bar */}
         <div className={styles.topBar}>
           <div className={styles.headerLeft}>
