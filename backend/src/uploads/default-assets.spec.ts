@@ -56,31 +56,29 @@ describe('default asset backfill', () => {
 
   it('matches a NULL column with an explicit OR, never an IN list', async () => {
     const { communities } = await run();
-    const coverCall = communities.find((c) => 'coverKey' in c.data);
+    const avatarCall = communities.find((c) => 'avatarKey' in c.data);
 
-    expect(coverCall.where).toEqual({
-      OR: [{ coverKey: null }, { coverKey: '' }],
+    expect(avatarCall.where).toEqual({
+      OR: [{ avatarKey: null }, { avatarKey: '' }],
     });
     // The shape that silently matched nothing.
-    expect(JSON.stringify(coverCall.where)).not.toContain('"in"');
+    expect(JSON.stringify(avatarCall.where)).not.toContain('"in"');
   });
 
   it('treats an empty string as missing too', async () => {
     // Older code wrote '' rather than NULL; both mean "no image chosen".
     const { users } = await run();
-    const coverCall = users.find((c) => 'cover' in c.data);
-    expect(coverCall.where.OR).toContainEqual({ cover: '' });
+    const avatarCall = users.find((c) => 'avatar' in c.data);
+    expect(avatarCall.where.OR).toContainEqual({ avatar: '' });
   });
 
-  it('fills all four fields', async () => {
+  it('fills avatar fields', async () => {
     const { communities, users } = await run();
     expect(communities.map((c) => Object.keys(c.data)[0]).sort()).toEqual([
       'avatarKey',
-      'coverKey',
     ]);
     expect(users.map((c) => Object.keys(c.data)[0]).sort()).toEqual([
       'avatar',
-      'cover',
     ]);
   });
 
@@ -175,27 +173,27 @@ describe('repointing records onto the current defaults', () => {
     );
   };
 
-  it('moves user covers and community covers onto the current version', async () => {
+  it('moves user avatars and community avatars onto the current version', async () => {
     const { callFor } = await run();
 
-    expect(callFor('user', 'cover').data.cover).toBe(
-      '/api/media/defaults/profile-cover-v2.webp',
+    expect(callFor('user', 'avatar').data.avatar).toBe(
+      '/api/media/defaults/profile-avatar-v2.webp',
     );
-    expect(callFor('community', 'coverKey').data.coverKey).toBe(
-      '/api/media/defaults/community-cover-v2.webp',
+    expect(callFor('community', 'avatarKey').data.avatarKey).toBe(
+      '/api/media/defaults/community-avatar-v2.webp',
     );
   });
 
   it('selects exactly the rows still on an older default', async () => {
     const { callFor } = await run();
-    const { where } = callFor('user', 'cover');
+    const { where } = callFor('user', 'avatar');
 
     expect(
-      matches(where, 'cover', '/api/media/defaults/profile-cover-v1.webp'),
+      matches(where, 'avatar', '/api/media/defaults/profile-avatar-v1.webp'),
     ).toBe(true);
     // Already current — updating it again would be pure write amplification.
     expect(
-      matches(where, 'cover', '/api/media/defaults/profile-cover-v2.webp'),
+      matches(where, 'avatar', '/api/media/defaults/profile-avatar-v2.webp'),
     ).toBe(false);
   });
 
@@ -203,32 +201,31 @@ describe('repointing records onto the current defaults', () => {
     // The whole safety argument: uploads never live under `defaults/`, so no
     // chosen image can satisfy the prefix, however it was stored.
     const { callFor } = await run();
-    const { where } = callFor('user', 'cover');
+    const { where } = callFor('user', 'avatar');
 
     for (const chosen of [
       '/api/media/covers/dfcb6659-8590-4643-93ad-d79f0e429c1b.webp',
       '/api/media/avatars/a307fc54.webp',
-      'https://cdn.example.com/defaults/profile-cover-v1.webp',
+      'https://cdn.example.com/defaults/profile-avatar-v1.webp',
       'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
       '',
       null,
     ]) {
-      expect(matches(where, 'cover', chosen)).toBe(false);
+      expect(matches(where, 'avatar', chosen)).toBe(false);
     }
   });
 
   it('does not let one asset claim another asset rows', async () => {
-    // `profile-cover-` and `profile-avatar-` must not overlap, or a bump would
-    // shuffle avatars into covers.
+    // `profile-avatar-` and `community-avatar-` must not overlap.
     const { callFor } = await run();
-    const cover = callFor('user', 'cover').where;
-    const avatar = callFor('user', 'avatar').where;
+    const commAvatar = callFor('community', 'avatarKey').where;
+    const userAvatar = callFor('user', 'avatar').where;
 
     expect(
-      matches(cover, 'cover', '/api/media/defaults/profile-avatar-v1.webp'),
+      matches(commAvatar, 'avatarKey', '/api/media/defaults/profile-avatar-v1.webp'),
     ).toBe(false);
     expect(
-      matches(avatar, 'avatar', '/api/media/defaults/profile-cover-v1.webp'),
+      matches(userAvatar, 'avatar', '/api/media/defaults/community-avatar-v1.webp'),
     ).toBe(false);
   });
 
