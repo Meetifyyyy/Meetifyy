@@ -14,6 +14,7 @@ import { Request, Response } from 'express';
 import { PostsService } from './posts.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import {
   IsString,
   IsOptional,
@@ -93,6 +94,7 @@ export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
   @Post()
+  @VerifiedOnly()
   async createPost(
     @CurrentUser() user: { id: string },
     @Body() dto: CreatePostDto,
@@ -109,6 +111,7 @@ export class PostsController {
   }
 
   @Delete(':id')
+  @VerifiedOnly()
   async deletePost(
     @CurrentUser() user: { id: string },
     @Param('id') id: string,
@@ -176,11 +179,13 @@ export class PostsController {
   }
 
   @Post(':id/like')
+  @VerifiedOnly()
   async like(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.postsService.likePost(id, user.id);
   }
 
   @Post(':id/unlike')
+  @VerifiedOnly()
   async unlike(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.postsService.unlikePost(id, user.id);
   }
@@ -197,6 +202,7 @@ export class PostsController {
   }
 
   @Post(':id/comments')
+  @VerifiedOnly()
   async addComment(
     @CurrentUser() user: { id: string },
     @Param('id') id: string,
@@ -212,6 +218,7 @@ export class PostsController {
   }
 
   @Post('comments/:commentId/like')
+  @VerifiedOnly()
   async likeComment(
     @CurrentUser() user: { id: string },
     @Param('commentId') commentId: string,
@@ -220,6 +227,7 @@ export class PostsController {
   }
 
   @Post('comments/:commentId/unlike')
+  @VerifiedOnly()
   async unlikeComment(
     @CurrentUser() user: { id: string },
     @Param('commentId') commentId: string,
@@ -228,6 +236,7 @@ export class PostsController {
   }
 
   @Delete('comments/:commentId')
+  @VerifiedOnly()
   async deleteComment(
     @CurrentUser() user: { id: string },
     @Param('commentId') commentId: string,
@@ -236,11 +245,13 @@ export class PostsController {
   }
 
   @Post(':id/bookmark')
+  @VerifiedOnly()
   async bookmark(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.postsService.bookmarkPost(id, user.id);
   }
 
   @Delete(':id/bookmark')
+  @VerifiedOnly()
   async unbookmark(
     @CurrentUser() user: { id: string },
     @Param('id') id: string,
@@ -249,6 +260,7 @@ export class PostsController {
   }
 
   @Post(':id/vote')
+  @VerifiedOnly()
   async voteInPoll(
     @CurrentUser() user: { id: string },
     @Param('id') id: string,

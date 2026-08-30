@@ -621,6 +621,14 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   async joinCommunity(communityId: string, userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { verificationStatus: true },
+    });
+    if (!user || user.verificationStatus !== 'VERIFIED') {
+      throw new ForbiddenException('Verify your account to join communities');
+    }
+
     const community = await this.prisma.community.findUnique({
       where: { id: communityId },
       include: { college: { select: { name: true } } },
@@ -778,6 +786,14 @@ export class CommunitiesService implements OnModuleInit {
       throw new NotFoundException('Join request not found');
     }
 
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: joinReq.userId },
+      select: { verificationStatus: true },
+    });
+    if (!targetUser || targetUser.verificationStatus !== 'VERIFIED') {
+      throw new ForbiddenException('The requesting user is not verified');
+    }
+
     let newMemberCount = 0;
     await this.prisma.$transaction(async (tx) => {
       await tx.communityJoinRequest.update({
@@ -926,6 +942,14 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   async createCommunity(data: any, creatorId: string) {
+    const creator = await this.prisma.user.findUnique({
+      where: { id: creatorId },
+      select: { verificationStatus: true },
+    });
+    if (!creator || creator.verificationStatus !== 'VERIFIED') {
+      throw new ForbiddenException('Verify your account to create communities');
+    }
+
     const rawSlug = (data.name || 'community')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')

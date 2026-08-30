@@ -13,6 +13,7 @@ import {
 import { CampusEventsService } from './campus-events.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import {
   CreateCampusEventDto,
   UpdateCampusEventDto,
@@ -59,11 +60,13 @@ export class CampusEventsController {
   }
 
   @Post()
+  @VerifiedOnly()
   async create(@Body() dto: CreateCampusEventDto, @CurrentUser() user: any) {
     return this.service.create(user.id, dto);
   }
 
   @Patch(':id')
+  @VerifiedOnly()
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateCampusEventDto,
@@ -73,11 +76,13 @@ export class CampusEventsController {
   }
 
   @Post(':id/publish')
+  @VerifiedOnly()
   async publish(@Param('id') id: string, @CurrentUser() user: any) {
     return this.service.publish(user.id, id);
   }
 
   @Delete(':id')
+  @VerifiedOnly()
   async remove(@Param('id') id: string, @CurrentUser() user: any) {
     return this.service.remove(user.id, id);
   }

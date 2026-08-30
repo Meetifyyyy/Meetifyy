@@ -14,6 +14,7 @@ import {
 import { DmService } from './dm.service';
 import { BlocksService } from '../../users/blocks.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
+import { VerifiedOnly } from '../../common/decorators/verified-only.decorator';
 import { DomainEventService } from '../../events/domain-event.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { NotificationFactory } from '../../notifications/notification.factory';
@@ -55,6 +56,7 @@ export class DmController {
 
   @Post()
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async startDM(
     @Req() req: any,
     @Body('targetUserId') targetUserId?: string,
@@ -80,6 +82,7 @@ export class DmController {
 
   @Post('instant-match')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async createInstantMatch(
     @Req() req: any,
     @Body() body: { targetUserId: string; activity: string },
@@ -112,6 +115,7 @@ export class DmController {
 
   @Post(':id/messages')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async sendMessage(
     @Req() req: any,
     @Param('id') conversationId: string,
@@ -287,6 +291,7 @@ export class DmController {
 
   @Post('msg/:messageId/forward')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async forwardMessage(
     @Req() req: any,
     @Param('messageId') messageId: string,

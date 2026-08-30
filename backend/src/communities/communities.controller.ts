@@ -14,6 +14,7 @@ import {
 import { CommunitiesService } from './communities.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import {
   CreateCommunityDto,
   UpdateCommunityDto,
@@ -98,6 +99,7 @@ export class CommunitiesController {
   }
 
   @Post(':id/join')
+  @VerifiedOnly()
   async joinCommunity(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: any,
@@ -122,6 +124,7 @@ export class CommunitiesController {
   }
 
   @Post(':id/requests/:requestId/accept')
+  @VerifiedOnly()
   async acceptJoinRequest(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('requestId', ParseUUIDPipe) requestId: string,
@@ -131,6 +134,7 @@ export class CommunitiesController {
   }
 
   @Post(':id/requests/:requestId/decline')
+  @VerifiedOnly()
   async declineJoinRequest(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('requestId', ParseUUIDPipe) requestId: string,
@@ -140,6 +144,7 @@ export class CommunitiesController {
   }
 
   @Post()
+  @VerifiedOnly()
   async createCommunity(
     @Body() data: CreateCommunityDto,
     @CurrentUser() user: any,
@@ -148,6 +153,7 @@ export class CommunitiesController {
   }
 
   @Patch(':id')
+  @VerifiedOnly()
   async updateCommunity(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() data: UpdateCommunityDto,
@@ -176,6 +182,7 @@ export class CommunitiesController {
   }
 
   @Patch(':id/members/:userId/role')
+  @VerifiedOnly()
   async updateMemberRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('userId', ParseUUIDPipe) memberId: string,
@@ -191,6 +198,7 @@ export class CommunitiesController {
   }
 
   @Delete(':id/members/:userId')
+  @VerifiedOnly()
   async removeMember(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('userId', ParseUUIDPipe) memberId: string,
@@ -200,6 +208,7 @@ export class CommunitiesController {
   }
 
   @Delete(':id')
+  @VerifiedOnly()
   async deleteCommunity(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: any,

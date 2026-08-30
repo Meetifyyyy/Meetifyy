@@ -137,6 +137,8 @@ model Media {
   messageAttachments  Message[]      @relation("MessageAttachment")
   avatarUsers         User[]         @relation("UserAvatar")
   coverUsers          User[]         @relation("UserCover")
+  verificationSelfies VerificationRequest[] @relation("VerificationSelfie")
+  verificationIdCards VerificationRequest[] @relation("VerificationIdCard")
 
   @@index([postId])
 }
@@ -171,6 +173,7 @@ model User {
   canPost                    Boolean                     @default(true)
   canMessage                 Boolean                     @default(true)
   canActivity                Boolean                     @default(true)
+  verificationStatus         VerificationStatus          @default(UNVERIFIED)
   // Campus Representative flag. Assignable ONLY by a Super Admin (admin portal);
   // never accepted by any /api/* user-facing endpoint or profile update.
   isCampusRep                Boolean                     @default(false)
@@ -217,6 +220,7 @@ model User {
   college                    College?                    @relation(fields: [collegeId], references: [id])
   coverMedia                 Media?                      @relation("UserCover", fields: [coverMediaId], references: [id])
   settings                   UserSettings?
+  verificationRequest        VerificationRequest?
 
   @@index([collegeId])
   @@index([collegeId, createdAt(sort: Desc)])
@@ -887,6 +891,7 @@ model SuperAdmin {
   loginAudits            LoginAudit[]
   sessions               SuperAdminSession[]
   assignedSupportTickets SupportTicket[]     @relation("AssignedSupportTickets")
+  reviewedVerifications  VerificationRequest[] @relation("VerificationReviewer")
 }
 
 model SuperAdminSession {
@@ -1599,6 +1604,34 @@ enum ActivityInvitationStatus {
   DECLINED
   CANCELLED
   EXPIRED
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+  RESUBMISSION_REQUIRED
+}
+
+model VerificationRequest {
+  id              String             @id @default(uuid())
+  userId          String             @unique
+  status          VerificationStatus @default(PENDING)
+  selfieMediaId   String
+  idCardMediaId   String
+  rejectionReason String?            @db.VarChar(500)
+  reviewerId      String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewer    SuperAdmin? @relation("VerificationReviewer", fields: [reviewerId], references: [id])
+  selfieMedia Media       @relation("VerificationSelfie", fields: [selfieMediaId], references: [id])
+  idCardMedia Media       @relation("VerificationIdCard", fields: [idCardMediaId], references: [id])
+
+  @@index([status])
+  @@index([status, createdAt])
 }
 
 enum CommunityRequestStatus {

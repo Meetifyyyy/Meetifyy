@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { DomainEventService } from '../events/domain-event.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
@@ -81,6 +82,7 @@ export class MessagesController {
 
   @Post('msg/:messageId/forward')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async forwardMessage(
     @Req() req: any,
     @Param('messageId') messageId: string,
@@ -217,6 +219,7 @@ export class MessagesController {
 
   @Post(':id/messages')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async sendMessage(
     @Req() req: any,
     @Param('id') conversationId: string,

@@ -3,6 +3,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AdminAuthModule } from './auth/admin-auth.module';
 import { AdminCollegesModule } from './colleges/admin-colleges.module';
 import { AdminUsersModule } from './users/admin-users.module';
+import { AdminVerificationModule } from './verification/admin-verification.module';
 import { AdminReportsModule } from './reports/admin-reports.module';
 import { AdminDashboardModule } from './dashboard/admin-dashboard.module';
 import { AdminSupportModule } from './support/admin-support.module';
@@ -20,6 +21,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     AdminAuthModule,
     AdminCollegesModule,
     AdminUsersModule,
+    AdminVerificationModule,
     AdminReportsModule,
     AdminDashboardModule,
     AdminSupportModule,
