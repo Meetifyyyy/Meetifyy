@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ShieldOff, Search } from '@shared/components/icons';
 import { apiClient } from '@shared/api/apiClient';
+import Skeleton from '@shared/components/skeletons/Skeleton';
 import BlockedContactRow from './BlockedContactRow';
 import UnblockConfirmDialog from './UnblockConfirmDialog';
 import styles from './BlockedContacts.module.css';
@@ -138,7 +139,18 @@ export default function BlockedContacts() {
   if (isLoading) {
     return (
       <div className={`${styles.panel} animate-in`}>
-        <div className={styles.loading}>Loading…</div>
+        <div className={styles.list}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className={styles.row}>
+              <Skeleton type="circle" width="44px" height="44px" />
+              <div className={styles.rowText}>
+                <Skeleton type="rect" width="120px" height="14px" style={{ borderRadius: '4px', marginBottom: '6px' }} />
+                <Skeleton type="rect" width="70px" height="12px" style={{ borderRadius: '4px' }} />
+              </div>
+              <Skeleton type="rect" width="72px" height="32px" style={{ borderRadius: 'var(--radius-full, 9999px)' }} />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

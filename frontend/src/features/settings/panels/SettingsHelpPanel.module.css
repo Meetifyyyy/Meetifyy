@@ -1,0 +1,250 @@
+/* ── Settings Help & Support Panel Specific Styles ── */
+
+.firstSectionLabel {
+  padding-top: 4px !important;
+}
+
+/* FAQ Accordion inside standard .group card */
+.faqList {
+  display: flex;
+  flex-direction: column;
+}
+
+.faqItem {
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+:global([data-theme="dark"]) .faqItem {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+.faqItem:last-child {
+  border-bottom: none;
+}
+
+.faqQuestion {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 16px var(--settings-gutter);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--color-text-main);
+  transition: background var(--transition-fast);
+}
+
+.faqQuestion:hover {
+  background: var(--color-bg-soft);
+}
+
+/* Remove click depth / scale effect on mouse click & large screens */
+.faqQuestion:active {
+  transform: none !important;
+  opacity: 1 !important;
+}
+
+@media (min-width: 1024px), (hover: hover) and (pointer: fine) {
+  .faqQuestion,
+  .faqQuestion:active {
+    transform: none !important;
+  }
+}
+
+.faqQuestionText {
+  font-family: var(--font-family-sans);
+  font-size: 0.89rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  line-height: 1.35;
+  flex: 1;
+}
+
+:global([data-theme="dark"]) .faqQuestionText {
+  color: #f8fafc;
+}
+
+.faqChevron {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  transition: transform var(--transition-fast);
+}
+
+.faqChevronOpen {
+  transform: rotate(180deg);
+  color: var(--color-primary);
+}
+
+/* FAQ Answer Content Formatting */
+.faqAnswer {
+  padding: 0 var(--settings-gutter) 16px;
+  font-family: var(--font-family-sans);
+  font-size: 0.865rem;
+  color: var(--color-text-muted, #64748b);
+  line-height: 1.6;
+  animation: faqFadeIn 0.16s ease-out;
+}
+
+:global([data-theme="dark"]) .faqAnswer {
+  color: #94a3b8;
+}
+
+.faqAnswer > :first-child {
+  margin-top: 0;
+}
+
+.faqAnswer > :last-child {
+  margin-bottom: 0;
+}
+
+.faqAnswer p {
+  margin: 0 0 0.65rem;
+  line-height: 1.6;
+}
+
+.faqAnswer ol {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 1.35rem;
+  list-style-type: decimal;
+}
+
+.faqAnswer ul {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 1.35rem;
+  list-style-type: disc;
+}
+
+.faqAnswer li {
+  margin-bottom: 0.45rem;
+  line-height: 1.55;
+  color: var(--color-text-muted, #64748b);
+}
+
+:global([data-theme="dark"]) .faqAnswer li {
+  color: #94a3b8;
+}
+
+.faqAnswer li::marker {
+  color: var(--color-text-muted, #94a3b8);
+  font-weight: 600;
+}
+
+:global([data-theme="dark"]) .faqAnswer li::marker {
+  color: #cbd5e1;
+}
+
+.faqAnswer li:last-child {
+  margin-bottom: 0;
+}
+
+.faqAnswer strong {
+  color: var(--color-text-main, #0f172a);
+  font-weight: 600;
+}
+
+:global([data-theme="dark"]) .faqAnswer strong {
+  color: #f8fafc;
+}
+
+.faqAnswer em {
+  font-style: italic;
+}
+
+.faqAnswer a {
+  color: var(--color-primary, #3b82f6);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@keyframes faqFadeIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Skeleton Loading inside .group */
+.skeletonItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px var(--settings-gutter);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.skeletonItem:last-child {
+  border-bottom: none;
+}
+
+/* Error Notice inside .group */
+.errorNotice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px var(--settings-gutter);
+}
+
+.errorTitle {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--color-danger, #ef4444);
+  margin: 0;
+}
+
+.errorSubtext {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin: 2px 0 0;
+}
+
+.retryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-white);
+  color: var(--color-text-main);
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast);
+}
+
+.retryBtn:hover {
+  background: var(--color-bg-soft);
+}
+
+:global([data-theme="dark"]) .retryBtn {
+  background: var(--color-bg-alt);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+}
+
+/* Empty Notice */
+.emptyNotice {
+  padding: 18px var(--settings-gutter);
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+}
+
+/* Contact Link Row Overrides */
+.linkRow {
+  text-decoration: none !important;
+  color: var(--color-text-main) !important;
+}
+
+.linkRow:hover,
+.linkRow:focus,
+.linkRow:visited {
+  text-decoration: none !important;
+  color: var(--color-text-main) !important;
+}
+
+.linkRow span {
+  text-decoration: none !important;
+}

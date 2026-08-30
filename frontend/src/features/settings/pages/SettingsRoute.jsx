@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation, useParams, Navigate, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
@@ -15,14 +15,16 @@ import { validateAcademicSelection } from '@shared/academics/academicCatalog';
 import {
   Pencil, Lock, Eye, EyeOff, AlertCircle, Trash2,
   User, GraduationCap, Shield, Bell, HelpCircle, LogOut,
-  ChevronRight, ChevronDown, Check, X, Mail, Ban, CheckCircle2,
+  ChevronRight, ChevronDown, Check, Ban,
+  LockKeyhole, Cookie,
 } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import styles from './SettingsRoute.module.css';
 import useDevToolsStore from '@shared/stores/devToolsStore';
 import BlockedContacts from '../panels/BlockedContacts';
 import SettingsVerificationPanel from '../panels/SettingsVerificationPanel';
-import { IS_DEV_BUILD, config } from '@config';
+import SettingsHelpPanel from '../panels/SettingsHelpPanel';
+import { IS_DEV_BUILD } from '@config';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
 
 // Large-device split layout only kicks in at this width — tablets and phones
@@ -33,10 +35,10 @@ const LARGE_SCREEN_QUERY = '(min-width: 1024px)';
 // live in component state seeded from location.state, which meant it could not
 // be linked to, did not survive a reload, and gave mobile Back nothing to pop —
 // so Back from a sub-page left Settings altogether.
-const SETTINGS_PANELS = ['profile', 'academic', 'security', 'privacy', 'notifications', 'interests', 'blocked-contacts', 'verification'];
+const SETTINGS_PANELS = ['profile', 'academic', 'security', 'privacy', 'notifications', 'interests', 'blocked-contacts', 'verification', 'help'];
 
 // Old links and in-app callers that still say `account` mean the profile panel.
-const PANEL_ALIASES = { account: 'profile' };
+const PANEL_ALIASES = { account: 'profile', 'help-and-support': 'help', 'help-support': 'help' };
 
 function useIsLargeScreen() {
   const [isLarge, setIsLarge] = useState(() => {
@@ -298,18 +300,6 @@ export default function SettingsRoute() {
 
   // Delete account state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  // Help & Support drawer
-  const [showHelpDrawer, setShowHelpDrawer] = useState(false);
-  const [openFaq, setOpenFaq] = useState(null);
-
-  // The Help & Support drawer sits over the settings list, so Back closes the
-  // drawer rather than leaving Settings entirely. Collapsing the open FAQ on
-  // the way out matches the close button, so reopening always starts clean.
-  const closeHelpDrawer = useCallback(() => {
-    setShowHelpDrawer(false);
-    setOpenFaq(null);
-  }, []);
-  useOverlayBack(showHelpDrawer, closeHelpDrawer);
 
   // Delete-account confirmation is a destructive dialog over the panel; Back
   // must cancel it, never navigate past it.
@@ -567,6 +557,7 @@ export default function SettingsRoute() {
     interests: 'Interests & Topics',
     'blocked-contacts': 'Blocked Contacts',
     verification: 'Account Verification',
+    help: 'Help & Support',
   };
 
   // Each panel's markup is built once here and placed by the layout below —
@@ -637,7 +628,7 @@ export default function SettingsRoute() {
           onClick={() => openPanel('privacy')}
         >
           <span className={styles.rowIcon}>
-            <Shield size={20} strokeWidth={2} />
+            <LockKeyhole size={20} strokeWidth={2} />
           </span>
           <span className={styles.rowLabel}>Privacy Settings</span>
           <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
@@ -697,7 +688,10 @@ export default function SettingsRoute() {
       {/* More section */}
       <div className={styles.sectionLabel}>More</div>
       <div className={styles.group}>
-        <button className={styles.row} onClick={() => setShowHelpDrawer(true)}>
+        <button
+          className={`${styles.row} ${activePanel === 'help' && isLargeScreen ? styles.rowActive : ''}`}
+          onClick={() => openPanel('help')}
+        >
           <span className={styles.rowIcon}>
             <HelpCircle size={20} strokeWidth={2} />
           </span>
@@ -707,7 +701,7 @@ export default function SettingsRoute() {
         <div className={styles.divider} />
         <button className={styles.row} onClick={openCookiePreferences}>
           <span className={styles.rowIcon}>
-            <Shield size={20} strokeWidth={2} />
+            <Cookie size={20} strokeWidth={2} />
           </span>
           <span className={styles.rowLabel}>Cookie Preferences</span>
           <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
@@ -871,13 +865,9 @@ export default function SettingsRoute() {
   const academicPanel = (
     <div className={`${styles.body} animate-in`}>
       <div className={styles.lockedInfoCard}>
-        <div className={styles.lockedCardHeader}>
-          <CheckCircle2 size={16} className={styles.lockedIcon} />
-          <span className={styles.lockedHeaderTitle}>Verified Student Identity</span>
-        </div>
         <div className={styles.lockedField}>
-          <span className={styles.lockedLabel}>College</span>
-          <span className={styles.lockedValue}>{collegeName}</span>
+          <span className={styles.lockedLabel}>College Name</span>
+          <span className={styles.lockedValue}>{collegeName || 'Not specified'}</span>
         </div>
         <div className={styles.lockedFieldDivider} />
         <div className={styles.lockedField}>
@@ -886,11 +876,8 @@ export default function SettingsRoute() {
             {currentUser?.collegeEmail ||
               (currentUser?.email && !currentUser.email.endsWith('@meetifyy.user') ? currentUser.email : null) ||
               session?.user?.email ||
-              ''}
+              'Not specified'}
           </span>
-        </div>
-        <div className={styles.lockedHint}>
-          Linked to your verified student login and cannot be modified.
         </div>
       </div>
 
@@ -1097,6 +1084,7 @@ export default function SettingsRoute() {
   // settings form state around it.
   const blockedContactsPanel = <BlockedContacts />;
   const verificationPanel = <SettingsVerificationPanel />;
+  const helpPanel = <SettingsHelpPanel />;
 
   const notificationsPanel = (
     <div className={`${styles.body} animate-in`}>
@@ -1234,6 +1222,7 @@ export default function SettingsRoute() {
             {activePanel === 'interests' && interestsPanel}
             {activePanel === 'blocked-contacts' && blockedContactsPanel}
             {activePanel === 'verification' && verificationPanel}
+            {activePanel === 'help' && helpPanel}
             {!activePanel && <SettingsWelcomePanel />}
           </div>
         </div>
@@ -1248,6 +1237,7 @@ export default function SettingsRoute() {
           {activePanel === 'interests' && interestsPanel}
           {activePanel === 'blocked-contacts' && blockedContactsPanel}
           {activePanel === 'verification' && verificationPanel}
+          {activePanel === 'help' && helpPanel}
         </>
       )}
 
@@ -1287,63 +1277,6 @@ export default function SettingsRoute() {
                 Delete
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Help & Support Drawer */}
-      {showHelpDrawer && (
-        <div className={styles.helpOverlay} onClick={closeHelpDrawer}>
-          <div className={styles.helpCard} onClick={e => e.stopPropagation()}>
-            <div className={styles.helpHeader}>
-              <h2 className={styles.helpTitle}>Help &amp; Support</h2>
-              <button
-                onClick={closeHelpDrawer}
-                className={styles.helpCloseBtn}
-                aria-label="Close"
-              >
-                <X size={18} strokeWidth={2.25} />
-              </button>
-            </div>
-
-            <p className={styles.helpIntro}>Quick answers below. Still stuck? Reach out.</p>
-
-            {[
-              { q: 'How do I change my username?', a: 'Go to Settings → Account & Profile. Usernames can be changed once every 30 days.' },
-              { q: 'Why can\'t I send messages?', a: 'Make sure you and the other person are connected (following each other). Some users also have message privacy set to followers only.' },
-              { q: 'How do I report a post or user?', a: 'Tap the ⋯ menu on any post or profile and select Report. Our team reviews all reports within 24 hours.' },
-              { q: 'Can I recover a deleted post?', a: 'Deleted posts cannot be recovered. Once removed they are gone permanently.' },
-              { q: 'How does the Instant Match work?', a: 'Instant Match connects you with another online user who shares an interest you both selected. Tap the ⚡ button on the Campus tab to try it.' },
-            ].map((item, i) => (
-              <div key={i} className={styles.faqItem}>
-                <button
-                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                  className={styles.faqQuestion}
-                >
-                  <span className={styles.faqQuestionText}>{item.q}</span>
-                  <ChevronDown
-                    size={16}
-                    strokeWidth={2.5}
-                    className={`${styles.faqChevron} ${openFaq === i ? styles.faqChevronOpen : ''}`}
-                  />
-                </button>
-                {openFaq === i && (
-                  <p className={styles.faqAnswer}>{item.a}</p>
-                )}
-              </div>
-            ))}
-
-            {config.app.supportEmail && (
-              <div className={styles.helpContactRow}>
-                <a
-                  href={`mailto:${config.app.supportEmail}?subject=Support%20Request`}
-                  className={styles.helpContactLink}
-                >
-                  <Mail size={18} strokeWidth={2} />
-                  Email {config.app.supportEmail}
-                </a>
-              </div>
-            )}
           </div>
         </div>
       )}

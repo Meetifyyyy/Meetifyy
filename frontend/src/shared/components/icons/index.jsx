@@ -106,6 +106,8 @@ import {
   ShieldCheckIcon,
   ShieldAlertIcon,
   FavouriteIcon,
+  BiscuitIcon,
+  FingerPrintIcon,
 } from '@hugeicons/core-free-icons';
 
 /**
@@ -287,7 +289,9 @@ const GLYPHS = {
   Globe2: GlobalIcon,
   // Link and Link2 are both "a URL".
   Link: Link01Icon,
-  Link2: Link01Icon
+  Link2: Link01Icon,
+  Cookie: BiscuitIcon,
+  Fingerprint: FingerPrintIcon
 };
 
 export const ChevronDown = /*#__PURE__*/ icon(GLYPHS.ChevronDown, 'ChevronDown');
@@ -406,3 +410,5 @@ export const MapPin = /*#__PURE__*/ icon(GLYPHS.MapPin, 'MapPin');
 export const Globe2 = /*#__PURE__*/ icon(GLYPHS.Globe2, 'Globe2');
 export const Link = /*#__PURE__*/ icon(GLYPHS.Link, 'Link');
 export const Link2 = /*#__PURE__*/ icon(GLYPHS.Link2, 'Link2');
+export const Cookie = /*#__PURE__*/ icon(GLYPHS.Cookie, 'Cookie');
+export const Fingerprint = /*#__PURE__*/ icon(GLYPHS.Fingerprint, 'Fingerprint');
