@@ -1222,37 +1222,23 @@ export class CommunitiesService implements OnModuleInit {
       throw err;
     }
 
-    if (
-      rawAvatarInput !== undefined &&
-      community.avatarKey &&
-      community.avatarKey !== updated.avatarKey
-    ) {
-      this.mediaCleanupService
-        ?.handleMediaReplacement(
-          'COMMUNITY_AVATAR',
-          communityId,
-          community.avatarKey,
-          updated.avatarKey,
-          requestingUserId,
-        )
-        .catch(() => {});
-    }
+    this.mediaCleanupService?.replaceEntityMedia({
+      entityType: 'COMMUNITY_AVATAR',
+      entityId: communityId,
+      previous: community.avatarKey,
+      next: updated.avatarKey,
+      ownerId: requestingUserId,
+      submitted: rawAvatarInput !== undefined,
+    });
 
-    if (
-      coverInput !== undefined &&
-      community.coverKey &&
-      community.coverKey !== updated.coverKey
-    ) {
-      this.mediaCleanupService
-        ?.handleMediaReplacement(
-          'COMMUNITY_COVER',
-          communityId,
-          community.coverKey,
-          updated.coverKey,
-          requestingUserId,
-        )
-        .catch(() => {});
-    }
+    this.mediaCleanupService?.replaceEntityMedia({
+      entityType: 'COMMUNITY_COVER',
+      entityId: communityId,
+      previous: community.coverKey,
+      next: updated.coverKey,
+      ownerId: requestingUserId,
+      submitted: coverInput !== undefined,
+    });
 
     this.domainEventService.emit('community.updated', {
       communityId,

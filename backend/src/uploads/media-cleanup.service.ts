@@ -94,6 +94,53 @@ export class MediaCleanupService {
   }
 
   /**
+   * The derived variants that travel with a storage key.
+   *
+   * The upload pipeline does not produce one file per image. For every folder
+   * behind the six replaceable media types — avatars, profile-covers,
+   * communities, community-icons, community-covers, groups, events — it also
+   * uploads a `<key>_thumb.webp` that lists and grids render instead of the
+   * full image. Cleanup that only knows about the primary key gets this wrong
+   * in both directions at once:
+   *
+   *  - it leaves the OLD thumbnail behind on every replacement, and
+   *  - the historical sweep, seeing a NEW thumbnail that no entity column
+   *    mentions, deletes the file that was just uploaded.
+   *
+   * The second was the more damaging: it is not orphan accumulation but data
+   * loss on the happy path, and it was live — six of thirteen entity images in
+   * the bucket had no thumbnail, across user avatars, user covers, community
+   * avatars, community covers and group avatars.
+   *
+   * Mirrors `deriveThumbnailKey` on the client, which decides where the variant
+   * is written. Returns the key itself plus anything derived from it.
+   */
+  variantKeysFor(key: string | null | undefined): string[] {
+    if (!key) return [];
+    if (/_thumb\.[a-z0-9]+$/i.test(key)) return [key];
+    const match = key.match(
+      /^([a-z0-9_-]+)\/([A-Za-z0-9._-]+)\.(webp|jpe?g|png|gif|mp4|webm|ogv|mov)$/i,
+    );
+    if (!match) return [key];
+    const [, folder, name] = match;
+    return [key, `${folder}/${name}_thumb.webp`];
+  }
+
+  /**
+   * Every key that must survive, given the keys an entity actively points at.
+   * Expands each into its variant family so a fresh thumbnail is never mistaken
+   * for a leftover.
+   */
+  activeKeyFamily(keys: (string | null | undefined)[]): Set<string> {
+    const family = new Set<string>();
+    for (const k of keys) {
+      const normalized = this.extractStorageKey(k) ?? k ?? null;
+      this.variantKeysFor(normalized).forEach((v) => family.add(v));
+    }
+    return family;
+  }
+
+  /**
    * Guard: returns true if the key is a shared platform asset, default cover/avatar, or preset media.
    * These assets must NEVER be deleted.
    */
@@ -122,6 +169,25 @@ export class MediaCleanupService {
     excludeScope?: { entityType: ReplaceableEntityType; entityId: string },
   ): Promise<boolean> {
     if (!key) return false;
+
+    // A thumbnail is alive exactly when the image it was derived from is alive.
+    // Nothing stores a thumbnail key in an entity column — the client derives it
+    // at render time — so asking about one directly always answered "not
+    // referenced", and any sweep that reached it would delete a live entity's
+    // thumbnail. Resolving it to its base is what makes that impossible,
+    // whichever folder the sweep happened to be looking in.
+    const thumbMatch = key.match(
+      /^([a-z0-9_-]+)\/([A-Za-z0-9._-]+)_thumb\.[a-z0-9]+$/i,
+    );
+    if (thumbMatch) {
+      const [, folder, name] = thumbMatch;
+      for (const ext of ['webp', 'jpg', 'jpeg', 'png', 'gif', 'mp4', 'webm']) {
+        if (await this.isKeyReferencedInDb(`${folder}/${name}.${ext}`, excludeScope)) {
+          return true;
+        }
+      }
+      return false;
+    }
 
     // Search across User avatar & cover with field-precise exclusion
     if (excludeScope?.entityType === 'USER_AVATAR') {
@@ -336,34 +402,50 @@ export class MediaCleanupService {
       return result;
     }
 
-    // Safe to delete from R2
-    try {
-      const deleted = await this.storageProvider.delete(oldKey);
-      if (deleted) {
-        result.deletedKeys.push(oldKey);
-        this.logger.log(
-          `Successfully deleted replaced media from R2: ${oldKey} (entity: ${entityType}/${entityId})`,
-        );
+    // Delete the old key AND everything derived from it. The thumbnail is a
+    // separate object with its own Media row; deleting only the primary left
+    // one orphan behind on every single replacement, of every media type.
+    //
+    // Guarded against the case where the replacement reuses part of the old
+    // family — re-uploading the same image, or a variant the new key also
+    // claims — which must never delete what the entity now points at.
+    const keepAlive = this.activeKeyFamily([newKey]);
+    const oldFamily = this.variantKeysFor(oldKey).filter(
+      (k) => !keepAlive.has(k),
+    );
 
-        // Clean up database Media row if exists
-        await this.prisma.media
-          .deleteMany({
-            where: { objectKey: oldKey },
-          })
-          .catch(() => {});
-      } else {
-        result.errors.push({
-          key: oldKey,
-          error: 'Storage provider delete returned false',
-        });
+    for (const key of oldFamily) {
+      try {
+        const deleted = await this.storageProvider.delete(key);
+        if (deleted) {
+          result.deletedKeys.push(key);
+          this.logger.log(
+            `Successfully deleted replaced media from R2: ${key} (entity: ${entityType}/${entityId})`,
+          );
+
+          // Clean up database Media row if exists
+          await this.prisma.media
+            .deleteMany({
+              where: { objectKey: key },
+            })
+            .catch(() => {});
+        } else if (key === oldKey) {
+          // A missing derived variant is unremarkable — not every upload
+          // produces one, and a folder outside the thumbnail set never does.
+          // A missing primary is worth reporting.
+          result.errors.push({
+            key,
+            error: 'Storage provider delete returned false',
+          });
+        }
+      } catch (err: any) {
+        this.logger.error(
+          `Failed to delete replaced media ${key} from R2: ${err?.message || err}`,
+        );
+        result.errors.push({ key, error: err?.message || String(err) });
+        result.success = false;
+        // Do not throw: DB update remains valid and active!
       }
-    } catch (err: any) {
-      this.logger.error(
-        `Failed to delete replaced media ${oldKey} from R2: ${err?.message || err}`,
-      );
-      result.errors.push({ key: oldKey, error: err?.message || String(err) });
-      result.success = false;
-      // Do not throw: DB update remains valid and active!
     }
 
     // Also audit & clean up older unreferenced remnant files for this entity
@@ -372,12 +454,63 @@ export class MediaCleanupService {
       await this.cleanupEntityMediaHistory(
         entityType,
         entityId,
-        [newKey].filter(Boolean) as string[],
+        // The family, not the bare key: passing only the primary is what made
+        // the sweep below delete the thumbnail that had just been uploaded.
+        Array.from(this.activeKeyFamily([newKey])),
         effectiveOwner,
       ).catch(() => {});
     }
 
     return result;
+  }
+
+  /**
+   * The whole "media was replaced, tidy up after it" step, in one call.
+   *
+   * Every call site was repeating the same three-part guard before reaching
+   * `handleMediaReplacement` — was this field even submitted, was there a
+   * previous value, did it actually change — and then the same
+   * `.catch(() => {})`. Seven copies of that across six services is exactly the
+   * duplication that lets one of them quietly drift: miss the `!== undefined`
+   * check and editing a display name deletes an avatar; miss the changed-check
+   * and re-saving the same image deletes the image.
+   *
+   * Deliberately fire-and-forget and never throwing. It is called strictly
+   * *after* the database update has succeeded, so a storage failure here must
+   * leave the user's save intact — an orphaned file is a cost, a failed profile
+   * update is a bug. Failures are logged by the methods underneath.
+   *
+   * `submitted` distinguishes "the caller did not touch this field" from "the
+   * caller cleared it": only the latter should delete anything.
+   */
+  replaceEntityMedia(args: {
+    entityType: ReplaceableEntityType;
+    entityId: string;
+    previous: string | null | undefined;
+    next: string | null | undefined;
+    ownerId?: string;
+    submitted?: boolean;
+  }): void {
+    const { entityType, entityId, previous, next, ownerId } = args;
+    const submitted = args.submitted !== false;
+
+    if (!submitted) return;
+    if (!previous) return;
+    if (previous === next) return;
+
+    void this.handleMediaReplacement(
+      entityType,
+      entityId,
+      previous,
+      next,
+      ownerId,
+    ).catch((err) => {
+      this.logger.error(
+        `Media replacement cleanup failed for ${entityType}/${entityId}: ${
+          (err as Error)?.message || err
+        }`,
+      );
+    });
   }
 
   /**
@@ -399,25 +532,32 @@ export class MediaCleanupService {
 
     if (!ownerId) return result;
 
-    const folder = this.getFolderForEntityType(entityType);
-    if (!folder) return result;
+    const folders = this.getFoldersForEntityType(entityType);
+    if (folders.length === 0) return result;
 
     try {
-      // Find candidate Media rows owned by this user/entity in this folder
+      // Candidate Media rows owned by this user/entity in any folder this
+      // media type is uploaded to.
       const candidates = await this.prisma.media.findMany({
         where: {
           ownerId,
-          objectKey: { startsWith: `${folder}/` },
+          OR: folders.map((folder) => ({
+            objectKey: { startsWith: `${folder}/` },
+          })),
           postId: null,
         },
         select: { objectKey: true },
       });
 
+      // Expanded here as well as at the call site, so a caller that passes only
+      // primary keys still cannot cause a live thumbnail to be swept.
+      const active = this.activeKeyFamily(activeKeys);
+
       for (const candidate of candidates) {
         const key = candidate.objectKey;
 
         // Skip active keys
-        if (activeKeys.includes(key)) {
+        if (active.has(key)) {
           result.skippedKeys.push({
             key,
             reason: 'Currently active media key',
@@ -637,27 +777,42 @@ export class MediaCleanupService {
     });
   }
 
-  private getFolderForEntityType(type: ReplaceableEntityType): string | null {
+  /**
+   * Every storage folder a given media type actually lands in.
+   *
+   * Deliberately a list, because two of these have more than one and the
+   * single-folder version quietly did nothing for them: a group avatar is
+   * uploaded to `avatars/` (the chat details panel) while this returned
+   * `groups/`, and a community avatar goes to `communities/` from the create
+   * dialog but `community-icons/` from the editor. The historical sweep looked
+   * in a folder those files were never in, so it always found nothing.
+   *
+   * Widening the sweep is only safe because `isKeyReferencedInDb` is the thing
+   * that decides deletion, and it now resolves a thumbnail to its base — so a
+   * group-avatar replacement scanning `avatars/` cannot take the owner's
+   * profile picture, or its thumbnail, with it.
+   */
+  private getFoldersForEntityType(type: ReplaceableEntityType): string[] {
     switch (type) {
       case 'USER_AVATAR':
-        return 'avatars';
+        return ['avatars'];
       case 'USER_COVER':
-        return 'profile-covers';
+        return ['profile-covers'];
       case 'COMMUNITY_AVATAR':
-        return 'community-icons';
+        return ['community-icons', 'communities'];
       case 'COMMUNITY_COVER':
-        return 'community-covers';
+        return ['community-covers', 'communities'];
       case 'GROUP_AVATAR':
-        return 'groups';
+        return ['groups', 'avatars'];
       case 'ACTIVITY_COVER':
-        return 'activities';
+        return ['activities'];
       case 'CAMPUS_EVENT_POSTER':
-        return 'events';
+        return ['events'];
       case 'COLLEGE_LOGO':
       case 'COLLEGE_BANNER':
-        return 'colleges';
+        return ['colleges'];
       default:
-        return null;
+        return [];
     }
   }
 }
