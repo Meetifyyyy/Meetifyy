@@ -1,10 +1,10 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
-import { apiClient } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
-import { Shield as ShieldCheck, Upload, Loader2, CheckCircle2, AlertCircle } from '@shared/components/icons';
+import { Upload, Loader2, CheckCircle2, AlertCircle } from '@shared/components/icons';
 import styles from '../pages/SettingsRoute.module.css';
 import { useQueryClient } from '@tanstack/react-query';
+import VerificationCameraCapture from './VerificationCameraCapture';
 
 export default function SettingsVerificationPanel() {
   const { currentUser } = useAuth();
@@ -61,38 +61,37 @@ export default function SettingsVerificationPanel() {
 
   return (
     <div className={`${styles.body} animate-in`}>
-      <div className={styles.sectionLabel} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <ShieldCheck size={20} />
-        Account Verification
-      </div>
-
       <div className={styles.group} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text)' }}>Current Status</h3>
-            <p style={{ fontSize: '0.875rem', color: 'var(--color-text-light)', marginTop: '0.25rem' }}>
-              Verification unlocks campus features, messaging, and community access.
-            </p>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-main, var(--color-text))', margin: 0 }}>
+              Current Status
+            </h3>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '2px 8px',
+              borderRadius: '9999px',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              textTransform: 'capitalize',
+              backgroundColor: 
+                status === 'VERIFIED' ? 'rgba(34, 197, 94, 0.12)' : 
+                status === 'PENDING' ? 'rgba(234, 179, 8, 0.12)' : 
+                status === 'REJECTED' ? 'rgba(239, 68, 68, 0.12)' : 
+                'rgba(148, 163, 184, 0.12)',
+              color: 
+                status === 'VERIFIED' ? '#22c55e' : 
+                status === 'PENDING' ? '#eab308' : 
+                status === 'REJECTED' ? '#ef4444' : 
+                'var(--color-text-muted, #94a3b8)'
+            }}>
+              {status.toLowerCase()}
+            </span>
           </div>
-          <div style={{
-            padding: '0.5rem 1rem',
-            borderRadius: '9999px',
-            fontSize: '0.875rem',
-            fontWeight: 600,
-            textTransform: 'capitalize',
-            backgroundColor: 
-              status === 'VERIFIED' ? 'rgba(34, 197, 94, 0.1)' : 
-              status === 'PENDING' ? 'rgba(234, 179, 8, 0.1)' : 
-              status === 'REJECTED' ? 'rgba(239, 68, 68, 0.1)' : 
-              'rgba(156, 163, 175, 0.1)',
-            color: 
-              status === 'VERIFIED' ? '#22c55e' : 
-              status === 'PENDING' ? '#eab308' : 
-              status === 'REJECTED' ? '#ef4444' : 
-              '#9ca3af'
-          }}>
-            {status.toLowerCase()}
-          </div>
+          <p style={{ fontSize: '0.815rem', color: 'var(--color-text-muted, var(--color-text-light))', margin: '0.35rem 0 0', lineHeight: 1.45 }}>
+            Verification unlocks campus features, messaging, and community access.
+          </p>
         </div>
 
         {status === 'VERIFIED' && (
@@ -128,19 +127,13 @@ export default function SettingsVerificationPanel() {
             )}
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>1. Upload a clear selfie</label>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>1. Take a clear selfie</label>
               <p style={{ fontSize: '0.75rem', color: 'var(--color-text-light)', marginBottom: '0.75rem' }}>This helps us verify you are a real person.</p>
-              <input type="file" accept="image/*" onChange={(e) => handleFileChange(e, setSelfieFile)} style={{ display: 'none' }} id="selfie-upload" />
-              <label htmlFor="selfie-upload" style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-                padding: '1rem', background: 'var(--color-bg-panel)', border: '1px dashed var(--color-border)', borderRadius: '8px',
-                cursor: 'pointer', transition: 'border-color 0.2s'
-              }}>
-                <Upload size={18} color="var(--color-text-light)" />
-                <span style={{ color: selfieFile ? 'var(--color-text)' : 'var(--color-text-light)', fontSize: '0.875rem' }}>
-                  {selfieFile ? selfieFile.name : 'Choose a selfie photo'}
-                </span>
-              </label>
+              <VerificationCameraCapture
+                value={selfieFile}
+                onChange={setSelfieFile}
+                isSubmitting={isSubmitting}
+              />
             </div>
 
             <div>
@@ -163,7 +156,7 @@ export default function SettingsVerificationPanel() {
               marginTop: '0.5rem',
               padding: '0.875rem',
               borderRadius: '9999px',
-              background: 'var(--color-brand)',
+              background: 'var(--color-brand, var(--color-primary, #2563eb))',
               color: 'white',
               fontWeight: 600,
               fontSize: '1rem',
