@@ -3,8 +3,19 @@ import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
 import { Upload, Loader2, CheckCircle2, AlertCircle } from '@shared/components/icons';
 import styles from '../pages/SettingsRoute.module.css';
+import { VERIFICATION_ALLOWED_TYPES } from '@shared/constants/mediaLimits';
 import { useQueryClient } from '@tanstack/react-query';
 import VerificationCameraCapture from './VerificationCameraCapture';
+import {
+  prepareVerificationDocument,
+  readUploadedMediaId,
+  validateVerificationDocument,
+  VerificationDocumentError,
+} from '@shared/utils/verificationMedia';
+
+// The picker filter matches the server allowlist exactly, so the dialog cannot
+// offer a format the upload will then refuse.
+const VERIFICATION_ACCEPT = VERIFICATION_ALLOWED_TYPES.join(',');
 
 export default function SettingsVerificationPanel() {
   const { currentUser } = useAuth();
@@ -12,49 +23,108 @@ export default function SettingsVerificationPanel() {
   const [selfieFile, setSelfieFile] = useState(null);
   const [collegeIdFile, setCollegeIdFile] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Which document the last failure was about, so the error sits next to the
+  // input the user has to fix rather than only in a toast that scrolls away.
+  const [fieldError, setFieldError] = useState(null);
+  const [stage, setStage] = useState(null);
 
   const status = currentUser?.verificationStatus || 'UNVERIFIED';
 
-  const handleFileChange = (e, setFile) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
+  // Validate at pick time, not at submit time. Catching an unsupported format or
+  // an unreadable file here means the user finds out while they are still
+  // looking at the picker, instead of after two uploads have already run.
+  const handleFileChange = async (e, setFile, label) => {
+    const file = e.target.files?.[0];
+    // Reset so re-picking the same file after an error fires onChange again.
+    e.target.value = '';
+    if (!file) return;
+    try {
+      await validateVerificationDocument(file, label);
+      setFieldError(null);
+      setFile(file);
+    } catch (err) {
+      setFile(null);
+      setFieldError({ label, message: err.message });
+      showToast(err.message, 'error');
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!selfieFile || !collegeIdFile) {
-      showToast('Please provide both required images', 'error');
+      const missing = !selfieFile ? 'selfie' : 'college ID';
+      setFieldError({ label: missing, message: `Please provide your ${missing}.` });
+      showToast(`Please provide your ${missing}.`, 'error');
       return;
     }
 
     setIsSubmitting(true);
-    try {
-      const { uploadsApi, apiClient } = await import('@shared/api/apiClient');
-      
-      const selfieRes = await uploadsApi.uploadMedia(selfieFile, 'verification');
-      const collegeIdRes = await uploadsApi.uploadMedia(collegeIdFile, 'verification');
+    setFieldError(null);
 
+    // Keys of anything we successfully put in storage. If the submission does
+    // not complete, these are discarded — otherwise a failed attempt leaves the
+    // documents sitting in the bucket with no request referencing them. That is
+    // not hypothetical: the live bucket currently holds exactly two such orphans
+    // from a submission that failed before it ever reached the database.
+    const uploadedKeys = [];
+
+    try {
+      setStage('Preparing your documents…');
+      // Converted to WebP with EXIF reset, at a quality that keeps ID text
+      // readable. Prepared before either upload starts so a bad image fails
+      // without anything having been stored.
+      const [selfieUpload, collegeIdUpload] = await Promise.all([
+        prepareVerificationDocument(selfieFile, 'selfie'),
+        prepareVerificationDocument(collegeIdFile, 'college ID'),
+      ]);
+
+      setStage('Uploading…');
+      const { uploadsApi, apiClient } = await import('@shared/api/apiClient');
+
+      // Sequential, and deliberately so: the two documents are told apart only
+      // by which field they land in, so the order they are prepared, uploaded
+      // and read back stays fixed and readable end to end. Two files is not a
+      // meaningful amount of parallelism to give up.
+      const selfieRes = await uploadsApi.uploadMedia(selfieUpload, 'verification');
+      if (selfieRes?.key) uploadedKeys.push(selfieRes.key);
+      const selfieMediaId = readUploadedMediaId(selfieRes, 'selfie');
+
+      const collegeIdRes = await uploadsApi.uploadMedia(collegeIdUpload, 'verification');
+      if (collegeIdRes?.key) uploadedKeys.push(collegeIdRes.key);
+      const idCardMediaId = readUploadedMediaId(collegeIdRes, 'college ID');
+
+      setStage('Submitting for review…');
       await apiClient.post('/api/verification/request', {
-        selfieMediaId: selfieRes.id,
-        idCardMediaId: collegeIdRes.id,
+        selfieMediaId,
+        idCardMediaId,
       });
+
+      // Only now is anything referencing the uploads, so nothing is orphaned.
+      uploadedKeys.length = 0;
 
       showToast('Verification request submitted successfully', 'success');
-      // Trigger a sync to update the current user's status
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
-      // To properly refresh userStore/currentUser:
-      apiClient.post('/api/auth/sync').then(res => {
-        // the AuthContext interceptor handles the cache update automatically
-      });
       setSelfieFile(null);
       setCollegeIdFile(null);
-      
-      // Reload page to reflect changes from auth context immediately
-      setTimeout(() => window.location.reload(), 1000);
+
+      // Awaited, not fired and forgotten. The old code raced an un-awaited sync
+      // against a 1-second reload timer, so the page could reload before the
+      // status it was reloading to show had been fetched.
+      await apiClient.post('/api/auth/sync').catch(() => {});
+      await queryClient.invalidateQueries();
     } catch (err) {
+      if (uploadedKeys.length > 0) {
+        const { uploadsApi } = await import('@shared/api/apiClient');
+        await Promise.all(
+          uploadedKeys.map((key) => uploadsApi.discard(key).catch(() => {})),
+        );
+      }
+      if (err instanceof VerificationDocumentError) {
+        setFieldError({ label: err.label, message: err.message });
+      }
       showToast(err?.message || 'Failed to submit verification request', 'error');
     } finally {
+      setStage(null);
       setIsSubmitting(false);
     }
   };
@@ -134,12 +204,17 @@ export default function SettingsVerificationPanel() {
                 onChange={setSelfieFile}
                 isSubmitting={isSubmitting}
               />
+              {fieldError?.label === 'selfie' && (
+                <p role="alert" style={{ fontSize: '0.78rem', color: '#ef4444', margin: '0.5rem 0 0' }}>
+                  {fieldError.message}
+                </p>
+              )}
             </div>
 
             <div>
               <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>2. Upload your College ID</label>
-              <p style={{ fontSize: '0.75rem', color: 'var(--color-text-light)', marginBottom: '0.75rem' }}>We use this to confirm your student status. We do not store this permanently.</p>
-              <input type="file" accept="image/*" onChange={(e) => handleFileChange(e, setCollegeIdFile)} style={{ display: 'none' }} id="id-upload" />
+              <p style={{ fontSize: '0.75rem', color: 'var(--color-text-light)', marginBottom: '0.75rem' }}>We use this to confirm your student status. Only our review team can see it.</p>
+              <input type="file" accept={VERIFICATION_ACCEPT} onChange={(e) => handleFileChange(e, setCollegeIdFile, 'college ID')} style={{ display: 'none' }} id="id-upload" />
               <label htmlFor="id-upload" style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
                 padding: '1rem', background: 'var(--color-bg-panel)', border: '1px dashed var(--color-border)', borderRadius: '8px',
@@ -150,6 +225,11 @@ export default function SettingsVerificationPanel() {
                   {collegeIdFile ? collegeIdFile.name : 'Choose your College ID photo'}
                 </span>
               </label>
+              {fieldError?.label === 'college ID' && (
+                <p role="alert" style={{ fontSize: '0.78rem', color: '#ef4444', margin: '0.5rem 0 0' }}>
+                  {fieldError.message}
+                </p>
+              )}
             </div>
 
             <button type="submit" disabled={isSubmitting || !selfieFile || !collegeIdFile} style={{
@@ -168,7 +248,14 @@ export default function SettingsVerificationPanel() {
               justifyContent: 'center',
               gap: '0.5rem'
             }}>
-              {isSubmitting ? <Loader2 size={18} className="spinner" /> : 'Submit for Verification'}
+              {isSubmitting ? (
+                <>
+                  <Loader2 size={18} className="spinner" />
+                  <span>{stage || 'Submitting…'}</span>
+                </>
+              ) : (
+                'Submit for Verification'
+              )}
             </button>
           </form>
         )}

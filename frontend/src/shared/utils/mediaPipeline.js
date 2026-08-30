@@ -190,13 +190,23 @@ export const validateFile = (file, options = {}) => {
  * Compresses an image file, converting to WebP and stripping EXIF data.
  */
 export const compressImage = async (file, options = {}) => {
-  const { maxWidthOrHeight = 1920, initialQuality = 0.8, fileType = 'image/webp' } = options;
-  
+  const {
+    maxWidthOrHeight = 1920,
+    initialQuality = 0.8,
+    fileType = 'image/webp',
+    // The 1 MB target is right for a feed photo and wrong for a document a
+    // human has to read. It was hardcoded, so a caller that needed to preserve
+    // fine detail — the text on a college ID, a face in a verification selfie —
+    // had no way to ask for it and silently got the aggressive setting.
+    // Defaulted to 1 so every existing caller is unchanged.
+    maxSizeMB = 1,
+  } = options;
+
   // Skip compression for GIFs to preserve animation
   if (!file || file.type === 'image/gif') return file;
 
   const compressionOptions = {
-    maxSizeMB: 1, // Target max size (aggressive)
+    maxSizeMB,
     maxWidthOrHeight,
     useWebWorker: true,
     fileType,
