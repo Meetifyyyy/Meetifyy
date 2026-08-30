@@ -46,93 +46,115 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
   const videoRef = useRef(null);
   const rafRef   = useRef(null);
 
-  // ── Only React state that actually changes rendered icon ────────────────
+  // ── React state for UI controls ──────────────────────────────────────────
   const [playing, setPlaying] = useState(false);
-  const [muted,   setMuted]   = useState(true);  // start muted for autoplay
+  const [muted,   setMuted]   = useState(false); // start unmuted by default
 
-  // ── DOM refs for timer pill + seekbar (bypasses React render on timeupdate) ──
-  const timerPillRef  = useRef(null);
-  const timerTextRef  = useRef(null);
-  const seekbarRef    = useRef(null);
+  // ── DOM refs for timer pill + seekbar ─────────────────────────────────────
+  const timerTextRef     = useRef(null);
+  const ctrlTimerTextRef = useRef(null);
+  const seekbarRef       = useRef(null);
+  const durationRef      = useRef(0);
 
-  // ── Duration (set once on loadedmetadata, rarely changes) ───────────────
-  const durationRef = useRef(0);
-  // For seekbar max attr (needs DOM access, not React controlled)
-  const seekbarMaxRef = useRef(100);
+  // ── Real-time progress updater ───────────────────────────────────────────
+  const updateProgress = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const ct  = v.currentTime || 0;
+    const dur = durationRef.current || v.duration || 0;
+    const pct = dur > 0 ? (ct / dur) * 100 : 0;
+    const timeStr = fmtTime(ct);
+
+    if (timerTextRef.current) {
+      timerTextRef.current.textContent = timeStr;
+    }
+    if (ctrlTimerTextRef.current) {
+      ctrlTimerTextRef.current.textContent = timeStr;
+    }
+    const sb = seekbarRef.current;
+    if (sb) {
+      sb.value = String(ct);
+      sb.style.setProperty('--progress', `${pct}%`);
+    }
+  }, []);
 
   // ── RAF-based progress loop ─────────────────────────────────────────────
   const startRAF = useCallback(() => {
     const tick = () => {
+      updateProgress();
       const v = videoRef.current;
-      if (!v) return;
-      const ct  = v.currentTime;
-      const dur = durationRef.current;
-      const pct = dur > 0 ? ct / dur : 0;
-
-      // Update timer pill text
-      if (timerTextRef.current) {
-        timerTextRef.current.textContent = `${fmtTime(ct)} / ${fmtTime(dur)}`;
+      if (v && !v.paused && !v.ended) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        rafRef.current = null;
       }
-
-      // Update seekbar value + progress css var directly
-      const sb = seekbarRef.current;
-      if (sb) {
-        sb.value = String(ct);
-        sb.style.setProperty('--progress', `${pct * 100}%`);
-      }
-
-      rafRef.current = requestAnimationFrame(tick);
     };
-    cancelAnimationFrame(rafRef.current);
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(tick);
-  }, []);
+  }, [updateProgress]);
 
   const stopRAF = useCallback(() => {
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
   }, []);
 
-  // ── Video event listeners ────────────────────────────────────────────────
+  const onPlay = useCallback(() => {
+    setPlaying(true);
+    startRAF();
+  }, [startRAF]);
+
+  const onPause = useCallback(() => {
+    setPlaying(false);
+    stopRAF();
+    feedVideoRegistry.notifyPause(uid);
+  }, [stopRAF, uid]);
+
+  const onEnded = useCallback(() => {
+    setPlaying(false);
+    stopRAF();
+  }, [stopRAF]);
+
+  const onLoadedMeta = useCallback((e) => {
+    const dur = e.target.duration || 0;
+    durationRef.current = dur;
+    if (seekbarRef.current) {
+      seekbarRef.current.max = String(dur || 100);
+    }
+    updateProgress();
+    if (handleVideoLoaded) handleVideoLoaded(index, e);
+  }, [handleVideoLoaded, index, updateProgress]);
+
+  const onVolumeChange = useCallback(() => {
+    const v = videoRef.current;
+    if (v) setMuted(v.muted);
+  }, []);
+
+  // ── Video registry and initial setup ─────────────────────────────────────
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
 
-    // Register with the global registry (priority 0 = feed video)
     const deregister = feedVideoRegistry.register(uid, v, 0);
 
-    const onPlay  = () => { setPlaying(true);  startRAF(); };
-    const onPause = () => {
-      setPlaying(false);
-      stopRAF();
-      feedVideoRegistry.notifyPause(uid);
-    };
-    const onEnded = () => { setPlaying(false); stopRAF(); };
-    const onLoadedMeta = (e) => {
-      durationRef.current  = e.target.duration;
-      seekbarMaxRef.current = e.target.duration;
+    if (v.duration && isFinite(v.duration)) {
+      durationRef.current = v.duration;
       if (seekbarRef.current) {
-        seekbarRef.current.max = String(e.target.duration);
+        seekbarRef.current.max = String(v.duration);
       }
-      handleVideoLoaded(index, e);
-    };
-    const onVolumeChange = () => setMuted(v.muted);
-
-    v.addEventListener('play',          onPlay);
-    v.addEventListener('pause',         onPause);
-    v.addEventListener('ended',         onEnded);
-    v.addEventListener('loadedmetadata', onLoadedMeta);
-    v.addEventListener('volumechange',  onVolumeChange);
+      updateProgress();
+    }
+    if (!v.paused) {
+      setPlaying(true);
+      startRAF();
+    }
 
     return () => {
-      v.removeEventListener('play',          onPlay);
-      v.removeEventListener('pause',         onPause);
-      v.removeEventListener('ended',         onEnded);
-      v.removeEventListener('loadedmetadata', onLoadedMeta);
-      v.removeEventListener('volumechange',  onVolumeChange);
       stopRAF();
       deregister();
     };
-  }, [src, uid, index, handleVideoLoaded, startRAF, stopRAF]);
+  }, [uid, updateProgress, startRAF, stopRAF]);
 
   // ── IntersectionObserver: only play when ≥40% visible ───────────────────
   useEffect(() => {
@@ -145,11 +167,16 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
         if (!v) return;
 
         if (entry.intersectionRatio >= 0.4) {
-          // Attempt autoplay via registry
           feedVideoRegistry.requestPlay(uid);
-          v.play().catch(() => {});
+          v.muted = false;
+          v.volume = 1;
+          v.play().catch(() => {
+            // Browser autoplay fallback if unmuted blocked
+            v.muted = true;
+            setMuted(true);
+            v.play().catch(() => {});
+          });
         } else {
-          // Left viewport — pause
           if (!v.paused) {
             v.pause();
             feedVideoRegistry.notifyPause(uid);
@@ -177,7 +204,7 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
     return () => document.removeEventListener('visibilitychange', onVisChange);
   }, [uid]);
 
-  // ── Cleanup RAF + pause on unmount ───────────────────────────────────────
+  // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       stopRAF();
@@ -186,13 +213,16 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
     };
   }, [stopRAF]);
 
-  // ── Stable callbacks ──────────────────────────────────────────────────────
+  // ── Play / Mute / Seek Actions ───────────────────────────────────────────
   const togglePlay = useCallback((e) => {
     e.stopPropagation();
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) {
       feedVideoRegistry.requestPlay(uid);
+      v.muted = false;
+      v.volume = 1;
+      setMuted(false);
       v.play().catch(() => {});
     } else {
       v.pause();
@@ -203,15 +233,22 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
     e.stopPropagation();
     const v = videoRef.current;
     if (!v) return;
-    v.muted = !v.muted;
+    const nextMuted = !v.muted;
+    v.muted = nextMuted;
+    if (!nextMuted) {
+      v.volume = 1;
+    }
+    setMuted(nextMuted);
   }, []);
 
   const handleSeek = useCallback((e) => {
     e.stopPropagation();
     const v = videoRef.current;
     if (!v) return;
-    v.currentTime = parseFloat(e.target.value);
-  }, []);
+    const targetTime = parseFloat(e.target.value);
+    v.currentTime = targetTime;
+    updateProgress();
+  }, [updateProgress]);
 
   const handleExpandClick = useCallback((e) => {
     e.stopPropagation();
@@ -239,20 +276,36 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
           ref={videoRef}
           src={src}
           playsInline
-          muted  /* start muted; IntersectionObserver will unmute if registry allows */
+          muted={muted}
           preload="metadata"
           className={`${styles.singleVideo} ${styles.loaded}`}
+          onPlay={onPlay}
+          onPause={onPause}
+          onEnded={onEnded}
+          onLoadedMetadata={onLoadedMeta}
+          onDurationChange={onLoadedMeta}
+          onTimeUpdate={updateProgress}
+          onVolumeChange={onVolumeChange}
         />
 
-        {/* Timer pill — updated directly by RAF, NOT by React state */}
-        <div ref={timerPillRef} className={styles.inlineTimerPill}>
-          <span ref={timerTextRef}>0:00 / 0:00</span>
+        {/* Floating bottom badges (Timer + Mute button) */}
+        <div className={styles.inlineBottomBadges}>
+          <div className={styles.inlineTimerPill}>
+            <span ref={timerTextRef}>0:00</span>
+          </div>
+          <button
+            type="button"
+            className={styles.inlineMuteBadge}
+            onClick={toggleMute}
+            aria-label={muted ? 'Unmute video' : 'Mute video'}
+          >
+            {muted ? <VolumeOff size={14} strokeWidth={1.75} /> : <VolumeHigh size={14} strokeWidth={1.75} />}
+          </button>
         </div>
 
         {/* Full controls overlay on hover */}
         <div className={styles.inlineControlsOverlay} onClick={(e) => e.stopPropagation()}>
           <div className={styles.inlineProgressTrackWrap}>
-            {/* Uncontrolled input — value and --progress updated by RAF */}
             <input
               ref={seekbarRef}
               type="range"
@@ -269,6 +322,7 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
           <div className={styles.inlineControlsRow}>
             <div className={styles.inlineCtrlGroupLeft}>
               <button
+                type="button"
                 className={`${styles.inlineCtrlBtn} ${!playing ? styles.inlineCtrlBtnPlay : ''}`}
                 onClick={togglePlay}
                 aria-label={playing ? 'Pause' : 'Play'}
@@ -277,21 +331,25 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
                   ? <Pause size={14} strokeWidth={1.75} />
                   : <Play  size={14} strokeWidth={1.75} />}
               </button>
-              {/* Timer text in controls row — reuse same ref via separate span */}
               <span className={styles.inlineTimeText} aria-hidden="true">
-                {/* Populated by RAF; initial placeholder */}
-                <span ref={(el) => { if (el && !timerTextRef.current) timerTextRef.current = el; }} />
+                <span ref={ctrlTimerTextRef}>0:00</span>
               </span>
             </div>
 
             <div className={styles.inlineCtrlGroupRight}>
-              <button className={styles.inlineCtrlBtn} onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
+              <button
+                type="button"
+                className={styles.inlineCtrlBtn}
+                onClick={toggleMute}
+                aria-label={muted ? 'Unmute' : 'Mute'}
+              >
                 {muted
                   ? <VolumeOff  size={14} strokeWidth={1.75} />
                   : <VolumeHigh size={14} strokeWidth={1.75} />}
               </button>
 
               <button
+                type="button"
                 className={styles.inlineCtrlBtn}
                 onClick={handleExpandClick}
                 aria-label="Expand media viewer"
