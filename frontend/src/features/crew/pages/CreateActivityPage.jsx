@@ -7,7 +7,9 @@ import { useScrollLock } from '@shared/hooks/useScrollLock';
 import styles from './CreateActivityPage.module.css';
 
 import ImageSearchModal from '@shared/components/modals/ImageSearchModal';
+import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import { commitDraftImage, removeDraftImage } from '@shared/utils/draftImageCache';
+import { useAmbientTint } from '@shared/hooks/useAmbientTint';
 
 import { getRelativeDateLabel } from '@shared/utils/time';
 import {
@@ -955,64 +957,11 @@ export default function CreateActivityPage() {
     });
   };
 
-  useEffect(() => {
-    // Solid-colour mode feeds the ambient tint directly — no decode needed.
-    if (formData.coverMode === 'color') {
-      const hex = formData.coverColor || '';
-      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
-      if (m && containerRef.current) {
-        containerRef.current.style.setProperty(
-          '--extracted-rgb',
-          `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}`,
-        );
-      }
-      return;
-    }
-
-    const coverImage = formData.coverImage;
-    if (!coverImage) return;
-
-    let active = true;
-    const timer = setTimeout(() => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.src = coverImage;
-      img.onload = () => {
-        if (!active) return;
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = 10;
-          canvas.height = 10;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return;
-          ctx.drawImage(img, 0, 0, 10, 10);
-          const data = ctx.getImageData(0, 0, 10, 10).data;
-
-          let r = 0, g = 0, b = 0, count = 0;
-          for (let i = 0; i < data.length; i += 4) {
-            r += data[i];
-            g += data[i+1];
-            b += data[i+2];
-            count++;
-          }
-          r = Math.round(r / count);
-          g = Math.round(g / count);
-          b = Math.round(b / count);
-
-          if (containerRef.current) {
-            containerRef.current.style.setProperty('--extracted-rgb', `${r}, ${g}, ${b}`);
-          }
-        } catch (e) {
-          console.warn('Failed to extract dominant color from cover image:', e);
-        }
-      };
-    }, 50);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [formData.coverImage, formData.coverMode, formData.coverColor]);
+  useAmbientTint(containerRef, {
+    coverImage: formData.coverImage,
+    coverColor: formData.coverColor,
+    coverMode: formData.coverMode,
+  });
 
   // Re-evaluate "is the start time in the past" on a timer, and immediately on
   // tab focus — a form left open for a while would otherwise keep offering a
@@ -1317,29 +1266,40 @@ export default function CreateActivityPage() {
     );
   }
 
+  useEffect(() => {
+    if (currentUser && currentUser.verificationStatus !== 'VERIFIED') {
+      openVerificationModal('Verify your account to create activities.');
+      navigate(returnTo || '/crew', { replace: true });
+    }
+  }, [currentUser, navigate, returnTo]);
+
+  if (currentUser?.verificationStatus !== 'VERIFIED') {
+    return null;
+  }
+
   return (
     <main ref={containerRef} data-theme="dark" className={styles.root}>
-      {/* Blurred ambient background from cover image */}
-      {/* Ambient cover wash. Renders in both cover modes so the page always
-          reflects the current cover — a solid colour bleeds into the backdrop
-          exactly the way an image does, instead of falling back to flat black. */}
-      <div className={styles.ambientBg} aria-hidden="true">
-        {hasCoverImage ? (
-          <img
-            src={formData.coverImage}
-            alt=""
-            className={styles.ambientImg}
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
-          />
-        ) : isColorCover ? (
-          <div className={styles.ambientColor} style={{ background: formData.coverColor }} />
-        ) : null}
-        <div className={styles.ambientGlass} />
-      </div>
-      
-      <div className={styles.glass}>
+        {/* Blurred ambient background from cover image */}
+        {/* Ambient cover wash. Renders in both cover modes so the page always
+            reflects the current cover — a solid colour bleeds into the backdrop
+            exactly the way an image does, instead of falling back to flat black. */}
+        <div className={styles.ambientBg} aria-hidden="true">
+          {hasCoverImage ? (
+            <img
+              src={formData.coverImage}
+              alt=""
+              className={styles.ambientImg}
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : isColorCover ? (
+            <div className={styles.ambientColor} style={{ background: formData.coverColor }} />
+          ) : null}
+          <div className={styles.ambientGlass} />
+        </div>
+        
+        <div className={styles.glass}>
         {/* ── Top bar ── */}
         <header className={styles.topBar}>
           <div className={styles.headerLeft}>
@@ -1594,6 +1554,6 @@ export default function CreateActivityPage() {
           onClose={() => setShowCapacity(false)}
         />
       )}
-    </main>
+      </main>
   );
 }
