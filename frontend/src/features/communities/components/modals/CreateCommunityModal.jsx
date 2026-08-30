@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { showToast } from '@shared/utils/toast';
+import { useAuth } from '@shared/context/AuthContext';
+import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import styles from './CreateCommunityModal.module.css';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
@@ -77,6 +79,7 @@ const categories = [
 ];
 
 export default function CreateCommunityModal({ onClose, onCreated, isCampusCommunity = false }) {
+  const { currentUser } = useAuth();
   const { addCommunity } = useCommunityActions();
 
   // Wizard Steps state
@@ -102,6 +105,18 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
   }, [step]);
 
   useOverlayBack(true, onClose, { onBack: handleWizardBack });
+
+  useEffect(() => {
+    if (currentUser?.verificationStatus !== 'VERIFIED') {
+      openVerificationModal('Verify your student ID to create a community.');
+      onClose();
+    }
+  }, [currentUser?.verificationStatus, onClose]);
+
+  if (currentUser?.verificationStatus !== 'VERIFIED') {
+    return null;
+  }
+
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [selectedCat, setSelectedCat] = useState(null);

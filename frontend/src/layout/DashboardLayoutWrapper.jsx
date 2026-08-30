@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Outlet, useNavigate, useMatches } from 'react-router-dom';
+import { useAuth } from '@shared/context/AuthContext';
 import Background from '@shared/components/ui/Background';
 import Header from './Header';
 import Sidebar from './Sidebar';
@@ -11,8 +12,10 @@ import InstantMatchSheet from '@features/instant-match/components/InstantMatchSh
 import MatchPopup from '@features/instant-match/components/match/MatchPopup';
 import InstantMatchChat from '@features/instant-match/components/chat/InstantMatchChat';
 import { useAutoHideChrome } from '@shared/hooks/useAutoHideChrome';
+import { VerificationModal } from '@shared/components/VerificationGate';
 
 export default function DashboardLayoutWrapper() {
+  const { currentUser } = useAuth();
   const matches = useMatches();
   const navigate = useNavigate();
 
@@ -45,6 +48,28 @@ export default function DashboardLayoutWrapper() {
   // to, so the header would never come back.
   const isMessages = matches.some((m) => m.pathname.startsWith('/messages'));
   useAutoHideChrome({ enabled: !isMessages });
+
+  useEffect(() => {
+    // Preload primary route chunks in background idle time for flicker-free transitions
+    const preload = () => {
+      import('@features/campus/pages/CampusPage');
+      import('@features/messages/pages/MessagesRoute');
+      import('@features/feed/pages/FeedRoute');
+      import('@features/crew/pages/FindYourCrewPage');
+      import('@features/communities/pages/CommunitiesRoute');
+      import('@features/notifications/pages/NotificationsRoute');
+      import('@features/settings/pages/SettingsRoute');
+      import('@features/profile/pages/ProfilePage');
+    };
+
+    if ('requestIdleCallback' in window) {
+      const id = window.requestIdleCallback(preload, { timeout: 1500 });
+      return () => window.cancelIdleCallback(id);
+    } else {
+      const id = setTimeout(preload, 300);
+      return () => clearTimeout(id);
+    }
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -87,6 +112,8 @@ export default function DashboardLayoutWrapper() {
     navigate(`/communities/${id}`);
   };
 
+  const isVerified = currentUser?.verificationStatus === 'VERIFIED';
+
   return (
     <InstantMatchProvider>
       <Background />
@@ -96,14 +123,19 @@ export default function DashboardLayoutWrapper() {
         <Outlet />
       </DashboardLayout>
       <BottomNav hidden={hideBottomNav} />
-      <InstantMatchFAB />
-      <InstantMatchSheet />
-      <MatchPopup />
-      {/* The dedicated 24h conversation. Mounted at the shell so it can cover
-          the app from anywhere, and so it survives navigation underneath it —
-          it is not a route, because this chat has no place in the router's
-          messaging space. */}
-      <InstantMatchChat />
+      <VerificationModal />
+      {isVerified && (
+        <>
+          <InstantMatchFAB />
+          <InstantMatchSheet />
+          <MatchPopup />
+          {/* The dedicated 24h conversation. Mounted at the shell so it can cover
+              the app from anywhere, and so it survives navigation underneath it —
+              it is not a route, because this chat has no place in the router's
+              messaging space. */}
+          <InstantMatchChat />
+        </>
+      )}
     </InstantMatchProvider>
   );
 }

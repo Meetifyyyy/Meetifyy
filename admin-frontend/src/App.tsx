@@ -13,6 +13,7 @@ import { ReportsPage } from './pages/ReportsPage';
 import { SupportPage } from './pages/SupportPage';
 import { MonitoringPage } from './pages/MonitoringPage';
 import { FlagsPage } from './pages/FlagsPage';
+import { VerificationPage } from './pages/VerificationPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AuditPage } from './pages/AuditPage';
 import { SessionsPage } from './pages/SessionsPage';
@@ -100,6 +101,7 @@ export default function App() {
               <Route path="/monitoring" element={<MonitoringPage />} />
               <Route path="/analytics" element={<DashboardPage />} />
               <Route path="/flags" element={<FlagsPage />} />
+              <Route path="/verification" element={<VerificationPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/audit" element={<AuditPage />} />
               <Route path="/sessions" element={<SessionsPage />} />

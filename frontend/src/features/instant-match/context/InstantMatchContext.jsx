@@ -27,6 +27,17 @@ export const INSTANT_MATCH_OPEN_CHAT_EVENT = 'instant-match:open-chat';
 /** Ask the Instant Match provider to open its chat overlay, from anywhere. */
 export function requestOpenInstantMatchChat() {
   if (typeof window === 'undefined') return;
+  try {
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+      const parsed = JSON.parse(savedUser);
+      if (parsed?.verificationStatus !== 'VERIFIED') return;
+    } else {
+      return;
+    }
+  } catch (_) {
+    return;
+  }
   window.dispatchEvent(new CustomEvent(INSTANT_MATCH_OPEN_CHAT_EVENT));
 }
 
@@ -75,6 +86,7 @@ export function validateRequest(formData) {
 export function InstantMatchProvider({ children }) {
   const { currentUser } = useAuth();
   const queryClient = useQueryClient();
+  const isVerified = currentUser?.verificationStatus === 'VERIFIED';
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [step, setStep] = useState(STEP_ACTIVITY);
@@ -101,9 +113,11 @@ export function InstantMatchProvider({ children }) {
   const {
     chat, refresh: refreshChat, leave: leaveChatSession, onCountdownElapsed,
     setChat, dismissEnded,
-  } = useInstantMatchChatState({ enabled: Boolean(currentUser?.id) });
+  } = useInstantMatchChatState({ enabled: Boolean(currentUser?.id) && isVerified });
 
   const statusRef = useRef(status);
+  const isVerifiedRef = useRef(isVerified);
+  isVerifiedRef.current = isVerified;
   statusRef.current = status;
 
   const chatRef = useRef(chat);
@@ -140,9 +154,9 @@ export function InstantMatchProvider({ children }) {
   // existing socket, so this costs nothing extra and means a match can arrive
   // while the sheet is closed or minimised.
   useEffect(() => {
-    if (!currentUser?.id) return undefined;
+    if (!currentUser?.id || !isVerified) return undefined;
     return matchSocketClient.acquire();
-  }, [currentUser?.id]);
+  }, [currentUser?.id, isVerified]);
 
   /**
    * Pulls authoritative state from the server. Runs on mount and after every
@@ -199,7 +213,7 @@ export function InstantMatchProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (!currentUser?.id) return undefined;
+    if (!currentUser?.id || !isVerified) return undefined;
 
     const offStatus = matchSocketClient.on('transport:status', ({ connected: isUp }) => {
       setConnected(isUp);
@@ -299,15 +313,16 @@ export function InstantMatchProvider({ children }) {
     return () => {
       offStatus(); offStats(); offFound(); offAccepted(); offDeclined(); offResumed();
     };
-  }, [currentUser?.id, queryClient, resync, refreshChat]);
+  }, [currentUser?.id, isVerified, queryClient, resync, refreshChat]);
 
   // ── Sheet ───────────────────────────────────────────────────────────────────
 
   const openSheet = useCallback(() => {
+    if (!isVerified) return;
     setError(null);
     setSheetOpen(true);
     setStep((prev) => (statusRef.current === 'searching' ? STEP_SEARCHING : prev));
-  }, []);
+  }, [isVerified]);
 
   const closeSheet = useCallback(() => {
     // A live match card must be answered, not dismissed — that one is a
@@ -352,7 +367,7 @@ export function InstantMatchProvider({ children }) {
   // ── Actions ─────────────────────────────────────────────────────────────────
 
   const startSearch = useCallback(async () => {
-    if (inFlightRef.current) return;
+    if (!isVerified || inFlightRef.current) return;
 
     const check = validateRequest(formData);
     if (!check.valid) {
@@ -470,7 +485,7 @@ export function InstantMatchProvider({ children }) {
    * look broken.
    */
   const openMatchChat = useCallback(async () => {
-    if (openingChatRef.current) return;
+    if (!isVerified || openingChatRef.current) return;
 
     // Opens the dedicated Instant Match surface — deliberately NOT a route
     // into /messages. This conversation does not live there, is not listed
@@ -523,10 +538,11 @@ export function InstantMatchProvider({ children }) {
    * an Instant Match conversation is deliberately absent from.
    */
   useEffect(() => {
+    if (!isVerified) return undefined;
     const onOpenRequest = () => { openMatchChat(); };
     window.addEventListener(INSTANT_MATCH_OPEN_CHAT_EVENT, onOpenRequest);
     return () => window.removeEventListener(INSTANT_MATCH_OPEN_CHAT_EVENT, onOpenRequest);
-  }, [openMatchChat]);
+  }, [isVerified, openMatchChat]);
 
   const closeChatOverlay = useCallback(() => {
     setChatOverlayOpen(false);
@@ -679,7 +695,7 @@ export function InstantMatchProvider({ children }) {
     openSheet, closeSheet, nextStep, prevStep, setStep,
     updateFormData, resetForm, startSearch, cancelSearch,
     respondToMatch, handleMatchTimeout, dismissError,
-    openMatchChat, dismissRecentMatch,
+    openMatchChat, dismissRecentMatch, isVerified,
   }), [
     sheetOpen, step, formData, status, buttonState, matchCountdown,
     queueStats, activeMatch,
@@ -689,7 +705,7 @@ export function InstantMatchProvider({ children }) {
     openSheet, closeSheet, nextStep, prevStep,
     updateFormData, resetForm, startSearch, cancelSearch,
     respondToMatch, handleMatchTimeout, dismissError,
-    openMatchChat, dismissRecentMatch,
+    openMatchChat, dismissRecentMatch, isVerified,
   ]);
 
   return (

@@ -15,6 +15,7 @@ import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
 import { yearLabel, validPassingYears } from '@shared/academics/academicCatalog';
 import { useDirectory } from '@shared/hooks/useProfile';
 import { useDebounce } from '@shared/hooks/useDebounce';
+import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 
 const SearchableMajorSelect = ({ value, onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -206,114 +207,111 @@ export default function DirectoryPage() {
 
   return (
     <main className={`centre centre-wide ${styles.hubContainer}`}>
-      <div className={`${styles.headerBanner} ${styles.compactHeader}`}>
-        <header className={styles.header}>
-          {showSearch ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', minHeight: '42px' }}>
-              <button className={styles.headerSquareBtn} onClick={() => { setShowSearch(false); setSearchQuery(""); }} title="Close Search">
-                <ArrowLeft size={20} />
-              </button>
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: 'transparent', borderRadius: '12px', padding: '0', border: 'none' }}>
-                <input
-                  type="text"
-                  placeholder="Search students..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className={styles.headerSearchInput}
-                  style={{ flex: 1, border: 'none', background: 'transparent', color: 'white', padding: '0.5rem 0.5rem', outline: 'none', fontSize: '1rem' }}
-                  autoFocus
-                />
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className={styles.headerLeftGroup}>
-                <button className={styles.headerSquareBtn} onClick={() => goBack('/campus')} title="Back to Campus">
+      <VerificationGate message="Verify your student ID to access the campus directory, events, and communities." fullPage>
+        <div className={`${styles.headerBanner} ${styles.compactHeader}`}>
+          <header className={styles.header}>
+            {showSearch ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', minHeight: '42px' }}>
+                <button className={styles.headerSquareBtn} onClick={() => { setShowSearch(false); setSearchQuery(""); }} title="Close Search">
                   <ArrowLeft size={20} />
                 </button>
-                <h1 className={styles.collegeTitle} style={{ margin: 0 }}>Student Directory</h1>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: 'transparent', borderRadius: '12px', padding: '0', border: 'none' }}>
+                  <input
+                    type="text"
+                    placeholder="Search students by name..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className={styles.headerSearchInput}
+                    style={{ flex: 1, border: 'none', background: 'transparent', color: 'white', padding: '0.5rem 0.5rem', outline: 'none', fontSize: '1rem' }}
+                    autoFocus
+                  />
+                </div>
               </div>
-              <div className={styles.headerActions}>
-                <button className={styles.headerSquareBtn} onClick={() => setShowSearch(true)} title="Search Directory">
-                  <Search size={20} />
-                </button>
-              </div>
-            </>
-          )}
-        </header>
-
-
-      </div>
-
-      <div className={styles.campusBody}>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <SearchableMajorSelect value={dirBranch} onChange={setDirBranch} />
-          <CustomClassYearSelect value={dirYear} onChange={setDirYear} years={classYears} />
+            ) : (
+              <>
+                <div className={styles.headerLeftGroup}>
+                  <button className={styles.headerSquareBtn} onClick={() => goBack('/campus')} title="Back to Campus">
+                    <ArrowLeft size={20} />
+                  </button>
+                  <h1 className={styles.collegeTitle} style={{ margin: 0 }}>Student Directory</h1>
+                </div>
+                <div className={styles.headerActions}>
+                  <button className={styles.headerSquareBtn} onClick={() => setShowSearch(true)} title="Search Directory">
+                    <Search size={20} />
+                  </button>
+                </div>
+              </>
+            )}
+          </header>
         </div>
 
+        <div className={styles.campusBody}>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <SearchableMajorSelect value={dirBranch} onChange={setDirBranch} />
+            <CustomClassYearSelect value={dirYear} onChange={setDirYear} years={classYears} />
+          </div>
 
-
-        <div className={styles.directoryGrid}>
-          {showCurrentUserCard && (
-            <div
-              key={`current-user-${currentUser.id}`}
-              className={styles.directoryCard}
-              onClick={() => navigate(`/profile/${currentUser.username}`, { state: { from: '/campus/directory' } })}
-            >
-              <Avatar
-                src={currentUser.avatar}
-                name={currentUser.displayName || currentUser.username}
-                size="56px"
-                showInitials
-              />
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', overflow: 'hidden' }}>
-                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '500', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {currentUser.displayName} (You)
-                </h4>
-                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-                  <DirectorySubtitle user={currentUser} />
-                </p>
+          <div className={styles.directoryGrid}>
+            {showCurrentUserCard && (
+              <div
+                key={`current-user-${currentUser.id}`}
+                className={styles.directoryCard}
+                onClick={() => navigate(`/profile/${currentUser.username}`, { state: { from: '/campus/directory' } })}
+              >
+                <Avatar
+                  src={currentUser.avatar}
+                  name={currentUser.displayName || currentUser.username}
+                  size="56px"
+                  showInitials
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', overflow: 'hidden' }}>
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '500', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {currentUser.displayName} (You)
+                  </h4>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                    <DirectorySubtitle user={currentUser} />
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
-          {collegeStudents.map(student => (
-            <div
-              key={student.id}
-              className={styles.directoryCard}
-              onClick={() => navigate(`/profile/${student.username}`, { state: { from: '/campus/directory' } })}
-            >
-              <Avatar
-                src={student.avatar}
-                name={student.displayName || student.username}
-                size="56px"
-                showInitials
-              />
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '500', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {student.displayName}
-                </h4>
-                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-                  <DirectorySubtitle user={student} />
-                </p>
+            )}
+            {collegeStudents.map(student => (
+              <div
+                key={student.id}
+                className={styles.directoryCard}
+                onClick={() => navigate(`/profile/${student.username}`, { state: { from: '/campus/directory' } })}
+              >
+                <Avatar
+                  src={student.avatar}
+                  name={student.displayName || student.username}
+                  size="56px"
+                  showInitials
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '500', color: 'var(--color-text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {student.displayName}
+                  </h4>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                    <DirectorySubtitle user={student} />
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
-          {!isLoading && collegeStudents.length === 0 && !showCurrentUserCard && (
-            <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '2rem 0', gridColumn: '1 / -1' }}>
-              No students found.
-            </p>
-          )}
+            ))}
+            {!isLoading && collegeStudents.length === 0 && !showCurrentUserCard && (
+              <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '2rem 0', gridColumn: '1 / -1' }}>
+                No students found.
+              </p>
+            )}
 
-          {/* Infinite-scroll sentinel + next-page indicator */}
-          <div ref={sentinelRef} style={{ gridColumn: '1 / -1', height: 1 }} />
-          {isFetchingNextPage && (
-            <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '1rem 0', gridColumn: '1 / -1', fontSize: '0.85rem' }}>
-              Loading more…
-            </p>
-          )}
+            {/* Infinite-scroll sentinel + next-page indicator */}
+            <div ref={sentinelRef} style={{ gridColumn: '1 / -1', height: 1 }} />
+            {isFetchingNextPage && (
+              <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '1rem 0', gridColumn: '1 / -1', fontSize: '0.85rem' }}>
+                Loading more…
+              </p>
+            )}
+          </div>
         </div>
-      </div>
+      </VerificationGate>
     </main>
   );
 }
-

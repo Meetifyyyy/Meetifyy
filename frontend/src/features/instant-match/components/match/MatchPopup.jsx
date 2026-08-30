@@ -24,9 +24,9 @@ const LIVE_STATUSES = new Set(['match_found', 'waiting', 'timed_out', 'matched']
  * actually arrived.
  */
 export default function MatchPopup() {
-  const { status, activeMatch } = useInstantMatch();
+  const { status, activeMatch, isVerified } = useInstantMatch();
 
-  if (!LIVE_STATUSES.has(status) || !activeMatch) return null;
+  if (!isVerified || !LIVE_STATUSES.has(status) || !activeMatch) return null;
   // Keyed by match id so a second match mounts a genuinely fresh card
   // (and a fresh countdown) rather than reusing the previous one's state.
   return <MatchCard key={activeMatch.matchId} />;

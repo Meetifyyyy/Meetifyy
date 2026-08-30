@@ -101,6 +101,11 @@ import {
   VolumeMute01Icon,
   VolumeOffIcon,
   WifiDisconnected01Icon,
+  Camera01Icon,
+  LockKeyholeIcon,
+  ShieldCheckIcon,
+  ShieldAlertIcon,
+  FavouriteIcon,
 } from '@hugeicons/core-free-icons';
 
 /**
@@ -224,10 +229,13 @@ const GLYPHS = {
   Ban: UserBlock01Icon,
   Flag: Flag02Icon,
   Shield: Shield01Icon,
+  ShieldCheck: ShieldCheckIcon,
+  ShieldAlert: ShieldAlertIcon,
   ShieldOff: ShieldOffIcon,
   ShieldPlus: ShieldPlusIcon,
   ShieldMinus: ShieldMinusIcon,
   Lock: LockIcon,
+  LockKeyhole: LockKeyholeIcon,
   LogOut: Logout01Icon,
   School: School01Icon,
   GraduationCap: GraduationCapIcon,
@@ -242,6 +250,7 @@ const GLYPHS = {
   Clock: Clock01Icon,
 
   // -- Media & files
+  Camera: Camera01Icon,
   Image: Image01Icon,
   ImageIcon: Image01Icon,
   ImageOff: ImageNotFound01Icon,
@@ -266,6 +275,7 @@ const GLYPHS = {
   Share: Share01Icon,
 
   // -- Content
+  Heart: FavouriteIcon,
   Bookmark: Bookmark02Icon,
   Trash2: Delete02Icon,
   Pencil: Edit02Icon,
@@ -340,10 +350,13 @@ export const UserX = /*#__PURE__*/ icon(GLYPHS.UserX, 'UserX');
 export const Ban = /*#__PURE__*/ icon(GLYPHS.Ban, 'Ban');
 export const Flag = /*#__PURE__*/ icon(GLYPHS.Flag, 'Flag');
 export const Shield = /*#__PURE__*/ icon(GLYPHS.Shield, 'Shield');
+export const ShieldCheck = /*#__PURE__*/ icon(GLYPHS.ShieldCheck, 'ShieldCheck');
+export const ShieldAlert = /*#__PURE__*/ icon(GLYPHS.ShieldAlert, 'ShieldAlert');
 export const ShieldOff = /*#__PURE__*/ icon(GLYPHS.ShieldOff, 'ShieldOff');
 export const ShieldPlus = /*#__PURE__*/ icon(GLYPHS.ShieldPlus, 'ShieldPlus');
 export const ShieldMinus = /*#__PURE__*/ icon(GLYPHS.ShieldMinus, 'ShieldMinus');
 export const Lock = /*#__PURE__*/ icon(GLYPHS.Lock, 'Lock');
+export const LockKeyhole = /*#__PURE__*/ icon(GLYPHS.LockKeyhole, 'LockKeyhole');
 export const LogOut = /*#__PURE__*/ icon(GLYPHS.LogOut, 'LogOut');
 export const School = /*#__PURE__*/ icon(GLYPHS.School, 'School');
 export const GraduationCap = /*#__PURE__*/ icon(GLYPHS.GraduationCap, 'GraduationCap');
@@ -354,6 +367,7 @@ export const CalendarPlus = /*#__PURE__*/ icon(GLYPHS.CalendarPlus, 'CalendarPlu
 export const CalendarRange = /*#__PURE__*/ icon(GLYPHS.CalendarRange, 'CalendarRange');
 export const CalendarX = /*#__PURE__*/ icon(GLYPHS.CalendarX, 'CalendarX');
 export const Clock = /*#__PURE__*/ icon(GLYPHS.Clock, 'Clock');
+export const Camera = /*#__PURE__*/ icon(GLYPHS.Camera, 'Camera');
 export const Image = /*#__PURE__*/ icon(GLYPHS.Image, 'Image');
 export const ImageIcon = /*#__PURE__*/ icon(GLYPHS.ImageIcon, 'ImageIcon');
 export const ImageOff = /*#__PURE__*/ icon(GLYPHS.ImageOff, 'ImageOff');
@@ -377,9 +391,13 @@ export const VolumeLow = /*#__PURE__*/ icon(GLYPHS.VolumeLow, 'VolumeLow');
 export const VolumeMute = /*#__PURE__*/ icon(GLYPHS.VolumeMute, 'VolumeMute');
 export const VolumeOff = /*#__PURE__*/ icon(GLYPHS.VolumeOff, 'VolumeOff');
 export const Share = /*#__PURE__*/ icon(GLYPHS.Share, 'Share');
+export const Share2 = Share;
 export const Bookmark = /*#__PURE__*/ icon(GLYPHS.Bookmark, 'Bookmark');
 export const Trash2 = /*#__PURE__*/ icon(GLYPHS.Trash2, 'Trash2');
 export const Pencil = /*#__PURE__*/ icon(GLYPHS.Pencil, 'Pencil');
+export const Edit2 = Pencil;
+export const CornerUpRight = /*#__PURE__*/ icon(GLYPHS.Forward, 'CornerUpRight');
+export const Heart = /*#__PURE__*/ icon(GLYPHS.Heart, 'Heart');
 export const Eye = /*#__PURE__*/ icon(GLYPHS.Eye, 'Eye');
 export const EyeOff = /*#__PURE__*/ icon(GLYPHS.EyeOff, 'EyeOff');
 export const Mail = /*#__PURE__*/ icon(GLYPHS.Mail, 'Mail');

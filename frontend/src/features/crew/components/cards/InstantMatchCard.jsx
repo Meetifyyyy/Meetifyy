@@ -17,7 +17,9 @@ import styles from './InstantMatchCard.module.css';
  * user left it rather than restarted from here.
  */
 export default function InstantMatchCard({ className = '' }) {
-  const { openSheet } = useInstantMatch();
+  const { openSheet, isVerified } = useInstantMatch();
+
+  if (!isVerified) return null;
 
   return (
     <button

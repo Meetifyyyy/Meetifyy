@@ -21,6 +21,7 @@ import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import styles from './SettingsRoute.module.css';
 import useDevToolsStore from '@shared/stores/devToolsStore';
 import BlockedContacts from '../panels/BlockedContacts';
+import SettingsVerificationPanel from '../panels/SettingsVerificationPanel';
 import { IS_DEV_BUILD, config } from '@config';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
 
@@ -32,7 +33,7 @@ const LARGE_SCREEN_QUERY = '(min-width: 1024px)';
 // live in component state seeded from location.state, which meant it could not
 // be linked to, did not survive a reload, and gave mobile Back nothing to pop —
 // so Back from a sub-page left Settings altogether.
-const SETTINGS_PANELS = ['profile', 'academic', 'security', 'privacy', 'notifications', 'interests', 'blocked-contacts'];
+const SETTINGS_PANELS = ['profile', 'academic', 'security', 'privacy', 'notifications', 'interests', 'blocked-contacts', 'verification'];
 
 // Old links and in-app callers that still say `account` mean the profile panel.
 const PANEL_ALIASES = { account: 'profile' };
@@ -565,6 +566,7 @@ export default function SettingsRoute() {
     notifications: 'Notifications',
     interests: 'Interests & Topics',
     'blocked-contacts': 'Blocked Contacts',
+    verification: 'Account Verification',
   };
 
   // Each panel's markup is built once here and placed by the layout below —
@@ -597,6 +599,17 @@ export default function SettingsRoute() {
             <GraduationCap size={20} strokeWidth={2} />
           </span>
           <span className={styles.rowLabel}>Academic Info</span>
+          <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
+        </button>
+        <div className={styles.divider} />
+        <button
+          className={`${styles.row} ${activePanel === 'verification' && isLargeScreen ? styles.rowActive : ''}`}
+          onClick={() => openPanel('verification')}
+        >
+          <span className={styles.rowIcon}>
+            <Shield size={20} strokeWidth={2} />
+          </span>
+          <span className={styles.rowLabel}>Account Verification</span>
           <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
         </button>
       </div>
@@ -1083,6 +1096,7 @@ export default function SettingsRoute() {
   // Self-contained: it owns its own fetching and needs nothing from the
   // settings form state around it.
   const blockedContactsPanel = <BlockedContacts />;
+  const verificationPanel = <SettingsVerificationPanel />;
 
   const notificationsPanel = (
     <div className={`${styles.body} animate-in`}>
@@ -1219,6 +1233,7 @@ export default function SettingsRoute() {
             {activePanel === 'notifications' && notificationsPanel}
             {activePanel === 'interests' && interestsPanel}
             {activePanel === 'blocked-contacts' && blockedContactsPanel}
+            {activePanel === 'verification' && verificationPanel}
             {!activePanel && <SettingsWelcomePanel />}
           </div>
         </div>
@@ -1232,6 +1247,7 @@ export default function SettingsRoute() {
           {activePanel === 'notifications' && notificationsPanel}
           {activePanel === 'interests' && interestsPanel}
           {activePanel === 'blocked-contacts' && blockedContactsPanel}
+          {activePanel === 'verification' && verificationPanel}
         </>
       )}
 

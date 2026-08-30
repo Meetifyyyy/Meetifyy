@@ -45,14 +45,14 @@ import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 export default function InstantMatchChat() {
   const {
     chatOverlayOpen, closeChatOverlay, chat, matchPartner,
-    leaveMatch, leaving,
+    leaveMatch, leaving, isVerified,
   } = useInstantMatch();
   const { currentUser } = useAuth();
 
   const [replyingTo, setReplyingTo] = useState(null);
   const [startersDismissed, setStartersDismissed] = useState(false);
 
-  const open = chatOverlayOpen && Boolean(chat);
+  const open = isVerified && chatOverlayOpen && Boolean(chat);
   useScrollLock(open);
   // Back leaves the Instant Match chat the same way its own back arrow and
   // Escape do. It is a full-screen overlay mounted at the app shell rather
@@ -61,7 +61,7 @@ export default function InstantMatchChat() {
   // the user never chose.
   useOverlayBack(open, closeChatOverlay);
 
-  if (!open) return null;
+  if (!isVerified || !open) return null;
   return (
     <InstantMatchChatSurface
       chat={chat}
