@@ -32,10 +32,13 @@ export default function InstantMatchSheet() {
   const {
     sheetOpen, step, formData, status, error, busy, connected, restoring,
     recentMatch, chat, closeSheet, setStep, updateFormData, startSearch, dismissError,
+    isVerified,
   } = useInstantMatch();
 
   const sheetRef = useRef(null);
   const titleId = useId();
+
+  if (!isVerified || !sheetOpen) return null;
 
   const activity = getActivity(formData.activity);
   const activityNeedsDetails = Boolean(ACTIVITY_DETAILS_CONFIG[formData.activity]);

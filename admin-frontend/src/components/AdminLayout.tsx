@@ -19,6 +19,7 @@ import {
   Megaphone,
   Menu,
   X,
+  CheckCircle,
 } from 'lucide-react';
 
 export const AdminLayout: React.FC = () => {
@@ -56,6 +57,7 @@ export const AdminLayout: React.FC = () => {
     { label: 'Support', path: '/support', icon: HelpCircle },
     { label: 'Monitoring', path: '/monitoring', icon: Activity },
     { label: 'Feature Flags', path: '/flags', icon: Flag },
+    { label: 'Verification', path: '/verification', icon: CheckCircle },
     { label: 'Settings', path: '/settings', icon: Settings },
     { label: 'Audit Logs', path: '/audit', icon: FileText },
     { label: 'Sessions', path: '/sessions', icon: ShieldCheck },

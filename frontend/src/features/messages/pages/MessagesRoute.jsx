@@ -2,6 +2,8 @@ import { useParams } from 'react-router-dom';
 import MessagesLayout from '../components/layout/MessagesLayout';
 import { useKeyboardInset } from '@shared/hooks/useKeyboardInset';
 
+import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
+
 export default function MessagesRoute() {
   // Keep the chat input above the soft keyboard on mobile (see hook docs).
   useKeyboardInset();
@@ -10,7 +12,9 @@ export default function MessagesRoute() {
 
   return (
     <main className={`centre centre-wide centre--messages animate-in ${isChatOpen ? 'chat-is-open' : ''}`}>
-      <MessagesLayout />
+      <VerificationGate message="Verify your student ID to send and receive messages." fullPage>
+        <MessagesLayout />
+      </VerificationGate>
     </main>
   );
 }

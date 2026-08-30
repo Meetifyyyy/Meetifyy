@@ -10,6 +10,7 @@ import PullToRefresh from './PullToRefresh';
 import styles from './Feed.module.css';
 import { useAuth } from '@shared/context/AuthContext';
 import { addCreatedPostToCaches } from '../utils/postCache';
+import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 
 function Feed({ onPostClick }) {
   const { currentUser } = useAuth();
@@ -119,7 +120,9 @@ function Feed({ onPostClick }) {
   return (
     <PullToRefresh onRefresh={handlePullToRefresh}>
       <div className={styles.feed}>
-        <PostComposer onSubmit={handleNewPost} />
+        <VerificationGate message="Verify your account to create posts.">
+          <PostComposer onSubmit={handleNewPost} />
+        </VerificationGate>
 
         {isLoading && (
           <>

@@ -20,6 +20,7 @@ import { useActivities } from '@shared/hooks/useCrew';
 import CrewCard from '@features/crew/components/cards/CrewCard';
 import CrewCardSkeleton from '@features/crew/components/cards/CrewCardSkeleton';
 import { mapActivity } from '@shared/utils/mapActivity';
+import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 
 export default function CampusPage() {
   const navigate = useNavigate();
@@ -107,6 +108,7 @@ export default function CampusPage() {
 
   return (
     <main className={`centre centre-wide ${styles.hubContainer}`}>
+      <VerificationGate message="Verify your student ID to access the campus directory, events, and communities." fullPage>
       {/* HEADER SECTION */}
       <div className={styles.headerBanner}>
         <header className={styles.header}>
@@ -282,13 +284,16 @@ export default function CampusPage() {
         </div>
       </div>
 
-      {isGroupModalOpen && (
-        <CreateCommunityModal
-          onClose={() => setIsGroupModalOpen(false)}
-          onCreated={handleCreateGroup}
-          isCampusCommunity={true}
-        />
-      )}
+        {isGroupModalOpen && (
+          <CreateCommunityModal
+            onClose={() => setIsGroupModalOpen(false)}
+            onSuccess={handleCreateGroup}
+            context="campus"
+            initialCollegeId={userCollegeId}
+            collegeName={collegeName}
+          />
+        )}
+      </VerificationGate>
 
       {eventFormState && (
         <CampusEventForm

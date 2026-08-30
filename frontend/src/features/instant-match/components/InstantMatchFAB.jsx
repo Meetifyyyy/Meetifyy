@@ -91,9 +91,11 @@ function progressOf(countdown) {
 
 export default function InstantMatchFAB() {
   const {
-    sheetOpen, buttonState, openSheet, queueStats, matchCountdown,
+    sheetOpen, buttonState, openSheet, queueStats, matchCountdown, isVerified,
   } = useInstantMatch();
   const location = useLocation();
+
+  if (!isVerified) return null;
 
   const state = STATE_CONFIG[buttonState] ? buttonState : 'idle';
   const config = STATE_CONFIG[state];

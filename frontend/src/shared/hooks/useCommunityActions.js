@@ -3,6 +3,7 @@ import { communitiesApi, postsApi } from '../api/apiClient';
 import { showToast } from '../utils/toast';
 import { addCreatedPostToCaches } from '../../features/feed/utils/postCache';
 import { patchCommunityMemberRole } from '../utils/communityCache';
+import { openVerificationModal } from '../stores/verificationModalStore';
 
 /**
  * The community / post write actions `useData` used to define inline.
@@ -19,12 +20,29 @@ export function useCommunityActions() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['communities'] }),
   });
 
+  const checkVerification = () => {
+    try {
+      const savedUser = localStorage.getItem('currentUser');
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        if (parsed?.verificationStatus !== 'VERIFIED') {
+          openVerificationModal('Verify your account to create communities.');
+          throw new Error('Verify your account to create communities');
+        }
+      }
+    } catch (e) {
+      if (e?.message?.includes('Verify your account')) throw e;
+    }
+  };
+
   const createCampusGroup = async (name, desc, avatar) => {
+    checkVerification();
     const res = await createCommMutation.mutateAsync({ name, description: desc, avatarKey: avatar });
     return res.id;
   };
 
   const addCommunity = async (data) => {
+    checkVerification();
     const res = await createCommMutation.mutateAsync({
       name: data.name,
       description: data.desc,

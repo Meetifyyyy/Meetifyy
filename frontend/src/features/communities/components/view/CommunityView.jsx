@@ -21,6 +21,8 @@ import Skeleton from '@shared/components/skeletons/Skeleton';
 import { ErrorState } from '@shared/components/ui/StateViews';
 import NotFoundState from '@shared/components/ui/NotFoundState';
 import Post from '@features/feed/components/post/Post';
+import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
+import { ShieldCheck, Calendar, Users, Eye, EyeOff, Check, X, ShieldAlert, Sparkles, MessageCircle, Heart, Bell, Trash2, Edit2, Share2, CornerUpRight, MapPin, ExternalLink, Settings, Plus, Camera, Link as LinkIcon, Info } from '@shared/components/icons';
 import PostComposer from '@features/feed/components/composer/PostComposer';
 import PostSkeleton from '@features/feed/components/skeletons/PostSkeleton';
 import CommunityMembersModal from '../modals/CommunityMembersModal';
@@ -31,6 +33,7 @@ import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { useJoinCommunity } from '../../hooks/useJoinCommunity';
 import { useCommunityById } from '@shared/hooks/useCommunities';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
+import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import ShareCommunityModal from '../modals/ShareCommunityModal';
 import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
 
@@ -1077,6 +1080,11 @@ function DeletedCommunityView({ onBack }) {
     const entityKey = `joinCommunity:${communityId}`;
     const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, rawJoined);
 
+    if (nextJoined && currentUser?.verificationStatus !== 'VERIFIED') {
+      openVerificationModal('Verify your account to join communities.');
+      return;
+    }
+
     // Private communities require admin approval — send a join request instead of directly joining
     if (!joined && (comm.isPrivate || comm.privacy === 'private')) {
       try {
@@ -1096,6 +1104,10 @@ function DeletedCommunityView({ onBack }) {
 
   const handleCreatePostClick = () => {
     if (!joined) {
+      if (currentUser?.verificationStatus !== 'VERIFIED') {
+        openVerificationModal('Verify your account to join communities.');
+        return;
+      }
       // `isJoined` is the DESIRED next state. This passed `joined`, which is
       // false in this branch — so the shortcut that is supposed to join the
       // community was calling leave on it instead.
@@ -1431,8 +1443,10 @@ function DeletedCommunityView({ onBack }) {
           ) : (
             <>
               {joined && (comm.allowMemberPosts !== false || isAdmin) && (
-                <div className={styles.composerWrap}>
-                  <PostComposer onSubmit={(text, poll, media, mentions) => addPost(text, poll, communityId, media, mentions)} />
+                <div className={styles.composerWrapper}>
+                  <VerificationGate message="Verify your account to post in communities.">
+                    <PostComposer onSubmit={(text, poll, media, mentions) => addPost(text, poll, communityId, media, mentions)} />
+                  </VerificationGate>
                 </div>
               )}
 
