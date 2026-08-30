@@ -7,11 +7,13 @@ import { useActivities, useCrewDiscover, useSavedActivitiesQuery, useMyActivitie
 import { useDebounce } from '@shared/hooks/useDebounce';
 import { useUrlState } from '@shared/hooks/useUrlState';
 import { prefetchActivity } from '@shared/hooks/prefetch';
+import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import PageLayout from '@layout/PageLayout';
 import PageHeader from '@layout/PageHeader';
 import CrewCard from '../components/cards/CrewCard';
 import CrewCardSkeleton from '../components/cards/CrewCardSkeleton';
 import InstantMatchCard from '../components/cards/InstantMatchCard';
+import CreateActivityCard from '../components/cards/CreateActivityCard';
 import CrewRightPanel from '../components/layout/CrewRightPanel';
 import { mapActivity } from '@shared/utils/mapActivity';
 import { filterActivities } from '@features/crew/utils/crewUtils';
@@ -52,6 +54,7 @@ function SectionHeader({ title, onSeeAll, onBack }) {
 
 export default function FindYourCrewPage() {
   const { currentUser, collegeName: authCollegeName } = useAuth();
+  const isVerified = currentUser?.verificationStatus === 'VERIFIED';
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -306,10 +309,22 @@ export default function FindYourCrewPage() {
       oneOnOneActivities, savedList, ongoingActivities, upcomingActivities, pastActivities,
       allTabSearchResults]);
 
+  const handleCreateActivity = useCallback(() => {
+    if (currentUser?.verificationStatus !== 'VERIFIED') {
+      openVerificationModal('Verify your account to create activities.');
+      return;
+    }
+    navigate('/crew/create');
+  }, [currentUser?.verificationStatus, navigate]);
+
   const handleActivityClick = useCallback((activityId) => {
+    if (currentUser?.verificationStatus !== 'VERIFIED') {
+      openVerificationModal('Verify your account to view and join activities.');
+      return;
+    }
     const activity = activitiesById.current.get(activityId);
     navigate(`/crew/${activityId}`, { state: { activity, from: '/crew' } });
-  }, [navigate]);
+  }, [currentUser?.verificationStatus, navigate]);
 
   const handleActivityHover = useCallback((activityId) => {
     prefetchActivity(queryClient, activityId);
@@ -343,7 +358,7 @@ export default function FindYourCrewPage() {
               <button
                 type="button"
                 className={styles.createIconBtn}
-                onClick={() => navigate('/crew/create')}
+                onClick={handleCreateActivity}
                 aria-label="Create Activity"
                 title="Create Activity"
               >
@@ -363,7 +378,14 @@ export default function FindYourCrewPage() {
             <div className={styles.content}>
               {/* Always the first thing in the column, on every tab and while
                   the list is still loading — the activity cards follow below. */}
-              <InstantMatchCard />
+              {isVerified && <InstantMatchCard />}
+
+              {/* Mobile-only: Create Activity Card shown only on the All tab */}
+              {isAllTab && (
+                <div className={styles.mobileCreateCardWrapper}>
+                  <CreateActivityCard onCreateActivity={handleCreateActivity} />
+                </div>
+              )}
 
               {loading ? (
                 <div className={styles.list}>
@@ -379,7 +401,7 @@ export default function FindYourCrewPage() {
                       allTabSearchResults.length > 0 ? (
                         <div className={styles.list}>{renderCards(allTabSearchResults)}</div>
                       ) : (
-                        <EmptyOrSearch searching label="" />
+                        <EmptyOrSearch searching label="" isAllTab={isAllTab} />
                       )
                     ) : allView === 'for-you' ? (
                       /* "See all" on For You — the full ranked list, in place. */
@@ -388,7 +410,7 @@ export default function FindYourCrewPage() {
                         {forYouActivities.length > 0 ? (
                           <div className={styles.list}>{renderCards(forYouActivities)}</div>
                         ) : (
-                          <div className={styles.subEmpty}>Nothing to recommend just yet.</div>
+                          <div className={`${styles.subEmptyFull} ${styles.subEmptyAll}`}>Nothing to recommend just yet.</div>
                         )}
                         {forYouFeed.hasNextPage && <div ref={sentinelRef} style={{ height: '1px', width: '100%' }} />}
                       </>
@@ -422,9 +444,8 @@ export default function FindYourCrewPage() {
                         )}
                       </div>
                     ) : (
-                      <div className={styles.emptyAll}>
-                        No activities yet. Start something above, or create an
-                        activity for later.
+                      <div className={`${styles.subEmptyFull} ${styles.subEmptyAll}`}>
+                        No activities yet.
                       </div>
                     )
                   )}
@@ -437,6 +458,7 @@ export default function FindYourCrewPage() {
                       ) : (
                         <EmptyOrSearch
                           searching={searching}
+                          fillSpace
                         />
                       )}
                       {collegeFeed.hasNextPage && <div ref={sentinelRef} style={{ height: '1px', width: '100%' }} />}
@@ -451,6 +473,7 @@ export default function FindYourCrewPage() {
                       ) : (
                         <EmptyOrSearch
                           searching={searching}
+                          fillSpace
                         />
                       )}
                       {oneOnOneFeed.hasNextPage && <div ref={sentinelRef} style={{ height: '1px', width: '100%' }} />}
@@ -460,15 +483,18 @@ export default function FindYourCrewPage() {
                   {/* ── Saved tab ────────────────────────────────────────────── */}
                   {selectedTab === TAB_SAVED && (
                     <>
-                      <div className={styles.sectionHeader}>
-                        <h2 className={styles.sectionTitle}>Saved Activities</h2>
-                      </div>
                       {savedList.length > 0 ? (
-                        <div className={styles.list}>{renderCards(savedList)}</div>
+                        <>
+                          <div className={styles.sectionHeader}>
+                            <h2 className={styles.sectionTitle}>Saved Activities</h2>
+                          </div>
+                          <div className={styles.list}>{renderCards(savedList)}</div>
+                        </>
                       ) : (
                         <EmptyOrSearch
                           searching={searching}
-                          label="Nothing saved yet — bookmark an activity to find it here."
+                          label="Nothing saved yet. Bookmark an activity to find it here."
+                          fillSpace
                         />
                       )}
                     </>
@@ -486,7 +512,7 @@ export default function FindYourCrewPage() {
                         {ongoingActivities.length > 0 ? (
                           <div className={styles.list}>{renderCards(ongoingActivities)}</div>
                         ) : (
-                          <div className={styles.subEmpty}>No ongoing activities right now.</div>
+                          <div className={styles.subEmptyCard}>No ongoing activities right now.</div>
                         )}
                       </div>
 
@@ -498,7 +524,7 @@ export default function FindYourCrewPage() {
                         {upcomingActivities.length > 0 ? (
                           <div className={styles.list}>{renderCards(upcomingActivities)}</div>
                         ) : (
-                          <div className={styles.subEmpty}>No upcoming activities scheduled.</div>
+                          <div className={styles.subEmptyCard}>No upcoming activities scheduled.</div>
                         )}
                       </div>
 
@@ -510,7 +536,7 @@ export default function FindYourCrewPage() {
                         {pastActivities.length > 0 ? (
                           <div className={styles.list}>{renderCards(pastActivities)}</div>
                         ) : (
-                          <div className={styles.subEmpty}>No past activities yet.</div>
+                          <div className={styles.subEmptyCard}>No past activities yet.</div>
                         )}
                       </div>
                     </div>
@@ -527,7 +553,7 @@ export default function FindYourCrewPage() {
 
             <div className={styles.sidebarWrapper}>
               <CrewRightPanel
-                onCreateActivity={() => navigate('/crew/create')}
+                onCreateActivity={handleCreateActivity}
                 onViewAll={() => {
                   setSelectedTab('My Activities');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -544,10 +570,10 @@ export default function FindYourCrewPage() {
 // Shared empty state for list tabs. A search that matches nothing is a dead end
 // and says so; a genuinely empty list just says so, because the Instant Match
 // strip at the top of the column is already offering the way out of it.
-function EmptyOrSearch({ searching, label }) {
+function EmptyOrSearch({ searching, label, fillSpace = true, isAllTab = false }) {
   if (searching) {
     return (
-      <div className={styles.empty}>
+      <div className={`${fillSpace ? styles.emptyFull : styles.empty} ${isAllTab ? styles.emptyFullAllTab : ''}`}>
         <div className={styles.emptyEmoji}>🔍</div>
         <h3 className={styles.emptyTitle}>No matching activities</h3>
         <p className={styles.emptySubtitle}>Try searching for something else or clear your search query.</p>
@@ -555,7 +581,7 @@ function EmptyOrSearch({ searching, label }) {
     );
   }
   return (
-    <div className={styles.subEmpty}>
+    <div className={`${fillSpace ? styles.subEmptyFull : styles.subEmptyCard} ${isAllTab ? styles.subEmptyFullAllTab : ''}`}>
       {label || 'No activities yet.'}
     </div>
   );

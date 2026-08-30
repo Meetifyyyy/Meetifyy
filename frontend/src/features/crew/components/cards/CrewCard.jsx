@@ -13,6 +13,8 @@ import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { Bookmark } from '@shared/components/icons';
 
+import { useAuth } from '@shared/context/AuthContext';
+import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import { getDefaultActivityCover as getDefaultCover } from '@shared/utils/activityCover';
 
 
@@ -119,6 +121,7 @@ function deriveAttendees(activity) {
 }
 
 function CrewCard({ activity, onClick, onMouseEnter }) {
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -157,8 +160,12 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
   }, [activityId, toggleSaveActivity]);
 
   const handleCardClick = useCallback(() => {
+    if (currentUser?.verificationStatus !== 'VERIFIED') {
+      openVerificationModal('Verify your account to view activity details.');
+      return;
+    }
     if (activityId) onClick?.(activityId);
-  }, [activityId, onClick]);
+  }, [activityId, currentUser?.verificationStatus, onClick]);
 
   // Hover prefetch: the callers have always passed this, but the card never
   // attached it, so the detail page was never warmed before the click.
