@@ -277,10 +277,23 @@
   cursor: default;
 }
 
-.inlineTimerPill {
+.inlineBottomBadges {
   position: absolute;
   bottom: 12px;
   right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 3;
+  transition: opacity 0.2s ease;
+}
+
+.inlineVideoWrap:hover .inlineBottomBadges {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.inlineTimerPill {
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -290,12 +303,35 @@
   padding: 3px 8px;
   border-radius: 6px;
   pointer-events: none;
-  transition: opacity 0.2s ease;
-  z-index: 3;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
 }
 
-.inlineVideoWrap:hover .inlineTimerPill {
-  opacity: 0;
+.inlineMuteBadge {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #ffffff;
+  border: none !important;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s ease, transform 0.15s ease;
+  line-height: 0;
+}
+
+.inlineMuteBadge:hover {
+  background: rgba(0, 0, 0, 0.9);
+  transform: scale(1.06);
+}
+
+.inlineMuteBadge:active {
+  transform: scale(0.94);
 }
 
 .inlineControlsOverlay {
