@@ -47,6 +47,7 @@ import { VerificationModule } from './verification/verification.module';
 import { RedisModule } from './redis/redis.module';
 import { EventsModule } from './events/events.module';
 import { DomainValidatorModule } from './common/services/domain-validator.module';
+import { VerificationAccessModule } from './common/verification/verification-access.module';
 import { AcademicsModule } from './academics/academics.module';
 import { SupportModule } from './support/support.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
@@ -54,6 +55,7 @@ import { MonitoringModule } from './monitoring/monitoring.module';
 @Module({
   imports: [
     DomainValidatorModule,
+    VerificationAccessModule,
     ConfigModule.forRoot({
       isGlobal: true,
       // The namespaces are views onto the central `config` object, which has

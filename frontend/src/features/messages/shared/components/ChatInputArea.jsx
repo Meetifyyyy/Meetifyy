@@ -62,17 +62,25 @@ export default function ChatInputArea({
     formatDuration,
     levelsRef: voiceLevelsRef,
   } = useVoiceRecorder({
-    onSend: (audioUrl, mediaType, duration) => sendMessageFn && sendMessageFn(conversation.id, '', replyingTo, [], audioUrl, 'audio', null, null, { duration }),
+    // A recording already in flight when the composer is disabled must not
+    // land: the upload finishes asynchronously, well after the UI has changed.
+    onSend: (audioUrl, mediaType, duration) => !disabled && sendMessageFn && sendMessageFn(conversation.id, '', replyingTo, [], audioUrl, 'audio', null, null, { duration }),
     showToast: (msg) => showToast(msg, 'error'),
   });
 
   const handleAttachClick = () => {
+    if (disabled) return;
     fileInputRef.current?.click();
   };
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Covers a picker that was already open when the composer was disabled.
+    if (disabled) {
+      e.target.value = '';
+      return;
+    }
 
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
@@ -116,7 +124,10 @@ export default function ChatInputArea({
   const handleSend = () => {
     const text = (typeof inputValue === 'string' ? inputValue : (inputValue?.text || '')).trim();
     const mentions = inputValue?.mentions || [];
-    if (!text || conversation?.blocked || conversation?.isBlockedByMe || conversation?.isBlockedByThem) return;
+    // `disabled` is re-checked here, not only at render: MentionInput's own
+    // Enter handling calls straight into this, so a composer that becomes
+    // unavailable between keystroke and submit must still refuse.
+    if (!text || disabled || conversation?.blocked || conversation?.isBlockedByMe || conversation?.isBlockedByThem) return;
 
     if (stopTypingNow) stopTypingNow();
 
@@ -139,14 +150,22 @@ export default function ChatInputArea({
   const isDisabledByParent = !!disabled;
 
   if (isClosed || isNotMember || isDisabledByParent) {
+    // Same shell, same overlay, same typography as the block state below —
+    // the chat keeps its shape and only the composer's contents change. The
+    // composer is not rendered at all in this branch, which is what makes the
+    // restriction complete rather than cosmetic: there is no text box to type
+    // in, no Enter to intercept, no attach/emoji/GIF/mic button, and no
+    // contenteditable to paste or drop media onto.
     return (
-      <div className={styles.msgChatInputWrap} style={{ justifyContent: 'center', padding: '1rem' }}>
-        <div className={styles.msgBlockedNotice} style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-          {disabledReason
-            ? disabledReason
-            : isClosed
-            ? 'This activity/conversation has ended.'
-            : "You can't send messages because you're no longer in this group."}
+      <div className={styles.msgChatInputWrap}>
+        <div className={styles.msgBlockedInputOverlay} role="status">
+          <span>
+            {disabledReason
+              ? disabledReason
+              : isClosed
+              ? 'This activity/conversation has ended.'
+              : "You can't send messages because you're no longer in this group."}
+          </span>
         </div>
       </div>
     );

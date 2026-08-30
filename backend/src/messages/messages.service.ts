@@ -10,6 +10,7 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { Prisma, MentionSource, NotificationEntityType } from '@prisma/client';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
@@ -25,6 +26,7 @@ import { resolvePresenceVisibilityForViewer } from '../users/privacy.helper';
 import { MentionsService } from '../mentions/mentions.service';
 import { buildReplyToSnapshot, REPLY_TO_SELECT } from './reply-preview.util';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
+import { VerificationAccessService } from '../common/verification/verification-access.service';
 
 /** The one question MessagesService asks the Instant Match domain. Kept to a
  *  single method so the coupling between the two stays visible and small. */
@@ -69,6 +71,9 @@ export class MessagesService
     // `blocksService` is the one everything uses — no shadowing copy. Ordered
     // before the optional param because a required parameter cannot follow one.
     blocksService: BlocksService,
+    // Same reasoning as blocksService: verification gating on every send runs
+    // through this, so it must fail at boot rather than silently disappear.
+    verificationAccess: VerificationAccessService,
     @Optional() private readonly redisService?: RedisService,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {
@@ -78,8 +83,23 @@ export class MessagesService
       domainEventService,
       mentionsService,
       blocksService,
+      verificationAccess,
     );
     this.redis = this.redisService?.getClient() ?? null;
+  }
+
+  /**
+   * The conversation list carries `canSendMessages`, and it is Redis-cached
+   * per viewer for 60s. A verification change therefore has to evict those
+   * entries or a reload within that window would restore a composer the server
+   * is already refusing. The event targets exactly the affected viewers: the
+   * user whose status changed, plus everyone holding a DM with them.
+   */
+  @OnEvent('user:verification_changed')
+  async handleVerificationChanged(payload: any) {
+    const targets: string[] = payload?.targetUserIds || [];
+    if (targets.length === 0) return;
+    await this.invalidateUserConversationsCache(targets).catch(() => {});
   }
 
   async invalidateUserConversationsCache(userIds?: string[]) {
@@ -291,6 +311,17 @@ export class MessagesService
         'You are no longer a member of this conversation',
       );
     }
+
+    // Verification gate. This override does not call super.sendMessage, so it
+    // needs its own copy of the check the core service performs — and it is
+    // the one the Socket.IO `message:send` handler reaches, which carries no
+    // guard of its own.
+    await this.verificationAccess.assertCanMessageInConversation(
+      conv.id,
+      senderId,
+      conv.participants.map((p) => p.userId),
+      conv.type === 'GROUP',
+    );
 
     const otherUserIds = conv.participants
       .filter((p) => p.userId !== senderId)
@@ -944,8 +975,35 @@ export class MessagesService
       };
     });
 
+    // Whether this viewer may send here, answered by the same policy the write
+    // path enforces with.
+    //
+    // The conversation list already carries this, but the list only covers the
+    // first page — a thread reached by a deep link, or one that has scrolled
+    // past that page, is not in it. Without this the client had no way to
+    // resolve the other participant and left the composer enabled until a send
+    // came back refused. History is the one response every open thread fetches,
+    // so it is the right place for the answer.
+    const conversationType = await this.prisma.conversation.findUnique({
+      where: { id: realConvId },
+      select: { type: true },
+    });
+    const isGroupConversation = conversationType?.type === 'GROUP';
+    const canSendMessages = currentUserId
+      ? await this.verificationAccess
+          .assertCanMessageInConversation(
+            realConvId,
+            currentUserId,
+            participants.filter((p) => p.leftAt == null).map((p) => p.userId),
+            isGroupConversation,
+          )
+          .then(() => true)
+          .catch(() => false)
+      : false;
+
     return {
       messages: messagesMapped,
+      canSendMessages,
       participants: participants.map((p) => ({
         userId: p.userId,
         lastReadAt:
@@ -1061,6 +1119,10 @@ export class MessagesService
                   username: true,
                   displayName: true,
                   avatar: true,
+                  // Drives the conversation's composer state. Carried on the
+                  // list payload so the chat can render its unavailable state
+                  // on first paint rather than after a second round-trip.
+                  verificationStatus: true,
                   settings: {
                     select: {
                       showOnlineStatus: true,
@@ -1138,6 +1200,14 @@ export class MessagesService
             this.blocksService,
           )
         : new Set<string>();
+
+    // Resolved once for the whole page rather than per conversation: the
+    // viewer's own status gates every row identically.
+    const verificationAccess = this.verificationAccess;
+    const enforcingVerification = verificationAccess.isEnforcementEnabled();
+    const viewerEligible = !enforcingVerification
+      ? true
+      : await verificationAccess.isUserEligible(userId);
 
     const result = await Promise.all(
       (participants as any[]).map(async (p: any) => {
@@ -1247,12 +1317,24 @@ export class MessagesService
           unreadCount,
           unread: unreadCount,
           lastMessage: resolvedLastMsg,
+          // Whether *this* viewer may send into this thread right now, judged
+          // by the one policy the backend enforces with. The client mirrors it
+          // to disable the composer; it is not the enforcement itself.
+          canSendMessages: isGroupConv
+            ? viewerEligible
+            : viewerEligible &&
+              (!enforcingVerification ||
+                !otherUser ||
+                verificationAccess.isEligibleStatus(
+                  otherUser.verificationStatus,
+                )),
           targetUser: otherUser
             ? {
                 id: otherUser.id,
                 username: otherUser.username,
                 displayName: otherUser.displayName,
                 avatar: otherUser.avatar,
+                verificationStatus: otherUser.verificationStatus,
                 isOnline: canSeeOnline
                   ? userPresence?.isOnline || false
                   : false,
@@ -1313,6 +1395,17 @@ export class MessagesService
       }
     }
 
+    // Verification gate, placed *after* the existing-conversation lookup above
+    // on purpose: returning the id of a thread that already exists is how the
+    // UI opens its history, which stays allowed. What is gated is the create
+    // below — no new conversation row is written for a pair (or group) that is
+    // not currently allowed to talk, so clicking Message never leaves an empty
+    // orphan behind.
+    await this.verificationAccess.assertUsersEligible(
+      [currentUserId, ...filteredUserIds],
+      currentUserId,
+    );
+
     const participants = [...new Set([...filteredUserIds, currentUserId])].map(
       (id) => ({
         userId: id,
@@ -1336,6 +1429,17 @@ export class MessagesService
   }
 
   async reactToMessage(messageId: string, userId: string, reaction: string) {
+    // Mirrors the core service: a reaction is a composer action and obeys the
+    // same both-sides-verified rule as sending.
+    const target = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { conversationId: true },
+    });
+    if (!target) {
+      throw new NotFoundException('Message not found');
+    }
+    await this.assertVerifiedForConversation(target.conversationId, userId);
+
     await this.prisma.messageReaction.upsert({
       where: {
         messageId_userId_emoji: {
@@ -1524,21 +1628,14 @@ export class MessagesService
       throw err;
     }
 
-    if (
-      avatarVal !== undefined &&
-      conversation?.avatarKey &&
-      conversation.avatarKey !== updated.avatarKey
-    ) {
-      this.mediaCleanupService
-        ?.handleMediaReplacement(
-          'GROUP_AVATAR',
-          realConvId,
-          conversation.avatarKey,
-          updated.avatarKey,
-          userId,
-        )
-        .catch(() => {});
-    }
+    this.mediaCleanupService?.replaceEntityMedia({
+      entityType: 'GROUP_AVATAR',
+      entityId: realConvId,
+      previous: conversation?.avatarKey,
+      next: updated.avatarKey,
+      ownerId: userId,
+      submitted: avatarVal !== undefined,
+    });
 
     this.invalidateUserConversationsCache(participantRows.map((p) => p.userId));
 
@@ -1562,6 +1659,14 @@ export class MessagesService
     if (!participant) {
       throw new ForbiddenException('Not a member of this conversation');
     }
+
+    // Both sides of an add must be eligible: the member doing the adding, and
+    // the account being pulled in. Same neutral wording as the block refusal
+    // above, so the caller learns nothing about the target's status.
+    await this.verificationAccess.assertUsersEligible(
+      [requesterId, targetUserId],
+      requesterId,
+    );
 
     // Block enforcement: don't let a member pull someone they've blocked (or who
     // blocked them) into a shared group.

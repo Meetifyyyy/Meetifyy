@@ -16,6 +16,7 @@ import { SendMessageDto } from './dto/send-message.dto';
 import { MessageResponseDto } from './dto/message-response.dto';
 import { MentionsService } from '../../mentions/mentions.service';
 import { buildReplyToSnapshot, REPLY_TO_SELECT } from '../reply-preview.util';
+import { VerificationAccessService } from '../../common/verification/verification-access.service';
 
 @Injectable()
 export class MessagingCoreService {
@@ -44,7 +45,45 @@ export class MessagingCoreService {
     // it, so an unwired instance must fail at boot rather than quietly stop
     // filtering.
     protected blocksService: BlocksService,
+    // Also required. This is the only thing standing between an unverified
+    // account and a message insert on the socket path, which has no guard of
+    // its own — an optional dependency would let that protection vanish
+    // silently instead of failing at boot.
+    protected verificationAccess: VerificationAccessService,
   ) {}
+
+  /**
+   * Verification gate for a conversation that already exists.
+   *
+   * Called from every write path rather than from the controllers, because
+   * the controllers are not the only entry point: `message:send` arrives over
+   * Socket.IO, offline queues replay long after the composer was rendered, and
+   * a stale tab still holds a conversation id it was allowed to open an hour
+   * ago. Putting the check here means none of those bypass it.
+   */
+  protected async assertVerifiedForConversation(
+    realConvId: string,
+    senderId: string,
+  ): Promise<void> {
+    if (!this.verificationAccess.isEnforcementEnabled()) return;
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: realConvId },
+      select: {
+        type: true,
+        participants: {
+          where: { leftAt: null },
+          select: { userId: true },
+        },
+      },
+    });
+    if (!conv) return; // the caller's own not-found handling owns this case
+    await this.verificationAccess.assertCanMessageInConversation(
+      realConvId,
+      senderId,
+      conv.participants.map((p) => p.userId),
+      conv.type === 'GROUP',
+    );
+  }
 
   async getBatchUnblockedAndUnmutedParticipants(
     conversationId: string,
@@ -172,6 +211,7 @@ export class MessagingCoreService {
         id: true,
         publicId: true,
         name: true,
+        type: true,
         participants: {
           // `deletedAt` is deliberately NOT filtered here. A participant who
           // deleted this conversation is still a member of it — they simply
@@ -195,6 +235,17 @@ export class MessagingCoreService {
         'You are no longer a member of this conversation',
       );
     }
+
+    // Verification gate, on the same participant set we just loaded. A DM
+    // needs both people eligible; a group needs the sender. This sits below
+    // every transport — REST, socket, offline replay — so a client holding
+    // stale "you may type here" state is refused at the insert, not trusted.
+    await this.verificationAccess.assertCanMessageInConversation(
+      conv.id,
+      senderId,
+      conv.participants.map((p) => p.userId),
+      (conv as any).type === 'GROUP',
+    );
 
     const otherParticipants = conv.participants.filter(
       (p) => p.userId !== senderId,
@@ -684,6 +735,16 @@ export class MessagingCoreService {
 
     return {
       messages: messagesMapped,
+      // Same verdict the /api/messages history carries: whether this viewer may
+      // send here, from the policy the write path enforces with. It travels on
+      // history because history is the one response every open thread fetches —
+      // the conversation list only covers its first page, so a deep-linked
+      // thread had no other way to learn the answer before trying to send.
+      canSendMessages: currentUserId
+        ? await this.assertVerifiedForConversation(realConvId, currentUserId)
+            .then(() => true)
+            .catch(() => false)
+        : false,
       participants: participants.map((p) => ({
         userId: p.userId,
         lastReadAt:
@@ -791,6 +852,18 @@ export class MessagingCoreService {
   }
 
   async reactToMessage(messageId: string, userId: string, reaction: string) {
+    // A reaction is a message-composer action too, so it obeys the same rule
+    // as sending: emoji on a thread you are not allowed to write in would be
+    // a trivial way to keep talking to someone you cannot message.
+    const target = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { conversationId: true },
+    });
+    if (!target) {
+      throw new NotFoundException('Message not found');
+    }
+    await this.assertVerifiedForConversation(target.conversationId, userId);
+
     await this.prisma.messageReaction.upsert({
       where: {
         messageId_userId_emoji: {

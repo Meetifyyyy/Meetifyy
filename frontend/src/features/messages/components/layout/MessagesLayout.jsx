@@ -190,6 +190,13 @@ export default function MessagesLayout() {
       avatar: inferredAvatar,
       messages: allMessages,
       participants: initialPage?.participants || baseConv.participants || baseConv.members || [],
+      // The history response answers this for any thread, including one reached
+      // by a deep link that the conversation list's first page never covered —
+      // which is the case that previously left the composer enabled until a
+      // send came back refused. Prefer it over the list's copy: it is fetched
+      // for the thread that is actually open.
+      canSendMessages:
+        initialPage?.canSendMessages ?? baseConv.canSendMessages,
       nextCursor: latestPage?.nextCursor || null,
     };
   }, [baseConv, allMessages, rawPages, currentUser?.id]);

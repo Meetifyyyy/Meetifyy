@@ -12,6 +12,7 @@ import { PresenceService } from '../../presence/presence.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { generatePublicId } from '../../common/utils/public-id.util';
 import { MentionsService } from '../../mentions/mentions.service';
+import { VerificationAccessService } from '../../common/verification/verification-access.service';
 
 import { resolvePresenceVisibilityForViewer } from '../../users/privacy.helper';
 
@@ -23,6 +24,7 @@ export class DmService extends MessagingCoreService {
     domainEventService: DomainEventService,
     mentionsService: MentionsService,
     blocksService: BlocksService,
+    verificationAccess: VerificationAccessService,
   ) {
     super(
       prisma,
@@ -30,6 +32,7 @@ export class DmService extends MessagingCoreService {
       domainEventService,
       mentionsService,
       blocksService,
+      verificationAccess,
     );
   }
 
@@ -96,6 +99,10 @@ export class DmService extends MessagingCoreService {
                     username: true,
                     displayName: true,
                     avatar: true,
+                    // See MessagesService.getUserConversations: the partner's
+                    // eligibility travels with the row so the composer can
+                    // render its unavailable state on first paint.
+                    verificationStatus: true,
                     settings: {
                       select: {
                         showOnlineStatus: true,
@@ -223,6 +230,12 @@ export class DmService extends MessagingCoreService {
       mutualBlockIds.filter((id) => !blockedByMeSet.has(id)),
     );
 
+    const enforcingVerification =
+      this.verificationAccess.isEnforcementEnabled();
+    const viewerEligible = !enforcingVerification
+      ? true
+      : await this.verificationAccess.isUserEligible(userId);
+
     const results = await Promise.all(
       participants.map(async (p) => {
         const conv = p.conversation;
@@ -326,12 +339,22 @@ export class DmService extends MessagingCoreService {
                   mediaType: lastMsgInfo.mediaType,
                 }
               : null,
+          // Mirrors the rule the backend enforces on send: both sides must be
+          // eligible for this viewer to be offered a composer.
+          canSendMessages:
+            viewerEligible &&
+            (!enforcingVerification ||
+              !otherUser ||
+              this.verificationAccess.isEligibleStatus(
+                (otherUser as any).verificationStatus,
+              )),
           targetUser: otherUser
             ? {
                 id: otherUser.id,
                 username: otherUser.username,
                 displayName: otherUser.displayName,
                 avatar: otherUser.avatar,
+                verificationStatus: (otherUser as any).verificationStatus,
                 isOnline: canSeeOnline
                   ? userPresence?.isOnline || false
                   : false,
@@ -421,6 +444,15 @@ export class DmService extends MessagingCoreService {
         const pubId = (existing as any).publicId || existing.id;
         return { id: pubId, publicId: pubId };
       }
+
+      // Both people must currently be eligible before a DM row is created.
+      // Reviving an existing thread above is untouched — history stays
+      // reachable — but a first contact with an ineligible account writes
+      // nothing, so the Message button cannot leave orphan conversations.
+      await this.verificationAccess.assertUsersEligible(
+        [currentUserId, targetUserId],
+        currentUserId,
+      );
 
       const newPubId = generatePublicId();
       const conv = await tx.conversation.create({
