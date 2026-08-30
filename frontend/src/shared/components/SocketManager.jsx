@@ -13,9 +13,11 @@ import { appendMessageToCache, matchesConversationId, getConversationAliases, up
 import { isInstantChat, isInstantMatchChatOpen } from '../utils/instantChatRouting';
 import { requestOpenInstantMatchChat } from '../../features/instant-match/context/InstantMatchContext';
 import { patchInviteNotification } from '@features/notifications/utils/inviteLifecycle';
+import { VERIFICATION_GATED_QUERY_KEYS } from '../utils/messagingEligibility';
+import { idbDelete } from '../lib/idb';
 
 export default function SocketManager() {
-  const { session, isLoggedIn, currentUser } = useAuth();
+  const { session, isLoggedIn, currentUser, updateCurrentUser } = useAuth();
   const { connect, disconnect, socket } = useGlobalSocketStore();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -32,6 +34,16 @@ export default function SocketManager() {
   useEffect(() => {
     selfShowOnlineRef.current = selfShowOnline;
   }, [selfShowOnline]);
+
+  // Same reason as the ref above: the socket handlers are bound once and must
+  // not be re-registered every time the user object changes, but the
+  // verification handler has to read and write the *current* user.
+  const currentUserRef = useRef(currentUser);
+  const updateCurrentUserRef = useRef(updateCurrentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+    updateCurrentUserRef.current = updateCurrentUser;
+  }, [currentUser, updateCurrentUser]);
 
   useEffect(() => {
     if (isLoggedIn && session?.access_token) {
@@ -1090,12 +1102,73 @@ export default function SocketManager() {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     };
 
+    // Verification decides whether a conversation has a composer at all, and
+    // it changes out-of-band (an admin reviews, or the user submits). This is
+    // what turns that into an immediate UI change instead of one the user
+    // discovers by having a message bounce. Modelled on the block handler
+    // above, which solves the same "the other side changed under you" problem.
+    const handleVerificationChanged = (payload) => {
+      const subjectId = payload?.userId;
+      if (!subjectId) return;
+      const status = payload?.verificationStatus;
+      const canMessage = Boolean(payload?.canMessage);
+      const self = currentUserRef.current;
+      const isSelf = String(subjectId) === String(self?.id);
+
+      if (isSelf) {
+        // The viewer's own status gates every conversation at once, including
+        // groups, and is read straight off currentUser by the composer.
+        if (status && self && self.verificationStatus !== status) {
+          updateCurrentUserRef.current?.({ ...self, verificationStatus: status });
+        }
+        // Losing eligibility has to take the gated content with it. Locking the
+        // page only stops it being rendered; the campus directory and events
+        // already sitting in the query cache (and in the IndexedDB mirror
+        // behind it) would otherwise survive the revocation and outlive a
+        // reload.
+        if (!canMessage) {
+          for (const key of VERIFICATION_GATED_QUERY_KEYS) {
+            queryClient.removeQueries({ queryKey: key });
+          }
+          idbDelete('profiles', 'campus_users').catch(() => {});
+        }
+      } else {
+        queryClient.setQueryData(['conversations'], (oldConvs) => {
+          if (!Array.isArray(oldConvs)) return oldConvs;
+          let modified = false;
+          const next = oldConvs.map((c) => {
+            if (c.isGroup || c.type === 'GROUP') return c;
+            const partnerId = c.targetUser?.id || c.otherUser?.id || c.userId;
+            if (!partnerId || String(partnerId) !== String(subjectId)) return c;
+            modified = true;
+            return {
+              ...c,
+              canSendMessages: canMessage,
+              ...(c.targetUser
+                ? { targetUser: { ...c.targetUser, verificationStatus: status } }
+                : {}),
+            };
+          });
+          return modified ? next : oldConvs;
+        });
+        // The draft screen asks a different question via its own key, and it
+        // has no conversation row to patch.
+        queryClient.invalidateQueries({ queryKey: ['messaging-eligibility', subjectId] });
+      }
+
+      // Rows this client has not loaded (a later page) come back correct on
+      // the next fetch; the server's list cache was evicted for the same set
+      // of viewers when the event was emitted.
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    };
+
     socket.on('notification:new', handleNewNotification);
     socket.on('notification:updated', handleNotificationUpdated);
     socket.on('notification:count', handleNotificationCount);
     socket.on('presence:update', handlePresenceUpdate);
     socket.on('user:blocked', handleBlockStateChange);
     socket.on('user:unblocked', handleBlockStateChange);
+    socket.on('user:verification_changed', handleVerificationChanged);
     socket.on('conversation:updated', handleConversationUpdated);
     socket.on('message:new', handleGlobalMessageNew);
     socket.on('message:updated', handleMessageUpdated);
@@ -1110,6 +1183,7 @@ export default function SocketManager() {
       socket.off('presence:update', handlePresenceUpdate);
       socket.off('user:blocked', handleBlockStateChange);
       socket.off('user:unblocked', handleBlockStateChange);
+      socket.off('user:verification_changed', handleVerificationChanged);
       socket.off('conversation:updated', handleConversationUpdated);
       socket.off('message:new', handleGlobalMessageNew);
       socket.off('message:updated', handleMessageUpdated);
