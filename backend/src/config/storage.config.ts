@@ -24,6 +24,20 @@ export const storageConfigValues = {
     accessKeyId: str('R2_ACCESS_KEY_ID'),
     secretAccessKey: str('R2_SECRET_ACCESS_KEY'),
     bucketName: str('R2_BUCKET_NAME', { default: 'meetifyy-dev' }),
+    /**
+     * Optional separate bucket for identity documents.
+     *
+     * The main bucket is served by a public `pub-*.r2.dev` host, which resolves
+     * ANY key with no authentication — so for verification media, privacy there
+     * rests entirely on the key being unguessable. That is not an acceptable
+     * control for a government or college ID. Point this at a bucket with no
+     * public host and verification objects become reachable only through a
+     * signed URL.
+     *
+     * Unset falls back to `bucketName`, which keeps existing deployments
+     * working unchanged.
+     */
+    verificationBucketName: str('R2_VERIFICATION_BUCKET_NAME', { default: '' }),
     publicUrl: url('R2_PUBLIC_URL'),
     region: str('STORAGE_REGION', { default: 'auto' }),
     /** Presigned URL lifetime in seconds. */

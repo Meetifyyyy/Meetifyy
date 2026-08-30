@@ -65,6 +65,27 @@ export class StorageService {
     ) {
       throw new BadRequestException(COVERED_IMAGE_SIZE_ERROR_MESSAGE);
     }
+    // Identity documents get their bytes checked, not just their label.
+    //
+    // The declared mimetype arrives in the same untrusted multipart body as the
+    // content, so on its own it proves nothing — and the verification flow is
+    // exactly where "this is a JPEG" needs to be true, because a reviewer makes
+    // an identity decision from it and the submission check downstream trusts
+    // the recorded type. The same signature check already guards support
+    // attachments; it is applied here rather than to every folder because the
+    // video and audio types the post/chat paths accept have no signature in it.
+    if (this.isAlwaysPrivateKey(`${safeFolder}/x`)) {
+      if (!file.mimetype?.startsWith('image/')) {
+        throw new BadRequestException('Verification documents must be images');
+      }
+      const sniffed = sniffMimeType(file.buffer);
+      if (sniffed !== file.mimetype) {
+        throw new BadRequestException(
+          "That file's contents do not match its type.",
+        );
+      }
+    }
+
     const ext = this.extensionForMime(file.mimetype);
     const randomHex = require('crypto').randomBytes(16).toString('hex');
     const key = `${safeFolder}/${randomHex}.${ext}`;
@@ -86,6 +107,7 @@ export class StorageService {
             : 'IMAGE', // Legacy fallback
         mimeType: file.mimetype,
         fileSize: file.size,
+        visibility: this.visibilityForFolder(safeFolder),
       },
     });
 
@@ -175,6 +197,7 @@ export class StorageService {
       width: width ? Math.round(Number(width)) : undefined,
       height: height ? Math.round(Number(height)) : undefined,
       duration: duration ? Math.round(Number(duration)) : undefined,
+      visibility: this.visibilityForFolder(safeFolder),
     };
 
     // Register media in database (pending state). Variant (thumbnail) keys can be
@@ -206,11 +229,64 @@ export class StorageService {
     return this.storageProvider.getPublicUrl(key);
   }
 
+  /**
+   * Prefixes whose contents are never served through the unauthenticated
+   * `GET /api/media/*` path, whatever the `media` row says.
+   *
+   * `visibility` is the general mechanism, but it is a column that has to be
+   * set correctly on every write to be worth anything — and it was not: a
+   * verification upload went in as the default 'public' and was only flipped
+   * afterwards, leaving a window, and a row that never got created at all
+   * (unregistered key) had no visibility to read. Identity documents are too
+   * sensitive to protect only by a column, so the folder itself is a hard
+   * floor: no `verification/` key resolves publicly, row or no row.
+   */
+  private static readonly PRIVATE_FOLDERS = new Set(['verification']);
+
+  /**
+   * The `visibility` value a new upload into this folder must be born with.
+   *
+   * Set at creation rather than patched afterwards: the previous flow uploaded
+   * an identity document as 'public' and only flipped it once the verification
+   * request was submitted, which left every selfie and ID card publicly
+   * resolvable for the whole gap between the two calls — and permanently so if
+   * the user abandoned the form after uploading.
+   */
+  visibilityForFolder(folder: string): string {
+    return this.isAlwaysPrivateKey(`${folder}/x`) ? 'private' : 'public';
+  }
+
+  /** True when a storage key sits under a folder that is never public. */
+  isAlwaysPrivateKey(key: string): boolean {
+    const folder = (key || '').split('/')[0];
+    return StorageService.PRIVATE_FOLDERS.has(folder);
+  }
+
+  /**
+   * Resolves a key to its public URL, or null when the object must not be
+   * served publicly.
+   *
+   * Returning null for private media (rather than throwing or returning a
+   * signed URL) is deliberate: the caller renders it exactly like a missing
+   * object, so the response cannot be used to confirm that a given
+   * verification document exists.
+   */
   async getResolvedPublicUrl(key: string): Promise<string | null> {
+    if (this.isAlwaysPrivateKey(key)) return null;
+
     const media = await this.prisma.media.findUnique({
       where: { objectKey: key },
-      select: { provider: true, bucket: true, objectKey: true },
+      select: {
+        provider: true,
+        bucket: true,
+        objectKey: true,
+        visibility: true,
+      },
     });
+
+    // Private media is reachable only through getSignedUrlsForUser, which
+    // checks ownership, or through an authorized reviewer path.
+    if (media && media.visibility !== 'public') return null;
 
     if (media?.provider === 'supabase') {
       return this.getSupabasePublicUrl(media.bucket, media.objectKey);
@@ -218,6 +294,21 @@ export class StorageService {
 
     // Default to active provider if no media record found or provider is r2
     return this.getPublicUrl(key);
+  }
+
+  /**
+   * A time-limited signed URL for one private object, for an authorized
+   * reviewer. Ownership is NOT the test here — a verification reviewer is by
+   * definition not the owner — so this must only ever be called from behind
+   * AdminGuard.
+   */
+  async getReviewerSignedUrl(
+    key: string,
+    expiresIn = 300,
+  ): Promise<string | null> {
+    if (!key || !this.isSafeStorageKey(key)) return null;
+    const signed = await this.getSignedUrls([key], expiresIn);
+    return signed[key] || null;
   }
 
   private getSupabasePublicUrl(bucket: string, key: string): string {
@@ -337,6 +428,10 @@ export class StorageService {
           storageKey: key,
           mimeType: 'application/octet-stream',
           fileSize: 0,
+          // This branch adopts a key that has no row yet, so it must apply the
+          // same folder rule as the registered paths — otherwise an
+          // unregistered verification key would be adopted as 'public'.
+          visibility: this.visibilityForFolder(key.split('/')[0] || 'general'),
         },
       });
     }

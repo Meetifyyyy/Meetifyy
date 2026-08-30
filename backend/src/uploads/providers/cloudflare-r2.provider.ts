@@ -24,6 +24,7 @@ export class CloudflareR2Provider implements StorageProvider {
   private readonly logger = new Logger(CloudflareR2Provider.name);
   private s3: S3Client | null = null;
   private bucketName: string;
+  private verificationBucketName: string;
   private publicUrl: string;
   private readonly isConfigured: boolean;
 
@@ -31,6 +32,10 @@ export class CloudflareR2Provider implements StorageProvider {
     const { accountId, accessKeyId, secretAccessKey, bucketName, region } =
       config.storage.r2;
     this.bucketName = bucketName;
+    // Falls back to the main bucket when unset, so nothing changes until an
+    // operator provisions a private bucket and points this at it.
+    this.verificationBucketName =
+      config.storage.r2.verificationBucketName || bucketName;
     this.publicUrl = config.storage.publicUrl || config.storage.r2.publicUrl;
 
     this.isConfigured = !!(
@@ -113,10 +118,14 @@ export class CloudflareR2Provider implements StorageProvider {
     }
 
     const command = new PutObjectCommand({
-      Bucket: this.bucketName,
+      Bucket: this.bucketFor(key),
       Key: key,
-      ContentType: contentType,
-      CacheControl: 'public, max-age=31536000, immutable',
+      // Identity documents must never be told to cache publicly for a year.
+      // They were, which is how a verification object stayed in a CDN long
+      // after the request that produced it had failed.
+      CacheControl: key.startsWith('verification/')
+        ? 'private, no-store'
+        : 'public, max-age=31536000, immutable',
     });
     const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn });
     const filePublicUrl = this.getPublicUrl(key);
@@ -124,12 +133,27 @@ export class CloudflareR2Provider implements StorageProvider {
     return { uploadUrl, publicUrl: filePublicUrl, key };
   }
 
+  /**
+   * The bucket a key belongs in.
+   *
+   * Identity documents can be routed to a bucket with no public host, because
+   * the main bucket is fronted by a `pub-*.r2.dev` URL that resolves any key
+   * without authentication — leaving verification privacy resting on key
+   * secrecy alone. Keyed off the prefix rather than passed by every caller, so
+   * a new call site cannot forget to ask for the right bucket.
+   */
+  private bucketFor(key: string): string {
+    return key?.startsWith('verification/')
+      ? this.verificationBucketName
+      : this.bucketName;
+  }
+
   async createSignedDownloadUrl(
     key: string,
     expiresIn = config.storage.r2.signedUrlTtlSeconds,
   ): Promise<string> {
     if (!this.isConfigured || !this.s3) return `/mock-download/${key}`;
-    const command = new GetObjectCommand({ Bucket: this.bucketName, Key: key });
+    const command = new GetObjectCommand({ Bucket: this.bucketFor(key), Key: key });
     return getSignedUrl(this.s3, command, { expiresIn });
   }
 
@@ -151,7 +175,7 @@ export class CloudflareR2Provider implements StorageProvider {
       keys.map(async (key) => {
         try {
           const command = new GetObjectCommand({
-            Bucket: this.bucketName,
+            Bucket: this.bucketFor(key),
             Key: key,
           });
           const url = await getSignedUrl(this.s3!, command, { expiresIn });
@@ -181,7 +205,7 @@ export class CloudflareR2Provider implements StorageProvider {
     if (!this.isConfigured || !this.s3) return true;
     try {
       await this.s3.send(
-        new DeleteObjectCommand({ Bucket: this.bucketName, Key: key }),
+        new DeleteObjectCommand({ Bucket: this.bucketFor(key), Key: key }),
       );
       return true;
     } catch (e) {
@@ -225,17 +249,22 @@ export class CloudflareR2Provider implements StorageProvider {
     try {
       await this.s3.send(
         new PutObjectCommand({
-          Bucket: this.bucketName,
+          Bucket: this.bucketFor(key),
           Key: key,
           Body: fileBuffer,
           ContentType: contentType,
-          CacheControl: 'public, max-age=31536000, immutable',
+          // An identity document is not a cacheable public asset. Storing one
+          // with a year-long immutable directive is how a verification image
+          // ended up pinned in a CDN edge long after the submission failed.
+          CacheControl: key.startsWith('verification/')
+            ? 'private, no-store'
+            : 'public, max-age=31536000, immutable',
         }),
       );
       return this.getPublicUrl(key);
     } catch (e: any) {
       this.logger.error(
-        `R2 upload failed for key ${key} in bucket ${this.bucketName}: ${e?.message || e}`,
+        `R2 upload failed for key ${key} in bucket ${this.bucketFor(key)}: ${e?.message || e}`,
       );
       throw new ServiceUnavailableException('Upload failed, please try again');
     }
@@ -250,7 +279,7 @@ export class CloudflareR2Provider implements StorageProvider {
       return fs.existsSync(this.getLocalFilePath(key));
     try {
       await this.s3.send(
-        new HeadObjectCommand({ Bucket: this.bucketName, Key: key }),
+        new HeadObjectCommand({ Bucket: this.bucketFor(key), Key: key }),
       );
       return true;
     } catch (e: any) {
@@ -271,7 +300,7 @@ export class CloudflareR2Provider implements StorageProvider {
     if (!this.isConfigured || !this.s3) return null;
     try {
       const head = await this.s3.send(
-        new HeadObjectCommand({ Bucket: this.bucketName, Key: key }),
+        new HeadObjectCommand({ Bucket: this.bucketFor(key), Key: key }),
       );
       return head;
     } catch (e) {
@@ -281,11 +310,20 @@ export class CloudflareR2Provider implements StorageProvider {
 
   async copy(sourceKey: string, destinationKey: string): Promise<boolean> {
     if (!this.isConfigured || !this.s3) return true;
+    // Copying across the public/private bucket boundary would move a document
+    // out of the bucket that protects it, or move ordinary media into it.
+    // Nothing does this today; refusing is cheaper than discovering it later.
+    if (this.bucketFor(sourceKey) !== this.bucketFor(destinationKey)) {
+      this.logger.error(
+        `Refusing cross-bucket copy ${sourceKey} -> ${destinationKey}`,
+      );
+      return false;
+    }
     try {
       await this.s3.send(
         new CopyObjectCommand({
-          Bucket: this.bucketName,
-          CopySource: `${this.bucketName}/${sourceKey}`,
+          Bucket: this.bucketFor(destinationKey),
+          CopySource: `${this.bucketFor(sourceKey)}/${sourceKey}`,
           Key: destinationKey,
         }),
       );
@@ -324,7 +362,7 @@ export class CloudflareR2Provider implements StorageProvider {
       do {
         const res = await this.s3.send(
           new ListObjectsV2Command({
-            Bucket: this.bucketName,
+            Bucket: this.bucketFor(prefix),
             Prefix: prefix,
             ContinuationToken: continuationToken,
           }),

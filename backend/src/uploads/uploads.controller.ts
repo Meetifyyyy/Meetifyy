@@ -418,6 +418,20 @@ export class UploadsController {
     if (!this.storageService.isSafeStorageKey(key)) {
       return this.sendMediaMiss(res, 400);
     }
+
+    // Private media never leaves through this endpoint. It is unauthenticated
+    // by design — every URL under /api/media is consumed as a plain <img> src —
+    // which is exactly why identity documents must be refused here rather than
+    // relying on the key being hard to guess. The local-disk branch below is
+    // covered too: it serves bytes directly and would otherwise sidestep the
+    // resolution path entirely.
+    //
+    // The response is an ordinary miss, so it cannot be used to probe whether a
+    // particular verification document exists.
+    if (this.storageService.isAlwaysPrivateKey(key)) {
+      return this.sendMediaMiss(res, 404);
+    }
+
     const cwd = process.cwd();
 
     // Check multiple potential uploads locations on local disk
