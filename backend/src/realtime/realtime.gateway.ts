@@ -43,6 +43,7 @@ import { CommunitiesService } from '../communities/communities.service';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 import { MentionDto } from '../common/dto/mention.dto';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 
 @WebSocketGateway({
   cors: {
@@ -1325,6 +1326,7 @@ export class RealtimeGateway
   }
 
   @SubscribeMessage('queue:join')
+  @VerifiedOnly()
   async handleQueueJoin(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: any,
@@ -1370,6 +1372,7 @@ export class RealtimeGateway
   }
 
   @SubscribeMessage('match:respond')
+  @VerifiedOnly()
   async handleMatchRespond(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: any,
@@ -1407,6 +1410,7 @@ export class RealtimeGateway
    * so the client rebuilds from this rather than from its own stale memory.
    */
   @SubscribeMessage('queue:sync')
+  @VerifiedOnly()
   async handleQueueSync(@ConnectedSocket() client: Socket) {
     const userId = (client as any).userId;
     if (!userId)
@@ -1428,6 +1432,7 @@ export class RealtimeGateway
    * learns about it here.
    */
   @SubscribeMessage('instant_match:chat_state')
+  @VerifiedOnly()
   async handleInstantMatchChatState(@ConnectedSocket() client: Socket) {
     const userId = (client as any).userId;
     if (!userId)
@@ -1450,6 +1455,7 @@ export class RealtimeGateway
    * error, because from the user's point of view the chat did end.
    */
   @SubscribeMessage('instant_match:leave')
+  @VerifiedOnly()
   async handleInstantMatchLeave(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: any,

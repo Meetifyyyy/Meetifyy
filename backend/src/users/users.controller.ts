@@ -13,6 +13,7 @@ import {
 import { UsersService } from './users.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
+import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 
 @Controller('api/users')
 export class UsersController {
@@ -207,6 +208,7 @@ export class UsersController {
 
   @Post(':username/follow')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async follow(@Param('username') username: string, @Req() req: any) {
     const currentUserId = req.user?.id;
     return this.usersService.followUser(currentUserId, username);
@@ -214,6 +216,7 @@ export class UsersController {
 
   @Post(':username/unfollow')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async unfollow(@Param('username') username: string, @Req() req: any) {
     const currentUserId = req.user?.id;
     return this.usersService.unfollowUser(currentUserId, username);

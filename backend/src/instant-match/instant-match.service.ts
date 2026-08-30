@@ -215,6 +215,14 @@ export class InstantMatchService implements OnModuleInit {
    * existing entry rather than stacking duplicates (userId is unique).
    */
   async joinQueue(dto: JoinQueueDto): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: dto.userId },
+      select: { verificationStatus: true },
+    });
+    if (!user || user.verificationStatus !== 'VERIFIED') {
+      throw new ForbiddenException('Account verification is required for Instant Match');
+    }
+
     // A user holding a live match must resolve it before re-queueing,
     // otherwise accepting the old match and searching again race each other.
     const pending = await this.findPendingSessionFor(dto.userId);
@@ -312,6 +320,7 @@ export class InstantMatchService implements OnModuleInit {
     const candidates = await this.prisma.matchQueueEntry.findMany({
       where: {
         activity: myEntry.activity,
+        user: { verificationStatus: 'VERIFIED' },
         userId: {
           not: userId,
           notIn: excludedIds.length ? excludedIds : undefined,

@@ -11,6 +11,7 @@ import {
   PRETTY_MESSAGE_FORMAT,
 } from './common/logging/log-format';
 import { RateLimitGuard } from './common/guards/ratelimit.guard';
+import { VerificationGuard } from './common/guards/verification.guard';
 import { NoCacheInterceptor } from './common/interceptors/no-cache.interceptor';
 import { config, configNamespaces } from './config';
 import { SupabaseModule } from './supabase/supabase.module';
@@ -42,6 +43,7 @@ import { InstantMatchModule } from './instant-match/instant-match.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { ModerationModule } from './moderation/moderation.module';
 import { AdminModule } from './admin/admin.module';
+import { VerificationModule } from './verification/verification.module';
 import { RedisModule } from './redis/redis.module';
 import { EventsModule } from './events/events.module';
 import { DomainValidatorModule } from './common/services/domain-validator.module';
@@ -260,6 +262,7 @@ import { MonitoringModule } from './monitoring/monitoring.module';
     InstantMatchModule,
     UploadsModule,
     ModerationModule,
+    VerificationModule,
     AdminModule,
     // Public help centre + support-request intake. The admin-facing half lives
     // inside AdminModule, behind AdminJwtGuard.
@@ -275,6 +278,10 @@ import { MonitoringModule } from './monitoring/monitoring.module';
     {
       provide: APP_GUARD,
       useClass: RateLimitGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: VerificationGuard,
     },
     {
       provide: APP_INTERCEPTOR,

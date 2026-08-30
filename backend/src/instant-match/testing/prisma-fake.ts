@@ -48,17 +48,22 @@ function matchesCondition(value: any, condition: any): boolean {
   return true;
 }
 
-function matchesWhere(row: Row, where: Row = {}): boolean {
+function matchesWhere(row: Row, where: Row = {}, users?: Map<string, FakeUser>): boolean {
   for (const [key, condition] of Object.entries(where)) {
     if (condition === undefined) continue;
     if (key === 'OR') {
-      if (!(condition as Row[]).some((sub) => matchesWhere(row, sub)))
+      if (!(condition as Row[]).some((sub) => matchesWhere(row, sub, users)))
         return false;
       continue;
     }
     if (key === 'AND') {
-      if (!(condition as Row[]).every((sub) => matchesWhere(row, sub)))
+      if (!(condition as Row[]).every((sub) => matchesWhere(row, sub, users)))
         return false;
+      continue;
+    }
+    if (key === 'user') {
+      const u = row.user || (row.userId && users ? users.get(row.userId) : null);
+      if (!u || !matchesWhere(u, condition as Row, users)) return false;
       continue;
     }
     if (!matchesCondition(row[key], condition)) return false;
@@ -83,6 +88,7 @@ export interface FakeUser {
   passingYear: number | null;
   interests: string[];
   bio: string | null;
+  verificationStatus?: string;
 }
 
 export class PrismaFake {
@@ -108,6 +114,7 @@ export class PrismaFake {
       passingYear: 2028,
       interests: [],
       bio: null,
+      verificationStatus: 'VERIFIED',
       ...overrides,
     };
     this.users.set(id, user);
@@ -168,7 +175,7 @@ export class PrismaFake {
       },
       async findMany({ where, include, select }: any) {
         return self.queue
-          .filter((e) => matchesWhere(e, where))
+          .filter((e) => matchesWhere(e, where, self.users))
           .map((e) => {
             const row: Row = select ? project(e, select) : { ...e };
             if (include?.user)
@@ -191,7 +198,7 @@ export class PrismaFake {
       },
       async deleteMany({ where }: any) {
         const before = self.queue.length;
-        self.queue = self.queue.filter((e) => !matchesWhere(e, where));
+        self.queue = self.queue.filter((e) => !matchesWhere(e, where, self.users));
         return { count: before - self.queue.length };
       },
     };
@@ -205,13 +212,13 @@ export class PrismaFake {
         return row ? project(row, select) : null;
       },
       async findFirst({ where }: any) {
-        const rows = self.sessions.filter((s) => matchesWhere(s, where));
+        const rows = self.sessions.filter((s) => matchesWhere(s, where, self.users));
         rows.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
         return rows[0] ? { ...rows[0] } : null;
       },
       async findMany({ where, select }: any) {
         return self.sessions
-          .filter((s) => matchesWhere(s, where))
+          .filter((s) => matchesWhere(s, where, self.users))
           .map((s) => project(s, select));
       },
       async create({ data, select }: any) {
@@ -240,7 +247,7 @@ export class PrismaFake {
         return { ...row };
       },
       async updateMany({ where, data }: any) {
-        const rows = self.sessions.filter((s) => matchesWhere(s, where));
+        const rows = self.sessions.filter((s) => matchesWhere(s, where, self.users));
         rows.forEach((r) => Object.assign(r, data));
         return { count: rows.length };
       },
@@ -264,7 +271,7 @@ export class PrismaFake {
     const self = this;
     return {
       async findFirst({ where, select }: any) {
-        const row = self.conversations.find((c) => matchesWhere(c, where));
+        const row = self.conversations.find((c) => matchesWhere(c, where, self.users));
         return row ? project(row, select) : null;
       },
       // Ending a chat closes its conversation too, so the fake has to accept
@@ -272,7 +279,7 @@ export class PrismaFake {
       async updateMany({ where, data }: any) {
         let count = 0;
         for (const c of self.conversations) {
-          if (matchesWhere(c, where)) {
+          if (matchesWhere(c, where, self.users)) {
             Object.assign(c, data);
             count += 1;
           }
@@ -286,7 +293,10 @@ export class PrismaFake {
     const self = this;
     return {
       async findUnique({ where, select }: any) {
-        const row = self.users.get(where.id);
+        let row = self.users.get(where.id);
+        if (!row && where.id) {
+          row = self.seedUser(where.id);
+        }
         return row ? project(row, select) : null;
       },
     };

@@ -413,6 +413,7 @@ export class StorageService {
       // logged in) and never listed publicly — reachable only through the
       // admin ticket view, which resolves the key itself.
       'support',
+      'verification',
     ];
     if (!allowedFolders.includes(folder)) {
       throw new BadRequestException(

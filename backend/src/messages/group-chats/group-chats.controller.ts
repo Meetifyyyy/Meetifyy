@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { GroupChatsService } from './group-chats.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
+import { VerifiedOnly } from '../../common/decorators/verified-only.decorator';
 import { DomainEventService } from '../../events/domain-event.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { NotificationFactory } from '../../notifications/notification.factory';
@@ -46,6 +47,7 @@ export class GroupChatsController {
 
   @Post()
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async createGroup(
     @Req() req: any,
     @Body('name') name: string,
@@ -130,6 +132,7 @@ export class GroupChatsController {
 
   @Post(':id/messages')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async sendMessage(
     @Req() req: any,
     @Param('id') conversationId: string,
@@ -283,6 +286,7 @@ export class GroupChatsController {
 
   @Patch(':id/info')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async updateGroupInfo(
     @Req() req: any,
     @Param('id') conversationId: string,
@@ -378,6 +382,7 @@ export class GroupChatsController {
 
   @Post(':id/members')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async addMember(
     @Req() req: any,
     @Param('id') conversationId: string,
@@ -416,6 +421,7 @@ export class GroupChatsController {
 
   @Delete(':id/members/:targetUserId')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async removeMember(
     @Req() req: any,
     @Param('id') conversationId: string,
@@ -595,6 +601,7 @@ export class GroupChatsController {
 
   @Post(':id/owner')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async changeOwner(
     @Req() req: any,
     @Param('id') conversationId: string,
@@ -656,6 +663,7 @@ export class GroupChatsController {
 
   @Post(':id/admins')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async promoteAdmin(
     @Req() req: any,
     @Param('id') conversationId: string,
@@ -698,6 +706,7 @@ export class GroupChatsController {
 
   @Delete(':id/admins/:targetUserId')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async demoteAdmin(
     @Req() req: any,
     @Param('id') conversationId: string,
@@ -753,6 +762,7 @@ export class GroupChatsController {
 
   @Post(':id/requests/:targetUserId/accept')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async acceptJoinRequest(
     @Req() req: any,
     @Param('id') conversationId: string,
@@ -783,6 +793,7 @@ export class GroupChatsController {
 
   @Post(':id/requests/:targetUserId/decline')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async declineJoinRequest(
     @Req() req: any,
     @Param('id') conversationId: string,

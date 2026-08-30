@@ -12,6 +12,7 @@ import {
 import { ActivitiesService } from './activities.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { CreateActivityDto } from './dto/activity.dto';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
 
@@ -94,6 +95,7 @@ export class ActivitiesController {
   }
 
   @Post('invitations/:invitationId/accept')
+  @VerifiedOnly()
   async acceptInvitation(
     @Param('invitationId') invitationId: string,
     @CurrentUser() user: any,
@@ -102,6 +104,7 @@ export class ActivitiesController {
   }
 
   @Post('invitations/:invitationId/decline')
+  @VerifiedOnly()
   async declineInvitation(
     @Param('invitationId') invitationId: string,
     @CurrentUser() user: any,
@@ -110,11 +113,13 @@ export class ActivitiesController {
   }
 
   @Post(':id/bookmark')
+  @VerifiedOnly()
   async bookmarkActivity(@Param('id') id: string, @CurrentUser() user: any) {
     return this.activitiesService.bookmarkActivity(id, user.id);
   }
 
   @Delete(':id/bookmark')
+  @VerifiedOnly()
   async unbookmarkActivity(@Param('id') id: string, @CurrentUser() user: any) {
     return this.activitiesService.unbookmarkActivity(id, user.id);
   }
@@ -147,6 +152,7 @@ export class ActivitiesController {
   }
 
   @Post()
+  @VerifiedOnly()
   async createActivity(
     @Body() data: CreateActivityDto,
     @CurrentUser() user: any,
@@ -159,6 +165,7 @@ export class ActivitiesController {
    * see ActivitiesService.updateActivityVisibility.
    */
   @Patch(':id/visibility')
+  @VerifiedOnly()
   async updateVisibility(
     @Param('id') id: string,
     @Body('visibility') visibility: string,
@@ -172,16 +179,19 @@ export class ActivitiesController {
   }
 
   @Post(':id/join')
+  @VerifiedOnly()
   async joinActivity(@Param('id') id: string, @CurrentUser() user: any) {
     return this.activitiesService.joinActivity(id, user.id);
   }
 
   @Post(':id/leave')
+  @VerifiedOnly()
   async leaveActivity(@Param('id') id: string, @CurrentUser() user: any) {
     return this.activitiesService.leaveActivity(id, user.id);
   }
 
   @Post(':id/decline')
+  @VerifiedOnly()
   async declineCrewInvitation(
     @Param('id') id: string,
     @CurrentUser() user: any,
@@ -190,16 +200,19 @@ export class ActivitiesController {
   }
 
   @Post(':id/cancel')
+  @VerifiedOnly()
   async cancelCrewActivity(@Param('id') id: string, @CurrentUser() user: any) {
     return this.activitiesService.cancelCrewActivity(id, user.id);
   }
 
   @Post(':id/end')
+  @VerifiedOnly()
   async endCrewActivity(@Param('id') id: string, @CurrentUser() user: any) {
     return this.activitiesService.endCrewActivity(id, user.id);
   }
 
   @Post(':id/invite')
+  @VerifiedOnly()
   async inviteFriends(
     @Param('id') id: string,
     @Body('userIds') userIds: string[],
@@ -210,6 +223,7 @@ export class ActivitiesController {
 
   /** Host-only: withdraw an outstanding invitation. Effective immediately. */
   @Delete(':id/invitations/:userId')
+  @VerifiedOnly()
   async revokeInvitation(
     @Param('id') id: string,
     @Param('userId') inviteeId: string,
