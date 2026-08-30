@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { usersApi } from '@shared/api/apiClient';
 import { idbGet, idbSet } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
+import { useIsVerified } from './useIsVerified';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
 export const PROFILE_KEYS = {
@@ -77,6 +78,11 @@ export function useProfile(username) {
 export function useCampusUsers(limit = 50, { enabled = true } = {}) {
   const queryClient = useQueryClient();
   const { isLoggedIn } = useAuth();
+  // The campus surfaces are verification-gated server-side. Without this the
+  // locked page still fired the request on every render pass — a guaranteed
+  // 403 per mount, and previously a successful one that filled the cache with
+  // content the lock was supposed to withhold.
+  const isVerified = useIsVerified();
 
   const query = useQuery({
     queryKey: [...PROFILE_KEYS.campusUsers, limit],
@@ -85,7 +91,7 @@ export function useCampusUsers(limit = 50, { enabled = true } = {}) {
       idbSet('profiles', 'campus_users', data);
       return data;
     },
-    enabled: Boolean(isLoggedIn) && enabled,
+    enabled: Boolean(isLoggedIn) && isVerified && enabled,
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
     placeholderData: (prev) => prev,
@@ -93,11 +99,16 @@ export function useCampusUsers(limit = 50, { enabled = true } = {}) {
 
   useEffect(() => {
     if (query.data) return;
+    // The IndexedDB mirror outlives the session, so an account that was
+    // verified yesterday and is not today would otherwise have the campus
+    // directory restored into its cache from disk — behind the locked page,
+    // and without a request the server could refuse.
+    if (!isVerified) return;
     idbGet('profiles', 'campus_users').then((cached) => {
       if (cached?.value) queryClient.setQueryData([...PROFILE_KEYS.campusUsers, limit], cached.value);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isVerified]);
 
   return {
     campusUsers: query.data || [],
@@ -116,13 +127,14 @@ export function useCampusUsers(limit = 50, { enabled = true } = {}) {
  */
 export function useDirectory({ search = '', course = 'All', branch = 'All', year = 'All' } = {}) {
   const { isLoggedIn } = useAuth();
+  const isVerified = useIsVerified();
   const normSearch = (search || '').trim();
 
   const query = useInfiniteQuery({
     queryKey: ['directory', { search: normSearch, course, branch, year }],
     queryFn: ({ pageParam }) =>
       usersApi.getDirectory({ search: normSearch, course, branch, year, limit: 30, cursor: pageParam }),
-    enabled: Boolean(isLoggedIn),
+    enabled: Boolean(isLoggedIn) && isVerified,
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     staleTime: 60 * 1000,
