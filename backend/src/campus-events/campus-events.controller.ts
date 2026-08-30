@@ -26,7 +26,10 @@ import {
 export class CampusEventsController {
   constructor(private readonly service: CampusEventsService) {}
 
+  // Campus events sit behind the same verification gate as the rest of the
+  // campus surfaces; see the note on GET /api/users/campus.
   @Get()
+  @VerifiedOnly()
   async list(
     @CurrentUser() user: any,
     @Query('scope') scope?: string,
@@ -50,11 +53,13 @@ export class CampusEventsController {
 
   // Static routes before `:id`.
   @Get('mine')
+  @VerifiedOnly()
   async listMine(@CurrentUser() user: any) {
     return this.service.listMine(user.id);
   }
 
   @Get(':id')
+  @VerifiedOnly()
   async getById(@Param('id') id: string, @CurrentUser() user: any) {
     return this.service.getById(id, user?.id);
   }

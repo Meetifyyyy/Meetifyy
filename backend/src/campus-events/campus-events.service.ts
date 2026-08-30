@@ -401,21 +401,14 @@ export class CampusEventsService {
       throw err;
     }
 
-    if (
-      data.posterUrl !== undefined &&
-      event.posterUrl &&
-      event.posterUrl !== updated.posterUrl
-    ) {
-      this.mediaCleanupService
-        ?.handleMediaReplacement(
-          'CAMPUS_EVENT_POSTER',
-          eventId,
-          event.posterUrl,
-          updated.posterUrl,
-          userId,
-        )
-        .catch(() => {});
-    }
+    this.mediaCleanupService?.replaceEntityMedia({
+      entityType: 'CAMPUS_EVENT_POSTER',
+      entityId: eventId,
+      previous: event.posterUrl,
+      next: updated.posterUrl,
+      ownerId: userId,
+      submitted: data.posterUrl !== undefined,
+    });
 
     await this.invalidateCampus(event.campusId);
     return updated;

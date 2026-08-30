@@ -8,6 +8,7 @@ import {
   setRealtimeGatewayRef,
 } from './instant-match.service';
 import { PrismaFake } from './testing/prisma-fake';
+import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
 
 /**
  * Instant Match is a two-party state machine driven entirely by socket events,
@@ -16,6 +17,7 @@ import { PrismaFake } from './testing/prisma-fake';
  * partner silently dropped out of the queue. Each of those has a case here.
  */
 describe('InstantMatchService', () => {
+  let verificationAccess: ReturnType<typeof createVerificationAccessMock>;
   let prisma: PrismaFake;
   let messages: {
     createInstantMatchConversation: jest.Mock;
@@ -69,11 +71,13 @@ describe('InstantMatchService', () => {
       emitQueueStats: jest.fn(),
       emitInstantMatchChatEnded: jest.fn(),
     };
+    verificationAccess = createVerificationAccessMock();
     setRealtimeGatewayRef(emitter);
     service = new InstantMatchService(
       prisma as any,
       messages as any,
       blocksStubFor(prisma),
+      verificationAccess as any,
     );
   });
 
@@ -392,6 +396,26 @@ describe('InstantMatchService', () => {
       expect(messages.createInstantMatchConversation).not.toHaveBeenCalled();
       expect(emitter.emitMatchAccepted).not.toHaveBeenCalled();
       expect(prisma.sessions[0].status).toBe('PENDING');
+    });
+
+    it('refuses to finalize when a participant lost eligibility while pending', async () => {
+      // The guard on `match:respond` vouches only for the caller. Bob's
+      // verification is revoked after the pair was matched, so the second
+      // accept must not hand them a chat the messaging layer would then
+      // refuse every send in.
+      verificationAccess.getEligibilityMap.mockResolvedValue(
+        new Map([
+          ['alice', true],
+          ['bob', false],
+        ]),
+      );
+
+      await service.respondToMatch('alice', sessionId, 'accept');
+      await service.respondToMatch('bob', sessionId, 'accept');
+
+      expect(messages.createInstantMatchConversation).not.toHaveBeenCalled();
+      expect(prisma.sessions[0].status).toBe('EXPIRED');
+      expect(emitter.emitMatchAccepted).not.toHaveBeenCalled();
     });
 
     it('opens exactly one conversation and notifies both once both accept', async () => {
