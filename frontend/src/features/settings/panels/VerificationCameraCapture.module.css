@@ -1,0 +1,437 @@
+.wrapper {
+  width: 100%;
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* ── Trigger Button (Matches Step 2 exactly) ── */
+.triggerButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: var(--color-bg-panel);
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text-light);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 400;
+  cursor: pointer;
+  outline: none;
+  box-shadow: none;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.triggerButton:hover:not(:disabled) {
+  border-color: var(--color-text-muted);
+  color: var(--color-text-main);
+}
+
+.triggerButton:focus-visible {
+  outline: none;
+  border-color: var(--color-text-main);
+}
+
+.triggerButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Live Viewfinder / Review Container ── */
+.viewportContainer {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-height: 380px;
+  background: #000000;
+  border-radius: var(--radius-xl, 20px);
+  overflow: hidden;
+  isolation: isolate;
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.videoElement {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mirrored {
+  transform: scaleX(-1);
+}
+
+.capturedImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ── Top Bar Overlay (Icon-Only Controls) ── */
+.topOverlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.topOverlayLeft,
+.topOverlayRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+/* ── Icon Button Base (Black/White Monochrome) ── */
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-full, 9999px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #ffffff;
+  cursor: pointer;
+  transition: background var(--transition-fast, 0.15s ease), border-color var(--transition-fast, 0.15s ease), opacity var(--transition-fast, 0.15s ease);
+  padding: 0;
+  outline: none;
+}
+
+.iconBtn:hover {
+  background: rgba(0, 0, 0, 0.85);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.iconBtn:active {
+  background: #000000;
+  opacity: 0.9;
+}
+
+/* ── Mobile-Only Flip Camera Button ── */
+/* Strictly hidden on desktop viewports */
+.flipBtn {
+  display: inline-flex;
+}
+
+@media (min-width: 768px) {
+  .flipBtn {
+    display: none !important;
+  }
+}
+
+/* ── Bottom Controls Overlay (Live Camera Mode) ── */
+.bottomOverlay {
+  position: absolute;
+  bottom: 14px;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+/* ── Shutter Button (Black and White Circular Button, No Hover Scale) ── */
+.shutterOuter {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2.5px solid #ffffff;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  outline: none;
+}
+
+.shutterOuter:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #ffffff;
+}
+
+.shutterOuter:active {
+  opacity: 0.85;
+}
+
+.shutterInner {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+/* ── Review Actions Overlay (Captured Photo Mode) ── */
+.reviewOverlay {
+  position: absolute;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  z-index: 10;
+  padding: 0 16px;
+}
+
+.reviewGlassPill {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  border-radius: var(--radius-full, 9999px);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.retakeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  cursor: pointer;
+  transition: background var(--transition-fast, 0.15s ease), border-color var(--transition-fast, 0.15s ease), opacity var(--transition-fast, 0.15s ease);
+  outline: none;
+}
+
+.retakeBtn:hover {
+  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.retakeBtn:active {
+  opacity: 0.8;
+}
+
+.confirmBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: none;
+  background: #ffffff;
+  color: #000000;
+  cursor: pointer;
+  transition: background var(--transition-fast, 0.15s ease), opacity var(--transition-fast, 0.15s ease);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  outline: none;
+}
+
+.confirmBtn:hover {
+  background: #f1f5f9;
+}
+
+.confirmBtn:active {
+  background: #e2e8f0;
+  opacity: 0.9;
+}
+
+/* ── Confirmed State Display (Monochrome) ── */
+.confirmedCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1rem;
+  background: var(--color-bg-panel, var(--color-bg-soft, #f8fafc));
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 12px);
+  gap: 1rem;
+}
+
+:global([data-theme="dark"]) .confirmedCard {
+  background: var(--color-bg-alt, #1e2025);
+  border-color: var(--color-border, #333945);
+}
+
+.confirmedPreviewGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.confirmedThumbnail {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-sm, 8px);
+  object-fit: cover;
+  border: 1px solid var(--color-border, #e2e8f0);
+  background: #000000;
+}
+
+:global([data-theme="dark"]) .confirmedThumbnail {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.confirmedInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.confirmedStatus {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-main, #0f172a);
+}
+
+:global([data-theme="dark"]) .confirmedStatus {
+  color: #ffffff;
+}
+
+.confirmedMeta {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+:global([data-theme="dark"]) .confirmedMeta {
+  color: var(--color-text-muted, #94a3b8);
+}
+
+.retakeIconAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full, 9999px);
+  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-bg-white, #ffffff);
+  color: var(--color-text-main, #0f172a);
+  cursor: pointer;
+  transition: background var(--transition-fast, 0.15s ease), border-color var(--transition-fast, 0.15s ease);
+}
+
+:global([data-theme="dark"]) .retakeIconAction {
+  background: var(--color-bg-elevated, #202020);
+  border-color: var(--color-border, #333333);
+  color: #ffffff;
+}
+
+.retakeIconAction:hover:not(:disabled) {
+  background: var(--color-bg-soft, #f1f5f9);
+  border-color: var(--color-border-dark, #cbd5e1);
+}
+
+:global([data-theme="dark"]) .retakeIconAction:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* ── Error State ── */
+.errorBox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.125rem;
+  background: rgba(var(--color-danger-rgb, 239, 68, 68), 0.08);
+  border: 1px solid rgba(var(--color-danger-rgb, 239, 68, 68), 0.25);
+  border-radius: var(--radius-md, 12px);
+  gap: 1rem;
+}
+
+.errorContent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  color: var(--color-danger, #ef4444);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  flex: 1;
+}
+
+.errorIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--color-danger, #ef4444);
+}
+
+.retryBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full, 9999px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  cursor: pointer;
+  outline: none;
+  transition: background var(--transition-fast, 0.15s ease), border-color var(--transition-fast, 0.15s ease);
+  flex-shrink: 0;
+}
+
+:global([data-theme="light"]) .retryBtn {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.15);
+  color: var(--color-text-main, #0f172a);
+}
+
+.retryBtn:hover {
+  background: rgba(0, 0, 0, 0.85);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+:global([data-theme="light"]) .retryBtn:hover {
+  background: rgba(0, 0, 0, 0.15);
+  border-color: rgba(0, 0, 0, 0.3);
+}
+
+/* ── Loading Overlay ── */
+.loadingOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  color: #ffffff;
+  z-index: 5;
+}
+
+.loadingText {
+  font-family: var(--font-family-sans, inherit);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.01em;
+}
