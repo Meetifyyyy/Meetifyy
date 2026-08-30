@@ -352,35 +352,24 @@ export class AdminCollegesService {
       throw err;
     }
 
-    if (
-      dto.logoKey !== undefined &&
-      existing.logoKey &&
-      existing.logoKey !== updated.logoKey
-    ) {
-      this.mediaCleanupService
-        ?.handleMediaReplacement(
-          'COLLEGE_LOGO',
-          id,
-          existing.logoKey,
-          updated.logoKey,
-        )
-        .catch(() => {});
-    }
+    // Colleges are not in the six types this pass targets, but they run the
+    // same replacement path — moved onto the shared helper so there is one
+    // implementation of the guard rather than a seventh copy of it.
+    this.mediaCleanupService?.replaceEntityMedia({
+      entityType: 'COLLEGE_LOGO',
+      entityId: id,
+      previous: existing.logoKey,
+      next: updated.logoKey,
+      submitted: dto.logoKey !== undefined,
+    });
 
-    if (
-      dto.bannerKey !== undefined &&
-      existing.bannerKey &&
-      existing.bannerKey !== updated.bannerKey
-    ) {
-      this.mediaCleanupService
-        ?.handleMediaReplacement(
-          'COLLEGE_BANNER',
-          id,
-          existing.bannerKey,
-          updated.bannerKey,
-        )
-        .catch(() => {});
-    }
+    this.mediaCleanupService?.replaceEntityMedia({
+      entityType: 'COLLEGE_BANNER',
+      entityId: id,
+      previous: existing.bannerKey,
+      next: updated.bannerKey,
+      submitted: dto.bannerKey !== undefined,
+    });
 
     await this.notifyCacheChange();
     return updated;

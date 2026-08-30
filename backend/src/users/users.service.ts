@@ -524,6 +524,7 @@ export class UsersService {
       location: targetUser.location,
       interests: targetUser.interests || [],
       verified: targetUser.emailVerified,
+      verificationStatus: targetUser.verificationStatus,
       profileCompleted: targetUser.profileCompleted,
       createdAt: targetUser.createdAt,
       settings,
@@ -1114,37 +1115,26 @@ export class UsersService {
       throw err;
     }
 
-    if (
-      avatar !== undefined &&
-      userBefore?.avatar &&
-      userBefore.avatar !== updated.avatar
-    ) {
-      this.mediaCleanupService
-        ?.handleMediaReplacement(
-          'USER_AVATAR',
-          userId,
-          userBefore.avatar,
-          updated.avatar,
-          userId,
-        )
-        .catch(() => {});
-    }
+    // Both run only after the update above committed, and only when the field
+    // was actually submitted and actually changed — editing a bio must never
+    // delete a picture.
+    this.mediaCleanupService?.replaceEntityMedia({
+      entityType: 'USER_AVATAR',
+      entityId: userId,
+      previous: userBefore?.avatar,
+      next: updated.avatar,
+      ownerId: userId,
+      submitted: avatar !== undefined,
+    });
 
-    if (
-      cover !== undefined &&
-      userBefore?.cover &&
-      userBefore.cover !== updated.cover
-    ) {
-      this.mediaCleanupService
-        ?.handleMediaReplacement(
-          'USER_COVER',
-          userId,
-          userBefore.cover,
-          updated.cover,
-          userId,
-        )
-        .catch(() => {});
-    }
+    this.mediaCleanupService?.replaceEntityMedia({
+      entityType: 'USER_COVER',
+      entityId: userId,
+      previous: userBefore?.cover,
+      next: updated.cover,
+      ownerId: userId,
+      submitted: cover !== undefined,
+    });
 
     // A changed avatar or cover has to reach everyone else, not just the person
     // who changed it. Both are denormalised into most payloads the app renders
