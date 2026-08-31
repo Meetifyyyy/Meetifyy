@@ -268,3 +268,85 @@ describe('replaceEntityMedia — the shared guard', () => {
     expect(() => call()).not.toThrow();
   });
 });
+
+/**
+ * Verification documents reference media by row id, not by storing a key in a
+ * column, so every column-based check in `isKeyReferencedInDb` is blind to them.
+ * No sweep reaches `verification/` today, but that is a property of the current
+ * callers rather than of this method — and an identity document deleted out
+ * from under a pending review is not a recoverable mistake.
+ */
+describe('verification documents are never collectable', () => {
+  const build = (opts: { selfie?: boolean; idCard?: boolean }) => {
+    const none = async () => null;
+    const prisma: any = {
+      user: { findFirst: none },
+      community: { findFirst: none },
+      conversation: { findFirst: none },
+      crewActivity: { findFirst: none },
+      campusEvent: { findFirst: none },
+      college: { findFirst: none },
+      media: {
+        findFirst: async ({ where }: any) => {
+          const wants = (where.OR || []).map((c: any) => Object.keys(c)[0]);
+          if (opts.selfie && wants.includes('verificationSelfies')) return { id: 'm1' };
+          if (opts.idCard && wants.includes('verificationIdCards')) return { id: 'm1' };
+          return null;
+        },
+        findMany: async () => [],
+        deleteMany: async () => ({ count: 0 }),
+      },
+    };
+    return new MediaCleanupService(prisma, { delete: async () => true } as any);
+  };
+
+  it('protects a document attached as a selfie', async () => {
+    await expect(
+      build({ selfie: true }).isKeyReferencedInDb('verification/a.webp'),
+    ).resolves.toBe(true);
+  });
+
+  it('protects a document attached as an ID card', async () => {
+    await expect(
+      build({ idCard: true }).isKeyReferencedInDb('verification/b.webp'),
+    ).resolves.toBe(true);
+  });
+
+  it('still reports a genuinely unattached key as unreferenced', async () => {
+    await expect(
+      build({}).isKeyReferencedInDb('verification/orphan.webp'),
+    ).resolves.toBe(false);
+  });
+});
+
+/**
+ * Externally-hosted avatars are stored as `Media` rows whose `objectKey` is a
+ * full URL rather than a storage key, so that `avatarMediaId` has something to
+ * point at. Three live accounts use a DiceBear avatar this way.
+ *
+ * Nothing must ever treat one of those as a deletable object: there is no
+ * bucket key to delete, and the string would be parsed as `folder/name` by
+ * anything splitting on `/`.
+ */
+describe('externally hosted media is never mistaken for a storage key', () => {
+  const external = [
+    'https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka&backgroundColor=b6e3f4',
+    'https://images.unsplash.com/photo-123',
+    'https://media.giphy.com/media/abc/giphy.gif',
+    'https://avatars.githubusercontent.com/u/1',
+    'https://lh3.googleusercontent.com/a/x',
+  ];
+
+  it.each(external)('returns no storage key for %s', (url) => {
+    const service = new MediaCleanupService({} as any, {} as any);
+    expect(service.extractStorageKey(url)).toBeNull();
+  });
+
+  it('still resolves our own media URLs', () => {
+    const service = new MediaCleanupService({} as any, {} as any);
+    expect(service.extractStorageKey('/api/media/avatars/abc.webp')).toBe(
+      'avatars/abc.webp',
+    );
+    expect(service.extractStorageKey('avatars/abc.webp')).toBe('avatars/abc.webp');
+  });
+});

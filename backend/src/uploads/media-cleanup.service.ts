@@ -41,13 +41,23 @@ export class MediaCleanupService {
       return null;
     }
 
-    // Check if it's an external third-party domain (e.g. Unsplash, Giphy, GitHub avatars, Google)
+    // Check if it's an external third-party domain (e.g. Unsplash, Giphy,
+    // GitHub avatars, Google, DiceBear generated avatars).
+    //
+    // DiceBear is on this list because those URLs are genuinely stored as
+    // `Media.objectKey` — an externally-hosted avatar still gets a row so the
+    // `avatarMediaId` relation has something to point at, and three live
+    // accounts use one today. They were already rejected below, but only
+    // because the storage-key regex happens to fail on `://`. Naming them makes
+    // the intent explicit rather than leaving a data shape this method handles
+    // by accident.
     if (
       trimmed.includes('images.unsplash.com') ||
       trimmed.includes('media.giphy.com') ||
       trimmed.includes('giphy.com') ||
       trimmed.includes('avatars.githubusercontent.com') ||
-      trimmed.includes('googleusercontent.com')
+      trimmed.includes('googleusercontent.com') ||
+      trimmed.includes('api.dicebear.com')
     ) {
       return null;
     }
@@ -329,7 +339,16 @@ export class MediaCleanupService {
       if (collegeRef) return true;
     }
 
-    // Search across Media relations (active posts, chat attachments)
+    // Search across Media relations (active posts, chat attachments), and
+    // across verification documents.
+    //
+    // Verification is the one entity that references media by row id rather
+    // than by storing a key in a column, so none of the checks above can see
+    // it. No sweep reaches `verification/` today — `getFoldersForEntityType`
+    // never returns it — but that is a property of the current callers, not of
+    // this method, and this method is the thing every future caller will trust.
+    // An identity document deleted out from under a pending review is not a
+    // recoverable mistake.
     const mediaWithPostOrAttach = await this.prisma.media.findFirst({
       where: {
         objectKey: key,
@@ -338,6 +357,8 @@ export class MediaCleanupService {
           { messageAttachments: { some: {} } },
           { coverActivities: { some: { deletedAt: null } } },
           { campusEventPosters: { some: { deletedAt: null } } },
+          { verificationSelfies: { some: {} } },
+          { verificationIdCards: { some: {} } },
         ],
       },
       select: { id: true },
