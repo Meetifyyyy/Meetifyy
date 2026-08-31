@@ -11,7 +11,7 @@ import {
   TrendingUp,
   UserCheck,
   Zap,
-} from 'lucide-react';
+} from '../components/icons';
 import {
   AreaChart,
   Area,

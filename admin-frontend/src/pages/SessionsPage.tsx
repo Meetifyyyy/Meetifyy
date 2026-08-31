@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
-import { Monitor, LogOut, Trash2 } from 'lucide-react';
+import { Monitor, LogOut, Trash2 } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 
 export const SessionsPage: React.FC = () => {

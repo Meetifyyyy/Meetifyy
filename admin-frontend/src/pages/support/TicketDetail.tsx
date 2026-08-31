@@ -12,7 +12,7 @@ import {
   RefreshCw,
   User as UserIcon,
   X,
-} from 'lucide-react';
+} from '../../components/icons';
 
 import { supportApi } from './supportApi';
 import {

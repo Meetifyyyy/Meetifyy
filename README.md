@@ -57,8 +57,8 @@ rather than at runtime.
 ## 🛠 Tech Stack
 
 - **Backend**: NestJS, TypeScript, Prisma ORM, Supabase (PostgreSQL & Auth), Cloudflare R2 (Storage), Redis (BullMQ queues, Rate Limiting, Presence), Resend API, Mailpit
-- **User Application**: React, Vite, Vanilla CSS Modules, Lucide Icons, Supabase Client
-- **Super Admin Portal**: React, Vite, TypeScript, TailwindCSS / Lucide Icons
+- **User Application**: React, Vite, Vanilla CSS Modules, Hugeicons, Supabase Client
+- **Super Admin Portal**: React, Vite, TypeScript, TailwindCSS / Hugeicons
 
 ---
 
