@@ -14,6 +14,7 @@ import { JwtGuard } from '../common/guards/jwt.guard';
 import { AuthRateLimitGuard } from '../common/guards/auth-ratelimit.guard';
 import { LoginRateLimitGuard } from '../common/guards/login-ratelimit.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import {
   CheckUsernameDto,
   CheckEmailDto,
@@ -33,7 +34,7 @@ export class AuthController {
 
   @Post('sync')
   @UseGuards(JwtGuard)
-  async syncProfile(@CurrentUser() user: { id: string; email: string }) {
+  async syncProfile(@CurrentUser() user: AuthenticatedUser) {
     const syncedUser = await this.authService.syncProfile(user);
     return {
       message: 'Profile synchronized successfully',
