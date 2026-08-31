@@ -279,6 +279,7 @@ const GLYPHS = {
   // -- Content
   Heart: FavouriteIcon,
   Bookmark: Bookmark02Icon,
+  BarChart2: BarChartIcon,
   Trash2: Delete02Icon,
   Pencil: Edit02Icon,
   Eye: ViewIcon,
