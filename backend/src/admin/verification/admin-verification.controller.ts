@@ -39,7 +39,9 @@ import { VerificationStatus } from '@prisma/client';
 @Controller('admin/verification')
 @UseGuards(AdminJwtGuard)
 export class AdminVerificationController {
-  constructor(private readonly adminVerificationService: AdminVerificationService) {}
+  constructor(
+    private readonly adminVerificationService: AdminVerificationService,
+  ) {}
 
   @Get('requests')
   async listRequests(
@@ -49,7 +51,11 @@ export class AdminVerificationController {
   ) {
     const limitNum = limit ? parseInt(limit, 10) : 20;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
-    return this.adminVerificationService.listRequests(status, limitNum, offsetNum);
+    return this.adminVerificationService.listRequests(
+      status,
+      limitNum,
+      offsetNum,
+    );
   }
 
   @Patch('requests/:id/status')

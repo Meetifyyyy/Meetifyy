@@ -172,7 +172,6 @@ export class AuthService {
       // `accountStatus` travels in the payload below, which is what the client
       // keys the suspension screen off.
 
-
       // Perform domain lookup for college auto-linking, but DO NOT block existing accounts
       // if their domain was later deactivated/removed from admin portal.
       const domainCheck = await this.domainValidatorService.validateDomain(

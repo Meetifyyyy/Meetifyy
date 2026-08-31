@@ -1,9 +1,4 @@
-import {
-  Global,
-  MiddlewareConsumer,
-  Module,
-  NestModule,
-} from '@nestjs/common';
+import { Global, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 
 import { PrismaModule } from '../prisma/prisma.module';
 import { SlowRequestMiddleware } from './slow-request.middleware';

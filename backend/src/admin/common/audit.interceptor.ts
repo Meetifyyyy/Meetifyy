@@ -49,7 +49,8 @@ export class AuditInterceptor implements NestInterceptor {
         else if (url.includes('/admin/reports')) targetType = 'REPORT';
         else if (url.includes('/admin/support')) targetType = 'SUPPORT_TICKET';
         else if (url.includes('/admin/content')) targetType = 'CONTENT';
-        else if (url.includes('/admin/verification')) targetType = 'VERIFICATION';
+        else if (url.includes('/admin/verification'))
+          targetType = 'VERIFICATION';
 
         if (
           !targetId &&

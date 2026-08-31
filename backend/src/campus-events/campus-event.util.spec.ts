@@ -5,7 +5,10 @@ jest.mock('../config', () => ({
   config: { isProduction: false },
 }));
 
-import { sanitizeRegistrationUrl, assertCoherentEventTimes } from './campus-event.util';
+import {
+  sanitizeRegistrationUrl,
+  assertCoherentEventTimes,
+} from './campus-event.util';
 import { config } from '../config';
 
 // ─── sanitizeRegistrationUrl ─────────────────────────────────────────────────
@@ -40,12 +43,12 @@ describe('sanitizeRegistrationUrl', () => {
 
   describe('scheme enforcement', () => {
     it('throws for a non-http/https scheme (javascript:)', () => {
-      expect(() =>
-        sanitizeRegistrationUrl('javascript:alert(1)'),
-      ).toThrow(BadRequestException);
-      expect(() =>
-        sanitizeRegistrationUrl('javascript:alert(1)'),
-      ).toThrow('Registration URL must use http or https.');
+      expect(() => sanitizeRegistrationUrl('javascript:alert(1)')).toThrow(
+        BadRequestException,
+      );
+      expect(() => sanitizeRegistrationUrl('javascript:alert(1)')).toThrow(
+        'Registration URL must use http or https.',
+      );
     });
 
     it('throws for a data: URI', () => {
@@ -161,9 +164,9 @@ describe('assertCoherentEventTimes', () => {
 
   describe('start time in the past', () => {
     it('throws when startTime is 10 minutes in the past', () => {
-      expect(() =>
-        assertCoherentEventTimes(fromNow(-10), fromNow(60)),
-      ).toThrow('Event start date/time cannot be in the past.');
+      expect(() => assertCoherentEventTimes(fromNow(-10), fromNow(60))).toThrow(
+        'Event start date/time cannot be in the past.',
+      );
     });
 
     it('allows startTime within the 5-minute grace period', () => {
@@ -183,9 +186,9 @@ describe('assertCoherentEventTimes', () => {
     });
 
     it('throws when endTime is before startTime', () => {
-      expect(() =>
-        assertCoherentEventTimes(fromNow(60), fromNow(30)),
-      ).toThrow('End time must be after start time.');
+      expect(() => assertCoherentEventTimes(fromNow(60), fromNow(30))).toThrow(
+        'End time must be after start time.',
+      );
     });
   });
 

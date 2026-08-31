@@ -1803,5 +1803,3 @@ export class CommunitiesService implements OnModuleInit {
     return { mediaKeysToClean };
   }
 }
-
-

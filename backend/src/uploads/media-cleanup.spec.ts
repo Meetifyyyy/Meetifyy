@@ -38,15 +38,17 @@ describe('MediaCleanupService', () => {
       },
     };
 
-    service = new MediaCleanupService(mockPrisma as any, mockStorageProvider as any);
+    service = new MediaCleanupService(mockPrisma, mockStorageProvider);
   });
 
   describe('extractStorageKey', () => {
     it('should extract canonical storage keys from various formats', () => {
-      expect(service.extractStorageKey('avatars/user-123.webp')).toBe('avatars/user-123.webp');
-      expect(service.extractStorageKey('/api/media/profile-covers/cover-123.webp')).toBe(
-        'profile-covers/cover-123.webp',
+      expect(service.extractStorageKey('avatars/user-123.webp')).toBe(
+        'avatars/user-123.webp',
       );
+      expect(
+        service.extractStorageKey('/api/media/profile-covers/cover-123.webp'),
+      ).toBe('profile-covers/cover-123.webp');
       expect(
         service.extractStorageKey(
           'https://pub-8cd64731b2bc47deb8a54acbbbfa9c4b.r2.dev/community-covers/cc.webp?v=1#tag',
@@ -58,10 +60,14 @@ describe('MediaCleanupService', () => {
         ),
       ).toBe('avatars/old.png');
       expect(
-        service.extractStorageKey('https://meetifyy.app/api/media/activities/act-cover.jpg'),
+        service.extractStorageKey(
+          'https://meetifyy.app/api/media/activities/act-cover.jpg',
+        ),
       ).toBe('activities/act-cover.jpg');
       expect(
-        service.extractStorageKey('http://localhost:3000/api/media/events/poster-1.webp?t=999'),
+        service.extractStorageKey(
+          'http://localhost:3000/api/media/events/poster-1.webp?t=999',
+        ),
       ).toBe('events/poster-1.webp');
     });
 
@@ -70,11 +76,25 @@ describe('MediaCleanupService', () => {
       expect(service.extractStorageKey(undefined)).toBeNull();
       expect(service.extractStorageKey('')).toBeNull();
       expect(service.extractStorageKey('   ')).toBeNull();
-      expect(service.extractStorageKey('blob:http://localhost:3000/123')).toBeNull();
-      expect(service.extractStorageKey('data:image/webp;base64,AAAA')).toBeNull();
-      expect(service.extractStorageKey('https://images.unsplash.com/photo-123')).toBeNull();
-      expect(service.extractStorageKey('https://media.giphy.com/media/xyz/giphy.gif')).toBeNull();
-      expect(service.extractStorageKey('https://avatars.githubusercontent.com/u/123')).toBeNull();
+      expect(
+        service.extractStorageKey('blob:http://localhost:3000/123'),
+      ).toBeNull();
+      expect(
+        service.extractStorageKey('data:image/webp;base64,AAAA'),
+      ).toBeNull();
+      expect(
+        service.extractStorageKey('https://images.unsplash.com/photo-123'),
+      ).toBeNull();
+      expect(
+        service.extractStorageKey(
+          'https://media.giphy.com/media/xyz/giphy.gif',
+        ),
+      ).toBeNull();
+      expect(
+        service.extractStorageKey(
+          'https://avatars.githubusercontent.com/u/123',
+        ),
+      ).toBeNull();
     });
   });
 
@@ -82,18 +102,26 @@ describe('MediaCleanupService', () => {
     it('should identify default, preset, system, and support assets as protected', () => {
       expect(service.isProtectedKey('defaults/avatar-1.webp')).toBe(true);
       expect(service.isProtectedKey('v2-defaults/cover.webp')).toBe(true);
-      expect(service.isProtectedKey('presets/images/preset-image-party-1.webp')).toBe(true);
-      expect(service.isProtectedKey('presets/posters/preset-gif-coding-2.webp')).toBe(true);
+      expect(
+        service.isProtectedKey('presets/images/preset-image-party-1.webp'),
+      ).toBe(true);
+      expect(
+        service.isProtectedKey('presets/posters/preset-gif-coding-2.webp'),
+      ).toBe(true);
       expect(service.isProtectedKey('system/logo.webp')).toBe(true);
       expect(service.isProtectedKey('assets/banner.webp')).toBe(true);
-      expect(service.isProtectedKey('support/ticket-attachment.pdf')).toBe(true);
+      expect(service.isProtectedKey('support/ticket-attachment.pdf')).toBe(
+        true,
+      );
       expect(service.isProtectedKey('mock-user-avatar.png')).toBe(true);
     });
 
     it('should not protect normal user-uploaded assets', () => {
       expect(service.isProtectedKey('avatars/user-abc-123.webp')).toBe(false);
       expect(service.isProtectedKey('profile-covers/cov-999.webp')).toBe(false);
-      expect(service.isProtectedKey('community-icons/comm-11.webp')).toBe(false);
+      expect(service.isProtectedKey('community-icons/comm-11.webp')).toBe(
+        false,
+      );
       expect(service.isProtectedKey('community-covers/cc-99.webp')).toBe(false);
       expect(service.isProtectedKey('groups/grp-77.webp')).toBe(false);
       expect(service.isProtectedKey('activities/act-88.webp')).toBe(false);
@@ -197,7 +225,11 @@ describe('MediaCleanupService', () => {
       mockPrisma.user.findFirst.mockImplementation(async ({ where }: any) => {
         // where has OR: [{ avatar: { contains: ... }, id: { not: 'user-1' } }, { cover: { contains: ... } }]
         // Since cover is checked for all users, it should match user-1's cover
-        if (where.OR?.some((cond: any) => cond.cover?.contains === sharedUserImage)) {
+        if (
+          where.OR?.some(
+            (cond: any) => cond.cover?.contains === sharedUserImage,
+          )
+        ) {
           return { id: 'user-1' };
         }
         return null;
@@ -219,12 +251,18 @@ describe('MediaCleanupService', () => {
       const sharedCommImage = 'community-icons/dual-comm.webp';
       const newCommAvatar = 'community-icons/new-comm-avatar.webp';
 
-      mockPrisma.community.findFirst.mockImplementation(async ({ where }: any) => {
-        if (where.OR?.some((cond: any) => cond.coverKey?.contains === sharedCommImage)) {
-          return { id: 'comm-1' };
-        }
-        return null;
-      });
+      mockPrisma.community.findFirst.mockImplementation(
+        async ({ where }: any) => {
+          if (
+            where.OR?.some(
+              (cond: any) => cond.coverKey?.contains === sharedCommImage,
+            )
+          ) {
+            return { id: 'comm-1' };
+          }
+          return null;
+        },
+      );
 
       const res = await service.handleMediaReplacement(
         'COMMUNITY_AVATAR',
@@ -242,7 +280,9 @@ describe('MediaCleanupService', () => {
       const oldAvatar = 'avatars/old-avatar.webp';
       const newAvatar = 'avatars/new-avatar.webp';
 
-      mockStorageProvider.delete.mockRejectedValueOnce(new Error('R2 Network Timeout'));
+      mockStorageProvider.delete.mockRejectedValueOnce(
+        new Error('R2 Network Timeout'),
+      );
 
       const res = await service.handleMediaReplacement(
         'USER_AVATAR',
@@ -281,7 +321,9 @@ describe('MediaCleanupService', () => {
         'events/new-poster.webp',
         'user-1',
       );
-      expect(mockStorageProvider.delete).toHaveBeenCalledWith('events/old-poster.webp');
+      expect(mockStorageProvider.delete).toHaveBeenCalledWith(
+        'events/old-poster.webp',
+      );
 
       // Group avatar
       await service.handleMediaReplacement(
@@ -291,7 +333,9 @@ describe('MediaCleanupService', () => {
         'groups/new-grp.webp',
         'user-1',
       );
-      expect(mockStorageProvider.delete).toHaveBeenCalledWith('groups/old-grp.webp');
+      expect(mockStorageProvider.delete).toHaveBeenCalledWith(
+        'groups/old-grp.webp',
+      );
 
       // Activity cover
       await service.handleMediaReplacement(
@@ -301,7 +345,9 @@ describe('MediaCleanupService', () => {
         'activities/new-act.webp',
         'user-1',
       );
-      expect(mockStorageProvider.delete).toHaveBeenCalledWith('activities/old-act.webp');
+      expect(mockStorageProvider.delete).toHaveBeenCalledWith(
+        'activities/old-act.webp',
+      );
 
       // College logo
       await service.handleMediaReplacement(
@@ -310,7 +356,9 @@ describe('MediaCleanupService', () => {
         'colleges/old-logo.webp',
         'colleges/new-logo.webp',
       );
-      expect(mockStorageProvider.delete).toHaveBeenCalledWith('colleges/old-logo.webp');
+      expect(mockStorageProvider.delete).toHaveBeenCalledWith(
+        'colleges/old-logo.webp',
+      );
     });
   });
 
@@ -330,9 +378,15 @@ describe('MediaCleanupService', () => {
       );
 
       expect(res.deletedKeys).toContain('avatars/orphan-1.webp');
-      expect(res.skippedKeys.some((s) => s.key === 'avatars/active-current.webp')).toBe(true);
-      expect(res.skippedKeys.some((s) => s.key === 'defaults/v2-avatar.webp')).toBe(true);
-      expect(mockStorageProvider.delete).toHaveBeenCalledWith('avatars/orphan-1.webp');
+      expect(
+        res.skippedKeys.some((s) => s.key === 'avatars/active-current.webp'),
+      ).toBe(true);
+      expect(
+        res.skippedKeys.some((s) => s.key === 'defaults/v2-avatar.webp'),
+      ).toBe(true);
+      expect(mockStorageProvider.delete).toHaveBeenCalledWith(
+        'avatars/orphan-1.webp',
+      );
       expect(mockPrisma.media.deleteMany).toHaveBeenCalledWith({
         where: { objectKey: 'avatars/orphan-1.webp' },
       });
@@ -358,7 +412,10 @@ describe('MediaCleanupService', () => {
     it('should discard newly uploaded file when database update fails', async () => {
       const failedUploadKey = 'avatars/failed-upload-999.webp';
 
-      const discarded = await service.discardFailedNewUpload(failedUploadKey, 'user-1');
+      const discarded = await service.discardFailedNewUpload(
+        failedUploadKey,
+        'user-1',
+      );
 
       expect(discarded).toBe(true);
       expect(mockStorageProvider.delete).toHaveBeenCalledWith(failedUploadKey);
@@ -370,7 +427,10 @@ describe('MediaCleanupService', () => {
     it('should never discard protected assets', async () => {
       const protectedKey = 'defaults/v2-profile-avatar.webp';
 
-      const discarded = await service.discardFailedNewUpload(protectedKey, 'user-1');
+      const discarded = await service.discardFailedNewUpload(
+        protectedKey,
+        'user-1',
+      );
 
       expect(discarded).toBe(false);
       expect(mockStorageProvider.delete).not.toHaveBeenCalled();
@@ -379,11 +439,15 @@ describe('MediaCleanupService', () => {
 
   describe('deletePermanently', () => {
     it('should delete storage object and Media row', async () => {
-      const outcome = await service.deletePermanently('profile-covers/cover-1.webp');
+      const outcome = await service.deletePermanently(
+        'profile-covers/cover-1.webp',
+      );
 
       expect(outcome.success).toBe(true);
       expect(outcome.key).toBe('profile-covers/cover-1.webp');
-      expect(mockStorageProvider.delete).toHaveBeenCalledWith('profile-covers/cover-1.webp');
+      expect(mockStorageProvider.delete).toHaveBeenCalledWith(
+        'profile-covers/cover-1.webp',
+      );
       expect(mockPrisma.media.deleteMany).toHaveBeenCalledWith({
         where: { objectKey: 'profile-covers/cover-1.webp' },
       });

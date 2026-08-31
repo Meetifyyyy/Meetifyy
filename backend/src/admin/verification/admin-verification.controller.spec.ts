@@ -27,7 +27,9 @@ describe('AdminVerificationController', () => {
       .useValue({ canActivate: jest.fn(() => true) })
       .compile();
 
-    controller = module.get<AdminVerificationController>(AdminVerificationController);
+    controller = module.get<AdminVerificationController>(
+      AdminVerificationController,
+    );
     service = module.get<AdminVerificationService>(AdminVerificationService);
     jest.clearAllMocks();
   });
@@ -35,20 +37,34 @@ describe('AdminVerificationController', () => {
   describe('listRequests', () => {
     it('should call listRequests on service with correct params', async () => {
       const statusResponse = { total: 10, requests: [] };
-      mockAdminVerificationService.listRequests.mockResolvedValue(statusResponse);
+      mockAdminVerificationService.listRequests.mockResolvedValue(
+        statusResponse,
+      );
 
-      const result = await controller.listRequests(VerificationStatus.PENDING, '10', '5');
+      const result = await controller.listRequests(
+        VerificationStatus.PENDING,
+        '10',
+        '5',
+      );
 
-      expect(service.listRequests).toHaveBeenCalledWith(VerificationStatus.PENDING, 10, 5);
+      expect(service.listRequests).toHaveBeenCalledWith(
+        VerificationStatus.PENDING,
+        10,
+        5,
+      );
       expect(result).toEqual(statusResponse);
     });
 
     it('should use default limit and offset if not provided', async () => {
       mockAdminVerificationService.listRequests.mockResolvedValue({});
-      
+
       await controller.listRequests(VerificationStatus.PENDING);
 
-      expect(service.listRequests).toHaveBeenCalledWith(VerificationStatus.PENDING, 20, 0);
+      expect(service.listRequests).toHaveBeenCalledWith(
+        VerificationStatus.PENDING,
+        20,
+        0,
+      );
     });
   });
 
@@ -57,8 +73,13 @@ describe('AdminVerificationController', () => {
     const req = { admin: { id: 'super-admin-7' } };
 
     it('should call updateStatus on service with correct params', async () => {
-      const updateResponse = { request: { id: 'req-1' }, user: { id: 'user-1' } };
-      mockAdminVerificationService.updateStatus.mockResolvedValue(updateResponse);
+      const updateResponse = {
+        request: { id: 'req-1' },
+        user: { id: 'user-1' },
+      };
+      mockAdminVerificationService.updateStatus.mockResolvedValue(
+        updateResponse,
+      );
 
       const result = await controller.updateStatus(
         req,
@@ -81,7 +102,10 @@ describe('AdminVerificationController', () => {
 
       await controller.updateStatus(
         // A caller trying to attribute the review to someone else.
-        { admin: { id: 'super-admin-7' }, body: { reviewerId: 'super-admin-1' } },
+        {
+          admin: { id: 'super-admin-7' },
+          body: { reviewerId: 'super-admin-1' },
+        },
         'req-1',
         VerificationStatus.REJECTED,
         'Blurry',

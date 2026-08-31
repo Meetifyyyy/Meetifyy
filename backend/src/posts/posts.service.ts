@@ -163,48 +163,67 @@ export class PostsService {
     );
 
     // ── Safe media attach ──────────────────────────────────────────────────────
-    const allMediaKeys = mediaKeys && mediaKeys.length > 0 ? mediaKeys : (mediaKey ? [mediaKey] : []);
+    const allMediaKeys =
+      mediaKeys && mediaKeys.length > 0
+        ? mediaKeys
+        : mediaKey
+          ? [mediaKey]
+          : [];
     let mediaIdsToConnect: string[] = [];
 
     if (allMediaKeys.length > 0) {
       if (allMediaKeys.length > 6) {
-        throw new BadRequestException('A maximum of 6 media items can be attached to a post');
+        throw new BadRequestException(
+          'A maximum of 6 media items can be attached to a post',
+        );
       }
 
-      const objectKeys = allMediaKeys.map(k => k.replace('/api/media/', ''));
+      const objectKeys = allMediaKeys.map((k) => k.replace('/api/media/', ''));
       const mediaList = await this.prisma.media.findMany({
         where: { objectKey: { in: objectKeys } },
         select: { id: true, ownerId: true, postId: true, objectKey: true },
       });
 
       if (mediaList.length !== objectKeys.length) {
-        this.logger.warn(`createPost: some media not found (author=${authorId})`);
+        this.logger.warn(
+          `createPost: some media not found (author=${authorId})`,
+        );
         throw new BadRequestException('One or more media items were not found');
       }
 
       for (const m of mediaList) {
         if (m.ownerId !== authorId) {
-          throw new BadRequestException('One or more media items are not owned by you');
+          throw new BadRequestException(
+            'One or more media items are not owned by you',
+          );
         }
         if (m.postId && m.postId !== '') {
-          throw new BadRequestException('One or more media items are already attached to a post');
+          throw new BadRequestException(
+            'One or more media items are already attached to a post',
+          );
         }
       }
 
       const existenceChecks = await Promise.all(
-        objectKeys.map(k => this.storageService.exists(k))
+        objectKeys.map((k) => this.storageService.exists(k)),
       );
-      
-      if (existenceChecks.some(exists => !exists)) {
-        this.logger.warn(`createPost: one or more media objects missing from storage (author=${authorId})`);
-        throw new BadRequestException('One or more image uploads did not finish. Please re-select the image and try again.');
+
+      if (existenceChecks.some((exists) => !exists)) {
+        this.logger.warn(
+          `createPost: one or more media objects missing from storage (author=${authorId})`,
+        );
+        throw new BadRequestException(
+          'One or more image uploads did not finish. Please re-select the image and try again.',
+        );
       }
 
-      mediaIdsToConnect = objectKeys.map(key => {
-        return mediaList.find(m => m.objectKey === key)!.id;
+      mediaIdsToConnect = objectKeys.map((key) => {
+        return mediaList.find((m) => m.objectKey === key)!.id;
       });
 
-      this.logger.log(`createPost: attaching ${mediaIdsToConnect.length} media items author=${authorId}`);
+      this.logger.log(
+        `createPost: attaching ${mediaIdsToConnect.length} media items author=${authorId}`,
+      );
     }
 
     const post = await this.prisma.post.create({
@@ -214,11 +233,12 @@ export class PostsService {
         communityId,
         mentions:
           sanitizedMentions.length > 0 ? (sanitizedMentions as any) : undefined,
-        media: mediaIdsToConnect.length > 0
-          ? {
-              connect: mediaIdsToConnect.map(id => ({ id })),
-            }
-          : undefined,
+        media:
+          mediaIdsToConnect.length > 0
+            ? {
+                connect: mediaIdsToConnect.map((id) => ({ id })),
+              }
+            : undefined,
       },
       include: {
         author: {
@@ -248,13 +268,13 @@ export class PostsService {
         allMediaKeys.map(async (key, index) => {
           const objectKey = key.replace('/api/media/', '');
           const thumbKey = objectKey.replace(/\.([a-z0-9]+)$/i, '_thumb.webp');
-          
+
           const mediaId = mediaIdsToConnect[index];
           await this.prisma.media.update({
             where: { id: mediaId },
-            data: { order: index }
+            data: { order: index },
           });
-        })
+        }),
       );
     }
 

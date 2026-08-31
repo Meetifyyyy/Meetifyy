@@ -115,16 +115,22 @@ export class CreateCollegeRequestDto {
 
   @IsString({ message: 'College name must be a string' })
   @IsNotEmpty({ message: 'College name is required' })
-  @Length(3, 120, { message: 'College name must be between 3 and 120 characters' })
+  @Length(3, 120, {
+    message: 'College name must be between 3 and 120 characters',
+  })
   collegeName: string;
 
   @IsEmail({}, { message: 'College email must be a valid email address' })
   @IsNotEmpty({ message: 'College email is required' })
-  @Length(5, 100, { message: 'College email must be between 5 and 100 characters' })
+  @Length(5, 100, {
+    message: 'College email must be between 5 and 100 characters',
+  })
   collegeEmail: string;
 
   @IsEmail({}, { message: 'Personal email must be a valid email address' })
   @IsNotEmpty({ message: 'Personal email is required' })
-  @Length(5, 100, { message: 'Personal email must be between 5 and 100 characters' })
+  @Length(5, 100, {
+    message: 'Personal email must be between 5 and 100 characters',
+  })
   personalEmail: string;
 }

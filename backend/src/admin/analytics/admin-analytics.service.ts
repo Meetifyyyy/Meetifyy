@@ -179,7 +179,12 @@ export class AdminAnalyticsService {
             unit: 'count',
             limit: Number.parseInt(conns?.ceiling ?? '', 10) || null,
           },
-          { label: 'Pool active', value: pool.active, unit: 'count', limit: pool.total },
+          {
+            label: 'Pool active',
+            value: pool.active,
+            unit: 'count',
+            limit: pool.total,
+          },
           { label: 'Pool idle', value: pool.idle, unit: 'count' },
           // Sustained non-zero waiting means queries are queueing for a
           // connection rather than running slowly — a different problem.
@@ -517,30 +522,30 @@ export class AdminAnalyticsService {
     // tab labels stay accurate while looking at either one.
     const [total, rows, slowest, byRoute, adminTotal, appTotal] =
       await Promise.all([
-      this.prisma.slowRequest.count({ where }),
-      this.prisma.slowRequest.findMany({
-        where,
-        orderBy: { occurredAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.slowRequest.aggregate({
-        where,
-        _max: { durationMs: true },
-        _avg: { durationMs: true },
-      }),
-      this.prisma.slowRequest.groupBy({
-        by: ['route'],
-        where,
-        _count: { _all: true },
-        _avg: { durationMs: true },
-        _max: { durationMs: true },
-        orderBy: { _count: { route: 'desc' } },
-        take: 10,
-      }),
-      this.prisma.slowRequest.count({ where: surfaceFilter('admin') }),
-      this.prisma.slowRequest.count({ where: surfaceFilter('app') }),
-    ]);
+        this.prisma.slowRequest.count({ where }),
+        this.prisma.slowRequest.findMany({
+          where,
+          orderBy: { occurredAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        this.prisma.slowRequest.aggregate({
+          where,
+          _max: { durationMs: true },
+          _avg: { durationMs: true },
+        }),
+        this.prisma.slowRequest.groupBy({
+          by: ['route'],
+          where,
+          _count: { _all: true },
+          _avg: { durationMs: true },
+          _max: { durationMs: true },
+          orderBy: { _count: { route: 'desc' } },
+          take: 10,
+        }),
+        this.prisma.slowRequest.count({ where: surfaceFilter('admin') }),
+        this.prisma.slowRequest.count({ where: surfaceFilter('app') }),
+      ]);
 
     return {
       data: rows,
@@ -555,7 +560,11 @@ export class AdminAnalyticsService {
         // the table covers all time.
         windowStart: this.retention.cutoff.toISOString(),
         surface,
-        surfaceCounts: { all: adminTotal + appTotal, admin: adminTotal, app: appTotal },
+        surfaceCounts: {
+          all: adminTotal + appTotal,
+          admin: adminTotal,
+          app: appTotal,
+        },
         slowestMs: slowest._max.durationMs ?? null,
         averageMs: slowest._avg.durationMs
           ? Math.round(slowest._avg.durationMs)

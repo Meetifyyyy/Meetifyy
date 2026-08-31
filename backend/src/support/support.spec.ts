@@ -12,7 +12,8 @@ describe('Support Request Validation & Security', () => {
       email: 'jane@example.com',
       category: SupportCategory.TECHNICAL,
       subject: 'Login page button is unresponsive',
-      description: 'Whenever I click the submit button, nothing happens at all.',
+      description:
+        'Whenever I click the submit button, nothing happens at all.',
       ...overrides,
     };
     return plainToInstance(CreateSupportRequestDto, raw);
@@ -100,11 +101,14 @@ describe('Support Request Validation & Security', () => {
         expect(categoryError).toBeDefined();
       });
 
-      it.each(PUBLIC_SUPPORT_CATEGORIES)('accepts public category %s', async (category) => {
-        const dto = createDto({ category });
-        const errors = await validate(dto);
-        expect(errors.length).toBe(0);
-      });
+      it.each(PUBLIC_SUPPORT_CATEGORIES)(
+        'accepts public category %s',
+        async (category) => {
+          const dto = createDto({ category });
+          const errors = await validate(dto);
+          expect(errors.length).toBe(0);
+        },
+      );
     });
 
     describe('subject (compulsory)', () => {

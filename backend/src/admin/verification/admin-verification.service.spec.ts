@@ -67,11 +67,19 @@ describe('AdminVerificationService', () => {
   describe('listRequests', () => {
     it('should query requests with pagination and status', async () => {
       mockPrisma.verificationRequest.count.mockResolvedValue(10);
-      mockPrisma.verificationRequest.findMany.mockResolvedValue([{ id: 'req-1' }]);
+      mockPrisma.verificationRequest.findMany.mockResolvedValue([
+        { id: 'req-1' },
+      ]);
 
-      const result = await service.listRequests(VerificationStatus.PENDING, 5, 2);
+      const result = await service.listRequests(
+        VerificationStatus.PENDING,
+        5,
+        2,
+      );
 
-      expect(mockPrisma.verificationRequest.count).toHaveBeenCalledWith({ where: { status: VerificationStatus.PENDING } });
+      expect(mockPrisma.verificationRequest.count).toHaveBeenCalledWith({
+        where: { status: VerificationStatus.PENDING },
+      });
       expect(mockPrisma.verificationRequest.findMany).toHaveBeenCalledWith({
         where: { status: VerificationStatus.PENDING },
         take: 5,
@@ -114,7 +122,9 @@ describe('AdminVerificationService', () => {
   describe('updateStatus', () => {
     it('should throw NotFoundException if request not found', async () => {
       mockPrisma.verificationRequest.findUnique.mockResolvedValue(null);
-      await expect(service.updateStatus('invalid-id', VerificationStatus.VERIFIED)).rejects.toThrow(NotFoundException);
+      await expect(
+        service.updateStatus('invalid-id', VerificationStatus.VERIFIED),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('rejects a status value outside the enum', async () => {
@@ -127,7 +137,10 @@ describe('AdminVerificationService', () => {
     it('approves a pending request and syncs the user row', async () => {
       stubRequest(VerificationStatus.PENDING);
 
-      const result = await service.updateStatus('req-1', VerificationStatus.VERIFIED);
+      const result = await service.updateStatus(
+        'req-1',
+        VerificationStatus.VERIFIED,
+      );
 
       expect(mockPrisma.verificationRequest.updateMany).toHaveBeenCalledWith({
         // Conditional on the status we read — this is the concurrency claim.

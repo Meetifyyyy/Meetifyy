@@ -16,7 +16,9 @@ describe('GET /api/media — verification documents', () => {
 
   const storage = {
     isSafeStorageKey: jest.fn(() => true),
-    isAlwaysPrivateKey: jest.fn((key: string) => key.startsWith('verification/')),
+    isAlwaysPrivateKey: jest.fn((key: string) =>
+      key.startsWith('verification/'),
+    ),
     exists: jest.fn(async () => true),
     getResolvedPublicUrl: jest.fn(async (key: string) =>
       key.startsWith('verification/') ? null : `https://cdn.example/${key}`,

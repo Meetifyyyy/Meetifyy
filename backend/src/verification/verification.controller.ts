@@ -18,7 +18,11 @@ export class VerificationController {
     @CurrentUser('id') userId: string,
     @Body() body: { selfieMediaId: string; idCardMediaId: string },
   ) {
-    return this.verificationService.submitVerification(userId, body.selfieMediaId, body.idCardMediaId);
+    return this.verificationService.submitVerification(
+      userId,
+      body.selfieMediaId,
+      body.idCardMediaId,
+    );
   }
 
   @Get('status')

@@ -11,7 +11,10 @@ describe('AuditInterceptor — verification reviews', () => {
   let prisma: any;
   let interceptor: AuditInterceptor;
 
-  const run = async (req: any, response: any = { request: { id: 'req-1' } }) => {
+  const run = async (
+    req: any,
+    response: any = { request: { id: 'req-1' } },
+  ) => {
     const ctx: any = {
       switchToHttp: () => ({ getRequest: () => req }),
     };

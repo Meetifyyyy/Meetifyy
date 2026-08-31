@@ -35,11 +35,17 @@ describe('VerificationController', () => {
     it('should call submitVerification on service with correct params', async () => {
       const userId = 'user-1';
       const body = { selfieMediaId: 'selfie-1', idCardMediaId: 'id-1' };
-      mockVerificationService.submitVerification.mockResolvedValue({ id: 'req-1' });
+      mockVerificationService.submitVerification.mockResolvedValue({
+        id: 'req-1',
+      });
 
       const result = await controller.submitVerification(userId, body);
 
-      expect(service.submitVerification).toHaveBeenCalledWith(userId, body.selfieMediaId, body.idCardMediaId);
+      expect(service.submitVerification).toHaveBeenCalledWith(
+        userId,
+        body.selfieMediaId,
+        body.idCardMediaId,
+      );
       expect(result).toEqual({ id: 'req-1' });
     });
   });

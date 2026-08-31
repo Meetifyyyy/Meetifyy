@@ -128,7 +128,9 @@ describe('VerificationGuard', () => {
           verificationStatus: status,
         });
         const ctx = buildContext({ type: 'http', userId: 'user-1' });
-        await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+        await expect(guard.canActivate(ctx)).rejects.toThrow(
+          ForbiddenException,
+        );
       },
     );
 

@@ -15,7 +15,9 @@ describe('VerificationAccessService — latency profile', () => {
   let service: VerificationAccessService;
 
   const percentile = (xs: number[], p: number) =>
-    [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor((xs.length * p) / 100))];
+    [...xs].sort((a, b) => a - b)[
+      Math.min(xs.length - 1, Math.floor((xs.length * p) / 100))
+    ];
 
   beforeEach(() => {
     delete process.env.FEATURE_VERIFICATION_ENABLED;
@@ -26,7 +28,10 @@ describe('VerificationAccessService — latency profile', () => {
         findUnique: jest.fn(async ({ where }: any) => {
           queries++;
           await delay();
-          return { id: where.id, verificationStatus: VerificationStatus.VERIFIED };
+          return {
+            id: where.id,
+            verificationStatus: VerificationStatus.VERIFIED,
+          };
         }),
         findMany: jest.fn(async ({ where }: any) => {
           queries++;
@@ -55,7 +60,7 @@ describe('VerificationAccessService — latency profile', () => {
     const p50 = percentile(samples, 50);
     const p95 = percentile(samples, 95);
     const p99 = percentile(samples, 99);
-    // eslint-disable-next-line no-console
+
     console.log(
       `[verification gate] n=${N} queries=${queries} ` +
         `p50=${p50.toFixed(4)}ms p95=${p95.toFixed(4)}ms p99=${p99.toFixed(4)}ms`,
@@ -90,7 +95,6 @@ describe('VerificationAccessService — latency profile', () => {
       cached.push(performance.now() - t);
     }
 
-    // eslint-disable-next-line no-console
     console.log(
       `[verification gate] before: queries=${beforeQueries} ` +
         `p50=${percentile(uncached, 50).toFixed(3)}ms p95=${percentile(uncached, 95).toFixed(3)}ms ` +
@@ -112,7 +116,6 @@ describe('VerificationAccessService — latency profile', () => {
     await service.getEligibilityMap(participants);
     const elapsed = performance.now() - t;
 
-    // eslint-disable-next-line no-console
     console.log(
       `[verification gate] 50 participants queries=${queries} elapsed=${elapsed.toFixed(2)}ms`,
     );

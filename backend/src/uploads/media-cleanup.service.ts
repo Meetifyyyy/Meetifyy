@@ -27,7 +27,8 @@ export class MediaCleanupService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject('STORAGE_PROVIDER') private readonly storageProvider: StorageProvider,
+    @Inject('STORAGE_PROVIDER')
+    private readonly storageProvider: StorageProvider,
   ) {}
 
   /**
@@ -37,7 +38,11 @@ export class MediaCleanupService {
   extractStorageKey(urlOrKey: string | null | undefined): string | null {
     if (!urlOrKey || typeof urlOrKey !== 'string') return null;
     const trimmed = urlOrKey.trim();
-    if (!trimmed || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+    if (
+      !trimmed ||
+      trimmed.startsWith('data:') ||
+      trimmed.startsWith('blob:')
+    ) {
       return null;
     }
 
@@ -192,7 +197,12 @@ export class MediaCleanupService {
     if (thumbMatch) {
       const [, folder, name] = thumbMatch;
       for (const ext of ['webp', 'jpg', 'jpeg', 'png', 'gif', 'mp4', 'webm']) {
-        if (await this.isKeyReferencedInDb(`${folder}/${name}.${ext}`, excludeScope)) {
+        if (
+          await this.isKeyReferencedInDb(
+            `${folder}/${name}.${ext}`,
+            excludeScope,
+          )
+        ) {
           return true;
         }
       }
@@ -237,7 +247,10 @@ export class MediaCleanupService {
       const communityRef = await this.prisma.community.findFirst({
         where: {
           OR: [
-            { avatarKey: { contains: key }, id: { not: excludeScope.entityId } },
+            {
+              avatarKey: { contains: key },
+              id: { not: excludeScope.entityId },
+            },
             { coverKey: { contains: key } },
           ],
           deletedAt: null,
@@ -260,7 +273,10 @@ export class MediaCleanupService {
     } else {
       const communityRef = await this.prisma.community.findFirst({
         where: {
-          OR: [{ avatarKey: { contains: key } }, { coverKey: { contains: key } }],
+          OR: [
+            { avatarKey: { contains: key } },
+            { coverKey: { contains: key } },
+          ],
           deletedAt: null,
         },
         select: { id: true },
@@ -323,7 +339,10 @@ export class MediaCleanupService {
         where: {
           OR: [
             { logoKey: { contains: key } },
-            { bannerKey: { contains: key }, id: { not: excludeScope.entityId } },
+            {
+              bannerKey: { contains: key },
+              id: { not: excludeScope.entityId },
+            },
           ],
         },
         select: { id: true },
@@ -332,7 +351,10 @@ export class MediaCleanupService {
     } else {
       const collegeRef = await this.prisma.college.findFirst({
         where: {
-          OR: [{ logoKey: { contains: key } }, { bannerKey: { contains: key } }],
+          OR: [
+            { logoKey: { contains: key } },
+            { bannerKey: { contains: key } },
+          ],
         },
         select: { id: true },
       });
@@ -674,7 +696,11 @@ export class MediaCleanupService {
   }> {
     const key = this.extractStorageKey(keyOrUrl);
     if (!key) {
-      return { success: false, skipped: true, reason: 'Invalid or external key' };
+      return {
+        success: false,
+        skipped: true,
+        reason: 'Invalid or external key',
+      };
     }
 
     if (this.isProtectedKey(key)) {

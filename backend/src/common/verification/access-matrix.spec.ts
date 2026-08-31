@@ -35,7 +35,9 @@ describe('verification access matrix', () => {
       getHandler: () => ({}),
       getClass: () => ({}),
       switchToHttp: () => ({
-        getRequest: () => ({ user: opts.userId ? { id: opts.userId } : undefined }),
+        getRequest: () => ({
+          user: opts.userId ? { id: opts.userId } : undefined,
+        }),
       }),
       switchToWs: () => ({
         getClient: () => (opts.userId ? { userId: opts.userId } : {}),
@@ -69,23 +71,23 @@ describe('verification access matrix', () => {
   describe.each(INELIGIBLE)('an account in %s', (status) => {
     it('is refused a gated HTTP action', async () => {
       asUser(status);
-      await expect(guard.canActivate(context({ type: 'http', userId: 'u1' }))).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(
+        guard.canActivate(context({ type: 'http', userId: 'u1' })),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('is refused a gated socket event', async () => {
       asUser(status);
-      await expect(guard.canActivate(context({ type: 'ws', userId: 'u1' }))).rejects.toThrow(
-        WsException,
-      );
+      await expect(
+        guard.canActivate(context({ type: 'ws', userId: 'u1' })),
+      ).rejects.toThrow(WsException);
     });
 
     it('cannot open a direct conversation', async () => {
       asUser(status);
-      await expect(access.assertUsersEligible(['u1', 'other'], 'u1')).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(
+        access.assertUsersEligible(['u1', 'other'], 'u1'),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -117,7 +119,9 @@ describe('verification access matrix', () => {
     // and JwtGuard has already rejected it. What matters is that it does not
     // throw a *verification* error that would mask a 401 as a 403.
     asUser(null);
-    await expect(guard.canActivate(context({ type: 'http' }))).resolves.toBe(true);
+    await expect(guard.canActivate(context({ type: 'http' }))).resolves.toBe(
+      true,
+    );
   });
 
   it('opens everything when the feature flag is off', async () => {

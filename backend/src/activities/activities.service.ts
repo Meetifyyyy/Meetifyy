@@ -1598,7 +1598,7 @@ export class ActivitiesService implements OnModuleInit {
       throw err;
     }
 
-    setImmediate(async () => {
+    setImmediate(() => {
       this.domainEventService.emit('activity.created', {
         id: createdActivity.id,
         creatorId,

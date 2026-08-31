@@ -153,7 +153,10 @@ export class CloudflareR2Provider implements StorageProvider {
     expiresIn = config.storage.r2.signedUrlTtlSeconds,
   ): Promise<string> {
     if (!this.isConfigured || !this.s3) return `/mock-download/${key}`;
-    const command = new GetObjectCommand({ Bucket: this.bucketFor(key), Key: key });
+    const command = new GetObjectCommand({
+      Bucket: this.bucketFor(key),
+      Key: key,
+    });
     return getSignedUrl(this.s3, command, { expiresIn });
   }
 

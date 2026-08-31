@@ -17,7 +17,9 @@ describe('media replacement — derived variants', () => {
   let service: MediaCleanupService;
   let deleted: string[];
 
-  const buildService = (opts: { referenced?: string[]; owned?: string[] } = {}) => {
+  const buildService = (
+    opts: { referenced?: string[]; owned?: string[] } = {},
+  ) => {
     deleted = [];
     const referenced = new Set(opts.referenced ?? []);
     prisma = {
@@ -26,7 +28,9 @@ describe('media replacement — derived variants', () => {
           const keys = (where.OR || []).map(
             (c: any) => c.avatar?.contains ?? c.cover?.contains,
           );
-          return keys.some((k: string) => referenced.has(k)) ? { id: 'u1' } : null;
+          return keys.some((k: string) => referenced.has(k))
+            ? { id: 'u1' }
+            : null;
         },
       },
       community: { findFirst: async () => null },
@@ -36,7 +40,8 @@ describe('media replacement — derived variants', () => {
       college: { findFirst: async () => null },
       media: {
         findFirst: async () => null,
-        findMany: async () => (opts.owned ?? []).map((objectKey) => ({ objectKey })),
+        findMany: async () =>
+          (opts.owned ?? []).map((objectKey) => ({ objectKey })),
         deleteMany: async () => ({ count: 1 }),
       },
     };
@@ -96,7 +101,11 @@ describe('media replacement — derived variants', () => {
       // without the family expansion it was deleted moments after upload.
       buildService({
         referenced: ['avatars/new.webp'],
-        owned: ['avatars/new.webp', 'avatars/new_thumb.webp', 'avatars/old.webp'],
+        owned: [
+          'avatars/new.webp',
+          'avatars/new_thumb.webp',
+          'avatars/old.webp',
+        ],
       });
 
       await service.handleMediaReplacement(
@@ -289,8 +298,10 @@ describe('verification documents are never collectable', () => {
       media: {
         findFirst: async ({ where }: any) => {
           const wants = (where.OR || []).map((c: any) => Object.keys(c)[0]);
-          if (opts.selfie && wants.includes('verificationSelfies')) return { id: 'm1' };
-          if (opts.idCard && wants.includes('verificationIdCards')) return { id: 'm1' };
+          if (opts.selfie && wants.includes('verificationSelfies'))
+            return { id: 'm1' };
+          if (opts.idCard && wants.includes('verificationIdCards'))
+            return { id: 'm1' };
           return null;
         },
         findMany: async () => [],
@@ -347,6 +358,8 @@ describe('externally hosted media is never mistaken for a storage key', () => {
     expect(service.extractStorageKey('/api/media/avatars/abc.webp')).toBe(
       'avatars/abc.webp',
     );
-    expect(service.extractStorageKey('avatars/abc.webp')).toBe('avatars/abc.webp');
+    expect(service.extractStorageKey('avatars/abc.webp')).toBe(
+      'avatars/abc.webp',
+    );
   });
 });

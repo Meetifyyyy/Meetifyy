@@ -26,7 +26,7 @@ describe('JwtGuard — suspension enforcement', () => {
     jest
       .spyOn(reflector, 'getAllAndOverride')
       .mockImplementation((key: any) =>
-        key === ALLOW_SUSPENDED_KEY ? (allowSuspended as any) : undefined,
+        key === ALLOW_SUSPENDED_KEY ? allowSuspended : undefined,
       );
     return {
       switchToHttp: () => ({ getRequest: () => ({ headers: {} }) }),

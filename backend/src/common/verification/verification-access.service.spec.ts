@@ -144,8 +144,13 @@ describe('VerificationAccessService — status cache', () => {
   let service: VerificationAccessService;
 
   const setStatus = (status: VerificationStatus) => {
-    prisma.user.findUnique.mockResolvedValue({ id: 'u1', verificationStatus: status });
-    prisma.user.findMany.mockResolvedValue([{ id: 'u1', verificationStatus: status }]);
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'u1',
+      verificationStatus: status,
+    });
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'u1', verificationStatus: status },
+    ]);
   };
 
   beforeEach(() => {

@@ -88,33 +88,34 @@ export class AdminCollegesService {
       ];
     }
 
-    const [total, colleges, statusCounts, domainCount, studentCount] = await Promise.all([
-      this.prisma.college.count({ where }),
-      this.prisma.college.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { name: 'asc' },
-        include: {
-          domains: {
-            orderBy: { isPrimary: 'desc' },
+    const [total, colleges, statusCounts, domainCount, studentCount] =
+      await Promise.all([
+        this.prisma.college.count({ where }),
+        this.prisma.college.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { name: 'asc' },
+          include: {
+            domains: {
+              orderBy: { isPrimary: 'desc' },
+            },
+            _count: {
+              select: { users: true },
+            },
           },
-          _count: {
-            select: { users: true },
-          },
-        },
-      }),
-      // Directory-wide figures for the header cards. Summing the current page
-      // made "Domains" and "Enrolled Students" describe 20 colleges while being
-      // presented as directory totals.
-      this.prisma.college.groupBy({
-        by: ['status'],
-        where,
-        _count: { _all: true },
-      }),
-      this.prisma.collegeDomain.count({ where: { college: where } }),
-      this.prisma.user.count({ where: { college: where } }),
-    ]);
+        }),
+        // Directory-wide figures for the header cards. Summing the current page
+        // made "Domains" and "Enrolled Students" describe 20 colleges while being
+        // presented as directory totals.
+        this.prisma.college.groupBy({
+          by: ['status'],
+          where,
+          _count: { _all: true },
+        }),
+        this.prisma.collegeDomain.count({ where: { college: where } }),
+        this.prisma.user.count({ where: { college: where } }),
+      ]);
 
     const byStatus = statusCounts.reduce<Record<string, number>>(
       (acc, row) => ({ ...acc, [String(row.status)]: row._count._all }),
